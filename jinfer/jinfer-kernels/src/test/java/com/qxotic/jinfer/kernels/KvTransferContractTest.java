@@ -2,8 +2,9 @@ package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -20,7 +21,7 @@ class KvTransferContractTest {
     void chainOfWrappingAndAliasingSpansRebuildsTheLiveWindow() {
         int[][] blocks = {{0, 5}, {5, 9}, {9, 30}};
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> live = Views.allocateF16(memory, WIDTH * ROW);
             MemorySegment[] blobs = new MemorySegment[blocks.length];
             for (int i = 0; i < blocks.length; i++) {
@@ -44,7 +45,7 @@ class KvTransferContractTest {
     @Test
     void aMidChainBoundaryRestoresItsOwnWindow() {
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> live = Views.allocateF16(memory, WIDTH * ROW);
             ingest(live, 0, 5);
             MemorySegment first = arena.allocate(5L * ROW * Short.BYTES, 8);

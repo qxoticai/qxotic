@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -27,7 +27,7 @@ final class NemotronHCheckpointCodecTest {
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(5), 64);
             NemotronH.State state =
-                    new NemotronH.State(config, 8, 4, new PanamaMemoryArena(arena), false);
+                    new NemotronH.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
 
             codec.restore(state, 0, 2, first);
             codec.restore(state, 2, 5, second);
@@ -59,7 +59,7 @@ final class NemotronHCheckpointCodecTest {
         NemotronHCheckpointCodec codec = new NemotronHCheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
             NemotronH.State state =
-                    new NemotronH.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+                    new NemotronH.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));

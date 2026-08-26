@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -83,7 +84,8 @@ class BatchTest {
     @Test
     void embeddingBlocksAreAtomic() {
         try (Arena arena = Arena.ofConfined()) {
-            var rows = Views.allocateF32(new PanamaMemoryArena(arena), 24).view(Shape.flat(6, 4));
+            var rows =
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), 24).view(Shape.flat(6, 4));
             Batch bidirectional = Batch.embeddings(rows, 6);
             assertSame(bidirectional, Batch.prepare(List.of(bidirectional), 6).get(0));
             assertThrows(

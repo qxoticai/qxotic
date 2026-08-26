@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import java.lang.foreign.Arena;
@@ -147,7 +147,7 @@ class WeightsCanaryIT {
         try (Arena weights = Arenas.newCrossThread()) {
             var loaded = com.qxotic.jinfer.chat.Models.loadEmbedder(fixturePath, weights);
             Arena stateArena = Arenas.newCrossThread();
-            var state = loaded.model().newState(512, 64, new PanamaMemoryArena(stateArena));
+            var state = loaded.model().newState(512, 64, MemoryAllocators.ofArena(stateArena));
             stateArena.close(); // the caller frees the state's buffers under the state
             IllegalStateException e =
                     assertThrows(

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -30,7 +30,7 @@ public final class BlockResumeTest {
         }
 
         FakeState(int capacity) {
-            super(capacity, 512, new PanamaMemoryArena(Arena.ofAuto()), false);
+            super(capacity, 512, MemoryAllocators.ofArena(Arena.ofAuto()), false);
             rows = new long[capacity];
         }
 

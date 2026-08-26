@@ -5,10 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.MediaProjectorContract;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -56,7 +57,7 @@ class Lfm2VisionComponentsTest {
         Media.Image image =
                 new Media.Image(new float[] {0f, 0.25f, 0.5f, 0.75f, 1f, 0.125f}, 1, 2, 3);
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> patches = Lfm2VisionPreprocess.patches(image, 1, memory);
             assertArrayEquals(
                     new float[] {-1f, -0.5f, 0f, 0.5f, 1f, -0.75f},
@@ -85,12 +86,12 @@ class Lfm2VisionComponentsTest {
         // Same synthetic tower Lfm2ChatTemplateTest uses, this time actually projecting: the
         // shared contract checks positions == rows, chunk shape/expiry and determinism.
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MediaProjectorContract.assertContract(tinyVision(memory), image(32, 32), 1);
         }
     }
 
-    private static Lfm2Vision tinyVision(PanamaMemoryArena arena) {
+    private static Lfm2Vision tinyVision(MemoryArena<MemorySegment> arena) {
         int patchVector = 3 * 16 * 16;
         return new Lfm2Vision(
                 16,
@@ -116,7 +117,7 @@ class Lfm2VisionComponentsTest {
                 new Lfm2Vision.Layer[0]);
     }
 
-    private static MemoryView<MemorySegment> one(PanamaMemoryArena arena) {
+    private static MemoryView<MemorySegment> one(MemoryArena<MemorySegment> arena) {
         MemoryView<MemorySegment> value = Views.allocateF32(arena, 1);
         Views.copyFromArray(value, 0, new float[] {1}, 0, 1, "test weight");
         return value;
@@ -127,7 +128,7 @@ class Lfm2VisionComponentsTest {
     }
 
     private static MemoryView<MemorySegment> tensor(
-            PanamaMemoryArena arena, int rows, int columns, float... values) {
+            MemoryArena<MemorySegment> arena, int rows, int columns, float... values) {
         MemoryView<MemorySegment> view = Views.allocateF32(arena, rows, columns);
         Views.copyFromArray(view, 0, values, 0, values.length, "test tensor");
         return view;

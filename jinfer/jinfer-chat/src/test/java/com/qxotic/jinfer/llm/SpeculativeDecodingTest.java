@@ -3,7 +3,7 @@ package com.qxotic.jinfer.llm;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.ContextState;
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +12,7 @@ class SpeculativeDecodingTest {
 
     private static final class State extends ContextState {
         State() {
-            super(8, 8, new PanamaMemoryArena(Arena.ofAuto()), false);
+            super(8, 8, MemoryAllocators.ofArena(Arena.ofAuto()), false);
         }
 
         @Override

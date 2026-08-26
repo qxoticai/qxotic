@@ -3,6 +3,7 @@ package com.qxotic.jinfer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +14,7 @@ class SafetyCanaryTest {
     void closedBorrowedArenaFailsWithTheBoundaryMessage() {
         Arena arena = Arena.ofShared();
         RuntimeStateLifecycleTest.ProbeState state =
-                new RuntimeStateLifecycleTest.ProbeState(new PanamaMemoryArena(arena), false);
+                new RuntimeStateLifecycleTest.ProbeState(MemoryAllocators.ofArena(arena), false);
         state.exclusively(() -> {});
         arena.close();
 
@@ -25,9 +26,9 @@ class SafetyCanaryTest {
 
     @Test
     void undyingScopesRemainUsable() {
-        new RuntimeStateLifecycleTest.ProbeState(new PanamaMemoryArena(Arena.ofAuto()), false)
+        new RuntimeStateLifecycleTest.ProbeState(MemoryAllocators.ofArena(Arena.ofAuto()), false)
                 .exclusively(() -> {});
-        new RuntimeStateLifecycleTest.ProbeState(new PanamaMemoryArena(Arena.global()), false)
+        new RuntimeStateLifecycleTest.ProbeState(MemoryAllocators.ofArena(Arena.global()), false)
                 .exclusively(() -> {});
     }
 }

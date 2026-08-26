@@ -3,9 +3,10 @@ package com.qxotic.jinfer.models.gemma4;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -17,7 +18,7 @@ class Gemma4VisionTest {
     void appliesIndependentNeoxRopeToXAndYHalves() {
         try (Arena arena = Arena.ofConfined()) {
             MemoryView<MemorySegment> value =
-                    tensor(new PanamaMemoryArena(arena), new float[] {1, 2, 3, 4, 5, 6, 7, 8});
+                    tensor(MemoryAllocators.ofArena(arena), new float[] {1, 2, 3, 4, 5, 6, 7, 8});
             Gemma4Vision.rope2d(value, 0, 8, 1, 2, 100f);
             assertPair(value, 0, 2, 1, 3, 1f);
             assertPair(value, 1, 3, 2, 4, 0.1f);
@@ -29,7 +30,7 @@ class Gemma4VisionTest {
     @Test
     void emitsVisionBlockAtomicallyAndPreservesGeometry() {
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             Gemma4Vision vision =
                     new Gemma4Vision(
                             2,
@@ -82,22 +83,23 @@ class Gemma4VisionTest {
         assertEquals(first * sine + second * cosine, get(value, secondIndex), 1e-6f);
     }
 
-    private static MemoryView<MemorySegment> tensor(PanamaMemoryArena arena, float... values) {
+    private static MemoryView<MemorySegment> tensor(
+            MemoryArena<MemorySegment> arena, float... values) {
         return tensor(arena, new long[] {values.length}, values);
     }
 
     private static MemoryView<MemorySegment> tensor(
-            PanamaMemoryArena arena, long d0, long d1, float... values) {
+            MemoryArena<MemorySegment> arena, long d0, long d1, float... values) {
         return tensor(arena, new long[] {d0, d1}, values);
     }
 
     private static MemoryView<MemorySegment> tensor(
-            PanamaMemoryArena arena, long d0, long d1, long d2, float[] values) {
+            MemoryArena<MemorySegment> arena, long d0, long d1, long d2, float[] values) {
         return tensor(arena, new long[] {d0, d1, d2}, values);
     }
 
     private static MemoryView<MemorySegment> tensor(
-            PanamaMemoryArena arena, long[] shape, float[] values) {
+            MemoryArena<MemorySegment> arena, long[] shape, float[] values) {
         MemoryView<MemorySegment> view = Views.allocateF32(arena, shape);
         assertEquals(view.shape().size(), values.length);
         Views.copyFromArray(view, 0, values, 0, values.length, "test tensor");

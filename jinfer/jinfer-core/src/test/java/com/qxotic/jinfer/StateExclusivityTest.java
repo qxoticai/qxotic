@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -73,7 +74,7 @@ final class StateExclusivityTest {
             for (Entry attacker : Entry.values()) {
                 ProbeModel model = new ProbeModel();
                 try (ProbeState state =
-                        new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true)) {
+                        new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true)) {
                     model.ingest(state, Batch.step(0));
                     CountDownLatch inside = new CountDownLatch(1);
                     CountDownLatch release = new CountDownLatch(1);
@@ -107,7 +108,7 @@ final class StateExclusivityTest {
     @Test
     void embedAllKeepsExclusiveAccessWhileCallingTheSink() throws Exception {
         ProbeModel model = new ProbeModel();
-        try (ProbeState state = new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true)) {
+        try (ProbeState state = new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true)) {
             CountDownLatch inSink = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
             Thread holder =
@@ -151,7 +152,7 @@ final class StateExclusivityTest {
     @Test
     void projectEmbeddingScopesTheViewToTheSynchronousExclusiveCallback() throws Exception {
         ProbeModel model = new ProbeModel();
-        ProbeState state = new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true);
+        ProbeState state = new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true);
         model.ingest(state, Batch.step(0));
         CountDownLatch inConsumer = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -210,7 +211,7 @@ final class StateExclusivityTest {
     @Test
     void projectEmbeddingPropagatesConsumerFailureAndReleasesTheState() {
         ProbeModel model = new ProbeModel();
-        try (ProbeState state = new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true)) {
+        try (ProbeState state = new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true)) {
             model.ingest(state, Batch.step(0));
             RuntimeException expected = new RuntimeException("consumer failed");
             RuntimeException actual =
@@ -233,7 +234,7 @@ final class StateExclusivityTest {
     @Test
     void safeEntryPointsMayNestOnTheHoldingThread() {
         ProbeModel model = new ProbeModel();
-        try (ProbeState state = new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true)) {
+        try (ProbeState state = new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true)) {
             state.exclusively(() -> model.ingest(state, Batch.prefill(new int[] {1, 2})));
             assertEquals(2, state.position());
         }
@@ -242,7 +243,7 @@ final class StateExclusivityTest {
     @Test
     void projectEmbeddingWithoutIndexProjectsTheFinalRetainedOutput() {
         ProbeModel model = new ProbeModel();
-        try (ProbeState state = new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true)) {
+        try (ProbeState state = new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true)) {
             model.ingest(state, Batch.score(new int[] {1, 2, 3}));
             model.projectEmbedding(state, ignored -> {});
             assertEquals(List.of(2), model.projectedOutputs);
@@ -292,7 +293,7 @@ final class StateExclusivityTest {
     @Test
     void projectEmbeddingWithoutRetainedOutputFailsClearly() {
         ProbeModel model = new ProbeModel();
-        try (ProbeState state = new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true)) {
+        try (ProbeState state = new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true)) {
             IllegalStateException error =
                     assertThrows(
                             IllegalStateException.class,

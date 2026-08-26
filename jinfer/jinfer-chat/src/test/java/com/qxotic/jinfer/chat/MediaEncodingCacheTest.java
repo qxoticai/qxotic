@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -42,7 +42,7 @@ final class MediaEncodingCacheTest {
                         projections.incrementAndGet();
                         try (Arena arena = Arena.ofConfined()) {
                             MemoryView<MemorySegment> rows =
-                                    Views.allocateF32(new PanamaMemoryArena(arena), 1, 2);
+                                    Views.allocateF32(MemoryAllocators.ofArena(arena), 1, 2);
                             float marker = source instanceof Media.Video ? 2 : 1;
                             Views.copyFromArray(
                                     rows, 0, new float[] {marker, marker + 1}, 0, 2, "test rows");

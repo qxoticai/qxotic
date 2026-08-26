@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.llama;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -24,7 +24,7 @@ final class GraniteCheckpointCodecTest {
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
             Granite.State state =
-                    new Granite.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+                    new Granite.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
 
             codec.restore(state, 0, 2, first);
             codec.restore(state, 2, 4, second);
@@ -50,7 +50,7 @@ final class GraniteCheckpointCodecTest {
         GraniteCheckpointCodec codec = new GraniteCheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
             Granite.State state =
-                    new Granite.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+                    new Granite.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));

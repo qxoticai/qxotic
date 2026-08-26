@@ -8,6 +8,7 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
@@ -65,7 +66,7 @@ class MediaBoundaryTest {
     void validatesDenseFp32EmbeddingRowsAndKeepsContentKey() {
         try (Arena arena = Arena.ofConfined()) {
             MemoryView<?> rows =
-                    Views.allocateF32(new PanamaMemoryArena(arena), 12).view(Shape.flat(3, 4));
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), 12).view(Shape.flat(3, 4));
             ContentKey key = new ContentKey("media:test");
             Batch.Input.Embeddings embeddings = new Batch.Input.Embeddings(rows, 3, true, key);
             assertEquals(key, embeddings.contentKey());

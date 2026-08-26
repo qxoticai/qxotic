@@ -18,11 +18,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.ReplyLanguage.Node;
 import com.qxotic.jinfer.chat.ReplyLanguage.Selection;
 import com.qxotic.jinfer.chat.ReplyLanguage.Walk;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
@@ -112,7 +112,7 @@ public final class ReplyLanguageTest {
     static boolean[] admitted(Walk w) {
         int n = TOK.vocabulary().size();
         MemoryView<MemorySegment> logits =
-                Views.allocateF32(new PanamaMemoryArena(Arena.ofAuto()), n);
+                Views.allocateF32(MemoryAllocators.ofArena(Arena.ofAuto()), n);
         w.maskLogits(logits);
         float[] values = Views.toFloatArray(logits, "logits");
         boolean[] ok = new boolean[n];

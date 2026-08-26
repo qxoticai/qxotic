@@ -2,11 +2,11 @@ package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ class ConvertContractTest {
     @Test
     void denseFloatFormatsDecodeKnownValuesAndOffsets() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             float[] values = {-3.5f, -0.25f, 0, 1, 9.5f, 0.125f, -2, 4};
             var f32 = Views.fromFloatArray(memory, values);
             var f16 =
@@ -60,7 +60,7 @@ class ConvertContractTest {
     @Test
     void q8DecodeCrossesABlockBoundary() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             var encoded = arena.allocate(68, 64);
             encoded.set(ValueLayout.JAVA_SHORT_UNALIGNED, 0, Float.floatToFloat16(0.5f));
             encoded.set(ValueLayout.JAVA_SHORT_UNALIGNED, 34, Float.floatToFloat16(0.25f));

@@ -3,8 +3,8 @@ package com.qxotic.jinfer.kernels;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +14,7 @@ class OpsContractTest {
     @Test
     void fusedActivationMatchesItsScalarDefinitionAcrossTheVectorTail() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             float[] gate = new float[35];
             float[] up = new float[35];
             for (int i = 0; i < gate.length; i++) {
@@ -38,7 +38,7 @@ class OpsContractTest {
     @Test
     void softmaxIsNormalizedAndShiftInvariant() {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             float[] values = new float[33];
             float[] shifted = new float[33];
             for (int i = 0; i < values.length; i++) {
@@ -68,7 +68,7 @@ class OpsContractTest {
         try (Arena arena = Arena.ofConfined()) {
             var values =
                     Views.fromFloatArray(
-                            new PanamaMemoryArena(arena), new float[] {0, 3, 1, 0, 9, 9, 0, 2});
+                            MemoryAllocators.ofArena(arena), new float[] {0, 3, 1, 0, 9, 9, 0, 2});
             assertEquals(1, Ops.argmax(values, 0, 4));
             assertEquals(0, Ops.argmax(values, 4, 4));
             assertEquals(4, Ops.argmax(values, 0, 8));

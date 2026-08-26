@@ -12,7 +12,7 @@ import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextConfiguration;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -60,7 +60,7 @@ public final class PromptCacheTest {
         }
 
         FakeState(int batchCap) {
-            super(CONTEXT, batchCap, new PanamaMemoryArena(Arena.ofAuto()), false);
+            super(CONTEXT, batchCap, MemoryAllocators.ofArena(Arena.ofAuto()), false);
             this.batchCap = batchCap;
         }
 

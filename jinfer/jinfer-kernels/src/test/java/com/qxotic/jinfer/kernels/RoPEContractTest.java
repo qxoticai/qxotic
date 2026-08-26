@@ -2,8 +2,9 @@ package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -44,7 +45,7 @@ class RoPEContractTest {
     void scatteredPositionsMatchTheirIndividualRanges() {
         int[] positions = {0, 1, 2, 0, 1, 511, 4999};
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             Range scattered =
                     new Range(
                             Views.allocateF32(memory, positions.length * HALF),
@@ -66,7 +67,7 @@ class RoPEContractTest {
     @Test
     void scheduleAndRotationLayoutAreIndependentAndPartialRotationKeepsTheTail() {
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> cos = Views.allocateF32(memory, HALF);
             MemoryView<MemorySegment> sin = Views.allocateF32(memory, HALF);
             RoPE.fill(cos, sin, 7, 1, HALF, RoPE.plain(HEAD_SIZE, THETA));
@@ -96,7 +97,7 @@ class RoPEContractTest {
     }
 
     private static Range fill(int from, int count, RoPE.Schedule schedule) {
-        PanamaMemoryArena memory = new PanamaMemoryArena(Arena.ofAuto());
+        MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(Arena.ofAuto());
         Range range =
                 new Range(
                         Views.allocateF32(memory, count * HALF),
@@ -105,7 +106,7 @@ class RoPEContractTest {
         return range;
     }
 
-    private static MemoryView<MemorySegment> sequence(PanamaMemoryArena memory, int size) {
+    private static MemoryView<MemorySegment> sequence(MemoryArena<MemorySegment> memory, int size) {
         float[] values = new float[size];
         for (int i = 0; i < size; i++) values[i] = i + 1;
         return Views.fromFloatArray(memory, values);

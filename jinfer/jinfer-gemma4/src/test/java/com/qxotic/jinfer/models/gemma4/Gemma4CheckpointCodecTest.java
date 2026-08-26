@@ -3,7 +3,7 @@ package com.qxotic.jinfer.models.gemma4;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -25,7 +25,7 @@ final class Gemma4CheckpointCodecTest {
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
             Gemma4.State state =
-                    new Gemma4.State(config, 8, 4, new PanamaMemoryArena(arena), false);
+                    new Gemma4.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
 
             // spans stay within W=4, so no ring slot aliases: every row lands on its own slot
             codec.restore(state, 0, 2, first);
@@ -52,7 +52,7 @@ final class Gemma4CheckpointCodecTest {
         Gemma4CheckpointCodec codec = new Gemma4CheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
             Gemma4.State state =
-                    new Gemma4.State(config(), 8, 4, new PanamaMemoryArena(arena), false);
+                    new Gemma4.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));

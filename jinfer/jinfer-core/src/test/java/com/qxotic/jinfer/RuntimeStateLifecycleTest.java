@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -29,16 +30,12 @@ class RuntimeStateLifecycleTest {
             buffer = Views.allocateF32(memoryArena(), 8);
         }
 
-        Arena jdkArena() {
-            return ((PanamaMemoryArena) memoryArena()).arena();
-        }
-
         @Override
         protected void clearHistory() {}
     }
 
     static ProbeState owned() {
-        return new ProbeState(new PanamaMemoryArena(Arena.ofShared()), true);
+        return new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true);
     }
 
     @Test
@@ -113,12 +110,12 @@ class RuntimeStateLifecycleTest {
     @Test
     void ownedMemoryDiesButBorrowedMemoryDoesNot() {
         ProbeState owned = owned();
-        Arena ownedArena = owned.jdkArena();
+        MemoryArena<MemorySegment> ownedArena = owned.memoryArena();
         owned.close();
-        assertFalse(ownedArena.scope().isAlive());
+        assertFalse(ownedArena.isAlive());
 
         try (Arena arena = Arena.ofShared()) {
-            ProbeState borrowed = new ProbeState(new PanamaMemoryArena(arena), false);
+            ProbeState borrowed = new ProbeState(MemoryAllocators.ofArena(arena), false);
             borrowed.close();
             assertTrue(arena.scope().isAlive());
             assertThrows(IllegalStateException.class, () -> borrowed.exclusively(() -> {}));
@@ -128,9 +125,9 @@ class RuntimeStateLifecycleTest {
     @Test
     void nonCloseableOwnedArenasAreSafe() {
         assertDoesNotThrow(
-                () -> new ProbeState(new PanamaMemoryArena(Arena.ofAuto()), true).close());
+                () -> new ProbeState(MemoryAllocators.ofArena(Arena.ofAuto()), true).close());
         assertDoesNotThrow(
-                () -> new ProbeState(new PanamaMemoryArena(Arena.global()), true).close());
+                () -> new ProbeState(MemoryAllocators.ofArena(Arena.global()), true).close());
     }
 
     @Test

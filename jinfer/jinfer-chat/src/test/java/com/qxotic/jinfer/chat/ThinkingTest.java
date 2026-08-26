@@ -2,9 +2,9 @@ package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
@@ -277,7 +277,7 @@ class ThinkingTest {
         float[] values = new float[tokens.length];
         values[favorite] = 2;
         values[fallback] = Math.max(values[fallback], 1);
-        return Views.fromFloatArray(new PanamaMemoryArena(Arena.ofAuto()), values);
+        return Views.fromFloatArray(MemoryAllocators.ofArena(Arena.ofAuto()), values);
     }
 
     private static final class FakeTokenizer implements Tokenizer {

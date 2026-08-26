@@ -5,8 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -146,7 +147,7 @@ class Mamba2Test {
         int rows = 2, inner = 4, heads = 2, groups = 1, stateSize = 2;
         int channels = inner + 2 * groups * stateSize;
         try (Arena arena = Arena.ofConfined()) {
-            PanamaMemoryArena memory = new PanamaMemoryArena(arena);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> conv = Views.allocateF32(memory, rows, channels);
             MemoryView<MemorySegment> z = Views.allocateF32(memory, rows, inner);
             MemoryView<MemorySegment> dt = Views.allocateF32(memory, rows, heads);
