@@ -60,17 +60,17 @@ class ReshapeTest extends AbstractMemoryTest {
         // Reshape to different dimensions with same total elements
         MemoryView<float[]> reshaped = view.view(Shape.of(6, 4));
         assertEquals(Shape.of(6, 4), reshaped.shape());
-        assertTrue(reshaped.isContiguous());
+        assertTrue(reshaped.isRowMajorContiguous());
 
         // Reshape to 1D
         MemoryView<float[]> flat = view.view(Shape.of(24));
         assertEquals(Shape.of(24), flat.shape());
-        assertTrue(flat.isContiguous());
+        assertTrue(flat.isRowMajorContiguous());
 
         // Reshape to higher dimensions
         MemoryView<float[]> higher = view.view(Shape.of(2, 2, 3, 2));
         assertEquals(Shape.of(2, 2, 3, 2), higher.shape());
-        assertTrue(higher.isContiguous());
+        assertTrue(higher.isRowMajorContiguous());
     }
 
     @Test
@@ -393,7 +393,7 @@ class ReshapeTest extends AbstractMemoryTest {
 
         // Create a non-contiguous view by taking every other row: rows 0 and 2
         MemoryView<float[]> sliced = view.slice(0, 0, 3, 2);
-        assertFalse(sliced.isContiguous());
+        assertFalse(sliced.isRowMajorContiguous());
     }
 
     @Test
@@ -407,7 +407,7 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> sliced = view.slice(0, 0, 2); // First two rows: (2, 4)
 
         // This slice should be contiguous because it takes consecutive memory
-        assertTrue(sliced.isContiguous(), "First two rows should be contiguous");
+        assertTrue(sliced.isRowMajorContiguous(), "First two rows should be contiguous");
 
         // Should be able to reshape freely since it's contiguous
         assertDoesNotThrow(() -> sliced.view(Shape.of(2, 4)));
@@ -426,7 +426,7 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> sliced = view.slice(1, 0, 4, 2); // Every other element in dim 1
         // This creates strides like (16, 8) instead of (16, 4)
 
-        assertFalse(sliced.isContiguous());
+        assertFalse(sliced.isRowMajorContiguous());
 
         MemoryView<float[]> reshaped = sliced.view(Shape.of(6));
         assertEquals(Stride.of(2), reshaped.stride());
@@ -456,7 +456,7 @@ class ReshapeTest extends AbstractMemoryTest {
 
         // Create a non-contiguous view by taking every other row (rows 0 and 2)
         MemoryView<float[]> sliced = view.slice(0, 0, 3, 2); // shape (2, 4), stride (8, 1)
-        assertFalse(sliced.isContiguous());
+        assertFalse(sliced.isRowMajorContiguous());
 
         // Same-shape "reshape" is a no-op - succeeds trivially
         assertDoesNotThrow(() -> sliced.view(Shape.of(2, 4)));
@@ -476,7 +476,7 @@ class ReshapeTest extends AbstractMemoryTest {
 
         MemoryView<float[]> viewed = view.view(Shape.of(6, 4));
         assertEquals(Shape.of(6, 4), viewed.shape());
-        assertTrue(viewed.isContiguous());
+        assertTrue(viewed.isRowMajorContiguous());
         assertSame(view.memory(), viewed.memory());
         assertEquals(view.byteOffset(), viewed.byteOffset());
     }

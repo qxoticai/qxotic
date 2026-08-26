@@ -32,7 +32,7 @@ class NativeUnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
     @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
-        if (!isPowerOf2(byteAlignment)) {
+        if (!Util.isPowerOf2(byteAlignment)) {
             throw new IllegalArgumentException("invalid byteAlignment, not a power of 2");
         }
         long mallocAddress = UNSAFE.allocateMemory(byteSize + byteAlignment - 1);
@@ -110,10 +110,6 @@ class NativeUnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
             sb.append('}');
             return sb.toString();
         }
-    }
-
-    private static boolean isPowerOf2(long n) {
-        return n > 0 && ((n & (n - 1)) == 0);
     }
 
     private static Unsafe initializeUnsafe() {

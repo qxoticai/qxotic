@@ -8,20 +8,11 @@ import com.qxotic.jota.Util;
 import com.qxotic.jota.View;
 import com.qxotic.jota.ViewTransforms;
 import com.qxotic.jota.memory.internal.MemoryViewFactory;
-import java.util.Arrays;
 import java.util.stream.IntStream;
 
 public interface MemoryView<B> extends View {
 
     Layout layout();
-
-    default Shape shape() {
-        return layout().shape();
-    }
-
-    default Stride stride() {
-        return layout().stride();
-    }
 
     DataType dataType();
 
@@ -34,21 +25,25 @@ public interface MemoryView<B> extends View {
     }
 
     default boolean isBroadcasted() {
-        return Arrays.stream(stride().toArray()).anyMatch(stride -> stride == 0L);
+        for (long stride : stride().toArray()) {
+            if (stride == 0L) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    default boolean isContiguous() {
-        return layout().isSpanContiguous();
-    }
-
+    /** Gapless byte range, in any iteration order (a transposed square is span-contiguous). */
     default boolean isSpanContiguous() {
         return layout().isSpanContiguous();
     }
 
+    /** Dense C order: the only layout that is safe to treat as one row-major block (memcpy). */
     default boolean isRowMajorContiguous() {
         return layout().isRowMajorContiguous();
     }
 
+    /** No two indices alias the same element (no broadcast strides). */
     default boolean isNonOverlapping() {
         return layout().isNonOverlapping();
     }

@@ -101,7 +101,6 @@ public record ViewPrintOptions(
             }
             String formatted = String.format(Locale.ROOT, "%.6f", value);
             formatted = formatted.replaceAll("0+$", "");
-            formatted = formatted.replaceAll("\\.$", ".");
             return formatted;
         }
     }

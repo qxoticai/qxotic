@@ -49,7 +49,7 @@ class ReshapeOpTest {
         Tensor result = input.reshape(Shape.of(2, 2));
 
         assertEquals(Shape.of(2, 2), result.shape());
-        assertTrue(result.materialize().isContiguous());
+        assertTrue(result.materialize().isRowMajorContiguous());
     }
 
     @Test
@@ -60,11 +60,11 @@ class ReshapeOpTest {
         Tensor input = Tensor.of(transposed);
 
         Tensor flatView = input.view(Shape.of(12));
-        assertTrue(flatView.materialize().isContiguous());
+        assertTrue(flatView.materialize().isRowMajorContiguous());
 
         Tensor flatReshape = input.reshape(Shape.of(12));
         assertEquals(Shape.of(12), flatReshape.shape());
-        assertTrue(flatReshape.materialize().isContiguous());
+        assertTrue(flatReshape.materialize().isRowMajorContiguous());
     }
 
     @Test
@@ -78,7 +78,7 @@ class ReshapeOpTest {
         Tensor result = input.reshape(Shape.of(6));
 
         assertEquals(Shape.of(6), result.shape());
-        assertTrue(result.materialize().isContiguous());
+        assertTrue(result.materialize().isRowMajorContiguous());
     }
 
     @Test
