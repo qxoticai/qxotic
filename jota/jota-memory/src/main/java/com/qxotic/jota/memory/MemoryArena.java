@@ -1,8 +1,9 @@
 package com.qxotic.jota.memory;
 
 /**
- * An allocator that owns the lifetime of what it hands out: {@link #close()} releases every
- * allocation at once. A {@link ScopedArena} additionally frees buffers one by one.
+ * An allocator with a lifetime: {@link #close()} releases every allocation at once if the arena
+ * owns them ({@code adopt}, {@code new}), and does nothing if it merely borrows them ({@code of}).
+ * A {@link ScopedArena} additionally frees buffers one by one.
  */
 public interface MemoryArena<B> extends MemoryAllocator<B>, AutoCloseable {
     /** Releases every allocation of this arena; views over them are invalid afterwards. */

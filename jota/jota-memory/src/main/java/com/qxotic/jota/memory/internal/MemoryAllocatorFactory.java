@@ -71,4 +71,8 @@ public final class MemoryAllocatorFactory {
     public static MemoryArena<MemorySegment> ofArena(Arena arena) {
         return ArenaAllocator.of(arena);
     }
+
+    public static MemoryArena<MemorySegment> adoptArena(Arena arena) {
+        return ArenaAllocator.adopt(arena);
+    }
 }

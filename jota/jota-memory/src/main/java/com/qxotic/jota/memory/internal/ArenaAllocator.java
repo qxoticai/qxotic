@@ -16,17 +16,25 @@ import java.util.Objects;
  */
 final class ArenaAllocator implements MemoryArena<MemorySegment> {
 
-    /** The global arena is a process singleton, so its wrapper is one too. */
-    private static final ArenaAllocator GLOBAL = new ArenaAllocator(Arena.global());
+    /** The global arena is a process singleton, so its borrowed wrapper is one too. */
+    private static final ArenaAllocator GLOBAL = new ArenaAllocator(Arena.global(), false);
 
     private final Arena arena;
+    private final boolean owns;
 
-    private ArenaAllocator(Arena arena) {
+    private ArenaAllocator(Arena arena, boolean owns) {
         this.arena = Objects.requireNonNull(arena, "arena");
+        this.owns = owns;
     }
 
+    /** Borrows {@code arena}: {@link #close()} is a no-op, its creator closes it. */
     static MemoryArena<MemorySegment> of(Arena arena) {
-        return arena == Arena.global() ? GLOBAL : new ArenaAllocator(arena);
+        return arena == Arena.global() ? GLOBAL : new ArenaAllocator(arena, false);
+    }
+
+    /** Adopts {@code arena}: {@link #close()} closes it. */
+    static MemoryArena<MemorySegment> adopt(Arena arena) {
+        return new ArenaAllocator(arena, true);
     }
 
     @Override
@@ -52,7 +60,9 @@ final class ArenaAllocator implements MemoryArena<MemorySegment> {
 
     @Override
     public void close() {
-        arena.close();
+        if (owns) {
+            arena.close();
+        }
     }
 
     @Override
@@ -62,6 +72,11 @@ final class ArenaAllocator implements MemoryArena<MemorySegment> {
 
     @Override
     public String toString() {
-        return "ArenaAllocator{" + arena + ", alive=" + isAlive() + '}';
+        return "ArenaAllocator{"
+                + arena
+                + (owns ? ", owned" : ", borrowed")
+                + ", alive="
+                + isAlive()
+                + '}';
     }
 }

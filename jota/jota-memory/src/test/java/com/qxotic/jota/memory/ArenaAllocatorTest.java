@@ -15,9 +15,40 @@ import org.junit.jupiter.api.Test;
 class ArenaAllocatorTest {
 
     @Test
+    void adoptedArenaIsClosedThroughTheDomain() {
+        try (MemoryDomain<MemorySegment> domain =
+                MemoryDomains.of(MemoryAllocators.adoptArena(Arena.ofShared()))) {
+            MemoryViews.zeros(domain, DataType.FP32, Shape.of(4));
+            assertTrue(domain.memoryAllocator().device() != null);
+        } // closes the adopted arena; nothing to assert but "did not throw"
+    }
+
+    @Test
+    void borrowedArenaIsNotClosedThroughTheDomain() {
+        try (Arena arena = Arena.ofShared()) {
+            MemoryDomain<MemorySegment> domain = MemoryDomains.of(MemoryAllocators.ofArena(arena));
+            MemoryView<MemorySegment> view = MemoryViews.zeros(domain, DataType.FP32, Shape.of(4));
+            domain.close();
+            assertTrue(arena.scope().isAlive());
+            assertEquals(0f, domain.directAccess().readFloat(view.memory(), 0));
+        }
+    }
+
+    @Test
+    void borrowedAutoArenaClosesQuietly() {
+        try (MemoryDomain<MemorySegment> domain =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.ofAuto()))) {
+            MemoryViews.zeros(domain, DataType.FP32, Shape.of(4));
+        }
+        assertThrows(
+                UnsupportedOperationException.class,
+                MemoryAllocators.adoptArena(Arena.ofAuto())::close);
+    }
+
+    @Test
     void sharedArenaOwnsItsAllocations() {
         Arena arena = Arena.ofShared();
-        MemoryArena<MemorySegment> allocator = MemoryAllocators.ofArena(arena);
+        MemoryArena<MemorySegment> allocator = MemoryAllocators.adoptArena(arena);
         MemoryDomain<MemorySegment> domain = MemoryDomains.of(allocator);
         MemoryView<MemorySegment> view = MemoryViews.zeros(domain, DataType.FP32, Shape.of(4));
         assertTrue(allocator.isAlive());
@@ -34,18 +65,16 @@ class ArenaAllocatorTest {
     }
 
     @Test
-    void autoAndGlobalArenasCannotBeClosed() {
+    void borrowedAutoAndGlobalArenasStayAlive() {
         MemoryArena<MemorySegment> auto = MemoryAllocators.ofArena(Arena.ofAuto());
         auto.allocateMemory(16);
-        assertTrue(auto.isAlive());
-        assertThrows(UnsupportedOperationException.class, auto::close);
+        auto.close();
         assertTrue(auto.isAlive());
 
-        assertSame(
-                MemoryAllocators.ofArena(Arena.global()), MemoryAllocators.ofArena(Arena.global()));
-        assertThrows(
-                UnsupportedOperationException.class,
-                MemoryAllocators.ofArena(Arena.global())::close);
+        MemoryArena<MemorySegment> global = MemoryAllocators.ofArena(Arena.global());
+        assertSame(global, MemoryAllocators.ofArena(Arena.global()));
+        global.close();
+        assertTrue(global.isAlive());
     }
 
     @Test
