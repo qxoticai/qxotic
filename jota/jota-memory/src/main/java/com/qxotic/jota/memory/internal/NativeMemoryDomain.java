@@ -43,7 +43,7 @@ record NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator)
 
     @Override
     public String toString() {
-        return "Context{MemorySegment, device="
+        return "MemoryDomain{MemorySegment, device="
                 + device()
                 + ", directAccess="
                 + (directAccess() != null)

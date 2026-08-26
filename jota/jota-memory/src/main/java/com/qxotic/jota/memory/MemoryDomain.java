@@ -43,9 +43,9 @@ public interface MemoryDomain<B> extends AutoCloseable {
     }
 
     static <S, D> void copy(
-            MemoryDomain<S> srcContext,
+            MemoryDomain<S> srcDomain,
             MemoryView<S> src,
-            MemoryDomain<D> dstContext,
+            MemoryDomain<D> dstDomain,
             MemoryView<D> dst) {
         if (src.dataType() != dst.dataType()) {
             throw new IllegalArgumentException(
@@ -56,21 +56,21 @@ public interface MemoryDomain<B> extends AutoCloseable {
                     "Shape mismatch: " + src.shape() + " vs " + dst.shape());
         }
 
-        if (srcContext.device().equals(dstContext.device())
-                && sharesMemoryOperations(srcContext, dstContext)) {
-            copySameDevice(srcContext, src, dst);
+        if (srcDomain.device().equals(dstDomain.device())
+                && sharesMemoryOperations(srcDomain, dstDomain)) {
+            copySameDevice(srcDomain, src, dst);
             return;
         }
 
         if (src.isRowMajorContiguous() && dst.isRowMajorContiguous()) {
-            copyContiguous(srcContext, src, dstContext, dst);
+            copyContiguous(srcDomain, src, dstDomain, dst);
             return;
         }
 
-        MemoryView<S> srcContig = contiguousCopy(srcContext, src);
-        MemoryView<D> dstContig = allocateContiguous(dstContext, dst.dataType(), dst.shape());
-        copyContiguous(srcContext, srcContig, dstContext, dstContig);
-        copySameDevice(dstContext, dstContig, dst);
+        MemoryView<S> srcContig = contiguousCopy(srcDomain, src);
+        MemoryView<D> dstContig = allocateContiguous(dstDomain, dst.dataType(), dst.shape());
+        copyContiguous(srcDomain, srcContig, dstDomain, dstContig);
+        copySameDevice(dstDomain, dstContig, dst);
     }
 
     private static boolean sharesMemoryOperations(MemoryDomain<?> left, MemoryDomain<?> right) {
@@ -79,7 +79,7 @@ public interface MemoryDomain<B> extends AutoCloseable {
 
     private static <S, D> void copySameDevice(
             MemoryDomain<S> domain, MemoryView<S> src, MemoryView<D> dst) {
-        if (srcContextDevice(domain).equals(dst.memory().device())) {
+        if (domain.device().equals(dst.memory().device())) {
             @SuppressWarnings("unchecked")
             MemoryView<S> castDst = (MemoryView<S>) dst;
             domain.copy(src, castDst);
@@ -103,31 +103,25 @@ public interface MemoryDomain<B> extends AutoCloseable {
     }
 
     private static <S, D> void copyContiguous(
-            MemoryDomain<S> srcContext,
+            MemoryDomain<S> srcDomain,
             MemoryView<S> src,
-            MemoryDomain<D> dstContext,
+            MemoryDomain<D> dstDomain,
             MemoryView<D> dst) {
         long bytes = src.dataType().byteSizeFor(src.shape());
         if (bytes == 0) {
             return;
         }
         MemoryOperations.copy(
-                srcContext.memoryOperations(),
+                srcDomain.memoryOperations(),
                 src.memory(),
                 src.byteOffset(),
-                dstContext.memoryOperations(),
+                dstDomain.memoryOperations(),
                 dst.memory(),
                 dst.byteOffset(),
                 bytes);
     }
 
-    private static <B> Device srcContextDevice(MemoryDomain<B> domain) {
-        return domain.device();
-    }
-
+    /** Redeclared without {@code throws Exception}: closing a domain never throws a checked one. */
     @Override
     void close();
-
-    @Override
-    String toString();
 }
