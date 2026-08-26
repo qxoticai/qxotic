@@ -87,10 +87,6 @@ public final class DomainFactory {
         return NativeMemoryFactory.createDomain(memoryAllocator);
     }
 
-    public static MemoryDomain<MemorySegment> ofMemorySegment() {
-        return NativeMemoryFactory.createDomain();
-    }
-
     public static MemoryDomain<ByteBuffer> ofByteBuffer(
             MemoryAllocator<ByteBuffer> memoryAllocator) {
         return new ByteBufferDomain(memoryAllocator);

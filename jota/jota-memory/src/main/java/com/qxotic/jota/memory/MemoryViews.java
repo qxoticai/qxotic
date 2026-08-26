@@ -139,7 +139,7 @@ public final class MemoryViews {
             MemoryDomain<B> domain, DataType dataType, long endExclusive) {
         if (!domain.supportsDataType(dataType)) {
             throw new IllegalArgumentException(
-                    "Context does not support "
+                    "Domain does not support "
                             + dataType
                             + " (requires "
                             + dataType.byteSize()

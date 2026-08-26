@@ -37,7 +37,7 @@ record ByteBufferDomain(MemoryAllocator<ByteBuffer> memoryAllocator)
 
     @Override
     public String toString() {
-        return "Context{ByteBuffer, device="
+        return "MemoryDomain{ByteBuffer, device="
                 + device()
                 + ", directAccess="
                 + (directAccess() != null)

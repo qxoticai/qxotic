@@ -6,20 +6,20 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.Objects;
 
 final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
 
     private final boolean direct;
-    private final ByteOrder byteOrder;
 
-    private ByteBufferAllocator(boolean direct, ByteOrder byteOrder) {
+    private ByteBufferAllocator(boolean direct) {
         this.direct = direct;
-        this.byteOrder = Objects.requireNonNull(byteOrder);
     }
 
-    public static MemoryAllocator<ByteBuffer> create(boolean direct, ByteOrder byteOrder) {
-        return new ByteBufferAllocator(direct, byteOrder);
+    /**
+     * Buffers are always native-order: the byte copies through {@code MemoryOperations} assume it.
+     */
+    public static MemoryAllocator<ByteBuffer> create(boolean direct) {
+        return new ByteBufferAllocator(direct);
     }
 
     @Override
@@ -51,6 +51,6 @@ final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
         ByteBuffer raw =
                 direct ? ByteBuffer.allocateDirect(capacity) : ByteBuffer.allocate(capacity);
         int start = (align - raw.alignmentOffset(0, align)) & (align - 1);
-        return MemoryFactory.ofByteBuffer(raw.slice(start, size).order(byteOrder));
+        return MemoryFactory.ofByteBuffer(raw.slice(start, size).order(ByteOrder.nativeOrder()));
     }
 }

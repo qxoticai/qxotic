@@ -2,12 +2,10 @@ package com.qxotic.jota.memory.internal;
 
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
-import com.qxotic.jota.memory.ScopedMemoryAllocator;
 import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 public final class MemoryAllocatorFactory {
 
@@ -58,29 +56,12 @@ public final class MemoryAllocatorFactory {
         return DOUBLES;
     }
 
-    public static MemoryAllocator<ByteBuffer> ofByteBuffer(boolean direct, ByteOrder byteOrder) {
-        return ByteBufferAllocator.create(direct, byteOrder);
-    }
-
-    // Native order.
     public static MemoryAllocator<ByteBuffer> ofByteBuffer(boolean direct) {
-        return ByteBufferAllocator.create(direct, ByteOrder.nativeOrder());
-    }
-
-    public static ScopedMemoryAllocator<MemorySegment> ofPanama() {
-        return NativeMemoryFactory.scopedAllocator();
+        return ByteBufferAllocator.create(direct);
     }
 
     public static ScopedMemoryAllocatorArena<MemorySegment> newPanamaArena() {
         return NativeMemoryFactory.createArena();
-    }
-
-    public static MemoryAllocator<MemorySegment> newPanamaAuto() {
-        return NativeMemoryFactory.createManagedArena();
-    }
-
-    public static MemoryAllocator<MemorySegment> newPanamaOnHeap() {
-        return NativeMemoryFactory.onHeapAllocator();
     }
 
     public static MemoryArena<MemorySegment> ofArena(Arena arena) {
