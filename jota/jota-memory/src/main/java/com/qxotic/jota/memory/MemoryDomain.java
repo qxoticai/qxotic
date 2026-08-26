@@ -7,8 +7,9 @@ import com.qxotic.jota.Shape;
 
 /**
  * A memory backend: its allocator, element access ({@code null} when the host cannot address the
- * memory, e.g. a GPU) and bulk operations. Closing a domain closes the arena it was built {@code
- * of}; the shared array domains own nothing and their {@code close()} is a no-op.
+ * memory, e.g. a GPU) and bulk operations. Closing a domain closes its allocator; whether that
+ * releases memory is the allocator's ownership (see {@link MemoryAllocators}). The shared array
+ * domains own nothing and their {@code close()} is a no-op.
  */
 public interface MemoryDomain<B> extends AutoCloseable {
     Device device();

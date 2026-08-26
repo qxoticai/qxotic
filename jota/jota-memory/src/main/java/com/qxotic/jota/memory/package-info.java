@@ -11,6 +11,7 @@
  *
  * <ul>
  *   <li>{@code of(x)} wraps {@code x} and inherits its lifetime; nothing is allocated.
+ *   <li>{@code adopt(x)} takes {@code x} over: closing the result closes {@code x}.
  *   <li>{@code newX()} creates something the caller owns; if it is {@link AutoCloseable}, the
  *       caller closes it.
  *   <li>a bare noun ({@code floats()}) is a shared, stateless instance; only the array backends
@@ -20,14 +21,15 @@
  * <h2>Lifetimes</h2>
  *
  * <p>Native memory always names its lifetime; there is no default native allocator. {@link
- * com.qxotic.jota.memory.MemoryAllocators#ofArena(java.lang.foreign.Arena)} follows the JDK arena
- * you pass ({@code ofConfined}, {@code ofShared}, {@code ofAuto}, {@code global}): allocations are
- * zero-filled, use after close throws {@link IllegalStateException}, {@code close()} delegates to
- * the arena. {@link com.qxotic.jota.memory.MemoryAllocators#newScopedArena()} is malloc-backed for
- * frequent buffers: each {@link com.qxotic.jota.memory.ScopedMemory} can be closed on its own, the
- * arena closes the rest; memory is not zero-filled and use after close is undefined. A {@link
- * com.qxotic.jota.memory.MemoryDomain} built {@code of} an arena closes that arena when it is
- * closed; the array domains own nothing and their {@code close()} is a no-op.
+ * com.qxotic.jota.memory.MemoryAllocators#ofArena(java.lang.foreign.Arena)} borrows the JDK arena
+ * you pass ({@code ofConfined}, {@code ofShared}, {@code ofAuto}, {@code global}) and {@code
+ * adoptArena} owns it: allocations are zero-filled, use after close throws {@link
+ * IllegalStateException}, and only an adopted arena is closed through jota. {@link
+ * com.qxotic.jota.memory.MemoryAllocators#newScopedArena()} is malloc-backed for frequent buffers:
+ * each {@link com.qxotic.jota.memory.ScopedMemory} can be closed on its own, the arena closes the
+ * rest; memory is not zero-filled and use after close is undefined. A {@link
+ * com.qxotic.jota.memory.MemoryDomain} closes its allocator when closed; a borrowed arena ignores
+ * that, an adopted or new one releases its memory.
  *
  * <p>{@link com.qxotic.jota.memory.Memory#isReadOnly()} is advisory: writers check it, but {@code
  * base()} hands out the storage and the JVM enforces nothing.
