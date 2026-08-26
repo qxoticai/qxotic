@@ -11,7 +11,7 @@ class NativeAllocatorLifecycleTest {
 
     @Test
     void scopedArenaTracksExplicitAndBulkClose() {
-        ScopedMemoryAllocatorArena<MemorySegment> arena = MemoryAllocators.newScopedArena();
+        ScopedArena<MemorySegment> arena = MemoryAllocators.newScopedArena();
         ScopedMemory<MemorySegment> explicitlyClosed = arena.allocateMemory(8);
         ScopedMemory<MemorySegment> arenaClosed = arena.allocateMemory(8);
 

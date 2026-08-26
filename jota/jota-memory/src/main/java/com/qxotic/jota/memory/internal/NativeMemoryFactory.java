@@ -5,7 +5,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryOperations;
-import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
+import com.qxotic.jota.memory.ScopedArena;
 import java.lang.foreign.MemorySegment;
 
 public final class NativeMemoryFactory {
@@ -17,7 +17,7 @@ public final class NativeMemoryFactory {
         return new NativeMemoryDomain(allocator);
     }
 
-    public static ScopedMemoryAllocatorArena<MemorySegment> createArena() {
+    public static ScopedArena<MemorySegment> createArena() {
         return NativeUnsafeAllocatorArena.create();
     }
 

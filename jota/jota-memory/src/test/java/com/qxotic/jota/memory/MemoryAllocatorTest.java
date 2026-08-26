@@ -55,7 +55,7 @@ public class MemoryAllocatorTest {
         return Stream.of(MemoryAllocators::newScopedArena, MemoryAllocators::newScopedArena);
     }
 
-    static Stream<Supplier<ScopedMemoryAllocatorArena<?>>> scopedArenaAllocatorProvider() {
+    static Stream<Supplier<ScopedArena<?>>> scopedArenaAllocatorProvider() {
         return Stream.of(MemoryAllocators::newScopedArena);
     }
 

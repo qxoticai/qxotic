@@ -30,7 +30,7 @@ public final class MemoryAllocators {
      * after close is undefined. For frequent, short-lived buffers where GC-managed release is not
      * enough.
      */
-    public static ScopedMemoryAllocatorArena<MemorySegment> newScopedArena() {
+    public static ScopedArena<MemorySegment> newScopedArena() {
         return MemoryAllocatorFactory.newPanamaArena();
     }
 

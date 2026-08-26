@@ -23,6 +23,10 @@ import java.util.Objects;
 
 final class TensorFactory {
 
+    /** Host-side services (access, operations); the global arena is never allocated from here. */
+    private static final MemoryDomain<MemorySegment> HOST =
+            MemoryDomains.of(MemoryAllocators.ofArena(Arena.global()));
+
     private TensorFactory() {}
 
     private static Device defaultDevice() {
@@ -561,8 +565,7 @@ final class TensorFactory {
             MemoryDomain<B> memoryDomain, float[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP32, data.length);
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -578,8 +581,7 @@ final class TensorFactory {
             MemoryDomain<B> memoryDomain, double[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP64, data.length);
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -595,8 +597,7 @@ final class TensorFactory {
             MemoryDomain<B> memoryDomain, int[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.I32, data.length);
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -612,8 +613,7 @@ final class TensorFactory {
             MemoryDomain<B> memoryDomain, long[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.I64, data.length);
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -633,8 +633,7 @@ final class TensorFactory {
             bytes[i] = data[i] ? (byte) 1 : 0;
         }
         Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(bytes));
-        MemoryOperations<MemorySegment> srcOps =
-                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = HOST.memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,

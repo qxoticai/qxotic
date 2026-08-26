@@ -2,13 +2,13 @@ package com.qxotic.jota.memory.internal;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.memory.ScopedArena;
 import com.qxotic.jota.memory.ScopedMemory;
-import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
 import java.lang.foreign.MemorySegment;
 import java.util.HashSet;
 import java.util.Set;
 
-class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> {
+class NativeUnsafeAllocatorArena implements ScopedArena<MemorySegment> {
 
     private final Set<ScopedMemory<MemorySegment>> allocations = new HashSet<>();
 
@@ -16,7 +16,7 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
 
     private NativeUnsafeAllocatorArena() {}
 
-    static ScopedMemoryAllocatorArena<MemorySegment> create() {
+    static ScopedArena<MemorySegment> create() {
         return new NativeUnsafeAllocatorArena();
     }
 
