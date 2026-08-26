@@ -68,7 +68,7 @@ class MemoryTest {
 
     @Test
     void booleanMemoryOnlySupportsBooleanValues() {
-        Memory<boolean[]> memory = Memories.of(false);
+        Memory<boolean[]> memory = Memories.of(new boolean[] {false});
         assertTrue(memory.supportsDataType(DataType.BOOL));
         assertFalse(memory.supportsDataType(DataType.I8));
     }

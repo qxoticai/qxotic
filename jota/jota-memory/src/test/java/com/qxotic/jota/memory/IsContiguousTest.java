@@ -13,7 +13,7 @@ public class IsContiguousTest extends MemoryTest {
     @Test
     void testScalarIsContiguous() {
         MemoryView<float[]> scalar =
-                MemoryViews.of(Memories.of(42f), DataType.FP32, Layout.scalar());
+                MemoryViews.of(Memories.of(new float[] {42f}), DataType.FP32, Layout.scalar());
         assertTrue(scalar.isRowMajorContiguous());
         assertTrue(scalar.isSpanContiguous());
         assertTrue(scalar.isNonOverlapping());
@@ -129,7 +129,7 @@ public class IsContiguousTest extends MemoryTest {
     @Test
     void testBroadcastExpandIsNotContiguous() {
         MemoryView<float[]> scalar =
-                MemoryViews.of(Memories.of(42f), DataType.FP32, Layout.scalar());
+                MemoryViews.of(Memories.of(new float[] {42f}), DataType.FP32, Layout.scalar());
         assertTrue(scalar.isRowMajorContiguous(), "Scalar should be row-major contiguous");
         assertTrue(scalar.isSpanContiguous(), "Scalar should be span-contiguous");
         assertTrue(scalar.isNonOverlapping(), "Scalar should be non-overlapping");
