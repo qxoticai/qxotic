@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-codecs</name>
-  <description>Media decoding into jinfer's canonical inputs: image, audio and video codecs with
+  <description>Internal to jinfer (no API promise). Media decoding into jinfer's canonical inputs: image, audio and video codecs with
     JVM (ImageIO, JavaSound) and native-image (ffmpeg) backend selection.</description>
 
   <dependencies>

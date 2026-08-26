@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
 
   <name>jinfer-jinja</name>
-  <description>Standalone Jinja chat-template engine: template source in, rendered String out.
+  <description>Internal to jinfer (no API promise). Standalone Jinja chat-template engine: template source in, rendered String out.
         Public API is JinjaRenderer.template(String) -&gt; CompiledTemplate; the lexer/parser/AST
         stay internal. Depends on no other jinfer module.</description>
 
