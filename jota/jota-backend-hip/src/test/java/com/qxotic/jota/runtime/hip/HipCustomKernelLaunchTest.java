@@ -8,7 +8,7 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
 import java.lang.foreign.MemorySegment;

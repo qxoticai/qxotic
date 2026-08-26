@@ -12,7 +12,7 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.MemoryViewFactory;
+import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;

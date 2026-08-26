@@ -7,7 +7,7 @@ import com.qxotic.jota.Stride;
 import com.qxotic.jota.Util;
 import com.qxotic.jota.View;
 import com.qxotic.jota.ViewTransforms;
-import com.qxotic.jota.memory.impl.MemoryViewFactory;
+import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 

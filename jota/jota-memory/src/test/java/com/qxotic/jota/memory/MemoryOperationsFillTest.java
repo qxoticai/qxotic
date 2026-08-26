@@ -2,9 +2,9 @@ package com.qxotic.jota.memory;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
-import com.qxotic.jota.memory.impl.DomainFactory;
-import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.memory.internal.DomainFactory;
+import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;

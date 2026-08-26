@@ -11,7 +11,7 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
 import java.util.List;
 import java.util.Optional;

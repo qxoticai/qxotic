@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
+import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 

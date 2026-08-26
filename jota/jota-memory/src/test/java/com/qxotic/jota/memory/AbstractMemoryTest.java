@@ -2,8 +2,8 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
-import com.qxotic.jota.memory.impl.DomainFactory;
-import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
+import com.qxotic.jota.memory.internal.DomainFactory;
+import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Stream;

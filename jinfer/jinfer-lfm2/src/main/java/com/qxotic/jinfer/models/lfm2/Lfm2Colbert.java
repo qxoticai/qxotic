@@ -7,8 +7,8 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryOperations;
+import com.qxotic.jota.memory.internal.MemoryFactory;
+import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
@@ -165,7 +165,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
     }
 
     private static final MemoryOperations<MemorySegment> NATIVE_OPS =
-            NativeMemoryOperations.instance();
+            NativeMemoryFactory.memoryOperations();
 
     /**
      * One projected+normalized row, copied OUT of the reused per-state buffer. The destination

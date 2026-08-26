@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
+import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.function.Supplier;

@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.impl.ShapeFactory;
-import com.qxotic.jota.memory.impl.MemoryViewFactory;
+import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
