@@ -40,6 +40,10 @@ public final class Memories {
         return MemoryFactory.ofDoubles(doubles);
     }
 
+    /**
+     * The whole buffer, {@code [0, capacity)}, addressed absolutely; position, limit and mark are
+     * ignored, as an array's would be. Pass {@code buffer.slice()} to wrap a window.
+     */
     public static Memory<ByteBuffer> of(ByteBuffer byteBuffer) {
         return MemoryFactory.ofByteBuffer(byteBuffer);
     }
