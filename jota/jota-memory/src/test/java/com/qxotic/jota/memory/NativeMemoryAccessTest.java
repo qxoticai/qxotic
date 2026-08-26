@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.memory.impl.MemoryAccessFactory;
-import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.memory.internal.MemoryAccessFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;

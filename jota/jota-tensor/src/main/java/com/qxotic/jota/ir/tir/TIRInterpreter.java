@@ -6,7 +6,7 @@ import com.qxotic.jota.Layout;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
+import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;

@@ -11,7 +11,7 @@ import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 

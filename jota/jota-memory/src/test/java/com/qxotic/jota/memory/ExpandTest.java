@@ -6,8 +6,8 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.memory.impl.MemoryViewFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
+import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import org.junit.jupiter.api.Test;
 
 class ExpandTest {

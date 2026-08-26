@@ -1,7 +1,7 @@
 package com.qxotic.jota.memory;
 
-import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
+import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 

@@ -2,8 +2,8 @@ package com.qxotic.jota.runtime.panama;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import com.qxotic.jota.runtime.DeviceRuntime;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.util.LinkedHashMap;

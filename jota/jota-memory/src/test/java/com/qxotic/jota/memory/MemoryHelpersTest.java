@@ -11,7 +11,7 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.internal.DomainFactory;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

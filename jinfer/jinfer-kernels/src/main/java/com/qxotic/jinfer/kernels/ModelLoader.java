@@ -11,7 +11,7 @@ import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;

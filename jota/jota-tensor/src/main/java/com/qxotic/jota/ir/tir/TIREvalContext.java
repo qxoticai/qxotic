@@ -7,7 +7,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
+import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
 import java.util.List;

@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;

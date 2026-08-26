@@ -5,8 +5,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryOperations;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryAccess;
-import com.qxotic.jota.runtime.nativeimpl.NativeMemoryOperations;
+import com.qxotic.jota.memory.internal.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 
 final class CMemoryDomain implements MemoryDomain<MemorySegment> {
@@ -30,12 +29,12 @@ final class CMemoryDomain implements MemoryDomain<MemorySegment> {
 
     @Override
     public MemoryAccess<MemorySegment> directAccess() {
-        return NativeMemoryAccess.instance();
+        return NativeMemoryFactory.memoryAccess();
     }
 
     @Override
     public MemoryOperations<MemorySegment> memoryOperations() {
-        return NativeMemoryOperations.instance();
+        return NativeMemoryFactory.memoryOperations();
     }
 
     @Override

@@ -4,7 +4,7 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryArena;
-import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
