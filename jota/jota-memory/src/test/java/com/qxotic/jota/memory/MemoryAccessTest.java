@@ -51,7 +51,6 @@ public class MemoryAccessTest {
         MemoryView<MemorySegment> view =
                 MemoryView.of(memory, DataType.I64, Layout.of(Shape.of(10, 10), Stride.of(0, 0)));
         long l = domain.directAccess().readByte(view.memory(), view.byteOffset());
-        System.out.println(l);
     }
 
     @Test
