@@ -25,10 +25,6 @@ class MemoryViewTest {
         MemoryView<float[]> view0 = view.slice(0, 0, 1).view(Shape.of(3, 5));
         MemoryView<float[]> view1 = view.slice(0, 1, 2).view(Shape.of(3, 5));
         MemoryAccess<float[]> memoryAccess = MemoryDomains.floats().directAccess();
-
-        System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
-        System.out.println(MemoryViewPrinter.toString(view0, memoryAccess));
-        System.out.println(MemoryViewPrinter.toString(view1, memoryAccess));
     }
 
     @Test
@@ -43,10 +39,6 @@ class MemoryViewTest {
         MemoryView<float[]> view0 = view.slice(-1, 0, 1); // .view(Shape.of(2, 3));
         MemoryView<float[]> view1 = view.slice(-1, 1, 2); // .view(Shape.of(2, 3));
         MemoryAccess<float[]> memoryAccess = MemoryDomains.floats().directAccess();
-
-        System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
-        System.out.println(MemoryViewPrinter.toString(view0, memoryAccess));
-        System.out.println(MemoryViewPrinter.toString(view1, memoryAccess));
     }
 
     @Test

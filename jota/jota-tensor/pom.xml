@@ -58,6 +58,8 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
+          <!-- This suite needs a runtime provider: it runs inside jota-backend-panama via
+               dependenciesToScan on the jota-tensor test-jar. -pl jota-tensor alone runs nothing. -->
           <skip>true</skip>
         </configuration>
       </plugin>
