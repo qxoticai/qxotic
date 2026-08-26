@@ -41,8 +41,23 @@ public final class Memories {
     }
 
     /**
-     * The whole buffer, {@code [0, capacity)}, addressed absolutely; position, limit and mark are
-     * ignored, as an array's would be. Pass {@code buffer.slice()} to wrap a window.
+     * The whole buffer as memory: {@code [0, capacity)}, addressed absolutely.
+     *
+     * <ul>
+     *   <li><b>Cursor.</b> Position, limit and mark are {@link ByteBuffer} bookkeeping, not part of
+     *       the memory; they are ignored and never moved. To wrap a window, pass {@code
+     *       buffer.slice()} (a slice shares the storage and starts at the old position).
+     *   <li><b>Byte order.</b> Typed reads and writes go through the buffer, so they follow the
+     *       buffer's own {@link ByteBuffer#order()}: a big-endian buffer holds big-endian values,
+     *       exactly as {@code buffer.getInt} would see them. Bulk copies move bytes as they are.
+     *       Every other jota backend, and therefore every byte that crosses into one, is
+     *       native-order; when the bytes will meet a segment, an array or a device, use a
+     *       native-order buffer ({@link MemoryAllocators#newByteBuffer(boolean)}, or {@code
+     *       buffer.order(ByteOrder.nativeOrder())}). Note that {@code ByteBuffer.allocate}, {@code
+     *       allocateDirect} and {@code slice()} all produce big-endian buffers.
+     *   <li><b>Sharing.</b> Zero-copy: {@code base()} is the buffer you passed, writes through jota
+     *       are visible in it and vice versa, and a read-only buffer yields read-only memory.
+     * </ul>
      */
     public static Memory<ByteBuffer> of(ByteBuffer byteBuffer) {
         return MemoryFactory.ofByteBuffer(byteBuffer);

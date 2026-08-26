@@ -14,8 +14,14 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
         this.byteBuffer = Objects.requireNonNull(byteBuffer);
     }
 
+    /**
+     * A cursor-free view of the same storage: absolute {@code get}/{@code put} honour the limit, so
+     * the memory holds a duplicate with limit = capacity. Read-only is inherited; the byte order is
+     * copied explicitly because {@code duplicate()} resets it to big-endian, like {@code slice()}.
+     * The caller's buffer and its cursor are untouched.
+     */
     static ByteBufferMemory of(ByteBuffer byteBuffer) {
-        return new ByteBufferMemory(byteBuffer);
+        return new ByteBufferMemory(byteBuffer.duplicate().clear().order(byteBuffer.order()));
     }
 
     @Override
