@@ -95,6 +95,16 @@ see the [demo scripts](examples/scripts/README.md).
 | Single-file demos | [JBang gallery](examples/scripts/README.md) |
 | Full applications | [Local RAG](jinfer-example-local-rag/README.md) · [Judge advisor](jinfer-example-judge-advisor/README.md) |
 
+## Artifacts
+
+Everything under `com.qxotic` with a `jinfer-` prefix is on Maven Central, but only some of it is API.
+Depend on the artifacts in the tables above and below (`jinfer-core`, the model providers,
+`jinfer-langchain4j`, `jinfer-spring-ai*`, `jinfer-hub`, `jinfer-server`), and manage versions with
+`jinfer-bom`.
+`jinfer-kernels`, `jinfer-codecs` and `jinfer-jinja` are internal: they are published only so the
+dependency graph resolves, they carry no API or compatibility promise, and their contents can change
+or move between releases without notice.
+
 ## CLI and server
 
 ```bash

@@ -10,5 +10,9 @@
  * <p>Decoding is separate from model projection: codecs know files and bytes, while a model's
  * {@link com.qxotic.jinfer.media.MediaProjector} turns decoded media into borrowed embedding rows.
  * No codec fetches remote content.
+ *
+ * <p><b>Internal to jinfer: published so the dependency graph resolves, with no API or
+ * compatibility promise. Depend on jinfer-core, the model artifacts, or the framework adapters
+ * instead.</b>
  */
 package com.qxotic.jinfer.codecs;

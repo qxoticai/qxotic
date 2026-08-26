@@ -32,11 +32,13 @@
         <artifactId>jinfer-core</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <!-- internal: managed for version alignment only, not an API -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-codecs</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <!-- internal: managed for version alignment only, not an API -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-kernels</artifactId>
@@ -62,6 +64,7 @@
         <artifactId>jinfer-hub</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <!-- internal: managed for version alignment only, not an API -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
