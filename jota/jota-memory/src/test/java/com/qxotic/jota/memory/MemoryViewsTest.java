@@ -1,6 +1,6 @@
 package com.qxotic.jota.memory;
 
-import static com.qxotic.jota.memory.MemoryHelpers.arange;
+import static com.qxotic.jota.memory.MemoryViews.arange;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-public class MemoryHelpersTest extends AbstractMemoryTest {
+public class MemoryViewsTest extends AbstractMemoryTest {
 
     // ============================================================
     // Byte (I8) tests
