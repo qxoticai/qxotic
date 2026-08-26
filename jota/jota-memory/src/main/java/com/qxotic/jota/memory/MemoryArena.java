@@ -1,8 +1,11 @@
 package com.qxotic.jota.memory;
 
-/** Only bulk de-allocation is supported. */
+/**
+ * An allocator that owns the lifetime of what it hands out: {@link #close()} releases every
+ * allocation at once. A {@link ScopedArena} additionally frees buffers one by one.
+ */
 public interface MemoryArena<B> extends MemoryAllocator<B>, AutoCloseable {
-    /** Releases ALL memory in the arena (invalidates all views) */
+    /** Releases every allocation of this arena; views over them are invalid afterwards. */
     @Override
     void close();
 

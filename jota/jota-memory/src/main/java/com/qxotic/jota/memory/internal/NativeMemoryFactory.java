@@ -8,6 +8,10 @@ import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.ScopedArena;
 import java.lang.foreign.MemorySegment;
 
+/**
+ * Internal bridge for the {@code memory} API; use the constructors in {@code
+ * com.qxotic.jota.memory}.
+ */
 public final class NativeMemoryFactory {
 
     private NativeMemoryFactory() {}
@@ -17,7 +21,7 @@ public final class NativeMemoryFactory {
         return new NativeMemoryDomain(allocator);
     }
 
-    public static ScopedArena<MemorySegment> createArena() {
+    public static ScopedArena<MemorySegment> newScopedArena() {
         return NativeUnsafeAllocatorArena.create();
     }
 

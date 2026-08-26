@@ -14,9 +14,11 @@ record NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator)
         implements MemoryDomain<MemorySegment> {
 
     NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator) {
-        assert memoryAllocator.device().belongsTo(DeviceType.PANAMA)
-                : "Expected panama device, got " + memoryAllocator.device();
         this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
+        if (!memoryAllocator.device().belongsTo(DeviceType.PANAMA)) {
+            throw new IllegalArgumentException(
+                    "not a MemorySegment allocator: " + memoryAllocator.device());
+        }
     }
 
     @Override

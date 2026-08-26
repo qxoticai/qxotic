@@ -4,6 +4,10 @@ import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 
+/**
+ * Internal bridge for the {@code memory} API; use the constructors in {@code
+ * com.qxotic.jota.memory}.
+ */
 public final class MemoryFactory {
 
     private MemoryFactory() {

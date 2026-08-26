@@ -31,7 +31,7 @@ public final class MemoryAllocators {
      * enough.
      */
     public static ScopedArena<MemorySegment> newScopedArena() {
-        return MemoryAllocatorFactory.newPanamaArena();
+        return MemoryAllocatorFactory.newScopedArena();
     }
 
     /** A new allocator of native-order {@link ByteBuffer}s, direct or heap. */

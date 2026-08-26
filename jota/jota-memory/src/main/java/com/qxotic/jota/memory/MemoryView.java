@@ -10,6 +10,10 @@ import com.qxotic.jota.ViewTransforms;
 import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import java.util.stream.IntStream;
 
+/**
+ * A shaped, typed window over a {@link Memory}: layout, dtype and byte offset. Views are immutable
+ * and cheap; every transform returns a new view over the same bytes. Equality is identity.
+ */
 public interface MemoryView<B> extends View {
 
     Layout layout();

@@ -3,6 +3,9 @@ package com.qxotic.jota.memory;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 
+/**
+ * A block of bytes on some device, backed by {@code B} (an array, a buffer, a segment, a handle).
+ */
 public interface Memory<B> {
 
     long byteSize();
