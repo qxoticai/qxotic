@@ -7,6 +7,10 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 
+/**
+ * Internal bridge for the {@code memory} API; use the constructors in {@code
+ * com.qxotic.jota.memory}.
+ */
 public final class MemoryViewFactory {
 
     private MemoryViewFactory() {

@@ -7,6 +7,10 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 
+/**
+ * Internal bridge for the {@code memory} API; use the constructors in {@code
+ * com.qxotic.jota.memory}.
+ */
 public final class MemoryAllocatorFactory {
 
     private static final MemoryAllocator<boolean[]> BOOLEANS =
@@ -60,8 +64,8 @@ public final class MemoryAllocatorFactory {
         return ByteBufferAllocator.create(direct);
     }
 
-    public static ScopedArena<MemorySegment> newPanamaArena() {
-        return NativeMemoryFactory.createArena();
+    public static ScopedArena<MemorySegment> newScopedArena() {
+        return NativeMemoryFactory.newScopedArena();
     }
 
     public static MemoryArena<MemorySegment> ofArena(Arena arena) {
