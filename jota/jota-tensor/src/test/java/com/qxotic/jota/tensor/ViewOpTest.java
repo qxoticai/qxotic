@@ -208,7 +208,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(12), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -220,14 +220,14 @@ class ViewOpTest {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2);
-        assertFalse(sliced.isContiguous());
+        assertFalse(sliced.isRowMajorContiguous());
         Tensor input = Tensor.of(sliced);
 
         Tensor result = input.view(Shape.of(6));
 
         assertEquals(Shape.of(6), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     @Test
@@ -235,7 +235,7 @@ class ViewOpTest {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> slicedRows = view.slice(0, 0, 3, 2);
-        assertFalse(slicedRows.isContiguous());
+        assertFalse(slicedRows.isRowMajorContiguous());
         Tensor input = Tensor.of(slicedRows);
 
         Tensor result = input.view(Shape.of(2, 4));
@@ -282,7 +282,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(2, 4), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -321,7 +321,7 @@ class ViewOpTest {
         // Shape (2, 2, 2) with standard row-major stride (4, 2, 1)
         Layout layout = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 2, 1));
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
-        assertTrue(view.isContiguous());
+        assertTrue(view.isRowMajorContiguous());
         Tensor input = Tensor.of(view);
 
         Tensor result1 = input.view(Shape.of(2, 4));
@@ -402,7 +402,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(2, 2), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -423,7 +423,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(4), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -444,7 +444,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(4), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -465,7 +465,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(4), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -481,14 +481,14 @@ class ViewOpTest {
 
         // Take every other row: rows 0 and 2
         MemoryView<MemorySegment> sliced = view.slice(0, 0, 4, 2); // shape (2, 3), stride (6, 1)
-        assertFalse(sliced.isContiguous());
+        assertFalse(sliced.isRowMajorContiguous());
         Tensor input = Tensor.of(sliced);
 
         Tensor result = input.view(Shape.of(6));
 
         assertEquals(Shape.of(6), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -503,14 +503,14 @@ class ViewOpTest {
 
         // Take every other column: columns 0 and 2
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2); // shape (3, 2), stride (4, 2)
-        assertFalse(sliced.isContiguous());
+        assertFalse(sliced.isRowMajorContiguous());
         Tensor input = Tensor.of(sliced);
 
         Tensor result = input.view(Shape.of(6));
 
         assertEquals(Shape.of(6), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     /**
@@ -533,7 +533,7 @@ class ViewOpTest {
 
         assertEquals(Shape.of(8), result.shape());
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
     }
 
     @Test

@@ -46,7 +46,7 @@ class ContiguousOpTest {
         Tensor input = Tensor.of(view);
         Tensor result = input.contiguous();
         MemoryView<?> materialized = result.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
         Layout expected = Layout.rowMajor(view.layout().shape());
         assertEquals(expected, materialized.layout());
     }
@@ -59,7 +59,7 @@ class ContiguousOpTest {
         Tensor input = Tensor.of(transposed);
         Tensor output = input.contiguous();
         MemoryView<?> materialized = output.materialize();
-        assertTrue(materialized.isContiguous());
+        assertTrue(materialized.isRowMajorContiguous());
         Layout expected = Layout.rowMajor(transposed.layout().shape());
         assertEquals(expected, materialized.layout());
     }
@@ -76,7 +76,7 @@ class ContiguousOpTest {
             Tensor input = Tensor.of(transposed);
             Tensor output = input.contiguous();
             MemoryView<?> materialized = output.materialize();
-            assertTrue(materialized.isContiguous(), "Expected contiguous for " + dataType);
+            assertTrue(materialized.isRowMajorContiguous(), "Expected contiguous for " + dataType);
             assertValuesEqual(Tensor.of(transposed), output, dataType);
         }
     }

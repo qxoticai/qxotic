@@ -1490,7 +1490,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     public MemoryView<MemorySegment> visitContiguous(Contiguous node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
 
-        if (input.isContiguous()) {
+        if (input.isRowMajorContiguous()) {
             return input;
         }
 
