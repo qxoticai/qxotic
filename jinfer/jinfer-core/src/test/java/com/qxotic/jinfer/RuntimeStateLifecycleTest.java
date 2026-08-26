@@ -35,7 +35,7 @@ class RuntimeStateLifecycleTest {
     }
 
     static ProbeState owned() {
-        return new ProbeState(MemoryAllocators.ofArena(Arena.ofShared()), true);
+        return new ProbeState(MemoryAllocators.adoptArena(Arena.ofShared()), true);
     }
 
     @Test

@@ -45,7 +45,7 @@ public final class Arenas {
      * instead - this factory is only the built-in default.
      */
     public static MemoryArena<MemorySegment> newCrossThreadMemoryArena() {
-        return MemoryAllocators.ofArena(newCrossThread());
+        return MemoryAllocators.adoptArena(newCrossThread());
     }
 
     /** Closes a runtime-selected arena when its implementation supports eager release. */
