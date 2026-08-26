@@ -9,7 +9,6 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import org.junit.jupiter.api.Test;
 
 class PermuteTest {
@@ -18,9 +17,7 @@ class PermuteTest {
     void permutesShapeStrideAndValues() {
         MemoryView<byte[]> source =
                 MemoryView.rowMajor(
-                        MemoryFactory.ofBytes(new byte[] {0, 1, 2, 3, 4, 5}),
-                        DataType.I8,
-                        Shape.flat(2, 3));
+                        Memories.of(new byte[] {0, 1, 2, 3, 4, 5}), DataType.I8, Shape.flat(2, 3));
 
         MemoryView<byte[]> result = source.permute(1, 0);
 
@@ -32,8 +29,7 @@ class PermuteTest {
     @Test
     void rejectsInvalidPermutations() {
         MemoryView<byte[]> source =
-                MemoryView.rowMajor(
-                        MemoryFactory.ofBytes(new byte[6]), DataType.I8, Shape.flat(2, 3));
+                MemoryView.rowMajor(Memories.of(new byte[6]), DataType.I8, Shape.flat(2, 3));
 
         assertAll(
                 () -> assertThrows(IllegalArgumentException.class, () -> source.permute(0)),

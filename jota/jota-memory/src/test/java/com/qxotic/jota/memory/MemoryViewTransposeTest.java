@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -16,8 +15,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTranspose2D(MemoryDomain<B> domain) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Initialize data if memory access is available
         if (domain.directAccess() != null) {
@@ -54,8 +52,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTranspose3D(MemoryDomain<B> domain) {
         // Create a 2x3x4 tensor
         Shape shape = Shape.of(2, 3, 4);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Initialize data if memory access is available
         if (domain.directAccess() != null) {
@@ -99,8 +96,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeNegativeIndices(MemoryDomain<B> domain) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Transpose using negative indices (-1 means last dimension)
         MemoryView<B> transposed = view.transpose(0, -1);
@@ -114,8 +110,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeSameAxis(MemoryDomain<B> domain) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Transposing the same axis should return an equivalent view
         MemoryView<B> transposed = view.transpose(0, 0);
@@ -130,8 +125,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeInvalidAxis(MemoryDomain<B> domain) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Should throw for invalid axis indices
         assertThrows(IllegalArgumentException.class, () -> view.transpose(0, 2));
@@ -143,8 +137,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeStrides(MemoryDomain<B> domain) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Get original strides
         Stride originalStrides = view.byteStride();
@@ -163,8 +156,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeContiguity(MemoryDomain<B> domain) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view =
-                MemoryViewFactory.allocate(domain.memoryAllocator(), DataType.FP32, shape);
+        MemoryView<B> view = MemoryViews.allocate(domain.memoryAllocator(), DataType.FP32, shape);
 
         // Original view should be row-major contiguous, span-contiguous, and non-overlapping
         assertTrue(view.isRowMajorContiguous());

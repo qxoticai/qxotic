@@ -2,9 +2,9 @@ package com.qxotic.jinfer;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryArena;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -17,8 +17,8 @@ import java.util.Objects;
  * ContextState}), not this adapter. In a native image {@code boundary.Arenas} may supply {@code
  * ofAuto}, making unsupported close the normal path.
  *
- * <p>jota's own native arenas ({@code NativeMemoryFactory.createArena/createManagedArena}) own
- * their lifecycle; jinfer's default arenas are supplied at the boundary ({@code newState(...,
+ * <p>jota's own native arenas ({@code MemoryAllocators.newScopedArena/ofArena}) own their
+ * lifecycle; jinfer's default arenas are supplied at the boundary ({@code newState(...,
  * MemoryArena)}, runtime-adaptive shared/auto per {@code boundary.Arenas}), so this wraps rather
  * than creates. (a candidate to push up to jota's nativeimpl if a second consumer appears.)
  */
@@ -46,7 +46,7 @@ public record PanamaMemoryArena(Arena arena) implements MemoryArena<MemorySegmen
 
     @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
-        return MemoryFactory.ofMemorySegment(arena.allocate(byteSize, byteAlignment));
+        return Memories.of(arena.allocate(byteSize, byteAlignment));
     }
 
     @Override

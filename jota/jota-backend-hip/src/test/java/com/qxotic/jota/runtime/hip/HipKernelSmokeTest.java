@@ -9,17 +9,19 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.random.RandomAlgorithms;
 import com.qxotic.jota.random.RandomKey;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import com.qxotic.jota.testutil.TestKernels;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +39,7 @@ class HipKernelSmokeTest {
             b[i] = n - i;
         }
 
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         var hostMemA = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         var hostMemB = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostA =
@@ -100,7 +102,7 @@ class HipKernelSmokeTest {
             values[i] = i * 0.25f - 2.0f;
         }
 
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         var hostMem = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostInput =
                 MemoryView.of(hostMem, DataType.FP32, Layout.rowMajor(Shape.flat(n)));
@@ -145,7 +147,7 @@ class HipKernelSmokeTest {
             values[i] = i - 4.0f;
         }
 
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         var hostMem = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostInput =
                 MemoryView.of(hostMem, DataType.FP32, Layout.rowMajor(Shape.flat(n)));
@@ -201,7 +203,7 @@ class HipKernelSmokeTest {
                                 Tracer.trace(Tensor.rand(key, Shape.of(n), DataType.FP64), x -> x)
                                         .materialize());
 
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<MemorySegment> fp32 = toHost(outFp32);
         MemoryView<MemorySegment> fp64 = toHost(outFp64);
@@ -232,7 +234,7 @@ class HipKernelSmokeTest {
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(Layout.rowMajor(src.shape()), dst.layout());
 
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<MemorySegment> hostDst = toHost(dst.materialize());
         MemoryView<MemorySegment> hostSrc =
@@ -262,7 +264,7 @@ class HipKernelSmokeTest {
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(Layout.rowMajor(src.shape()), dst.layout());
 
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<MemorySegment> hostDst = toHost(dst.materialize());
         MemoryAccess<MemorySegment> access = host.directAccess();
@@ -290,7 +292,8 @@ class HipKernelSmokeTest {
         device.memoryOperations().fillByte(devBuf.memory(), 0, n, fillValue);
 
         MemoryView<MemorySegment> hostBuf = toHost(devBuf);
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostBuf, i);
             assertEquals(fillValue, access.readByte(hostBuf.memory(), offset));
@@ -313,7 +316,8 @@ class HipKernelSmokeTest {
         device.memoryOperations().fillInt(devBuf.memory(), 0, (long) n * Integer.BYTES, fillValue);
 
         MemoryView<MemorySegment> hostBuf = toHost(devBuf);
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostBuf, i);
             assertEquals(fillValue, access.readInt(hostBuf.memory(), offset));
@@ -336,7 +340,8 @@ class HipKernelSmokeTest {
         device.memoryOperations().fillLong(devBuf.memory(), 0, (long) n * Long.BYTES, fillValue);
 
         MemoryView<MemorySegment> hostBuf = toHost(devBuf);
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostBuf, i);
             assertEquals(fillValue, access.readLong(hostBuf.memory(), offset));
@@ -350,13 +355,14 @@ class HipKernelSmokeTest {
         float[] values = {1.5f, -2.25f, 0.0f, 9.75f, -6.5f};
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(
-                        MemoryFactory.ofMemorySegment(MemorySegment.ofArray(values)),
+                        Memories.of(MemorySegment.ofArray(values)),
                         DataType.FP32,
                         Layout.rowMajor(Shape.flat(values.length)));
 
         Tensor onHip = Tensor.of(hostView).to(ConfiguredTestDevice.resolve(DeviceType.HIP));
         MemoryView<MemorySegment> roundTrip = toHost(onHip.materialize());
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = Indexing.linearToOffset(roundTrip, i);
             assertEquals(values[i], access.readFloat(roundTrip.memory(), offset), 1e-6f);

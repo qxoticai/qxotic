@@ -11,8 +11,6 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.stream.Stream;
@@ -30,10 +28,7 @@ class StridedCopyTest {
         byte[] result = filled(8, (byte) 9);
         MemoryView<byte[]> dst =
                 MemoryView.of(
-                        MemoryFactory.ofBytes(result),
-                        2,
-                        DataType.I8,
-                        Layout.rowMajor(Shape.flat(2, 2)));
+                        Memories.of(result), 2, DataType.I8, Layout.rowMajor(Shape.flat(2, 2)));
 
         OPAQUE.copy(src, dst);
 
@@ -44,7 +39,7 @@ class StridedCopyTest {
     void stagesAStridedDestinationWithoutOverwritingItsGaps() {
         MemoryView<byte[]> src =
                 MemoryView.of(
-                        MemoryFactory.ofBytes(new byte[] {9, 1, 2, 3, 4, 9}),
+                        Memories.of(new byte[] {9, 1, 2, 3, 4, 9}),
                         1,
                         DataType.I8,
                         Layout.rowMajor(Shape.flat(2, 2)));
@@ -59,12 +54,11 @@ class StridedCopyTest {
     @Test
     void rejectsIncompatibleViews() {
         MemoryView<byte[]> bytes =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(new byte[4]), DataType.I8, Shape.flat(4));
+                MemoryView.rowMajor(Memories.of(new byte[4]), DataType.I8, Shape.flat(4));
         MemoryView<byte[]> bools =
-                MemoryView.rowMajor(
-                        MemoryFactory.ofBytes(new byte[4]), DataType.BOOL, Shape.flat(4));
+                MemoryView.rowMajor(Memories.of(new byte[4]), DataType.BOOL, Shape.flat(4));
         MemoryView<byte[]> shorter =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(new byte[3]), DataType.I8, Shape.flat(3));
+                MemoryView.rowMajor(Memories.of(new byte[3]), DataType.I8, Shape.flat(3));
 
         assertThrows(IllegalArgumentException.class, () -> OPAQUE.copy(bytes, bools));
         assertThrows(IllegalArgumentException.class, () -> OPAQUE.copy(bytes, shorter));
@@ -80,7 +74,7 @@ class StridedCopyTest {
     @Test
     void emptyCopyIsANoOp() {
         MemoryView<byte[]> empty =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(new byte[0]), DataType.I8, Shape.flat(0));
+                MemoryView.rowMajor(Memories.of(new byte[0]), DataType.I8, Shape.flat(0));
         assertDoesNotThrow(() -> OPAQUE.copy(empty, empty));
     }
 
@@ -110,13 +104,11 @@ class StridedCopyTest {
         byte[] data = new byte[2 * 3 * blk];
         for (int i = 0; i < data.length; i++) data[i] = (byte) i;
         MemoryView<byte[]> src =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(data), type, Shape.flat(2, 3))
-                        .slice(1, 0, 3, 2);
+                MemoryView.rowMajor(Memories.of(data), type, Shape.flat(2, 3)).slice(1, 0, 3, 2);
         byte[] result = new byte[2 * 2 * blk];
-        MemoryView<byte[]> dst =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(result), type, Shape.flat(2, 2));
+        MemoryView<byte[]> dst = MemoryView.rowMajor(Memories.of(result), type, Shape.flat(2, 2));
 
-        DomainFactory.ofBytes().copy(src, dst);
+        MemoryDomains.bytes().copy(src, dst);
 
         byte[] expected = new byte[result.length];
         System.arraycopy(data, 0, expected, 0, blk);
@@ -129,10 +121,9 @@ class StridedCopyTest {
     @Test
     void overlappingSelfCopyReadsBeforeItWrites() {
         byte[] data = {0, 1, 2, 3, 4, 5, 6, 7};
-        MemoryView<byte[]> all =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(data), DataType.I8, Shape.flat(8));
+        MemoryView<byte[]> all = MemoryView.rowMajor(Memories.of(data), DataType.I8, Shape.flat(8));
         // elements {0,2,4} -> {2,4,6}: a forward element loop would read the clobbered 2.
-        DomainFactory.ofBytes().copy(all.slice(0, 0, 6, 2), all.slice(0, 2, 8, 2));
+        MemoryDomains.bytes().copy(all.slice(0, 0, 6, 2), all.slice(0, 2, 8, 2));
 
         assertArrayEquals(new byte[] {0, 1, 0, 3, 2, 5, 4, 7}, data);
     }
@@ -141,10 +132,10 @@ class StridedCopyTest {
     void stagesOnlyTheViewSpanForOpaqueDomains() {
         byte[] big = new byte[1 << 20];
         MemoryView<byte[]> src =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(big), DataType.I8, Shape.flat(1 << 20))
+                MemoryView.rowMajor(Memories.of(big), DataType.I8, Shape.flat(1 << 20))
                         .slice(0, 1000, 1008, 2);
         MemoryView<byte[]> dst =
-                MemoryView.rowMajor(MemoryFactory.ofBytes(new byte[4]), DataType.I8, Shape.flat(4));
+                MemoryView.rowMajor(Memories.of(new byte[4]), DataType.I8, Shape.flat(4));
         long[] staged = new long[1];
         MemoryDomain<byte[]> counting =
                 new OpaqueByteDomain() {
@@ -202,10 +193,7 @@ class StridedCopyTest {
 
     private static MemoryView<byte[]> view(byte[] bytes, long byteOffset, Stride stride) {
         return MemoryView.of(
-                MemoryFactory.ofBytes(bytes),
-                byteOffset,
-                DataType.I8,
-                Layout.of(Shape.flat(2, 2), stride));
+                Memories.of(bytes), byteOffset, DataType.I8, Layout.of(Shape.flat(2, 2), stride));
     }
 
     private static byte[] filled(int size, byte value) {
@@ -247,7 +235,7 @@ class StridedCopyTest {
 
     private static class OpaqueByteDomain implements MemoryDomain<byte[]> {
 
-        private final MemoryDomain<byte[]> delegate = DomainFactory.ofBytes();
+        private final MemoryDomain<byte[]> delegate = MemoryDomains.bytes();
 
         @Override
         public Device device() {

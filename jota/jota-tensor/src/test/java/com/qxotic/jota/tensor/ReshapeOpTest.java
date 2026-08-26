@@ -11,8 +11,8 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,7 +31,7 @@ class ReshapeOpTest {
     @Test
     void reshapeContiguousInput() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = input.reshape(Shape.of(4, 3));
@@ -55,7 +55,7 @@ class ReshapeOpTest {
     @Test
     void reshapeTransposedTensor() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         Tensor input = Tensor.of(transposed);
 
@@ -70,7 +70,7 @@ class ReshapeOpTest {
     @Test
     void reshapeSlicedTensorWithGaps() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(4, 3));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(4, 3));
 
         MemoryView<MemorySegment> sliced = view.slice(0, 0, 4, 2);
         Tensor input = Tensor.of(sliced);
@@ -84,7 +84,7 @@ class ReshapeOpTest {
     @Test
     void reshapeThrowsOnSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         assertThrows(IllegalArgumentException.class, () -> input.reshape(Shape.of(5, 5)));
@@ -93,7 +93,7 @@ class ReshapeOpTest {
     @Test
     void reshapeThrowsWhenNewShapeTooLarge() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -104,7 +104,7 @@ class ReshapeOpTest {
     @Test
     void reshapeThrowsWhenNewShapeTooSmall() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -115,7 +115,7 @@ class ReshapeOpTest {
     @Test
     void reshapeThrowsWhenFlatteningToWrongSize() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryViews.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -126,7 +126,7 @@ class ReshapeOpTest {
     @Test
     void reshapeThrowsWithNestedShapeSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 8).view(Shape.of(2, 4));
+                MemoryViews.arange(domain, DataType.FP32, 8).view(Shape.of(2, 4));
         Tensor input = Tensor.of(view);
 
         Shape nestedShape = Shape.of(Shape.of(3L, 1L), 2L);

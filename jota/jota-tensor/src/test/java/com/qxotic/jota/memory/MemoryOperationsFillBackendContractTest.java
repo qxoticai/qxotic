@@ -4,9 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.memory.internal.MemoryAccessFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class MemoryOperationsFillBackendContractTest {
 
     private static final MemoryAccess<MemorySegment> HOST_ACCESS =
-            MemoryAccessFactory.ofMemorySegment();
+            MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
 
     @Test
     <B> void fillByteSupportsFullAndPartialRanges() {
@@ -158,8 +157,7 @@ class MemoryOperationsFillBackendContractTest {
 
     private static <B> Memory<MemorySegment> copyToHost(
             MemoryDomain<B> domain, Memory<B> src, long byteSize) {
-        Memory<MemorySegment> host =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[(int) byteSize]));
+        Memory<MemorySegment> host = Memories.of(MemorySegment.ofArray(new byte[(int) byteSize]));
         domain.memoryOperations().copyToNative(src, 0, host, 0, byteSize);
         return host;
     }

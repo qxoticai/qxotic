@@ -3,9 +3,11 @@ package com.qxotic.jota.runtime.c;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryOperations;
-import com.qxotic.jota.memory.internal.NativeMemoryFactory;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 final class CMemoryDomain implements MemoryDomain<MemorySegment> {
@@ -29,12 +31,12 @@ final class CMemoryDomain implements MemoryDomain<MemorySegment> {
 
     @Override
     public MemoryAccess<MemorySegment> directAccess() {
-        return NativeMemoryFactory.memoryAccess();
+        return MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
     }
 
     @Override
     public MemoryOperations<MemorySegment> memoryOperations() {
-        return NativeMemoryFactory.memoryOperations();
+        return MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
     }
 
     @Override

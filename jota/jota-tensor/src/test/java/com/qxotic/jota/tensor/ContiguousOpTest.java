@@ -8,8 +8,8 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import java.lang.foreign.MemorySegment;
@@ -42,7 +42,7 @@ class ContiguousOpTest {
     @Test
     void contiguousReturnsSameTensorForContiguousInput() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
+                MemoryViews.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
         Tensor result = input.contiguous();
         MemoryView<?> materialized = result.materialize();
@@ -54,7 +54,7 @@ class ContiguousOpTest {
     @Test
     void contiguousMaterializesStridedView() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
+                MemoryViews.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         Tensor input = Tensor.of(transposed);
         Tensor output = input.contiguous();
@@ -70,8 +70,8 @@ class ContiguousOpTest {
         for (DataType dataType : PRIMITIVE_TYPES) {
             MemoryView<MemorySegment> view =
                     dataType == DataType.BOOL
-                            ? MemoryHelpers.full(domain, dataType, shape.size(), 1).view(shape)
-                            : MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
+                            ? MemoryViews.full(domain, dataType, shape.size(), 1).view(shape)
+                            : MemoryViews.arange(domain, dataType, shape.size()).view(shape);
             MemoryView<MemorySegment> transposed = view.transpose(0, 1);
             Tensor input = Tensor.of(transposed);
             Tensor output = input.contiguous();

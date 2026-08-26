@@ -3,6 +3,7 @@ package com.qxotic.jota.memory.internal;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocator;
 import java.lang.foreign.MemorySegment;
@@ -11,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class UnsafeAllocatorTest {
 
     static final ScopedMemoryAllocator<MemorySegment> unsafeAllocator =
-            MemoryAllocatorFactory.ofPanama();
+            MemoryAllocators.newScopedArena();
 
     @Test
     void testAllocateMemory() {

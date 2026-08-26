@@ -2,24 +2,23 @@ package com.qxotic.jota;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.MemoryViewPrinter;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
+import com.qxotic.jota.memory.MemoryViews;
 import java.util.Arrays;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
 public class JotaTest {
 
-    @AutoClose MemoryDomain<float[]> domain = DomainFactory.ofFloats();
+    @AutoClose MemoryDomain<float[]> domain = MemoryDomains.floats();
 
     public static MemoryView<float[]> ofFloatsVector(float... floats) {
-        return MemoryViewFactory.of(
-                DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
+        return MemoryViews.of(Memories.of(floats), DataType.FP32, Layout.rowMajor(floats.length));
     }
 
     public static MemoryView<float[]> full(float value, Shape shape) {

@@ -6,9 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.util.stream.Stream;
@@ -30,28 +27,29 @@ class MemoryOperationsAutoBufferTest {
     private static final int MIN_BUFFER_SIZE = 4 << 10; // 4K
 
     // Native domains
-    @AutoClose MemoryDomain<MemorySegment> nativeDomain = DomainFactory.ofMemorySegment();
+    @AutoClose
+    MemoryDomain<MemorySegment> nativeDomain = MemoryDomains.of(MemoryAllocators.newScopedArena());
 
     @AutoClose
     MemoryDomain<ByteBuffer> bufferDomain =
-            DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+            MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false));
 
     @AutoClose
     MemoryDomain<ByteBuffer> directBufferDomain =
-            DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true));
+            MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true));
 
     // Primitive array domains
-    @AutoClose MemoryDomain<byte[]> byteDomain = DomainFactory.ofBytes();
+    @AutoClose MemoryDomain<byte[]> byteDomain = MemoryDomains.bytes();
 
-    @AutoClose MemoryDomain<short[]> shortDomain = DomainFactory.ofShorts();
+    @AutoClose MemoryDomain<short[]> shortDomain = MemoryDomains.shorts();
 
-    @AutoClose MemoryDomain<int[]> intDomain = DomainFactory.ofInts();
+    @AutoClose MemoryDomain<int[]> intDomain = MemoryDomains.ints();
 
-    @AutoClose MemoryDomain<long[]> longDomain = DomainFactory.ofLongs();
+    @AutoClose MemoryDomain<long[]> longDomain = MemoryDomains.longs();
 
-    @AutoClose MemoryDomain<float[]> floatDomain = DomainFactory.ofFloats();
+    @AutoClose MemoryDomain<float[]> floatDomain = MemoryDomains.floats();
 
-    @AutoClose MemoryDomain<double[]> doubleDomain = DomainFactory.ofDoubles();
+    @AutoClose MemoryDomain<double[]> doubleDomain = MemoryDomains.doubles();
 
     // ========== Zero and small copies ==========
 
@@ -94,8 +92,7 @@ class MemoryOperationsAutoBufferTest {
     void rejectsEmptyExplicitStagingBuffer() {
         Memory<byte[]> src = byteDomain.memoryAllocator().allocateMemory(1);
         Memory<byte[]> dst = byteDomain.memoryAllocator().allocateMemory(1);
-        Memory<MemorySegment> buffer =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[0]));
+        Memory<MemorySegment> buffer = Memories.of(MemorySegment.ofArray(new byte[0]));
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -115,8 +112,7 @@ class MemoryOperationsAutoBufferTest {
     void rejectsSizeMisalignedExplicitStagingBuffer() {
         Memory<int[]> src = intDomain.memoryAllocator().allocateMemory(8);
         Memory<int[]> dst = intDomain.memoryAllocator().allocateMemory(8);
-        Memory<MemorySegment> buffer =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[5]));
+        Memory<MemorySegment> buffer = Memories.of(MemorySegment.ofArray(new byte[5]));
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -134,10 +130,9 @@ class MemoryOperationsAutoBufferTest {
 
     @Test
     void acceptsSizeAlignedExplicitStagingBuffer() {
-        Memory<int[]> src = MemoryFactory.ofInts(1, 2);
+        Memory<int[]> src = Memories.of(1, 2);
         Memory<int[]> dst = intDomain.memoryAllocator().allocateMemory(8);
-        Memory<MemorySegment> buffer =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[4]));
+        Memory<MemorySegment> buffer = Memories.of(MemorySegment.ofArray(new byte[4]));
 
         MemoryOperations.copy(
                 intDomain.memoryOperations(),
@@ -159,7 +154,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < values.length; i++) {
             values[i] = Double.doubleToRawLongBits(i + 0.5);
         }
-        Memory<long[]> src = MemoryFactory.ofLongs(values);
+        Memory<long[]> src = Memories.of(values);
         Memory<double[]> dst =
                 doubleDomain.memoryAllocator().allocateMemory((long) elementCount * Double.BYTES);
 
@@ -180,8 +175,7 @@ class MemoryOperationsAutoBufferTest {
     void emptyCopyDoesNotRequireAStagingBuffer() {
         Memory<byte[]> src = byteDomain.memoryAllocator().allocateMemory(0);
         Memory<byte[]> dst = byteDomain.memoryAllocator().allocateMemory(0);
-        Memory<MemorySegment> buffer =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[0]));
+        Memory<MemorySegment> buffer = Memories.of(MemorySegment.ofArray(new byte[0]));
 
         assertDoesNotThrow(
                 () ->
@@ -237,7 +231,7 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFromHeapBackedFloatMemorySegment() {
         float[] source = {1.25f, -2.5f, 3.75f, 0.5f};
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(source));
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(source));
         Memory<float[]> dst =
                 floatDomain.memoryAllocator().allocateMemory((long) source.length * Float.BYTES);
 

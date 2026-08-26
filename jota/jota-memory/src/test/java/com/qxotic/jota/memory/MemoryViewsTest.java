@@ -11,7 +11,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.internal.DomainFactory;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -389,7 +388,7 @@ public class MemoryViewsTest extends AbstractMemoryTest {
 
     /** GPU-shaped domain: no direct access, only bulk operations. */
     private static MemoryDomain<byte[]> opaque() {
-        MemoryDomain<byte[]> host = DomainFactory.ofBytes();
+        MemoryDomain<byte[]> host = MemoryDomains.bytes();
         return new MemoryDomain<>() {
             public Device device() {
                 return host.device();
@@ -415,7 +414,7 @@ public class MemoryViewsTest extends AbstractMemoryTest {
     void arangeWorksOnOpaqueDomains() {
         MemoryView<byte[]> longs = arange(opaque(), DataType.I64, 5);
         MemoryView<byte[]> floats = arange(opaque(), DataType.FP32, 4);
-        MemoryAccess<byte[]> read = DomainFactory.ofBytes().directAccess();
+        MemoryAccess<byte[]> read = MemoryDomains.bytes().directAccess();
         for (int i = 0; i < 5; i++) assertEquals(i, read.readLong(longs.memory(), i * 8L));
         for (int i = 0; i < 4; i++)
             assertEquals((float) i, read.readFloat(floats.memory(), i * 4L));
@@ -426,13 +425,13 @@ public class MemoryViewsTest extends AbstractMemoryTest {
         var e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> arange(DomainFactory.ofBytes(), DataType.BOOL, 2));
+                        () -> arange(MemoryDomains.bytes(), DataType.BOOL, 2));
         assertTrue(e.getMessage().contains("Unsupported data type"), e.getMessage());
     }
 
     @Test
     void arangeNegativeEndIsEmpty() {
-        assertEquals(0, arange(DomainFactory.ofInts(), DataType.I32, -3).shape().size());
+        assertEquals(0, arange(MemoryDomains.ints(), DataType.I32, -3).shape().size());
         assertEquals(0, arange(opaque(), DataType.I8, 0).shape().size());
     }
 }

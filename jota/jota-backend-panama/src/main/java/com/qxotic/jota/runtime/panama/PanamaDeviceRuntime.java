@@ -2,8 +2,9 @@ package com.qxotic.jota.runtime.panama;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.internal.NativeMemoryFactory;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.DiskKernelCache;
@@ -26,7 +27,9 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public PanamaDeviceRuntime() {
-        this(NativeMemoryFactory.createDomain(), DiskKernelCache.defaultCache(DeviceType.PANAMA));
+        this(
+                MemoryDomains.of(MemoryAllocators.newScopedArena()),
+                DiskKernelCache.defaultCache(DeviceType.PANAMA));
     }
 
     public PanamaDeviceRuntime(MemoryDomain<MemorySegment> memoryDomain, DiskKernelCache cache) {

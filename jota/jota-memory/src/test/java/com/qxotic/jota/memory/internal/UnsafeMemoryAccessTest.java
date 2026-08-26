@@ -3,6 +3,7 @@ package com.qxotic.jota.memory.internal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
 import org.junit.jupiter.api.Test;
 
 class UnsafeMemoryAccessTest {
@@ -10,7 +11,7 @@ class UnsafeMemoryAccessTest {
     @Test
     void accessesAbsoluteAddresses() {
         MemoryAccess<Void> access = UnsafeMemoryAccess.instance();
-        try (var memory = MemoryAllocatorFactory.ofPanama().allocateMemory(32)) {
+        try (var memory = MemoryAllocators.newScopedArena().allocateMemory(32)) {
             long address = memory.base().address();
 
             access.writeByte(null, address, (byte) 0x12);

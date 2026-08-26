@@ -6,10 +6,11 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
-import com.qxotic.jota.memory.internal.NativeMemoryFactory;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -25,7 +26,8 @@ class JavaKernelCompilerTest {
     // Environment.nativeMemoryDomain()'s - that arena is the runtime registry's shared
     // instance, and closing it poisons every later test in the fork ("arena already closed").
     @AutoClose
-    private final MemoryDomain<MemorySegment> domain = NativeMemoryFactory.createDomain();
+    private final MemoryDomain<MemorySegment> domain =
+            MemoryDomains.of(MemoryAllocators.newScopedArena());
 
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);
@@ -182,7 +184,7 @@ class JavaKernelCompilerTest {
             long offset = (long) i * DataType.FP32.byteSize();
             segment.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, (float) i);
         }
-        return MemoryViewFactory.of(DataType.FP32, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.FP32, Layout.rowMajor(shape));
     }
 
     private MemoryView<MemorySegment> rangeInt(Shape shape) {
@@ -193,7 +195,7 @@ class JavaKernelCompilerTest {
             long offset = (long) i * DataType.I32.byteSize();
             segment.set(ValueLayout.JAVA_INT_UNALIGNED, offset, i);
         }
-        return MemoryViewFactory.of(DataType.I32, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.I32, Layout.rowMajor(shape));
     }
 
     private float[] readFloatValues(MemoryView<?> view, int count) {

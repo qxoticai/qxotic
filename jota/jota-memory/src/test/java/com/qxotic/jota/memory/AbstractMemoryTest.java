@@ -2,8 +2,6 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -30,18 +28,18 @@ public abstract class AbstractMemoryTest {
 
     public static Stream<MemoryDomain<?>> onHeapDomains() {
         return suppliedBy(
-                DomainFactory::ofBytes,
-                DomainFactory::ofShorts,
-                DomainFactory::ofInts,
-                DomainFactory::ofLongs,
-                DomainFactory::ofFloats,
-                DomainFactory::ofDoubles);
+                MemoryDomains::bytes,
+                MemoryDomains::shorts,
+                MemoryDomains::ints,
+                MemoryDomains::longs,
+                MemoryDomains::floats,
+                MemoryDomains::doubles);
     }
 
     public static Stream<MemoryDomain<?>> nativeDomains() {
         return suppliedBy(
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> allDomains() {
@@ -50,37 +48,37 @@ public abstract class AbstractMemoryTest {
 
     public static Stream<MemoryDomain<?>> domainsSupportingF32() {
         return suppliedBy(
-                DomainFactory::ofBytes,
-                DomainFactory::ofFloats,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::bytes,
+                MemoryDomains::floats,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> domainsSupportingF64() {
         return suppliedBy(
-                DomainFactory::ofBytes,
-                DomainFactory::ofDoubles,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::bytes,
+                MemoryDomains::doubles,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> domainsSupportingI8() {
         return suppliedBy(
-                DomainFactory::ofBytes,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::bytes,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> domainsSupportingI16() {
         return suppliedBy(
-                DomainFactory::ofBytes,
-                DomainFactory::ofShorts,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::bytes,
+                MemoryDomains::shorts,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> domainsSupportingBF16() {
@@ -89,27 +87,27 @@ public abstract class AbstractMemoryTest {
 
     public static Stream<MemoryDomain<?>> domainsSupportingI32() {
         return suppliedBy(
-                DomainFactory::ofInts,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::ints,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> domainsSupportingI64() {
         return suppliedBy(
-                DomainFactory::ofLongs,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::longs,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     public static Stream<MemoryDomain<?>> domainsSupportingBool() {
         return suppliedBy(
-                DomainFactory::ofBooleans,
-                DomainFactory::ofBytes,
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                DomainFactory::ofMemorySegment);
+                MemoryDomains::booleans,
+                MemoryDomains::bytes,
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                () -> MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                () -> MemoryDomains.of(MemoryAllocators.newScopedArena()));
     }
 
     @SafeVarargs

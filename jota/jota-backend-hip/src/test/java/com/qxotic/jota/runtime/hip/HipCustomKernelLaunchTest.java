@@ -6,9 +6,10 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
 import java.lang.foreign.MemorySegment;
@@ -56,7 +57,7 @@ class HipCustomKernelLaunchTest {
         MemoryView<HipDevicePtr> devY = allocateDevice(device, DataType.FP32, Shape.flat(M));
 
         // Prepare host data
-        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = MemoryDomains.of(MemoryAllocators.newScopedArena());
         MemoryView<MemorySegment> hostA = allocateHost(host, DataType.FP32, Shape.of(M, N));
         MemoryView<MemorySegment> hostX = allocateHost(host, DataType.FP32, Shape.flat(N));
 

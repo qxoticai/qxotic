@@ -4,9 +4,10 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.NativeMemoryFactory;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +35,7 @@ public final class TIRInterpreter {
                 long size = layout.shape().size();
 
                 Memory<MemorySegment> persistentMemory =
-                        NativeMemoryFactory.onHeapAllocator().allocateMemory(dtype, size);
+                        MemoryAllocators.ofArena(Arena.ofAuto()).allocateMemory(dtype, size);
                 MemoryView<MemorySegment> persistentOutput =
                         MemoryView.of(persistentMemory, 0, dtype, layout);
 

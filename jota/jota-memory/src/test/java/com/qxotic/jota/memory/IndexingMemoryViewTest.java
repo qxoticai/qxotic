@@ -27,7 +27,7 @@ class IndexingMemoryViewTest extends AbstractMemoryTest {
 
         Shape shape = Shape.of(2, 3);
         Layout layout = Layout.rowMajor(shape);
-        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size());
+        MemoryView<B> base = MemoryViews.arange(domain, DataType.FP32, shape.size());
         MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.FP32, layout);
 
         for (long linear = 0; linear < shape.size(); linear++) {
@@ -51,7 +51,7 @@ class IndexingMemoryViewTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 3);
         Layout layout = Layout.columnMajor(shape);
         long byteOffset = DataType.FP32.byteSize() * 2;
-        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size() + 2);
+        MemoryView<B> base = MemoryViews.arange(domain, DataType.FP32, shape.size() + 2);
         MemoryView<B> view = MemoryView.of(base.memory(), byteOffset, DataType.FP32, layout);
 
         for (long linear = 0; linear < shape.size(); linear++) {

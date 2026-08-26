@@ -12,7 +12,7 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
+import com.qxotic.jota.memory.MemoryViews;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
@@ -484,7 +484,7 @@ class TIRInterpreterTest {
                         (byte) (block * dataType.byteSize() + byteIndex));
             }
         }
-        MemoryView<?> input = MemoryViewFactory.of(dataType, memory, Layout.rowMajor(shape));
+        MemoryView<?> input = MemoryViews.of(memory, dataType, Layout.rowMajor(shape));
         TIRNode tensorInput = new TensorInput(0, dataType, input.layout());
         TIRNode transposed =
                 new ViewTransform(tensorInput, new ViewOperation.Transpose(new int[] {1, 0}));
@@ -1135,7 +1135,7 @@ class TIRInterpreterTest {
         for (int i = 0; i < data.length; i++) {
             memoryAccess.writeFloat(memory, i * 4L, data[i]);
         }
-        return MemoryViewFactory.of(DataType.FP32, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.FP32, Layout.rowMajor(shape));
     }
 
     private MemoryView<?> createDoubleTensor(double[] data) {
@@ -1145,7 +1145,7 @@ class TIRInterpreterTest {
         for (int i = 0; i < data.length; i++) {
             memoryAccess.writeDouble(memory, i * 8L, data[i]);
         }
-        return MemoryViewFactory.of(DataType.FP64, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.FP64, Layout.rowMajor(shape));
     }
 
     private MemoryView<?> createIntTensor(int[] data) {
@@ -1155,7 +1155,7 @@ class TIRInterpreterTest {
         for (int i = 0; i < data.length; i++) {
             memoryAccess.writeInt(memory, i * 4L, data[i]);
         }
-        return MemoryViewFactory.of(DataType.I32, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.I32, Layout.rowMajor(shape));
     }
 
     private MemoryView<?> createByteTensor(byte[] data) {
@@ -1165,7 +1165,7 @@ class TIRInterpreterTest {
         for (int i = 0; i < data.length; i++) {
             memoryAccess.writeByte(memory, i, data[i]);
         }
-        return MemoryViewFactory.of(DataType.I8, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.I8, Layout.rowMajor(shape));
     }
 
     private MemoryView<?> createShortTensor(short[] data) {
@@ -1175,7 +1175,7 @@ class TIRInterpreterTest {
         for (int i = 0; i < data.length; i++) {
             memoryAccess.writeShort(memory, i * 2L, data[i]);
         }
-        return MemoryViewFactory.of(DataType.I16, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.I16, Layout.rowMajor(shape));
     }
 
     private MemoryView<?> createBoolTensor(boolean[] data) {
@@ -1185,7 +1185,7 @@ class TIRInterpreterTest {
         for (int i = 0; i < data.length; i++) {
             memoryAccess.writeByte(memory, i, (byte) (data[i] ? 1 : 0));
         }
-        return MemoryViewFactory.of(DataType.BOOL, memory, Layout.rowMajor(shape));
+        return MemoryViews.of(memory, DataType.BOOL, Layout.rowMajor(shape));
     }
 
     private static long floatBits(float value) {

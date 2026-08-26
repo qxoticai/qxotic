@@ -7,8 +7,8 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.AbstractMemoryTest;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViews;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import java.lang.foreign.MemorySegment;
@@ -134,9 +134,9 @@ class ProductReductionOpTest extends AbstractMemoryTest {
 
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {
         if (dataType == DataType.BOOL) {
-            return MemoryHelpers.full(domain, dataType, shape.size(), 1).view(shape);
+            return MemoryViews.full(domain, dataType, shape.size(), 1).view(shape);
         }
-        return MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
+        return MemoryViews.arange(domain, dataType, shape.size()).view(shape);
     }
 
     private Object readValue(Tensor tensor, long linearIndex, DataType dataType) {

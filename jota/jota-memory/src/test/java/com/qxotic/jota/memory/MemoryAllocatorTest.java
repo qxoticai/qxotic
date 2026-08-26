@@ -9,9 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
+import java.lang.foreign.Arena;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -23,41 +22,41 @@ public class MemoryAllocatorTest {
 
     static Stream<Supplier<MemoryAllocator<?>>> managedAllocatorProvider() {
         return Stream.of(
-                MemoryAllocatorFactory::ofBooleans,
-                MemoryAllocatorFactory::ofBytes,
-                MemoryAllocatorFactory::ofShorts,
-                MemoryAllocatorFactory::ofInts,
-                MemoryAllocatorFactory::ofFloats,
-                MemoryAllocatorFactory::ofDoubles,
-                MemoryAllocatorFactory::ofLongs,
-                MemoryAllocatorFactory::newPanamaAuto,
-                () -> MemoryAllocatorFactory.ofByteBuffer(true, ByteOrder.nativeOrder()),
-                () -> MemoryAllocatorFactory.ofByteBuffer(false, ByteOrder.nativeOrder()));
+                MemoryDomains.booleans()::memoryAllocator,
+                MemoryDomains.bytes()::memoryAllocator,
+                MemoryDomains.shorts()::memoryAllocator,
+                MemoryDomains.ints()::memoryAllocator,
+                MemoryDomains.floats()::memoryAllocator,
+                MemoryDomains.doubles()::memoryAllocator,
+                MemoryDomains.longs()::memoryAllocator,
+                () -> MemoryAllocators.ofArena(Arena.ofAuto()),
+                () -> MemoryAllocators.newByteBuffer(true),
+                () -> MemoryAllocators.newByteBuffer(false));
     }
 
     static Stream<Supplier<MemoryAllocator<?>>> javaArrayAllocatorProvider() {
         return Stream.of(
-                MemoryAllocatorFactory::ofBooleans,
-                MemoryAllocatorFactory::ofBytes,
-                MemoryAllocatorFactory::ofShorts,
-                MemoryAllocatorFactory::ofInts,
-                MemoryAllocatorFactory::ofFloats,
-                MemoryAllocatorFactory::ofDoubles,
-                MemoryAllocatorFactory::ofLongs);
+                MemoryDomains.booleans()::memoryAllocator,
+                MemoryDomains.bytes()::memoryAllocator,
+                MemoryDomains.shorts()::memoryAllocator,
+                MemoryDomains.ints()::memoryAllocator,
+                MemoryDomains.floats()::memoryAllocator,
+                MemoryDomains.doubles()::memoryAllocator,
+                MemoryDomains.longs()::memoryAllocator);
     }
 
     static Stream<Supplier<MemoryAllocator<?>>> byteBufferAllocatorProvider() {
         return Stream.of(
-                () -> MemoryAllocatorFactory.ofByteBuffer(false, ByteOrder.nativeOrder()),
-                () -> MemoryAllocatorFactory.ofByteBuffer(true, ByteOrder.nativeOrder()));
+                () -> MemoryAllocators.newByteBuffer(false),
+                () -> MemoryAllocators.newByteBuffer(true));
     }
 
     static Stream<Supplier<ScopedMemoryAllocator<?>>> scopedAllocatorProvider() {
-        return Stream.of(MemoryAllocatorFactory::ofPanama, MemoryAllocatorFactory::newPanamaArena);
+        return Stream.of(MemoryAllocators::newScopedArena, MemoryAllocators::newScopedArena);
     }
 
     static Stream<Supplier<ScopedMemoryAllocatorArena<?>>> scopedArenaAllocatorProvider() {
-        return Stream.of(MemoryAllocatorFactory::newPanamaArena);
+        return Stream.of(MemoryAllocators::newScopedArena);
     }
 
     private static final DataType[] DATA_TYPES = {
@@ -100,7 +99,7 @@ public class MemoryAllocatorTest {
 
     @Test
     void arrayAllocatorsValidateSizeAndAlignment() {
-        MemoryAllocator<int[]> allocator = MemoryAllocatorFactory.ofInts();
+        MemoryAllocator<int[]> allocator = MemoryDomains.ints().memoryAllocator();
 
         assertDoesNotThrow(() -> allocator.allocateMemory(Integer.BYTES, Integer.BYTES));
         assertDoesNotThrow(() -> allocator.allocateMemory(Integer.BYTES, Short.BYTES));
@@ -117,7 +116,7 @@ public class MemoryAllocatorTest {
 
     @Test
     void booleanAllocatorOnlySupportsBooleanValues() {
-        MemoryAllocator<boolean[]> allocator = MemoryAllocatorFactory.ofBooleans();
+        MemoryAllocator<boolean[]> allocator = MemoryDomains.booleans().memoryAllocator();
         assertTrue(allocator.supportsDataType(DataType.BOOL));
         assertFalse(allocator.supportsDataType(DataType.I8));
     }
@@ -126,7 +125,7 @@ public class MemoryAllocatorTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void byteBufferAllocatorHonorsSizeAndAlignment(boolean direct) {
-        var allocator = MemoryAllocatorFactory.ofByteBuffer(direct);
+        var allocator = MemoryAllocators.newByteBuffer(direct);
         int maxAlign = direct ? 4096 : 1;
         for (int size : new int[] {1, 10, 100, 4097}) {
             for (int align = 1; align <= maxAlign; align *= 2) {

@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
@@ -109,7 +109,7 @@ public class LogicalShapeTest {
     @Test
     void memoryViewExposesLogicalShape() {
         MemorySegment seg = Arena.ofAuto().allocate(2048L * 64 * 34);
-        Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(seg);
+        Memory<MemorySegment> mem = Memories.of(seg);
         MemoryView<MemorySegment> weights =
                 MemoryView.rowMajor(mem, DataType.Q8_0, Shape.flat(2048, 64));
         assertEquals(Shape.flat(2048, 64), weights.shape());

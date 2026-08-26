@@ -3,10 +3,10 @@ package com.qxotic.jinfer;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -97,8 +97,7 @@ public final class Views {
     /** Wrap an existing segment (e.g. a weights mmap slice) as a typed view. */
     public static MemoryView<MemorySegment> wrap(
             MemorySegment segment, DataType dtype, Shape shape) {
-        return MemoryView.of(
-                MemoryFactory.ofMemorySegment(segment), 0, dtype, Layout.rowMajor(shape));
+        return MemoryView.of(Memories.of(segment), 0, dtype, Layout.rowMajor(shape));
     }
 
     public static void requireF32(MemoryView<?> view, String name) {

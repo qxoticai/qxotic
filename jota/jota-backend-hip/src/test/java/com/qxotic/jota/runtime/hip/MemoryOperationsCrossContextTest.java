@@ -3,10 +3,10 @@ package com.qxotic.jota.runtime.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryOperations;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Assumptions;
@@ -15,13 +15,14 @@ import org.junit.jupiter.api.Test;
 
 class MemoryOperationsCrossDomainTest {
 
-    @AutoClose MemoryDomain<MemorySegment> nativeDomain = DomainFactory.ofMemorySegment();
+    @AutoClose
+    MemoryDomain<MemorySegment> nativeDomain = MemoryDomains.of(MemoryAllocators.newScopedArena());
 
-    @AutoClose MemoryDomain<float[]> floatDomain = DomainFactory.ofFloats();
+    @AutoClose MemoryDomain<float[]> floatDomain = MemoryDomains.floats();
 
     @AutoClose
     MemoryDomain<ByteBuffer> bufferDomain =
-            DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+            MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false));
 
     @Test
     void copyShouldTransferFloatBetweenDifferentDomains() {

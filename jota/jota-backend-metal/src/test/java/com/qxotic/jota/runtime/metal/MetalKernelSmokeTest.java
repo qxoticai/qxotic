@@ -7,14 +7,16 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +33,8 @@ class MetalKernelSmokeTest {
         MemoryView<?> output = traced.materialize();
 
         MemoryView<MemorySegment> host = toHost(output);
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(host, i);
             float value = access.readFloat(host.memory(), offset);
@@ -48,7 +51,8 @@ class MetalKernelSmokeTest {
         Tensor onMetal = src.to(ConfiguredTestDevice.resolve(DeviceType.METAL));
         MemoryView<MemorySegment> host = toHost(onMetal.materialize());
 
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(host, i);
             assertEquals(i, access.readInt(host.memory(), offset));
@@ -60,15 +64,15 @@ class MetalKernelSmokeTest {
         MetalTestAssumptions.assumeMetalReady();
 
         float[] values = {1.5f, -2.25f, 0.0f, 9.75f, -6.5f};
-        Memory<MemorySegment> hostMemory =
-                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(values));
+        Memory<MemorySegment> hostMemory = Memories.of(MemorySegment.ofArray(values));
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(
                         hostMemory, DataType.FP32, Layout.rowMajor(Shape.flat(values.length)));
 
         Tensor onMetal = Tensor.of(hostView).to(ConfiguredTestDevice.resolve(DeviceType.METAL));
         MemoryView<MemorySegment> roundTrip = toHost(onMetal.materialize());
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = Indexing.linearToOffset(roundTrip, i);
             assertEquals(values[i], access.readFloat(roundTrip.memory(), offset), 1e-6f);

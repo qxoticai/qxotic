@@ -3,10 +3,7 @@ package com.qxotic.jota.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryAccessFactory;
-import com.qxotic.jota.memory.internal.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.util.stream.Stream;
@@ -25,9 +22,9 @@ class MemoryOperationsComprehensiveTest {
         return Stream.concat(
                 AbstractMemoryTest.onHeapDomains(),
                 Stream.of(
-                        DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                        DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                        DomainFactory.ofMemorySegment()));
+                        MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(false)),
+                        MemoryDomains.ofByteBuffer(MemoryAllocators.newByteBuffer(true)),
+                        MemoryDomains.of(MemoryAllocators.newScopedArena())));
     }
 
     @ParameterizedTest
@@ -93,7 +90,8 @@ class MemoryOperationsComprehensiveTest {
 
             MemoryOperations<B> memoryOperations = domain.memoryOperations();
             MemoryAllocator<B> allocator = domain.memoryAllocator();
-            MemoryAccess<MemorySegment> nativeAccess = MemoryAccessFactory.ofMemorySegment();
+            MemoryAccess<MemorySegment> nativeAccess =
+                    MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
 
             for (DataType dataType : DATA_TYPES) {
                 Memory<B> local = allocateMemory(allocator, dataType);
@@ -125,7 +123,8 @@ class MemoryOperationsComprehensiveTest {
 
             MemoryOperations<B> memoryOperations = domain.memoryOperations();
             MemoryAllocator<B> allocator = domain.memoryAllocator();
-            MemoryAccess<MemorySegment> nativeAccess = MemoryAccessFactory.ofMemorySegment();
+            MemoryAccess<MemorySegment> nativeAccess =
+                    MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
 
             for (DataType dataType : DATA_TYPES) {
                 Memory<B> local = allocateMemory(allocator, dataType);
@@ -188,22 +187,22 @@ class MemoryOperationsComprehensiveTest {
 
     private static Memory<MemorySegment> allocateNativeMemory(DataType dataType) {
         if (dataType == DataType.FP32) {
-            return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new float[ELEMENT_COUNT]));
+            return Memories.of(MemorySegment.ofArray(new float[ELEMENT_COUNT]));
         }
         if (dataType == DataType.FP64) {
-            return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new double[ELEMENT_COUNT]));
+            return Memories.of(MemorySegment.ofArray(new double[ELEMENT_COUNT]));
         }
         if (dataType == DataType.I64) {
-            return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new long[ELEMENT_COUNT]));
+            return Memories.of(MemorySegment.ofArray(new long[ELEMENT_COUNT]));
         }
         if (dataType == DataType.I32) {
-            return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new int[ELEMENT_COUNT]));
+            return Memories.of(MemorySegment.ofArray(new int[ELEMENT_COUNT]));
         }
         if (dataType == DataType.I16) {
-            return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new short[ELEMENT_COUNT]));
+            return Memories.of(MemorySegment.ofArray(new short[ELEMENT_COUNT]));
         }
         if (dataType == DataType.I8) {
-            return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new byte[ELEMENT_COUNT]));
+            return Memories.of(MemorySegment.ofArray(new byte[ELEMENT_COUNT]));
         }
         throw new IllegalArgumentException("Unsupported data type: " + dataType);
     }

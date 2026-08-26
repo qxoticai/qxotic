@@ -10,7 +10,6 @@ import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import org.junit.jupiter.api.Test;
 
 class SliceTest {
@@ -38,8 +37,7 @@ class SliceTest {
     @Test
     void elementOffsetsAreScaledByTheDataType() {
         MemoryView<float[]> slice =
-                MemoryView.rowMajor(
-                                MemoryFactory.ofFloats(new float[5]), DataType.FP32, Shape.of(5))
+                MemoryView.rowMajor(Memories.of(new float[5]), DataType.FP32, Shape.of(5))
                         .slice(0, 2, 5);
 
         assertEquals(2L * Float.BYTES, slice.byteOffset());
@@ -73,7 +71,7 @@ class SliceTest {
         }
         MemoryView<float[]> view =
                 MemoryView.of(
-                        MemoryFactory.ofFloats(data),
+                        Memories.of(data),
                         DataType.FP32,
                         Layout.rowMajor(Shape.of(Shape.of(2L, 3L), 4)));
 
@@ -87,8 +85,7 @@ class SliceTest {
     @Test
     void rejectsANonAffineNestedMode() {
         Layout layout = Layout.of(Shape.of(Shape.of(2L, 3L), 4), Stride.of(Stride.of(4L, 8L), 1));
-        MemoryView<float[]> view =
-                MemoryView.of(MemoryFactory.ofFloats(new float[24]), DataType.FP32, layout);
+        MemoryView<float[]> view = MemoryView.of(Memories.of(new float[24]), DataType.FP32, layout);
 
         assertThrows(IllegalArgumentException.class, () -> view.slice(0, 0, 6));
     }
@@ -112,8 +109,7 @@ class SliceTest {
         for (int i = 0; i < values.length; i++) {
             bytes[i] = (byte) values[i];
         }
-        return MemoryView.rowMajor(
-                MemoryFactory.ofBytes(bytes), DataType.I8, Shape.flat(bytes.length));
+        return MemoryView.rowMajor(Memories.of(bytes), DataType.I8, Shape.flat(bytes.length));
     }
 
     private static byte[] values(MemoryView<byte[]> view) {

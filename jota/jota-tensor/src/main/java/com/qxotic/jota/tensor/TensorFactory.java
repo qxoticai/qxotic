@@ -8,14 +8,16 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.ir.tir.IotaConstant;
 import com.qxotic.jota.ir.tir.ScalarConstant;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.random.RandomKey;
 import com.qxotic.jota.random.RandomKeys;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
@@ -558,8 +560,9 @@ final class TensorFactory {
     private static <B> MemoryView<B> copyFloatArray(
             MemoryDomain<B> memoryDomain, float[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP32, data.length);
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -574,8 +577,9 @@ final class TensorFactory {
     private static <B> MemoryView<B> copyDoubleArray(
             MemoryDomain<B> memoryDomain, double[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP64, data.length);
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -590,8 +594,9 @@ final class TensorFactory {
     private static <B> MemoryView<B> copyIntArray(
             MemoryDomain<B> memoryDomain, int[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.I32, data.length);
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -606,8 +611,9 @@ final class TensorFactory {
     private static <B> MemoryView<B> copyLongArray(
             MemoryDomain<B> memoryDomain, long[] data, Shape shape) {
         Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.I64, data.length);
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
@@ -626,8 +632,9 @@ final class TensorFactory {
         for (int i = 0; i < data.length; i++) {
             bytes[i] = data[i] ? (byte) 1 : 0;
         }
-        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(bytes));
-        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
+        Memory<MemorySegment> src = Memories.of(MemorySegment.ofArray(bytes));
+        MemoryOperations<MemorySegment> srcOps =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,

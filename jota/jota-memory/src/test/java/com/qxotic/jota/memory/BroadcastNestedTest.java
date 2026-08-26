@@ -6,8 +6,6 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
-import com.qxotic.jota.memory.internal.MemoryFactory;
-import com.qxotic.jota.memory.internal.MemoryViewFactory;
 import org.junit.jupiter.api.Test;
 
 class BroadcastNestedTest {
@@ -16,10 +14,7 @@ class BroadcastNestedTest {
     void testBroadcastFlatToFlatPreservesStructure() {
         float[] data = {1.0f, 2.0f, 3.0f};
         MemoryView<float[]> vec =
-                MemoryViewFactory.of(
-                        DataType.FP32,
-                        MemoryFactory.ofFloats(data),
-                        Layout.rowMajor(Shape.flat(3)));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(Shape.flat(3)));
 
         // Broadcast (3) -> (4, 3)
         MemoryView<float[]> result = vec.broadcast(Shape.flat(4, 3));
@@ -35,8 +30,7 @@ class BroadcastNestedTest {
         // Shape: (2, (1, 3))
         Shape nestedShape = Shape.of(2, Shape.of(1L, 3L));
         MemoryView<float[]> view =
-                MemoryViewFactory.of(
-                        DataType.FP32, MemoryFactory.ofFloats(data), Layout.rowMajor(nestedShape));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(nestedShape));
 
         // Broadcast to: (2, (5, 3))
         Shape targetShape = Shape.of(2, Shape.of(5L, 3L));
@@ -51,10 +45,7 @@ class BroadcastNestedTest {
     void testBroadcastAddsLeadingDimensionsFlat() {
         float[] data = {1.0f, 2.0f};
         MemoryView<float[]> vec =
-                MemoryViewFactory.of(
-                        DataType.FP32,
-                        MemoryFactory.ofFloats(data),
-                        Layout.rowMajor(Shape.flat(2)));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(Shape.flat(2)));
 
         // Broadcast (2) -> (3, 4, 2)
         MemoryView<float[]> result = vec.broadcast(Shape.flat(3, 4, 2));
@@ -67,9 +58,9 @@ class BroadcastNestedTest {
     void testBroadcastSameRankUsesExpandDirectly() {
         float[] data = new float[4];
         MemoryView<float[]> view =
-                MemoryViewFactory.of(
+                MemoryViews.of(
+                        Memories.of(data),
                         DataType.FP32,
-                        MemoryFactory.ofFloats(data),
                         Layout.of(Shape.flat(4, 1), Stride.flat(1, 0)));
 
         // Broadcast (4, 1) -> (4, 5) - same rank, just expands
@@ -83,7 +74,7 @@ class BroadcastNestedTest {
     void testBroadcastScalarToVector() {
         float[] data = {42.0f};
         MemoryView<float[]> scalar =
-                MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(data), Layout.scalar());
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.scalar());
 
         // Broadcast () -> (5)
         MemoryView<float[]> result = scalar.broadcast(Shape.flat(5));
@@ -96,7 +87,7 @@ class BroadcastNestedTest {
     void testBroadcastScalarToMatrix() {
         float[] data = {7.0f};
         MemoryView<float[]> scalar =
-                MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(data), Layout.scalar());
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.scalar());
 
         // Broadcast () -> (3, 4)
         MemoryView<float[]> result = scalar.broadcast(Shape.flat(3, 4));
@@ -109,10 +100,7 @@ class BroadcastNestedTest {
     void testBroadcastIncompatibleDimensionThrows() {
         float[] data = {1.0f, 2.0f, 3.0f};
         MemoryView<float[]> vec =
-                MemoryViewFactory.of(
-                        DataType.FP32,
-                        MemoryFactory.ofFloats(data),
-                        Layout.rowMajor(Shape.flat(3)));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(Shape.flat(3)));
 
         // Cannot broadcast (3) -> (4) - incompatible
         assertThrows(
@@ -126,10 +114,7 @@ class BroadcastNestedTest {
     void testBroadcastFewerRanksThrows() {
         float[] data = new float[12];
         MemoryView<float[]> mat =
-                MemoryViewFactory.of(
-                        DataType.FP32,
-                        MemoryFactory.ofFloats(data),
-                        Layout.rowMajor(Shape.flat(3, 4)));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(Shape.flat(3, 4)));
 
         // Cannot broadcast to fewer dimensions
         assertThrows(
@@ -143,10 +128,7 @@ class BroadcastNestedTest {
     void testBroadcastWithExistingSingletonDimension() {
         float[] data = {5.0f, 10.0f};
         MemoryView<float[]> vec =
-                MemoryViewFactory.of(
-                        DataType.FP32,
-                        MemoryFactory.ofFloats(data),
-                        Layout.rowMajor(Shape.flat(2, 1)));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(Shape.flat(2, 1)));
 
         // Broadcast (2, 1) -> (2, 4)
         MemoryView<float[]> result = vec.broadcast(Shape.flat(2, 4));
@@ -159,10 +141,7 @@ class BroadcastNestedTest {
     void testBroadcastChainedWithOtherOps() {
         float[] data = {1.0f, 2.0f, 3.0f, 4.0f};
         MemoryView<float[]> vec =
-                MemoryViewFactory.of(
-                        DataType.FP32,
-                        MemoryFactory.ofFloats(data),
-                        Layout.rowMajor(Shape.flat(4)));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(Shape.flat(4)));
 
         // Chain: view -> broadcast -> transpose
         MemoryView<float[]> result =
@@ -177,8 +156,7 @@ class BroadcastNestedTest {
         // Shape: ((2, 1), (2, 2))
         Shape nestedShape = Shape.of(Shape.of(2L, 1L), Shape.of(2L, 2L));
         MemoryView<float[]> view =
-                MemoryViewFactory.of(
-                        DataType.FP32, MemoryFactory.ofFloats(data), Layout.rowMajor(nestedShape));
+                MemoryViews.of(Memories.of(data), DataType.FP32, Layout.rowMajor(nestedShape));
 
         // Broadcast to: ((2, 5), (2, 2))
         Shape targetShape = Shape.of(Shape.of(2L, 5L), Shape.of(2L, 2L));

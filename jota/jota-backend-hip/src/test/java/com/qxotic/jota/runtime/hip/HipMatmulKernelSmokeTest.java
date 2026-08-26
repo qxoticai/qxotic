@@ -9,11 +9,13 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -282,7 +284,8 @@ class HipMatmulKernelSmokeTest {
 
     private static float readFp32(MemoryView<?> view, long linearIndex) {
         MemoryView<MemorySegment> hostView = toHost(view);
-        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        MemoryAccess<MemorySegment> access =
+                MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).directAccess();
         long offset = Indexing.linearToOffset(hostView, linearIndex);
         return access.readFloat(hostView.memory(), offset);
     }

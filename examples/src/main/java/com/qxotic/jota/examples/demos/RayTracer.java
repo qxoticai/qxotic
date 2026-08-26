@@ -5,10 +5,10 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryDomains;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.internal.DomainFactory;
-import com.qxotic.jota.memory.internal.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -222,9 +222,8 @@ public final class RayTracer {
                 (MemoryDomain<Object>)
                         Environment.runtimeFor(view.memory().device()).memoryDomain(),
                 src,
-                DomainFactory.ofFloats(),
-                MemoryView.of(
-                        MemoryFactory.ofFloats(arr), DataType.FP32, Layout.rowMajor(view.shape())));
+                MemoryDomains.floats(),
+                MemoryView.of(Memories.of(arr), DataType.FP32, Layout.rowMajor(view.shape())));
         return arr;
     }
 
