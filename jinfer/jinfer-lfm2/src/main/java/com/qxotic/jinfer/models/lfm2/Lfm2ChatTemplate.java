@@ -245,10 +245,14 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                                 batchCapacity,
                                 rows ->
                                         encoded.batch(
+                                                // causal, like text: only the Gemma projectors
+                                                // attend over an image block bidirectionally
+                                                // (llama.cpp mtmd_decode_use_non_causal); HF's
+                                                // Lfm2Vl uses the plain causal mask
                                                 Batch.embeddings(
                                                         rows,
                                                         Math.toIntExact(rows.shape().flatAt(0)),
-                                                        true,
+                                                        false,
                                                         contentKey)));
                     }
                     encoded.id(require("<|image_end|>"));
