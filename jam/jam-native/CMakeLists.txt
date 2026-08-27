@@ -6,6 +6,30 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # compile_commands.json for clangd
 
+# A kernel library built at -O0 is always a mistake, and an unset build type silently is one —
+# the POST_BUILD staging would then ship the slow lib. Explicit -DCMAKE_BUILD_TYPE still wins.
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "build type (defaulted; Release unless overridden)" FORCE)
+endif()
+
+# Every object ends up inside libjam.so, but the per-ISA OBJECT libraries do NOT inherit the shared
+# library's implicit -fPIC: on ELF that breaks the link (or lets PIE code sneak in on default-PIE
+# distros). Harmless on Mach-O (always PIC) and PE (no PIC concept).
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# The flag spellings below are GCC/Clang (-m..., -march=...); Windows builds use MinGW-w64
+# (cmake/toolchains/windows-*.cmake). Fail fast instead of erroring on the first -m flag.
+if (MSVC)
+    message(FATAL_ERROR "jam builds with GCC/Clang, incl. MinGW-w64 for Windows "
+                        "(cmake/toolchains/windows-*.cmake); MSVC flag spellings are not maintained")
+endif()
+
+# macOS is Apple-silicon only: the x86 branch below is for Linux/Windows, and an Intel-Mac (or
+# Rosetta-targeted) build would ship a combination nothing tests. Fail fast, not silently.
+if (APPLE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    message(FATAL_ERROR "jam on macOS supports Apple silicon (aarch64) only")
+endif()
+
 option(JAM_JNI "Build the JNI binding into libjam" ON)
 option(JAM_METAL "Build the Apple Metal GPU backend (macOS only)" ON)
 option(JAM_STRIP "Strip debug symbols from the shared library (Release builds)" OFF)
@@ -15,7 +39,6 @@ option(JAM_STRIP "Strip debug symbols from the shared library (Release builds)" 
 # BEFORE the targets so every object inherits it. Build: cmake -B build-asan -DJAM_SANITIZE=ON -DJAM_JNI=OFF
 option(JAM_SANITIZE "Build lib + tests with AddressSanitizer and UBSan" OFF)
 if (JAM_SANITIZE)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)   # ASan relocations in the OBJECT libs -> need -fPIC for the .so
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
     add_link_options(-fsanitize=address,undefined)
 endif()
@@ -35,8 +58,10 @@ set_target_properties(jam PROPERTIES VERSION 1.0.0 SOVERSION 1)   # libjam.so.1 
 # would drop jam_mm/jam_ctx_* from jam.dll and break the Panama binding). No effect on ELF/Mach-O.
 target_compile_definitions(jam PRIVATE JAM_BUILD=1)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)   # -pthread over -lpthread where it matters (GCC/ELF)
 find_package(Threads REQUIRED)
 target_link_libraries(jam PRIVATE Threads::Threads m)   # libm: lrintf/fabsf in the requant floor
+                                                        # (a no-op alias on MinGW, part of libSystem on macOS)
 
 # One per-ISA kernel TU: compiled with its OWN flags and bound at create; the dispatcher (src/jam.c)
 # stays at BASELINE flags. `def`=1 is defined for the TU and, when dispatch=ON, for the dispatcher too
@@ -73,9 +98,14 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         src/kernels/jam_kernels_nvfp4_avx2.c src/kernels/jam_kernels_q1_0_avx2.c)
 
     # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512 — the Q8_0/Q4_0 8-row repack bands
-    # and the pure-256 requant (F32 reuses AVX2; K-quants use the avx2 8-row bands).
-    jam_isa_tu(jam_avxvnni JAM_HAVE_AVXVNNI ON "-mavxvnni -mavx2 -mfma -mf16c"
-        src/kernels/jam_kernels_avxvnni.c)
+    # and the pure-256 requant (F32 reuses AVX2; K-quants use the avx2 8-row bands). The flag needs
+    # GCC 11+/Clang 12+ (Ubuntu LTS MinGW cross-GCC is older): probe like avx512bf16 below, and an old
+    # compiler just skips the TU — dispatch falls back to AVX2 on those builds.
+    check_c_compiler_flag(-mavxvnni JAM_CC_AVXVNNI)
+    if (JAM_CC_AVXVNNI)
+        jam_isa_tu(jam_avxvnni JAM_HAVE_AVXVNNI ON "-mavxvnni -mavx2 -mfma -mf16c"
+            src/kernels/jam_kernels_avxvnni.c)
+    endif()
 
     # AVX-512BW without VNNI (Skylake-SP/X): 512-bit maddubs Q8_0 + NVFP4. Built WITHOUT -mavx512vnni so it
     # provably emits no VNNI instructions, hence safe to bind on AVX-512 CPUs that lack VNNI.
@@ -159,7 +189,10 @@ if(JAM_STRIP)
 endif()
 
 # ---- stage the native lib into the fat-jar layout: dist/native/com/qxotic/jam/native/<os>-<arch>/<lib> ----
-# CI builds this on each platform and uploads dist/native/; the assemble job merges them + runs build-jar.sh.
+# Each platform's build (native or via cmake/toolchains/) stages its own subdir; the subdirs are
+# disjoint, so builds ACCUMULATE here. Everything is built/tested/packaged locally (a Linux VM covers
+# linux native + the windows cross targets; the Mac covers darwin-aarch64) - merge the dist/native/
+# trees into one checkout and run scripts/build-jar.sh. No CI by design.
 # The os/arch tokens MUST match NativeLoader.java.
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" JAM_OS)               # linux / darwin / windows
 set(JAM_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
