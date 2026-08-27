@@ -77,8 +77,11 @@ public final class Server {
         public synchronized void close() {
             if (closed) return;
             closed = true;
-            http.stop(stopDelaySeconds);
+            // queued callers first: their handlers write the 503 while the server still delivers
+            // it. Stopping HTTP first parked them for the whole stop delay and then cut the
+            // connections, so the "shutting down" answer went to a closed socket.
             worker.close();
+            http.stop(stopDelaySeconds);
             // the fixed handler pool is non-daemon and stop() does not touch it - without this an
             // embedder's JVM never exits
             if (http.getExecutor() instanceof ExecutorService pool) {

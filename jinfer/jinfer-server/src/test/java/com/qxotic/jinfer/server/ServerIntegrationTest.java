@@ -14,12 +14,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -151,6 +153,37 @@ class ServerIntegrationTest {
             assertTrue(metrics.contains("jinfer_generation_requests_invalid_total 1"), metrics);
             assertTrue(metrics.contains("jinfer_speculation_accepted_tokens_total 0"), metrics);
         }
+    }
+
+    @Test
+    void closeAnswersQueuedCallersBeforeStoppingHttp() throws Exception {
+        // a caller queued behind the running generation must receive its 503 while the server
+        // can still deliver it; stopping HTTP first parked it for the whole stop delay and then
+        // reset the connection
+        Path path = TestModels.require(MODEL);
+        try (ChatEngine engine = engine(path, PromptCache.Options.DEFAULTS)) {
+            Server.Running server = Server.start(engine, ServerConfig.local(0));
+            HttpClient client = HttpClient.newHttpClient();
+            String slow = "{\"prompt\":\"Once upon a time\",\"max_tokens\":300,\"temperature\":0}";
+            String quick = "{\"prompt\":\"Once\",\"max_tokens\":1,\"temperature\":0}";
+            var running = client.sendAsync(request(base(server), slow), BodyHandlers.ofString());
+            Thread.sleep(500); // generating
+            var queued = client.sendAsync(request(base(server), quick), BodyHandlers.ofString());
+            Thread.sleep(300); // queued behind it
+            Thread closer = new Thread(server::close, "closer");
+            closer.start();
+            HttpResponse<String> answer = queued.get(10, TimeUnit.SECONDS);
+            assertEquals(503, answer.statusCode(), answer.body());
+            closer.join();
+            running.handle((r, t) -> null).get(30, TimeUnit.SECONDS); // either outcome is fine
+        }
+    }
+
+    private static HttpRequest request(String base, String body) {
+        return HttpRequest.newBuilder(URI.create(base + "/v1/completions"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
     }
 
     @Test
