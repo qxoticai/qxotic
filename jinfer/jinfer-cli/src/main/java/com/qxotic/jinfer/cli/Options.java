@@ -622,7 +622,7 @@ public record Options(
                 "  --temperature, --temp <float> temperature in [0,inf]; default: the model's"
                         + " recommended value, else 0.8");
         out.println(
-                "  --top-p <float>               top-p (nucleus) mass in [0,1]; default: the"
+                "  --top-p <float>               top-p (nucleus) mass in (0,1]; default: the"
                         + " model's recommended value, else 0.95");
         out.println(
                 "  --top-k <int>                 top-k cutoff, 0 disables; default: the model's"

@@ -35,6 +35,30 @@ class ValidationTest {
     }
 
     @Test
+    void topPRangeIsTheEnginesRange() {
+        // the validator used to admit 0, which Sampling refuses after the request was accepted
+        ServerConfig config = ServerConfig.local(0);
+        for (Object bad : List.of(0, 0.0, -0.1, 1.5)) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.put("top_p", bad);
+            assertTrue(
+                    assertThrows(
+                                    IllegalArgumentException.class,
+                                    () ->
+                                            Validation.validateGenerationParams(
+                                                    request, "model", config))
+                            .getMessage()
+                            .contains("top_p must be within (0, 1]"),
+                    "top_p=" + bad);
+        }
+        for (Object fine : List.of(1e-6, 0.5, 1, 1.0)) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.put("top_p", fine);
+            Validation.validateGenerationParams(request, "model", config);
+        }
+    }
+
+    @Test
     void rejectsEmptyStopStrings() {
         // "" would stop every reply at its first fragment, an empty answer with finish "stop"
         ServerConfig config = ServerConfig.local(0);
