@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * {@link RuntimeFlags#linuxFastCores} against synthetic sysfs trees - one per real topology, so
- * the Linux fast-core logic is verified on any dev machine. Each tree writes only the files the
- * detector reads: {@code devices/system/cpu/online}, optional {@code devices/cpu_core/cpus}
- * (Intel hybrid), optional per-cpu {@code cpu_capacity} (ARM big.LITTLE), and per-cpu {@code
+ * {@link RuntimeFlags#linuxFastCores} against synthetic sysfs trees - one per real topology, so the
+ * Linux fast-core logic is verified on any dev machine. Each tree writes only the files the
+ * detector reads: {@code devices/system/cpu/online}, optional {@code devices/cpu_core/cpus} (Intel
+ * hybrid), optional per-cpu {@code cpu_capacity} (ARM big.LITTLE), and per-cpu {@code
  * topology/physical_package_id} + {@code core_id}.
  */
 class LinuxFastCoresTest {
@@ -67,7 +67,9 @@ class LinuxFastCoresTest {
     void homogeneousSmtDisabled() throws IOException { // nosmt: one online thread per core
         online("0-3");
         for (int c = 0; c < 4; c++) cpu(c, 0, c, null);
-        assertEquals(4, RuntimeFlags.linuxFastCores(sys, noProc())); // NOT halved (the old heuristic's bug)
+        assertEquals(
+                4,
+                RuntimeFlags.linuxFastCores(sys, noProc())); // NOT halved (the old heuristic's bug)
     }
 
     @Test

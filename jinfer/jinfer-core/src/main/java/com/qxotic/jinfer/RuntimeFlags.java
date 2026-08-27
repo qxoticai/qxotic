@@ -52,8 +52,8 @@ public final class RuntimeFlags {
     }
 
     /**
-     * Fast-core count for sizing the worker pools, measured where the platform can be asked:
-     * Apple silicon P-cores via sysctl, Linux from sysfs topology (hybrid-, big.LITTLE- and
+     * Fast-core count for sizing the worker pools, measured where the platform can be asked: Apple
+     * silicon P-cores via sysctl, Linux from sysfs topology (hybrid-, big.LITTLE- and
      * SMT-state-aware). Elsewhere (Windows) a heuristic: 2-way SMT on x86, none on ARM. Capped by
      * availableProcessors so a cgroup cpuset never gets oversubscribed (sysfs shows HOST cpus).
      * Override with -Djinfer.decodeThreads / computeThreads; read at run time so a native binary
@@ -95,9 +95,7 @@ public final class RuntimeFlags {
                 MemorySegment out = arena.allocate(ValueLayout.JAVA_INT);
                 MemorySegment len = arena.allocate(ValueLayout.JAVA_LONG);
                 len.set(ValueLayout.JAVA_LONG, 0, 4L);
-                int rc =
-                        (int)
-                                sysctl.invokeExact(name, out, len, MemorySegment.NULL, 0L);
+                int rc = (int) sysctl.invokeExact(name, out, len, MemorySegment.NULL, 0L);
                 return rc == 0 ? out.get(ValueLayout.JAVA_INT, 0) : 0;
             }
         } catch (Throwable t) {
@@ -108,16 +106,16 @@ public final class RuntimeFlags {
     /**
      * Linux fast-core count from sysfs, MEASURED rather than guessed: enumerate online CPUs,
      * restrict to the fast tier (Intel hybrid publishes the P-core list at {@code
-     * devices/cpu_core/cpus}; ARM big.LITTLE ranks clusters by {@code cpu_capacity} - keep the
-     * top tier; homogeneous parts have neither and keep everything), then count UNIQUE
-     * (package, core) pairs - correct whether SMT is on, off (BIOS or nosmt), or absent, unlike
-     * a logical/2 heuristic. CONTAINER-aware: the walk starts from the cgroup/taskset affinity
-     * mask ({@code Cpus_allowed_list} in /proc/self/status), so a cpuset-restricted pool never
-     * counts host cores it cannot run on - and a cpuset pinned entirely OFF the fast tier falls
-     * back to the allowed cores themselves (running on E-cores beats sizing a pool for absent
-     * P-cores). Package-visible and rooted at caller paths so synthetic /sys + /proc trees can
-     * unit-test every topology and confinement from any dev machine. 0 = not Linux / unreadable
-     * -> caller falls through to the heuristic chain.
+     * devices/cpu_core/cpus}; ARM big.LITTLE ranks clusters by {@code cpu_capacity} - keep the top
+     * tier; homogeneous parts have neither and keep everything), then count UNIQUE (package, core)
+     * pairs - correct whether SMT is on, off (BIOS or nosmt), or absent, unlike a logical/2
+     * heuristic. CONTAINER-aware: the walk starts from the cgroup/taskset affinity mask ({@code
+     * Cpus_allowed_list} in /proc/self/status), so a cpuset-restricted pool never counts host cores
+     * it cannot run on - and a cpuset pinned entirely OFF the fast tier falls back to the allowed
+     * cores themselves (running on E-cores beats sizing a pool for absent P-cores). Package-visible
+     * and rooted at caller paths so synthetic /sys + /proc trees can unit-test every topology and
+     * confinement from any dev machine. 0 = not Linux / unreadable -> caller falls through to the
+     * heuristic chain.
      */
     static int linuxFastCores(Path sys, Path procSelfStatus) {
         try {
@@ -130,8 +128,7 @@ public final class RuntimeFlags {
             for (int c : fast) {
                 Path t = sys.resolve("devices/system/cpu/cpu" + c + "/topology");
                 long pkg =
-                        Long.parseLong(
-                                Files.readString(t.resolve("physical_package_id")).trim());
+                        Long.parseLong(Files.readString(t.resolve("physical_package_id")).trim());
                 long core = Long.parseLong(Files.readString(t.resolve("core_id")).trim());
                 cores.add(pkg << 32 | (core & 0xffffffffL));
             }
@@ -142,8 +139,8 @@ public final class RuntimeFlags {
     }
 
     /**
-     * The fast-tier subset of {@code cpus}: Intel hybrid's published P-core list, else the top
-     * ARM {@code cpu_capacity} tier, else all of them (homogeneous - no tier files).
+     * The fast-tier subset of {@code cpus}: Intel hybrid's published P-core list, else the top ARM
+     * {@code cpu_capacity} tier, else all of them (homogeneous - no tier files).
      */
     private static List<Integer> fastTier(Path sys, List<Integer> cpus) throws Exception {
         Path hybrid = sys.resolve("devices/cpu_core/cpus"); // Intel hybrid: P-core cpu list
@@ -163,8 +160,8 @@ public final class RuntimeFlags {
     }
 
     /**
-     * The process affinity set from {@code Cpus_allowed_list} (cgroup cpuset, docker
-     * --cpuset-cpus, taskset), or null when unrestricted/unreadable (non-Linux, no such line).
+     * The process affinity set from {@code Cpus_allowed_list} (cgroup cpuset, docker --cpuset-cpus,
+     * taskset), or null when unrestricted/unreadable (non-Linux, no such line).
      */
     private static List<Integer> allowedCpus(Path procSelfStatus) {
         try {
