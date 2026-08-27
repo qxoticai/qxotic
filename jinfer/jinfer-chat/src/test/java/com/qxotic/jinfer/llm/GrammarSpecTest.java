@@ -806,6 +806,36 @@ public final class GrammarSpecTest {
         Grammar.Spec tab = g("root ::= \"x\\ty\"");
         acc("esctab", tab, "x\ty");
         rej("esctab", tab, "xy");
+
+        // \xNN is the raw byte, in a literal exactly as in a class: the byte spelling of a
+        // non-ASCII character and the character itself are one language (a literal used to
+        // turn \xC3 into the char U+00C3 and then UTF-8 encode it, two bytes for one)
+        Grammar.Spec bytes = g("root ::= \"\\xC3\\xA9\"");
+        acc("eschigh", bytes, "é");
+        rej("eschigh", bytes, "Ã©");
+        Grammar.Spec text = g("root ::= \"é\"");
+        acc("eschigh-text", text, "é");
+        rej("eschigh-text", text, "Ã©");
+        Grammar.Spec classes = g("root ::= [\\xC3] [\\xA9]");
+        acc("eschigh-class", classes, "é");
+        Grammar.Spec mixed = g("root ::= \"a\\xC3\\xA9b\"");
+        acc("eschigh-mixed", mixed, "aéb");
+        rej("eschigh-mixed", mixed, "ab");
+        // a byte no UTF-8 text spells: reachable only through the escape
+        Grammar.Spec raw = g("root ::= \"\\xff\"");
+        check("escraw ✓accepts 0xFF", probe(raw, BV, new byte[] {(byte) 0xFF})[0] == -1);
+        rej("escraw", raw, "ÿ"); // C3 BF, what the old char reading produced
+        // supplementary-plane text in a literal is its four UTF-8 bytes (surrogate pair intact)
+        Grammar.Spec emoji = g("root ::= \"😀\"");
+        acc("escemoji", emoji, "😀");
+        rej("escemoji", emoji, "😁");
+        boolean threw = false;
+        try {
+            g("root ::= \"\\x4\"");
+        } catch (IllegalArgumentException e) {
+            threw = true;
+        }
+        check("short \\x escape throws", threw);
     }
 
     // ========================================================================
