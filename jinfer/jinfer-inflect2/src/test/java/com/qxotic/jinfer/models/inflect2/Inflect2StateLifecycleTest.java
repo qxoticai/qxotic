@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.util.ConcurrentModificationException;
 import java.util.concurrent.CountDownLatch;
@@ -53,7 +53,7 @@ final class Inflect2StateLifecycleTest {
     void aBorrowedArenaIsNeverTouchedByClose() throws Exception {
         InflectTTS tts = tts();
         try (Arena arena = Arena.ofShared()) {
-            Inflect2.State state = tts.newState(new PanamaMemoryArena(arena)); // BORROWED
+            Inflect2.State state = tts.newState(MemoryAllocators.ofArena(arena)); // BORROWED
             state.close();
             assertTrue(arena.scope().isAlive(), "borrow: close must not free an arena it was lent");
         }

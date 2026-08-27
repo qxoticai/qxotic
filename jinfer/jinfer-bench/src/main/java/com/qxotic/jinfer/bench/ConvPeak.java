@@ -16,12 +16,12 @@
 // Measuring on the common pool would time a dispatch path the model never takes.
 package com.qxotic.jinfer.bench;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convolutions;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -170,7 +170,7 @@ public final class ConvPeak {
     /** Seconds per pass, REPS of them, after an adaptive warmup. */
     private static double[] measure(Shape shape) {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> in =
                     Views.allocateF32(memory, shape.channels(), shape.time());
             MemoryView<MemorySegment> out =

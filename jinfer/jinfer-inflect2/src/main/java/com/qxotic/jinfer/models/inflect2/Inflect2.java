@@ -15,7 +15,6 @@ package com.qxotic.jinfer.models.inflect2;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.LeakWatch;
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Views;
@@ -28,6 +27,7 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
@@ -222,7 +222,7 @@ public final class Inflect2 {
             parameters += tensor.logicalSize();
         return new Inflect2(
                 config,
-                loadWeights(tensors, config, new PanamaMemoryArena(arena)),
+                loadWeights(tensors, config, MemoryAllocators.ofArena(arena)),
                 tensors.size(),
                 parameters);
     }
@@ -230,7 +230,7 @@ public final class Inflect2 {
     static Weights loadWeights(
             Map<String, MemoryView<MemorySegment>> tensors,
             Configuration config,
-            PanamaMemoryArena allocator) {
+            MemoryArena<MemorySegment> allocator) {
         int hidden = config.hiddenChannels(), latent = config.interChannels();
         MemoryView<MemorySegment> embedding = ModelLoader.require(tensors, "enc_p.emb.weight");
 
@@ -390,7 +390,7 @@ public final class Inflect2 {
      */
     private static Conv conv(
             Map<String, MemoryView<MemorySegment>> tensors,
-            PanamaMemoryArena allocator,
+            MemoryArena<MemorySegment> allocator,
             String name,
             int kernel,
             int inChannels) {
@@ -407,7 +407,7 @@ public final class Inflect2 {
      */
     private static Conv transposedConv(
             Map<String, MemoryView<MemorySegment>> tensors,
-            PanamaMemoryArena allocator,
+            MemoryArena<MemorySegment> allocator,
             String name,
             int kernel,
             int inChannels) {
@@ -424,7 +424,7 @@ public final class Inflect2 {
 
     private static Conv conv(
             Map<String, MemoryView<MemorySegment>> tensors,
-            PanamaMemoryArena allocator,
+            MemoryArena<MemorySegment> allocator,
             MemoryView<MemorySegment> weight,
             String name,
             int kernel,
@@ -447,7 +447,7 @@ public final class Inflect2 {
     /** The conv bias, dequantized to F32 (it is read one scalar at a time), or null when absent. */
     private static MemoryView<MemorySegment> bias(
             Map<String, MemoryView<MemorySegment>> tensors,
-            PanamaMemoryArena allocator,
+            MemoryArena<MemorySegment> allocator,
             String name) {
         return ModelLoader.find(tensors, name)
                 .map(view -> dequantToF32(allocator, view, name))
@@ -464,7 +464,7 @@ public final class Inflect2 {
 
     private static Norm norm(
             Map<String, MemoryView<MemorySegment>> tensors,
-            PanamaMemoryArena allocator,
+            MemoryArena<MemorySegment> allocator,
             String name) {
         MemoryView<MemorySegment> gamma = ModelLoader.require(tensors, name + ".gamma");
         return new Norm(
@@ -481,7 +481,7 @@ public final class Inflect2 {
      * old port's exactly.
      */
     private static MemoryView<MemorySegment> dequantToF32(
-            PanamaMemoryArena allocator, MemoryView<MemorySegment> view, String name) {
+            MemoryArena<MemorySegment> allocator, MemoryView<MemorySegment> view, String name) {
         if (view.dataType() == DataType.FP32) return view;
         int size = Math.toIntExact(view.logicalSize());
         MemoryView<MemorySegment> copy = Views.allocateF32(allocator, size);
