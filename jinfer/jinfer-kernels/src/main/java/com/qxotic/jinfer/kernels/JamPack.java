@@ -14,9 +14,9 @@ import com.qxotic.jinfer.Parallel;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.Memories;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -40,7 +40,12 @@ final class JamPack {
     }
 
     private record Job(
-            String name, MemoryView<MemorySegment> view, DataType dt, int rows, int k, long off,
+            String name,
+            MemoryView<MemorySegment> view,
+            DataType dt,
+            int rows,
+            int k,
+            long off,
             long bytes) {
         long groupBytes() {
             return bytes / (rows / 4); // uniform by layout construction (jam.h JAM_PACK_ABI)
@@ -58,8 +63,8 @@ final class JamPack {
     }
 
     /**
-     * Pack every tensor the jam backend asks for ({@link JAM#packSize} is the policy - it returns
-     * 0 on hardware without packed kernels, for unpackable dtypes, and for unsupported shapes), in
+     * Pack every tensor the jam backend asks for ({@link JAM#packSize} is the policy - it returns 0
+     * on hardware without packed kernels, for unpackable dtypes, and for unsupported shapes), in
      * place in {@code views}. No-op without jam or with {@code -Djinfer.pack=false}. The slab lives
      * in {@code arena} - the same lifetime as the weights it replaces.
      */
@@ -78,8 +83,10 @@ final class JamPack {
             DataType dt = v.dataType();
             // capability, not policy: the layouts packGroup below can produce. Whether a tensor
             // SHOULD pack is jam's call alone (nativePackSize == 0 keeps it canonical).
-            if (dt != DataType.Q4_0 && dt != DataType.Q4_K
-                    && dt != DataType.Q5_K && dt != DataType.Q6_K) continue;
+            if (dt != DataType.Q4_0
+                    && dt != DataType.Q4_K
+                    && dt != DataType.Q5_K
+                    && dt != DataType.Q6_K) continue;
             if (rowRead(e.getKey())) continue;
             long[] dims = v.shape().toArray(); // physical: innermost counts BLOCKS
             if (dims.length < 2) continue;
@@ -114,8 +121,7 @@ final class JamPack {
             for (Job j : jobs) {
                 MemorySegment src = j.view.memory().base();
                 long srcBase = j.view.byteOffset();
-                long srcRowBytes =
-                        (long) j.k / j.dt.elementsPerBlock() * j.dt.byteSize();
+                long srcRowBytes = (long) j.k / j.dt.elementsPerBlock() * j.dt.byteSize();
                 long gb = j.groupBytes();
                 Parallel.forLoop(
                         j.rows / 4,
@@ -125,7 +131,9 @@ final class JamPack {
                 views.put(
                         j.name,
                         MemoryView.of(
-                                slabMemory, j.off, packed,
+                                slabMemory,
+                                j.off,
+                                packed,
                                 Layout.rowMajor(packed.physicalShape(logical))));
             }
         }
@@ -135,8 +143,15 @@ final class JamPack {
     // ---- one 4-row group -> the jam.h JAM_PACK_ABI 1 sections ----
 
     private static void packGroup(
-            DataType dt, MemorySegment src, long srcBase, long srcRowBytes,
-            MemorySegment dst, long dstBase, long gb, int g, int k) {
+            DataType dt,
+            MemorySegment src,
+            long srcBase,
+            long srcRowBytes,
+            MemorySegment dst,
+            long dstBase,
+            long gb,
+            int g,
+            int k) {
         final int nb = k / 32, sb = k / 256;
         final long go = dstBase + (long) g * gb;
         for (int r = 0; r < 4; r++) {
@@ -144,8 +159,12 @@ final class JamPack {
             if (dt == DataType.Q4_0) {
                 long so = go + (long) nb * 64;
                 for (int b = 0; b < nb; b++) {
-                    MemorySegment.copy(src, w + (long) b * 18 + 2, dst, go + (long) b * 64 + r * 16L, 16);
-                    dst.set(JAVA_FLOAT_UNALIGNED, so + ((long) b * 4 + r) * 4, f16(src, w + (long) b * 18));
+                    MemorySegment.copy(
+                            src, w + (long) b * 18 + 2, dst, go + (long) b * 64 + r * 16L, 16);
+                    dst.set(
+                            JAVA_FLOAT_UNALIGNED,
+                            so + ((long) b * 4 + r) * 4,
+                            f16(src, w + (long) b * 18));
                 }
             } else if (dt == DataType.Q6_K) {
                 long sco = go + (long) nb * 128, ddo = sco + (long) nb * 8;
@@ -162,8 +181,14 @@ final class JamPack {
                                 int hi = ((u8(src, qh + j) >> (2 * gg)) & 3) << 4;
                                 dst.set(JAVA_BYTE, d + j, (byte) ((lo | hi) - 32));
                             }
-                            dst.set(JAVA_BYTE, sco + (long) blk * 8 + r, src.get(JAVA_BYTE, s + 192 + hh * 8 + gg * 2));
-                            dst.set(JAVA_BYTE, sco + (long) blk * 8 + 4 + r, src.get(JAVA_BYTE, s + 192 + hh * 8 + gg * 2 + 1));
+                            dst.set(
+                                    JAVA_BYTE,
+                                    sco + (long) blk * 8 + r,
+                                    src.get(JAVA_BYTE, s + 192 + hh * 8 + gg * 2));
+                            dst.set(
+                                    JAVA_BYTE,
+                                    sco + (long) blk * 8 + 4 + r,
+                                    src.get(JAVA_BYTE, s + 192 + hh * 8 + gg * 2 + 1));
                         }
                 }
             } else { // Q4_K / Q5_K
@@ -174,7 +199,10 @@ final class JamPack {
                 for (int B = 0; B < sb; B++) {
                     long s = w + (long) B * bytes;
                     dst.set(JAVA_FLOAT_UNALIGNED, ddo + ((long) B * 8 + r) * 4, f16(src, s));
-                    dst.set(JAVA_FLOAT_UNALIGNED, ddo + ((long) B * 8 + 4 + r) * 4, f16(src, s + 2));
+                    dst.set(
+                            JAVA_FLOAT_UNALIGNED,
+                            ddo + ((long) B * 8 + 4 + r) * 4,
+                            f16(src, s + 2));
                     scalesMins(src, s + 4, sc, mn);
                     long qh = s + 16, qs = s + (q5 ? 48 : 16);
                     for (int gg = 0; gg < 4; gg++) {
@@ -184,13 +212,25 @@ final class JamPack {
                         if (q5) {
                             for (int j = 0; j < 32; j++) {
                                 int b = u8(src, qs + gg * 32 + j), h = u8(src, qh + j);
-                                dst.set(JAVA_BYTE, dl + j, (byte) ((b & 0xF) | (((h >> (2 * gg)) & 1) << 4)));
-                                dst.set(JAVA_BYTE, dh + j, (byte) ((b >> 4) | (((h >> (2 * gg + 1)) & 1) << 4)));
+                                dst.set(
+                                        JAVA_BYTE,
+                                        dl + j,
+                                        (byte) ((b & 0xF) | (((h >> (2 * gg)) & 1) << 4)));
+                                dst.set(
+                                        JAVA_BYTE,
+                                        dh + j,
+                                        (byte) ((b >> 4) | (((h >> (2 * gg + 1)) & 1) << 4)));
                             }
                         } else {
-                            for (int j = 0; j < 16; j++) { // elem e low nibble, e+16 high (Q4_0 order)
-                                int alo = u8(src, qs + gg * 32 + j), ahi = u8(src, qs + gg * 32 + 16 + j);
-                                dst.set(JAVA_BYTE, dl + j, (byte) ((alo & 0xF) | ((ahi & 0xF) << 4)));
+                            for (int j = 0;
+                                    j < 16;
+                                    j++) { // elem e low nibble, e+16 high (Q4_0 order)
+                                int alo = u8(src, qs + gg * 32 + j),
+                                        ahi = u8(src, qs + gg * 32 + 16 + j);
+                                dst.set(
+                                        JAVA_BYTE,
+                                        dl + j,
+                                        (byte) ((alo & 0xF) | ((ahi & 0xF) << 4)));
                                 dst.set(JAVA_BYTE, dh + j, (byte) ((alo >> 4) | ((ahi >> 4) << 4)));
                             }
                         }
@@ -227,8 +267,7 @@ final class JamPack {
         try {
             Path file = Files.createTempFile("jinfer-pack-", ".bin");
             try (FileChannel ch =
-                    FileChannel.open(
-                            file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+                    FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
                 MemorySegment slab = ch.map(FileChannel.MapMode.PRIVATE, 0, bytes, arena);
                 try {
                     Files.delete(file); // POSIX: unlink now, pages live until the arena closes

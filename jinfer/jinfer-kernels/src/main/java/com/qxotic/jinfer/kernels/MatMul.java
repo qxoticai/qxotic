@@ -72,9 +72,12 @@ public final class MatMul {
     private static final boolean ARM_NATIVE_KQ_DECODE =
             System.getProperty("os.arch", "").contains("aarch64")
                     && Boolean.parseBoolean(System.getProperty("jinfer.kq.nativeDecode", "true"));
+
     static {
-        // -Djam.native.parallelFor=true: hand jinfer's pool to jam as its executor (one pool total).
-        // Reflective: jam-native is an optional runtime dependency, resolved like the NATIVE backend.
+        // -Djam.native.parallelFor=true: hand jinfer's pool to jam as its executor (one pool
+        // total).
+        // Reflective: jam-native is an optional runtime dependency, resolved like the NATIVE
+        // backend.
         if (Boolean.parseBoolean(System.getProperty("jam.native.parallelFor", "false"))) {
             try {
                 Class.forName("com.qxotic.jam.libjam.NativeJAM")
@@ -202,7 +205,6 @@ public final class MatMul {
         shapedMm(w, a, c, 1);
     }
 
-
     /** The shared implementation behind both shaped entry points: validate once, then call mm. */
     private static void shapedMm(
             MemoryView<MemorySegment> w,
@@ -284,8 +286,16 @@ public final class MatMul {
                 return;
             }
             throw new IllegalStateException(
-                    "packed weight rejected by jam: " + dt + " m=" + m + " n=" + n + " k=" + k
-                            + " wOff=" + wOff);
+                    "packed weight rejected by jam: "
+                            + dt
+                            + " m="
+                            + m
+                            + " n="
+                            + n
+                            + " k="
+                            + k
+                            + " wOff="
+                            + wOff);
         }
         // Prefill rungs: native jam -> Vector-API jam -> floor. Decode stays on the Java floor
         // except Dispatch's slowDot types and AArch64 Q4_0/Q8_0: their native activation-requant +
