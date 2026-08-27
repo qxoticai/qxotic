@@ -352,4 +352,58 @@ final class OptionsTest {
                         });
         assertEquals("secret", secured.apiKey());
     }
+
+    private static String[] withModel(String... rest) throws java.io.IOException {
+        java.nio.file.Path model = java.nio.file.Files.createTempFile("options", ".gguf");
+        model.toFile().deleteOnExit();
+        String[] args = new String[rest.length + 2];
+        args[0] = "--model";
+        args[1] = model.toString();
+        System.arraycopy(rest, 0, args, 2, rest.length);
+        return args;
+    }
+
+    @Test
+    void anUnresolvableHostIsNamedAsSuch() throws Exception {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        withModel(
+                                                "--server",
+                                                "--host",
+                                                "nosuchhost.invalid",
+                                                "--api-key",
+                                                "k")));
+        assertEquals(true, e.getMessage().contains("does not resolve"), e.getMessage());
+    }
+
+    @Test
+    void theLaterCacheFlagWins() throws Exception {
+        Options o =
+                Options.parse(
+                        withModel("--prompt", "hi", "--cache-ro", "a.jkv", "--cache", "b.jkv"));
+        assertEquals(false, o.promptCacheReadOnly());
+        assertEquals("b.jkv", o.promptCache().toString());
+    }
+
+    @Test
+    void aRawPromptRefusesWhatTheTemplateWouldHaveFramed() throws Exception {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Options.parse(
+                                        withModel(
+                                                "--prompt",
+                                                "hi",
+                                                "--raw-prompt",
+                                                "--system-prompt",
+                                                "terse")));
+        assertEquals(true, e.getMessage().contains("--raw-prompt"), e.getMessage());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Options.parse(withModel("--chat", "--raw-prompt")));
+    }
 }
