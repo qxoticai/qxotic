@@ -960,10 +960,13 @@ final class Fetch {
      * every platform, including Windows, where an open lock file cannot be deleted at all.
      */
     private static Path lockFileFor(Path dest) throws IOException {
-        // the AMBIENT root, whatever store instance is downloading: the SPI hands a source its
-        // destination, not the store's root. The lock set is tiny, and sharing one home for it is
-        // what makes cross-instance downloads of one file exclude each other.
-        Path locks = ModelStore.ambientRoot().resolve(".locks");
+        // ONE home per host and user, whatever store instance is downloading (the SPI hands a
+        // source its destination, not the store's root): two JVMs with different model roots
+        // must still exclude each other on the same destination, and a store on a writable
+        // volume must not depend on the user's cache directory being writable
+        Path locks =
+                Path.of(System.getProperty("java.io.tmpdir"))
+                        .resolve("jinfer-locks-" + System.getProperty("user.name", "jinfer"));
         Files.createDirectories(locks);
         String key =
                 HexFormat.of()
