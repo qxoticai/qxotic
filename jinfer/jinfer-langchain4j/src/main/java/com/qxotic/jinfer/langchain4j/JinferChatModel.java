@@ -713,7 +713,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /** langchain4j listeners; core dispatches onRequest/onResponse/onError around chat. */
         public Builder listeners(List<ChatModelListener> listeners) {
-            this.listeners = listeners;
+            this.listeners = List.copyOf(listeners); // a null list fails here, not after the load
             return this;
         }
 
