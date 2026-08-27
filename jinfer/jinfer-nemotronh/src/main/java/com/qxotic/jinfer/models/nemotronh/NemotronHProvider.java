@@ -46,7 +46,11 @@ public final class NemotronHProvider implements ModelProvider {
                 Models.modelSeed(fileChannel),
                 // the GGUF template frames; the attached codec keeps the family's reply grammar
                 // (call parsing, constrained decoding, forced calls) on the whole-render path
-                Optional.of(new NemotronHChatTemplate(tok)),
+                Optional.of(
+                        new NemotronHChatTemplate(
+                                tok,
+                                NemotronHChatTemplate.Dialect.of(
+                                        gguf.getStringOrDefault("tokenizer.chat_template", "")))),
                 LoadedModel.SamplingDefaults.NONE);
     }
 }
