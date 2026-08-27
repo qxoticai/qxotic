@@ -570,6 +570,12 @@ public final class NemotronH
         int stateSize = gguf.getValueOrDefault(int.class, arch + ".ssm.state_size", 0);
         int kernel = gguf.getValueOrDefault(int.class, arch + ".ssm.conv_kernel", 0);
         int experts = gguf.getValueOrDefault(int.class, arch + ".expert_count", 0);
+        if (experts == 0) {
+            // a dense Nemotron-H (ReLU^2 ffn_up/ffn_down, no experts) is a different FFN; the
+            // hybrid MoE checkpoints (Nemotron 3.5 Lightning, Cascade 2) are what this port runs
+            throw new IllegalArgumentException(
+                    "dense nemotron_h (no experts) is not supported yet");
+        }
         int expertGroups = gguf.getValueOrDefault(int.class, arch + ".expert_group_count", 0);
         if (expertGroups > 1)
             throw new IllegalArgumentException(
