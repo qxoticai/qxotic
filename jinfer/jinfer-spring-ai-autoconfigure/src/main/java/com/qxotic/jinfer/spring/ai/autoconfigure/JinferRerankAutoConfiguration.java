@@ -35,8 +35,10 @@ public class JinferRerankAutoConfiguration {
         JinferDocumentPostProcessor.Builder builder =
                 JinferDocumentPostProcessor.builder()
                         .contextLength(properties.contextLength())
-                        .topK(properties.topK())
-                        .minScore(properties.minScore());
+                        .topK(properties.topK());
+        // unset keeps the builder's no-threshold default (ColBERT MaxSim sums can be negative;
+        // a 0 here silently dropped them)
+        if (properties.minScore() != null) builder.minScore(properties.minScore());
         if (properties.model().contains("://")) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.rerank.model is a URL; download it first and configure its"

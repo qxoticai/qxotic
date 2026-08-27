@@ -82,7 +82,8 @@ class JinferRerankAutoConfigurationTest {
                             assertThat(p.contextLength()).isEqualTo(2048);
                             assertThat(p.instruction()).isNull(); // = the model card's wording
                             assertThat(p.topK()).isZero(); // keep every document
-                            assertThat(p.minScore()).isZero(); // no relevance gate
+                            assertThat(p.minScore())
+                                    .isNull(); // unset: the adapter keeps every score
                         });
     }
 
