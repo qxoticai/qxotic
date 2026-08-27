@@ -109,15 +109,11 @@ class ModelHubIT {
         assumeReachable("huggingface.co");
         useCache(root);
         ModelRef ref = ModelRef.parse(REPO + ":Q8_0");
-        String commit = Hub.commit(ref);
+        HuggingFaceSource hf = new HuggingFaceSource();
+        String commit = Hub.commit(ref, hf);
         Assertions.assertNotNull(commit, "main resolves to a commit");
 
-        Path file =
-                Hub.fetchInto(
-                        ref,
-                        ModelStore.standard().select(ref, new HuggingFaceSource()),
-                        commit,
-                        hub);
+        Path file = Hub.fetchInto(ref, ModelStore.standard().select(ref, hf), commit, hub, hf);
         assertTrue(file.startsWith(hub));
         assertEquals(39390272L, Files.size(file));
         assertTrue(Files.isSymbolicLink(file), "a snapshot entry is a link into blobs/");

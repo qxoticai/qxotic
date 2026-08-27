@@ -172,11 +172,9 @@ final class Hub {
      * DOWNGRADES a download to the flat layout, never fails it. The hub layout keys snapshots by
      * commit, so joining it starts here; a ref already pinned to a commit needs no request.
      */
-    static String commit(ModelRef ref) {
+    static String commit(ModelRef ref, RepositorySource source) {
         String revision = ref.revisionOrDefault();
-        return isCommit(revision)
-                ? revision
-                : new RepositorySource(ModelRef.Host.HF, null).commitFor(ref);
+        return isCommit(revision) ? revision : source.commitFor(ref);
     }
 
     /**
@@ -186,7 +184,8 @@ final class Hub {
      * file as their own. Concurrent writers need no lock here: blobs are content-addressed, so two
      * tools racing on one file write identical bytes, each behind its own temp-and-rename.
      */
-    static Path fetchInto(ModelRef ref, RemoteFile file, String commit, Path hubCache)
+    static Path fetchInto(
+            ModelRef ref, RemoteFile file, String commit, Path hubCache, RepositorySource source)
             throws IOException {
         Path repo = hubCache.resolve("models--" + ref.owner() + "--" + ref.repo());
         Path blob = repo.resolve("blobs").resolve(file.sha256());
@@ -196,7 +195,9 @@ final class Hub {
             Fetch.announce("download " + ref.host() + "/" + ref.repoId() + "/" + file.path());
             // download at the COMMIT, not the branch: the listing that chose this file and the
             // fetch must not straddle a push
-            String url = ref.repoUrl() + "/resolve/" + commit + "/" + file.path();
+            // through the SOURCE that listed the file: a mirror configured on the store serves
+            // the bytes too, instead of only the listing
+            String url = source.fileUrl(ref, commit, file.path());
             Fetch.download(
                     url,
                     blob,
@@ -226,6 +227,9 @@ final class Hub {
             Path target = dest.getParent().toAbsolutePath().relativize(blob.toAbsolutePath());
             Files.createSymbolicLink(dest, target);
         } catch (IOException | UnsupportedOperationException noSymlinks) {
+            // a racing writer (hf download, another JVM) may have linked it meanwhile: that is
+            // not "no symlinks", and moving the blob out from under its link would orphan it
+            if (Files.exists(dest)) return dest;
             Files.move(blob, dest);
         }
         return dest;

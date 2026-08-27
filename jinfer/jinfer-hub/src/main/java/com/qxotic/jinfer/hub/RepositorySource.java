@@ -55,14 +55,11 @@ class RepositorySource implements ModelSource {
 
     /** {@code <base><prefix>/owner/repo/resolve/<revision>/<file>} - a 302 to a signed CDN URL. */
     String fileUrl(ModelRef ref, String file) {
-        return base
-                + host.prefix
-                + "/"
-                + ref.repoId()
-                + "/resolve/"
-                + ref.revisionOrDefault()
-                + "/"
-                + file;
+        return fileUrl(ref, ref.revisionOrDefault(), file);
+    }
+
+    String fileUrl(ModelRef ref, String revision, String file) {
+        return base + host.prefix + "/" + ref.repoId() + "/resolve/" + revision + "/" + file;
     }
 
     /**

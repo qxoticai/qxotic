@@ -577,10 +577,13 @@ public final class ModelStore {
                             + " parts first with llama.cpp's llama-gguf-split --merge, or pick a"
                             + " quant that fits in one file.");
         }
-        if (hubShare && ref.host().equals(ModelRef.Host.HF.name) && Hub.isSha256(file.sha256())) {
-            String commit = Hub.commit(ref);
+        if (hubShare
+                && source instanceof RepositorySource hf
+                && ref.host().equals(ModelRef.Host.HF.name)
+                && Hub.isSha256(file.sha256())) {
+            String commit = Hub.commit(ref, hf);
             if (commit != null) {
-                return Hub.fetchInto(ref, file, commit, Hub.cache());
+                return Hub.fetchInto(ref, file, commit, Hub.cache(), hf);
             }
             // no commit means no snapshot directory to link under; the flat layout still works
         }
