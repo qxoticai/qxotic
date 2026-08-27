@@ -1203,6 +1203,61 @@ public final class GrammarSpecTest {
         rej("sc-obj", person, "{\"age\":30,\"name\":\"Bob\"}"); // wrong order (documented)
         rej("sc-obj", person, "{}");
 
+        // optional properties: an ordered subset, any may be omitted, none may be invented
+        Grammar.Spec contact =
+                sc(
+                        map(
+                                "type", "object",
+                                "properties",
+                                        map(
+                                                "name", map("type", "string"),
+                                                "age", map("type", "integer"),
+                                                "city", map("type", "string")),
+                                "required", Arrays.asList("name")));
+        acc("sc-opt", contact, "{\"name\":\"Bob\"}");
+        acc("sc-opt", contact, "{\"name\":\"Bob\",\"age\":30}");
+        acc("sc-opt", contact, "{\"name\":\"Bob\",\"city\":\"Oslo\"}");
+        acc("sc-opt", contact, "{\"name\":\"Bob\", \"age\":30, \"city\":\"Oslo\"}");
+        rej("sc-opt", contact, "{\"age\":30}"); // the required one is missing
+        rej("sc-opt", contact, "{\"name\":\"Bob\",\"city\":\"Oslo\",\"age\":30}"); // order
+        rej("sc-opt", contact, "{\"name\":\"Bob\",\"zip\":1}"); // never invented
+        // required: [] means nothing mandatory, so {} is a document (AiServices' POJOs)
+        Grammar.Spec loose =
+                sc(
+                        map(
+                                "type", "object",
+                                "properties",
+                                        map(
+                                                "a",
+                                                map("type", "integer"),
+                                                "b",
+                                                map("type", "integer")),
+                                "required", Arrays.asList()));
+        acc("sc-loose", loose, "{}");
+        acc("sc-loose", loose, "{\"b\":2}");
+        acc("sc-loose", loose, "{\"a\":1,\"b\":2}");
+        rej("sc-loose", loose, "{\"b\":2,\"a\":1}");
+        // a polymorphic variant keeps its optional fields reachable
+        Grammar.Spec animal =
+                sc(
+                        map(
+                                "anyOf",
+                                Arrays.asList(
+                                        map(
+                                                "type", "object",
+                                                "properties",
+                                                        map(
+                                                                "type", map("const", "Dog"),
+                                                                "name", map("type", "string")),
+                                                "required", Arrays.asList("type")),
+                                        map(
+                                                "type", "object",
+                                                "properties", map("type", map("const", "Cat")),
+                                                "required", Arrays.asList("type")))));
+        acc("sc-poly", animal, "{\"type\":\"Dog\",\"name\":\"Rex\"}");
+        acc("sc-poly", animal, "{\"type\":\"Cat\"}");
+        rej("sc-poly", animal, "{\"type\":\"Cat\",\"name\":\"Tom\"}");
+
         // empty / no-properties object
         Grammar.Spec emptyObj = sc(map("type", "object"));
         acc("sc-emptyobj", emptyObj, "{}");

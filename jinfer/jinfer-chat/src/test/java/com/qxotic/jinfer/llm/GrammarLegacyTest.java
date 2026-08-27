@@ -581,7 +581,8 @@ public final class GrammarLegacyTest {
         System.out.println("-- schema objects --");
         MockV v = new MockV();
 
-        // required subset: ONLY the required keys are admitted, in the required list's order
+        // required keys first, in the required list's order, then the optional ones as an
+        // ordered subset (JSON Schema, as llama.cpp builds it)
         Grammar.Spec s =
                 Grammar.fromSchema(
                         linked(
@@ -594,7 +595,8 @@ public final class GrammarLegacyTest {
                         v);
         check("obj required key ok", acceptsDoc(s, v, "{\"b\":\"x\"}"));
         check("obj non-required key rejected", rejectsDoc(s, v, "{\"a\":1}"));
-        check("obj extra key rejected", rejectsDoc(s, v, "{\"b\":\"x\",\"a\":1}"));
+        check("obj optional after required admitted", acceptsDoc(s, v, "{\"b\":\"x\",\"a\":1}"));
+        check("obj optional before required rejected", rejectsDoc(s, v, "{\"a\":1,\"b\":\"x\"}"));
 
         // no required (or EMPTY required): all properties, in DECLARATION order
         for (Object req : new Object[] {null, List.of()}) {
@@ -611,7 +613,8 @@ public final class GrammarLegacyTest {
             check(
                     "obj all-props in order" + (req == null ? "" : " (empty required)"),
                     acceptsDoc(all, v, "{\"a\":1,\"b\":\"x\"}"));
-            check("obj missing prop rejected", rejectsDoc(all, v, "{\"b\":\"x\"}"));
+            check("obj optional subset admitted", acceptsDoc(all, v, "{\"b\":\"x\"}"));
+            check("obj empty subset admitted", acceptsDoc(all, v, "{}"));
             check("obj wrong order rejected", rejectsDoc(all, v, "{\"b\":\"x\",\"a\":1}"));
         }
 
@@ -830,8 +833,7 @@ public final class GrammarLegacyTest {
         check("minItems ignored (pinned)", acceptsDoc(arr, v, "[1]"));
         check("maxItems ignored (pinned)", acceptsDoc(arr, v, "[1,2,3,4]"));
 
-        // optional (non-required) properties are not admitted at all - stricter than JSON
-        // Schema (pinned in testSchemaObjects; restated here as the documented contract)
+        // optional (non-required) properties are an ordered subset after the required ones
         Grammar.Spec opt =
                 Grammar.fromSchema(
                         linked(
@@ -842,9 +844,10 @@ public final class GrammarLegacyTest {
                                                 "b", Map.of("type", "integer")),
                                 "required", List.of("a")),
                         v);
-        check("optional prop not admitted (pinned)", rejectsDoc(opt, v, "{\"a\":1,\"b\":2}"));
+        check("optional prop admitted", acceptsDoc(opt, v, "{\"a\":1,\"b\":2}"));
+        check("optional prop omitted", acceptsDoc(opt, v, "{\"a\":1}"));
 
-        // a required list naming ONLY unknown keys collapses the object to {} (pinned)
+        // a required list naming ONLY unknown keys leaves every declared property optional
         Grammar.Spec unknownOnly =
                 Grammar.fromSchema(
                         linked(
@@ -852,10 +855,10 @@ public final class GrammarLegacyTest {
                                 "properties", linked("a", Map.of("type", "integer")),
                                 "required", List.of("zzz")),
                         v);
-        check("required unknown-only = {} (pinned)", acceptsDoc(unknownOnly, v, "{}"));
+        check("required unknown-only admits {}", acceptsDoc(unknownOnly, v, "{}"));
         check(
-                "required unknown-only rejects props (pinned)",
-                rejectsDoc(unknownOnly, v, "{\"a\":1}"));
+                "required unknown-only admits the declared prop",
+                acceptsDoc(unknownOnly, v, "{\"a\":1}"));
 
         // additionalProperties does not open the fixed object shape (pinned)
         Grammar.Spec ap =
