@@ -152,4 +152,14 @@ class JinjaSemanticsTest {
     void stringMethodsWorkWithParentheses() {
         assertEquals("a", render("{{ ' a '.strip() }}"));
     }
+
+    @Test
+    void andAndOrShortCircuitLikePython() {
+        // the Nemotron templates guard every optional field this way; an eager right side
+        // applied `length` to an undefined value and refused the whole render
+        assertEquals("False", render("{{ x is defined and x | length > 0 }}"));
+        assertEquals("ok", render("{{ (x is defined and x | length > 0) or 'ok' }}"));
+        assertEquals("a", render("{{ 'a' or (x | length) }}"));
+        assertEquals("True", render("{{ x is not defined or x | length > 0 }}"));
+    }
 }
