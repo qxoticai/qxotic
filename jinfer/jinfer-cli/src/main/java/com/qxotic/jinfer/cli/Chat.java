@@ -50,6 +50,12 @@ final class Chat {
                         engine.prepare(Requests.of(List.copyOf(history), sampling, options))) {
                     turn = Turn.start(engine.loaded().tokenizer(), prepared, options);
                     completion = engine.complete(prepared, turn);
+                } catch (IllegalArgumentException | IllegalStateException e) {
+                    // a turn the engine refuses (over the context, a bad request) ends that turn,
+                    // not the conversation: drop the message it was about and read the next
+                    history.removeLast();
+                    System.err.println("ERROR " + e.getMessage());
+                    continue;
                 }
                 turn.finish(completion, engine.contextCapacity());
                 if (completion.reply() != null) {
