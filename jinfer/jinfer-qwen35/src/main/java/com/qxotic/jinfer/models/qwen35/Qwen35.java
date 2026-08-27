@@ -213,8 +213,7 @@ public final class Qwen35
     }
 
     /**
-     * Projected media rows: copy into the residual stream, then the decoder blocks (prefill-style
-     * batch; the draft-head synchronize path is token-only and skipped).
+     * Projected media rows: each row is its own embedding, for the decoder and the MTP block alike.
      */
     private void forwardMedia(
             State state, MemoryView<MemorySegment> rowsView, int startPos, int rows) {
@@ -222,8 +221,10 @@ public final class Qwen35
         if (weights.rope != null)
             RoPE.fill(state.ropeCos, state.ropeSin, startPos, rows, weights.ropeHalf, weights.rope);
         Convert.copyF32(rowsView, 0, state.residual, 0, (long) rows * c.embeddingLength);
+        if (c.hasMtp()) mtpInputs(state, state.residual, rows);
         for (int layer = 0; layer < c.numberOfLayers; layer++)
             decoderBlock(state, layer, startPos, rows);
+        if (c.hasMtp()) synchronizeMtp(state, startPos, rows);
     }
 
     private void forward(State state, int[] tokens, int startPos, int rows) {
@@ -233,18 +234,20 @@ public final class Qwen35
         Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
         Convert.gatherToF32(
                 weights.tokenEmbedding, tokens, 0, rows, state.residual, 0, c.embeddingLength);
+        if (c.hasMtp()) {
+            Convert.gatherToF32(
+                    weights.nextn.tokenEmbedding,
+                    tokens,
+                    0,
+                    rows,
+                    state.normed,
+                    0,
+                    c.embeddingLength);
+            mtpInputs(state, state.normed, rows);
+        }
         for (int layer = 0; layer < c.numberOfLayers; layer++)
             decoderBlock(state, layer, startPos, rows);
-        if (c.hasMtp()) {
-            Norms.rmsnormRows(
-                    state.targetHidden,
-                    state.residual,
-                    weights.outputNorm,
-                    rows,
-                    c.embeddingLength,
-                    c.rmsNormEps);
-            synchronizeMtp(state, tokens, startPos, rows);
-        }
+        if (c.hasMtp()) synchronizeMtp(state, startPos, rows);
     }
 
     private void decoderBlock(State state, int layer, int startPos, int rows) {
@@ -272,32 +275,42 @@ public final class Qwen35
         if (Trace.ENABLED) Trace.sum("l_out-" + layer, state.residual, rows * c.embeddingLength);
     }
 
-    /** Keeps the embedded MTP block's KV prefix aligned with every committed target token. */
-    private void synchronizeMtp(State state, int[] tokens, int startPos, int rows) {
+    /**
+     * The embedding half of every MTP row, normed into {@link State#mtpConcat}. Runs before the
+     * decoder blocks: they reuse the scratch the embeddings sit in, and nothing else touches the
+     * concat buffer.
+     */
+    private void mtpInputs(State state, MemoryView<MemorySegment> embeddings, int rows) {
+        Configuration c = configuration;
+        int dim = c.embeddingLength;
+        for (int row = 0; row < rows; row++)
+            Norms.rmsnorm(
+                    state.mtpConcat,
+                    (long) row * 2 * dim,
+                    embeddings,
+                    (long) row * dim,
+                    weights.nextn.embeddingNorm,
+                    dim,
+                    c.rmsNormEps);
+    }
+
+    /**
+     * After the decoder blocks: the target hidden of every row (what {@link #logits} projects), the
+     * hidden half of every MTP row, and the MTP block's own KV for the batch, so its prefix stays
+     * aligned with every committed row, token or media.
+     */
+    private void synchronizeMtp(State state, int startPos, int rows) {
         Configuration c = configuration;
         NextNWeights nextn = weights.nextn;
         int dim = c.embeddingLength;
+        Norms.rmsnormRows(
+                state.targetHidden, state.residual, weights.outputNorm, rows, dim, c.rmsNormEps);
         for (int row = 0; row < rows; row++) {
-            long concat = (long) row * 2 * dim;
-            Convert.copyToF32(
-                    nextn.tokenEmbedding,
-                    (long) tokens[row] * dim,
-                    state.normed,
-                    (long) row * dim,
-                    dim);
-            Norms.rmsnorm(
-                    state.mtpConcat,
-                    concat,
-                    state.normed,
-                    (long) row * dim,
-                    nextn.embeddingNorm,
-                    dim,
-                    c.rmsNormEps);
             MemoryView<MemorySegment> hidden = row == 0 ? state.pendingHidden : state.targetHidden;
             long hiddenOffset = row == 0 ? 0 : (long) (row - 1) * dim;
             Norms.rmsnorm(
                     state.mtpConcat,
-                    concat + dim,
+                    (long) row * 2 * dim + dim,
                     hidden,
                     hiddenOffset,
                     nextn.hiddenNorm,
