@@ -184,25 +184,8 @@ public final class Moe {
             MemoryView<MemorySegment> out,
             MemoryView<MemorySegment> expertScale,
             ExpertKernel kernel) {
-        Raw scaleRaw = expertScale != null ? Raw.f32(expertScale, "expertScale") : null;
+        buildCsr(r, expertScale);
         int[] off = r.offsets;
-        off[0] = 0;
-        for (int e = 0; e < r.numExperts; e++) off[e + 1] = off[e] + r.counts[e];
-        System.arraycopy(off, 0, r.cursor, 0, r.numExperts);
-        for (int s = 0; s < r.seqLen; s++) {
-            for (int k = 0; k < r.topK; k++) {
-                int e = r.rowTopE[s * r.topK + k];
-                int pos = r.cursor[e]++;
-                r.rowByExpert[pos] = s;
-                r.probByExpert[pos] =
-                        scaleRaw == null
-                                ? r.rowTopP[s * r.topK + k]
-                                : r.rowTopP[s * r.topK + k]
-                                        * readFloat(
-                                                scaleRaw.vseg(),
-                                                scaleRaw.vbase() + (long) e * Float.BYTES);
-            }
-        }
 
         Ops.fillInPlace(out, 0, r.seqLen * dim, 0f);
         for (int e = 0; e < r.numExperts; e++) {
@@ -230,4 +213,28 @@ public final class Moe {
                                     r.probByExpert[start + j]));
         }
     }
+
+    /** CSR grouping for dispatch; folds expertScale into the combine weights. */
+    private static void buildCsr(Routing r, MemoryView<MemorySegment> expertScale) {
+        Raw scaleRaw = expertScale != null ? Raw.f32(expertScale, "expertScale") : null;
+        int[] off = r.offsets;
+        off[0] = 0;
+        for (int e = 0; e < r.numExperts; e++) off[e + 1] = off[e] + r.counts[e];
+        System.arraycopy(off, 0, r.cursor, 0, r.numExperts);
+        for (int s = 0; s < r.seqLen; s++) {
+            for (int k = 0; k < r.topK; k++) {
+                int e = r.rowTopE[s * r.topK + k];
+                int pos = r.cursor[e]++;
+                r.rowByExpert[pos] = s;
+                r.probByExpert[pos] =
+                        scaleRaw == null
+                                ? r.rowTopP[s * r.topK + k]
+                                : r.rowTopP[s * r.topK + k]
+                                        * readFloat(
+                                                scaleRaw.vseg(),
+                                                scaleRaw.vbase() + (long) e * Float.BYTES);
+            }
+        }
+    }
+
 }
