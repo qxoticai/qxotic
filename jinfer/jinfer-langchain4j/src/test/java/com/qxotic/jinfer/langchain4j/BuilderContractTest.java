@@ -191,6 +191,17 @@ final class BuilderContractTest {
                     JinferChatModel.builder().model(loaded).contextLength(8192).build()) {
                 assertTrue(model.chat("Say hi.").length() > 0);
             }
+            IllegalArgumentException tooLarge =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    JinferChatModel.builder()
+                                            .model(loaded)
+                                            .contextLength(1 << 24)
+                                            .build());
+            assertTrue(
+                    tooLarge.getMessage().contains("exceeds the model's context length"),
+                    "refused at build, not at the first long prompt: " + tooLarge.getMessage());
             try (JinferChatModel model =
                     JinferChatModel.builder().model(loaded).contextLength(64).build()) {
                 IllegalArgumentException e =

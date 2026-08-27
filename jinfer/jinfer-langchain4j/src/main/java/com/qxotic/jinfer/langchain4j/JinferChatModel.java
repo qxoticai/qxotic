@@ -92,11 +92,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * application did not ask it to write.
      */
     private static PromptCache.Options cacheOptions(
-            Path promptCache, int retainedSessions, int contextLength) {
-        var defaults = PromptCache.Options.DEFAULTS;
-        return defaults.withRetainedSessions(retainedSessions)
-                .withContextCapacity(contextLength)
-                .withCatalog(promptCache, true);
+            Path promptCache, int retainedSessions, Integer contextLength) {
+        var options = PromptCache.Options.DEFAULTS.withRetainedSessions(retainedSessions);
+        // unset stays the engine's bounded default (min(4096, model)); an explicit value above
+        // the model's context length is refused at build
+        if (contextLength != null) options = options.withContextCapacity(contextLength);
+        return options.withCatalog(promptCache, true);
     }
 
     private JinferChatModel(Builder b) {
@@ -109,10 +110,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             rejectUnsupported(b.defaultParameters, stated != null && !stated.isEmpty());
         }
         PromptCache.Options requestedCacheOptions =
-                cacheOptions(
-                        b.promptCache,
-                        b.retainedSessions,
-                        b.contextLength == null ? 4096 : b.contextLength);
+                cacheOptions(b.promptCache, b.retainedSessions, b.contextLength);
         this.ownsWeights = b.loaded == null;
         this.engine =
                 b.loaded == null
@@ -527,7 +525,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private Path promptCache;
         private int retainedSessions = 1;
-        private Integer contextLength; // null = unset -> 4096
+        private Integer contextLength; // null = unset -> min(4096, model)
         private Double temperature;
         private Double topP;
         private Integer topK;
@@ -649,9 +647,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Upper bound on the context available to each conversation, in tokens. The default is
-         * 4096, deliberately bounded because a full-context state can consume substantial memory.
-         * {@code 0} uses the model's declared context length; otherwise the effective capacity is
-         * the smaller of this value and that length.
+         * min(4096, the model's context length), deliberately bounded because a full-context state
+         * can consume substantial memory. A value above the model's context length is refused at
+         * build; {@code 0} asks for the model's maximum. {@code 0} uses the model's declared
+         * context length; otherwise the effective capacity is the smaller of this value and that
+         * length.
          *
          * @throws IllegalArgumentException if {@code contextLength < 0}
          */

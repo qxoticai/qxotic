@@ -98,20 +98,15 @@ public class Main {
             System.exit(1);
             return;
         }
-        try {
-            options.requireFitsModel(model); // --context-capacity against the model's own
-        } catch (IllegalArgumentException e) {
-            System.err.println("ERROR " + e.getMessage());
-            System.exit(1);
-            return;
-        }
         Sampling sampling = options.sampling(model.samplingDefaults());
         // the engine owns the prompt cache: instruct's --cache file rides the catalog options,
         // chat gets the in-memory defaults (its own flag validation already refused --cache)
-        PromptCache.Options cacheOptions =
-                PromptCache.Options.DEFAULTS
-                        .withContextCapacity(options.contextCapacity())
-                        .withCatalog(options.promptCache(), options.promptCacheReadOnly());
+        PromptCache.Options cacheOptions = PromptCache.Options.DEFAULTS;
+        if (options.contextCapacity() != null) {
+            cacheOptions = cacheOptions.withContextCapacity(options.contextCapacity());
+        }
+        cacheOptions =
+                cacheOptions.withCatalog(options.promptCache(), options.promptCacheReadOnly());
         ChatEngine engine =
                 new ChatEngine(model, options.modelPath().getFileName().toString(), cacheOptions)
                         .speculationDepth(options.speculationDepth());

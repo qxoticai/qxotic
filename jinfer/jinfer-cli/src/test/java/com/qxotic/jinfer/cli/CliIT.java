@@ -46,7 +46,8 @@ class CliIT {
                 model,
                 "test",
                 PromptCache.Options.DEFAULTS
-                        .withContextCapacity(options.contextCapacity())
+                        .withContextCapacity(
+                                options.contextCapacity() == null ? 0 : options.contextCapacity())
                         .withCatalog(options.promptCache(), options.promptCacheReadOnly()));
     }
 
