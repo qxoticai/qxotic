@@ -313,9 +313,12 @@ public final class Convolutions {
                     int from = (unit % tiles) * TILE, to = Math.min(time, from + TILE);
                     if (from >= to) return;
 
-                    // Every tap is in range exactly while t is at least pad from either end; the
-                    // interior is therefore branch-free, and the two edges are a few samples wide.
-                    int bodyFrom = Math.max(from, pad), bodyTo = Math.min(to, time - pad);
+                    // Every tap is in range exactly while t is at least pad from the start and
+                    // reach from the end (they differ by one for an even kernel, whose "same"
+                    // padding is asymmetric); the interior is therefore branch-free, and the two
+                    // edges are a few samples wide.
+                    int reach = (kernel - 1) * dilation - pad;
+                    int bodyFrom = Math.max(from, pad), bodyTo = Math.min(to, time - reach);
                     if (bodyTo < bodyFrom) bodyTo = bodyFrom;
 
                     if (channels == GROUP)
@@ -431,6 +434,11 @@ public final class Convolutions {
                 case "4x4" -> 2;
                 default -> 0; // 4x1
             };
+
+    /** The register tile in force: 0 = 4x1 (auto), 1 = 4x2, 2 = 4x4. For the selection tests. */
+    static int tileCode() {
+        return TILE_CODE;
+    }
 
     /**
      * The interior for a full group of {@link #GROUP} output channels: one input vector is loaded
@@ -634,13 +642,13 @@ public final class Convolutions {
                     w = FloatVector.broadcast(SPECIES, taps[row1 + tap + k]);
                     a10 = w.fma(x0, a10);
                     a11 = w.fma(x1, a11);
-                    a12 = w.fma(x1, a12);
-                    a13 = w.fma(x1, a13);
+                    a12 = w.fma(x2, a12);
+                    a13 = w.fma(x3, a13);
                     w = FloatVector.broadcast(SPECIES, taps[row2 + tap + k]);
                     a20 = w.fma(x0, a20);
                     a21 = w.fma(x1, a21);
                     a22 = w.fma(x2, a22);
-                    a23 = w.fma(x2, a23);
+                    a23 = w.fma(x3, a23);
                     w = FloatVector.broadcast(SPECIES, taps[row3 + tap + k]);
                     a30 = w.fma(x0, a30);
                     a31 = w.fma(x1, a31);
@@ -690,9 +698,9 @@ public final class Convolutions {
             long outRow,
             int from,
             int to) {
-        int lanes = SPECIES.length();
         int t = from;
         if (Segments.USE_VECTOR_API) {
+            int lanes = SPECIES.length();
             // Four accumulators, not one: every tap of an output is a multiply-add into the same
             // register, so a single accumulator would serialize the whole (inChannel, tap) loop on
             // FMA latency. Four independent chains keep the units fed, and each broadcast tap is
