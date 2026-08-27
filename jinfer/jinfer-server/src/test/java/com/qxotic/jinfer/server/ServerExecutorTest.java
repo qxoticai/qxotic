@@ -1,45 +1,33 @@
 package com.qxotic.jinfer.server;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class ServerExecutorTest {
 
     @Test
-    void boundsActiveAndWaitingHttpRequests() throws Exception {
-        ExecutorService executor = Server.requestExecutor(1);
-        CountDownLatch running = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch queuedRan = new CountDownLatch(1);
-        try {
-            executor.execute(
-                    () -> {
-                        running.countDown();
-                        await(release);
-                    });
-            assertTrue(running.await(2, TimeUnit.SECONDS));
-            executor.execute(queuedRan::countDown);
+    void saturationAnswers503WithRetryAfterInsteadOfDroppingTheConnection() throws Exception {
+        // the bounded executor queue rejected the excess inside the JDK server, which closed
+        // the socket with no status; the gate answers like every other overload path
+        AtomicInteger served = new AtomicInteger();
+        Semaphore admissions = new Semaphore(1);
+        var gated = Server.gated(exchange -> served.incrementAndGet(), admissions, 7);
 
-            assertThrows(RejectedExecutionException.class, () -> executor.execute(() -> {}));
-            release.countDown();
-            assertTrue(queuedRan.await(2, TimeUnit.SECONDS));
-        } finally {
-            release.countDown();
-            executor.shutdownNow();
-        }
-    }
+        TestExchange ok = new TestExchange(new byte[0]);
+        gated.handle(ok);
+        assertEquals(1, served.get());
+        assertEquals(1, admissions.availablePermits(), "the permit comes back");
 
-    private static void await(CountDownLatch latch) {
-        try {
-            latch.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        admissions.acquire();
+        TestExchange busy = new TestExchange(new byte[0]);
+        gated.handle(busy);
+        assertEquals(503, busy.getResponseCode());
+        assertEquals("7", busy.getResponseHeaders().getFirst("Retry-After"));
+        assertEquals(1, served.get(), "a refused request never reaches the handler");
+        assertTrue(Server.requestExecutor(1).getClass().getSimpleName().contains("ThreadPool"));
     }
 }
