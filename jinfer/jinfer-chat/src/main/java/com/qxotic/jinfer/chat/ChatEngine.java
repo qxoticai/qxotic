@@ -454,7 +454,12 @@ public final class ChatEngine implements AutoCloseable {
                             "forced tool \"" + named.name() + "\" is not among the offered tools");
                 }
             }
-            templateKwargs = templateKwargs == null ? null : Map.copyOf(templateKwargs);
+            // not Map.copyOf: a null value is a legitimate Jinja None, not a request error
+            templateKwargs =
+                    templateKwargs == null
+                            ? null
+                            : java.util.Collections.unmodifiableMap(
+                                    new java.util.LinkedHashMap<>(templateKwargs));
         }
 
         /**
