@@ -28,6 +28,7 @@ final class FileServer implements AutoCloseable {
     private final Map<String, String> lastHeaders = new ConcurrentHashMap<>(); // path + name
     private final Map<String, String> lastQuery = new ConcurrentHashMap<>();
     private final List<String> noRange = new CopyOnWriteArrayList<>();
+    private final Map<String, String> etags = new ConcurrentHashMap<>();
 
     private FileServer(HttpServer server) {
         this.server = server;
@@ -55,6 +56,14 @@ final class FileServer implements AutoCloseable {
 
     FileServer serve(String path, String payload) {
         return serve(path, payload.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * This path carries {@code etag}; a Range request whose If-Range differs gets the whole body.
+     */
+    FileServer etag(String path, String etag) {
+        etags.put(path, etag);
+        return this;
     }
 
     /** This path answers every GET, ranged or not, with 200 and the WHOLE body. */
@@ -102,9 +111,13 @@ final class FileServer implements AutoCloseable {
                         (name, values) ->
                                 lastHeaders.put(path + "\n" + name.toLowerCase(), values.get(0)));
         String range = exchange.getRequestHeaders().getFirst("Range");
+        String etag = etags.get(path);
+        if (etag != null) exchange.getResponseHeaders().set("ETag", etag);
+        String ifRange = exchange.getRequestHeaders().getFirst("If-Range");
+        boolean changed = ifRange != null && (etag == null || !ifRange.equals(etag));
         byte[] body = payload;
         int status = 200;
-        if (range != null && range.startsWith("bytes=") && !noRange.contains(path)) {
+        if (range != null && range.startsWith("bytes=") && !noRange.contains(path) && !changed) {
             lastRange.put(path, range);
             String[] ends = range.substring("bytes=".length()).split("-", 2);
             long start = Long.parseLong(ends[0]);

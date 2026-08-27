@@ -514,6 +514,7 @@ final class Fetch {
                         sequential(url, part, expectedSize, sha256, headers, progress);
                         progress.finish();
                         Files.move(part, dest, StandardCopyOption.ATOMIC_MOVE);
+                        Files.deleteIfExists(sibling(part, ".etag"));
                         return;
                     }
                     verify(part, sha256, progress);
@@ -563,6 +564,13 @@ final class Fetch {
             throws IOException {
         int chunks = chunkCount(size);
         Path mapFile = sibling(part, ".map");
+        // the first response's validator (ETag or Last-Modified) rides in the .etag sidecar and
+        // every later chunk request carries it as If-Range: a remote that changed answers 200,
+        // which the chunk fetch turns into a restart. A map with no validator cannot be trusted.
+        Path validatorFile = sibling(part, ".etag");
+        String validator =
+                Files.exists(validatorFile) ? Files.readString(validatorFile).strip() : null;
+        if (validator == null) Files.deleteIfExists(mapFile);
         byte[] done = chunkMap(mapFile, chunks, part, size);
         long already = 0;
         List<Integer> todo = new ArrayList<>();
@@ -596,7 +604,15 @@ final class Fetch {
                         pool.submit(
                                 () -> {
                                     chunk(
-                                            url, headers, file, index, chunks, size, written,
+                                            url,
+                                            headers,
+                                            validator,
+                                            validatorFile,
+                                            file,
+                                            index,
+                                            chunks,
+                                            size,
+                                            written,
                                             progress);
                                     // the data MUST reach the disk before the map says it did:
                                     // a crash that persisted the bit but not the bytes would
@@ -618,6 +634,8 @@ final class Fetch {
     private static void chunk(
             String url,
             Map<String, String> headers,
+            String validator,
+            Path validatorFile,
             FileChannel file,
             int index,
             int chunks,
@@ -631,17 +649,20 @@ final class Fetch {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             Map<String, String> ranged = new LinkedHashMap<>(headers);
             ranged.put("Range", "bytes=" + start + "-" + (start + length - 1));
+            if (validator != null) ranged.put("If-Range", validator);
             long at = start;
             Stall stall = null;
             HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
-            if (response.statusCode() == 200 && start > 0) {
-                // the whole file, not the chunk: writing it at `start` would corrupt the file
-                // (silently, when no sha256 is known). The transfer falls back to one stream.
+            if (response.statusCode() == 200 && (start > 0 || validator != null)) {
+                // the whole file, not the chunk (or, under If-Range, a file that changed):
+                // writing it at `start` would corrupt the file (silently, when no sha256 is
+                // known). The transfer falls back to one stream from scratch.
                 try (InputStream drain = response.body()) {
                     drain.readNBytes(8 * 1024);
                 }
                 throw new RangeIgnored(url);
             }
+            if (validator == null) recordValidator(response, validatorFile);
             try (InputStream in = body(response, url, true)) {
                 stall = new Stall(in);
                 byte[] buffer = new byte[BUFFER];
@@ -691,6 +712,18 @@ final class Fetch {
             return new byte[chunks];
         }
         return Files.readAllBytes(mapFile);
+    }
+
+    /** The first chunk response to land writes the validator every resume will send back. */
+    private static synchronized void recordValidator(
+            HttpResponse<InputStream> response, Path validatorFile) throws IOException {
+        if (Files.exists(validatorFile)) return;
+        String validator =
+                response.headers()
+                        .firstValue("etag")
+                        .or(() -> response.headers().firstValue("last-modified"))
+                        .orElse(null);
+        if (validator != null) Files.writeString(validatorFile, validator);
     }
 
     private static int chunkCount(long size) {
