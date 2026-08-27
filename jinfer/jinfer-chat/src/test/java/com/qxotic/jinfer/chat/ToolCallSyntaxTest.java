@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.chat;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -7,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The tool-call payload grammars against what small models actually emit (langchain4j's
@@ -94,6 +97,58 @@ final class ToolCallSyntaxTest {
         assertEquals(List.of(), ToolCallSyntax.parseBlock("[{\"arguments\":{}}]")); // nameless
         assertNull(ToolCallSyntax.parseObject("[1,2,3]"));
         assertNull(ToolCallSyntax.parseObject("{\"x\":}"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "template frame      | >\\nParis\\n</ | Paris",
+                "empty, one newline  | >\\n</           | ''",
+                "empty, two newlines | >\\n\\n</        | ''",
+                "no newline after >  | >Paris\\n</    | Paris",
+                "no newline before < | >\\nParis</    | Paris",
+                "bare value          | >Paris</      | Paris",
+                "inner newline kept  | >\\na\\nb\\n</   | a\\nb",
+            })
+    void functionXmlFramingNewlinesAreOptional(String label, String frame, String expected) {
+        // the templates print ">\n" + value + "\n</parameter>"; a model may drop either newline
+        // (the one-newline empty value used to throw from inside the sampler)
+        String span = "<function=f><parameter=k" + unescape(frame) + "parameter></function>";
+        List<Content.ToolCall> calls = ToolCallSyntax.parseFunctionXml(span);
+        assertEquals(1, calls.size());
+        assertEquals(Map.of("k", unescape(expected)), calls.get(0).arguments(), label);
+    }
+
+    @Test
+    void functionXmlNeverThrowsOnTruncatedOrOddSpans() {
+        String span =
+                "<function=search>\n<parameter=city>\nParis\n</parameter>\n"
+                        + "<parameter=limit>\n3\n</parameter>\n</function>";
+        for (int cut = 0; cut <= span.length(); cut++) {
+            String prefix = span.substring(0, cut);
+            assertDoesNotThrow(() -> ToolCallSyntax.parseFunctionXml(prefix), prefix);
+        }
+        for (String odd :
+                List.of(
+                        "",
+                        "<function=>",
+                        "<function=f>",
+                        "<function=f><parameter=>",
+                        "<function=f><parameter=k>",
+                        "<function=f><parameter=k></parameter>",
+                        "<function=f><parameter=k>v</parameter><parameter=")) {
+            assertDoesNotThrow(() -> ToolCallSyntax.parseFunctionXml(odd), odd);
+        }
+        assertEquals(
+                Map.of("k", ""),
+                ToolCallSyntax.parseFunctionXml("<function=f><parameter=k></parameter>")
+                        .get(0)
+                        .arguments());
+    }
+
+    private static String unescape(String s) {
+        return s.replace("\\n", "\n");
     }
 
     @Test

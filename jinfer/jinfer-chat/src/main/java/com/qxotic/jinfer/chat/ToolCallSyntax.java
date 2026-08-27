@@ -89,6 +89,11 @@ public final class ToolCallSyntax {
      * parameter value is the template's {@code tojson}-for-objects / raw-string-otherwise, so it
      * parses as JSON when it is valid JSON (numbers, objects, arrays, booleans) and stays a plain
      * string otherwise (an unquoted word like {@code Paris} is not valid JSON).
+     *
+     * <p>The templates print each value framed as {@code >\n} + value + {@code \n</parameter>}; the
+     * model is not held to that, so each newline of the frame is optional and everything between is
+     * the value verbatim. Like every parser here this never throws: the text is the model's, and a
+     * malformed span is a dropped call, not a dead generation.
      */
     public static List<Content.ToolCall> parseFunctionXml(String block) {
         int fn = block.indexOf("<function=");
@@ -99,22 +104,26 @@ public final class ToolCallSyntax {
         if (name.isEmpty()) return List.of();
 
         int fnClose = block.indexOf("</function>", nameEnd);
-        String body = block.substring(nameEnd, fnClose < 0 ? block.length() : fnClose);
+        String body = block.substring(nameEnd + 1, fnClose < 0 ? block.length() : fnClose);
 
         Map<String, Object> arguments = new LinkedHashMap<>();
-        int p = body.indexOf("<parameter=");
-        while (p >= 0) {
+        for (int p = body.indexOf("<parameter="); p >= 0; ) {
             int keyEnd = body.indexOf('>', p);
             if (keyEnd < 0) break;
             String key = body.substring(p + "<parameter=".length(), keyEnd).strip();
-            int close = body.indexOf("\n</parameter>", keyEnd);
+            int close = body.indexOf("</parameter>", keyEnd);
             if (close < 0) break;
-            // the templates frame the value as ">\n" + value + "\n</parameter>"
-            String value = body.substring(keyEnd + 2, close);
-            if (!key.isEmpty()) arguments.put(key, typedValue(value));
+            if (!key.isEmpty()) arguments.put(key, typedValue(unframed(body, keyEnd + 1, close)));
             p = body.indexOf("<parameter=", close);
         }
         return List.of(new Content.ToolCall("", name, arguments));
+    }
+
+    /** {@code text[start, end)} minus one leading and one trailing newline, each if present. */
+    private static String unframed(String text, int start, int end) {
+        if (start < end && text.charAt(start) == '\n') start++;
+        if (start < end && text.charAt(end - 1) == '\n') end--;
+        return text.substring(start, end);
     }
 
     /**
