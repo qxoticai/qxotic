@@ -181,11 +181,7 @@ public final class BlockTree<S extends ContextState> {
             boolean corrupt = false;
             for (int i = chainScratch.size() - 1; i >= 0; i--) {
                 Block b = chainScratch.get(i);
-                boolean valid =
-                        !b.frozen
-                                || b.frozenVerified
-                                || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
-                if (!valid) { // failed verification = a miss, never restored
+                if (!verified(b)) { // failed verification = a miss, never restored
                     discard(b); // the block and everything chained on it
                     corrupt = true;
                     break;
@@ -259,6 +255,15 @@ public final class BlockTree<S extends ContextState> {
      * degrades to a miss, never a wrong answer. Iterative, parent-first: chains run context-length
      * deep, and recursion would stack-overflow on exactly the catalogs that need recovery.
      */
+    /**
+     * A frozen block's artifact-carried CRC is checked once, on first use; own blocks are trusted.
+     */
+    private boolean verified(Block b) {
+        return !b.frozen
+                || b.frozenVerified
+                || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
+    }
+
     private void discard(Block b) {
         ArrayDeque<Block> stack = new ArrayDeque<>();
         stack.push(b);
@@ -345,11 +350,7 @@ public final class BlockTree<S extends ContextState> {
             if (b != sentinel) {
                 // a frozen block that never verified is checked now: a corrupt one (and its
                 // chain) must not be re-stamped with a fresh CRC and laundered into the export
-                boolean valid =
-                        !b.frozen
-                                || b.frozenVerified
-                                || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
-                if (!valid) {
+                if (!verified(b)) {
                     discard(b);
                     continue;
                 }

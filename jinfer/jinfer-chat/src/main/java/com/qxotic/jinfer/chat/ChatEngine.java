@@ -1099,13 +1099,15 @@ public final class ChatEngine implements AutoCloseable {
                             if (!fragment.text().isEmpty()) {
                                 // the fragment's own lane, not the parser's post-feed channel:
                                 // a marker flushes the pending bytes of the lane it CLOSES
-                                Channel channel =
-                                        parser.reasoning() ? Channel.REASONING : Channel.CONTENT;
-                                if (channel == Channel.CONTENT) {
+                                if (!parser.reasoning()) {
                                     fragment.tokens().forEachInt(heldIds[0]::add);
                                     watch.accept(fragment.text());
                                 } else {
-                                    out.on(new Delta(channel, fragment.text(), fragment.tokens()));
+                                    out.on(
+                                            new Delta(
+                                                    Channel.REASONING,
+                                                    fragment.text(),
+                                                    fragment.tokens()));
                                 }
                             }
                         }
