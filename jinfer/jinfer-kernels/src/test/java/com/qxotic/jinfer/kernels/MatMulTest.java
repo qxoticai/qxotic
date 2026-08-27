@@ -11,8 +11,8 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import org.junit.jupiter.api.Test;
 import java.util.Arrays;
+import org.junit.jupiter.api.Test;
 
 class MatMulTest {
 

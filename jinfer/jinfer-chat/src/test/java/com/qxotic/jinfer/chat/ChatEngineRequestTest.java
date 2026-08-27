@@ -9,13 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.toknroll.IntSequence;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import com.qxotic.toknroll.IntSequence;
 
 /**
  * {@link ChatEngine.Request} is a positional record built by every integration, so its guards are
@@ -299,9 +299,7 @@ final class ChatEngineRequestTest {
                 () -> new ChatEngine.Delta(null, "x", IntSequence.of(1)));
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        new ChatEngine.Delta(
-                                Channel.CONTENT, "", IntSequence.of(1)));
+                () -> new ChatEngine.Delta(Channel.CONTENT, "", IntSequence.of(1)));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new ChatEngine.Delta(Channel.CONTENT, "x", null));

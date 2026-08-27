@@ -103,9 +103,7 @@ class WeightsCanaryIT {
             if (embedPath.isPresent()) {
                 JinferEmbeddingModel embed =
                         JinferEmbeddingModel.builder()
-                                .model(
-                                        Models.loadEmbedder(
-                                                embedPath.get(), arena))
+                                .model(Models.loadEmbedder(embedPath.get(), arena))
                                 .contextLength(256)
                                 .build();
                 embed.close();
@@ -119,9 +117,7 @@ class WeightsCanaryIT {
             if (rerankPath.isPresent()) {
                 JinferScoringModel score =
                         JinferScoringModel.builder()
-                                .model(
-                                        Models.loadReranker(
-                                                rerankPath.get(), arena))
+                                .model(Models.loadReranker(rerankPath.get(), arena))
                                 .contextLength(512)
                                 .build();
                 score.close();

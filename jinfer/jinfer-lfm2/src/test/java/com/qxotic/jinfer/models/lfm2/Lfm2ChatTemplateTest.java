@@ -19,6 +19,7 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -29,6 +30,7 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -37,14 +39,12 @@ import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import com.qxotic.jinfer.chat.ReplyParser;
-import com.qxotic.jota.memory.MemoryView;
-import java.util.Arrays;
 
 final class Lfm2ChatTemplateTest {
     private static Tokenizer tokenizer;
@@ -135,8 +135,7 @@ final class Lfm2ChatTemplateTest {
 
     private static void assertTail(int[] ids, int[] tail) {
         assertTrue(ids.length >= tail.length);
-        assertArrayEquals(
-                tail, Arrays.copyOfRange(ids, ids.length - tail.length, ids.length));
+        assertArrayEquals(tail, Arrays.copyOfRange(ids, ids.length - tail.length, ids.length));
     }
 
     private static int[] concat(int[] a, int[] b) {
@@ -317,8 +316,7 @@ final class Lfm2ChatTemplateTest {
         Conversation withTools =
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true, "");
         ChatTemplate.ReplyState toolState = state(template, withTools);
-        Message structured =
-                ReplyParser.parse(toolState.parser(), generated);
+        Message structured = ReplyParser.parse(toolState.parser(), generated);
         Content.ToolCall call =
                 assertInstanceOf(Content.ToolCall.class, structured.content().getFirst());
         assertEquals("Paris", call.arguments().get("city"));
@@ -335,9 +333,7 @@ final class Lfm2ChatTemplateTest {
         Conversation conversation =
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true, "");
 
-        Message reply =
-                ReplyParser.parse(
-                        state(template, conversation).parser(), generated);
+        Message reply = ReplyParser.parse(state(template, conversation).parser(), generated);
         Content.Reasoning reasoning =
                 assertInstanceOf(Content.Reasoning.class, reply.content().getFirst());
         assertInstanceOf(Content.ToolCall.class, reasoning.content().getFirst());
@@ -493,8 +489,7 @@ final class Lfm2ChatTemplateTest {
                 new Lfm2Vision.Layer[0]);
     }
 
-    private static MemoryView<MemorySegment> one(
-            MemoryArena<MemorySegment> arena) {
+    private static MemoryView<MemorySegment> one(MemoryArena<MemorySegment> arena) {
         var value = Views.allocateF32(arena, 1);
         Views.copyFromArray(value, 0, new float[] {1}, 0, 1, "test weight");
         return value;

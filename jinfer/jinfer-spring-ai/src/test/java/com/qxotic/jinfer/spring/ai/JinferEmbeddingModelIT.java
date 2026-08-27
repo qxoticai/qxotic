@@ -5,15 +5,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingOptions;
@@ -21,11 +26,6 @@ import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
-import com.qxotic.jinfer.chat.Models;
-import java.lang.foreign.Arena;
-import java.util.Arrays;
-import java.util.Map;
-import org.springframework.ai.content.Media;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.util.MimeTypeUtils;
 
@@ -351,9 +351,7 @@ class JinferEmbeddingModelIT {
     void sharedWeightsForkIsAParallelPipeline() throws Exception {
         // ONE load in the USER's arena; fork() mints a second pipeline for a context's price
         try (Arena arena = Arenas.newCrossThread()) {
-            var loaded =
-                    Models.loadEmbedder(
-                            TestModels.require(EMBED_REF), arena);
+            var loaded = Models.loadEmbedder(TestModels.require(EMBED_REF), arena);
             JinferEmbeddingModel a =
                     JinferEmbeddingModel.builder().model(loaded).contextLength(1024).build();
             JinferEmbeddingModel b = a.fork();
@@ -380,8 +378,7 @@ class JinferEmbeddingModelIT {
                 new Document(
                         new Media(
                                 MimeTypeUtils.IMAGE_PNG,
-                                new ByteArrayResource(
-                                        new byte[] {1, 2, 3})),
+                                new ByteArrayResource(new byte[] {1, 2, 3})),
                         Map.of());
         IllegalArgumentException e =
                 assertThrows(IllegalArgumentException.class, () -> model.embed(media));

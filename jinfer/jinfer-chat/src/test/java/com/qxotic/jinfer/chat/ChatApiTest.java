@@ -32,12 +32,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.IntStream;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Test;
-import java.util.function.Consumer;
 
 final class ChatApiTest {
     private static final ByteTokenizer TOKENIZER = new ByteTokenizer();
@@ -102,9 +102,7 @@ final class ChatApiTest {
 
                         @Override
                         public void project(
-                                Media.Image source,
-                                int max,
-                                Consumer<MemoryView<?>> sink) {
+                                Media.Image source, int max, Consumer<MemoryView<?>> sink) {
                             sink.accept(Views.allocateF32(MemoryAllocators.ofArena(arena), 2, 4));
                         }
                     },

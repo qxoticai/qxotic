@@ -13,13 +13,13 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import java.util.List;
 
 class MemoryCopyTest extends AbstractMemoryTest {
 
@@ -125,8 +125,7 @@ class MemoryCopyTest extends AbstractMemoryTest {
                 .flatMap(cases -> cases);
     }
 
-    private static Stream<Arguments> cases(
-            DataType dataType, List<MemoryDomain<?>> domains) {
+    private static Stream<Arguments> cases(DataType dataType, List<MemoryDomain<?>> domains) {
         return domains.stream()
                 .flatMap(src -> domains.stream().map(dst -> Arguments.of(dataType, src, dst)));
     }

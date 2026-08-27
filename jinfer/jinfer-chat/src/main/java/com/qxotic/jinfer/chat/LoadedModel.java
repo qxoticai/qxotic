@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
@@ -12,7 +13,6 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
-import com.qxotic.format.gguf.GGUF;
 
 /**
  * A loaded model and everything a generation needs around it, bound at load: the tokenizer, the

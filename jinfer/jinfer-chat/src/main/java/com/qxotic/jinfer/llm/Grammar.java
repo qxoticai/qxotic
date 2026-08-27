@@ -3,6 +3,7 @@ package com.qxotic.jinfer.llm;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
+import java.io.ByteArrayOutputStream;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.ref.WeakReference;
@@ -18,7 +19,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.io.ByteArrayOutputStream;
 
 /**
  * Grammar-constrained decoding: compile a grammar once, mask logits per token so the model can only

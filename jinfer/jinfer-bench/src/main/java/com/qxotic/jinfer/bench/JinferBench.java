@@ -16,7 +16,9 @@ import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.Multimodal;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -25,12 +27,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import com.qxotic.jinfer.media.Media;
-import java.io.IOException;
-import java.util.LinkedHashMap;
 
 /**
  * A llama-bench-parity harness driving every model through the generic loader ({@link Models#load}
@@ -197,8 +197,7 @@ public final class JinferBench {
         }
 
         @SuppressWarnings("unchecked")
-        static BenchModel<?> open(Path path, Map<String, Path> companions)
-                throws IOException {
+        static BenchModel<?> open(Path path, Map<String, Path> companions) throws IOException {
             return new BenchModel<>(
                     (LoadedModel<ContextState>) Models.load(path, Arena.ofAuto(), companions));
         }
@@ -536,10 +535,7 @@ public final class JinferBench {
     }
 
     private static ChatEngine.Request mediaRequest(
-            Media.Image image,
-            ContentKey contentKey,
-            int gen,
-            String question) {
+            Media.Image image, ContentKey contentKey, int gen, String question) {
         return new ChatEngine.Request(
                 List.of(
                         new Message(

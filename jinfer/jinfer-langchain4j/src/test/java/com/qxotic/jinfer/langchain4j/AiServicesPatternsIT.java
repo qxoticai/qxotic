@@ -6,10 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.memory.chat.TokenWindowChatMemory;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
+import dev.langchain4j.rag.content.injector.ContentInjector;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.Result;
@@ -17,24 +22,19 @@ import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 import dev.langchain4j.service.tool.ToolExecution;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
-import dev.langchain4j.rag.DefaultRetrievalAugmentor;
-import dev.langchain4j.rag.content.injector.ContentInjector;
-import dev.langchain4j.service.tool.ToolErrorHandlerResult;
-import java.util.Collections;
-import java.util.HashSet;
-import org.junit.jupiter.api.Assertions;
 
 /**
  * The AiServices idioms professional langchain4j code is actually written in, over one shared
@@ -287,9 +287,7 @@ class AiServicesPatternsIT {
         assertFalse(answer.isBlank(), "the default handler must keep the loop alive");
         assertTrue(
                 memory.messages().stream()
-                        .filter(
-                                ToolExecutionResultMessage.class
-                                        ::isInstance)
+                        .filter(ToolExecutionResultMessage.class::isInstance)
                         .map(ToolExecutionResultMessage.class::cast)
                         .anyMatch(r -> r.text().contains("sensor \"RX-7\" blew up")),
                 "the raw failure text rides the tool result by default: " + memory.messages());
@@ -319,9 +317,7 @@ class AiServicesPatternsIT {
         // quotes, newline and braces framed intact (hand-rolled renderers break the turn here)
         var results =
                 memory.messages().stream()
-                        .filter(
-                                ToolExecutionResultMessage.class
-                                        ::isInstance)
+                        .filter(ToolExecutionResultMessage.class::isInstance)
                         .map(ToolExecutionResultMessage.class::cast)
                         .toList();
         assertTrue(
@@ -345,8 +341,7 @@ class AiServicesPatternsIT {
         closed.close();
         Chat chat = AiServices.builder(Chat.class).chatModel(closed).build();
         IllegalStateException e =
-                Assertions.assertThrows(
-                        IllegalStateException.class, () -> chat.chat("hello"));
+                Assertions.assertThrows(IllegalStateException.class, () -> chat.chat("hello"));
         assertTrue(
                 e.getClass() == IllegalStateException.class,
                 "exactly the engine's exception, never a proxy wrapper: " + e.getClass());
@@ -360,8 +355,7 @@ class AiServicesPatternsIT {
         ContentInjector injector =
                 (contents, message) ->
                         dev.langchain4j.data.message.UserMessage.from(
-                                TextContent.from(
-                                        "Context: the codeword for today is ZEBRA."),
+                                TextContent.from("Context: the codeword for today is ZEBRA."),
                                 TextContent.from(
                                         ((dev.langchain4j.data.message.UserMessage) message)
                                                 .singleText()));
@@ -402,8 +396,7 @@ class AiServicesPatternsIT {
         var messages = memory.messages();
         var callIds = new HashSet<String>();
         for (var m : messages) {
-            if (m instanceof AiMessage ai
-                    && ai.hasToolExecutionRequests()) {
+            if (m instanceof AiMessage ai && ai.hasToolExecutionRequests()) {
                 ai.toolExecutionRequests().forEach(r -> callIds.add(r.id()));
             }
             if (m instanceof ToolExecutionResultMessage r) {

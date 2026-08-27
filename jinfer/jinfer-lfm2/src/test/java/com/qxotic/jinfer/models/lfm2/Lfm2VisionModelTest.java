@@ -17,10 +17,10 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import java.util.Arrays;
 
 class Lfm2VisionModelTest {
     private static final String TEXT = "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M";

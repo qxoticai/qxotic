@@ -10,9 +10,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Assertions;
 
 /**
  * Pins the punctuation-run split, not the phonemes: espeak's IPA is version-dependent, so the

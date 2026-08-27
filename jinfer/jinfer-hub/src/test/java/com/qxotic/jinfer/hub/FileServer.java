@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.hub;
 
+import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -12,7 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import com.sun.net.httpserver.HttpExchange;
 
 /**
  * A local HTTP file server for download tests: honors single {@code Range} requests the way every

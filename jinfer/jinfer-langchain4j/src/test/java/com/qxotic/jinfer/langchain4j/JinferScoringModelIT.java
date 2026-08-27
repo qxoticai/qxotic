@@ -5,17 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.output.Response;
+import java.lang.foreign.Arena;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import com.qxotic.jinfer.chat.Models;
-import java.lang.foreign.Arena;
-import org.junit.jupiter.api.Assertions;
 
 /**
  * The reranking laws on a real reranker GGUF (Qwen3-Reranker 0.6B). Assertions are ORDERING-based
@@ -50,10 +50,8 @@ class JinferScoringModelIT {
     @Test
     void forkOfAnOwningModelRefusesWithTheRecipe() {
         IllegalStateException e =
-                Assertions.assertThrows(
-                        IllegalStateException.class, scorer::fork);
-        Assertions.assertTrue(
-                e.getMessage().contains("Models.loadReranker"), e.getMessage());
+                Assertions.assertThrows(IllegalStateException.class, scorer::fork);
+        Assertions.assertTrue(e.getMessage().contains("Models.loadReranker"), e.getMessage());
     }
 
     @Test
@@ -66,10 +64,8 @@ class JinferScoringModelIT {
             try {
                 var docs =
                         List.of(
-                                TextSegment.from(
-                                        "The reset portal is https://acme.example/reset."),
-                                TextSegment.from(
-                                        "Bananas are rich in potassium."));
+                                TextSegment.from("The reset portal is https://acme.example/reset."),
+                                TextSegment.from("Bananas are rich in potassium."));
                 var sa = a.scoreAll(docs, "Where do I reset my password?").content();
                 var sb = b.scoreAll(docs, "Where do I reset my password?").content();
                 Assertions.assertTrue(sa.get(0) > sa.get(1), sa.toString());

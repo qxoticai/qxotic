@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
@@ -44,8 +46,6 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Spring AI {@link ChatModel} backed by jinfer: in-process CPU inference over a local GGUF.
@@ -74,8 +74,7 @@ import org.slf4j.LoggerFactory;
 public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     private static final String PROVIDER = "jinfer";
-    private static final Logger LOG =
-            LoggerFactory.getLogger(JinferChatModel.class);
+    private static final Logger LOG = LoggerFactory.getLogger(JinferChatModel.class);
     private static final ChatModelObservationConvention DEFAULT_CONVENTION =
             new DefaultChatModelObservationConvention();
 

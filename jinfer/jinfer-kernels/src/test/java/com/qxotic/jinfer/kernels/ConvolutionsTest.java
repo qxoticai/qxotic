@@ -8,11 +8,11 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import java.lang.foreign.ValueLayout;
 
 /** Direct contracts for the stateful causal convolution used by recurrent models. */
 class ConvolutionsTest {
@@ -55,8 +55,7 @@ class ConvolutionsTest {
                 channels,
                 kernel);
         assertArrayEquals(expected, out.toArray(ValueLayout.JAVA_FLOAT), 1e-6f);
-        assertArrayEquals(
-                new float[] {3, 4, 5, 6}, state.toArray(ValueLayout.JAVA_FLOAT));
+        assertArrayEquals(new float[] {3, 4, 5, 6}, state.toArray(ValueLayout.JAVA_FLOAT));
     }
 
     /**

@@ -7,14 +7,14 @@ import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 /**
  * {@code AutoCloseable} semantics against the small LFM2.5 (cheap to load per test). Model-gated
@@ -48,8 +48,7 @@ class JinferLifecycleIT {
         CountDownLatch firstChunk = new CountDownLatch(1);
         m.stream(slow).subscribe(chunk -> firstChunk.countDown(), error -> {}, () -> {});
         assertTrue(firstChunk.await(30, TimeUnit.SECONDS));
-        CompletableFuture<Throwable> queued =
-                new CompletableFuture<>();
+        CompletableFuture<Throwable> queued = new CompletableFuture<>();
         m.stream(quick)
                 .subscribe(
                         chunk -> {},

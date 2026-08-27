@@ -7,8 +7,12 @@ import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.common.AbstractStreamingChatModelListenerIT;
+import dev.langchain4j.model.chat.listener.ChatModelErrorContext;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
+import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
+import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,10 +22,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
-import dev.langchain4j.model.chat.listener.ChatModelErrorContext;
-import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
-import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
-import dev.langchain4j.model.chat.response.ChatResponse;
 
 /**
  * The langchain4j streaming listener compliance kit against {@link JinferStreamingChatModel}. The
@@ -99,20 +99,17 @@ class JinferStreamingChatModelListenerIT extends AbstractStreamingChatModelListe
         ChatModelListener counting =
                 new ChatModelListener() {
                     @Override
-                    public void onRequest(
-                            ChatModelRequestContext context) {
+                    public void onRequest(ChatModelRequestContext context) {
                         requests.incrementAndGet();
                     }
 
                     @Override
-                    public void onResponse(
-                            ChatModelResponseContext context) {
+                    public void onResponse(ChatModelResponseContext context) {
                         terminal.incrementAndGet();
                     }
 
                     @Override
-                    public void onError(
-                            ChatModelErrorContext context) {
+                    public void onError(ChatModelErrorContext context) {
                         terminal.incrementAndGet();
                     }
                 };
@@ -126,9 +123,7 @@ class JinferStreamingChatModelListenerIT extends AbstractStreamingChatModelListe
                                         .build(),
                                 new StreamingChatResponseHandler() {
                                     @Override
-                                    public void onCompleteResponse(
-                                            ChatResponse
-                                                    response) {}
+                                    public void onCompleteResponse(ChatResponse response) {}
 
                                     @Override
                                     public void onError(Throwable error) {}

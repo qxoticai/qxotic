@@ -4,11 +4,11 @@ import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
-import com.qxotic.jota.memory.MemoryView;
 
 class GatedDeltaNetTest {
     @Test
@@ -122,8 +122,7 @@ class GatedDeltaNetTest {
         }
     }
 
-    private static MemoryView<MemorySegment> view(
-            Arena arena, float[] values) {
+    private static MemoryView<MemorySegment> view(Arena arena, float[] values) {
         MemorySegment segment = arena.allocate(4L * values.length, 64);
         segment.copyFrom(MemorySegment.ofArray(values));
         return Oracles.f32View(segment, values.length);

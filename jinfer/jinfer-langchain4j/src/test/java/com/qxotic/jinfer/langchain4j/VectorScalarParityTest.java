@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.LoadedModel;
@@ -19,7 +20,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
-import com.qxotic.jinfer.ContextState;
 
 /**
  * The scalar kernels must produce the SAME TOKENS as the vector ones. A fallback that runs but

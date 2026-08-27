@@ -4,6 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.ContextModel;
 import com.qxotic.jinfer.Reranker;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocators;
@@ -19,7 +20,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.DoubleConsumer;
-import com.qxotic.jota.DataType;
 
 /**
  * LFM2.5-ColBERT as a reranker: late interaction. Query and documents are embedded SEPARATELY

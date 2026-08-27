@@ -13,8 +13,8 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import java.nio.ByteBuffer;
-import org.junit.jupiter.api.Test;
 import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * The estimator's composition laws over a deterministic fake tokenizer (1 token per character):

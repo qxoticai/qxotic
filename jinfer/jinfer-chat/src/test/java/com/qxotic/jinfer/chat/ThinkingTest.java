@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import org.junit.jupiter.api.Test;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.Test;
 
 /** Thinking-budget behavior over a tiny tokenizer, without a model. */
 class ThinkingTest {

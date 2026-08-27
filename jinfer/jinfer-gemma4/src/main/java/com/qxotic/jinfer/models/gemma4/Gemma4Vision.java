@@ -18,6 +18,7 @@ import com.qxotic.jinfer.kernels.Raw;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
@@ -31,7 +32,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
-import com.qxotic.jota.DataType;
 
 /** Gemma 4 SigLIP-style vision tower ({@code projector_type=gemma4v}). */
 public final class Gemma4Vision implements MediaProjector<Media.Image> {

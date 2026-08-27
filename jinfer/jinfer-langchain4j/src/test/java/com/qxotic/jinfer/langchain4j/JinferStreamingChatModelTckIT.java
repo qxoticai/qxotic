@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.common.AbstractStreamingChatModelIT;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
@@ -12,19 +13,18 @@ import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.TokenUsage;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.condition.EnabledIf;
-import org.mockito.InOrder;
-import org.mockito.Mockito;
-import dev.langchain4j.data.message.ImageContent;
-import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.InOrder;
+import org.mockito.Mockito;
 
 /**
  * The langchain4j streaming compliance kit against {@link JinferStreamingChatModel} on LFM2.5-8B.
@@ -274,13 +274,11 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     // the kit's photos vendored locally - see the blocking TCK's note
     @Override
     protected ImageContent catImageContentBase64() {
-        return ImageContent.from(
-                JinferChatModelTckIT.kitImage("cat.png"), "image/png");
+        return ImageContent.from(JinferChatModelTckIT.kitImage("cat.png"), "image/png");
     }
 
     @Override
     protected ImageContent diceImageContentBase64() {
-        return ImageContent.from(
-                JinferChatModelTckIT.kitImage("dice.png"), "image/png");
+        return ImageContent.from(JinferChatModelTckIT.kitImage("dice.png"), "image/png");
     }
 }

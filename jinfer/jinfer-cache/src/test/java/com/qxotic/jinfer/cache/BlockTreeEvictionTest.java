@@ -6,8 +6,8 @@ import com.qxotic.jinfer.ContextState;
 import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /**
  * Eviction stress for PromptCache: a tiny budget forcing evictions during chain commits, dedup onto

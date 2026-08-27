@@ -51,8 +51,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final Arena arena;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
-    private static final Logger LOG =
-            LoggerFactory.getLogger(JinferEmbeddingModel.class);
+    private static final Logger LOG = LoggerFactory.getLogger(JinferEmbeddingModel.class);
     private final AtomicBoolean hintedBareUse = new AtomicBoolean();
     private final List<EmbeddingModelListener> listeners;
 

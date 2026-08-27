@@ -30,13 +30,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import java.util.Set;
 
 /**
  * E2E contract of {@link JinferEmbeddingModel} on Qwen3-Embedding 0.6B: dimension, semantic
@@ -337,8 +337,7 @@ class JinferEmbeddingModelIT {
                         .contextLength(256)
                         .build()) {
             assertEquals(
-                    Set.of(EmbeddingRequestParameters.INPUT_TYPE),
-                    fixed.supportedParameters());
+                    Set.of(EmbeddingRequestParameters.INPUT_TYPE), fixed.supportedParameters());
             assertEquals(1024, fixed.embed("native").content().dimension());
             assertThrows(
                     UnsupportedFeatureException.class,

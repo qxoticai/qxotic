@@ -21,13 +21,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import java.util.Set;
 
 @Tag("integration")
 class ServerIntegrationTest {
@@ -166,8 +166,7 @@ class ServerIntegrationTest {
                                 engine,
                                 ServerConfig.local(0)
                                         .withAccess(
-                                                new ServerConfig.Access(
-                                                        "secret", Set.of("*"))))) {
+                                                new ServerConfig.Access("secret", Set.of("*"))))) {
             HttpClient client = HttpClient.newHttpClient();
             HttpResponse<String> health =
                     client.send(

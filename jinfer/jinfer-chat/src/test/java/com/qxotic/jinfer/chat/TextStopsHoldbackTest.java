@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
-import org.junit.jupiter.api.Test;
 import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /** The holdback matcher: streamed partials must always concatenate to the trimmed text. */
 class TextStopsHoldbackTest {

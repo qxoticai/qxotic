@@ -30,9 +30,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.junit.jupiter.api.Test;
 import sun.misc.Unsafe;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 final class ChatEngineLifecycleTest {
 

@@ -7,10 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
+import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
-import com.qxotic.jota.Layout;
 
 class BroadcastTest {
 

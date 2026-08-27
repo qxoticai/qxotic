@@ -2,11 +2,11 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.HashSet;
 import java.util.OptionalInt;
 import java.util.Set;
-import com.qxotic.jota.memory.MemoryView;
 
 /**
  * Think-channel controls: {@link Sampler} wrappers that steer the model's reasoning span using its

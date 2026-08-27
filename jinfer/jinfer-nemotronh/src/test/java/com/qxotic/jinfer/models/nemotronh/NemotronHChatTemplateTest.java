@@ -15,10 +15,10 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import java.util.ArrayList;
 
 /** Both framework and server tool-result shapes must retain their payload in the prompt. */
 class NemotronHChatTemplateTest {
