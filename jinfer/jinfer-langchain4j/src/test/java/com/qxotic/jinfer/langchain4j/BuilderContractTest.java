@@ -35,6 +35,13 @@ final class BuilderContractTest {
     }
 
     @Test
+    void aNullListenerListFailsAtTheSetterNotAfterTheLoad() {
+        // List.copyOf ran at build(), after the weights were mapped: a NullPointerException with a
+        // multi-gigabyte load behind it
+        assertThrows(NullPointerException.class, () -> JinferChatModel.builder().listeners(null));
+    }
+
+    @Test
     void contextLengthHasOneSentinelAtEveryBuilder() {
         JinferChatModel.builder().contextLength(0);
         JinferEmbeddingModel.builder().contextLength(0);
