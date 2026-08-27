@@ -14,6 +14,7 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import java.lang.foreign.MemorySegment;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.OptionalInt;
 import java.util.Set;
 
@@ -82,6 +83,8 @@ public final class Gemma4Speculative {
         if (!model.speculationReady())
             throw new IllegalStateException(
                     "MTP sidecar not loaded - use loadWithMtp(gguf, mtpSidecar, arena)");
+        // the verify block is depth+1 rows of one batch
+        depth = Math.min(depth, s.batchCapacity() - 1);
         Scratch scratch = s.specScratch;
         if (scratch == null || scratch.depth < depth) {
             scratch = new Scratch(model, s, depth);
@@ -141,6 +144,11 @@ public final class Gemma4Speculative {
 
         // seed from the last ingested row: its token, its hidden, and the exact next token
         int lastRow = s.lastBatchSize() - 1;
+        if (lastRow < 0 || s.lastTokens == null || lastRow >= s.lastTokens.length) {
+            throw new IllegalStateException(
+                    "speculation continues from a token batch: ingest one (a prompt or a step)"
+                            + " before speculate, media rows or a rewind leave no seed");
+        }
         int tLast = s.lastTokens[lastRow];
         Convert.copyF32(s.residual, (long) lastRow * dim, h, 0, dim);
         MemoryView<?> promptLogits = model.logits(s, s.outputCount() - 1);
@@ -154,30 +162,38 @@ public final class Gemma4Speculative {
         int[] cand = new int[depth + 1];
         FinishReason finish = FinishReason.LENGTH; // budget/context, the while's exits
         while (emitted.size() < maxTokens
-                && s.position() + depth + 1 <= s.contextCapacity() // a verify block must fit
+                && s.position() < s.contextCapacity()
                 && System.nanoTime() < deadline) {
+            // the block shrinks to what the context and the token budget still hold: the
+            // last tokens of a context are emitted, and nothing past maxTokens is committed
+            int drafts =
+                    Math.min(
+                            depth,
+                            Math.min(
+                                    s.contextCapacity() - s.position() - 1,
+                                    maxTokens - emitted.size() - 1));
             // draft chain: warm-up pairs (h, tLast) at tLast's position; heads chain greedily
             // from `next`
             int pos = s.position() - 1;
             decoder.draft(s, h, 0, tLast, pos);
             cand[0] = next;
             int dTok = next;
-            for (int i = 1; i <= depth; i++) {
+            for (int i = 1; i <= drafts; i++) {
                 MemoryView<MemorySegment> dl =
                         decoder.draft(s, decoder.chainedHidden(), 0, dTok, pos);
                 dTok = Ops.argmax(dl, 0, vocab);
                 cand[i] = dTok;
             }
-            drafted += depth;
+            drafted += drafts;
 
             // verify all candidates in one backbone forward (ALL outputs), then walk the rows
             int basePos = s.position();
-            model.ingest(s, Batch.score(cand));
+            model.ingest(s, Batch.score(Arrays.copyOf(cand, drafts + 1)));
             forwards++;
             model.logitsAll(s, vlogits); // every verify row's logits in ONE head GEMM
             int accepted = 0; // drafts confirmed beyond cand[0]
             int nextAfter = -1;
-            while (accepted < depth) {
+            while (accepted < drafts) {
                 // sample the TARGET at this row; the draft survives only by agreeing with it
                 Convert.copyF32(vlogits.slice(0, accepted, accepted + 1), 0, row, 0, vocab);
                 if (rowArgmax != null) rowArgmax[accepted] = Ops.argmax(row, 0, vocab);
