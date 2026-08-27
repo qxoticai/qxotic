@@ -358,13 +358,16 @@ public final class Gemma4
         MemoryView<MemorySegment> sin = swa ? state.ropeSinSwa : state.ropeSinFull;
 
         Norms.rmsnormRows(state.normed, state.residual, w.attnNorm, seqLen, dim, c.rmsNormEps);
+        boolean hasKv = c.hasKv(l);
         MatMul.gemm(w.wq, state.normed, state.query, seqLen);
+        if (hasKv) {
+            MatMul.gemm(w.wk, state.normed, state.batchK[l], seqLen);
+            if (w.wv != null) MatMul.gemm(w.wv, state.normed, state.batchV[l], seqLen);
+        }
         headNormRope(state.query, c.numberOfHeads, headSize, w.qNorm, seqLen, cos, sin);
-        if (c.hasKv(l)) {
+        if (hasKv) {
             MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
-            MatMul.gemm(w.wk, state.normed, bK, seqLen);
-            if (w.wv != null) MatMul.gemm(w.wv, state.normed, bV, seqLen);
-            else Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
+            if (w.wv == null) Convert.copyF32(bK, 0, bV, 0, (long) seqLen * kvDim);
             headNormRope(bK, nKvHeads, headSize, w.kNorm, seqLen, cos, sin);
             Parallel.forLoop(
                     seqLen,
