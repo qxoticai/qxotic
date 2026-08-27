@@ -441,7 +441,7 @@ public final class JinjaRendererTest {
         eq("plain text, no tags", "plain text, no tags");
         eq("{{ 42 }}", "42");
         eq("{{ 3.14 }}", "3.14");
-        eq("{{ 2.0 }}", "2"); // whole floats render without a trailing .0
+        eq("{{ 2.0 }}", "2.0"); // Python str(float): whole floats keep their .0
         eq("{{ -5 }}", "-5");
         eq("{{ 'single' }}", "single");
         eq("{{ \"double\" }}", "double");
@@ -460,7 +460,7 @@ public final class JinjaRendererTest {
         eq("{{ 10 - 4 }}", "6");
         eq("{{ 6 * 7 }}", "42");
         eq("{{ 3 / 2 }}", "1.5");
-        eq("{{ 9 / 3 }}", "3"); // exact division renders as integer
+        eq("{{ 9 / 3 }}", "3.0"); // true division is a float, as in Python 3
         eq("{{ 10 % 3 }}", "1");
         eq("{{ 2 + 3 * 4 }}", "14"); // precedence: * before +
         eq("{{ (2 + 3) * 4 }}", "20"); // parentheses override

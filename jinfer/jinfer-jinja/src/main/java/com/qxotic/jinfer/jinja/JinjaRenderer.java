@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -252,11 +253,15 @@ public final class JinjaRenderer {
         }
     }
 
+    /**
+     * Python {@code str(float)}: a whole value keeps its {@code .0} ({@code 1.0}, {@code 4 / 2} is
+     * {@code 2.0}).
+     */
     private static String fmtDouble(double v) {
-        if (v == (long) v) return Long.toString((long) v);
-        String s = Double.toString(v);
-        if (s.endsWith(".0")) s = s.substring(0, s.length() - 2);
-        return s;
+        if (Double.isNaN(v)) return "nan";
+        if (Double.isInfinite(v)) return v > 0 ? "inf" : "-inf";
+        if (v == Math.rint(v) && Math.abs(v) < 1e16) return (long) v + ".0";
+        return Double.toString(v);
     }
 
     /**
@@ -284,15 +289,40 @@ public final class JinjaRenderer {
     // ── Filters ──────────────────────────────────────────────────
 
     static Val applyFilter(String name, Val val, List<Val> args) {
+        return applyFilter(name, val, args, Map.of());
+    }
+
+    /**
+     * Keyword arguments are honored where the filter defines them ({@code tojson(indent=)}, {@code
+     * default(boolean=)}) and refused elsewhere: a kwarg silently read as None would render a
+     * different prompt than the template author wrote.
+     */
+    static Val applyFilter(String name, Val val, List<Val> args, Map<String, Val> kwargs) {
+        for (String k : kwargs.keySet()) {
+            boolean known =
+                    switch (name) {
+                        case "tojson" -> JSON_KWARGS.contains(k);
+                        case "default" -> k.equals("boolean");
+                        default -> false;
+                    };
+            if (!known) throw unsupported("filter '" + name + "' keyword argument '" + k + "'");
+        }
         return switch (name) {
-            case "tojson" -> tojson(val);
+            case "tojson" -> {
+                Val indent = kwargs.getOrDefault("indent", args.isEmpty() ? Val.NONE : args.get(0));
+                yield tojson(val, JsonStyle.of(indent, kwargs));
+            }
             case "trim" -> new Val.Str(val.asStr().strip());
             case "string" -> new Val.Str(val.asStr());
             case "length" -> new Val.Int(length(val));
-            case "default" ->
-                    val.isDefined()
-                            ? val
-                            : (args.isEmpty() ? new Val.Str("") : requireArg(args, 0));
+            case "default" -> {
+                // default(value, boolean=false): with boolean, a falsy value is replaced too
+                Val fallback = args.isEmpty() ? new Val.Str("") : args.get(0);
+                Val bool = kwargs.getOrDefault("boolean", args.size() > 1 ? args.get(1) : Val.NONE);
+                boolean replace =
+                        !val.isDefined() || (!bool.isNone() && bool.truthy() && !val.truthy());
+                yield replace ? fallback : val;
+            }
             case "join" ->
                     new Val.Str(join(val, args.isEmpty() ? "" : expectStr(requireArg(args, 0))));
             case "split" -> split(val, expectStr(requireArg(args, 0)));
@@ -358,7 +388,7 @@ public final class JinjaRenderer {
             case Val.Str s -> s.v.length();
             case Val.Arr a -> a.v.size();
             case Val.Obj o -> o.v.size();
-            default -> v.asStr().length();
+            default -> throw unsupported("length of " + v.asStr() + " (no len())");
         };
     }
 
@@ -426,43 +456,96 @@ public final class JinjaRenderer {
         };
     }
 
+    private static final Set<String> JSON_KWARGS =
+            Set.of("indent", "separators", "ensure_ascii", "sort_keys");
+
+    /**
+     * The {@code json.dumps} knobs the transformers {@code tojson} filter forwards. Python's
+     * defaults: separators {@code (', ', ': ')} compact, {@code (',', ': ')} when indented;
+     * transformers passes {@code ensure_ascii=False}, so non-ASCII stays literal unless asked.
+     */
+    record JsonStyle(
+            int indent, String itemSep, String keySep, boolean asciiOnly, boolean sortKeys) {
+        static final JsonStyle COMPACT = new JsonStyle(-1, ", ", ": ", false, false);
+
+        static JsonStyle of(Val indent, Map<String, Val> kwargs) {
+            int level = indent.isNone() ? -1 : (int) num(indent);
+            String itemSep = level < 0 ? ", " : ",", keySep = ": ";
+            if (kwargs.get("separators") instanceof Val.Arr seps && seps.v().size() == 2) {
+                itemSep = seps.v().get(0).asStr();
+                keySep = seps.v().get(1).asStr();
+            }
+            boolean ascii = kwargs.getOrDefault("ensure_ascii", Val.NONE).truthy();
+            boolean sort = kwargs.getOrDefault("sort_keys", Val.NONE).truthy();
+            return new JsonStyle(level, itemSep, keySep, ascii, sort);
+        }
+    }
+
     static Val tojson(Val v) {
+        return tojson(v, JsonStyle.COMPACT);
+    }
+
+    static Val tojson(Val v, JsonStyle style) {
         StringBuilder sb = new StringBuilder();
-        writeJson(sb, v);
+        writeJson(sb, v, style, 0);
         return new Val.Str(sb.toString());
     }
 
-    private static void writeJson(StringBuilder sb, Val v) {
+    private static void writeJson(StringBuilder sb, Val v, JsonStyle style, int depth) {
         switch (v) {
             case Val.None __ -> sb.append("null");
             case Val.Bool b -> sb.append(b.v);
             case Val.Int i -> sb.append(i.v);
             case Val.Flt f -> sb.append(fmtDouble(f.v));
-            case Val.Str s -> sb.append(Json.stringify(s.v));
+            case Val.Str s -> sb.append(jsonString(s.v, style));
             case Val.Arr a -> {
                 sb.append('[');
                 for (int i = 0; i < a.v.size(); i++) {
-                    if (i > 0) sb.append(", ");
-                    writeJson(sb, a.v.get(i));
+                    if (i > 0) sb.append(style.itemSep());
+                    jsonBreak(sb, style, depth + 1);
+                    writeJson(sb, a.v.get(i), style, depth + 1);
                 }
+                if (!a.v.isEmpty()) jsonBreak(sb, style, depth);
                 sb.append(']');
             }
             case Val.Obj o -> {
                 sb.append('{');
                 boolean first = true;
-                for (var e : o.v.entrySet()) {
-                    if (!first) sb.append(", ");
+                var keys = new ArrayList<>(o.v.keySet());
+                if (style.sortKeys()) keys.sort(null);
+                for (String key : keys) {
+                    if (!first) sb.append(style.itemSep());
                     first = false;
-                    sb.append(Json.stringify(e.getKey()));
-                    sb.append(": ");
-                    writeJson(sb, e.getValue());
+                    jsonBreak(sb, style, depth + 1);
+                    sb.append(jsonString(key, style));
+                    sb.append(style.keySep());
+                    writeJson(sb, o.v.get(key), style, depth + 1);
                 }
+                if (!o.v.isEmpty()) jsonBreak(sb, style, depth);
                 sb.append('}');
             }
             case Val.Func f -> sb.append('"').append(f.name).append('"');
             case Val.Undef u -> sb.append("null");
             default -> sb.append("null");
         }
+    }
+
+    /** The line break and indent before a JSON item when pretty; nothing when compact. */
+    private static void jsonBreak(StringBuilder sb, JsonStyle style, int depth) {
+        if (style.indent() >= 0) sb.append('\n').append(" ".repeat(style.indent() * depth));
+    }
+
+    /** A JSON string literal; with {@code ensure_ascii} every non-ASCII char is a \\u escape. */
+    private static String jsonString(String s, JsonStyle style) {
+        String quoted = Json.stringify(s);
+        if (!style.asciiOnly()) return quoted;
+        StringBuilder out = new StringBuilder(quoted.length());
+        for (int i = 0; i < quoted.length(); i++) {
+            char c = quoted.charAt(i); // UTF-16 units, exactly what Python's \\uXXXX escapes
+            if (c < 0x80) out.append(c);
+            else out.append(String.format("\\u%04x", (int) c));
+        }
+        return out.toString();
     }
 
     // ── Functions ────────────────────────────────────────────────
@@ -909,16 +992,14 @@ public final class JinjaRenderer {
             }
         }
 
-        /** Strip trailing whitespace from the last emitted TEXT token. */
+        /** {@code {%-}: strip trailing whitespace from the text immediately before the tag. */
         void stripLastText() {
-            for (int j = toks.size() - 1; j >= 0; j--) {
-                Tok pt = toks.get(j);
-                if (pt.type == T.TEXT) {
-                    String stripped = pt.val.stripTrailing();
-                    if (!stripped.equals(pt.val)) toks.set(j, new Tok(T.TEXT, stripped, pt.pos));
-                    break;
-                }
-            }
+            if (toks.isEmpty()) return;
+            int j = toks.size() - 1;
+            Tok pt = toks.get(j);
+            if (pt.type != T.TEXT) return; // an expression sits between: nothing adjacent to strip
+            String stripped = pt.val.stripTrailing();
+            if (!stripped.equals(pt.val)) toks.set(j, new Tok(T.TEXT, stripped, pt.pos));
         }
 
         boolean matchStr(String s) {
@@ -1034,7 +1115,8 @@ public final class JinjaRenderer {
     record CondNode(Node test, Node then, Node orElse)
             implements Node {} // a if test else b (value-valued)
 
-    record ForNode(String var, String var2, Node iterable, Node filter, List<Node> body)
+    record ForNode(
+            String var, String var2, Node iterable, Node filter, List<Node> body, List<Node> orElse)
             implements Node {}
 
     record GenerationNode(List<Node> body)
@@ -1198,11 +1280,10 @@ public final class JinjaRenderer {
                 case "macro" -> result = parseMacro();
                 case "generation" -> result = parseGeneration();
                 case "break", "continue" -> throw err("{% " + kw + " %} is not supported");
-                case "else", "elif", "endif", "endfor", "endmacro", "endgeneration", "end" -> {
-                    // These are handled by enclosing parse functions
-                    idx--; // back up over the identifier
-                    return new TextNode("");
-                }
+                case "else", "elif", "endif", "endfor", "endmacro", "endgeneration", "end" ->
+                        // an enclosing block consumes its own keywords before reaching here: this
+                        // one has no block to close (Jinja: TemplateSyntaxError)
+                        throw err("unexpected {% " + kw + " %}");
                 default -> {
                     // Expression statement: {% expr %}
                     // Back up the identifier so parseExpr picks it up
@@ -1266,13 +1347,20 @@ public final class JinjaRenderer {
                 filter = parseExpr();
             }
             expect(T.CLOSE_STMT);
-            var body = parseBody("endfor");
+            var body = parseBody("else", "endfor");
+            List<Node> orElse = List.of();
+            if (isStmt("else")) { // {% for %}...{% else %}: runs when the iterable is empty
+                expect(T.OPEN_STMT);
+                expectId("else");
+                expect(T.CLOSE_STMT);
+                orElse = parseBody("endfor");
+            }
             expect(T.OPEN_STMT);
             expectId("endfor");
             expect(T.CLOSE_STMT);
             String v1 = loopVars.getFirst();
             String v2 = loopVars.size() > 1 ? loopVars.get(1) : null;
-            return new ForNode(v1, v2, iterable, filter, body);
+            return new ForNode(v1, v2, iterable, filter, body, orElse);
         }
 
         // ── generation (transformers assistant-span extension) ──
@@ -1741,7 +1829,10 @@ public final class JinjaRenderer {
         Val get(String name) {
             Val v = vars.get(name);
             if (v != null) return v;
-            if (name.equals("loop")) return vars.get("__loop__");
+            if (name.equals("loop")) {
+                Val loop = vars.get("__loop__");
+                return loop != null ? loop : new Val.Undef("loop");
+            }
             // Jinja2 accepts both capitalized and lowercase literals
             if (name.equals("True") || name.equals("true")) return new Val.Bool(true);
             if (name.equals("False") || name.equals("false")) return new Val.Bool(false);
@@ -1797,13 +1888,20 @@ public final class JinjaRenderer {
                                     for (String k : o.v.keySet()) arr.add(new Val.Str(k));
                                     yield arr;
                                 }
-                                default -> {
-                                    String s = iter.asStr();
-                                    if (s.isEmpty()) yield List.of();
+                                case Val.Str s -> {
                                     var arr = new ArrayList<Val>();
-                                    for (String part : s.split("\n")) arr.add(new Val.Str(part));
+                                    s.v().codePoints()
+                                            .forEach(
+                                                    c ->
+                                                            arr.add(
+                                                                    new Val.Str(
+                                                                            Character.toString(
+                                                                                    c))));
                                     yield arr;
                                 }
+                                case Val.None __ -> List.of(); // a null binding (tools) is empty
+                                case Val.Undef __ -> List.of();
+                                default -> throw unsupported("iteration over " + iter.asStr());
                             };
                     if (f.filter() != null) {
                         // Jinja's loop filter: applied BEFORE iteration, so loop.length /
@@ -1821,6 +1919,7 @@ public final class JinjaRenderer {
                         }
                         items = kept;
                     }
+                    if (items.isEmpty()) execAll(f.orElse(), out);
                     for (int idx = 0; idx < items.size(); idx++) {
                         Val item = items.get(idx);
                         var lf = new Frame();
@@ -1946,7 +2045,7 @@ public final class JinjaRenderer {
                                     e.getValue() instanceof Node n
                                             ? eval(n)
                                             : Val.of(e.getValue()));
-                        yield new Val.Obj(out, false);
+                        yield new Val.Obj(out); // a dict literal has .items()/.keys()/.get() too
                     }
                     yield Val.of(l.val());
                 }
@@ -1956,8 +2055,19 @@ public final class JinjaRenderer {
                 case FilterNode f -> {
                     Val v = eval(f.operand());
                     var a = new ArrayList<Val>();
-                    for (Node n : f.args()) a.add(eval(n));
-                    yield applyFilter(f.name(), v, a);
+                    var kw = new LinkedHashMap<String, Val>();
+                    for (Node n : f.args()) {
+                        if (n instanceof BinNode b && "kwarg".equals(b.op())) {
+                            String k =
+                                    b.left() instanceof IdentNode id
+                                            ? id.name()
+                                            : eval(b.left()).asStr();
+                            kw.put(k, eval(b.right()));
+                        } else {
+                            a.add(eval(n));
+                        }
+                    }
+                    yield applyFilter(f.name(), v, a, kw);
                 }
                 case MemberNode m -> evalMember(eval(m.obj()), m);
                 case CallNode c -> {
@@ -2034,14 +2144,24 @@ public final class JinjaRenderer {
 
         Val evalBin(String op, Val l, Val r) {
             return switch (op) {
-                case "+" ->
-                        l.isString() || r.isString()
-                                ? new Val.Str(l.asStr() + r.asStr())
-                                : new Val.Flt(toNum(l) + toNum(r));
-                case "-" -> new Val.Flt(toNum(l) - toNum(r));
-                case "*" -> new Val.Flt(toNum(l) * toNum(r));
-                case "/" -> new Val.Flt(toNum(l) / toNum(r));
-                case "%" -> new Val.Int((long) toNum(l) % (long) toNum(r));
+                case "+" -> {
+                    if (l.isString() || r.isString()) yield new Val.Str(l.asStr() + r.asStr());
+                    if (l instanceof Val.Arr a && r instanceof Val.Arr b) {
+                        var joined = new ArrayList<Val>(a.v());
+                        joined.addAll(b.v());
+                        yield new Val.Arr(joined); // list concatenation, the ns.items + [x] idiom
+                    }
+                    yield arith(l, r, Long::sum, Double::sum);
+                }
+                case "-" -> arith(l, r, (a, b) -> a - b, (a, b) -> a - b);
+                case "*" -> arith(l, r, (a, b) -> a * b, (a, b) -> a * b);
+                case "/" -> new Val.Flt(toNum(l) / toNum(r)); // true division, a float in Python 3
+                case "%" ->
+                        arith(
+                                l,
+                                r,
+                                Math::floorMod,
+                                (a, b) -> a - b * Math.floor(a / b)); // Python's sign rule
                 case "~" -> new Val.Str(l.asStr() + r.asStr());
                 case "==" -> new Val.Bool(eq(l, r));
                 case "!=" -> new Val.Bool(!eq(l, r));
@@ -2219,6 +2339,18 @@ public final class JinjaRenderer {
             }
             if (container instanceof Val.Obj o) return o.v.containsKey(item.asStr());
             return false;
+        }
+
+        /** Python's numeric tower in miniature: two ints stay an int, anything else is a float. */
+        static Val arith(
+                Val l,
+                Val r,
+                java.util.function.LongBinaryOperator ints,
+                java.util.function.DoubleBinaryOperator floats) {
+            if (l instanceof Val.Int a && r instanceof Val.Int b) {
+                return new Val.Int(ints.applyAsLong(a.v(), b.v()));
+            }
+            return new Val.Flt(floats.applyAsDouble(toNum(l), toNum(r)));
         }
 
         static double toNum(Val v) {
