@@ -13,11 +13,11 @@
 // that are not multiples of the vector width, so the tail paths are exercised too.
 package com.qxotic.jinfer.bench;
 
-import com.qxotic.jinfer.PanamaMemoryArena;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convolutions;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -60,7 +60,7 @@ public final class ConvParity {
     /** SHA-256 over the output's raw float bits - any numerical difference shows up here. */
     private static String digest(Shape shape) throws NoSuchAlgorithmException {
         try (Arena arena = Arena.ofConfined()) {
-            var memory = new PanamaMemoryArena(arena);
+            var memory = MemoryAllocators.ofArena(arena);
             MemoryView<MemorySegment> in =
                     Views.allocateF32(memory, shape.inChannels(), shape.time());
             MemoryView<MemorySegment> out =
