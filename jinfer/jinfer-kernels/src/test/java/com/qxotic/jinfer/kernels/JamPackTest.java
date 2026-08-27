@@ -14,8 +14,8 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.Memories;
+import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
@@ -33,8 +33,8 @@ import org.junit.jupiter.api.Test;
  * the canonical dequant; the transform only reorders bytes and widens scales") - over random
  * payloads with per-block varied scales, so any byte landing in the wrong line, lane, row, group,
  * or section slot fails. The size policy is injected (the spec formula): the native library is
- * excluded from this classpath, and the policy is its half of the contract anyway - these tests
- * own the pure-Java mechanics.
+ * excluded from this classpath, and the policy is its half of the contract anyway - these tests own
+ * the pure-Java mechanics.
  */
 class JamPackTest {
 
@@ -50,8 +50,7 @@ class JamPackTest {
         return 0;
     }
 
-    private static final JamPack.PackPolicy SPEC =
-            (dt, rows, k) -> (rows / 4) * groupBytes(dt, k);
+    private static final JamPack.PackPolicy SPEC = (dt, rows, k) -> (rows / 4) * groupBytes(dt, k);
 
     // ---- bit-exact layout parity, one test per dtype ----
 
@@ -76,8 +75,8 @@ class JamPackTest {
     }
 
     /**
-     * Negative control: the parity walk itself must have teeth. A single flipped slab byte fails
-     * it - so a future refactor can never leave both readers vacuously agreeing.
+     * Negative control: the parity walk itself must have teeth. A single flipped slab byte fails it
+     * - so a future refactor can never leave both readers vacuously agreeing.
      */
     @Test
     void parityWalkDetectsSingleByteCorruption() {
@@ -134,7 +133,9 @@ class JamPackTest {
         views.put(
                 "blk.0.w",
                 MemoryView.of(
-                        Memories.of(padded), pad, DataType.Q4_K,
+                        Memories.of(padded),
+                        pad,
+                        DataType.Q4_K,
                         Layout.rowMajor(Shape.flat(m, k / 256))));
         MemoryView<MemorySegment> v = JamPack.apply(views, arena, SPEC).get("blk.0.w");
         assertInstanceOf(JamPacked.class, v.dataType());
@@ -165,7 +166,8 @@ class JamPackTest {
     /** The policy owns the decision: 0 keeps canonical; a non-uniform size is not this ABI. */
     @Test
     void policyDeclineAndAbiDriftKeepCanonical() {
-        var view = Views.wrap(canonical(DataType.Q4_0, 8, 512, 5), DataType.Q4_0, Shape.flat(8, 16));
+        var view =
+                Views.wrap(canonical(DataType.Q4_0, 8, 512, 5), DataType.Q4_0, Shape.flat(8, 16));
         var views = new LinkedHashMap<String, MemoryView<MemorySegment>>();
         views.put("w", view);
         assertSame(view, JamPack.apply(views, arena, (dt, rows, k) -> 0).get("w"));
@@ -179,7 +181,8 @@ class JamPackTest {
     void slabSharedAndTensorsCacheLineAligned() {
         int m = 4, k = 32; // Q4_0 group = 80 bytes: exercises the 64B round-up between tensors
         var views = new LinkedHashMap<String, MemoryView<MemorySegment>>();
-        MemorySegment a = canonical(DataType.Q4_0, m, k, 21), b = canonical(DataType.Q4_0, m, k, 22);
+        MemorySegment a = canonical(DataType.Q4_0, m, k, 21),
+                b = canonical(DataType.Q4_0, m, k, 22);
         views.put("a", Views.wrap(a, DataType.Q4_0, Shape.flat(m, 1)));
         views.put("b", Views.wrap(b, DataType.Q4_0, Shape.flat(m, 1)));
         Map<String, MemoryView<MemorySegment>> out = JamPack.apply(views, arena, SPEC);
@@ -238,8 +241,12 @@ class JamPackTest {
     // ---- the parity walk ----
 
     private static void assertParity(
-            MemorySegment canon, long canonBase, MemoryView<MemorySegment> packedView,
-            DataType dt, int m, int k) {
+            MemorySegment canon,
+            long canonBase,
+            MemoryView<MemorySegment> packedView,
+            DataType dt,
+            int m,
+            int k) {
         MemorySegment slab = packedView.memory().base();
         long base = packedView.byteOffset();
         for (int row = 0; row < m; row++) {

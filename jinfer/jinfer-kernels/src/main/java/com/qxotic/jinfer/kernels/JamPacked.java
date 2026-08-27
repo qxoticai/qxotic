@@ -6,12 +6,12 @@ import java.lang.foreign.ValueLayout;
 import java.util.List;
 
 /**
- * Impl-only weight dtype: the bytes hold jam's packed in-memory layout (jam.h {@code
- * JAM_PACK_ABI}) of {@link #base()}, produced by {@link JamPack} at load time. One storage block is
- * one WEIGHT ROW ({@code elementsPerBlock == k}), so all view algebra moves whole rows and can
- * never split the layout; jam additionally requires offsets at 4-row-group boundaries ({@link
- * MatMul#jamApplies}). Never a wire format: {@link GGMLDataTypes} does not know this type, so it
- * cannot be serialized, and only the jam backend can read it.
+ * Impl-only weight dtype: the bytes hold jam's packed in-memory layout (jam.h {@code JAM_PACK_ABI})
+ * of {@link #base()}, produced by {@link JamPack} at load time. One storage block is one WEIGHT ROW
+ * ({@code elementsPerBlock == k}), so all view algebra moves whole rows and can never split the
+ * layout; jam additionally requires offsets at 4-row-group boundaries ({@link MatMul#jamApplies}).
+ * Never a wire format: {@link GGMLDataTypes} does not know this type, so it cannot be serialized,
+ * and only the jam backend can read it.
  */
 final class JamPacked implements DataType {
 

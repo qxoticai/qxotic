@@ -6,8 +6,9 @@ import java.io.Console;
  * A stderr heartbeat for the silent seconds of a cold model load (mmap + parse + weight packing):
  * {@code - Loading model ... 12s}, redrawn in place, erased on stop. Rendered ONLY when stderr is
  * an interactive console ({@link System#console} attached and a TTY) - piped and scripted runs see
- * no bytes, and embedders never reach this class (it is the CLI's, not the library's: jinfer-kernels
- * keeps its silent DEBUG {@code Timer}, and whoever owns the terminal owns the rendering).
+ * no bytes, and embedders never reach this class (it is the CLI's, not the library's:
+ * jinfer-kernels keeps its silent DEBUG {@code Timer}, and whoever owns the terminal owns the
+ * rendering).
  */
 final class LoadSpinner {
 
