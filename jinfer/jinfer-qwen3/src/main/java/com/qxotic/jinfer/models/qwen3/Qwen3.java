@@ -457,12 +457,12 @@ public final class Qwen3
     }
 
     /**
-     * The raw LM logit of ONE token at the last ingested row, via the TIED token-embedding head
-     * (Qwen3 small variants tie the LM head; reranker GGUFs carry no separate output.weight). A
-     * reranker reads its two verdict tokens with two of these - two dot products, where a
-     * generative head would project the whole vocabulary (~155 MB streamed at Q8) to reach them.
-     * Holds the state and fences the model, like every other public entry point that runs kernels;
-     * {@link #targetedHead} is the unfenced seam.
+     * The raw LM logit of ONE token at the last ingested row, through the LM head (output.weight,
+     * or the tied token embeddings when a checkpoint carries none, as the 0.6B does; the 8B is
+     * untied and has both). A reranker reads its two verdict tokens with two of these - two dot
+     * products, where a generative head would project the whole vocabulary (~155 MB streamed at Q8)
+     * to reach them. Holds the state and fences the model, like every other public entry point that
+     * runs kernels; {@link #targetedHead} is the unfenced seam.
      */
     public float logit(State s, int token) {
         float out = s.exclusively(() -> targetedHead(s, token));
@@ -486,9 +486,10 @@ public final class Qwen3
                 weights.finalNorm(),
                 dim,
                 configuration.rmsNormEps);
-        // one row of the tied head: c[0] = tokenEmbeddings[token] . normed
+        // one row of the LM head (output.weight, or the tied embeddings when absent, exactly what
+        // projectLogits uses): c[0] = head[token] . normed
         MatMul.gemm(
-                weights.tokenEmbeddings,
+                weights.wcls(),
                 (long) token * dim,
                 s.normed,
                 dim,
