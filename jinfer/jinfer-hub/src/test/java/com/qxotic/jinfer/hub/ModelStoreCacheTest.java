@@ -40,6 +40,7 @@ class ModelStoreCacheTest {
         Files.writeString(foreign, "legacy");
         // the cache's own scaffolding is never a model
         Files.writeString(model.resolveSibling("thing-Q8_0.gguf.part"), "half");
+        Files.writeString(model.resolveSibling("thing-Q8_0.gguf.part.etag"), "\"v1\"");
         Files.writeString(root.resolve("CACHEDIR.TAG"), "tag");
         Files.createDirectories(root.resolve(".locks"));
         Files.writeString(root.resolve(".locks/ab.lock"), "");

@@ -475,7 +475,10 @@ public final class ModelStore {
         if (relative.getName(0).toString().equals(".locks") || name.equals("CACHEDIR.TAG")) {
             return false;
         }
-        return !name.endsWith(".part") && !name.endsWith(".map") && !name.endsWith(".lock");
+        return !name.endsWith(".part")
+                && !name.endsWith(".map")
+                && !name.endsWith(".etag")
+                && !name.endsWith(".lock");
     }
 
     /**
