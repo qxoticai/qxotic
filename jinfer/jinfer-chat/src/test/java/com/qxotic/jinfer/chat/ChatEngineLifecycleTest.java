@@ -350,6 +350,7 @@ final class ChatEngineLifecycleTest {
         ChatEngine engine = (ChatEngine) unsafe().allocateInstance(ChatEngine.class);
         set(engine, "streamDriver", newDriver());
         set(engine, "streamThread", new AtomicReference<Thread>());
+        set(engine, "lifecycle", new java.util.concurrent.locks.ReentrantReadWriteLock());
         return engine;
     }
 
