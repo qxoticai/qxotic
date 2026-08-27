@@ -158,7 +158,7 @@ public final class TextNormalizer {
                 DECIMAL.matcher(text)
                         .replaceAll(
                                 r -> spokenNumber(r.group(1)) + " point " + digitWords(r.group(2)));
-        text = ORDINAL.matcher(text).replaceAll(r -> ordinalWords(Integer.parseInt(r.group(1))));
+        text = ORDINAL.matcher(text).replaceAll(r -> ordinal(r.group(1)));
         text = NUMBER.matcher(text).replaceAll(TextNormalizer::number);
         text = UPPERCASE_ACRONYM.matcher(text).replaceAll(r -> spellLetters(r.group()));
 
@@ -316,6 +316,13 @@ public final class TextNormalizer {
                 : numberWords(Integer.parseInt(digits));
     }
 
+    /** An ordinal as a quantity when it fits; a longer digit run is an identifier, read out. */
+    static String ordinal(String digits) {
+        return digits.length() > MAX_NUMBER_DIGITS
+                ? digitWords(digits)
+                : ordinalWords(Integer.parseInt(digits));
+    }
+
     static String numberWords(int n) {
         if (n < 20) return ONES[n];
         if (n < 100) return TENS[n / 10] + (n % 10 > 0 ? " " + ONES[n % 10] : "");
@@ -323,11 +330,11 @@ public final class TextNormalizer {
             int rest = n % 100;
             return ONES[n / 100] + " hundred" + (rest > 0 ? " " + numberWords(rest) : "");
         }
-        if (n < 1_000_000) {
-            int rest = n % 1_000;
-            return numberWords(n / 1_000) + " thousand" + (rest > 0 ? " " + numberWords(rest) : "");
-        }
-        return digitWords(String.valueOf(n));
+        // every quantity spokenNumber admits (MAX_NUMBER_DIGITS) fits below a billion
+        int scale = n < 1_000_000 ? 1_000 : 1_000_000;
+        String name = scale == 1_000 ? " thousand" : " million";
+        int rest = n % scale;
+        return numberWords(n / scale) + name + (rest > 0 ? " " + numberWords(rest) : "");
     }
 
     static String ordinalWords(int n) {

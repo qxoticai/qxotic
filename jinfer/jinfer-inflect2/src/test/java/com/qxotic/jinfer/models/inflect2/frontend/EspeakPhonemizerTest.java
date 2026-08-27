@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.models.inflect2.Symbols;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -36,6 +38,37 @@ class EspeakPhonemizerTest {
             }
         }
         return marks;
+    }
+
+    @Test
+    void aRunStartingWithADashIsTextNotAnOption() throws IOException {
+        // "-5 degrees" normalizes to "-five degrees"; as an argv element getopt read "-f"
+        int[] tokens = espeak().phonemize("-five degrees");
+        assertTrue(tokens.length > 4, "both words phonemized: " + tokens.length);
+    }
+
+    @Test
+    void stderrIsNeverSpokenAndAFailedRunIsAnError() throws IOException {
+        Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "needs a shell");
+        Path dir = Files.createTempDirectory("espeak-stub");
+        Path chatty = dir.resolve("chatty.sh"), broken = dir.resolve("broken.sh");
+        Files.writeString(
+                chatty,
+                "#!/bin/sh\n"
+                        + "cat >/dev/null\n"
+                        + "echo 'warning: no voice data' >&2\n"
+                        + "echo 'h\u0259l\u02c8o\u028a'\n");
+        Files.writeString(broken, "#!/bin/sh\ncat >/dev/null\necho 'error: option' >&2\nexit 2\n");
+        chatty.toFile().setExecutable(true);
+        broken.toFile().setExecutable(true);
+        int[] tokens = new EspeakPhonemizer(chatty.toString()).phonemize("hello");
+        // the IPA line alone is ~11 tokens; with the warning spoken too it would be over 50
+        assertTrue(tokens.length > 0 && tokens.length < 20, "only the IPA line: " + tokens.length);
+        IOException e =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IOException.class,
+                        () -> new EspeakPhonemizer(broken.toString()).phonemize("hello"));
+        assertTrue(e.getMessage().contains("exited 2"), e.getMessage());
     }
 
     @Test
