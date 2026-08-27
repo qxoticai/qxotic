@@ -12,6 +12,7 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Batch;
@@ -214,5 +215,66 @@ class Gemma4MtpIdentityTest {
         List<Integer> out = new ArrayList<>(seq.length());
         for (int i = 0; i < seq.length(); i++) out.add(seq.intAt(i));
         return out;
+    }
+
+    private static SpeculationResult speculate(
+            Gemma4 model, Gemma4.State state, int maxTokens, int depth) {
+        return model.speculate(
+                state,
+                Sampler.ARGMAX,
+                new Constraints(maxTokens, Duration.ZERO, Set.of()),
+                depth,
+                null,
+                null);
+    }
+
+    @Test
+    @Tag("driver")
+    void theBlockShrinksToTheContextAndTheBudget() throws Exception {
+        Gemma4 model =
+                Gemma4.loadWithMtp(
+                        TestModels.require(MODEL_REF),
+                        TestModels.require(SIDECAR_REF),
+                        Arena.ofAuto());
+        int[] prompt = model.tokenizer().encodeToArray("Count upward: 1, 2, 3,");
+        // two free slots: a walk that insists on a full depth+1 block emits nothing
+        try (Gemma4.State state = model.newState(prompt.length + 2, 16)) {
+            model.ingest(state, Batch.prefill(prompt));
+            SpeculationResult r = speculate(model, state, 12, 4);
+            assertEquals(2, r.emitted().length(), "the last slots of the context are used");
+        }
+        // maxTokens bounds the committed stream, not just the emitted one
+        try (Gemma4.State state = model.newState(prompt.length + 32, 16)) {
+            model.ingest(state, Batch.prefill(prompt));
+            SpeculationResult r = speculate(model, state, 1, 4);
+            assertEquals(1, r.emitted().length());
+            assertEquals(1, r.committed().length(), "nothing past maxTokens is committed");
+            assertEquals(prompt.length + 1, state.position());
+        }
+    }
+
+    @Test
+    @Tag("driver")
+    void aNarrowDecodeStateAndAMissingSeedAreHandled() throws Exception {
+        Gemma4 model =
+                Gemma4.loadWithMtp(
+                        TestModels.require(MODEL_REF),
+                        TestModels.require(SIDECAR_REF),
+                        Arena.ofAuto());
+        int[] prompt = model.tokenizer().encodeToArray("Count upward: 1, 2, 3,");
+        // batchCapacity 1: the depth clamps to the block the state can hold
+        try (Gemma4.State state = model.newState(prompt.length + 32, 1)) {
+            for (int t : prompt) model.ingest(state, Batch.step(t));
+            SpeculationResult r = speculate(model, state, 4, 4);
+            assertTrue(r.emitted().length() > 0, "a decode-width state still speculates");
+        }
+        // a rewind leaves no ingested row to seed from: refused with the remedy, not AIOOBE
+        try (Gemma4.State state = model.newState(prompt.length + 32, 16)) {
+            model.ingest(state, Batch.prefill(prompt));
+            state.resumeAt(prompt.length - 1);
+            IllegalStateException e =
+                    assertThrows(IllegalStateException.class, () -> speculate(model, state, 4, 4));
+            assertTrue(e.getMessage().contains("token batch"), e.getMessage());
+        }
     }
 }
