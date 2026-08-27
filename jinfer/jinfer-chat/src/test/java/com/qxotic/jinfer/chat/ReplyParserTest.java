@@ -41,8 +41,11 @@ public final class ReplyParserTest {
         "=1)]",
         "{\"name\": \"f\",",
         " \"arguments\": {\"x\": 1",
-        ",},}"
+        ",},}",
+        "\n\n",
+        "Hi"
     };
+    // 18: the blank line every reasoning family puts after </think>; 19: a word after it
     // 8, 9: the two halves of a split two-byte UTF-8 code point (é = 0xC3 0xA9); 10: malformed;
     // 11-14: one call payload fragmented four ways, incl. a whitespace-only fragment;
     // 15-17: a JSON envelope with trailing commas (the salvage lane's payload, fragmented)
@@ -64,7 +67,9 @@ public final class ReplyParserTest {
         b("=1)]"),
         b("{\"name\": \"f\","),
         b(" \"arguments\": {\"x\": 1"),
-        b(",},}")
+        b(",},}"),
+        b("\n\n"),
+        b("Hi")
     };
     static final int SPECIALS = 5; // ids 0..4 are special
 
@@ -96,6 +101,19 @@ public final class ReplyParserTest {
     }
 
     @Test
+    void whitespaceAfterAThinkCloseIsFramingNotContent() {
+        // "</think>\n\nHi": the blank line frames the answer (llama.cpp's parser consumes it
+        // too); the streamed text and the finished message both start at "Hi", the ids stay
+        ReplyParser p = ReplyParser.spans(TOK);
+        List<Step> steps = run(p, 0, 5, 1, 18, 19);
+        Assertions.assertEquals(List.of(new Step("Hello", true), new Step("Hi", false)), steps);
+        Message m = p.finish();
+        Assertions.assertEquals("Hi", ((Content.Text) m.content().get(1)).text());
+        Assertions.assertEquals(
+                2, ((Content.Text) m.content().get(1)).verbatim().length(), "ids verbatim");
+    }
+
+    @Test
     void spanGrammarStepper() {
         // 1. plain content: fragments stream on the content channel, coalesce in the message
         ReplyParser p = ReplyParser.spans(TOK);
@@ -116,8 +134,9 @@ public final class ReplyParserTest {
         // 2. think span: markers hidden, channel flips, unterminated span closes at finish
         p = ReplyParser.spans(TOK);
         steps = run(p, 0, 5, 1, 6); // <think>Hello</think> world
+        // the space after </think> is the answer's frame, not its first character
         check(
-                steps.equals(List.of(new Step("Hello", true), new Step(" world", false))),
+                steps.equals(List.of(new Step("Hello", true), new Step("world", false))),
                 "think routing + channel flags: " + steps);
         m = p.finish();
         check(

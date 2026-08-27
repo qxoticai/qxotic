@@ -22,6 +22,7 @@ final class SpansReplyParser implements ReplyParser {
     private Message result;
     private boolean generated;
     private boolean inThink;
+    private boolean trimLead; // the whitespace the model puts after </think> is framing
     private boolean lastReasoning;
     private int seenSpans;
 
@@ -130,6 +131,16 @@ final class SpansReplyParser implements ReplyParser {
     }
 
     private Fragment emit(String fragment, IntSequence ids) {
+        if (!inThink && trimLead) {
+            // "</think>\n\n" is how every reasoning family frames the answer: the frame is not
+            // content (llama.cpp's parser consumes it too). The ids stay verbatim for the cache.
+            fragment = fragment.stripLeading();
+            if (fragment.isEmpty()) {
+                content.text("", ids); // nothing to show, but the ids are the reply's verbatim
+                return new Fragment("", ids);
+            }
+            trimLead = false;
+        }
         if (fragment.isEmpty()) return Fragment.EMPTY;
         lastReasoning = inThink;
         if (inThink) {
@@ -165,6 +176,7 @@ final class SpansReplyParser implements ReplyParser {
     private void closeThink() {
         if (!inThink) return;
         inThink = false;
+        trimLead = true;
         content.add(new Content.Reasoning(reasoningContent.parts(), reasoningIds.build()));
         reasoningContent = null;
         reasoningIds = IntSequence.newBuilder();

@@ -57,7 +57,7 @@ public final class ReplyLanguageTest {
     static final String[] SPECIALS = {
         "<think>", "</think>", "<call>", "</call>", "<end>", "<odd>", "[ARGS]"
     };
-    static final String CHARS = "abxy{}\":1,()f2[]";
+    static final String CHARS = "abxy{}\":1,()f2[] \n";
     static final int THINK = 0, END_THINK = 1, CALL = 2, END_CALL = 3, END = 4, ODD = 5, ARGS = 6;
     static final int HALF_1 = 7, HALF_2 = 8; // 0xC3, 0xA9: e-acute split across tokens
 
@@ -118,6 +118,28 @@ public final class ReplyLanguageTest {
         boolean[] ok = new boolean[n];
         for (int i = 0; i < n; i++) ok[i] = values[i] == 0f;
         return ok;
+    }
+
+    @Test
+    void whitespaceAfterAThinkCloseIsFramingNotContent() {
+        Walk w = Selection.of(family(), TOK).walk();
+        List<Step> steps = new ArrayList<>();
+        steps.addAll(run(w, THINK));
+        steps.addAll(run(w, toks("ab")));
+        steps.addAll(run(w, END_THINK));
+        steps.addAll(run(w, ch('\n'), ch('\n'), ch(' ')));
+        steps.addAll(run(w, toks("xy")));
+        steps.addAll(run(w, END));
+        assertEquals(
+                List.of(
+                        new Step("a", true),
+                        new Step("b", true),
+                        new Step("x", false),
+                        new Step("y", false)),
+                steps,
+                "the frame after </think> streams nothing");
+        Message m = w.finish();
+        assertEquals("xy", ((Content.Text) m.content().get(1)).text());
     }
 
     @Test
