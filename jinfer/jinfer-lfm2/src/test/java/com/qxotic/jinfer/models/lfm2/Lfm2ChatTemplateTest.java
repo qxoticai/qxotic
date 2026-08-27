@@ -18,6 +18,7 @@ import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -105,6 +106,36 @@ final class Lfm2ChatTemplateTest {
                 state(Lfm2ChatTemplate.fromGguf(tokenizer, direct), conversation)
                         .replyPrefix()
                         .isEmpty());
+    }
+
+    @Test
+    void promptOpensThinkingReadsBothNewlineSpellings() {
+        // the GGUF stores the Jinja escape; the provider used to search for a literal newline and
+        // never saw the 2.6B's pre-opened span
+        assertTrue(Lfm2ChatTemplate.promptOpensThinking(chatTemplate), "the 2.6B template");
+        assertTrue(
+                Lfm2ChatTemplate.promptOpensThinking(
+                        "{{- \"<|im_start|>assistant\\n<think>\" -}}"));
+        assertTrue(
+                Lfm2ChatTemplate.promptOpensThinking("{{- \"<|im_start|>assistant\n<think>\" -}}"));
+        assertFalse(Lfm2ChatTemplate.promptOpensThinking("{{- \"<|im_start|>assistant\\n\" -}}"));
+        assertFalse(Lfm2ChatTemplate.promptOpensThinking(""));
+    }
+
+    @Test
+    void providerPathOpensThinkingLikeTheFactory() throws Exception {
+        // Models.load is the ServiceLoader path every frontend uses; it must derive the same
+        // template as fromGguf (they had drifted: the served 2.6B never opened its span)
+        Conversation conversation =
+                new Conversation(List.of(Message.user("reason")), List.of(), true, "");
+        try (Arena arena = Arena.ofShared()) {
+            var loaded =
+                    Models.load(TestModels.require("hf.co/LiquidAI/LFM2.5-2.6B-GGUF:Q8_0"), arena);
+            Lfm2ChatTemplate served = (Lfm2ChatTemplate) loaded.template().orElseThrow();
+            assertArrayEquals(
+                    new int[] {special("<think>")},
+                    state(served, conversation).replyPrefix().toArray());
+        }
     }
 
     @Test

@@ -55,9 +55,7 @@ public final class Lfm2Provider implements ModelProvider {
         }
         Tokenizer tok = model.tokenizer();
         String source = gguf.getStringOrDefault("tokenizer.chat_template", "");
-        // the 2.6B-era template's generation prompt is "<|im_start|>assistant\n<think>" - detect
-        // the pre-opened think span from the checkpoint's own template source
-        boolean opensThink = source.contains("assistant\n<think>");
+        boolean opensThink = Lfm2ChatTemplate.promptOpensThinking(source);
         return new LoadedModel<>(
                 model,
                 tok,
