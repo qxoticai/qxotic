@@ -19,6 +19,19 @@ import org.junit.jupiter.api.Test;
 final class SamplingTest {
 
     @Test
+    void topPIsAHalfOpenUnitInterval() {
+        // the server validator states this same range to clients; keep the two in step
+        new Sampling(1f, Float.MIN_VALUE, 0, 0f, null);
+        new Sampling(1f, 1f, 0, 0f, null);
+        for (float bad : new float[] {0f, -0.1f, 1.0001f, Float.NaN}) {
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new Sampling(1f, bad, 0, 0f, null),
+                    "topP " + bad);
+        }
+    }
+
+    @Test
     void aTransposedTemperatureAndTopPIsRejected() {
         // topP is a probability mass; temperature is unbounded. Swapping a typical pair
         // (0.7, 0.95) is silently plausible, which is exactly why the range check exists

@@ -263,8 +263,8 @@ final class Validation {
         if (present(request, "top_p")) {
             float topp = Values.floatValue(request.get("top_p"), 1f);
             require(
-                    Float.isFinite(topp) && 0 <= topp && topp <= 1,
-                    "Invalid argument: top_p must be within [0, 1]");
+                    Float.isFinite(topp) && 0 < topp && topp <= 1,
+                    "Invalid argument: top_p must be within (0, 1]"); // Sampling's own range
         }
         if (present(request, "top_k")) {
             require(
