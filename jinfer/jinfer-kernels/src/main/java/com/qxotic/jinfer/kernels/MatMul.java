@@ -45,12 +45,16 @@ import jdk.incubator.vector.VectorOperators;
  * bandwidth-bound) is the Java floor (the dense dots beat jam's gemv there), except the C2 {@code
  * slowDot} k-quant exception ({@code Q4_K}/{@code Q5_K}/{@code Q6_K} on a JIT that doesn't
  * intrinsify the Vector API - those decode through jam) and the no-Vector-API case (every decode
- * jams); <b>prefill</b> ({@code n > 1}, compute-bound) tries native jam, then Vector-API jam, then
- * the floor — jam is only offered a call when the dtype has a kernel AND k and the weight offset
- * are block-aligned ({@code Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code c} are
- * FP32 by construction). A runtime decline (EBUSY, older libjam) falls to the next rung. A backend
- * can be switched off with {@code -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code
- * scalar}). With no jam backend enabled or on the classpath the path is bit-identical to the floor.
+ * jams). On AArch64 ordinary Q4_0 decode uses native JAM by default; {@code
+ * -Djinfer.q4.nativeDecode=false} restores the portable Vector API path. AArch64 Q8_0 decode
+ * likewise uses native JAM by default so one activation requant feeds NEON SDOT; {@code
+ * -Djinfer.q8.nativeDecode=false} restores the portable Vector API path. <b>Prefill</b> ({@code n >
+ * 1}, compute-bound) tries native jam, then Vector-API jam, then the floor — jam is only offered a
+ * call when the dtype has a kernel AND k and the weight offset are block-aligned ({@code
+ * Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A
+ * runtime decline (EBUSY, older libjam) falls to the next rung. A backend can be switched off with
+ * {@code -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam
+ * backend enabled or on the classpath the path is bit-identical to the floor.
  */
 public final class MatMul {
 
@@ -58,6 +62,32 @@ public final class MatMul {
 
     // tiny matvec (e.g. the 32-row MoE router): the ForkJoin round trip costs more than the work
     static final int TINY_MATVEC_ELEMS = 1 << 18;
+
+    private static final boolean ARM_NATIVE_Q4_DECODE =
+            System.getProperty("os.arch", "").contains("aarch64")
+                    && Boolean.parseBoolean(System.getProperty("jinfer.q4.nativeDecode", "true"));
+    private static final boolean ARM_NATIVE_Q8_DECODE =
+            System.getProperty("os.arch", "").contains("aarch64")
+                    && Boolean.parseBoolean(System.getProperty("jinfer.q8.nativeDecode", "true"));
+    private static final boolean ARM_NATIVE_KQ_DECODE =
+            System.getProperty("os.arch", "").contains("aarch64")
+                    && Boolean.parseBoolean(System.getProperty("jinfer.kq.nativeDecode", "true"));
+    static {
+        // -Djam.native.parallelFor=true: hand jinfer's pool to jam as its executor (one pool total).
+        // Reflective: jam-native is an optional runtime dependency, resolved like the NATIVE backend.
+        if (Boolean.parseBoolean(System.getProperty("jam.native.parallelFor", "false"))) {
+            try {
+                Class.forName("com.qxotic.jam.libjam.NativeJAM")
+                        .getMethod("parallelExecutor", java.util.function.ObjIntConsumer.class)
+                        .invoke(
+                                null,
+                                (java.util.function.ObjIntConsumer<java.util.function.IntConsumer>)
+                                        (body, n) -> Parallel.forLoop(n, body));
+            } catch (ReflectiveOperationException e) {
+                // no jam-native on the classpath: the property is inert
+            }
+        }
+    }
 
     private static final int Q8_BLOCK = 32; // Q8_0 elements per block
     private static final int Q8_BLOCK_BYTES = 34; // f16 scale + 32 int8
@@ -172,6 +202,7 @@ public final class MatMul {
         shapedMm(w, a, c, 1);
     }
 
+
     /** The shared implementation behind both shaped entry points: validate once, then call mm. */
     private static void shapedMm(
             MemoryView<MemorySegment> w,
@@ -240,14 +271,36 @@ public final class MatMul {
         Views.requireContiguous(w, "w");
         MemorySegment ws = w.memory().base();
         long wBase = w.byteOffset();
-        // prefill rungs: native jam -> Vector-API jam -> floor. Decode (n==1) stays on the
-        // floor - its parallel dot() vectorizes, and the dense dots beat jam's gemv there -
-        // EXCEPT Dispatch's slowDot exception: C2 runs the byte-unpack k-quant dots largely
-        // un-intrinsified (Q4_K_M decode 11 t/s vs jam's 31), so on a slow-vector JIT those
-        // decode through jam too. (Legacy also jammed every decode when the Vector API was
-        // absent entirely.)
+        // Packed weights (JamPack) exist only because the native backend asked for them: no other
+        // rung can read the bytes, so this either runs on jam or is a hard error - never a silent
+        // fall-through to a kernel that would misread the layout.
+        if (dt instanceof JamPacked) {
+            if (!inPlace
+                    && jamApplies(dt, k, wOff)
+                    && NATIVE != null
+                    && NATIVE.mm(
+                            ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
+                            n, k)) {
+                return;
+            }
+            throw new IllegalStateException(
+                    "packed weight rejected by jam: " + dt + " m=" + m + " n=" + n + " k=" + k
+                            + " wOff=" + wOff);
+        }
+        // Prefill rungs: native jam -> Vector-API jam -> floor. Decode stays on the Java floor
+        // except Dispatch's slowDot types and AArch64 Q4_0/Q8_0: their native activation-requant +
+        // SDOT GEMV path is more than twice as fast as byte-to-F32 Vector API dots.
         boolean slowDot = !FAST_VECTOR_JIT && bytePackedDot(dt);
-        boolean jamDecode = n == 1 && (!USE_VECTOR_API || slowDot);
+        boolean nativeQ4Decode = ARM_NATIVE_Q4_DECODE && dt == DataType.Q4_0;
+        boolean nativeQ8Decode = ARM_NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
+        boolean nativeKqDecode = ARM_NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
+        boolean jamDecode =
+                n == 1
+                        && (!USE_VECTOR_API
+                                || slowDot
+                                || nativeQ4Decode
+                                || nativeQ8Decode
+                                || nativeKqDecode);
         if ((n > 1 || jamDecode) && !inPlace && jamApplies(dt, k, wOff)) {
             if (NATIVE != null
                     && NATIVE.mm(
@@ -1791,6 +1844,11 @@ public final class MatMul {
     /**
      * One JAM backend over Raw pointers; {@code false} = runtime decline (caller falls through).
      */
+    /** {@link JamPack}'s policy+size query: 0 without a native backend (nothing packs). */
+    static long nativePackSize(DataType dt, int rows, int k) {
+        return NATIVE == null ? 0 : NATIVE.jam.packSize(jamTag(dt), rows, k);
+    }
+
     private static final class JamMm {
         private final JAM jam;
 
@@ -1876,6 +1934,10 @@ public final class MatMul {
      * test.
      */
     static boolean jamApplies(DataType dt, int k, long wOff) {
+        if (dt instanceof JamPacked) {
+            // one block = one row; jam reads whole 4-row groups, so offsets sit on group bounds
+            return k == dt.elementsPerBlock() && wOff % (4L * k) == 0;
+        }
         if (dt != DataType.Q8_0
                 && dt != DataType.Q4_0
                 && dt != DataType.Q4_K
@@ -1907,6 +1969,7 @@ public final class MatMul {
 
     /** jota DataType -> jam dtype tag (== ggml_type value, mapped explicitly to stay honest). */
     static int jamTag(DataType dt) {
+        if (dt instanceof JamPacked p) return jamTag(p.base()) | JAM.PACKED;
         if (dt == DataType.Q8_0) return JAM.Q8_0;
         if (dt == DataType.Q4_0) return JAM.Q4_0;
         if (dt == DataType.Q4_K) return JAM.Q4_K;

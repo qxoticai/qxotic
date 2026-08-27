@@ -103,7 +103,10 @@ public final class ModelLoader {
                     tensor.name(),
                     MemoryView.of(memory, tensor.offset(), dtype, Layout.rowMajor(physical)));
         }
-        return tensorViews;
+        // Load-time weight packing (jam's in-memory layouts; -Djinfer.pack=false to disable):
+        // packed tensors move into a page-aligned slab in the SAME arena and their canonical mmap
+        // pages are dropped - one copy total, shared as-is with Metal via unified memory.
+        return JamPack.apply(tensorViews, arena);
     }
 
     /**
