@@ -404,11 +404,14 @@ public final class MatMul {
         }
         // gemm: C[s][row] = dot(W row, A row s)
         long aRowBytes = (long) aStride * 4, cRowBytes = (long) cStride * 4;
+        // the cell count indexes the parallel loop: past 2^31 (8k rows x a 262k vocab) it must
+        // fail here, not wrap negative and compute nothing
+        int cells = Math.multiplyExact(n, m);
         if (inPlace) {
-            float[] tmp = new float[n * m];
+            float[] tmp = new float[cells];
             Parallel.forLoop(
                     0,
-                    n * m,
+                    cells,
                     idx -> {
                         int s = idx / m, row = idx - s * m;
                         tmp[idx] =
@@ -428,7 +431,7 @@ public final class MatMul {
         } else {
             Parallel.forLoop(
                     0,
-                    n * m,
+                    cells,
                     idx -> {
                         int s = idx / m, row = idx - s * m;
                         writeFloat(
