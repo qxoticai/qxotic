@@ -40,6 +40,7 @@ import org.springframework.ai.chat.observation.ChatModelObservationDocumentation
 import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
@@ -375,15 +376,28 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         });
     }
 
-    /** The complete request seen by observation, validation and execution. */
+    /**
+     * The complete request seen by observation, validation and execution: request values over the
+     * model's defaults. Tools follow Spring AI's own rule ({@link
+     * ToolCallingChatOptions#mergeToolCallbacks}): a request that names tools replaces the
+     * defaults' list, one that names none inherits it. {@code combineWith} concatenates the two
+     * lists instead, which declared every default tool twice (ChatClient already folds the defaults
+     * into the request) and let no request drop them.
+     */
     static Prompt effectivePrompt(Prompt requestedPrompt, JinferChatOptions defaults) {
         ChatOptions requested = requestedPrompt.getOptions();
+        if (requested == null) return new Prompt(requestedPrompt.getInstructions(), defaults);
+        JinferChatOptions request = JinferChatOptions.from(requested);
         JinferChatOptions effective =
-                requested == null
-                        ? defaults
-                        : defaults.mutate()
-                                .combineWith(JinferChatOptions.from(requested).mutate())
-                                .build();
+                defaults.mutate()
+                        .combineWith(request.mutate())
+                        .toolCallbacks(
+                                ToolCallingChatOptions.mergeToolCallbacks(
+                                        request.getToolCallbacks(), defaults.getToolCallbacks()))
+                        .toolContext(
+                                ToolCallingChatOptions.mergeToolContext(
+                                        request.getToolContext(), defaults.getToolContext()))
+                        .build();
         return new Prompt(requestedPrompt.getInstructions(), effective);
     }
 
