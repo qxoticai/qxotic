@@ -10,15 +10,15 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.util.StringUtils;
 
 /** Wires one {@link JinferChatModel} bean from {@code spring.ai.jinfer.chat.*} properties. */
 @AutoConfiguration
 @ConditionalOnClass(JinferChatModel.class)
-@ConditionalOnProperty(name = "spring.ai.model.chat", havingValue = "jinfer", matchIfMissing = true)
+@Conditional(JinferChatSelected.class)
 @EnableConfigurationProperties(JinferChatProperties.class)
 public class JinferChatAutoConfiguration {
 
