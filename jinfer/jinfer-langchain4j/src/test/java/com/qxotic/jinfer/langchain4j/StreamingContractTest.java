@@ -207,11 +207,15 @@ class StreamingContractTest {
                         }
                     }
                 };
-        model.streaming().chat("Name one colour.", r);
+        // a prompt whose reply spans several tokens: "Name one colour." is answered "Blue", one
+        // delta, which cannot show that deltas keep arriving after the fault
+        model.streaming().chat("Count from one to five, comma separated.", r);
         r.awaitCompletion();
 
         assertTrue(r.events.contains("error"), "the handler fault must be reported: " + r.events);
         assertTrue(r.events.contains("complete"), "the generation must still finish: " + r.events);
-        assertTrue(deltas.get() > 1, "deltas must keep arriving after a handler fault");
+        assertTrue(
+                deltas.get() > 1,
+                "deltas must keep arriving after a handler fault: " + r.events + " " + r.text);
     }
 }
