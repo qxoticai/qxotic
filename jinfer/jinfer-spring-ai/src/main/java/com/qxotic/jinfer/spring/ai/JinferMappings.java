@@ -128,34 +128,47 @@ final class JinferMappings {
 
     /** Inline/bytes or a LOCAL file - the library never fetches over the network. */
     private static byte[] bytes(org.springframework.ai.content.Media media) {
-        rejectRemote(media.getData());
+        Object data = rejectRemote(media.getData());
+        if (data instanceof byte[] inline) return inline;
+        Path file = localFile(data);
+        if (file != null) {
+            try {
+                return Files.readAllBytes(file);
+            } catch (IOException e) {
+                throw new UncheckedIOException("cannot read media file " + file, e);
+            }
+        }
         return media.getDataAsByteArray();
     }
 
-    private static Path localPath(org.springframework.ai.content.Media media) {
-        Object data = rejectRemote(media.getData());
+    /** A file:// URI (the Media(MimeType, URI) form, stored as a String) or a file Resource. */
+    private static Path localFile(Object data) {
+        if (data instanceof URI u && "file".equals(u.getScheme())) return Path.of(u);
+        if (data instanceof String s && s.startsWith("file:")) return Path.of(URI.create(s));
         if (data instanceof Resource r) {
             try {
                 return r.getFile().toPath();
             } catch (IOException e) {
-                throw new UnsupportedOperationException(
-                        "video needs a local file Resource, got " + r, e);
+                return null;
             }
         }
-        if (data instanceof URI u && "file".equals(u.getScheme())) {
-            return Path.of(u);
-        }
-        if (data instanceof String s && s.startsWith("file:")) {
-            return Path.of(URI.create(s));
-        }
-        // inline bytes deferred - the fix is byte[] overloads on VideoCodec when a
-        // caller actually holds bytes, NOT per-adapter temp-file handling
+        return null;
+    }
+
+    private static Path localPath(org.springframework.ai.content.Media media) {
+        Object data = rejectRemote(media.getData());
+        Path file = localFile(data);
+        if (file != null) return file;
+        // inline bytes deferred - the fix is byte[] overloads on VideoCodec when a caller
+        // actually holds bytes, NOT per-adapter temp-file handling. Spring AI 2.x reads a
+        // Resource into bytes eagerly, so the only form that reaches here as a file is the
+        // Media(MimeType, URI) constructor with a file:// URI
         if (data instanceof byte[])
             throw new UnsupportedOperationException(
-                    "inline video bytes are not supported: write them to a file and pass a local"
-                            + " file Resource or file:// URI");
+                    "inline video bytes are not supported: write them to a file and pass"
+                            + " Media(MimeType, URI) with a file:// URI");
         throw new UnsupportedOperationException(
-                "video needs a local file Resource or file:// URI, got " + data);
+                "video needs Media(MimeType, URI) with a file:// URI, got " + data);
     }
 
     private static Object rejectRemote(Object data) {
