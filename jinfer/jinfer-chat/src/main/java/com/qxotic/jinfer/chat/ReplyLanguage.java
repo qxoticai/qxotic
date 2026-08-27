@@ -834,6 +834,7 @@ public final class ReplyLanguage {
         private IntSequence.Builder contentIds = IntSequence.newBuilder();
         private final List<Content> calls = new ArrayList<>();
         private boolean lastReasoning;
+        private boolean trimLead; // the whitespace the model puts after </think> is framing
         private boolean ended;
         private boolean generated;
         private boolean seeding;
@@ -1158,9 +1159,19 @@ public final class ReplyLanguage {
         private Fragment stream(byte[] bs, int token) {
             PendingUtf8.Fragment frag = pending.add(bs, token);
             if (frag == null) return Fragment.EMPTY;
-            route(frag.text(), frag.ids());
+            String text = frag.text();
+            if (trimLead && region.kind() != Kind.THINK) {
+                // the whitespace after </think> frames the answer; not content (ids stay verbatim)
+                text = text.stripLeading();
+                if (text.isEmpty()) {
+                    route("", frag.ids()); // nothing to show; the ids stay the reply's verbatim
+                    return new Fragment("", frag.ids());
+                }
+                trimLead = false;
+            }
+            route(text, frag.ids());
             lastReasoning = region.kind() == Kind.THINK;
-            return new Fragment(frag.text(), frag.ids());
+            return new Fragment(text, frag.ids());
         }
 
         private void route(String text, IntSequence ids) {
@@ -1223,6 +1234,7 @@ public final class ReplyLanguage {
 
         private void exitRegion() {
             flushPending(region.kind());
+            if (region.kind() == Kind.THINK) trimLead = true;
             // think and content ACCUMULATE across regions: the reply's structure is one
             // coalesced reasoning part, one coalesced text part, then the calls (the ReplyParser
             // contract, and what every echo consumer expects)
