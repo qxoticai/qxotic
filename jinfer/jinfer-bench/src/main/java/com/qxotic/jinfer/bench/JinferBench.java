@@ -230,8 +230,7 @@ public final class JinferBench {
                                 depthSnapshot =
                                         MemorySegment.ofArray(
                                                 new byte[Math.toIntExact(codec.byteSize(0))]);
-                                codec.capture(
-                                        state, prefix.length, prefix.length, depthSnapshot);
+                                codec.capture(state, prefix.length, prefix.length, depthSnapshot);
                             });
         }
 
@@ -462,9 +461,15 @@ public final class JinferBench {
                     && mm.projector(com.qxotic.jinfer.media.Media.Image.class).isPresent()) {
                 byte[] bytes = Files.readAllBytes(mediaPath);
                 var image = ImageCodec.decode(bytes);
-                var request = mediaRequest(image, ContentKey.sha256(bytes), gen);
-                long coldMedia = promptNanos(engine, request);
-                long warmMedia = promptNanos(engine, request);
+                ContentKey key = ContentKey.sha256(bytes);
+                // a different question after the same image: the prompt cache cannot serve the
+                // second pass from the first (the text differs), only the media cache can, so
+                // warm measures the projector replay and nothing else
+                long coldMedia =
+                        promptNanos(engine, mediaRequest(image, key, gen, "Describe this image."));
+                long warmMedia =
+                        promptNanos(
+                                engine, mediaRequest(image, key, gen, "What is in this picture?"));
                 media = String.format("%.1f / %.1f", coldMedia / 1e6, warmMedia / 1e6);
             }
         }
@@ -502,14 +507,17 @@ public final class JinferBench {
     }
 
     private static ChatEngine.Request mediaRequest(
-            com.qxotic.jinfer.media.Media.Image image, ContentKey contentKey, int gen) {
+            com.qxotic.jinfer.media.Media.Image image,
+            ContentKey contentKey,
+            int gen,
+            String question) {
         return new ChatEngine.Request(
                 List.of(
                         new Message(
                                 Role.USER,
                                 List.of(
                                         new Content.Media(image, contentKey),
-                                        new Content.Text("Describe this image.", null)))),
+                                        new Content.Text(question, null)))),
                 List.of(),
                 false,
                 gen,

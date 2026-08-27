@@ -259,7 +259,9 @@ public final class FrozenBlocks {
             // the header re-read turns a stale view into a loud refusal instead of data loss.
             try (FileLock ignored = ch.lock()) {
                 ByteBuffer head = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
-                ch.read(head, COUNT_OFFSET);
+                if (ch.read(head, COUNT_OFFSET) != head.capacity()) {
+                    throw new IOException("catalog " + file + " is shorter than its header");
+                }
                 head.flip();
                 int diskCount = head.getInt();
                 long diskIndexOffset = head.getLong();
@@ -283,7 +285,7 @@ public final class FrozenBlocks {
         long[] offsets = new long[fresh.size()];
         for (int i = 0; i < fresh.size(); i++) {
             offsets[i] = off;
-            writeFully(ch, fresh.get(i).mem().asByteBuffer(), off);
+            writeFully(ch, fresh.get(i).mem(), off);
             off = align(off + fresh.get(i).mem().byteSize());
         }
         long newIndexOffset = off;
@@ -345,10 +347,26 @@ public final class FrozenBlocks {
         while (buf.hasRemaining()) pos += ch.write(buf, pos);
     }
 
+    /** A blob to the channel at {@code pos}: ByteBuffer views are int-sized, a blob is not. */
+    private static void writeFully(FileChannel ch, MemorySegment mem, long pos) throws IOException {
+        for (long off = 0; off < mem.byteSize(); off += BUFFER_VIEW) {
+            long len = Math.min(BUFFER_VIEW, mem.byteSize() - off);
+            writeFully(ch, mem.asSlice(off, len).asByteBuffer(), pos + off);
+        }
+    }
+
+    /**
+     * The largest ByteBuffer view taken over a blob (a define-only prefill block can pass 2 GiB).
+     */
+    private static final long BUFFER_VIEW = 1L << 30;
+
     /** CRC32C of a blob - the frozen-block integrity stamp (store CRCs cover only pool blobs). */
     static int crc32c(MemorySegment mem) {
         CRC32C crc = new CRC32C();
-        crc.update(mem.asByteBuffer());
+        for (long off = 0; off < mem.byteSize(); off += BUFFER_VIEW) {
+            long len = Math.min(BUFFER_VIEW, mem.byteSize() - off);
+            crc.update(mem.asSlice(off, len).asByteBuffer());
+        }
         return (int) crc.getValue();
     }
 
