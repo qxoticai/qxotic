@@ -33,7 +33,12 @@ final class Lfm2ToolCodec {
         }
     }
 
-    static String renderCalls(List<Content.ToolCall> calls) {
+    /**
+     * The template's {@code render_tool_calls}: {@code [name(arg=value, ...)]}. {@code escape}
+     * selects the 2.6B {@code format_arg_value} (escaped strings, JSON lists) over the 8B one (raw
+     * strings, Python repr lists); mappings are JSON in both.
+     */
+    static String renderCalls(List<Content.ToolCall> calls, boolean escape) {
         StringBuilder out = new StringBuilder("[");
         for (int i = 0; i < calls.size(); i++) {
             if (i > 0) out.append(", ");
@@ -44,7 +49,7 @@ final class Lfm2ToolCodec {
                 if (!first) out.append(", ");
                 first = false;
                 out.append(argument.getKey()).append('=');
-                writeArgument(out, argument.getValue());
+                writeArgument(out, argument.getValue(), escape);
             }
             out.append(')');
         }
@@ -60,8 +65,12 @@ final class Lfm2ToolCodec {
         return out.append(']').toString();
     }
 
-    private static void writeArgument(StringBuilder out, Object value) {
-        if (value instanceof String text) {
+    private static void writeArgument(StringBuilder out, Object value, boolean escape) {
+        if (value instanceof String text && !escape) {
+            out.append('\'').append(text).append('\'');
+        } else if (value instanceof List<?> list && !escape) {
+            writePython(out, list);
+        } else if (value instanceof String text) {
             out.append('\'');
             for (int i = 0; i < text.length(); i++) {
                 char c = text.charAt(i);
@@ -82,6 +91,52 @@ final class Lfm2ToolCodec {
             out.append("None");
         } else {
             out.append(value);
+        }
+    }
+
+    /** Python {@code str()} of a value: what {@code | string} renders for an 8B list argument. */
+    private static void writePython(StringBuilder out, Object value) {
+        switch (value) {
+            case null -> out.append("None");
+            case String text -> {
+                // repr: single quotes, backslash escapes (a string holding a quote and no
+                // double quote would be double-quoted by Python; ponytail, kept single)
+                out.append('\'');
+                for (int i = 0; i < text.length(); i++) {
+                    char c = text.charAt(i);
+                    switch (c) {
+                        case '\\' -> out.append("\\\\");
+                        case '\'' -> out.append("\\'");
+                        case '\n' -> out.append("\\n");
+                        case '\r' -> out.append("\\r");
+                        case '\t' -> out.append("\\t");
+                        default -> out.append(c);
+                    }
+                }
+                out.append('\'');
+            }
+            case Boolean bool -> out.append(bool ? "True" : "False");
+            case List<?> list -> {
+                out.append('[');
+                for (int i = 0; i < list.size(); i++) {
+                    if (i > 0) out.append(", ");
+                    writePython(out, list.get(i));
+                }
+                out.append(']');
+            }
+            case Map<?, ?> map -> {
+                out.append('{');
+                boolean first = true;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!first) out.append(", ");
+                    first = false;
+                    writePython(out, String.valueOf(entry.getKey()));
+                    out.append(": ");
+                    writePython(out, entry.getValue());
+                }
+                out.append('}');
+            }
+            default -> out.append(value);
         }
     }
 

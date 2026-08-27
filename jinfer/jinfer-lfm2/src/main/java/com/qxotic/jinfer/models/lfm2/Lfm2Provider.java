@@ -55,7 +55,6 @@ public final class Lfm2Provider implements ModelProvider {
         }
         Tokenizer tok = model.tokenizer();
         String source = gguf.getStringOrDefault("tokenizer.chat_template", "");
-        boolean opensThink = Lfm2ChatTemplate.promptOpensThinking(source);
         return new LoadedModel<>(
                 model,
                 tok,
@@ -63,7 +62,7 @@ public final class Lfm2Provider implements ModelProvider {
                 SpecialTokens.stops(
                         tok, -1, "<|im_end|>", "<eos>", "<|endoftext|>", "<end_of_turn>"),
                 Models.modelSeed(fileChannel),
-                Optional.of(new Lfm2ChatTemplate(model, opensThink)),
+                Optional.of(Lfm2ChatTemplate.fromGguf(model, gguf)),
                 LoadedModel.SamplingDefaults.NONE);
     }
 

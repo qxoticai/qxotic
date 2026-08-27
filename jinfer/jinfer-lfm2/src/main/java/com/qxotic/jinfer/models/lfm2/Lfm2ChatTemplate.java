@@ -35,7 +35,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
     private final Lfm2Vision vision;
-    private final boolean promptOpensThinking;
+    private final Dialect dialect;
     private final IntSequence promptStart;
     private final int turnOpen;
     private final int turnClose;
@@ -45,12 +45,42 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private final int thinkClose;
     private final ReplyLanguage.Spans replyLanguage;
 
-    /** Builds the native template with the checkpoint's generation-prompt behavior. */
+    /**
+     * What a checkpoint's Jinja template does that the codec must mirror, read off its source: the
+     * LFM2.5 family ships three dialects. 2.6B opens the think span in its generation prompt, keeps
+     * thinking after the last user turn and escapes call arguments; 8B keeps thinking the same way
+     * but renders string arguments raw and lists as Python repr; 350M keeps the LAST assistant
+     * turn's thinking wherever it sits.
+     */
+    public record Dialect(
+            boolean promptOpensThinking,
+            boolean lastAssistantKeepsThinking,
+            boolean escapesArguments) {
+        public static Dialect of(String templateSource) {
+            return new Dialect(
+                    Lfm2ChatTemplate.promptOpensThinking(templateSource),
+                    templateSource.contains("last_assistant_index"),
+                    !templateSource.contains("format_arg_value")
+                            || templateSource.contains("replace("));
+        }
+    }
+
+    /** Builds the native template in the checkpoint's dialect. */
     public static Lfm2ChatTemplate fromGguf(Tokenizer tokenizer, GGUF gguf) {
         Objects.requireNonNull(gguf, "gguf");
         return new Lfm2ChatTemplate(
                 tokenizer,
-                promptOpensThinking(gguf.getStringOrDefault("tokenizer.chat_template", "")));
+                null,
+                Dialect.of(gguf.getStringOrDefault("tokenizer.chat_template", "")));
+    }
+
+    /** Builds the native template in the checkpoint's dialect, with the model's vision tower. */
+    public static Lfm2ChatTemplate fromGguf(Lfm2 model, GGUF gguf) {
+        Objects.requireNonNull(gguf, "gguf");
+        return new Lfm2ChatTemplate(
+                model.tokenizer(),
+                model.vision(),
+                Dialect.of(gguf.getStringOrDefault("tokenizer.chat_template", "")));
     }
 
     /**
@@ -65,17 +95,18 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     public Lfm2ChatTemplate(Tokenizer tokenizer, boolean promptOpensThinking) {
-        this(tokenizer, null, promptOpensThinking);
+        this(tokenizer, null, new Dialect(promptOpensThinking, false, true));
     }
 
     public Lfm2ChatTemplate(Lfm2 model, boolean promptOpensThinking) {
-        this(model.tokenizer(), model.vision(), promptOpensThinking);
+        this(model.tokenizer(), model.vision(), new Dialect(promptOpensThinking, false, true));
     }
 
-    Lfm2ChatTemplate(Tokenizer tokenizer, Lfm2Vision vision, boolean promptOpensThinking) {
+    Lfm2ChatTemplate(Tokenizer tokenizer, Lfm2Vision vision, Dialect dialect) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.vision = vision;
-        this.promptOpensThinking = promptOpensThinking;
+        this.dialect = Objects.requireNonNull(dialect, "dialect");
+        boolean promptOpensThinking = dialect.promptOpensThinking();
         promptStart = IntSequence.of(SpecialTokens.require(tokenizer, "<|startoftext|>"));
         turnOpen = SpecialTokens.require(tokenizer, "<|im_start|>");
         turnClose = SpecialTokens.require(tokenizer, "<|im_end|>");
@@ -137,17 +168,19 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
             out.flush();
         }
 
-        int lastUser = lastUser(messages);
+        int lastUser = last(messages, Role.USER), lastAssistant = last(messages, Role.ASSISTANT);
         for (int i = first; i < messages.size(); i++) {
             Message message = messages.get(i);
+            boolean keepThinking =
+                    dialect.lastAssistantKeepsThinking() ? i == lastAssistant : i > lastUser;
             if (spliceable(message)) splice(out, message);
-            else writeTurn(out, message, i > lastUser, batchCapacity);
+            else writeTurn(out, message, keepThinking, batchCapacity);
             out.flush();
         }
 
         out.id(turnOpen).text("assistant\n");
         IntSequence replyPrefix = IntSequence.empty();
-        if (promptOpensThinking) {
+        if (dialect.promptOpensThinking()) {
             // the checkpoint opens the span on every assistant turn; with thinking off we close
             // it at once, the shape its history takes for a turn without reasoning (llama.cpp
             // does the same). A bare header is a prompt the model never saw.
@@ -193,19 +226,22 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     private void writeTurn(
-            PromptWriter out, Message message, boolean afterLastUser, int batchCapacity) {
+            PromptWriter out, Message message, boolean keepThinking, int batchCapacity) {
         out.id(turnOpen).text(message.role().name()).text("\n");
         if (message.role().equals(Role.ASSISTANT)) {
             boolean typedReasoning =
                     message.content().stream().anyMatch(Content.Reasoning.class::isInstance);
-            if (afterLastUser) writeReasoning(out, message);
+            if (keepThinking) writeReasoning(out, message);
             String visible = text(message);
-            if (!afterLastUser) visible = stripThinking(visible);
-            if (typedReasoning && !afterLastUser) visible = visible.strip();
-            out.text(visible);
+            if (!keepThinking) visible = stripThinking(visible);
+            if (typedReasoning && !keepThinking) visible = visible.strip();
+            if (keepThinking) writeVisible(out, visible);
+            else out.text(visible);
             List<Content.ToolCall> calls = calls(message);
             if (!calls.isEmpty()) {
-                out.id(callOpen).text(Lfm2ToolCodec.renderCalls(calls)).id(callClose);
+                out.id(callOpen)
+                        .text(Lfm2ToolCodec.renderCalls(calls, dialect.escapesArguments()))
+                        .id(callClose);
             }
         } else {
             for (Content part : message.content()) {
@@ -266,6 +302,24 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         if (media instanceof Media.Image image) return vision.positions(image);
         throw new UnsupportedOperationException(
                 media.getClass().getSimpleName() + " is not supported by LFM2-VL");
+    }
+
+    /**
+     * Kept inline markers are the think ids (what the template path mints from the same text); the
+     * reasoning between them stays untrusted text.
+     */
+    private void writeVisible(PromptWriter out, String visible) {
+        int open = visible.indexOf(THINK_OPEN);
+        int close = open < 0 ? -1 : visible.indexOf(THINK_CLOSE, open);
+        if (open < 0 || close < 0 || thinkOpen < 0) {
+            out.text(visible);
+            return;
+        }
+        out.text(visible.substring(0, open))
+                .id(thinkOpen)
+                .text(visible.substring(open + THINK_OPEN.length(), close))
+                .id(thinkClose);
+        writeVisible(out, visible.substring(close + THINK_CLOSE.length()));
     }
 
     private void writeReasoning(PromptWriter out, Message message) {
@@ -377,10 +431,9 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         return calls;
     }
 
-    private static int lastUser(List<Message> messages) {
+    private static int last(List<Message> messages, Role role) {
         int last = -1;
-        for (int i = 0; i < messages.size(); i++)
-            if (messages.get(i).role().equals(Role.USER)) last = i;
+        for (int i = 0; i < messages.size(); i++) if (messages.get(i).role().equals(role)) last = i;
         return last;
     }
 

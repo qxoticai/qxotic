@@ -27,7 +27,7 @@ final class Lfm2ToolCodecTest {
 
         String wire =
                 Lfm2ToolCodec.renderCalls(
-                        List.of(new Content.ToolCall("", "configure", arguments)));
+                        List.of(new Content.ToolCall("", "configure", arguments)), true);
         List<Content.ToolCall> parsed = Lfm2ToolCodec.parse(wire);
 
         assertEquals(1, parsed.size());
