@@ -206,7 +206,18 @@ public final class BlockTree<S extends ContextState> {
      * dead tip whose commits no-op) when the budget refuses the block.
      */
     Block commit(Block tip, long[] spanFp, int off, int len, S state) {
-        if (!tip.live || len == 0) return tip;
+        if (len == 0) return tip;
+        if (!tip.live) {
+            // an evicted tip (another session's commit under budget pressure) is not the end of
+            // this session: if the same block is live again, chain on it; otherwise the commit
+            // is a visible refusal, not a silent no-op for the rest of the session's life
+            Block again = blocks.get(tip.key);
+            if (again == null || !again.live) {
+                if (tip != detached) refusals++;
+                return tip;
+            }
+            tip = again;
+        }
         if (state.position() != tip.to + len) {
             throw new IllegalStateException(
                     "commit of "

@@ -62,4 +62,42 @@ public final class BlockTreeEvictionTest {
         }
         System.out.println(cache.stats());
     }
+
+    @Test
+    void anEvictedRetainedTipReattachesWhenItsBlockIsBackInTheTree() {
+        // A commits one block and keeps its tip; B's traffic evicts it; C recommits the same
+        // block; A's next commit must chain on the live twin, not no-op forever on the corpse
+        BlockTree<FakeState> cache =
+                new BlockTree<>(
+                        new FakeCodec(),
+                        CacheStore.inMemory(),
+                        32 * 1024,
+                        ContentKey.sha256(new byte[] {1}));
+        long[] shared = {1, 2};
+        FakeState a = new FakeState();
+        BlockTree<FakeState>.Block tipA = cache.resume(new long[0], 0, a);
+        a.resumeAt(1);
+        tipA = cache.commit(tipA, shared, 0, 1, a);
+        org.junit.jupiter.api.Assertions.assertTrue(tipA.live);
+
+        FakeState b = new FakeState();
+        BlockTree<FakeState>.Block tipB = cache.resume(new long[0], 0, b);
+        long[] other = new long[8];
+        for (int i = 0; i < other.length; i++) {
+            other[i] = 100 + i;
+            b.resumeAt(i + 1);
+            tipB = cache.commit(tipB, other, i, 1, b);
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(tipA.live, "B's traffic evicted A's tip");
+
+        FakeState c = new FakeState();
+        BlockTree<FakeState>.Block tipC = cache.resume(new long[0], 0, c);
+        c.resumeAt(1);
+        cache.commit(tipC, shared, 0, 1, c);
+
+        a.resumeAt(2);
+        BlockTree<FakeState>.Block next = cache.commit(tipA, shared, 1, 1, a);
+        org.junit.jupiter.api.Assertions.assertTrue(next.live, "chained on the recommitted twin");
+        org.junit.jupiter.api.Assertions.assertEquals(2, next.to);
+    }
 }
