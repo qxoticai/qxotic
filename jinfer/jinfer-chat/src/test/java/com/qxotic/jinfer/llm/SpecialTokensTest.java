@@ -68,7 +68,7 @@ public final class SpecialTokensTest {
         check(ids.toList().equals(List.of(0, 5, 1)), "specials-aware encode maps markers: " + ids);
     }
 
-    private static final class FakeTokenizer implements Tokenizer {
+    static final class FakeTokenizer implements Tokenizer { // shared with GrammarLifetimeTest
         private final Vocabulary vocab = new FakeVocabulary();
 
         @Override
