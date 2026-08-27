@@ -273,6 +273,7 @@ public final class Ops {
                 row -> {
                     int outputYIndex = row / outputX, outputXIndex = row % outputX, samples = 0;
                     long destinationBase = (long) row * dim;
+                    fillInPlace(dst, destinationBase, dim, 0f); // dst is a sum, not an accumulator
                     for (int my = 0; my < merge; my++) {
                         int y = outputYIndex * merge + my;
                         if (y >= patchesY) continue;
