@@ -1323,6 +1323,113 @@ public final class GrammarSpecTest {
         acc("sc-any", anyJson, "42");
         acc("sc-any", anyJson, "null");
         rej("sc-any", anyJson, "{\"a\":}");
+
+        // $ref into $defs - what a generated schema emits for a type it names once and references
+        // (langchain4j and Spring AI both spell nested POJOs exactly this way)
+        Grammar.Spec refDefs =
+                sc(
+                        map(
+                                "$defs",
+                                        map(
+                                                "Addr",
+                                                map(
+                                                        "type", "object",
+                                                        "properties",
+                                                                map("city", map("type", "string")),
+                                                        "required", Arrays.asList("city"))),
+                                "type", "object",
+                                "properties", map("home", map("$ref", "#/$defs/Addr")),
+                                "required", Arrays.asList("home")));
+        acc("sc-ref", refDefs, "{\"home\":{\"city\":\"Munich\"}}");
+        rej("sc-ref", refDefs, "{\"home\":{\"city\":5}}");
+        rej("sc-ref", refDefs, "{\"home\":{}}");
+
+        // the older spelling, and a pointer INTO a definition rather than at it
+        Grammar.Spec refDeep =
+                sc(
+                        map(
+                                "definitions",
+                                map(
+                                        "Addr",
+                                        map(
+                                                "type",
+                                                "object",
+                                                "properties",
+                                                map("zip", map("type", "integer")))),
+                                "$ref",
+                                "#/definitions/Addr/properties/zip"));
+        acc("sc-refdeep", refDeep, "12345");
+        rej("sc-refdeep", refDeep, "\"12345\"");
+
+        // one definition referenced twice: both sites constrain
+        Grammar.Spec refTwice =
+                sc(
+                        map(
+                                "$defs", map("Id", map("type", "integer")),
+                                "type", "object",
+                                "properties",
+                                        map(
+                                                "from", map("$ref", "#/$defs/Id"),
+                                                "to", map("$ref", "#/$defs/Id")),
+                                "required", Arrays.asList("from", "to")));
+        acc("sc-reftwice", refTwice, "{\"from\":1,\"to\":2}");
+        rej("sc-reftwice", refTwice, "{\"from\":1,\"to\":\"2\"}");
+
+        // RECURSION - the reason $ref exists at all: a type that reaches itself. The rule name is
+        // registered before its body is built, so this compiles into a recursive GBNF rule instead
+        // of diverging here. A base case (the integer arm) makes the language non-empty.
+        Grammar.Spec tree =
+                sc(
+                        map(
+                                "$defs",
+                                map(
+                                        "Node",
+                                        map(
+                                                "anyOf",
+                                                Arrays.asList(
+                                                        map("type", "integer"),
+                                                        map(
+                                                                "type", "object",
+                                                                "properties",
+                                                                        map(
+                                                                                "child",
+                                                                                map(
+                                                                                        "$ref",
+                                                                                        "#/$defs/Node")),
+                                                                "required",
+                                                                        Arrays.asList("child"))))),
+                                "$ref",
+                                "#/$defs/Node"));
+        acc("sc-rec", tree, "7");
+        acc("sc-rec", tree, "{\"child\":7}");
+        acc("sc-rec", tree, "{\"child\":{\"child\":{\"child\":7}}}");
+        rej("sc-rec", tree, "{\"child\":\"leaf\"}"); // the leaf must itself be a Node
+        rej("sc-rec", tree, "{}"); // child is required
+
+        // a type that requires ITSELF has no finite document - the compiler must still terminate
+        // (name registered before body) and simply accept nothing
+        Grammar.Spec bottomless =
+                sc(
+                        map(
+                                "$defs",
+                                map(
+                                        "Endless",
+                                        map(
+                                                "type", "object",
+                                                "properties",
+                                                        map("next", map("$ref", "#/$defs/Endless")),
+                                                "required", Arrays.asList("next"))),
+                                "$ref",
+                                "#/$defs/Endless"));
+        rej("sc-recinf", bottomless, "{}");
+        rej("sc-recinf", bottomless, "{\"next\":{}}");
+
+        // a pointer resolving to nothing degrades to any-JSON, never to a broken grammar
+        Grammar.Spec refMissing = sc(map("$ref", "#/$defs/Absent"));
+        acc("sc-refmiss", refMissing, "{\"anything\":true}");
+        acc("sc-refmiss", refMissing, "42");
+        Grammar.Spec refExternal = sc(map("$ref", "https://example.com/schema.json"));
+        acc("sc-refext", refExternal, "\"whatever\"");
     }
 
     // ========================================================================
