@@ -16,12 +16,23 @@ class JinferChatAutoConfigurationTest {
                     .withConfiguration(AutoConfigurations.of(JinferChatAutoConfiguration.class));
 
     @Test
-    void modelIsRequired() {
+    void modelIsRequiredWhenJinferIsSelectedExplicitly() {
+        runner.withPropertyValues("spring.ai.model.chat=jinfer")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasMessageContaining("spring.ai.jinfer.chat.model");
+                        });
+    }
+
+    @Test
+    void noSelectionAndNoModelBootsWithoutAChatBean() {
+        // the starter used for embeddings, reranking or speech only
         runner.run(
                 context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(context.getStartupFailure())
-                            .hasMessageContaining("spring.ai.jinfer.chat.model");
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(JinferChatModel.class);
                 });
     }
 
