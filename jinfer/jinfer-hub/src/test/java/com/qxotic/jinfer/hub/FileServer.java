@@ -25,6 +25,7 @@ final class FileServer implements AutoCloseable {
     private final Map<String, byte[]> files = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> hits = new ConcurrentHashMap<>();
     private final Map<String, String> lastRange = new ConcurrentHashMap<>();
+    private final Map<String, String> lastHeaders = new ConcurrentHashMap<>(); // path + name
     private final Map<String, String> lastQuery = new ConcurrentHashMap<>();
     private final List<String> noRange = new CopyOnWriteArrayList<>();
 
@@ -74,6 +75,11 @@ final class FileServer implements AutoCloseable {
         return lastRange.get(path);
     }
 
+    /** The last request's value of {@code name} for {@code path}, or null. */
+    String lastHeader(String path, String name) {
+        return lastHeaders.get(path + "\n" + name.toLowerCase());
+    }
+
     String lastQuery(String path) {
         return lastQuery.get(path);
     }
@@ -91,6 +97,10 @@ final class FileServer implements AutoCloseable {
             return;
         }
         hits.computeIfAbsent(path, p -> new AtomicInteger()).incrementAndGet();
+        exchange.getRequestHeaders()
+                .forEach(
+                        (name, values) ->
+                                lastHeaders.put(path + "\n" + name.toLowerCase(), values.get(0)));
         String range = exchange.getRequestHeaders().getFirst("Range");
         byte[] body = payload;
         int status = 200;
