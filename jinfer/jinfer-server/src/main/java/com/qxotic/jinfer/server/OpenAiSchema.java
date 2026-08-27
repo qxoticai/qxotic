@@ -64,7 +64,10 @@ final class OpenAiSchema {
     static Map<String, Object> chatCompletionResponse(String id, String modelId, Reply result) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("role", "assistant");
-        message.put("content", result.toolCalls().isEmpty() ? result.text() : null);
+        // text the model wrote alongside its calls is content (it streamed as such); only a
+        // call-only reply carries null
+        String text = result.text() == null ? "" : result.text();
+        message.put("content", result.toolCalls().isEmpty() || !text.isEmpty() ? text : null);
         if (result.reasoning() != null) message.put("reasoning_content", result.reasoning());
         if (!result.toolCalls().isEmpty())
             message.put("tool_calls", ToolCalls.toWire(result.toolCalls()));
@@ -172,9 +175,14 @@ final class OpenAiSchema {
      * following the item events saw an empty answer and never learned a tool had been called.
      */
     static List<Map<String, Object>> responseOutputItems(String id, Reply result) {
-        return result.toolCalls().isEmpty()
-                ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
-                : responseToolCallItems(ToolCalls.toWire(result.toolCalls()));
+        String text = result.text() == null ? "" : result.text();
+        if (result.toolCalls().isEmpty()) {
+            return List.of(responseMessageItem("msg_" + id, "completed", text));
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (!text.isEmpty()) items.add(responseMessageItem("msg_" + id, "completed", text));
+        items.addAll(responseToolCallItems(ToolCalls.toWire(result.toolCalls())));
+        return items;
     }
 
     static Map<String, Object> responseResponse(String id, String modelId, Reply result) {
