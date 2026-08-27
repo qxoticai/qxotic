@@ -792,4 +792,20 @@ public final class ReplyLanguageTest {
             return Collections.emptyIterator();
         }
     }
+
+    @Test
+    void bytesFlushedByARegionExitAreStreamedUnderTheirLane() {
+        // a dangling UTF-8 lead byte at </think> is flushed into the reasoning lane; it must
+        // also be streamed (as reasoning), not appear only in the finished message
+        Walk w = Selection.of(family(), TOK).walk();
+        List<Step> steps = new ArrayList<>();
+        steps.addAll(run(w, THINK));
+        steps.addAll(run(w, HALF_1));
+        steps.addAll(run(w, END_THINK));
+        steps.addAll(run(w, toks("xy")));
+        steps.addAll(run(w, END));
+        assertEquals(3, steps.size(), steps.toString());
+        assertTrue(steps.get(0).reasoning(), "the flushed byte belongs to the thought");
+        assertEquals(new Step("x", false), steps.get(1));
+    }
 }
