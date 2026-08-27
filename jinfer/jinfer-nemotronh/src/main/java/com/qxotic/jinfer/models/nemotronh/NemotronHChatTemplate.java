@@ -263,10 +263,7 @@ public final class NemotronHChatTemplate implements ChatTemplate {
         Message sys = msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
         String sysText = sys != null ? sys.text() : dialect.defaultSystem();
         List<Message> loop = sys != null ? msgs.subList(1, msgs.size()) : msgs;
-        int lastUser = -1;
-        for (int i = 0; i < loop.size(); i++) {
-            if (loop.get(i).role().equals(Role.USER)) lastUser = i;
-        }
+        int lastUser = lastUser(loop);
 
         // system turn: message text, then declarations + instructions when tools are offered
         out.id(imStart).text("system\n").text(sysText);
