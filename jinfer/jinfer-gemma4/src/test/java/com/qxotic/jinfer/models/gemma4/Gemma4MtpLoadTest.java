@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
@@ -75,7 +76,7 @@ class Gemma4MtpLoadTest {
             for (Gemma4 model : new Gemma4[] {mtpFirst, mediaFirst}) {
                 assertTrue(model.speculationReady(), "the draft head survives either order");
                 assertTrue(
-                        model.projector(com.qxotic.jinfer.media.Media.Image.class).isPresent(),
+                        model.projector(Media.Image.class).isPresent(),
                         "the vision projector survives either order");
             }
         }
