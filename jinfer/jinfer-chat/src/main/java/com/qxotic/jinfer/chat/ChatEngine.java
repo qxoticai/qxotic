@@ -5,6 +5,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.LeakWatch;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
@@ -67,7 +68,7 @@ public final class ChatEngine implements AutoCloseable {
     // prompt-encode chunk width; Generator re-chunks to the STATE's batchCapacity before ingest,
     // so this only decides how many Batch objects a prompt arrives as (the cache's block
     // boundaries are the codec's turn boundaries, one per batch)
-    private static final int ENCODE_BATCH = Integer.getInteger("jinfer.batchCapacity", 512);
+    private static final int ENCODE_BATCH = RuntimeFlags.BATCH_CAPACITY;
 
     private final LoadedModel<?> loaded;
     private final String modelName;
