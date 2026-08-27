@@ -162,8 +162,50 @@ class GeneratorTest {
                             recording(new ArrayList<>(), new ArrayList<>()));
 
             assertEquals(Generator.FinishReason.LENGTH, result.finishReason());
-            assertArrayEquals(new int[] {10, 11}, result.tokens()); // 4 - 2 prompt positions
+            // 4 - 2 free slots, plus the final token sampled from the last slot's logits
+            assertArrayEquals(new int[] {10, 11, 12}, result.tokens());
+            assertEquals(4, state.position());
             assertEquals(OptionalInt.empty(), result.stopToken());
+        }
+    }
+
+    @Test
+    void aPromptFillingTheContextStillYieldsItsNextToken() {
+        FakeModel model = new FakeModel();
+        try (FakeModel.State state =
+                model.newState(3, 8, MemoryAllocators.ofArena(Arena.ofAuto()))) {
+            var result =
+                    Generator.generate(
+                            model,
+                            state,
+                            new int[] {1, 2, 3},
+                            scripted(10),
+                            constraints(Generator.Constraints.UNLIMITED, Duration.ZERO, Set.of()),
+                            recording(new ArrayList<>(), new ArrayList<>()));
+
+            assertEquals(Generator.FinishReason.LENGTH, result.finishReason());
+            assertArrayEquals(new int[] {10}, result.tokens());
+            assertEquals(3, state.position()); // the sampled token was never ingested
+        }
+    }
+
+    @Test
+    void aDeadlineDuringThePromptIsATimeoutEvenWithNothingToDecode() {
+        FakeModel model = new FakeModel();
+        try (FakeModel.State state =
+                model.newState(128, 8, MemoryAllocators.ofArena(Arena.ofAuto()))) {
+            var result =
+                    Generator.generate(
+                            model,
+                            state,
+                            new int[] {1, 2, 3},
+                            scripted(),
+                            constraints(0, Duration.ofNanos(1), Set.of()),
+                            recording(new ArrayList<>(), new ArrayList<>()));
+
+            // the prompt is partial: LENGTH would read as a completed prefill
+            assertEquals(Generator.FinishReason.TIMEOUT, result.finishReason());
+            assertArrayEquals(new int[0], result.tokens());
         }
     }
 

@@ -163,19 +163,24 @@ public final class Generator {
                             + capacity
                             + " available - raise the state's contextCapacity)");
         }
+        // the final token is sampled from the last occupied slot's logits and never ingested,
+        // so a context holds one more token than it has free slots
+        int room = capacity - promptPositions + 1;
         int max =
                 constraints.maxTokens() == Constraints.UNLIMITED
-                        ? capacity - promptPositions
-                        : Math.min(constraints.maxTokens(), capacity - promptPositions);
+                        ? room
+                        : Math.min(constraints.maxTokens(), room);
         long startNanos = System.nanoTime();
         long deadlineNanos =
                 constraints.timeout().isZero()
                         ? Long.MAX_VALUE
                         : saturatingDeadline(startNanos, constraints.timeout().toNanos());
 
+        boolean timedOut = false;
         for (Batch batch : Batch.prepare(prompt, state.batchCapacity())) {
             if (System.nanoTime() >= deadlineNanos) {
-                break; // no new chunk past the deadline; the decode loop ends the pass below
+                timedOut = true; // no new chunk past the deadline; the prompt is partial
+                break;
             }
             model.ingest(state, batch);
         }
@@ -185,7 +190,9 @@ public final class Generator {
         Set<Integer> stops = constraints.stopTokens();
         int[] generated = new int[max];
         int n = 0;
-        FinishReason finish = FinishReason.LENGTH; // budget/context, or maxTokens=0 prefill-only
+        // budget/context, or maxTokens=0 prefill-only; a deadline hit during the prompt is a
+        // TIMEOUT even when no decode step runs (the caller must know the prompt is partial)
+        FinishReason finish = timedOut ? FinishReason.TIMEOUT : FinishReason.LENGTH;
         // resolved ONCE, not per token: allocating a per-token event only to find it disabled
         // would let telemetry perturb the thing it measures. A recording started
         // mid-generation is picked up by the next pass, which is soon enough.
