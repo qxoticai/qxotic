@@ -101,9 +101,9 @@ public interface JAM {
      * Byte size of the packed in-memory weight layout this backend wants for a {@code [m x k]}
      * weight of {@code dtype}, or 0 to keep the canonical bytes (dtype not packable, shape
      * unsupported, or no packed kernels on this hardware). The CALLER produces the packed bytes
-     * once at load (layout: jam.h {@code JAM_PACK_ABI}), drops the canonical copy, and calls
-     * {@link #mm} with {@code wt | PACKED} and {@code ldw == k}. Values are exactly the canonical
-     * dequant - packing only reorders bytes and widens scales.
+     * once at load (layout: jam.h {@code JAM_PACK_ABI}), drops the canonical copy, and calls {@link
+     * #mm} with {@code wt | PACKED} and {@code ldw == k}. Values are exactly the canonical dequant
+     * - packing only reorders bytes and widens scales.
      */
     default long packSize(int dtype, int m, int k) {
         return 0;

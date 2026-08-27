@@ -179,7 +179,9 @@ public final class NativeJAM implements JAM {
     /** Create the process-wide Java context through jam's existing context API. */
     private static native long createJni(int threads);
 
-    /** As createJni with a host executor: pf is an upcall stub with the jam_parallel_for signature. */
+    /**
+     * As createJni with a host executor: pf is an upcall stub with the jam_parallel_for signature.
+     */
     private static native long createPfJni(int threads, long pf);
 
     /**
@@ -208,7 +210,9 @@ public final class NativeJAM implements JAM {
 
     private static volatile ObjIntConsumer<IntConsumer> fanOut; // (body, n) -> run body over [0,n)
 
-    /** Inject the engine's fan-out (e.g. jinfer's Parallel::forLoop). Takes effect on the next mm. */
+    /**
+     * Inject the engine's fan-out (e.g. jinfer's Parallel::forLoop). Takes effect on the next mm.
+     */
     public static void parallelExecutor(ObjIntConsumer<IntConsumer> fan) {
         fanOut = fan;
     }
@@ -256,7 +260,10 @@ public final class NativeJAM implements JAM {
                                         NativeJAM.class,
                                         "pfUpcall",
                                         MethodType.methodType(
-                                                void.class, long.class, int.class, long.class,
+                                                void.class,
+                                                long.class,
+                                                int.class,
+                                                long.class,
                                                 long.class));
                 stub =
                         Linker.nativeLinker()
@@ -349,13 +356,19 @@ public final class NativeJAM implements JAM {
         SymbolLookup lookup = SymbolLookup.loaderLookup();
         MethodHandle abi =
                 linker.downcallHandle(
-                        lookup.find("jam_pack_abi").orElseThrow(
-                                () -> new UnsatisfiedLinkError("jam: 'jam_pack_abi' not found")),
+                        lookup.find("jam_pack_abi")
+                                .orElseThrow(
+                                        () ->
+                                                new UnsatisfiedLinkError(
+                                                        "jam: 'jam_pack_abi' not found")),
                         FunctionDescriptor.of(JAVA_INT));
         PACK_SIZE_FFM =
                 linker.downcallHandle(
-                        lookup.find("jam_pack_size").orElseThrow(
-                                () -> new UnsatisfiedLinkError("jam: 'jam_pack_size' not found")),
+                        lookup.find("jam_pack_size")
+                                .orElseThrow(
+                                        () ->
+                                                new UnsatisfiedLinkError(
+                                                        "jam: 'jam_pack_size' not found")),
                         FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, JAVA_INT, JAVA_INT, JAVA_INT));
         try {
             PACK_ABI_NATIVE = (int) abi.invokeExact();
