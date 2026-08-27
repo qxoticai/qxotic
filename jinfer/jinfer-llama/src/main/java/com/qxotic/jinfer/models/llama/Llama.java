@@ -725,6 +725,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             Map<String, MemoryView<MemorySegment>> tensors) {
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         String scalingType = gguf.getValueOrDefault(String.class, arch + ".rope.scaling.type", "");
+        if (scalingType.equals("longrope")) {
+            // MiniCPM3/4 write rope_factors_long/short.weight, chosen by context length; plain
+            // RoPE here would drift from the reference at every position, silently
+            throw new IllegalArgumentException(
+                    arch + ": rope.scaling.type longrope is not supported yet");
+        }
         if (scalingType.equals("yarn")) {
             float factor = gguf.getValue(float.class, arch + ".rope.scaling.factor");
             int origCtx = gguf.getValue(int.class, arch + ".rope.scaling.original_context_length");
