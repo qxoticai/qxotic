@@ -55,8 +55,15 @@ final class Lfm2VisionPreprocess {
                         0,
                         0,
                         true);
-        if (image.width() <= TILE_SIZE * MAX_PIXELS_TOLERANCE
-                && image.height() <= TILE_SIZE * MAX_PIXELS_TOLERANCE) {
+        // the reference processor's _is_image_too_large: the factor-rounded AREA against
+        // max_image_tokens * factor^2 * tolerance (an area rule, not a per-side box: an 800x800
+        // photo tiles, a 1100x200 banner does not)
+        long roundedWidth =
+                Math.max(factor, Math.round((float) image.width() / factor) * (long) factor);
+        long roundedHeight =
+                Math.max(factor, Math.round((float) image.height() / factor) * (long) factor);
+        if (roundedWidth * roundedHeight
+                <= (long) MAX_IMAGE_TOKENS * factorArea * MAX_PIXELS_TOLERANCE) {
             return new Plan(List.of(overview), 0, 0);
         }
 

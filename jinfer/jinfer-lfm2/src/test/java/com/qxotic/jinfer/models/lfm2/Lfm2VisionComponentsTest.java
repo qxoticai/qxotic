@@ -45,6 +45,14 @@ class Lfm2VisionComponentsTest {
     }
 
     @Test
+    void tilingIsDecidedByAreaLikeTheReferenceProcessor() {
+        // 800x800 = 640000 rounded pixels > 256 tokens * 32^2 * 2.0 = 524288: tiled (HF renders
+        // four tiles plus the thumbnail); a 1100x200 banner is 220000: one overview
+        assertTrue(Lfm2VisionPreprocess.plan(image(800, 800), 16, 2).tiled());
+        assertFalse(Lfm2VisionPreprocess.plan(image(1100, 200), 16, 2).tiled());
+    }
+
+    @Test
     void smallImageUsesOnlyTheOverview() {
         Lfm2VisionPreprocess.Plan plan = Lfm2VisionPreprocess.plan(image(640, 480), 16, 2);
         assertFalse(plan.tiled());
