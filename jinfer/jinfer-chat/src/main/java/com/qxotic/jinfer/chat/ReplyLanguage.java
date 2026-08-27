@@ -835,6 +835,8 @@ public final class ReplyLanguage {
         private final List<Content> calls = new ArrayList<>();
         private boolean lastReasoning;
         private boolean trimLead; // the whitespace the model puts after </think> is framing
+        private Fragment carry; // flushed by a region exit, owed to the next feed's return
+        private boolean carryReasoning;
         private boolean ended;
         private boolean generated;
         private boolean seeding;
@@ -941,8 +943,19 @@ public final class ReplyLanguage {
             if (finished != null) throw new IllegalStateException("parser already finished");
             if (!seeding) generated = true;
             if (ended) return Fragment.EMPTY;
-            if (cands != null) return feedCandidates(token);
-            return region != null ? feedRegion(token) : dispatch(token);
+            Fragment out =
+                    cands != null
+                            ? feedCandidates(token)
+                            : region != null ? feedRegion(token) : dispatch(token);
+            if (carry == null) return out;
+            // bytes a region exit flushed into its lane are streamed too, under that lane
+            Fragment flushed = carry;
+            carry = null;
+            if (out.text().isEmpty()) {
+                lastReasoning = carryReasoning;
+                return flushed;
+            }
+            return new Fragment(flushed.text() + out.text(), flushed.tokens().concat(out.tokens()));
         }
 
         // -- structure dispatch ----------------------------------------------
@@ -1219,6 +1232,10 @@ public final class ReplyLanguage {
         private void flushPending(Kind owner) {
             PendingUtf8.Fragment frag = pending.flush();
             if (frag == null || frag.text().isEmpty()) return;
+            if (!seeding) {
+                carry = new Fragment(frag.text(), frag.ids());
+                carryReasoning = owner == Kind.THINK;
+            }
             if (owner == Kind.THINK) {
                 thinkText.append(frag.text());
                 frag.ids().forEachInt(thinkIds::add);
