@@ -128,19 +128,20 @@ public final class InflectTTS
      * image at build time by the {@code native} profile from wherever the models were downloaded.
      * An image built without it falls back to espeak-ng, which is a working image.
      *
-     * <p>The two are alternatives, not layers. A lexicon is a hash lookup and knows only what it
-     * was built with, leaving the rest unspoken (it says so on stderr - {@link #wordOverrides(Map)}
-     * is the fix for a handful of terms). espeak has a letter-to-sound model and pronounces
-     * anything, at ~50x realtime against the lexicon's ~54x.
+     * <p>Each lexicon rung layers espeak-ng underneath when it is installed: known words stay a
+     * deterministic hash lookup, a run containing an unknown word goes to espeak whole, and a word
+     * nothing covers is guessed by letter-to-sound rules - a best-effort pronunciation, never
+     * silence ({@link #wordOverrides(Map)} corrects a guess). espeak alone pronounces anything, at
+     * ~50x realtime against the lexicon's ~54x.
      */
     private static Phonemizer frontend(Path gguf, Path lexicon) throws IOException {
-        if (lexicon != null) return Phonemizer.lexicon(lexicon);
+        if (lexicon != null) return Phonemizer.lexicon(lexicon).withEspeakFallback();
         if (gguf != null) {
             Path beside = gguf.resolveSibling("lexicon.bin");
-            if (Files.isReadable(beside)) return Phonemizer.lexicon(beside);
+            if (Files.isReadable(beside)) return Phonemizer.lexicon(beside).withEspeakFallback();
         }
         Phonemizer bundled = Phonemizer.bundledLexicon();
-        if (bundled != null) return bundled;
+        if (bundled != null) return bundled.withEspeakFallback();
         Phonemizer espeak = Phonemizer.espeak();
         if (espeak != null) {
             System.getLogger("jinfer.inflect2")
