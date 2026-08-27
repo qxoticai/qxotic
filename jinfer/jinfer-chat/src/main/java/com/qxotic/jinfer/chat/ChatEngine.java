@@ -461,6 +461,13 @@ public final class ChatEngine implements AutoCloseable {
             stops = TextStops.checked(stops);
             forcedTool = forcedTool == null ? ForcedTool.NONE : forcedTool;
             if (forcedTool != ForcedTool.NONE) {
+                if (contentGbnf != null) {
+                    // two independent walks would stack: the content walk never sees the seeded
+                    // call marker and masks the call's arguments into nothing (docs/reply-language)
+                    throw new IllegalArgumentException(
+                            "a forced tool call and a grammar-shaped answer cannot both be the"
+                                    + " reply");
+                }
                 if (tools.isEmpty()) {
                     throw new IllegalArgumentException("forcing a tool call needs offered tools");
                 }
