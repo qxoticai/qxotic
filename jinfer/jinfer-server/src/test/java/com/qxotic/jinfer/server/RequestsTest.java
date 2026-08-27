@@ -84,6 +84,13 @@ class RequestsTest {
         Requests.normalizeResponse(request);
         List<Object> messages = Requests.responseInputMessages(request);
 
+        // SDKs serialize an unset max_tokens as null; it must not shadow max_output_tokens
+        Map<String, Object> nulled = new HashMap<>();
+        nulled.put("max_tokens", null);
+        nulled.put("max_output_tokens", 7);
+        Requests.normalizeResponse(nulled);
+        assertEquals(7, nulled.get("max_tokens"));
+
         Map<?, ?> assistant = (Map<?, ?>) messages.getFirst();
         Map<?, ?> call = (Map<?, ?>) ((List<?>) assistant.get("tool_calls")).getFirst();
         Map<?, ?> tool = (Map<?, ?>) messages.get(1);

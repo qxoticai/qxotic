@@ -60,7 +60,9 @@ final class Requests {
      * function}.
      */
     static void normalizeResponse(Map<String, Object> request) {
-        if (!request.containsKey("max_tokens") && request.containsKey("max_output_tokens")) {
+        // absent OR null: SDKs serialize an unset max_tokens as null, which must not shadow the
+        // Responses-API spelling beside it
+        if (request.get("max_tokens") == null && request.get("max_output_tokens") != null) {
             request.put("max_tokens", request.get("max_output_tokens"));
         }
         if (!request.containsKey("response_format") && request.get("text") != null) {
