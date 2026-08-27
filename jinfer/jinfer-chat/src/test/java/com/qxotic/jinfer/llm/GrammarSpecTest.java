@@ -1062,7 +1062,7 @@ public final class GrammarSpecTest {
 
     static int tokenId(Grammar.Vocab v, String s) {
         byte[] want = s.getBytes(StandardCharsets.UTF_8);
-        for (int i = 0; i < v.size(); i++) if (java.util.Arrays.equals(v.bytes(i), want)) return i;
+        for (int i = 0; i < v.size(); i++) if (Arrays.equals(v.bytes(i), want)) return i;
         return -1;
     }
 

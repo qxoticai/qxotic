@@ -35,6 +35,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * langchain4j {@link ChatModel} backed by jinfer: in-process CPU inference over a local GGUF.
@@ -68,8 +70,8 @@ import java.util.function.Supplier;
  */
 public final class JinferChatModel implements ChatModel, AutoCloseable {
 
-    private static final org.slf4j.Logger LOG =
-            org.slf4j.LoggerFactory.getLogger(JinferChatModel.class);
+    private static final Logger LOG =
+            LoggerFactory.getLogger(JinferChatModel.class);
 
     final ChatEngine engine;
     final ChatRequestParameters defaults;

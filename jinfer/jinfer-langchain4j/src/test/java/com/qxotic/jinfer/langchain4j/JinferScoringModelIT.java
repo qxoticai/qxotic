@@ -13,6 +13,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jinfer.chat.Models;
+import java.lang.foreign.Arena;
+import org.junit.jupiter.api.Assertions;
 
 /**
  * The reranking laws on a real reranker GGUF (Qwen3-Reranker 0.6B). Assertions are ORDERING-based
@@ -47,30 +50,30 @@ class JinferScoringModelIT {
     @Test
     void forkOfAnOwningModelRefusesWithTheRecipe() {
         IllegalStateException e =
-                org.junit.jupiter.api.Assertions.assertThrows(
+                Assertions.assertThrows(
                         IllegalStateException.class, scorer::fork);
-        org.junit.jupiter.api.Assertions.assertTrue(
+        Assertions.assertTrue(
                 e.getMessage().contains("Models.loadReranker"), e.getMessage());
     }
 
     @Test
     void sharedWeightsForkScoresTheSameRanking() throws Exception {
-        try (java.lang.foreign.Arena arena = Arenas.newCrossThread()) {
-            var loaded = com.qxotic.jinfer.chat.Models.loadReranker(TestModels.require(REF), arena);
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadReranker(TestModels.require(REF), arena);
             JinferScoringModel a =
                     JinferScoringModel.builder().model(loaded).contextLength(2048).build();
             JinferScoringModel b = a.fork();
             try {
                 var docs =
-                        java.util.List.of(
-                                dev.langchain4j.data.segment.TextSegment.from(
+                        List.of(
+                                TextSegment.from(
                                         "The reset portal is https://acme.example/reset."),
-                                dev.langchain4j.data.segment.TextSegment.from(
+                                TextSegment.from(
                                         "Bananas are rich in potassium."));
                 var sa = a.scoreAll(docs, "Where do I reset my password?").content();
                 var sb = b.scoreAll(docs, "Where do I reset my password?").content();
-                org.junit.jupiter.api.Assertions.assertTrue(sa.get(0) > sa.get(1), sa.toString());
-                org.junit.jupiter.api.Assertions.assertTrue(sb.get(0) > sb.get(1), sb.toString());
+                Assertions.assertTrue(sa.get(0) > sa.get(1), sa.toString());
+                Assertions.assertTrue(sb.get(0) > sb.get(1), sb.toString());
             } finally {
                 a.close();
                 b.close();

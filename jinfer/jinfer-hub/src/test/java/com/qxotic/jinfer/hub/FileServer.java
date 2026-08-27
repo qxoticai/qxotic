@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import com.sun.net.httpserver.HttpExchange;
 
 /**
  * A local HTTP file server for download tests: honors single {@code Range} requests the way every
@@ -93,7 +94,7 @@ final class FileServer implements AutoCloseable {
         return lastQuery.get(path);
     }
 
-    private void handle(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+    private void handle(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
         String query = exchange.getRequestURI().getQuery();
         if (query != null) {

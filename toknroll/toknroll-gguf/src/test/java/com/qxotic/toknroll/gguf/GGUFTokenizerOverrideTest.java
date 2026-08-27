@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import com.qxotic.format.gguf.Builder;
 
 /**
  * The pre-tokenizer extension points: symbolic aliases (order-independent, cycle-checked at build)
@@ -279,7 +280,7 @@ class GGUFTokenizerOverrideTest {
             GGUFTokenizerLoader.Builder builder, String pre, String text, List<String> expected) {
         List<String> chunks = new ArrayList<>();
         GGUF gguf =
-                com.qxotic.format.gguf.Builder.newBuilder()
+                Builder.newBuilder()
                         .putString("tokenizer.ggml.model", "stub")
                         .putString("tokenizer.ggml.pre", pre)
                         .build();

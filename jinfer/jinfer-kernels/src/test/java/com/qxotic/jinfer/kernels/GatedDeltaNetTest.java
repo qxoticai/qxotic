@@ -8,6 +8,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jota.memory.MemoryView;
 
 class GatedDeltaNetTest {
     @Test
@@ -121,14 +122,14 @@ class GatedDeltaNetTest {
         }
     }
 
-    private static com.qxotic.jota.memory.MemoryView<MemorySegment> view(
+    private static MemoryView<MemorySegment> view(
             Arena arena, float[] values) {
         MemorySegment segment = arena.allocate(4L * values.length, 64);
         segment.copyFrom(MemorySegment.ofArray(values));
         return Oracles.f32View(segment, values.length);
     }
 
-    private static float[] floats(com.qxotic.jota.memory.MemoryView<MemorySegment> view) {
+    private static float[] floats(MemoryView<MemorySegment> view) {
         return view.memory()
                 .base()
                 .asSlice(view.byteOffset(), view.logicalSize() * Float.BYTES)

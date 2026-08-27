@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.DoubleConsumer;
+import com.qxotic.jota.DataType;
 
 /**
  * LFM2.5-ColBERT as a reranker: late interaction. Query and documents are embedded SEPARATELY
@@ -178,7 +179,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
      */
     private float[] copyRow(Lfm2.State state, int row) {
         MemoryView<?> view = model.colbertRow(state, row);
-        Views.requireDense(view, com.qxotic.jota.DataType.FP32, "colbertRow");
+        Views.requireDense(view, DataType.FP32, "colbertRow");
         int outDim = model.configuration().embeddingLengthOut();
         float[] dst = new float[outDim];
         MemoryView<MemorySegment> src = Views.castToSegmentBacked(view, "colbertRow");

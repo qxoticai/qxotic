@@ -11,6 +11,7 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import com.qxotic.jinfer.testkit.TestModels;
 
 /**
  * Coarse block caching, shared across the hybrid models whose codec overrides {@code coarseBlocks}
@@ -30,7 +31,7 @@ abstract class AbstractCoarseCacheIT {
     void cachedPromptWorksByteIdenticallyAndCoarsely() {
         JinferChatModel base =
                 JinferChatModel.builder()
-                        .modelPath(com.qxotic.jinfer.testkit.TestModels.require(modelRef()))
+                        .modelPath(TestModels.require(modelRef()))
                         .contextLength(4096)
                         // pinned decode like the langchain4j twin: greedy, seeded, no think span -
                         // the model's recommended sampled temperature would make "contains Paris"

@@ -10,6 +10,7 @@ import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jota.Layout;
 
 class BroadcastTest {
 
@@ -20,7 +21,7 @@ class BroadcastTest {
                         Memories.of(new byte[] {9, 1, 2, 3, 9}),
                         1,
                         DataType.I8,
-                        com.qxotic.jota.Layout.rowMajor(Shape.flat(3)));
+                        Layout.rowMajor(Shape.flat(3)));
 
         MemoryView<byte[]> result = source.broadcast(Shape.flat(2, 3));
 

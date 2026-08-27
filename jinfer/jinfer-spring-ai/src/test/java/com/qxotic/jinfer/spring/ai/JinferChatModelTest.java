@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
+import java.lang.reflect.Method;
 
 /** Builder validation, no model needed: errors fail fast, before any GGUF is touched. */
 class JinferChatModelTest {
@@ -83,7 +84,7 @@ class JinferChatModelTest {
         assertThrows(NullPointerException.class, () -> JinferChatModel.builder().options(null));
         var methods =
                 Arrays.stream(JinferChatModel.Builder.class.getDeclaredMethods())
-                        .map(java.lang.reflect.Method::getName)
+                        .map(Method::getName)
                         .toList();
         assertTrue(methods.contains("options"));
         for (String removed :

@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import dev.langchain4j.data.message.CustomMessage;
 
 /** The mapping seam, model-free: typed messages, fallback maps, tools, replies, finish reasons. */
 class MappingsTest {
@@ -49,7 +50,7 @@ class MappingsTest {
                                 Mappings.toMessages(
                                         List.of(
                                                 UserMessage.from("hi"),
-                                                dev.langchain4j.data.message.CustomMessage.from(
+                                                CustomMessage.from(
                                                         Map.of("role", "context", "content", "x"))),
                                         VideoSampler.UNIFORM));
         assertTrue(e.getMessage().contains("CUSTOM"), e.getMessage());

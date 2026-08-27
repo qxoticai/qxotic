@@ -27,6 +27,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import com.qxotic.format.json.Json;
 
 /**
  * {@link Mappings#toSchemaMap} against langchain4j's own {@code JsonSchemaElementUtils.toMap} as
@@ -308,7 +309,7 @@ class SchemaMapTest {
                         + "[\"date\"]},\"classes\":{\"type\":\"array\",\"items\":{\"type\":"
                         + "\"string\",\"enum\":[\"ECONOMY\",\"BUSINESS\"]}}},\"required\":"
                         + "[\"destination\",\"when\"]}}}",
-                com.qxotic.format.json.Json.stringify(
+                Json.stringify(
                         Mappings.toTools(List.of(spec)).get(0).definition()));
     }
 

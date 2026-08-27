@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import java.util.function.Consumer;
 
 class ModelsTest {
 
@@ -156,7 +157,7 @@ class ModelsTest {
                     public ReplyState encode(
                             Conversation conversation,
                             int batchCapacity,
-                            java.util.function.Consumer<Batch> sink) {
+                            Consumer<Batch> sink) {
                         return null;
                     }
                 };

@@ -19,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import java.util.function.Consumer;
 
 /** Every state-consuming model entry point observes one shared exclusion boundary. */
 final class StateExclusivityTest {
@@ -398,7 +399,7 @@ final class StateExclusivityTest {
 
         @Override
         public void projectEmbedding(
-                ProbeState state, int output, java.util.function.Consumer<MemoryView<?>> consumer) {
+                ProbeState state, int output, Consumer<MemoryView<?>> consumer) {
             state.exclusively(
                     () -> {
                         body();

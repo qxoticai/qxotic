@@ -4,6 +4,7 @@ package com.qxotic.jinfer.server;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 final class Validation {
     private Validation() {}
@@ -239,7 +240,7 @@ final class Validation {
         if (present(request, "reasoning_effort")) {
             String effort = Values.stringValue(request.get("reasoning_effort"), "");
             require(
-                    java.util.Set.of("none", "minimal", "low", "medium", "high").contains(effort),
+                    Set.of("none", "minimal", "low", "medium", "high").contains(effort),
                     "reasoning_effort must be one of none, minimal, low, medium, high");
         }
         if (present(request, "chat_template_kwargs")) {

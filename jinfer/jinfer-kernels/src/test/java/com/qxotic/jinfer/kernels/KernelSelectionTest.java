@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.Segments;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import com.sun.management.HotSpotDiagnosticMXBean;
+import java.lang.management.ManagementFactory;
 
 /**
  * Pins the kernel selection this JVM runs under to the properties it was started with.
@@ -63,8 +65,8 @@ class KernelSelectionTest {
         // -XX:-UseJVMCICompiler, so the VM option is the only honest source
         boolean jvmci =
                 Boolean.parseBoolean(
-                        java.lang.management.ManagementFactory.getPlatformMXBean(
-                                        com.sun.management.HotSpotDiagnosticMXBean.class)
+                        ManagementFactory.getPlatformMXBean(
+                                        HotSpotDiagnosticMXBean.class)
                                 .getVMOption("UseJVMCICompiler")
                                 .getValue());
         assertEquals(jvmci, Segments.vectorJitDetected());

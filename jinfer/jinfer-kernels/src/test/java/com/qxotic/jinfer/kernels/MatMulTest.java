@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
+import java.util.Arrays;
 
 class MatMulTest {
 
@@ -57,7 +58,7 @@ class MatMulTest {
                 expected += Float.float16ToFloat(bits);
             }
             float[] ones = new float[k];
-            java.util.Arrays.fill(ones, 1f);
+            Arrays.fill(ones, 1f);
             var memory = MemoryAllocators.ofArena(arena);
             var x = Views.fromFloatArray(memory, ones);
             var out = Views.allocateF32(memory, 1);

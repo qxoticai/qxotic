@@ -42,6 +42,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jinfer.chat.ReplyParser;
+import com.qxotic.jota.memory.MemoryView;
+import java.util.Arrays;
 
 final class Lfm2ChatTemplateTest {
     private static Tokenizer tokenizer;
@@ -133,11 +136,11 @@ final class Lfm2ChatTemplateTest {
     private static void assertTail(int[] ids, int[] tail) {
         assertTrue(ids.length >= tail.length);
         assertArrayEquals(
-                tail, java.util.Arrays.copyOfRange(ids, ids.length - tail.length, ids.length));
+                tail, Arrays.copyOfRange(ids, ids.length - tail.length, ids.length));
     }
 
     private static int[] concat(int[] a, int[] b) {
-        int[] out = java.util.Arrays.copyOf(a, a.length + b.length);
+        int[] out = Arrays.copyOf(a, a.length + b.length);
         System.arraycopy(b, 0, out, a.length, b.length);
         return out;
     }
@@ -275,7 +278,7 @@ final class Lfm2ChatTemplateTest {
                                 false,
                                 ""));
         // minus the generation prompt's own empty span (thinking off on a pre-opening checkpoint)
-        int[] activeHistory = java.util.Arrays.copyOf(active, active.length - 2);
+        int[] activeHistory = Arrays.copyOf(active, active.length - 2);
         assertEquals(1, count(activeHistory, special("<think>")));
         assertEquals(1, count(activeHistory, special("</think>")));
 
@@ -291,7 +294,7 @@ final class Lfm2ChatTemplateTest {
                                 List.of(weather()),
                                 false,
                                 ""));
-        int[] historicalHistory = java.util.Arrays.copyOf(historical, historical.length - 2);
+        int[] historicalHistory = Arrays.copyOf(historical, historical.length - 2);
         assertEquals(0, count(historicalHistory, special("<think>")));
         assertEquals(0, count(historicalHistory, special("</think>")));
     }
@@ -306,7 +309,7 @@ final class Lfm2ChatTemplateTest {
 
         Conversation plain = new Conversation(List.of(Message.user("Weather?")));
         ChatTemplate.ReplyState plainState = state(template, plain);
-        Message visible = com.qxotic.jinfer.chat.ReplyParser.parse(plainState.parser(), generated);
+        Message visible = ReplyParser.parse(plainState.parser(), generated);
         assertTrue(visible.text().contains("get_weather"));
         assertFalse(visible.content().stream().anyMatch(Content.ToolCall.class::isInstance));
         assertRoundTrip(template, plain, visible, generated);
@@ -315,7 +318,7 @@ final class Lfm2ChatTemplateTest {
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true, "");
         ChatTemplate.ReplyState toolState = state(template, withTools);
         Message structured =
-                com.qxotic.jinfer.chat.ReplyParser.parse(toolState.parser(), generated);
+                ReplyParser.parse(toolState.parser(), generated);
         Content.ToolCall call =
                 assertInstanceOf(Content.ToolCall.class, structured.content().getFirst());
         assertEquals("Paris", call.arguments().get("city"));
@@ -333,7 +336,7 @@ final class Lfm2ChatTemplateTest {
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true, "");
 
         Message reply =
-                com.qxotic.jinfer.chat.ReplyParser.parse(
+                ReplyParser.parse(
                         state(template, conversation).parser(), generated);
         Content.Reasoning reasoning =
                 assertInstanceOf(Content.Reasoning.class, reply.content().getFirst());
@@ -490,7 +493,7 @@ final class Lfm2ChatTemplateTest {
                 new Lfm2Vision.Layer[0]);
     }
 
-    private static com.qxotic.jota.memory.MemoryView<java.lang.foreign.MemorySegment> one(
+    private static MemoryView<MemorySegment> one(
             MemoryArena<MemorySegment> arena) {
         var value = Views.allocateF32(arena, 1);
         Views.copyFromArray(value, 0, new float[] {1}, 0, 1, "test weight");

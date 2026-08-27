@@ -15,6 +15,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import java.util.Arrays;
 
 /**
  * Endianness contract tests.
@@ -254,7 +255,7 @@ class EndiannessTest extends AbstractMemoryTest {
             return bytesOf(Float.floatToIntBits(floats[0]));
         }
         if (view.memory().base() instanceof byte[] bytes) {
-            return java.util.Arrays.copyOf(bytes, Float.BYTES);
+            return Arrays.copyOf(bytes, Float.BYTES);
         }
         throw new IllegalStateException("unexpected base: " + view.memory().base().getClass());
     }

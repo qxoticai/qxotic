@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import com.qxotic.format.json.Json;
 
 /** OpenAI wire values lowered onto the framework-neutral {@link ChatEngine}. */
 final class Generation {
@@ -292,7 +293,7 @@ final class Generation {
         Object parsed;
         try {
             parsed = JsonCodec.parse(json);
-        } catch (com.qxotic.format.json.Json.ParseException e) {
+        } catch (Json.ParseException e) {
             // a model's broken JSON echoed back in history is the client's input, a 400, not a
             // server failure (ParseException is a bare RuntimeException, which the worker
             // reports as ours)

@@ -20,6 +20,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
+import dev.langchain4j.data.message.ImageContent;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The langchain4j streaming compliance kit against {@link JinferStreamingChatModel} on LFM2.5-8B.
@@ -49,44 +54,44 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     // ---- the blocking kit's per-model capability gates, same reasons ----
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("modelsSupportingTools")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsTools")
+    @ParameterizedTest
+    @MethodSource("modelsSupportingTools")
+    @EnabledIf("supportsTools")
     protected void should_execute_a_tool_then_answer(StreamingChatModel model) {
         JinferChatModelTckIT.assumeNotBareSpecMarginal();
         super.should_execute_a_tool_then_answer(model);
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("modelsSupportingTools")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsTools")
+    @ParameterizedTest
+    @MethodSource("modelsSupportingTools")
+    @EnabledIf("supportsTools")
     protected void should_execute_multiple_tools_in_parallel_then_answer(StreamingChatModel model) {
         JinferChatModelTckIT.assumeParallelCallsRepresentable();
         super.should_execute_multiple_tools_in_parallel_then_answer(model);
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("models")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    @ParameterizedTest
+    @MethodSource("models")
+    @EnabledIf("supportsMaxOutputTokensParameter")
     protected void should_respect_maxOutputTokens_in_chat_request(StreamingChatModel model) {
         JinferChatModelTckIT.assumeReasoningFitsTheBudget();
         super.should_respect_maxOutputTokens_in_chat_request(model);
     }
 
     @Override
-    @org.junit.jupiter.api.Test
-    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    @Test
+    @EnabledIf("supportsMaxOutputTokensParameter")
     protected void should_respect_maxOutputTokens_in_default_model_parameters() {
         JinferChatModelTckIT.assumeReasoningFitsTheBudget();
         super.should_respect_maxOutputTokens_in_default_model_parameters();
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("models")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    @ParameterizedTest
+    @MethodSource("models")
+    @EnabledIf("supportsMaxOutputTokensParameter")
     protected void
             should_respect_common_parameters_wrapped_in_integration_specific_class_in_chat_request(
                     StreamingChatModel model) {
@@ -156,7 +161,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                         .thinking(JinferChatModelTckIT.tckThinking())
                         .seed(7L);
         if (JinferChatModelTckIT.mediaAvailable()) {
-            builder.companionPath("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
+            builder.companionPath("media", Path.of(JinferChatModelTckIT.MEDIA));
         }
         return track(builder.build()).streaming();
     }
@@ -180,7 +185,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                         .seed(7L)
                         .listeners(listeners);
         if (JinferChatModelTckIT.mediaAvailable()) {
-            builder.companionPath("media", java.nio.file.Path.of(JinferChatModelTckIT.MEDIA));
+            builder.companionPath("media", Path.of(JinferChatModelTckIT.MEDIA));
         }
         return builder.build();
     }
@@ -268,14 +273,14 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
 
     // the kit's photos vendored locally - see the blocking TCK's note
     @Override
-    protected dev.langchain4j.data.message.ImageContent catImageContentBase64() {
-        return dev.langchain4j.data.message.ImageContent.from(
+    protected ImageContent catImageContentBase64() {
+        return ImageContent.from(
                 JinferChatModelTckIT.kitImage("cat.png"), "image/png");
     }
 
     @Override
-    protected dev.langchain4j.data.message.ImageContent diceImageContentBase64() {
-        return dev.langchain4j.data.message.ImageContent.from(
+    protected ImageContent diceImageContentBase64() {
+        return ImageContent.from(
                 JinferChatModelTckIT.kitImage("dice.png"), "image/png");
     }
 }

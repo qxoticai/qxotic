@@ -11,6 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.llm.Sampling;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.util.List;
 
 /** The command line's own rules - the ones whose failure prints usage and exits 1. */
 final class OptionsTest {
@@ -44,7 +49,7 @@ final class OptionsTest {
     @Test
     void contextCapacityIsUnsetUnlessGiven() throws Exception {
         // the engine resolves "not given" to min(4096, model); a typed value is the user's promise
-        java.nio.file.Path model = java.nio.file.Files.createTempFile("options", ".gguf");
+        Path model = Files.createTempFile("options", ".gguf");
         model.toFile().deleteOnExit();
         assertEquals(
                 null,
@@ -56,8 +61,8 @@ final class OptionsTest {
     void helpSaysWhatThinkOffDoes() {
         // --think off disables reasoning at the prompt (the model answers directly); the help
         // used to promise a display filter over thoughts the model "still generates"
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        Options.printUsage(new java.io.PrintStream(out, true));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        Options.printUsage(new PrintStream(out, true));
         String help = out.toString();
         assertTrue(help.contains("off: do not reason"), help);
         assertFalse(help.contains("still generates"), help);
@@ -147,8 +152,8 @@ final class OptionsTest {
                         });
         var request =
                 Requests.of(
-                        java.util.List.of(com.qxotic.jinfer.chat.Message.user("hi")),
-                        new com.qxotic.jinfer.llm.Sampling(0f, 1f, 0, 0f, null),
+                        List.of(Message.user("hi")),
+                        new Sampling(0f, 1f, 0, 0f, null),
                         options);
         assertEquals(128, request.reasoningMaxTokens());
         assertEquals("... Let me wrap up.", request.reasoningMessage());
@@ -353,8 +358,8 @@ final class OptionsTest {
         assertEquals("secret", secured.apiKey());
     }
 
-    private static String[] withModel(String... rest) throws java.io.IOException {
-        java.nio.file.Path model = java.nio.file.Files.createTempFile("options", ".gguf");
+    private static String[] withModel(String... rest) throws IOException {
+        Path model = Files.createTempFile("options", ".gguf");
         model.toFile().deleteOnExit();
         String[] args = new String[rest.length + 2];
         args[0] = "--model";

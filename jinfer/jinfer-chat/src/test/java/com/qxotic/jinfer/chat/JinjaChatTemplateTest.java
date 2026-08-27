@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
+import java.util.stream.IntStream;
 
 class JinjaChatTemplateTest {
 
@@ -194,7 +195,7 @@ class JinjaChatTemplateTest {
 
             @Override
             public Iterator<Map.Entry<String, Integer>> iterator() {
-                return java.util.stream.IntStream.range(0, tokens.size())
+                return IntStream.range(0, tokens.size())
                         .mapToObj(i -> Map.entry(tokens.get(i), i))
                         .iterator();
             }

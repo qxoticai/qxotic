@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * {@code AutoCloseable} semantics against the small LFM2.5 (cheap to load per test). Model-gated
@@ -42,11 +45,11 @@ class JinferLifecycleIT {
                         new UserMessage("Write a long story about a lighthouse keeper."),
                         JinferChatOptions.builder().maxTokens(300).build());
         Prompt quick = new Prompt(new UserMessage("hi"));
-        java.util.concurrent.CountDownLatch firstChunk = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch firstChunk = new CountDownLatch(1);
         m.stream(slow).subscribe(chunk -> firstChunk.countDown(), error -> {}, () -> {});
-        assertTrue(firstChunk.await(30, java.util.concurrent.TimeUnit.SECONDS));
-        java.util.concurrent.CompletableFuture<Throwable> queued =
-                new java.util.concurrent.CompletableFuture<>();
+        assertTrue(firstChunk.await(30, TimeUnit.SECONDS));
+        CompletableFuture<Throwable> queued =
+                new CompletableFuture<>();
         m.stream(quick)
                 .subscribe(
                         chunk -> {},
@@ -54,7 +57,7 @@ class JinferLifecycleIT {
                         () -> queued.complete(new AssertionError("completed after close")));
         Thread closer = new Thread(m::close, "closer");
         closer.start();
-        Throwable outcome = queued.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        Throwable outcome = queued.get(60, TimeUnit.SECONDS);
         closer.join();
         assertTrue(outcome instanceof IllegalStateException, String.valueOf(outcome));
     }

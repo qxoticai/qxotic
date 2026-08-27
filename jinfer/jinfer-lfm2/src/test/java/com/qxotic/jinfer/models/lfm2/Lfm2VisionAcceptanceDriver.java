@@ -33,6 +33,8 @@ import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jinfer.testkit.TestModels;
+import java.util.ArrayList;
 
 /**
  * Manual, real-model visual acceptance matrix; answers and generated fixtures are test artifacts.
@@ -55,8 +57,8 @@ final class Lfm2VisionAcceptanceDriver {
         Path coco = officialImage("cocoImage", "/tmp/lfm2-vl-acceptance/coco_sample.png");
         Path audit = officialImage("auditImage", "/tmp/lfm2-vl-acceptance/audit-logs.png");
 
-        Path text = com.qxotic.jinfer.testkit.TestModels.require(TEXT);
-        Path projector = com.qxotic.jinfer.testkit.TestModels.require(PROJECTOR);
+        Path text = TestModels.require(TEXT);
+        Path projector = TestModels.require(PROJECTOR);
         try (Arena weights = Arenas.newCrossThread()) {
             var loaded = Models.load(text, weights, Map.of("media", projector));
             var cache =
@@ -228,8 +230,8 @@ final class Lfm2VisionAcceptanceDriver {
                                 "/tmp/lfm2-vl-acceptance/candy.jpg"));
         assertTrue(Files.isRegularFile(candy), () -> "Missing acceptance image: " + candy);
 
-        Path text = com.qxotic.jinfer.testkit.TestModels.require(TEXT);
-        Path projector = com.qxotic.jinfer.testkit.TestModels.require(PROJECTOR);
+        Path text = TestModels.require(TEXT);
+        Path projector = TestModels.require(PROJECTOR);
         try (Arena weights = Arenas.newCrossThread()) {
             var loaded = Models.load(text, weights, Map.of("media", projector));
             var cache =
@@ -383,7 +385,7 @@ final class Lfm2VisionAcceptanceDriver {
     }
 
     private static String media(List<Message> messages) {
-        List<String> dimensions = new java.util.ArrayList<>();
+        List<String> dimensions = new ArrayList<>();
         for (Message message : messages)
             for (Content content : message.content())
                 if (content instanceof Content.Media value

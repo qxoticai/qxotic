@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import com.qxotic.format.gguf.GGUF;
 
 /**
  * A loaded model and everything a generation needs around it, bound at load: the tokenizer, the
@@ -108,7 +109,7 @@ public record LoadedModel<S extends ContextState>(
         /** No recommendations - every lookup falls through to the engine baseline. */
         public static final SamplingDefaults NONE = new SamplingDefaults(null, null, null, null);
 
-        static SamplingDefaults fromGGUF(com.qxotic.format.gguf.GGUF gguf) {
+        static SamplingDefaults fromGGUF(GGUF gguf) {
             return new SamplingDefaults(
                     floatValue(gguf, "general.sampling.temp"),
                     floatValue(gguf, "general.sampling.top_p"),
@@ -123,14 +124,14 @@ public record LoadedModel<S extends ContextState>(
          * absent opinion. Only a missing key yields {@code null}, letting the layering fall through
          * to the port's recommendation or the engine baseline.
          */
-        private static Integer topKValue(com.qxotic.format.gguf.GGUF gguf) {
+        private static Integer topKValue(GGUF gguf) {
             if (!gguf.containsKey("general.sampling.top_k")) {
                 return null;
             }
             return Math.max(0, gguf.getValue(Integer.class, "general.sampling.top_k"));
         }
 
-        private static Float floatValue(com.qxotic.format.gguf.GGUF gguf, String key) {
+        private static Float floatValue(GGUF gguf, String key) {
             return gguf.containsKey(key) ? gguf.getValue(Float.class, key) : null;
         }
 

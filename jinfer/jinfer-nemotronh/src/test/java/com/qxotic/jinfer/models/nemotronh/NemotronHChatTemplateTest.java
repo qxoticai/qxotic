@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import java.util.ArrayList;
 
 /** Both framework and server tool-result shapes must retain their payload in the prompt. */
 class NemotronHChatTemplateTest {
@@ -56,7 +57,7 @@ class NemotronHChatTemplateTest {
                             List.of(tool),
                             false,
                             "");
-            java.util.ArrayList<Batch> batches = new java.util.ArrayList<>();
+            ArrayList<Batch> batches = new ArrayList<>();
             template.encode(conversation, 512, batches::add);
             String prompt = tokenizer.decode(Batch.tokenIds(batches));
             assertTrue(

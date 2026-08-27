@@ -11,6 +11,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
 
 /**
  * {@link Sampling} exists to stop four interchangeable numbers travelling as four arguments. These
@@ -24,7 +25,7 @@ final class SamplingTest {
         new Sampling(1f, Float.MIN_VALUE, 0, 0f, null);
         new Sampling(1f, 1f, 0, 0f, null);
         for (float bad : new float[] {0f, -0.1f, 1.0001f, Float.NaN}) {
-            org.junit.jupiter.api.Assertions.assertThrows(
+            Assertions.assertThrows(
                     IllegalArgumentException.class,
                     () -> new Sampling(1f, bad, 0, 0f, null),
                     "topP " + bad);

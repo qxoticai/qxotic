@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.Assertions;
 
 public class ReadWriteTest extends GGUFTest {
 
@@ -506,7 +507,7 @@ public class ReadWriteTest extends GGUFTest {
         // ArithmeticException or a multi-GB allocation, never as the format error it is
         byte[] bytes = GGUFTest.writeToBytes(Builder.newBuilder().putString("k", "v").build());
         for (int i = 16; i < 24; i++) bytes[i] = (byte) 0x7F; // metadata_kv_count
-        org.junit.jupiter.api.Assertions.assertThrows(
+        Assertions.assertThrows(
                 GGUFFormatException.class, () -> GGUFTest.readFromBytes(bytes));
     }
 }

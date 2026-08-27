@@ -30,6 +30,8 @@ import org.springframework.ai.audio.tts.TextToSpeechOptions;
 import org.springframework.ai.audio.tts.TextToSpeechPrompt;
 import org.springframework.ai.audio.tts.TextToSpeechResponse;
 import reactor.core.publisher.Flux;
+import org.junit.jupiter.api.Assertions;
+import reactor.core.Exceptions;
 
 /**
  * The adapter's own behaviour over a toy model - no GGUF, no weights, no kernels - plus one
@@ -353,10 +355,10 @@ final class JinferSpeechModelTest {
             // blockLast wraps non-RuntimeExceptions in Reactor's ReactiveException - the point
             // is that the failure ARRIVES instead of the subscriber hanging
             RuntimeException wrapped =
-                    org.junit.jupiter.api.Assertions.assertThrows(
+                    Assertions.assertThrows(
                             RuntimeException.class,
                             () -> speech.stream(new TextToSpeechPrompt("hello")).blockLast());
-            Throwable cause = reactor.core.Exceptions.unwrap(wrapped);
+            Throwable cause = Exceptions.unwrap(wrapped);
             assertTrue(
                     cause instanceof AssertionError && cause.getMessage().contains("kernel died"),
                     String.valueOf(cause));

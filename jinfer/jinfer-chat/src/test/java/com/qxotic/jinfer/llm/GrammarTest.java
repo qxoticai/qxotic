@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
 
 final class GrammarTest {
     private static final Grammar.Vocab VOCAB =
@@ -52,7 +53,7 @@ final class GrammarTest {
             MemoryView<MemorySegment> logits =
                     Views.allocateF32(MemoryAllocators.ofArena(arena), 2);
             IllegalArgumentException error =
-                    org.junit.jupiter.api.Assertions.assertThrows(
+                    Assertions.assertThrows(
                             IllegalArgumentException.class, () -> cursor.maskLogits(logits));
             assertTrue(error.getMessage().contains("vocabulary 4"));
         }

@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * langchain4j {@link EmbeddingModel} backed by jinfer: in-process CPU embeddings over a local GGUF
@@ -49,8 +51,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private final Arena arena;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
-    private static final org.slf4j.Logger LOG =
-            org.slf4j.LoggerFactory.getLogger(JinferEmbeddingModel.class);
+    private static final Logger LOG =
+            LoggerFactory.getLogger(JinferEmbeddingModel.class);
     private final AtomicBoolean hintedBareUse = new AtomicBoolean();
     private final List<EmbeddingModelListener> listeners;
 

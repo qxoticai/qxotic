@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import com.qxotic.toknroll.IntSequence;
 
 /**
  * {@link ChatEngine.Request} is a positional record built by every integration, so its guards are
@@ -295,12 +296,12 @@ final class ChatEngineRequestTest {
     void aDeltaIsNeverEmpty() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new ChatEngine.Delta(null, "x", com.qxotic.toknroll.IntSequence.of(1)));
+                () -> new ChatEngine.Delta(null, "x", IntSequence.of(1)));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         new ChatEngine.Delta(
-                                Channel.CONTENT, "", com.qxotic.toknroll.IntSequence.of(1)));
+                                Channel.CONTENT, "", IntSequence.of(1)));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new ChatEngine.Delta(Channel.CONTENT, "x", null));
