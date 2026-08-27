@@ -2,6 +2,7 @@ package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
@@ -67,6 +68,21 @@ class MatMulTest {
                     expected,
                     Views.getFloat(out, 0, "out"),
                     1e-5f); // lane order, not a flush (7e-4)
+        }
+    }
+
+    @Test
+    void aliasingIsJudgedByAddressNotByViewIdentity() {
+        // two Memory objects over one segment: the shaped contract must still refuse in-place
+        int m = 4, k = 8, n = 2;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment shared = arena.allocate(n * k * 4L);
+            var a = Views.wrap(shared, DataType.FP32, Shape.flat(n, k));
+            var c = Views.wrap(shared, DataType.FP32, Shape.flat(n, k));
+            var w = Views.wrap(arena.allocate(m * k * 4L), DataType.FP32, Shape.flat(m, k));
+            IllegalArgumentException e =
+                    assertThrows(IllegalArgumentException.class, () -> MatMul.gemm(w, a, c, n));
+            assertTrue(e.getMessage().contains("alias"), e.getMessage());
         }
     }
 }
