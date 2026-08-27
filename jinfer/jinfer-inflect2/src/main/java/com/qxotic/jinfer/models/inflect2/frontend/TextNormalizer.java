@@ -331,10 +331,12 @@ public final class TextNormalizer {
             return ONES[n / 100] + " hundred" + (rest > 0 ? " " + numberWords(rest) : "");
         }
         // every quantity spokenNumber admits (MAX_NUMBER_DIGITS) fits below a billion
-        int scale = n < 1_000_000 ? 1_000 : 1_000_000;
-        String name = scale == 1_000 ? " thousand" : " million";
+        boolean millions = n >= 1_000_000;
+        int scale = millions ? 1_000_000 : 1_000;
         int rest = n % scale;
-        return numberWords(n / scale) + name + (rest > 0 ? " " + numberWords(rest) : "");
+        return numberWords(n / scale)
+                + (millions ? " million" : " thousand")
+                + (rest > 0 ? " " + numberWords(rest) : "");
     }
 
     static String ordinalWords(int n) {
