@@ -434,12 +434,16 @@ public final class JinferBench {
                                 hitMs, fullMs, fullMs / hitMs, hit.restoredTokens());
             }
 
-            // MTP: decode with and without the draft head; acceptance from the pass itself
+            // MTP: decode with and without the draft head; acceptance from the pass itself. On
+            // a REAL prompt through the chat template: a draft head predicts predictable text,
+            // and the filler tokens the other cells use are, by construction, unpredictable
+            // (they measured 0% accepted where the CLI measures a third on prose)
             if (engine.speculationReady()) {
+                ChatEngine.Request ask = textRequest("Explain how a hash map works.", gen);
                 engine.speculationDepth(0);
-                ChatEngine.Completion plain = complete(engine, prompt, greedy, gen);
+                ChatEngine.Completion plain = complete(engine, ask);
                 engine.speculationDepth(4);
-                ChatEngine.Completion drafted = complete(engine, prompt, greedy, gen);
+                ChatEngine.Completion drafted = complete(engine, ask);
                 double plainTps = decodeTps(plain);
                 double mtpTps = decodeTps(drafted);
                 mtp =
@@ -504,6 +508,28 @@ public final class JinferBench {
 
     private static double decodeTps(ChatEngine.Completion c) {
         return c.result().completionTokens() / (c.result().decodeTime().toNanos() / 1e9);
+    }
+
+    private static ChatEngine.Completion complete(ChatEngine engine, ChatEngine.Request request) {
+        try (ChatEngine.Prepared prepared = engine.prepare(request)) {
+            return engine.complete(prepared, ChatEngine.ReplySink.NONE);
+        }
+    }
+
+    private static ChatEngine.Request textRequest(String question, int gen) {
+        return new ChatEngine.Request(
+                List.of(new Message(Role.USER, question)),
+                List.of(),
+                false,
+                gen,
+                null,
+                null,
+                Duration.ZERO,
+                GREEDY,
+                null,
+                null,
+                List.of(),
+                Map.of());
     }
 
     private static ChatEngine.Request mediaRequest(
