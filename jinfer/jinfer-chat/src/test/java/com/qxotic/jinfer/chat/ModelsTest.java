@@ -28,9 +28,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import java.util.function.Consumer;
 
 class ModelsTest {
 
@@ -155,9 +155,7 @@ class ModelsTest {
 
                     @Override
                     public ReplyState encode(
-                            Conversation conversation,
-                            int batchCapacity,
-                            Consumer<Batch> sink) {
+                            Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
                         return null;
                     }
                 };

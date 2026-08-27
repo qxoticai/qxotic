@@ -4,6 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.Multimodal;
@@ -27,11 +28,10 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import com.qxotic.jinfer.SpeechSynthesisModel;
-import java.util.Set;
 
 /**
  * Loads any generative model, dispatching on {@code general.architecture} to the matching port via

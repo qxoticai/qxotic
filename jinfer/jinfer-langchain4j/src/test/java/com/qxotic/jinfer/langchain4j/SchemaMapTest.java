@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.exception.UnsupportedFeatureException;
@@ -27,7 +28,6 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import com.qxotic.format.json.Json;
 
 /**
  * {@link Mappings#toSchemaMap} against langchain4j's own {@code JsonSchemaElementUtils.toMap} as
@@ -309,8 +309,7 @@ class SchemaMapTest {
                         + "[\"date\"]},\"classes\":{\"type\":\"array\",\"items\":{\"type\":"
                         + "\"string\",\"enum\":[\"ECONOMY\",\"BUSINESS\"]}}},\"required\":"
                         + "[\"destination\",\"when\"]}}}",
-                Json.stringify(
-                        Mappings.toTools(List.of(spec)).get(0).definition()));
+                Json.stringify(Mappings.toTools(List.of(spec)).get(0).definition()));
     }
 
     @Test

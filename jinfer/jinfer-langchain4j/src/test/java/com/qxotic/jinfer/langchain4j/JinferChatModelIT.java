@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
@@ -28,7 +29,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import dev.langchain4j.data.message.SystemMessage;
 
 /**
  * End-to-end against a real GGUF (LFM2: native template port, tool-capable). Model-gated:
@@ -287,13 +287,9 @@ class JinferChatModelIT {
                         .maxOutputTokens(8)
                         .build();
         JinferChatModel view =
-                base.withCachedPrompt(
-                        List.of(SystemMessage.from("be brief")),
-                        List.of());
+                base.withCachedPrompt(List.of(SystemMessage.from("be brief")), List.of());
         JinferChatModel sibling =
-                base.withCachedPrompt(
-                        List.of(SystemMessage.from("be loud")),
-                        List.of());
+                base.withCachedPrompt(List.of(SystemMessage.from("be loud")), List.of());
         JinferStreamingChatModel twin = base.streaming();
 
         view.close();
@@ -318,12 +314,7 @@ class JinferChatModelIT {
         // a dead engine also refuses NEW views
         assertThrows(
                 IllegalStateException.class,
-                () ->
-                        base.withCachedPrompt(
-                                List.of(
-                                        SystemMessage.from(
-                                                "too late")),
-                                List.of()));
+                () -> base.withCachedPrompt(List.of(SystemMessage.from("too late")), List.of()));
         base.close(); // idempotent: reclosing through another instance is a no-op
     }
 

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.spring.ai;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.TestModels;
 import java.util.List;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,6 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
-import com.qxotic.jinfer.testkit.TestModels;
 
 /**
  * Coarse block caching, shared across the hybrid models whose codec overrides {@code coarseBlocks}

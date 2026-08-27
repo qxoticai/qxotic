@@ -70,8 +70,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class JinferChatModel implements ChatModel, AutoCloseable {
 
-    private static final Logger LOG =
-            LoggerFactory.getLogger(JinferChatModel.class);
+    private static final Logger LOG = LoggerFactory.getLogger(JinferChatModel.class);
 
     final ChatEngine engine;
     final ChatRequestParameters defaults;

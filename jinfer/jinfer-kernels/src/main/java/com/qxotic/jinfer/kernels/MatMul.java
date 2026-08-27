@@ -22,15 +22,15 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.IntConsumer;
+import java.util.function.ObjIntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.IntConsumer;
-import java.util.function.ObjIntConsumer;
 
 /**
  * Static, dtype-switched matmul over views. Per-dtype dispatch is hoisted out of the row loop.

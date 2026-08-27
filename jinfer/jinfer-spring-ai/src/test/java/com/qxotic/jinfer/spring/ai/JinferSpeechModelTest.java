@@ -25,13 +25,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.audio.tts.TextToSpeechOptions;
 import org.springframework.ai.audio.tts.TextToSpeechPrompt;
 import org.springframework.ai.audio.tts.TextToSpeechResponse;
-import reactor.core.publisher.Flux;
-import org.junit.jupiter.api.Assertions;
 import reactor.core.Exceptions;
+import reactor.core.publisher.Flux;
 
 /**
  * The adapter's own behaviour over a toy model - no GGUF, no weights, no kernels - plus one

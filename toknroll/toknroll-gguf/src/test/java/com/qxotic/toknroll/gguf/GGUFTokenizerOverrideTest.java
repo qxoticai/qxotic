@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
@@ -26,7 +27,6 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import com.qxotic.format.gguf.Builder;
 
 /**
  * The pre-tokenizer extension points: symbolic aliases (order-independent, cycle-checked at build)

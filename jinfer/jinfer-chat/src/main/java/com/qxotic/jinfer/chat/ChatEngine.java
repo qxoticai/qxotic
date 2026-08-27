@@ -30,6 +30,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -44,8 +46,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 
 /**
  * The framework-neutral provider runtime: one loaded model, the two-tier template stack (native
@@ -483,8 +483,7 @@ public final class ChatEngine implements AutoCloseable {
             templateKwargs =
                     templateKwargs == null
                             ? null
-                            : Collections.unmodifiableMap(
-                                    new LinkedHashMap<>(templateKwargs));
+                            : Collections.unmodifiableMap(new LinkedHashMap<>(templateKwargs));
         }
 
         /**

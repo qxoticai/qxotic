@@ -6,16 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.LoadedModel;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.Sampling;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** The command line's own rules - the ones whose failure prints usage and exits 1. */
 final class OptionsTest {
@@ -152,9 +152,7 @@ final class OptionsTest {
                         });
         var request =
                 Requests.of(
-                        List.of(Message.user("hi")),
-                        new Sampling(0f, 1f, 0, 0f, null),
-                        options);
+                        List.of(Message.user("hi")), new Sampling(0f, 1f, 0, 0f, null), options);
         assertEquals(128, request.reasoningMaxTokens());
         assertEquals("... Let me wrap up.", request.reasoningMessage());
     }

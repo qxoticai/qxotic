@@ -6,13 +6,13 @@ import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.io.IOException;
 
 /**
  * Throughput for the ragged/packed batched-embedding path ({@code EmbeddingModel.embedAll}), any

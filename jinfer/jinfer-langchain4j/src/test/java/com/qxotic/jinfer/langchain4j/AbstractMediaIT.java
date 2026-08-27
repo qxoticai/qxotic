@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
@@ -26,7 +27,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import dev.langchain4j.data.message.AudioContent;
 
 /**
  * The model-independent media contract, end-to-end against a real GGUF. A model instance is in
@@ -195,8 +195,7 @@ abstract class AbstractMediaIT {
                         () ->
                                 model.chat(
                                         UserMessage.from(
-                                                AudioContent.from(
-                                                        wav, "audio/wav"),
+                                                AudioContent.from(wav, "audio/wav"),
                                                 TextContent.from("Describe this audio."))));
         assertTrue(e.getMessage().contains("not supported"), e.getMessage());
     }

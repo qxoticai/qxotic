@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.server;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
@@ -23,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import com.qxotic.format.json.Json;
 
 /** OpenAI wire values lowered onto the framework-neutral {@link ChatEngine}. */
 final class Generation {

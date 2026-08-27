@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -33,10 +34,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import java.util.ArrayList;
-import java.util.stream.IntStream;
 
 /** The loaded MTP state is cacheable regardless of which decode loop a request selects. */
 final class Qwen35MtpCacheLifecycleTest {

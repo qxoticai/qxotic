@@ -6,11 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.LoadedModel;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
-import java.lang.reflect.Method;
 
 /** Builder validation, no model needed: errors fail fast, before any GGUF is touched. */
 class JinferChatModelTest {

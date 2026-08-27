@@ -6,10 +6,10 @@ import com.sun.management.HotSpotDiagnosticMXBean;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
+import java.lang.reflect.Field;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 import sun.misc.Unsafe;
-import java.lang.reflect.Field;
 
 /**
  * The raw-memory substrate every kernel body assumes. Kernels validate dtype/contiguity at entry

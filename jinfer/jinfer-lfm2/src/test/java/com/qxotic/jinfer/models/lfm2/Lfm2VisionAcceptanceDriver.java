@@ -16,6 +16,7 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.testkit.TestModels;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
@@ -26,6 +27,7 @@ import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -33,8 +35,6 @@ import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import com.qxotic.jinfer.testkit.TestModels;
-import java.util.ArrayList;
 
 /**
  * Manual, real-model visual acceptance matrix; answers and generated fixtures are test artifacts.

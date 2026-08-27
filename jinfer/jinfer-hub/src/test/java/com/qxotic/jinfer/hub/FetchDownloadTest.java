@@ -7,17 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Random;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import java.nio.charset.StandardCharsets;
-import java.util.Random;
 
 /**
  * The download's own guarantees against a {@link FileServer}: sha256 enforcement, the resume
@@ -41,9 +41,7 @@ class FetchDownloadTest {
             return HexFormat.of()
                     .formatHex(
                             MessageDigest.getInstance("SHA-256")
-                                    .digest(
-                                            value.getBytes(
-                                                    StandardCharsets.UTF_8)));
+                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }

@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.chat;
 
+import com.qxotic.jinfer.media.Media;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import com.qxotic.jinfer.media.Media;
 
 /** One role-tagged message with ordered, interleaved content. */
 public record Message(Role role, List<Content> content) {
