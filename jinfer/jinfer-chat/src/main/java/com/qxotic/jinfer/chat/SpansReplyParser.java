@@ -68,6 +68,17 @@ final class SpansReplyParser implements ReplyParser {
     }
 
     private Fragment consume(int token) {
+        if (thinkClose >= 0
+                && token == thinkClose
+                && inThink
+                && toolCalls != null
+                && toolCalls.inSpan()) {
+            // the close outranks an open call span (a cap-forced close lands here): the partial
+            // span is the reasoning's visible text, and the span cannot swallow the closer
+            Fragment flushed = concat(flushPending(), abandonSpan());
+            closeThink();
+            return flushed;
+        }
         if (toolCalls != null && toolCalls.accept(token)) {
             Fragment flushed = flushPending();
             return concat(flushed, collectSpans());
@@ -124,6 +135,7 @@ final class SpansReplyParser implements ReplyParser {
     public Message finish() {
         if (result == null) {
             flushPending();
+            if (toolCalls != null && toolCalls.inSpan()) abandonSpan(); // its text and ids stay
             closeThink();
             result = new Message(Role.ASSISTANT, content.parts());
         }
@@ -145,6 +157,15 @@ final class SpansReplyParser implements ReplyParser {
             content.text(fragment, ids);
         }
         return new Fragment(fragment, ids);
+    }
+
+    /** An unterminated span is the model's visible text, ids verbatim, never a call. */
+    private Fragment abandonSpan() {
+        SpanToolCallDetector.Span span = toolCalls.abandon();
+        ContentBuilder target = inThink ? reasoningContent : content;
+        target.add(new Content.Text(span.text(), span.wireIds()));
+        lastReasoning = inThink;
+        return span.text().isEmpty() ? Fragment.EMPTY : new Fragment(span.text(), span.wireIds());
     }
 
     private Fragment collectSpans() {

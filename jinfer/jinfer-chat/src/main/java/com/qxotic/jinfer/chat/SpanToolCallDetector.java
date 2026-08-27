@@ -76,6 +76,14 @@ final class SpanToolCallDetector {
         inSpan = false;
     }
 
+    /** Ends an unterminated span: its bytes as visible text with their wire ids, no calls. */
+    public Span abandon() {
+        Span span = new Span(bytes.toString(StandardCharsets.UTF_8), wireIds.build(), List.of());
+        bytes.reset();
+        inSpan = false;
+        return span;
+    }
+
     public boolean inSpan() {
         return inSpan;
     }
