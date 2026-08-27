@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
@@ -251,6 +252,137 @@ public final class FrozenBlocksTest {
         BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
         serve.resume(a, 12, r);
         assertEquals(12, r.position(), "torn append: old prompt still serves");
+    }
+
+    @Test
+    void evictedPersistedBlockIsNotAppendedTwice() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {9});
+        BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
+        Path file = Files.createTempFile("dup", ".jkv");
+        Files.delete(file);
+        file.toFile().deleteOnExit();
+        // budget for two 12-position blocks, so the third commit evicts the oldest leaf
+        long budget = 2 * codec.byteSize(12) + 8;
+        BlockTree<BlockResumeTest.FakeState> tree =
+                new BlockTree<>(codec, CacheStore.inMemory(), budget, seed);
+        long[] a = fp(12, 100), b = fp(12, 200), c = fp(12, 300);
+
+        commitFresh(tree, a);
+        tree.appendTo(file); // A is on disk, and still an evictable leaf in memory
+        commitFresh(tree, b);
+        commitFresh(tree, c); // budget: A (the LRU leaf) is evicted
+        assertTrue(tree.sample().evictions() > 0, "the budget evicted A");
+        commitFresh(tree, a); // A is new to the tree again, but not to the file; evicts B
+        tree.appendTo(file); // writes C; B was evicted before it was ever saved
+
+        FrozenBlocks reopened = FrozenBlocks.open(file, seed); // refused duplicates before the fix
+        assertEquals(2, reopened.entries().size(), "A and C, once each");
+        assertEquals(
+                2,
+                reopened.entries().stream().map(FrozenBlocks.Entry::key).distinct().count(),
+                "distinct keys");
+
+        // the second append must not have written A's blob again either
+        FrozenBlocks.Entry again = reopened.entries().get(0);
+        long before = Files.size(file);
+        reopened.append(List.of(again));
+        assertEquals(before, Files.size(file), "append skips a key already on disk");
+
+        // and the reopened catalog serves A from its frozen copy
+        BlockTree<BlockResumeTest.FakeState> layered =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1 << 20, seed, reopened);
+        BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
+        layered.resume(a, 12, s);
+        assertEquals(12, s.position(), "A restored from the artifact");
+    }
+
+    @Test
+    void recoveryRefreezeAlsoMarksBlocksAsPersisted() throws Exception {
+        // appendTo on a missing file re-freezes the whole tree and re-mounts it as the base;
+        // those blocks are on disk too, so a later evict-and-recommit must not append them again
+        ContentKey seed = ContentKey.sha256(new byte[] {10});
+        BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
+        Path file = Files.createTempFile("recover", ".jkv");
+        Files.delete(file);
+        file.toFile().deleteOnExit();
+        long budget = 2 * codec.byteSize(12) + 8;
+        BlockTree<BlockResumeTest.FakeState> tree =
+                new BlockTree<>(codec, CacheStore.inMemory(), budget, seed);
+        long[] a = fp(12, 100), b = fp(12, 200), c = fp(12, 300);
+
+        commitFresh(tree, a);
+        tree.appendTo(file);
+        Files.delete(file); // the catalog vanishes mid-run
+        commitFresh(tree, b);
+        tree.appendTo(file); // recovery: A and B re-frozen, file re-mounted
+        assertEquals(2, FrozenBlocks.open(file, seed).entries().size());
+        commitFresh(tree, c); // evicts A
+        commitFresh(tree, a); // evicts B; A is on disk already
+        tree.appendTo(file); // writes C only
+
+        FrozenBlocks reopened = FrozenBlocks.open(file, seed);
+        assertEquals(3, reopened.entries().size(), "A, B and C once each");
+        assertEquals(
+                3, reopened.entries().stream().map(FrozenBlocks.Entry::key).distinct().count());
+    }
+
+    @Test
+    void appendSkipsDuplicatesWithinOneBatch() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {11});
+        Path file = artifactWithTwoBlocks(seed);
+        FrozenBlocks mounted = FrozenBlocks.open(file, seed);
+        FrozenBlocks.Entry first = mounted.entries().get(0);
+        long before = Files.size(file);
+        mounted.append(List.of(first, first));
+        assertEquals(before, Files.size(file), "nothing new to write");
+        assertEquals(2, FrozenBlocks.open(file, seed).entries().size());
+    }
+
+    @Test
+    void randomSaveEvictRecommitSequencesKeepTheCatalogValid() throws Exception {
+        // every interleaving of commit, eviction, save and mid-run catalog loss must leave an
+        // artifact that opens (distinct keys) and serves exactly the blocks it lists
+        ContentKey seed = ContentKey.sha256(new byte[] {12});
+        BlockResumeTest.FakeCodec codec = new BlockResumeTest.FakeCodec();
+        Path file = Files.createTempFile("random", ".jkv");
+        Files.delete(file);
+        file.toFile().deleteOnExit();
+        long budget = 3 * codec.byteSize(12) + 8;
+        BlockTree<BlockResumeTest.FakeState> tree =
+                new BlockTree<>(codec, CacheStore.inMemory(), budget, seed);
+        long[][] prompts = new long[6][];
+        for (int i = 0; i < prompts.length; i++) prompts[i] = fp(12, 100L * (i + 1));
+        Random rnd = new Random(4242);
+        for (int round = 0; round < 200; round++) {
+            commitFresh(tree, prompts[rnd.nextInt(prompts.length)]);
+            if (rnd.nextInt(5) == 0) tree.appendTo(file);
+            if (rnd.nextInt(40) == 0 && Files.exists(file)) Files.delete(file);
+        }
+        tree.appendTo(file);
+        assertTrue(tree.sample().evictions() > 0, "the budget evicted along the way");
+
+        FrozenBlocks reopened = FrozenBlocks.open(file, seed);
+        assertEquals(
+                reopened.entries().size(),
+                reopened.entries().stream().map(FrozenBlocks.Entry::key).distinct().count(),
+                "distinct keys");
+        BlockTree<BlockResumeTest.FakeState> layered =
+                new BlockTree<>(codec, CacheStore.inMemory(), 1 << 20, seed, reopened);
+        int served = 0;
+        for (long[] prompt : prompts) {
+            BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
+            layered.resume(prompt, 12, s);
+            if (s.position() == 12) served++;
+            else assertEquals(0, s.position(), "a prompt is either fully on disk or absent");
+        }
+        assertEquals(reopened.entries().size(), served, "every listed block serves its prompt");
+    }
+
+    private static void commitFresh(BlockTree<BlockResumeTest.FakeState> tree, long[] fp) {
+        BlockResumeTest.FakeState s = new BlockResumeTest.FakeState();
+        BlockTree<BlockResumeTest.FakeState>.Block tip = tree.resume(new long[0], 0, s);
+        s.ingestTo(fp.length);
+        tree.commit(tip, fp, 0, fp.length, s);
     }
 
     @Test
