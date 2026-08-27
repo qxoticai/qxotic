@@ -38,4 +38,21 @@ class GenerationTest {
                         () -> Generation.parseArguments("{\"city\": Paris"));
         assertTrue(e.getMessage().contains("arguments"), e.getMessage());
     }
+
+    @Test
+    void reasoningEffortIsTheOpenAiSpellingOfThinking() {
+        assertEquals(false, Generation.thinking(Map.of("reasoning_effort", "none"), true));
+        assertEquals(true, Generation.thinking(Map.of("reasoning_effort", "low"), false));
+        assertEquals(
+                false,
+                Generation.thinking(
+                        Map.of(
+                                "reasoning_effort",
+                                "high",
+                                "chat_template_kwargs",
+                                Map.of("enable_thinking", false)),
+                        true),
+                "the explicit kwarg wins");
+        assertEquals(true, Generation.thinking(Map.of(), true));
+    }
 }

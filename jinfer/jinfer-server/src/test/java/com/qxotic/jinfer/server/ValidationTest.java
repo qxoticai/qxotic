@@ -291,4 +291,16 @@ class ValidationTest {
                     request.toString());
         }
     }
+
+    @Test
+    void reasoningEffortTakesOnlyTheKnownLevels() {
+        ServerConfig config = ServerConfig.local(0);
+        Map<String, Object> request = new HashMap<>(user("hi"));
+        request.put("reasoning_effort", "none");
+        Validation.validateGenerationParams(request, "model", config);
+        request.put("reasoning_effort", "bogus");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Validation.validateGenerationParams(request, "model", config));
+    }
 }

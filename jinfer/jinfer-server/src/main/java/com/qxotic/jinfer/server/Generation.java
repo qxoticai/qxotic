@@ -436,9 +436,19 @@ final class Generation {
     }
 
     private boolean thinking(Map<String, Object> request) {
+        return thinking(request, config.defaults().think());
+    }
+
+    /**
+     * {@code chat_template_kwargs.enable_thinking} first, else the OpenAI spelling: {@code
+     * reasoning_effort} "none" turns reasoning off and any level turns it on (the levels themselves
+     * have no dial here, as in llama.cpp), else the server default.
+     */
+    static boolean thinking(Map<String, Object> request, boolean fallback) {
         if (request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs
                 && kwargs.get("enable_thinking") instanceof Boolean value) return value;
-        return config.defaults().think();
+        if (request.get("reasoning_effort") instanceof String effort) return !effort.equals("none");
+        return fallback;
     }
 
     @SuppressWarnings("unchecked")
