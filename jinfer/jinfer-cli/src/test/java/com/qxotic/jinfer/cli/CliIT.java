@@ -145,6 +145,36 @@ class CliIT {
     }
 
     @Test
+    void aRefusedTurnEndsThatTurnNotTheChat(@TempDir Path dir) throws IOException {
+        // a prompt over the context used to escape run() with a stack trace, losing the session
+        Path model = TestModels.require(REF);
+        Options options =
+                new Options(
+                        model, Map.of(), null, null, null, true, 0f, null, null, null, 42L, 16, 64,
+                        false, false, true, false, false, false, null, false, 4);
+        InputStream realIn = System.in;
+        PrintStream realErr = System.err;
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        System.setIn(
+                new ByteArrayInputStream(
+                        ("word ".repeat(300) + "\nSay hi\n/quit\n")
+                                .getBytes(StandardCharsets.UTF_8)));
+        System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
+        ChatEngine e = engine(options);
+        try {
+            Chat.run(e, options.sampling(e.loaded().samplingDefaults()), options);
+        } finally {
+            e.close();
+            System.setIn(realIn);
+            System.setErr(realErr);
+        }
+        String output = err.toString(StandardCharsets.UTF_8);
+        assertTrue(output.contains("ERROR"), output);
+        assertEquals(
+                1, output.split("cache:", -1).length - 1, "the next turn still ran: " + output);
+    }
+
+    @Test
     void theCacheRestoresThePromptOnTheSecondRun(@TempDir Path dir) throws IOException {
         Path model = TestModels.require(REF);
         Path cache = dir.resolve("prompts.jkv");
