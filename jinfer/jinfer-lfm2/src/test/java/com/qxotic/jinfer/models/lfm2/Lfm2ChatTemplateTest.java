@@ -375,7 +375,9 @@ final class Lfm2ChatTemplateTest {
         Media.Image image = new Media.Image(new float[2000 * 1000 * 3], 1000, 2000, 3);
         try (Arena arena = Arena.ofShared()) {
             Lfm2Vision vision = tinyVision(MemoryAllocators.ofArena(arena));
-            Lfm2ChatTemplate template = new Lfm2ChatTemplate(current, vision, false);
+            Lfm2ChatTemplate template =
+                    new Lfm2ChatTemplate(
+                            current, vision, new Lfm2ChatTemplate.Dialect(false, false, true));
             MediaEncodingCache mediaCache = new MediaEncodingCache();
             IntSequence.Builder tokens = IntSequence.newBuilder();
             List<Integer> embeddingRows = new ArrayList<>();
