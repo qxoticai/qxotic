@@ -102,7 +102,9 @@ public final class TextNormalizer {
             Pattern.compile("\\b(\\d{1,2})\\s*([AaPp]\\.?\\s*[Mm]\\.?)\\b");
     private static final Pattern PHONE = Pattern.compile("\\b(\\d{3})-(\\d{4})\\b");
     private static final Pattern VERSION = Pattern.compile("\\b\\d+(?:\\.\\d+){2,}\\b");
-    private static final Pattern DECIMAL = Pattern.compile("\\b(\\d+)\\.(\\d+)\\b");
+    // the integer part may be comma-grouped (1,234.56): NUMBER would otherwise eat the "1,"
+    private static final Pattern DECIMAL =
+            Pattern.compile("\\b(\\d{1,3}(?:,\\d{3})+|\\d+)\\.(\\d+)\\b");
     private static final Pattern ORDINAL =
             Pattern.compile("\\b(\\d+)(st|nd|rd|th)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern NUMBER = Pattern.compile("\\b\\d[\\d,]*\\b");
@@ -157,7 +159,10 @@ public final class TextNormalizer {
         text =
                 DECIMAL.matcher(text)
                         .replaceAll(
-                                r -> spokenNumber(r.group(1)) + " point " + digitWords(r.group(2)));
+                                r ->
+                                        spokenNumber(r.group(1).replace(",", ""))
+                                                + " point "
+                                                + digitWords(r.group(2)));
         text = ORDINAL.matcher(text).replaceAll(r -> ordinal(r.group(1)));
         text = NUMBER.matcher(text).replaceAll(TextNormalizer::number);
         text = UPPERCASE_ACRONYM.matcher(text).replaceAll(r -> spellLetters(r.group()));
@@ -299,12 +304,16 @@ public final class TextNormalizer {
         return out.toString();
     }
 
-    /** A long run of digits is an identifier, not a quantity - except a year-like 20xx. */
+    /**
+     * A long run of digits is an identifier, not a quantity - except a year-like 20xx, and except a
+     * comma-grouped number: the grouping is the writer saying it is a quantity.
+     */
     private static String number(MatchResult match) {
-        String digits = match.group().replace(",", "");
-        return digits.length() >= 5 && !digits.startsWith("20")
-                ? digitWords(digits)
-                : spokenNumber(digits);
+        String written = match.group();
+        String digits = written.replace(",", "");
+        boolean identifier =
+                !written.contains(",") && digits.length() >= 5 && !digits.startsWith("20");
+        return identifier ? digitWords(digits) : spokenNumber(digits);
     }
 
     // ── numbers to words ──────────────────────────────────────────────────

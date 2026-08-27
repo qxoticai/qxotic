@@ -41,4 +41,16 @@ class TextNormalizerTest {
                 "one two three four five six seven eight nine zero one",
                 TextNormalizer.normalize("12345678901st"));
     }
+
+    @Test
+    void groupedNumbersAreQuantities() {
+        // the comma grouping is the writer saying "quantity": never digit by digit, and a
+        // grouped decimal keeps its integer part whole
+        assertEquals(
+                "About thirty thousand people came.",
+                TextNormalizer.normalize("About 30,000 people came."));
+        assertEquals(
+                "It costs one thousand two hundred thirty four point five six dollars.",
+                TextNormalizer.normalize("It costs 1,234.56 dollars."));
+    }
 }

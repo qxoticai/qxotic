@@ -1,4 +1,5 @@
 // Pure-Java phonemizer: an IVL2 lexicon of pre-phonemized words, plus a suffix fallback.
+// Unknown words fall through to espeak-ng per run when installed, else letter-to-sound rules.
 // Read from a file the caller names, or from the classpath when a jar or image bundles one.
 package com.qxotic.jinfer.models.inflect2.frontend;
 
@@ -9,8 +10,10 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 final class LexiconPhonemizer implements Phonemizer {
@@ -20,11 +23,22 @@ final class LexiconPhonemizer implements Phonemizer {
     /** Word separator in the symbol table - the model hears a space as a symbol of its own. */
     private static final int SPACE = Symbols.idOf(' ');
 
+    /** IPA for one punctuation-free run; the fallback channel, espeak-ng's {@code ipaRun}. */
+    interface RunFallback {
+        String ipa(String run) throws IOException;
+    }
+
     private final Map<String, int[]> lexicon;
+    private final RunFallback fallback; // espeak-ng, or null: letter-to-sound guesses instead
     private boolean warned;
 
     private LexiconPhonemizer(Map<String, int[]> lexicon) {
+        this(lexicon, null);
+    }
+
+    private LexiconPhonemizer(Map<String, int[]> lexicon, RunFallback fallback) {
         this.lexicon = lexicon;
+        this.fallback = fallback;
     }
 
     /**
@@ -46,6 +60,17 @@ final class LexiconPhonemizer implements Phonemizer {
         }
     }
 
+    @Override
+    public Phonemizer withEspeakFallback() {
+        EspeakPhonemizer espeak = EspeakPhonemizer.tryCreate();
+        return espeak == null ? this : new LexiconPhonemizer(lexicon, espeak::ipaRun);
+    }
+
+    /** A small in-memory lexicon, for tests. */
+    static LexiconPhonemizer of(Map<String, int[]> lexicon, RunFallback fallback) {
+        return new LexiconPhonemizer(lexicon, fallback);
+    }
+
     /**
      * Look each word up and join with the separator symbol. The text is expected to be normalized
      * already (see {@link Phonemizer}).
@@ -55,43 +80,100 @@ final class LexiconPhonemizer implements Phonemizer {
      * words would otherwise miss every clause-final word in ordinary prose ("grows." and "thin."
      * are in the lexicon; "grows." and "thin." with the stop attached are not).
      *
-     * <p>There is no letter-to-sound model behind this one, so a word it does not know is dropped -
-     * and says so once on stderr, because silence for a missing word is invisible downstream.
+     * <p>Words the lexicon does not know are never silent. With an espeak fallback, a whole
+     * punctuation-free run containing an unknown word goes to espeak - stress is contextual, so
+     * per-word fallback would stamp a primary stress on every function word (see {@link
+     * EspeakPhonemizer}). Without one, each unknown word is guessed by {@link LetterToSound} and
+     * the guess count is logged once, because a wrong pronunciation should be audible work, not an
+     * invisible gap.
      */
     @Override
-    public int[] phonemize(String text) {
-        int[] symbols = new int[64];
-        int length = 0;
-        int dropped = 0;
+    public int[] phonemize(String text) throws IOException {
+        Emitter out = new Emitter();
+        var runWords = new ArrayList<String>();
+        var runIds = new ArrayList<int[]>();
+        boolean runHasUnknown = false;
         for (String token : text.split("\\s+")) {
             if (token.isEmpty()) continue;
             int end = EspeakPhonemizer.wordEnd(token);
-            int[] ids = end > 0 ? lookup(token.substring(0, end).toLowerCase()) : null;
-            if (end > 0 && (ids == null || ids.length == 0)) dropped++;
-            int[] marks = Symbols.toRaw(token.substring(end));
-            int width = (ids == null ? 0 : ids.length) + marks.length;
-            if (width == 0) continue;
-            if (length + width + 1 > symbols.length)
-                symbols = Arrays.copyOf(symbols, (length + width + 1) * 2);
-            if (length > 0) symbols[length++] = SPACE;
-            if (ids != null) {
-                System.arraycopy(ids, 0, symbols, length, ids.length);
-                length += ids.length;
+            if (end > 0) {
+                String word = token.substring(0, end).toLowerCase();
+                int[] ids = lookup(word);
+                if (ids == null || ids.length == 0) runHasUnknown = true;
+                runWords.add(word);
+                runIds.add(ids);
             }
-            System.arraycopy(marks, 0, symbols, length, marks.length);
-            length += marks.length;
+            if (end < token.length()) { // trailing punctuation closes the run
+                out.put(runSymbols(runWords, runIds, runHasUnknown));
+                out.put(Symbols.toRaw(token.substring(end)));
+                runWords.clear();
+                runIds.clear();
+                runHasUnknown = false;
+            }
         }
-        if (dropped > 0 && !warned) {
+        out.put(runSymbols(runWords, runIds, runHasUnknown));
+        if (guessedCount > 0 && !warned) {
             warned = true;
             System.getLogger("jinfer.inflect2")
                     .log(
-                            System.Logger.Level.WARNING,
-                            "{0} word(s) are not in the lexicon and were left unspoken; install"
-                                    + " espeak-ng and remove the lexicon to phonemize them"
-                                    + " instead",
-                            dropped);
+                            System.Logger.Level.INFO,
+                            "{0} word(s) are not in the lexicon; pronounced by letter-to-sound"
+                                    + " rules. Correct one with a word override, or install"
+                                    + " espeak-ng to cover them all",
+                            guessedCount);
         }
-        return Symbols.blankIntersperse(Arrays.copyOf(symbols, length));
+        return Symbols.blankIntersperse(out.symbols());
+    }
+
+    private int guessedCount;
+
+    /**
+     * The buffered punctuation-free run as raw symbol ids: espeak when it covers the unknowns,
+     * lexicon plus letter-to-sound guesses otherwise.
+     */
+    private int[] runSymbols(List<String> words, List<int[]> ids, boolean hasUnknown)
+            throws IOException {
+        if (words.isEmpty()) return new int[0];
+        if (hasUnknown && fallback != null)
+            return Symbols.toRaw(fallback.ipa(String.join(" ", words)));
+        int total = words.size() - 1; // spaces between words
+        for (int i = 0; i < ids.size(); i++) {
+            int[] word = ids.get(i);
+            if (word == null || word.length == 0) {
+                word = Symbols.toRaw(LetterToSound.guess(words.get(i)));
+                guessedCount++;
+                ids.set(i, word);
+            }
+            total += word.length;
+        }
+        int[] out = new int[total];
+        int at = 0;
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) out[at++] = SPACE;
+            int[] word = ids.get(i);
+            System.arraycopy(word, 0, out, at, word.length);
+            at += word.length;
+        }
+        return out;
+    }
+
+    /** Space-separated symbol stream assembly: every block lands behind one separator. */
+    private static final class Emitter {
+        private int[] symbols = new int[64];
+        private int length;
+
+        void put(int[] block) {
+            if (block.length == 0) return;
+            int needed = length + block.length + (length > 0 ? 1 : 0);
+            if (needed > symbols.length) symbols = Arrays.copyOf(symbols, needed * 2);
+            if (length > 0) symbols[length++] = SPACE;
+            System.arraycopy(block, 0, symbols, length, block.length);
+            length += block.length;
+        }
+
+        int[] symbols() {
+            return Arrays.copyOf(symbols, length);
+        }
     }
 
     /** Exact match, else a known suffix split off a stem that is in the lexicon. */

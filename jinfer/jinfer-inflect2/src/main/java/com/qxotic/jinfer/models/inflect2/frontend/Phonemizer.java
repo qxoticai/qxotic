@@ -33,4 +33,14 @@ public interface Phonemizer {
     static Phonemizer espeak() {
         return EspeakPhonemizer.tryCreate();
     }
+
+    /**
+     * This front end with espeak-ng covering what it cannot resolve, or itself when espeak-ng is
+     * not installed. The lexicon layers espeak under itself: known words stay a deterministic hash
+     * lookup, runs containing an unknown word go to espeak's letter-to-sound model, and any
+     * remaining gap is guessed by rule - a best-effort pronunciation, never silence.
+     */
+    default Phonemizer withEspeakFallback() {
+        return this;
+    }
 }
