@@ -95,19 +95,39 @@ class JinjaChatTemplateTest {
         assertEquals("oknhi", CHAR_TOKENIZER.decode(ids));
     }
 
-    // two control tokens plus one token per character the tests render
+    // control tokens plus one token per character the tests render
     private static final Tokenizer CHAR_TOKENIZER =
-            new CharTokenizer("<|im_start|>", "<|im_end|>", "hiokn\u200b<|im_start|><|im_end|>");
+            new CharTokenizer(
+                    List.of("<|im_start|>", "<|im_end|>", "<think>", "</think>"),
+                    "hiokn\u200b<|im_start|><|im_end|>");
+
+    @Test
+    void thinkingOffClosesAScaffoldThatOpensTheSpan() {
+        // the mirror of "open it for them": a template whose generation prompt always opens
+        // <think> gets the empty span when thinking is off, and stays open when it is on
+        String opens = "{{ messages[0].content }}<think>";
+        String bare = "{{ messages[0].content }}";
+        List<Object> messages = List.of(Map.of("role", "user", "content", "hi"));
+        assertEquals("hi<think></think>", render(opens, messages, false), "closed at once");
+        assertEquals("hi<think>", render(opens, messages, true), "left open");
+        assertEquals("hi", render(bare, messages, false), "no span, nothing to close");
+        assertEquals("hi<think>", render(bare, messages, true), "opened for a bare scaffold");
+    }
+
+    private static String render(String source, List<Object> messages, boolean thinking) {
+        return CHAR_TOKENIZER.decode(
+                new JinjaChatTemplate(CHAR_TOKENIZER, source)
+                        .render(messages, null, true, thinking, null));
+    }
 
     private static final class CharTokenizer implements Tokenizer {
         private final List<String> tokens = new ArrayList<>();
         private final int controls;
         private final Vocabulary vocabulary;
 
-        CharTokenizer(String control1, String control2, String alphabet) {
-            tokens.add(control1);
-            tokens.add(control2);
-            controls = 2;
+        CharTokenizer(List<String> controlTokens, String alphabet) {
+            tokens.addAll(controlTokens);
+            controls = controlTokens.size();
             alphabet.chars().distinct().forEach(c -> tokens.add(String.valueOf((char) c)));
             vocabulary = new CharVocabulary();
         }

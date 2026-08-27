@@ -109,6 +109,40 @@ final class Lfm2ChatTemplateTest {
     }
 
     @Test
+    void thinkingOffClosesAPromptOpenedSpanAtOnce() {
+        // a pure reasoning checkpoint opens <think> on every turn: thinking off renders the
+        // empty span, thinking on leaves it open; a checkpoint whose prompt does not open the
+        // span keeps the bare header in both modes
+        Lfm2ChatTemplate opens = new Lfm2ChatTemplate(tokenizer, true);
+        Lfm2ChatTemplate bare = new Lfm2ChatTemplate(tokenizer, false);
+        Conversation on = new Conversation(List.of(Message.user("reason")), List.of(), true, "");
+        Conversation off = new Conversation(List.of(Message.user("reason")), List.of(), false, "");
+        int open = special("<think>"), close = special("</think>");
+        int[] header = specials("<|im_start|>assistant\n");
+
+        assertTail(encode(opens, on), concat(header, new int[] {open}));
+        assertArrayEquals(new int[] {open}, state(opens, on).replyPrefix().toArray());
+        assertTail(encode(opens, off), concat(header, new int[] {open, close}));
+        assertArrayEquals(new int[] {open, close}, state(opens, off).replyPrefix().toArray());
+        assertTail(encode(bare, on), header);
+        assertTrue(state(bare, on).replyPrefix().isEmpty());
+        assertTail(encode(bare, off), header);
+        assertTrue(state(bare, off).replyPrefix().isEmpty());
+    }
+
+    private static void assertTail(int[] ids, int[] tail) {
+        assertTrue(ids.length >= tail.length);
+        assertArrayEquals(
+                tail, java.util.Arrays.copyOfRange(ids, ids.length - tail.length, ids.length));
+    }
+
+    private static int[] concat(int[] a, int[] b) {
+        int[] out = java.util.Arrays.copyOf(a, a.length + b.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    @Test
     void promptOpensThinkingReadsBothNewlineSpellings() {
         // the GGUF stores the Jinja escape; the provider used to search for a literal newline and
         // never saw the 2.6B's pre-opened span
@@ -167,9 +201,12 @@ final class Lfm2ChatTemplateTest {
                                 64,
                                 batches::add);
 
-        assertTrue(reply.replyPrefix().isEmpty());
+        // the span the checkpoint always opens is closed at once: the parser starts in content,
+        // and the model sees the shape its history takes for a turn without reasoning
+        int open = special("<think>"), close = special("</think>");
+        assertArrayEquals(new int[] {open, close}, reply.replyPrefix().toArray());
         assertEquals(Channel.CONTENT, reply.parser().channel());
-        assertFalse(IntSequence.of(Batch.tokenIds(batches)).toList().contains(special("<think>")));
+        assertTail(Batch.tokenIds(batches), new int[] {open, close});
     }
 
     @Test
@@ -237,8 +274,10 @@ final class Lfm2ChatTemplateTest {
                                 List.of(weather()),
                                 false,
                                 ""));
-        assertEquals(1, count(active, special("<think>")));
-        assertEquals(1, count(active, special("</think>")));
+        // minus the generation prompt's own empty span (thinking off on a pre-opening checkpoint)
+        int[] activeHistory = java.util.Arrays.copyOf(active, active.length - 2);
+        assertEquals(1, count(activeHistory, special("<think>")));
+        assertEquals(1, count(activeHistory, special("</think>")));
 
         int[] historical =
                 encode(
@@ -252,8 +291,9 @@ final class Lfm2ChatTemplateTest {
                                 List.of(weather()),
                                 false,
                                 ""));
-        assertEquals(0, count(historical, special("<think>")));
-        assertEquals(0, count(historical, special("</think>")));
+        int[] historicalHistory = java.util.Arrays.copyOf(historical, historical.length - 2);
+        assertEquals(0, count(historicalHistory, special("<think>")));
+        assertEquals(0, count(historicalHistory, special("</think>")));
     }
 
     @Test

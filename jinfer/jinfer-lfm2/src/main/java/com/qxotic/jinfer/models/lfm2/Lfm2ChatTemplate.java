@@ -147,9 +147,17 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
 
         out.id(turnOpen).text("assistant\n");
         IntSequence replyPrefix = IntSequence.empty();
-        if (conversation.thinking() && promptOpensThinking) {
+        if (promptOpensThinking) {
+            // the checkpoint opens the span on every assistant turn; with thinking off we close
+            // it at once, the shape its history takes for a turn without reasoning (llama.cpp
+            // does the same). A bare header is a prompt the model never saw.
             out.id(thinkOpen);
-            replyPrefix = IntSequence.of(thinkOpen);
+            if (conversation.thinking()) {
+                replyPrefix = IntSequence.of(thinkOpen);
+            } else {
+                out.id(thinkClose);
+                replyPrefix = IntSequence.of(thinkOpen, thinkClose);
+            }
         }
         out.finish();
 

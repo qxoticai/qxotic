@@ -95,11 +95,14 @@ final class JinjaChatTemplate {
         // greedy: one <|im_end|>, an empty reply). Open it for them; the engine arms the thinking
         // cap and seeds the parser from exactly this tail. Skip when the render already left a
         // span open (Qwen3-style scaffolds end with "<think>\n").
-        if (enableThinking
-                && addGenerationPrompt
-                && SpecialTokens.find(tokenizer, Thinking.OPEN).isPresent()
-                && rendered.lastIndexOf(Thinking.OPEN) <= rendered.lastIndexOf(Thinking.CLOSE)) {
-            rendered += Thinking.OPEN;
+        if (addGenerationPrompt && SpecialTokens.find(tokenizer, Thinking.OPEN).isPresent()) {
+            boolean tailOpen =
+                    rendered.lastIndexOf(Thinking.OPEN) > rendered.lastIndexOf(Thinking.CLOSE);
+            if (enableThinking && !tailOpen) rendered += Thinking.OPEN;
+            // the mirror image: a scaffold that always opens the span (LFM2.5-2.6B, a pure
+            // reasoning model) is closed at once when thinking is off - the model's own shape
+            // for a turn without reasoning, and the only one the marker ban leaves reachable
+            if (!enableThinking && tailOpen) rendered += Thinking.CLOSE;
         }
         return specials.encode(tokenizer, rendered);
     }
