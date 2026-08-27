@@ -1261,31 +1261,61 @@ public final class Grammar {
             };
         }
 
+        /**
+         * JSON Schema's object rule, as llama.cpp builds it: the required properties in the
+         * schema's required order, every one present, then the optional properties as an ORDERED
+         * SUBSET in declaration order (any of them may be omitted, none may be invented). Property
+         * order is fixed by the grammar, a documented limitation shared with llama.cpp.
+         */
         @SuppressWarnings("unchecked")
         private String objectBody(Map<String, Object> m) {
             Object propsObj = m.get("properties");
             if (!(propsObj instanceof Map) || ((Map<?, ?>) propsObj).isEmpty())
                 return "\"{\" ws \"}\"";
             Map<String, Object> props = (Map<String, Object>) propsObj;
-            List<String> keys = new ArrayList<>();
-            // an EMPTY required list means "nothing mandatory", not "no properties" - fall back
-            // to all declared properties (AiServices emits required=[] for extracted POJOs)
-            if (m.get("required") instanceof List<?> req && !req.isEmpty()) {
+            List<String> required = new ArrayList<>();
+            if (m.get("required") instanceof List<?> req)
                 for (Object k : req)
-                    if (props.containsKey(String.valueOf(k))) keys.add(String.valueOf(k));
-            } else {
-                keys.addAll(props.keySet());
+                    if (props.containsKey(String.valueOf(k))) required.add(String.valueOf(k));
+            List<String> head = new ArrayList<>(), tail = new ArrayList<>();
+            for (String k : required) head.add(pair(k, props.get(k)));
+            for (String k : props.keySet())
+                if (!required.contains(k)) tail.add(pair(k, props.get(k)));
+            String optional = tail.isEmpty() ? null : optionalSubset(tail, 0);
+            if (head.isEmpty()) {
+                return optional == null
+                        ? "\"{\" ws \"}\""
+                        : "\"{\" ws (" + optional + ")? ws \"}\"";
             }
-            if (keys.isEmpty()) return "\"{\" ws \"}\"";
-            StringBuilder sb = new StringBuilder("\"{\" ws ");
-            for (int i = 0; i < keys.size(); i++) {
-                if (i > 0) sb.append(" ws \",\" ws ");
-                String k = keys.get(i);
-                sb.append(gbnfLiteral("\"" + jsonEsc(k) + "\""))
-                        .append(" ws \":\" ws ")
-                        .append(rule(props.get(k)));
-            }
-            return sb.append(" ws \"}\"").toString();
+            String pairs = String.join(" ws \",\" ws ", head);
+            return optional == null
+                    ? "\"{\" ws " + pairs + " ws \"}\""
+                    : "\"{\" ws " + pairs + " (ws \",\" ws " + optional + ")? ws \"}\"";
+        }
+
+        /** {@code "key" ws ":" ws <value rule>}. */
+        private String pair(String key, Object schema) {
+            return gbnfLiteral("\"" + jsonEsc(key) + "\"") + " ws \":\" ws " + rule(schema);
+        }
+
+        /**
+         * The non-empty ordered subsets of {@code pairs[from..)}, one named rule per suffix: {@code
+         * S_i ::= kv_i (ws "," ws S_i+1)? | S_i+1}, {@code S_n ::= kv_n}. Returns the name of
+         * {@code S_from}.
+         */
+        private String optionalSubset(List<String> pairs, int from) {
+            String kv = pairs.get(from);
+            String body =
+                    from + 1 == pairs.size()
+                            ? kv
+                            : kv
+                                    + " (ws \",\" ws "
+                                    + optionalSubset(pairs, from + 1)
+                                    + ")? | "
+                                    + optionalSubset(pairs, from + 1);
+            String name = "r" + (counter++);
+            rules.append(name).append(" ::= ").append(body).append("\n");
+            return name;
         }
 
         private String arrayBody(Map<String, Object> m) {
