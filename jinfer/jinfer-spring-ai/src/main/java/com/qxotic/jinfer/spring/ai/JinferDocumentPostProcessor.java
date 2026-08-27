@@ -175,7 +175,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
         private int contextLength = 2048;
         private String instruction;
         private int topK;
-        private double minScore;
+        private double minScore = Double.NEGATIVE_INFINITY; // unset: no threshold
 
         /** The reranker GGUF to load. Required. */
         public Builder modelPath(Path modelPath) {
@@ -245,9 +245,10 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
         }
 
         /**
-         * Drop documents scoring below this; 0 (default) keeps all. The verdict is a probability,
-         * so 0.5 reads as "the model would have answered yes" - an off-topic question then empties
-         * the context instead of grounding the answer in the least-bad chunk.
+         * Drop documents scoring below this; unset keeps all. A yes/no reranker's score is a
+         * probability, so 0.5 reads as "the model would have answered yes" - an off-topic question
+         * then empties the context instead of grounding the answer in the least-bad chunk. A
+         * ColBERT score is a MaxSim sum and can be negative, which is why unset is not 0.
          */
         public Builder minScore(double minScore) {
             this.minScore = minScore;
