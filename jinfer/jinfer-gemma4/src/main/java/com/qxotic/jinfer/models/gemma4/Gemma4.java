@@ -56,23 +56,27 @@ public final class Gemma4
     private final Weights weights;
     private final MediaProjector<Media.Image> vision;
     private final MediaProjector<Media.Audio> audio;
-    private Gemma4Mtp mtp; // MTP draft sidecar; null unless attachMtp loaded one
+    private final Gemma4Mtp mtp; // MTP draft sidecar; null unless attachMtp loaded one
 
     Gemma4(Configuration configuration, Tokenizer tokenizer, Weights weights) {
-        this(configuration, tokenizer, weights, null, null);
+        this(configuration, tokenizer, weights, null, null, null);
     }
 
+    // sidecars attach by copying, so attachMtp and withMedia commute and a model never changes
+    // under a state minted from it
     private Gemma4(
             Configuration configuration,
             Tokenizer tokenizer,
             Weights weights,
             MediaProjector<Media.Image> vision,
-            MediaProjector<Media.Audio> audio) {
+            MediaProjector<Media.Audio> audio,
+            Gemma4Mtp mtp) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
         this.vision = vision;
         this.audio = audio;
+        this.mtp = mtp;
     }
 
     @Override
@@ -848,9 +852,9 @@ public final class Gemma4
     }
 
     /**
-     * Attaches the {@code speculation} companion: the MTP draft sidecar, into {@code arena}. A
-     * load-time wiring call, before the model is published - pass the WEIGHTS arena so the sidecar
-     * dies with the backbone.
+     * Returns a model sharing this backbone's weights (and media sidecars) with the {@code
+     * speculation} companion, the MTP draft sidecar, attached from {@code arena}. Pass the WEIGHTS
+     * arena so the sidecar dies with the backbone.
      *
      * <p>The PAIRING is enforced here, like the mmproj's: the sidecar consumes this backbone's
      * hidden state, so its {@code embedding_length_out} must equal this model's embedding width,
@@ -893,8 +897,7 @@ public final class Gemma4
                             + " - it is the MTP head of a different gemma-4 size; use the sidecar"
                             + " published for this exact model");
         }
-        this.mtp = sidecar;
-        return this;
+        return new Gemma4(configuration, tokenizer, weights, vision, audio, sidecar);
     }
 
     private int kvHeadSize(int layer) {
@@ -984,7 +987,7 @@ public final class Gemma4
                                                 + audioType
                                                 + "' (expected gemma4a or gemma4ua)");
                     };
-            return new Gemma4(configuration, tokenizer, weights, visionEncoder, audioEncoder);
+            return new Gemma4(configuration, tokenizer, weights, visionEncoder, audioEncoder, mtp);
         }
     }
 

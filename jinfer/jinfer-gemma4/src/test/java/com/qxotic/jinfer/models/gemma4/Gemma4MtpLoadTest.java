@@ -6,6 +6,7 @@ package com.qxotic.jinfer.models.gemma4;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
@@ -57,5 +58,26 @@ class Gemma4MtpLoadTest {
         assertEquals(4, w.layerOutputScales.length, "layer output scales");
         assertNotNull(w.ropeFreqFactors, "rope_freqs present");
         assertEquals(256, w.ropeFreqFactors.length, "rope_freqs factors (full layer)");
+    }
+
+    @Test
+    @Tag("integration")
+    void sidecarsCommute() throws Exception {
+        Path text = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+        Path sidecar = TestModels.require(SIDECAR_REF);
+        Path mmproj = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
+        try (Arena arena = Arena.ofConfined()) {
+            Gemma4 mtpFirst = Gemma4.loadWithMtp(text, sidecar, arena).withMedia(mmproj, arena);
+            Gemma4 mediaFirst =
+                    Gemma4.loadModel(text, arena)
+                            .withMedia(mmproj, arena)
+                            .attachMtp(sidecar, arena);
+            for (Gemma4 model : new Gemma4[] {mtpFirst, mediaFirst}) {
+                assertTrue(model.speculationReady(), "the draft head survives either order");
+                assertTrue(
+                        model.projector(com.qxotic.jinfer.media.Media.Image.class).isPresent(),
+                        "the vision projector survives either order");
+            }
+        }
     }
 }
