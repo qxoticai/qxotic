@@ -41,6 +41,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -72,6 +73,10 @@ public final class ChatEngine implements AutoCloseable {
     private final String modelName;
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
+    // Preparing a request (encode, sampler) reads the weights and the caches but never the
+    // generation state, so it runs beside a generation; what it must exclude is close()'s
+    // teardown of those weights. Prepares share the read side, teardown takes the write side.
+    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     // THE cache: retained sessions + block tree + optional catalog, one front door (all access
     // under the generation lock - the facade is single-threaded by design, like the tree)
     private final PromptCache<?> cache;
@@ -293,6 +298,7 @@ public final class ChatEngine implements AutoCloseable {
                             + " callback and close after the call ends");
         }
         lock.lock();
+        lifecycle.writeLock().lock(); // no prepare mid-encode while the caches go
         try {
             if (!closed) {
                 closed = true;
@@ -302,6 +308,7 @@ public final class ChatEngine implements AutoCloseable {
                 mediaCache.clear();
             }
         } finally {
+            lifecycle.writeLock().unlock();
             lock.unlock();
         }
         // no interrupt: an in-flight generation finishes; queued streams fail loudly at checkOpen
@@ -318,9 +325,11 @@ public final class ChatEngine implements AutoCloseable {
             }
             // Multiple close callers may wait above; serialize their idempotent arena close.
             lock.lock();
+            lifecycle.writeLock().lock(); // and no prepare reads the weights as they are freed
             try {
                 freeOwnedWeights();
             } finally {
+                lifecycle.writeLock().unlock();
                 lock.unlock();
             }
         } finally {
@@ -505,7 +514,7 @@ public final class ChatEngine implements AutoCloseable {
             Duration timeout,
             String contentGbnf,
             List<String> stops) {
-        lock.lock();
+        lifecycle.readLock().lock();
         try {
             checkOpen();
             if (promptTokens == null || promptTokens.length == 0) {
@@ -526,7 +535,7 @@ public final class ChatEngine implements AutoCloseable {
             return Prepared.raw(
                     promptTokens, sampler, maxTokens, timeout, TextStops.checked(stops));
         } finally {
-            lock.unlock();
+            lifecycle.readLock().unlock();
         }
     }
 
@@ -593,7 +602,7 @@ public final class ChatEngine implements AutoCloseable {
      * </ul>
      */
     public Prepared prepare(Request request) {
-        lock.lock();
+        lifecycle.readLock().lock();
         try {
             checkOpen();
             Arena memory = Arenas.newCrossThread();
@@ -604,7 +613,7 @@ public final class ChatEngine implements AutoCloseable {
                 throw failure;
             }
         } finally {
-            lock.unlock();
+            lifecycle.readLock().unlock();
         }
     }
 
@@ -802,12 +811,12 @@ public final class ChatEngine implements AutoCloseable {
      * their framework's exception type.
      */
     public Encoded encode(Conversation conversation, Map<String, Object> templateKwargs) {
-        lock.lock();
+        lifecycle.readLock().lock();
         try {
             checkOpen();
             return encode(conversation, templateKwargs, MemoryAllocators.ofArena(Arena.ofAuto()));
         } finally {
-            lock.unlock();
+            lifecycle.readLock().unlock();
         }
     }
 

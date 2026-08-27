@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,10 +58,13 @@ class StreamingContractTest {
         final AtomicReference<Throwable> error = new AtomicReference<>();
         final CountDownLatch done = new CountDownLatch(1);
 
+        final CountDownLatch firstDelta = new CountDownLatch(1);
+
         @Override
         public void onPartialResponse(PartialResponse partial, PartialResponseContext context) {
             text.append(partial.text());
             events.add("partial");
+            firstDelta.countDown();
         }
 
         @Override
@@ -190,6 +194,35 @@ class StreamingContractTest {
                     dev.langchain4j.model.output.FinishReason.LENGTH,
                     r.response.get().finishReason(),
                     "the wall ends as LENGTH: " + r.response.get().finishReason());
+        }
+    }
+
+    @Test
+    void startingAStreamDoesNotWaitForTheRunningGeneration() throws Exception {
+        // chat() prepares the request on the caller's thread; preparing used to take the
+        // generation lock, so a second stream could not even be enqueued until the first reply
+        // had finished generating. A long first reply makes the wait visible.
+        try (JinferChatModel patient =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(MODEL_REF))
+                        .maxOutputTokens(400)
+                        .seed(7L)
+                        .build()) {
+            Recorder first = new Recorder();
+            patient.streaming().chat("Write a long story about a lighthouse keeper.", first);
+            assertTrue(
+                    first.firstDelta.await(30, TimeUnit.SECONDS), "the first stream is generating");
+
+            Recorder second = new Recorder();
+            long start = System.nanoTime();
+            patient.streaming().chat("Name one colour.", second); // enqueues, must not block
+            long waited = (System.nanoTime() - start) / 1_000_000;
+
+            assertFalse(first.events.contains("complete"), "the first reply was still generating");
+            assertTrue(waited < 2_000, "chat() returned after " + waited + " ms");
+            first.awaitCompletion();
+            second.awaitCompletion();
+            assertTrue(second.events.contains("complete"), second.events.toString());
         }
     }
 
