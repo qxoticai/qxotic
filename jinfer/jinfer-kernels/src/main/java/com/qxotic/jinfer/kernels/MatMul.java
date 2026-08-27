@@ -1770,6 +1770,14 @@ public final class MatMul {
     private static final JamMm NATIVE = boolFlag("jinfer.disableJam") ? null : load("native");
     private static final JamMm VECTOR = load("vector");
 
+    /** The JAM rungs that loaded ("native", "vector"), for the selection tests. */
+    static java.util.List<String> jamRungs() {
+        java.util.List<String> rungs = new java.util.ArrayList<>(2);
+        if (NATIVE != null) rungs.add("native");
+        if (VECTOR != null) rungs.add("vector");
+        return rungs;
+    }
+
     static {
         // Both rungs absent: every prefill is on the Java floor for the whole run. (A present
         // but broken backend already logged at load(); explicit -Djam.<id>.disabled is the

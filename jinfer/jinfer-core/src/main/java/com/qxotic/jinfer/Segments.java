@@ -101,9 +101,29 @@ public final class Segments {
     // present" with "vectors fast" there. The active compiler must be read from the
     // UseJVMCICompiler VM option - java.vm.version says "jvmci" on GraalVM even when it runs C2
     // via -XX:-UseJVMCICompiler.
-    public static final boolean FAST_VECTOR_JIT = USE_VECTOR_API && jitIntrinsifiesVectors();
+    public static final boolean FAST_VECTOR_JIT = USE_VECTOR_API && vectorJit();
 
-    private static boolean jitIntrinsifiesVectors() {
+    // -Djinfer.vectorJit=auto|fast|slow: auto (the default) is the compiler detection below; fast
+    // and slow override it, for a JIT whose Vector API quality the detection misjudges and for
+    // the kernel selection matrix in jinfer-kernels' pom, which runs both sides on any compiler.
+    // A native image folds this at build time, so pass it to the image build, not the binary.
+    private static boolean vectorJit() {
+        String value = System.getProperty("jinfer.vectorJit", "auto");
+        return switch (value) {
+            case "fast" -> true;
+            case "slow" -> false;
+            case "auto" -> vectorJitDetected();
+            default ->
+                    throw new IllegalArgumentException(
+                            "jinfer.vectorJit: auto, fast or slow, not '" + value + "'");
+        };
+    }
+
+    /**
+     * Whether the active compiler intrinsifies the Vector API well enough to trust it on hot paths:
+     * the compiler's own answer, what {@code -Djinfer.vectorJit=auto} resolves to.
+     */
+    public static boolean vectorJitDetected() {
         if (System.getProperty("org.graalvm.nativeimage.imagecode") != null) {
             // Native image (this also covers build-time class initialization, where the
             // property is set to "buildtime"): Graal AOT-compiles the Vector API well.

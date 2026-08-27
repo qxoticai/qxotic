@@ -8,7 +8,10 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Direct contracts for the stateful causal convolution used by recurrent models. */
 class ConvolutionsTest {
@@ -53,6 +56,74 @@ class ConvolutionsTest {
         assertArrayEquals(expected, out.toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT), 1e-6f);
         assertArrayEquals(
                 new float[] {3, 4, 5, 6}, state.toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT));
+    }
+
+    /**
+     * {@link Convolutions#conv1dRows} against a scalar reference, over shapes that reach every
+     * path: full 4-channel groups and a partial group, the branch-free interior at each register
+     * tile ({@code -Djinfer.convTile}, see {@link KernelSelectionTest}), both edges, dilation, an
+     * even kernel (asymmetric "same" padding) and a time axis shorter than one tile span.
+     */
+    @ParameterizedTest(name = "in={0} out={1} time={2} kernel={3} dilation={4}")
+    @CsvSource({
+        "3, 8, 300, 5, 1",
+        "3, 8, 300, 5, 2",
+        "2, 9, 257, 11, 1",
+        "2, 4, 300, 4, 1",
+        "2, 4, 300, 4, 3",
+        "1, 4, 7, 3, 1",
+        "5, 1, 130, 1, 1",
+    })
+    void conv1dRowsMatchesScalarOracle(
+            int inChannels, int outChannels, int time, int kernel, int dilation) {
+        Random rnd = new Random(31L * inChannels + 7L * outChannels + time + kernel + dilation);
+        float[] input = new float[inChannels * time];
+        float[] taps = new float[outChannels * inChannels * kernel];
+        float[] bias = new float[outChannels];
+        for (int i = 0; i < input.length; i++) input[i] = rnd.nextFloat() * 2 - 1;
+        for (int i = 0; i < taps.length; i++) taps[i] = rnd.nextFloat() * 2 - 1;
+        for (int i = 0; i < bias.length; i++) bias[i] = rnd.nextFloat() * 2 - 1;
+
+        int pad = ((kernel - 1) * dilation) / 2;
+        float[] expected = new float[outChannels * time];
+        for (int oc = 0; oc < outChannels; oc++) {
+            for (int t = 0; t < time; t++) {
+                double sum = bias[oc];
+                for (int ic = 0; ic < inChannels; ic++) {
+                    for (int k = 0; k < kernel; k++) {
+                        int pos = t + k * dilation - pad;
+                        if (pos < 0 || pos >= time) continue;
+                        sum += taps[(oc * inChannels + ic) * kernel + k] * input[ic * time + pos];
+                    }
+                }
+                expected[oc * time + t] = (float) sum;
+            }
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            MemoryView<MemorySegment> in = Views.allocateF32(memory, inChannels, time);
+            MemoryView<MemorySegment> out = Views.allocateF32(memory, outChannels, time);
+            MemoryView<MemorySegment> biasView = Views.allocateF32(memory, outChannels);
+            Views.copyFromArray(in, 0, input, 0, input.length, "in");
+            Views.copyFromArray(biasView, 0, bias, 0, bias.length, "bias");
+            Convolutions.conv1dRows(
+                    in, inChannels, out, outChannels, time, kernel, dilation, taps, biasView);
+            float[] actual = Views.toFloatArray(out, "out");
+            for (int i = 0; i < expected.length; i++) {
+                assertEquals(
+                        expected[i],
+                        actual[i],
+                        1e-4f,
+                        "channel "
+                                + i / time
+                                + " sample "
+                                + i % time
+                                + " (tile "
+                                + Convolutions.tileCode()
+                                + ")");
+            }
+        }
     }
 
     @Test
