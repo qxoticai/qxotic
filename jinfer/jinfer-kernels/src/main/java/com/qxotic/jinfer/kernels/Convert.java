@@ -88,8 +88,8 @@ public final class Convert {
 
     /**
      * F16 → F32 over an element span (the old F16→F32 {@code copyTo} / {@code copyRow}): vector
-     * body plus scalar tail, exact for normals with subnormals flushed — the same converter the
-     * FlashAttention F16 tiles use, so decode-first and direct paths agree bit for bit.
+     * body plus scalar tail, exact on every half - the same converter the FlashAttention F16 tiles
+     * use, so decode-first and direct paths agree bit for bit.
      */
     public static void f16ToF32(
             MemoryView<MemorySegment> src,
