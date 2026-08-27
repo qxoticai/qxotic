@@ -135,13 +135,8 @@ final class SpansReplyParser implements ReplyParser {
             // "</think>\n\n" is how every reasoning family frames the answer: the frame is not
             // content (llama.cpp's parser consumes it too). The ids stay verbatim for the cache.
             fragment = fragment.stripLeading();
-            if (fragment.isEmpty()) {
-                content.text("", ids); // nothing to show, but the ids are the reply's verbatim
-                return new Fragment("", ids);
-            }
-            trimLead = false;
+            trimLead = fragment.isEmpty();
         }
-        if (fragment.isEmpty()) return Fragment.EMPTY;
         lastReasoning = inThink;
         if (inThink) {
             reasoningContent.text(fragment, ids);

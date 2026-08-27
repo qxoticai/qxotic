@@ -1163,11 +1163,7 @@ public final class ReplyLanguage {
             if (trimLead && region.kind() != Kind.THINK) {
                 // the whitespace after </think> frames the answer; not content (ids stay verbatim)
                 text = text.stripLeading();
-                if (text.isEmpty()) {
-                    route("", frag.ids()); // nothing to show; the ids stay the reply's verbatim
-                    return new Fragment("", frag.ids());
-                }
-                trimLead = false;
+                trimLead = text.isEmpty();
             }
             route(text, frag.ids());
             lastReasoning = region.kind() == Kind.THINK;
