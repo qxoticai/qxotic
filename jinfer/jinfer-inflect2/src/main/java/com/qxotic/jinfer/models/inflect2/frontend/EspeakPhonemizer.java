@@ -5,6 +5,7 @@ import com.qxotic.jinfer.models.inflect2.Symbols;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 final class EspeakPhonemizer implements Phonemizer {
@@ -13,7 +14,7 @@ final class EspeakPhonemizer implements Phonemizer {
 
     private final String binary;
 
-    private EspeakPhonemizer(String binary) {
+    EspeakPhonemizer(String binary) { // package-private: tests point it at a stand-in script
         this.binary = binary;
     }
 
@@ -71,10 +72,9 @@ final class EspeakPhonemizer implements Phonemizer {
     }
 
     /**
-     * Where the word ends and its trailing punctuation begins. An apostrophe between letters is
-     * part of the word ("don't"), not punctuation.
+     * Where the word ends and its trailing punctuation begins; shared with the lexicon path. An
+     * apostrophe between letters is part of the word ("don't"), not punctuation.
      */
-    /** Where the word ends and its trailing punctuation begins; shared with the lexicon path. */
     static int wordEnd(String token) {
         int end = token.length();
         while (end > 0) {
@@ -87,13 +87,26 @@ final class EspeakPhonemizer implements Phonemizer {
         return end;
     }
 
+    /** IPA for one punctuation-free run; the lexicon's fallback channel. */
+    String ipaRun(String words) throws IOException {
+        return phonemizeRun(words);
+    }
+
     private String phonemizeRun(String words) throws IOException {
+        // the text goes in on stdin, never as an argument: a run that starts with '-' ("-five
+        // degrees") would be parsed as an option. stderr is not IPA: it is dropped, and a failed
+        // run is an error here instead of a diagnostic spoken letter by letter.
         Process espeak =
-                new ProcessBuilder(binary, "--ipa", "-q", "-v", "en-us", words)
-                        .redirectErrorStream(true)
+                new ProcessBuilder(binary, "--ipa", "-q", "-v", "en-us", "--stdin")
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
+        try (var stdin = espeak.getOutputStream()) {
+            stdin.write(words.getBytes(StandardCharsets.UTF_8));
+        }
         String ipa;
-        try (var reader = new BufferedReader(new InputStreamReader(espeak.getInputStream()))) {
+        try (var reader =
+                new BufferedReader(
+                        new InputStreamReader(espeak.getInputStream(), StandardCharsets.UTF_8))) {
             // a run can span several output lines (espeak breaks at clause boundaries): keep the
             // separator, or the last phoneme of one line fuses with the first of the next
             ipa = String.join(" ", reader.lines().toList());
@@ -107,6 +120,9 @@ final class EspeakPhonemizer implements Phonemizer {
             espeak.destroyForcibly();
             Thread.currentThread().interrupt();
             throw new IOException(binary + " interrupted", e);
+        }
+        if (espeak.exitValue() != 0) {
+            throw new IOException(binary + " exited " + espeak.exitValue() + " on: " + words);
         }
         return ipa.replace("_", "").replaceAll("\\s+", " ").trim();
     }
