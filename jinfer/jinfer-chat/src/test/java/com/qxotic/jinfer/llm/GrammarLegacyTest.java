@@ -1595,7 +1595,7 @@ public final class GrammarLegacyTest {
     }
 
     private static String lit(String source) {
-        return new String(Grammar.literalBytes(source), java.nio.charset.StandardCharsets.UTF_8);
+        return new String(Grammar.literalBytes(source), StandardCharsets.UTF_8);
     }
 
     static void testParser() {

@@ -31,6 +31,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import com.qxotic.jota.DataType;
 
 /** Gemma 4 SigLIP-style vision tower ({@code projector_type=gemma4v}). */
 public final class Gemma4Vision implements MediaProjector<Media.Image> {
@@ -454,7 +455,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
                                 Math.multiplyExact(280, Math.multiplyExact(factor, factor)));
         int imageSize = (int) (Math.sqrt(maxPixels) / factor) * factor;
         MemoryView<MemorySegment> position = require(tensors, "v.position_embd.weight");
-        if (position.dataType() != com.qxotic.jota.DataType.FP32)
+        if (position.dataType() != DataType.FP32)
             throw new IllegalArgumentException(
                     label.getFileName() + ": v.position_embd.weight must be FP32");
         Shape positionShape = position.shape();

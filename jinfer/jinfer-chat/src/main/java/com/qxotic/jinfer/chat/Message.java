@@ -3,6 +3,7 @@ package com.qxotic.jinfer.chat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import com.qxotic.jinfer.media.Media;
 
 /** One role-tagged message with ordered, interleaved content. */
 public record Message(Role role, List<Content> content) {
@@ -19,7 +20,7 @@ public record Message(Role role, List<Content> content) {
         return new Message(Role.SYSTEM, text);
     }
 
-    public static Message user(String text, com.qxotic.jinfer.media.Media... media) {
+    public static Message user(String text, Media... media) {
         ArrayList<Content> content = new ArrayList<>(media.length + 1);
         content.add(new Content.Text(text));
         for (var value : media) content.add(new Content.Media(value));

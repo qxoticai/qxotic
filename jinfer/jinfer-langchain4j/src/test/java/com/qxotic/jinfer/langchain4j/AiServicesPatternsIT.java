@@ -26,6 +26,15 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
+import dev.langchain4j.rag.content.injector.ContentInjector;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
+import java.util.Collections;
+import java.util.HashSet;
+import org.junit.jupiter.api.Assertions;
 
 /**
  * The AiServices idioms professional langchain4j code is actually written in, over one shared
@@ -279,9 +288,9 @@ class AiServicesPatternsIT {
         assertTrue(
                 memory.messages().stream()
                         .filter(
-                                dev.langchain4j.data.message.ToolExecutionResultMessage.class
+                                ToolExecutionResultMessage.class
                                         ::isInstance)
-                        .map(dev.langchain4j.data.message.ToolExecutionResultMessage.class::cast)
+                        .map(ToolExecutionResultMessage.class::cast)
                         .anyMatch(r -> r.text().contains("sensor \"RX-7\" blew up")),
                 "the raw failure text rides the tool result by default: " + memory.messages());
     }
@@ -296,7 +305,7 @@ class AiServicesPatternsIT {
                         .chatMemory(memory)
                         .toolExecutionErrorHandler(
                                 (error, context) ->
-                                        dev.langchain4j.service.tool.ToolErrorHandlerResult.text(
+                                        ToolErrorHandlerResult.text(
                                                 "Tool failed: " + error.getMessage()))
                         .build();
 
@@ -311,9 +320,9 @@ class AiServicesPatternsIT {
         var results =
                 memory.messages().stream()
                         .filter(
-                                dev.langchain4j.data.message.ToolExecutionResultMessage.class
+                                ToolExecutionResultMessage.class
                                         ::isInstance)
-                        .map(dev.langchain4j.data.message.ToolExecutionResultMessage.class::cast)
+                        .map(ToolExecutionResultMessage.class::cast)
                         .toList();
         assertTrue(
                 results.stream().anyMatch(r -> r.text().contains("sensor \"RX-7\" blew up")),
@@ -336,7 +345,7 @@ class AiServicesPatternsIT {
         closed.close();
         Chat chat = AiServices.builder(Chat.class).chatModel(closed).build();
         IllegalStateException e =
-                org.junit.jupiter.api.Assertions.assertThrows(
+                Assertions.assertThrows(
                         IllegalStateException.class, () -> chat.chat("hello"));
         assertTrue(
                 e.getClass() == IllegalStateException.class,
@@ -348,17 +357,17 @@ class AiServicesPatternsIT {
         // the upstream mock pins the injector's output shape; the jinfer lane pins that an
         // injected multi-part user message survives lowering and the model actually grounds its
         // answer in the injected content (a fact it cannot know otherwise)
-        dev.langchain4j.rag.content.injector.ContentInjector injector =
+        ContentInjector injector =
                 (contents, message) ->
                         dev.langchain4j.data.message.UserMessage.from(
-                                dev.langchain4j.data.message.TextContent.from(
+                                TextContent.from(
                                         "Context: the codeword for today is ZEBRA."),
-                                dev.langchain4j.data.message.TextContent.from(
+                                TextContent.from(
                                         ((dev.langchain4j.data.message.UserMessage) message)
                                                 .singleText()));
         var augmentor =
-                dev.langchain4j.rag.DefaultRetrievalAugmentor.builder()
-                        .contentRetriever(query -> java.util.Collections.emptyList())
+                DefaultRetrievalAugmentor.builder()
+                        .contentRetriever(query -> Collections.emptyList())
                         .contentInjector(injector)
                         .build();
         Chat chat =
@@ -391,13 +400,13 @@ class AiServicesPatternsIT {
 
         // the law, directly on the memory: no result without its call anywhere in the window
         var messages = memory.messages();
-        var callIds = new java.util.HashSet<String>();
+        var callIds = new HashSet<String>();
         for (var m : messages) {
-            if (m instanceof dev.langchain4j.data.message.AiMessage ai
+            if (m instanceof AiMessage ai
                     && ai.hasToolExecutionRequests()) {
                 ai.toolExecutionRequests().forEach(r -> callIds.add(r.id()));
             }
-            if (m instanceof dev.langchain4j.data.message.ToolExecutionResultMessage r) {
+            if (m instanceof ToolExecutionResultMessage r) {
                 assertTrue(
                         callIds.contains(r.id()),
                         "orphan tool result survived eviction: " + r.id() + " in " + messages);

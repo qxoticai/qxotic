@@ -21,6 +21,8 @@ import java.lang.foreign.ValueLayout;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import java.util.Arrays;
+import java.util.Random;
 
 class Qwen35VisionComponentsTest {
 
@@ -205,7 +207,7 @@ class Qwen35VisionComponentsTest {
         // signal; the two paths differ only in summation order (online vs explicit softmax).
         int visionDim = 8, headCount = 2, ffnDim = 8, merge = 2, modelDim = 4;
         int projectorDim = 16, patchVector = 3, projectorInput = merge * merge * visionDim;
-        java.util.Random rnd = new java.util.Random(7);
+        Random rnd = new Random(7);
         try (Arena arena = Arena.ofConfined()) {
             MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             Qwen35Vision.Layer layer =
@@ -275,7 +277,7 @@ class Qwen35VisionComponentsTest {
     }
 
     private static MemoryView<MemorySegment> random(
-            MemoryArena<MemorySegment> arena, java.util.Random rnd, long... dims) {
+            MemoryArena<MemorySegment> arena, Random rnd, long... dims) {
         long n = 1;
         for (long d : dims) n *= d;
         float[] values = new float[Math.toIntExact(n)];
@@ -342,7 +344,7 @@ class Qwen35VisionComponentsTest {
 
     private static MemoryView<MemorySegment> ones(MemoryArena<MemorySegment> arena, long d0) {
         float[] values = new float[Math.toIntExact(d0)];
-        java.util.Arrays.fill(values, 1f);
+        Arrays.fill(values, 1f);
         return tensor(arena, new long[] {d0}, values);
     }
 

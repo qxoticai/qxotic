@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jinfer.ContextState;
 
 /**
  * The scalar kernels must produce the SAME TOKENS as the vector ones. A fallback that runs but
@@ -87,7 +88,7 @@ final class VectorScalarParityTest {
         }
     }
 
-    private static <S extends com.qxotic.jinfer.ContextState> String greedy(LoadedModel<S> loaded) {
+    private static <S extends ContextState> String greedy(LoadedModel<S> loaded) {
         var model = loaded.model();
         int vocab = model.configuration().vocabularySize();
         S state = model.newState(512, 512);

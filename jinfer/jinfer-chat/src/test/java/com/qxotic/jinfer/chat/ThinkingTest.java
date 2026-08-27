@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
+import java.util.stream.IntStream;
 
 /** Thinking-budget behavior over a tiny tokenizer, without a model. */
 class ThinkingTest {
@@ -367,7 +368,7 @@ class ThinkingTest {
 
         @Override
         public Iterator<Map.Entry<String, Integer>> iterator() {
-            return java.util.stream.IntStream.range(0, tokens.length)
+            return IntStream.range(0, tokens.length)
                     .mapToObj(i -> Map.entry(tokens[i], i))
                     .iterator();
         }

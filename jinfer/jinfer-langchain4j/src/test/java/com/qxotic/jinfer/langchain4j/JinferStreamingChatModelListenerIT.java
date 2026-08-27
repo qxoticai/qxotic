@@ -18,6 +18,10 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
+import dev.langchain4j.model.chat.listener.ChatModelErrorContext;
+import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
+import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
+import dev.langchain4j.model.chat.response.ChatResponse;
 
 /**
  * The langchain4j streaming listener compliance kit against {@link JinferStreamingChatModel}. The
@@ -96,19 +100,19 @@ class JinferStreamingChatModelListenerIT extends AbstractStreamingChatModelListe
                 new ChatModelListener() {
                     @Override
                     public void onRequest(
-                            dev.langchain4j.model.chat.listener.ChatModelRequestContext context) {
+                            ChatModelRequestContext context) {
                         requests.incrementAndGet();
                     }
 
                     @Override
                     public void onResponse(
-                            dev.langchain4j.model.chat.listener.ChatModelResponseContext context) {
+                            ChatModelResponseContext context) {
                         terminal.incrementAndGet();
                     }
 
                     @Override
                     public void onError(
-                            dev.langchain4j.model.chat.listener.ChatModelErrorContext context) {
+                            ChatModelErrorContext context) {
                         terminal.incrementAndGet();
                     }
                 };
@@ -123,7 +127,7 @@ class JinferStreamingChatModelListenerIT extends AbstractStreamingChatModelListe
                                 new StreamingChatResponseHandler() {
                                     @Override
                                     public void onCompleteResponse(
-                                            dev.langchain4j.model.chat.response.ChatResponse
+                                            ChatResponse
                                                     response) {}
 
                                     @Override

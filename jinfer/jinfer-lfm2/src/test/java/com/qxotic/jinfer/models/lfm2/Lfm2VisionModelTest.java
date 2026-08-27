@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import java.util.Arrays;
 
 class Lfm2VisionModelTest {
     private static final String TEXT = "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M";
@@ -55,11 +56,11 @@ class Lfm2VisionModelTest {
                         assertEquals(215.128174f, sum, 5f);
                         assertArrayEquals(
                                 new float[] {0.0302f, -0.0598f, 0.2365f},
-                                java.util.Arrays.copyOf(values, 3),
+                                Arrays.copyOf(values, 3),
                                 0.01f);
                         assertArrayEquals(
                                 new float[] {0.1229f, -0.0922f, -0.1178f},
-                                java.util.Arrays.copyOfRange(values, 2045, 2048),
+                                Arrays.copyOfRange(values, 2045, 2048),
                                 0.01f);
                         borrowed.add(segment);
                     });

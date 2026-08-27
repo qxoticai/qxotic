@@ -22,6 +22,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
+import com.qxotic.jinfer.testkit.TestModels;
 
 /**
  * The model-agnostic CAPABILITY contract on the Spring AI surface: tool calling and structured
@@ -56,7 +57,7 @@ abstract class AbstractCapabilityIT {
     void load() {
         model =
                 JinferChatModel.builder()
-                        .modelPath(com.qxotic.jinfer.testkit.TestModels.require(modelRef()))
+                        .modelPath(TestModels.require(modelRef()))
                         .contextLength(4096)
                         .options(JinferChatOptions.builder().maxTokens(512).build())
                         .build();

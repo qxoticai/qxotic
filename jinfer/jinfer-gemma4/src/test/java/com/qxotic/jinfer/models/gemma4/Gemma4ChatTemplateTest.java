@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import java.util.function.Consumer;
 
 final class Gemma4ChatTemplateTest {
 
@@ -276,7 +277,7 @@ final class Gemma4ChatTemplateTest {
                         public void project(
                                 R source,
                                 int maxChunkSize,
-                                java.util.function.Consumer<MemoryView<?>> sink) {
+                                Consumer<MemoryView<?>> sink) {
                             projections.incrementAndGet();
                             sink.accept(
                                     Views.allocateF32(MemoryAllocators.ofArena(arena), rows, 3));

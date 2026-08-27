@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.Test;
 import sun.misc.Unsafe;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 final class ChatEngineLifecycleTest {
 
@@ -350,7 +351,7 @@ final class ChatEngineLifecycleTest {
         ChatEngine engine = (ChatEngine) unsafe().allocateInstance(ChatEngine.class);
         set(engine, "streamDriver", newDriver());
         set(engine, "streamThread", new AtomicReference<Thread>());
-        set(engine, "lifecycle", new java.util.concurrent.locks.ReentrantReadWriteLock());
+        set(engine, "lifecycle", new ReentrantReadWriteLock());
         return engine;
     }
 

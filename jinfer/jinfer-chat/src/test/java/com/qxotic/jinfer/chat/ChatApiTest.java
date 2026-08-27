@@ -37,6 +37,7 @@ import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Test;
+import java.util.function.Consumer;
 
 final class ChatApiTest {
     private static final ByteTokenizer TOKENIZER = new ByteTokenizer();
@@ -103,7 +104,7 @@ final class ChatApiTest {
                         public void project(
                                 Media.Image source,
                                 int max,
-                                java.util.function.Consumer<MemoryView<?>> sink) {
+                                Consumer<MemoryView<?>> sink) {
                             sink.accept(Views.allocateF32(MemoryAllocators.ofArena(arena), 2, 4));
                         }
                     },

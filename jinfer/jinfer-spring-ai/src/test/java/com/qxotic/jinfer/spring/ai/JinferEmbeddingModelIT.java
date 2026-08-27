@@ -21,6 +21,13 @@ import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
+import com.qxotic.jinfer.chat.Models;
+import java.lang.foreign.Arena;
+import java.util.Arrays;
+import java.util.Map;
+import org.springframework.ai.content.Media;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.util.MimeTypeUtils;
 
 /**
  * E2E contract of {@link JinferEmbeddingModel} on Qwen3-Embedding 0.6B (mirrors the old suite):
@@ -160,7 +167,7 @@ class JinferEmbeddingModelIT {
 
         assertEquals(64, truncated.length);
         assertEquals(1, norm(truncated), 1e-5);
-        float[] expected = java.util.Arrays.copyOf(nativeWidth, 64);
+        float[] expected = Arrays.copyOf(nativeWidth, 64);
         normalize(expected);
         assertTrue(
                 cosine(truncated, expected) > 0.999,
@@ -343,9 +350,9 @@ class JinferEmbeddingModelIT {
     @Test
     void sharedWeightsForkIsAParallelPipeline() throws Exception {
         // ONE load in the USER's arena; fork() mints a second pipeline for a context's price
-        try (java.lang.foreign.Arena arena = Arenas.newCrossThread()) {
+        try (Arena arena = Arenas.newCrossThread()) {
             var loaded =
-                    com.qxotic.jinfer.chat.Models.loadEmbedder(
+                    Models.loadEmbedder(
                             TestModels.require(EMBED_REF), arena);
             JinferEmbeddingModel a =
                     JinferEmbeddingModel.builder().model(loaded).contextLength(1024).build();
@@ -371,11 +378,11 @@ class JinferEmbeddingModelIT {
     void mediaDocumentIsRefusedLoudly() {
         Document media =
                 new Document(
-                        new org.springframework.ai.content.Media(
-                                org.springframework.util.MimeTypeUtils.IMAGE_PNG,
-                                new org.springframework.core.io.ByteArrayResource(
+                        new Media(
+                                MimeTypeUtils.IMAGE_PNG,
+                                new ByteArrayResource(
                                         new byte[] {1, 2, 3})),
-                        java.util.Map.of());
+                        Map.of());
         IllegalArgumentException e =
                 assertThrows(IllegalArgumentException.class, () -> model.embed(media));
         assertTrue(e.getMessage().contains("media"), e.getMessage());

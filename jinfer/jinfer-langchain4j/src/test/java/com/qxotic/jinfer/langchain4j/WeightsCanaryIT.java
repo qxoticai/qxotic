@@ -104,7 +104,7 @@ class WeightsCanaryIT {
                 JinferEmbeddingModel embed =
                         JinferEmbeddingModel.builder()
                                 .model(
-                                        com.qxotic.jinfer.chat.Models.loadEmbedder(
+                                        Models.loadEmbedder(
                                                 embedPath.get(), arena))
                                 .contextLength(256)
                                 .build();
@@ -120,7 +120,7 @@ class WeightsCanaryIT {
                 JinferScoringModel score =
                         JinferScoringModel.builder()
                                 .model(
-                                        com.qxotic.jinfer.chat.Models.loadReranker(
+                                        Models.loadReranker(
                                                 rerankPath.get(), arena))
                                 .contextLength(512)
                                 .build();
@@ -145,7 +145,7 @@ class WeightsCanaryIT {
         String fixture = "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
         var fixturePath = TestModels.require(fixture);
         try (Arena weights = Arenas.newCrossThread()) {
-            var loaded = com.qxotic.jinfer.chat.Models.loadEmbedder(fixturePath, weights);
+            var loaded = Models.loadEmbedder(fixturePath, weights);
             Arena stateArena = Arenas.newCrossThread();
             var state = loaded.model().newState(512, 64, MemoryAllocators.ofArena(stateArena));
             stateArena.close(); // the caller frees the state's buffers under the state
@@ -169,7 +169,7 @@ class WeightsCanaryIT {
             Arena arena = Arenas.newCrossThread();
             JinferEmbeddingModel borrowed;
             try {
-                var loaded = com.qxotic.jinfer.chat.Models.loadEmbedder(familyPath.get(), arena);
+                var loaded = Models.loadEmbedder(familyPath.get(), arena);
                 borrowed = JinferEmbeddingModel.builder().model(loaded).contextLength(256).build();
             } catch (Throwable t) {
                 arena.close();
@@ -201,7 +201,7 @@ class WeightsCanaryIT {
             Arena arena = Arenas.newCrossThread();
             JinferScoringModel borrowed;
             try {
-                var loaded = com.qxotic.jinfer.chat.Models.loadReranker(familyPath.get(), arena);
+                var loaded = Models.loadReranker(familyPath.get(), arena);
                 borrowed = JinferScoringModel.builder().model(loaded).contextLength(512).build();
             } catch (Throwable t) {
                 arena.close();

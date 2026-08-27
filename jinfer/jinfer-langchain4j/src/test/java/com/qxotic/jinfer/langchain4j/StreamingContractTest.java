@@ -22,6 +22,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import dev.langchain4j.model.output.FinishReason;
 
 /**
  * Streaming had NO default coverage: the TCK that exercises it is opt-in, so a normal build never
@@ -191,7 +192,7 @@ class StreamingContractTest {
             assertTrue(r.events.size() > 10, "partials must flow before the wall: " + r.events);
             assertEquals("complete", r.events.get(r.events.size() - 1), r.events.toString());
             assertEquals(
-                    dev.langchain4j.model.output.FinishReason.LENGTH,
+                    FinishReason.LENGTH,
                     r.response.get().finishReason(),
                     "the wall ends as LENGTH: " + r.response.get().finishReason());
         }

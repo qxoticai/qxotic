@@ -16,6 +16,8 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import java.nio.charset.StandardCharsets;
+import java.util.Random;
 
 /**
  * The download's own guarantees against a {@link FileServer}: sha256 enforcement, the resume
@@ -41,7 +43,7 @@ class FetchDownloadTest {
                             MessageDigest.getInstance("SHA-256")
                                     .digest(
                                             value.getBytes(
-                                                    java.nio.charset.StandardCharsets.UTF_8)));
+                                                    StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
@@ -65,7 +67,7 @@ class FetchDownloadTest {
         // every chunk beyond the first used to accept a 200 (the whole file) and write it at its
         // own offset: a corrupt file, published silently when no sha256 was known
         byte[] big = new byte[(int) Fetch.PARALLEL_FLOOR + 1];
-        new java.util.Random(11).nextBytes(big);
+        new Random(11).nextBytes(big);
         try (FileServer server =
                 FileServer.start().serve("/big.bin", big).ignoringRange("/big.bin")) {
             Path dest = dir.resolve("big.bin");
@@ -80,7 +82,7 @@ class FetchDownloadTest {
         // same size; the parallel path now sends the first response's validator as If-Range,
         // and a changed remote (200 to a ranged request) restarts the transfer from scratch
         byte[] big = new byte[(int) Fetch.PARALLEL_FLOOR + 1];
-        new java.util.Random(12).nextBytes(big);
+        new Random(12).nextBytes(big);
         try (FileServer server =
                 FileServer.start().serve("/big.bin", big).etag("/big.bin", "\"v2\"")) {
             Path dest = dir.resolve("big.bin");

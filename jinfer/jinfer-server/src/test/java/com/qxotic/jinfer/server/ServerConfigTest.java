@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Duration;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import java.util.HashSet;
 
 class ServerConfigTest {
 
@@ -20,7 +21,7 @@ class ServerConfigTest {
 
     @Test
     void accessDefensivelyCopiesOrigins() {
-        var source = new java.util.HashSet<>(Set.of("https://example.test"));
+        var source = new HashSet<>(Set.of("https://example.test"));
         var access = new ServerConfig.Access("token", source);
         source.clear();
         assertEquals(Set.of("https://example.test"), access.allowedOrigins());

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The span {@link ReplyParser} stepper over a fake vocabulary: channel routing on trusted think
@@ -267,8 +268,8 @@ public final class ReplyParserTest {
         // a call payload fragmented across many tokens - a whitespace-only fragment included -
         // must reach the call parser as the EXACT concatenation, with nothing streamed mid-span
         // (langchain4j's blank-partial-arguments case, at jinfer's boundary: spans are atomic)
-        java.util.concurrent.atomic.AtomicReference<String> received =
-                new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<String> received =
+                new AtomicReference<>();
         ReplyParser p =
                 ReplyParser.spans(
                         TOK,

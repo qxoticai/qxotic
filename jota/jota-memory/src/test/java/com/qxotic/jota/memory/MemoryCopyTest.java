@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import java.util.List;
 
 class MemoryCopyTest extends AbstractMemoryTest {
 
@@ -125,7 +126,7 @@ class MemoryCopyTest extends AbstractMemoryTest {
     }
 
     private static Stream<Arguments> cases(
-            DataType dataType, java.util.List<MemoryDomain<?>> domains) {
+            DataType dataType, List<MemoryDomain<?>> domains) {
         return domains.stream()
                 .flatMap(src -> domains.stream().map(dst -> Arguments.of(dataType, src, dst)));
     }

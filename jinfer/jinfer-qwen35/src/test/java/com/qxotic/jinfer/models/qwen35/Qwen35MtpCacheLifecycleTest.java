@@ -35,6 +35,8 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import java.util.ArrayList;
+import java.util.stream.IntStream;
 
 /** The loaded MTP state is cacheable regardless of which decode loop a request selects. */
 final class Qwen35MtpCacheLifecycleTest {
@@ -260,7 +262,7 @@ final class Qwen35MtpCacheLifecycleTest {
                                 result.accepted(),
                                 violations[0]);
                     }
-                    var committed = new java.util.ArrayList<Integer>();
+                    var committed = new ArrayList<Integer>();
                     Generator.generate(
                             model,
                             state,
@@ -448,7 +450,7 @@ final class Qwen35MtpCacheLifecycleTest {
 
                     @Override
                     public Iterator<Map.Entry<String, Integer>> iterator() {
-                        return java.util.stream.IntStream.range(0, size())
+                        return IntStream.range(0, size())
                                 .<Map.Entry<String, Integer>>mapToObj(
                                         i -> new AbstractMap.SimpleImmutableEntry<>(token(i), i))
                                 .iterator();

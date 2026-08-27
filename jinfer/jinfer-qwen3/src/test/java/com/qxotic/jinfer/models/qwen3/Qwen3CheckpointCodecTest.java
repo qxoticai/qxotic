@@ -7,6 +7,7 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
+import java.lang.foreign.ValueLayout;
 
 final class Qwen3CheckpointCodecTest {
 
@@ -59,7 +60,7 @@ final class Qwen3CheckpointCodecTest {
     private static MemorySegment patterned(Arena arena, long bytes, int seed) {
         MemorySegment blob = arena.allocate(bytes, 64);
         for (long i = 0; i < bytes; i++)
-            blob.set(java.lang.foreign.ValueLayout.JAVA_BYTE, i, (byte) (seed + i));
+            blob.set(ValueLayout.JAVA_BYTE, i, (byte) (seed + i));
         return blob;
     }
 

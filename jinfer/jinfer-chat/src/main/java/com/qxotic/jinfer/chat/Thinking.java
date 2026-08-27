@@ -6,6 +6,7 @@ import com.qxotic.toknroll.Tokenizer;
 import java.util.HashSet;
 import java.util.OptionalInt;
 import java.util.Set;
+import com.qxotic.jota.memory.MemoryView;
 
 /**
  * Think-channel controls: {@link Sampler} wrappers that steer the model's reasoning span using its
@@ -74,7 +75,7 @@ final class Thinking {
             int pendingPos;
 
             @Override
-            public int sampleToken(com.qxotic.jota.memory.MemoryView<?> logits) {
+            public int sampleToken(MemoryView<?> logits) {
                 if (pendingPos < pending.length) {
                     return pending[pendingPos++];
                 }

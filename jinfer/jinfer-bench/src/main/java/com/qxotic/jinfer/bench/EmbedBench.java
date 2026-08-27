@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.io.IOException;
 
 /**
  * Throughput for the ragged/packed batched-embedding path ({@code EmbeddingModel.embedAll}), any
@@ -153,7 +154,7 @@ public final class EmbedBench {
         }
 
         @SuppressWarnings("unchecked")
-        static EmbedModel<?> open(Path path) throws java.io.IOException {
+        static EmbedModel<?> open(Path path) throws IOException {
             return new EmbedModel<>(
                     (LoadedEmbedder<ContextState>) Models.loadEmbedder(path, Arena.ofAuto()));
         }

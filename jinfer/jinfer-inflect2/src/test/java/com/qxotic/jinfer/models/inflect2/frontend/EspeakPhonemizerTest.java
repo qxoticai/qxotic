@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
 
 /**
  * Pins the punctuation-run split, not the phonemes: espeak's IPA is version-dependent, so the
@@ -65,7 +66,7 @@ class EspeakPhonemizerTest {
         // the IPA line alone is ~11 tokens; with the warning spoken too it would be over 50
         assertTrue(tokens.length > 0 && tokens.length < 20, "only the IPA line: " + tokens.length);
         IOException e =
-                org.junit.jupiter.api.Assertions.assertThrows(
+                Assertions.assertThrows(
                         IOException.class,
                         () -> new EspeakPhonemizer(broken.toString()).phonemize("hello"));
         assertTrue(e.getMessage().contains("exited 2"), e.getMessage());

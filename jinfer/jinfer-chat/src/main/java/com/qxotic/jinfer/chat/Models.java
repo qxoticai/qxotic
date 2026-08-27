@@ -30,6 +30,8 @@ import java.util.ServiceLoader;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import com.qxotic.jinfer.SpeechSynthesisModel;
+import java.util.Set;
 
 /**
  * Loads any generative model, dispatching on {@code general.architecture} to the matching port via
@@ -187,7 +189,7 @@ public final class Models {
     }
 
     /** Loads a SPEECH model at the port's own defaults. */
-    public static com.qxotic.jinfer.SpeechSynthesisModel<?, ?, ?> loadSpeech(Path path, Arena arena)
+    public static SpeechSynthesisModel<?, ?, ?> loadSpeech(Path path, Arena arena)
             throws IOException {
         return loadSpeech(path, arena, Map.of());
     }
@@ -198,7 +200,7 @@ public final class Models {
      * external tool) remains the DEFAULT; naming one here overrides that ladder rather than
      * extending it.
      */
-    public static com.qxotic.jinfer.SpeechSynthesisModel<?, ?, ?> loadSpeech(
+    public static SpeechSynthesisModel<?, ?, ?> loadSpeech(
             Path path, Arena arena, Map<String, Path> companions) throws IOException {
         Map<String, Path> attached = Map.copyOf(companions);
         return open(
@@ -391,7 +393,7 @@ public final class Models {
 
     /** A companion this architecture does not have is a mistake, not something to ignore. */
     private static void requireAccepted(
-            ModelProvider provider, GGUF gguf, java.util.Set<String> capabilities) {
+            ModelProvider provider, GGUF gguf, Set<String> capabilities) {
         Map<String, String> accepted = provider.companionFiles();
         for (String capability : capabilities) {
             if (!accepted.containsKey(capability)) {

@@ -11,6 +11,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import com.qxotic.jota.memory.MemoryView;
 
 /** The public state factories make ownership unambiguous: owned or borrowed, never a flag. */
 class ModelArenaMatrixTest {
@@ -59,7 +60,7 @@ class ModelArenaMatrixTest {
         }
 
         @Override
-        public com.qxotic.jota.memory.MemoryView<?> logits(
+        public MemoryView<?> logits(
                 RuntimeStateLifecycleTest.ProbeState state, int output) {
             return state.exclusively(() -> state.buffer);
         }

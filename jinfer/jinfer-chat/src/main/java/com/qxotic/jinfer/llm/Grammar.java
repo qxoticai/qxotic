@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.io.ByteArrayOutputStream;
 
 /**
  * Grammar-constrained decoding: compile a grammar once, mask logits per token so the model can only
@@ -1713,7 +1714,7 @@ public final class Grammar {
      * of a non-ASCII byte sequence ({@code "\xC3\xA9"} and {@code "é"}) are one language.
      */
     static byte[] literalBytes(String s) {
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(s.length());
+        ByteArrayOutputStream out = new ByteArrayOutputStream(s.length());
         StringBuilder text = new StringBuilder(); // pending plain text, encoded as one run
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);

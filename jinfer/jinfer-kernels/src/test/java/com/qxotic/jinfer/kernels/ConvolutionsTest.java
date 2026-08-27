@@ -12,6 +12,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import java.lang.foreign.ValueLayout;
 
 /** Direct contracts for the stateful causal convolution used by recurrent models. */
 class ConvolutionsTest {
@@ -53,9 +54,9 @@ class ConvolutionsTest {
                 rows,
                 channels,
                 kernel);
-        assertArrayEquals(expected, out.toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT), 1e-6f);
+        assertArrayEquals(expected, out.toArray(ValueLayout.JAVA_FLOAT), 1e-6f);
         assertArrayEquals(
-                new float[] {3, 4, 5, 6}, state.toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT));
+                new float[] {3, 4, 5, 6}, state.toArray(ValueLayout.JAVA_FLOAT));
     }
 
     /**

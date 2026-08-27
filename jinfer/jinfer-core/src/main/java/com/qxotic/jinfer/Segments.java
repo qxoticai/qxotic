@@ -9,6 +9,7 @@ import java.lang.management.ManagementFactory;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 import sun.misc.Unsafe;
+import java.lang.reflect.Field;
 
 /**
  * The raw-memory substrate every kernel body assumes. Kernels validate dtype/contiguity at entry
@@ -82,7 +83,7 @@ public final class Segments {
 
     static {
         try {
-            java.lang.reflect.Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            Field f = Unsafe.class.getDeclaredField("theUnsafe");
             f.setAccessible(true);
             UNSAFE = (Unsafe) f.get(null);
         } catch (NoSuchFieldException | IllegalAccessException e) {

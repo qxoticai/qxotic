@@ -7,6 +7,7 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assertions;
 
 /**
  * Eviction stress for PromptCache: a tiny budget forcing evictions during chain commits, dedup onto
@@ -78,7 +79,7 @@ public final class BlockTreeEvictionTest {
         BlockTree<FakeState>.Block tipA = cache.resume(new long[0], 0, a);
         a.resumeAt(1);
         tipA = cache.commit(tipA, shared, 0, 1, a);
-        org.junit.jupiter.api.Assertions.assertTrue(tipA.live);
+        Assertions.assertTrue(tipA.live);
 
         FakeState b = new FakeState();
         BlockTree<FakeState>.Block tipB = cache.resume(new long[0], 0, b);
@@ -88,7 +89,7 @@ public final class BlockTreeEvictionTest {
             b.resumeAt(i + 1);
             tipB = cache.commit(tipB, other, i, 1, b);
         }
-        org.junit.jupiter.api.Assertions.assertFalse(tipA.live, "B's traffic evicted A's tip");
+        Assertions.assertFalse(tipA.live, "B's traffic evicted A's tip");
 
         FakeState c = new FakeState();
         BlockTree<FakeState>.Block tipC = cache.resume(new long[0], 0, c);
@@ -97,7 +98,7 @@ public final class BlockTreeEvictionTest {
 
         a.resumeAt(2);
         BlockTree<FakeState>.Block next = cache.commit(tipA, shared, 1, 1, a);
-        org.junit.jupiter.api.Assertions.assertTrue(next.live, "chained on the recommitted twin");
-        org.junit.jupiter.api.Assertions.assertEquals(2, next.to);
+        Assertions.assertTrue(next.live, "chained on the recommitted twin");
+        Assertions.assertEquals(2, next.to);
     }
 }

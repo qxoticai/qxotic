@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import java.util.Arrays;
+import org.junit.jupiter.api.Assertions;
 
 /** The holdback matcher: streamed partials must always concatenate to the trimmed text. */
 class TextStopsHoldbackTest {
@@ -26,12 +28,12 @@ class TextStopsHoldbackTest {
         assertEquals("", TextStops.apply("hello", List.of("")).text());
         for (List<String> bad :
                 List.<List<String>>of(
-                        List.of(""), List.of("stop", ""), java.util.Arrays.asList((String) null))) {
+                        List.of(""), List.of("stop", ""), Arrays.asList((String) null))) {
             var e =
-                    org.junit.jupiter.api.Assertions.assertThrows(
+                    Assertions.assertThrows(
                             IllegalArgumentException.class, () -> TextStops.checked(bad));
             assertEquals("stop strings must not be empty", e.getMessage());
-            org.junit.jupiter.api.Assertions.assertThrows(
+            Assertions.assertThrows(
                     IllegalArgumentException.class, () -> new TextStops.Holdback(bad, t -> {}));
         }
         assertEquals(List.of(), TextStops.checked(null));

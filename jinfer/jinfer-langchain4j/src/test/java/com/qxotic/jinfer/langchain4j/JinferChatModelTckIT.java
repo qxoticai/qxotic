@@ -16,6 +16,14 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.condition.EnabledIf;
+import dev.langchain4j.data.message.ImageContent;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.Base64;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The langchain4j compliance kit (AbstractChatModelIT: "all the common tests that every ChatModel
@@ -113,7 +121,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      */
     static void assumeNotBareSpecMarginal() {
         String model = TestModels.require(REF).toString();
-        org.junit.jupiter.api.Assumptions.assumeFalse(
+        Assumptions.assumeFalse(
                 model.contains("gemma-4-E2B") || model.contains("SmolLM3"),
                 "small-checkpoint bare-spec round-2 near-tie (capability; see the family battery)");
     }
@@ -126,7 +134,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      * LENGTH finish stay asserted by the runs that pass; only "text not blank" cannot hold.
      */
     static void assumeReasoningFitsTheBudget() {
-        org.junit.jupiter.api.Assumptions.assumeFalse(
+        Assumptions.assumeFalse(
                 TestModels.require(REF).toString().contains("gpt-oss"),
                 "gpt-oss: a 5-token budget cannot surface final-channel text on an"
                         + " always-reasoning family");
@@ -138,50 +146,50 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      * one call is correct family behavior, not a miss.
      */
     static void assumeParallelCallsRepresentable() {
-        org.junit.jupiter.api.Assumptions.assumeFalse(
+        Assumptions.assumeFalse(
                 TestModels.require(REF).toString().contains("gpt-oss"),
                 "gpt-oss: Harmony renders at most one call per assistant message");
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("modelsSupportingTools")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsTools")
+    @ParameterizedTest
+    @MethodSource("modelsSupportingTools")
+    @EnabledIf("supportsTools")
     protected void should_execute_a_tool_then_answer(ChatModel model) {
         assumeNotBareSpecMarginal();
         super.should_execute_a_tool_then_answer(model);
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("modelsSupportingTools")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsTools")
+    @ParameterizedTest
+    @MethodSource("modelsSupportingTools")
+    @EnabledIf("supportsTools")
     protected void should_execute_multiple_tools_in_parallel_then_answer(ChatModel model) {
         assumeParallelCallsRepresentable();
         super.should_execute_multiple_tools_in_parallel_then_answer(model);
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("models")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    @ParameterizedTest
+    @MethodSource("models")
+    @EnabledIf("supportsMaxOutputTokensParameter")
     protected void should_respect_maxOutputTokens_in_chat_request(ChatModel model) {
         assumeReasoningFitsTheBudget();
         super.should_respect_maxOutputTokens_in_chat_request(model);
     }
 
     @Override
-    @org.junit.jupiter.api.Test
-    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    @Test
+    @EnabledIf("supportsMaxOutputTokensParameter")
     protected void should_respect_maxOutputTokens_in_default_model_parameters() {
         assumeReasoningFitsTheBudget();
         super.should_respect_maxOutputTokens_in_default_model_parameters();
     }
 
     @Override
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.MethodSource("models")
-    @org.junit.jupiter.api.condition.EnabledIf("supportsMaxOutputTokensParameter")
+    @ParameterizedTest
+    @MethodSource("models")
+    @EnabledIf("supportsMaxOutputTokensParameter")
     protected void
             should_respect_common_parameters_wrapped_in_integration_specific_class_in_chat_request(
                     ChatModel model) {
@@ -260,21 +268,21 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
      * so the images must be the real ones).
      */
     @Override
-    protected dev.langchain4j.data.message.ImageContent catImageContentBase64() {
-        return dev.langchain4j.data.message.ImageContent.from(kitImage("cat.png"), "image/png");
+    protected ImageContent catImageContentBase64() {
+        return ImageContent.from(kitImage("cat.png"), "image/png");
     }
 
     @Override
-    protected dev.langchain4j.data.message.ImageContent diceImageContentBase64() {
-        return dev.langchain4j.data.message.ImageContent.from(kitImage("dice.png"), "image/png");
+    protected ImageContent diceImageContentBase64() {
+        return ImageContent.from(kitImage("dice.png"), "image/png");
     }
 
     static String kitImage(String name) {
         try (var in = JinferChatModelTckIT.class.getResourceAsStream("/kit-images/" + name)) {
             if (in == null) throw new IllegalStateException("missing test resource " + name);
-            return java.util.Base64.getEncoder().encodeToString(in.readAllBytes());
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException(e);
+            return Base64.getEncoder().encodeToString(in.readAllBytes());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 

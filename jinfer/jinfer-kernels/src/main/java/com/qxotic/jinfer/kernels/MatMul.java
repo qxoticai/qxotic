@@ -27,6 +27,10 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.IntConsumer;
+import java.util.function.ObjIntConsumer;
 
 /**
  * Static, dtype-switched matmul over views. Per-dtype dispatch is hoisted out of the row loop.
@@ -81,10 +85,10 @@ public final class MatMul {
         if (Boolean.parseBoolean(System.getProperty("jam.native.parallelFor", "false"))) {
             try {
                 Class.forName("com.qxotic.jam.libjam.NativeJAM")
-                        .getMethod("parallelExecutor", java.util.function.ObjIntConsumer.class)
+                        .getMethod("parallelExecutor", ObjIntConsumer.class)
                         .invoke(
                                 null,
-                                (java.util.function.ObjIntConsumer<java.util.function.IntConsumer>)
+                                (ObjIntConsumer<IntConsumer>)
                                         (body, n) -> Parallel.forLoop(n, body));
             } catch (ReflectiveOperationException e) {
                 // no jam-native on the classpath: the property is inert
@@ -1825,8 +1829,8 @@ public final class MatMul {
     private static final JamMm VECTOR = load("vector");
 
     /** The JAM rungs that loaded ("native", "vector"), for the selection tests. */
-    static java.util.List<String> jamRungs() {
-        java.util.List<String> rungs = new java.util.ArrayList<>(2);
+    static List<String> jamRungs() {
+        List<String> rungs = new ArrayList<>(2);
         if (NATIVE != null) rungs.add("native");
         if (VECTOR != null) rungs.add("vector");
         return rungs;

@@ -28,6 +28,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import com.qxotic.jinfer.media.Media;
+import java.io.IOException;
+import java.util.LinkedHashMap;
 
 /**
  * A llama-bench-parity harness driving every model through the generic loader ({@link Models#load}
@@ -82,7 +85,7 @@ public final class JinferBench {
 
     public static void main(String[] args) throws Exception {
         List<String> models = new ArrayList<>();
-        Map<String, Path> companions = new java.util.LinkedHashMap<>();
+        Map<String, Path> companions = new LinkedHashMap<>();
         int p = 512, n = 128, depth = 0, reps = 5, warmup = 2, ctx = 0, threads = 0;
         boolean noWarmup = false, runCapabilities = true;
         Path media = null;
@@ -195,7 +198,7 @@ public final class JinferBench {
 
         @SuppressWarnings("unchecked")
         static BenchModel<?> open(Path path, Map<String, Path> companions)
-                throws java.io.IOException {
+                throws IOException {
             return new BenchModel<>(
                     (LoadedModel<ContextState>) Models.load(path, Arena.ofAuto(), companions));
         }
@@ -462,7 +465,7 @@ public final class JinferBench {
             // projected media, cold (encoder projection) vs warm (media-cache replay)
             if (mediaPath != null
                     && bench.loaded.model() instanceof Multimodal mm
-                    && mm.projector(com.qxotic.jinfer.media.Media.Image.class).isPresent()) {
+                    && mm.projector(Media.Image.class).isPresent()) {
                 byte[] bytes = Files.readAllBytes(mediaPath);
                 var image = ImageCodec.decode(bytes);
                 ContentKey key = ContentKey.sha256(bytes);
@@ -533,7 +536,7 @@ public final class JinferBench {
     }
 
     private static ChatEngine.Request mediaRequest(
-            com.qxotic.jinfer.media.Media.Image image,
+            Media.Image image,
             ContentKey contentKey,
             int gen,
             String question) {

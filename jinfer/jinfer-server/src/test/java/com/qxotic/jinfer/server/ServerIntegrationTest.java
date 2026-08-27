@@ -27,6 +27,7 @@ import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import java.util.Set;
 
 @Tag("integration")
 class ServerIntegrationTest {
@@ -166,7 +167,7 @@ class ServerIntegrationTest {
                                 ServerConfig.local(0)
                                         .withAccess(
                                                 new ServerConfig.Access(
-                                                        "secret", java.util.Set.of("*"))))) {
+                                                        "secret", Set.of("*"))))) {
             HttpClient client = HttpClient.newHttpClient();
             HttpResponse<String> health =
                     client.send(

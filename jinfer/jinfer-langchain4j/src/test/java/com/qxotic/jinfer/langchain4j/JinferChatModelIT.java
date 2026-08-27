@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import dev.langchain4j.data.message.SystemMessage;
 
 /**
  * End-to-end against a real GGUF (LFM2: native template port, tool-capable). Model-gated:
@@ -287,11 +288,11 @@ class JinferChatModelIT {
                         .build();
         JinferChatModel view =
                 base.withCachedPrompt(
-                        List.of(dev.langchain4j.data.message.SystemMessage.from("be brief")),
+                        List.of(SystemMessage.from("be brief")),
                         List.of());
         JinferChatModel sibling =
                 base.withCachedPrompt(
-                        List.of(dev.langchain4j.data.message.SystemMessage.from("be loud")),
+                        List.of(SystemMessage.from("be loud")),
                         List.of());
         JinferStreamingChatModel twin = base.streaming();
 
@@ -320,7 +321,7 @@ class JinferChatModelIT {
                 () ->
                         base.withCachedPrompt(
                                 List.of(
-                                        dev.langchain4j.data.message.SystemMessage.from(
+                                        SystemMessage.from(
                                                 "too late")),
                                 List.of()));
         base.close(); // idempotent: reclosing through another instance is a no-op

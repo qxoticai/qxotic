@@ -14,6 +14,7 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;
+import java.util.List;
 
 /**
  * The estimator's composition laws over a deterministic fake tokenizer (1 token per character):
@@ -98,7 +99,7 @@ final class EstimatorsTest {
         AiMessage two =
                 AiMessage.builder()
                         .toolExecutionRequests(
-                                java.util.List.of(
+                                List.of(
                                         call(null),
                                         ToolExecutionRequest.builder()
                                                 .id("2")
