@@ -457,9 +457,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                     sink ->
                                             engine.stream(
                                                     () -> {
+                                                        // prepare can fail on the driver thread
+                                                        // (the engine closed while this was
+                                                        // queued): the sink must hear it, or the
+                                                        // subscriber waits forever
                                                         try (ChatEngine.Prepared p =
                                                                 prepare(effective)) {
                                                             streamInto(p, sink);
+                                                        } catch (Throwable t) {
+                                                            sink.error(t);
                                                         }
                                                     }));
                     return new MessageAggregator()

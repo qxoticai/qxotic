@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
@@ -29,6 +30,33 @@ class JinferLifecycleIT {
                 .contextLength(2048)
                 .options(JinferChatOptions.builder().maxTokens(8).build())
                 .build();
+    }
+
+    @Test
+    void aStreamQueuedBehindAnotherFailsLoudlyWhenTheModelCloses() throws Exception {
+        // the queued stream's prepare runs on the driver thread after close(): it must reach the
+        // sink as an error, not die uncaught and leave the subscriber waiting forever
+        JinferChatModel m = load();
+        Prompt slow =
+                new Prompt(
+                        new UserMessage("Write a long story about a lighthouse keeper."),
+                        JinferChatOptions.builder().maxTokens(300).build());
+        Prompt quick = new Prompt(new UserMessage("hi"));
+        java.util.concurrent.CountDownLatch firstChunk = new java.util.concurrent.CountDownLatch(1);
+        m.stream(slow).subscribe(chunk -> firstChunk.countDown(), error -> {}, () -> {});
+        assertTrue(firstChunk.await(30, java.util.concurrent.TimeUnit.SECONDS));
+        java.util.concurrent.CompletableFuture<Throwable> queued =
+                new java.util.concurrent.CompletableFuture<>();
+        m.stream(quick)
+                .subscribe(
+                        chunk -> {},
+                        queued::complete,
+                        () -> queued.complete(new AssertionError("completed after close")));
+        Thread closer = new Thread(m::close, "closer");
+        closer.start();
+        Throwable outcome = queued.get(60, java.util.concurrent.TimeUnit.SECONDS);
+        closer.join();
+        assertTrue(outcome instanceof IllegalStateException, String.valueOf(outcome));
     }
 
     @Test
