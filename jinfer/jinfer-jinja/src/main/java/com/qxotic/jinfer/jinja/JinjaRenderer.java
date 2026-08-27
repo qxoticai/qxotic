@@ -2051,7 +2051,14 @@ public final class JinjaRenderer {
                     yield Val.of(l.val());
                 }
                 case IdentNode id -> lookup(id.name());
-                case BinNode b -> evalBin(b.op(), eval(b.left()), eval(b.right()));
+                case BinNode b -> {
+                    // and/or short-circuit like Python: `x is defined and x | length > 0` must
+                    // never evaluate the right side on an undefined x
+                    Val l = eval(b.left());
+                    if (b.op().equals("and")) yield l.truthy() ? eval(b.right()) : l;
+                    if (b.op().equals("or")) yield l.truthy() ? l : eval(b.right());
+                    yield evalBin(b.op(), l, eval(b.right()));
+                }
                 case UnaNode u -> evalUnary(u.op(), eval(u.arg()));
                 case FilterNode f -> {
                     Val v = eval(f.operand());
