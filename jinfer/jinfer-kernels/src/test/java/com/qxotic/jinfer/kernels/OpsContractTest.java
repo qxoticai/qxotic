@@ -74,4 +74,25 @@ class OpsContractTest {
             assertEquals(4, Ops.argmax(values, 0, 8));
         }
     }
+
+    @Test
+    void windowedMeanPoolOwnsItsOutput() {
+        // 3x3 patches of width 2 merged 2x2: the output is a sum the pool must start itself, not
+        // an accumulator it inherits from whatever the destination held
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            float[] patches = new float[9 * 2];
+            for (int i = 0; i < patches.length; i++) patches[i] = i;
+            var src = Views.fromFloatArray(memory, patches);
+            var dst = Views.fromFloatArray(memory, new float[] {1e6f, -1e6f});
+
+            Ops.windowedMeanPool(src, 3, 3, 2, 2, dst);
+
+            // rows (0,0) (0,1) (1,0) (1,1) of the 3x3 grid: patch indices 0, 1, 3, 4
+            float[] expected = {(0 + 2 + 6 + 8) / 4f, (1 + 3 + 7 + 9) / 4f};
+            float[] actual = Views.toFloatArray(dst, "pooled");
+            assertEquals(expected[0], actual[0]);
+            assertEquals(expected[1], actual[1]);
+        }
+    }
 }
