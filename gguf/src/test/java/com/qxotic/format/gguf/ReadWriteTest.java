@@ -303,13 +303,13 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
-    public void testOversizedStringLengthThrowsArithmeticException() {
+    public void testOversizedStringLengthIsAFormatError() {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataStringWithLength("s", Long.MAX_VALUE)});
-        assertThrows(ArithmeticException.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
-    public void testOversizedArrayLengthThrowsArithmeticException() {
+    public void testOversizedArrayLengthIsAFormatError() {
         byte[] ggufBytes =
                 rawGguf(
                         0,
@@ -317,7 +317,7 @@ public class ReadWriteTest extends GGUFTest {
                             metadataArrayHeaderWithLength(
                                     "arr", MetadataValueType.INT32, Long.MAX_VALUE)
                         });
-        assertThrows(ArithmeticException.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
@@ -498,5 +498,15 @@ public class ReadWriteTest extends GGUFTest {
             bytes[i] = (byte) values[i];
         }
         return bytes;
+    }
+
+    @Test
+    public void aCorruptCountIsAFormatError() throws IOException {
+        // a truncated download whose kv_count field lands in tensor data used to surface as an
+        // ArithmeticException or a multi-GB allocation, never as the format error it is
+        byte[] bytes = GGUFTest.writeToBytes(Builder.newBuilder().putString("k", "v").build());
+        for (int i = 16; i < 24; i++) bytes[i] = (byte) 0x7F; // metadata_kv_count
+        org.junit.jupiter.api.Assertions.assertThrows(
+                GGUFFormatException.class, () -> GGUFTest.readFromBytes(bytes));
     }
 }
