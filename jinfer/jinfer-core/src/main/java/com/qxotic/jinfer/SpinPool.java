@@ -97,6 +97,12 @@ final class SpinPool {
             for (int i = start; i < end; i++) body.accept(i);
             return;
         }
+        if (action != null) {
+            // a region is in flight on this very thread: re-entering would overwrite it and
+            // reset the barrier under the workers still in it. Loud, not corrupt.
+            throw new IllegalStateException(
+                    "Parallel.forLoop nested inside a spin region is not supported");
+        }
         action = body;
         rangeStart = start;
         rangeEnd = end;
