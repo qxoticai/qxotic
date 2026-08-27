@@ -16,6 +16,21 @@ public final class TextStops {
 
     public record Result(String text, boolean stopped) {}
 
+    /**
+     * The stop list as an immutable copy, refusing empty strings: "" matches at index 0 of any
+     * text, which turns every reply into an empty one with finish reason "stop", and it arrives by
+     * accident (an unset config variable, an SDK's "unset" encoding, a trailing comma).
+     */
+    public static List<String> checked(List<String> stops) {
+        if (stops == null) return List.of();
+        for (String stop : stops) {
+            if (stop == null || stop.isEmpty()) {
+                throw new IllegalArgumentException("stop strings must not be empty");
+            }
+        }
+        return List.copyOf(stops);
+    }
+
     /** The text truncated at the earliest stop-string occurrence, flagged when one matched. */
     public static Result apply(String text, List<String> stops) {
         int cut = -1;
@@ -38,7 +53,7 @@ public final class TextStops {
         private boolean stopped;
 
         public Holdback(List<String> stops, Consumer<String> downstream) {
-            this.stops = stops;
+            this.stops = checked(stops);
             this.downstream = downstream;
         }
 

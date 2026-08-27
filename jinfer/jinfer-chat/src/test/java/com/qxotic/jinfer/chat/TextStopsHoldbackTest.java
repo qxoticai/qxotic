@@ -19,6 +19,26 @@ class TextStopsHoldbackTest {
     }
 
     @Test
+    void emptyStopStringsAreRefusedNotSilentlyFatal() {
+        // "" matches at index 0 of anything: apply() cuts every reply to nothing, so the list is
+        // refused at every boundary instead
+        assertTrue(TextStops.apply("hello", List.of("")).stopped(), "the hazard this guards");
+        assertEquals("", TextStops.apply("hello", List.of("")).text());
+        for (List<String> bad :
+                List.<List<String>>of(
+                        List.of(""), List.of("stop", ""), java.util.Arrays.asList((String) null))) {
+            var e =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            IllegalArgumentException.class, () -> TextStops.checked(bad));
+            assertEquals("stop strings must not be empty", e.getMessage());
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class, () -> new TextStops.Holdback(bad, t -> {}));
+        }
+        assertEquals(List.of(), TextStops.checked(null));
+        assertEquals(List.of("a", "bb"), TextStops.checked(List.of("a", "bb")));
+    }
+
+    @Test
     void noHitFlushesEverything() {
         StringBuilder out = new StringBuilder();
         TextStops.Holdback watch = new TextStops.Holdback(List.of("STOP"), out::append);

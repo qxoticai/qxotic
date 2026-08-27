@@ -296,11 +296,18 @@ final class Validation {
     }
 
     private static void validateStops(Object value) {
-        if (value == null || value instanceof String) return;
+        if (value == null) return;
+        if (value instanceof String s) {
+            require(!s.isEmpty(), "stop strings must not be empty");
+            return;
+        }
         List<Object> stops = Values.asArray(value, "stop");
         require(stops.size() <= 4, "stop supports at most 4 strings");
         for (Object stop : stops) {
             require(stop instanceof String, "stop array must contain only strings");
+            // "" matches at index 0 of any text: every reply would come back empty with
+            // finish_reason "stop", and nothing downstream could tell the caller why
+            require(!((String) stop).isEmpty(), "stop strings must not be empty");
         }
     }
 
