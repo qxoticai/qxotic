@@ -162,30 +162,9 @@ class GeneratorTest {
                             recording(new ArrayList<>(), new ArrayList<>()));
 
             assertEquals(Generator.FinishReason.LENGTH, result.finishReason());
-            // 4 - 2 free slots, plus the final token sampled from the last slot's logits
-            assertArrayEquals(new int[] {10, 11, 12}, result.tokens());
-            assertEquals(4, state.position());
+            // 4 - 2 prompt positions: prompt + generated never exceeds the context
+            assertArrayEquals(new int[] {10, 11}, result.tokens());
             assertEquals(OptionalInt.empty(), result.stopToken());
-        }
-    }
-
-    @Test
-    void aPromptFillingTheContextStillYieldsItsNextToken() {
-        FakeModel model = new FakeModel();
-        try (FakeModel.State state =
-                model.newState(3, 8, MemoryAllocators.ofArena(Arena.ofAuto()))) {
-            var result =
-                    Generator.generate(
-                            model,
-                            state,
-                            new int[] {1, 2, 3},
-                            scripted(10),
-                            constraints(Generator.Constraints.UNLIMITED, Duration.ZERO, Set.of()),
-                            recording(new ArrayList<>(), new ArrayList<>()));
-
-            assertEquals(Generator.FinishReason.LENGTH, result.finishReason());
-            assertArrayEquals(new int[] {10}, result.tokens());
-            assertEquals(3, state.position()); // the sampled token was never ingested
         }
     }
 

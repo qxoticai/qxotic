@@ -977,10 +977,9 @@ public final class GrammarSpecTest {
         dc.reset(); // all no-ops, no crash
         check("disabled ops noop", true);
 
-        // empty grammar text -> DISABLED
-        check(
-                "empty grammar -> disabled",
-                Grammar.of("", BV) == Grammar.Spec.DISABLED || !Grammar.of("", BV).isValid());
+        // empty grammar text -> DISABLED (the absence of a grammar); text without a rule is
+        // an error, see GrammarTest
+        check("empty grammar -> disabled", !Grammar.of("", BV).isValid());
 
         // zero-size vocab
         Grammar.Vocab zv =

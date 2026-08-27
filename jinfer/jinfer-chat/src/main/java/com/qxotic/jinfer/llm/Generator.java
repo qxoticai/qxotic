@@ -163,9 +163,10 @@ public final class Generator {
                             + capacity
                             + " available - raise the state's contextCapacity)");
         }
-        // the final token is sampled from the last occupied slot's logits and never ingested,
-        // so a context holds one more token than it has free slots
-        int room = capacity - promptPositions + 1;
+        // the wall is the context: prompt + generated never exceeds capacity (the final token is
+        // sampled without being ingested, so one slot stays free; the adapters' usage contract
+        // input + output <= capacity depends on it)
+        int room = capacity - promptPositions;
         int max =
                 constraints.maxTokens() == Constraints.UNLIMITED
                         ? room
