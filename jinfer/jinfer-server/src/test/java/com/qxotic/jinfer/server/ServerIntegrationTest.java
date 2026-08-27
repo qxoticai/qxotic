@@ -156,6 +156,32 @@ class ServerIntegrationTest {
     }
 
     @Test
+    void healthIsOpenWhenEverythingElseNeedsTheKey() throws Exception {
+        // liveness probes carry no key; the inference routes still do
+        Path path = TestModels.require(MODEL);
+        try (ChatEngine engine = engine(path, PromptCache.Options.DEFAULTS);
+                Server.Running server =
+                        Server.start(
+                                engine,
+                                ServerConfig.local(0)
+                                        .withAccess(
+                                                new ServerConfig.Access(
+                                                        "secret", java.util.Set.of("*"))))) {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> health =
+                    client.send(
+                            HttpRequest.newBuilder(URI.create(base(server) + "/health")).build(),
+                            BodyHandlers.ofString());
+            assertEquals(200, health.statusCode(), health.body());
+            HttpResponse<String> models =
+                    client.send(
+                            HttpRequest.newBuilder(URI.create(base(server) + "/v1/models")).build(),
+                            BodyHandlers.ofString());
+            assertEquals(401, models.statusCode());
+        }
+    }
+
+    @Test
     void closeAnswersQueuedCallersBeforeStoppingHttp() throws Exception {
         // a caller queued behind the running generation must receive its 503 while the server
         // can still deliver it; stopping HTTP first parked it for the whole stop delay and then

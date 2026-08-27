@@ -61,6 +61,17 @@ class HttpAccessTest {
                                 .build(),
                         HttpResponse.BodyHandlers.ofString());
         assertEquals(200, accepted.statusCode());
+        // the scheme is case-insensitive (RFC 7235): a proxy that lowercases it must not lock out
+        assertEquals(
+                200,
+                client.send(
+                                HttpRequest.newBuilder(uri)
+                                        .header("Authorization", "bearer secret")
+                                        .header("Origin", "https://allowed.test")
+                                        .GET()
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString())
+                        .statusCode());
         assertEquals(
                 "https://allowed.test",
                 accepted.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());

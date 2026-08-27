@@ -189,12 +189,14 @@ public final class Server {
                 "/v1/chat/completions", exchange -> handleChatCompletion(exchange, config));
         server.createContext("/v1/completions", exchange -> handleCompletion(exchange, config));
         server.createContext("/v1/responses", exchange -> handleResponse(exchange, config));
+        // liveness probes carry no key: /health is open (llama.cpp's is too); it says nothing
+        // a probe should not know (up, busy, queue depth)
         jsonRoute(
                 server,
                 "/health",
                 "GET",
-                request ->
-                        Map.of("status", "ok", "busy", worker.busy(), "queued", worker.queued()));
+                request -> Map.of("status", "ok", "busy", worker.busy(), "queued", worker.queued()),
+                new ServerConfig.Access(null, config.access().allowedOrigins()));
         jsonRoute(
                 server,
                 "/props",
@@ -309,10 +311,19 @@ public final class Server {
             String path,
             String method,
             Function<Map<String, Object>, Object> body) {
+        jsonRoute(server, path, method, body, config.access());
+    }
+
+    private void jsonRoute(
+            HttpServer server,
+            String path,
+            String method,
+            Function<Map<String, Object>, Object> body,
+            ServerConfig.Access access) {
         server.createContext(
                 path,
                 exchange -> {
-                    if (Http.preamble(exchange, config.access())) return;
+                    if (Http.preamble(exchange, access)) return;
                     // contexts match by longest PREFIX: /v1/models/garbage would land here — 404 it
                     if (!exchange.getRequestURI().getPath().equals(path)) {
                         Http.sendError(exchange, 404, "Not found");

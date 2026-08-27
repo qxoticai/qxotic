@@ -70,7 +70,8 @@ final class Http {
     private static boolean authorized(HttpExchange exchange, String token) {
         if (token == null) return true;
         String value = exchange.getRequestHeaders().getFirst("Authorization");
-        if (value == null || !value.startsWith("Bearer ")) return false;
+        // the scheme is case-insensitive (RFC 7235); proxies do lowercase it
+        if (value == null || !value.regionMatches(true, 0, "Bearer ", 0, 7)) return false;
         return MessageDigest.isEqual(
                 token.getBytes(StandardCharsets.UTF_8),
                 value.substring("Bearer ".length()).getBytes(StandardCharsets.UTF_8));
