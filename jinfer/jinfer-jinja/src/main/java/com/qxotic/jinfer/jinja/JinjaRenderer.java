@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.DoubleBinaryOperator;
+import java.util.function.LongBinaryOperator;
 import java.util.regex.Pattern;
 
 /**
@@ -470,7 +472,8 @@ public final class JinjaRenderer {
 
         static JsonStyle of(Val indent, Map<String, Val> kwargs) {
             int level = indent.isNone() ? -1 : (int) num(indent);
-            String itemSep = level < 0 ? ", " : ",", keySep = ": ";
+            String itemSep = level < 0 ? ", " : ",";
+            String keySep = ": ";
             if (kwargs.get("separators") instanceof Val.Arr seps && seps.v().size() == 2) {
                 itemSep = seps.v().get(0).asStr();
                 keySep = seps.v().get(1).asStr();
@@ -1888,17 +1891,15 @@ public final class JinjaRenderer {
                                     for (String k : o.v.keySet()) arr.add(new Val.Str(k));
                                     yield arr;
                                 }
-                                case Val.Str s -> {
-                                    var arr = new ArrayList<Val>();
-                                    s.v().codePoints()
-                                            .forEach(
-                                                    c ->
-                                                            arr.add(
-                                                                    new Val.Str(
-                                                                            Character.toString(
-                                                                                    c))));
-                                    yield arr;
-                                }
+                                case Val.Str s -> // by character, as Python iterates a str
+                                        s.v().codePoints()
+                                                .mapToObj(
+                                                        c ->
+                                                                (Val)
+                                                                        new Val.Str(
+                                                                                Character.toString(
+                                                                                        c)))
+                                                .toList();
                                 case Val.None __ -> List.of(); // a null binding (tools) is empty
                                 case Val.Undef __ -> List.of();
                                 default -> throw unsupported("iteration over " + iter.asStr());
@@ -2342,11 +2343,7 @@ public final class JinjaRenderer {
         }
 
         /** Python's numeric tower in miniature: two ints stay an int, anything else is a float. */
-        static Val arith(
-                Val l,
-                Val r,
-                java.util.function.LongBinaryOperator ints,
-                java.util.function.DoubleBinaryOperator floats) {
+        static Val arith(Val l, Val r, LongBinaryOperator ints, DoubleBinaryOperator floats) {
             if (l instanceof Val.Int a && r instanceof Val.Int b) {
                 return new Val.Int(ints.applyAsLong(a.v(), b.v()));
             }
