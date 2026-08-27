@@ -661,8 +661,8 @@ public record Options(
                 "  --color <on|off|auto>         colorize thinking output in terminal (default:"
                         + " auto)");
         out.println(
-                "  --think <off|on|inline>       on: show thinking (default), off: hide thinking"
-                        + " from output (model still generates it), inline: thoughts to stdout");
+                "  --think <off|on|inline>       on: reason, thoughts on stderr (default); off: do"
+                        + " not reason, the model answers directly; inline: thoughts on stdout");
         out.println(
                 "  --reasoning-budget <int>      cap the thinking span at N tokens (default: half"
                         + " of --max-output-tokens, -1: uncapped)");

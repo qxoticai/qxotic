@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -38,6 +39,17 @@ final class OptionsTest {
                 null,
                 false,
                 4);
+    }
+
+    @Test
+    void helpSaysWhatThinkOffDoes() {
+        // --think off disables reasoning at the prompt (the model answers directly); the help
+        // used to promise a display filter over thoughts the model "still generates"
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        Options.printUsage(new java.io.PrintStream(out, true));
+        String help = out.toString();
+        assertTrue(help.contains("off: do not reason"), help);
+        assertFalse(help.contains("still generates"), help);
     }
 
     /**

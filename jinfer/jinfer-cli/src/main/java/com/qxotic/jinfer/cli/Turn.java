@@ -8,7 +8,9 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -16,6 +18,9 @@ import java.util.Locale;
  * the request: prompt echo, delta streaming, think routing (inline vs stderr) and the stderr timing
  * summary. The PARSE is the engine's ({@link ChatEngine.ReplySink} deltas arrive UTF-8-safe and
  * channel-tagged); what remains here is pure presentation, which is all a terminal ever wanted.
+ *
+ * <p>{@code --stream false} is the same rendering, replayed in {@link #finish}: one path decides
+ * what goes where, so the two modes cannot disagree.
  */
 final class Turn implements ChatEngine.ReplySink {
 
@@ -26,10 +31,10 @@ final class Turn implements ChatEngine.ReplySink {
     private final Tokenizer tokenizer;
     private final Options options;
     private final boolean rawLane;
-    private final StringBuilder text = new StringBuilder();
+    private final List<ChatEngine.Delta> buffered = new ArrayList<>(); // --stream false
     private boolean inReasoning;
 
-    private Turn(Tokenizer tokenizer, Options options, boolean rawLane) {
+    Turn(Tokenizer tokenizer, Options options, boolean rawLane) {
         this.tokenizer = tokenizer;
         this.options = options;
         this.rawLane = rawLane;
@@ -70,14 +75,13 @@ final class Turn implements ChatEngine.ReplySink {
         if (rawLane && isControl(delta)) {
             return; // a parser-less delta of pure special tokens is control, not content
         }
-        text.append(delta.text());
-        if (!options.stream()) {
-            return; // nothing streams - finish() prints the whole reply at once
-        }
+        if (options.stream()) emit(delta);
+        else buffered.add(delta);
+    }
+
+    /** The one rendering path: a delta to its stream, thinking framed. */
+    private void emit(ChatEngine.Delta delta) {
         if (delta.channel() == Channel.REASONING) {
-            if (!options.think()) {
-                return;
-            }
             if (!inReasoning) {
                 onThinkingStart();
                 inReasoning = true;
@@ -99,10 +103,12 @@ final class Turn implements ChatEngine.ReplySink {
      * streamed.
      */
     void finish(ChatEngine.Completion completion, int contextCapacity) {
+        if (!options.stream()) buffered.forEach(this::emit);
         if (inReasoning) {
             onThinkingEnd();
             inReasoning = false;
         }
+        System.out.println(); // the reply's line ends on stdout, streamed or not
         Generator.GenerationResult result = completion.result();
         if (result != null) {
             int promptTokens = completion.promptTokens();
@@ -113,7 +119,7 @@ final class Turn implements ChatEngine.ReplySink {
             String prefix = options.colors() ? ANSI_CYAN : "";
             String suffix = options.colors() ? ANSI_RESET : "";
             System.err.printf(
-                    "%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)"
+                    "%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)"
                             + " cache: %s, %d restored%s%s%n",
                     prefix,
                     promptTokens + generated,
@@ -126,9 +132,6 @@ final class Turn implements ChatEngine.ReplySink {
                     completion.restoredTokens(),
                     acceptance(completion),
                     suffix);
-        }
-        if (!options.stream()) {
-            System.out.println(text);
         }
     }
 
