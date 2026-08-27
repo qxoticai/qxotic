@@ -232,7 +232,10 @@ public final class BlockTree<S extends ContextState> {
         codec.capture(state, tip.to, to, mem);
         Block block = new Block(key, tip, tip.to, to, mem);
         blocks.put(key, block);
-        freshBlocks.add(block); // creation order is parents-first: a tip precedes its children
+        // fresh = not yet on disk. A block appended earlier stays evictable (its bytes are safe in
+        // the artifact); when it is recommitted after eviction it is new to the tree, not to the
+        // file. Creation order is parents-first: a tip precedes its children.
+        if (base == null || !base.contains(key)) freshBlocks.add(block);
         leaves.remove(tip);
         leaves.add(block);
         tip.children.add(block);

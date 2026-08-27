@@ -69,11 +69,19 @@ public final class FrozenBlocks {
     private final long kvBytes;
     private long indexOffset; // advances as append() publishes new indexes
 
+    private final Set<BlockTree.BlockKey> keys = new HashSet<>();
+
     private FrozenBlocks(Path file, List<Entry> entries, long kvBytes, long indexOffset) {
         this.file = file;
         this.entries = entries;
         this.kvBytes = kvBytes;
         this.indexOffset = indexOffset;
+        for (Entry e : entries) keys.add(e.key());
+    }
+
+    /** Whether {@code key} is already on disk in this artifact (mounted or appended by us). */
+    boolean contains(BlockTree.BlockKey key) {
+        return keys.contains(key);
     }
 
     Path file() {
@@ -235,6 +243,13 @@ public final class FrozenBlocks {
      * blocks are re-serialized. Partial state never touches disk: blocks only exist complete.
      */
     void append(List<Entry> fresh) throws IOException {
+        // The index is a tree, one entry per key, and open() refuses anything else; enforce it
+        // where the index is written. Entries already on disk (or repeated in this batch) are
+        // skipped, not rewritten: the key names the same bytes.
+        List<Entry> unseen = new ArrayList<>(fresh.size());
+        Set<BlockTree.BlockKey> batch = new HashSet<>();
+        for (Entry e : fresh) if (!keys.contains(e.key()) && batch.add(e.key())) unseen.add(e);
+        fresh = unseen;
         if (fresh.isEmpty()) return;
         try (FileChannel ch =
                 FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
@@ -317,6 +332,7 @@ public final class FrozenBlocks {
                             offsets[i],
                             e.mem(),
                             e.crc()));
+            keys.add(e.key());
         }
         indexOffset = newIndexOffset;
     }
