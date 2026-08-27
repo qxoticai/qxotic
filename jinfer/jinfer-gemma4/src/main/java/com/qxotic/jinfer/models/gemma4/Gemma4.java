@@ -162,6 +162,7 @@ public final class Gemma4
                 else forward(state, ids, 0, from, n);
             }
             case Batch.Input.Embeddings e -> {
+                state.lastTokens = null; // media rows are no seed for the MTP draft
                 if (vision == null && audio == null)
                     throw new UnsupportedOperationException("no media encoder loaded");
                 if (e.rows().shape().flatAt(1) != configuration.embeddingLength)
