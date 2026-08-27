@@ -443,14 +443,17 @@ public final class Lfm2
                 state.normed, state.residual, ffnNormW, seqLen, dim, configuration.rmsNormEps);
         MatMul.gemm(ffn.gate(), state.normed, state.hidden, seqLen);
         MatMul.gemm(ffn.up(), state.normed, state.hidden2, seqLen);
+        // hidden/hidden2 are [batch, maxHiddenDim]: the gemms write rows at the buffer's stride,
+        // which is wider than this layer's hiddenDim when widths differ across layers
+        int hiddenStride = Math.toIntExact(state.hidden.stride().flatAt(0));
         Parallel.forLoop(
                 seqLen,
                 s ->
                         Activations.siluMultiply(
                                 state.hidden,
-                                s * hiddenDim,
+                                s * hiddenStride,
                                 state.hidden2,
-                                s * hiddenDim,
+                                s * hiddenStride,
                                 hiddenDim));
         MatMul.gemm(ffn.down(), state.hidden, state.normed, seqLen);
         if (postFfnNormW != null)
