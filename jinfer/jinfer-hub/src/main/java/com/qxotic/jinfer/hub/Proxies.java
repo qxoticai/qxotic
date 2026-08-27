@@ -43,7 +43,7 @@ final class Proxies {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
-    private static final class EnvProxySelector extends ProxySelector {
+    static final class EnvProxySelector extends ProxySelector { // package-private for tests
 
         private final Proxy http;
         private final Proxy https;
@@ -57,6 +57,9 @@ final class Proxies {
                             ? List.of()
                             : Arrays.stream(noProxy.split(","))
                                     .map(s -> s.strip().toLowerCase(Locale.ROOT))
+                                    // ".example.com" is the most common spelling; it means the
+                                    // same as "example.com" (curl, requests, wget agree)
+                                    .map(s -> s.startsWith(".") ? s.substring(1) : s)
                                     .filter(s -> !s.isEmpty())
                                     .toList();
         }
