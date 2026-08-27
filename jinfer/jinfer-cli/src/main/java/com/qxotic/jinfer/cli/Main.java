@@ -82,6 +82,10 @@ public class Main {
             return;
         }
         LoadedModel<?> model;
+        // A cold load is seconds of silent work (mmap + parse + weight packing); on a terminal,
+        // show a heartbeat so it never looks hung. Piped/scripted runs stay byte-clean: the
+        // spinner writes only when stderr is a console.
+        LoadSpinner spinner = LoadSpinner.start("Loading model");
         try {
             // ONE load path: every file - model and companions - uses its preload when it has
             // one, parses fresh when it does not; any mix composes
@@ -94,10 +98,12 @@ public class Main {
             // load errors carry their remedy in the message (wrong mmproj, unknown architecture,
             // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack
             // trace; anything else is a bug and still traces
+            spinner.stop();
             System.err.println("ERROR " + e.getMessage());
             System.exit(1);
             return;
         }
+        spinner.stop();
         Sampling sampling = options.sampling(model.samplingDefaults());
         // the engine owns the prompt cache: instruct's --cache file rides the catalog options,
         // chat gets the in-memory defaults (its own flag validation already refused --cache)
