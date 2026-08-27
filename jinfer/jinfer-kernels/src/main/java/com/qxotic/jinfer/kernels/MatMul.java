@@ -249,8 +249,13 @@ public final class MatMul {
      * A/C must not be the same region; in-place matmul is not expressible in the shaped contract.
      */
     private static void checkNotAliased(MemoryView<MemorySegment> a, MemoryView<MemorySegment> c) {
-        if (a.memory() == c.memory() && a.byteOffset() == c.byteOffset())
+        if (sameRegion(Raw.f32(a, "a"), 0, Raw.f32(c, "c"), 0))
             throw new IllegalArgumentException("gemm: a and c must not alias the same region");
+    }
+
+    /** Aliasing by resolved address, so two views or two Memory objects over one region agree. */
+    private static boolean sameRegion(Raw a, long aOff, Raw c, long cOff) {
+        return a.vseg() == c.vseg() && a.vbase() + aOff * 4L == c.vbase() + cOff * 4L;
     }
 
     public static void mm(
@@ -268,7 +273,7 @@ public final class MatMul {
             int k) {
         Raw av = Raw.f32(a, "a");
         Raw cv = Raw.f32(c, "c");
-        boolean inPlace = a == c && aOff == cOff;
+        boolean inPlace = sameRegion(av, aOff, cv, cOff);
         DataType dt = w.dataType();
         Views.requireContiguous(w, "w");
         MemorySegment ws = w.memory().base();
