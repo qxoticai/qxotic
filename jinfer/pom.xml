@@ -67,7 +67,8 @@
          4x4 rather than the JIT's 4x1: native-image allocates from all 32 zmm, so the 21 live
          vectors of a 4x4 tile stay in registers where a JIT limited to zmm0-15 spills them.
          Measured on a 32-ZMM native-image builder (Zen 5), Inflect2 end to end: +14% (nano) and
-         +29% (micro), output bit-identical. VALIDATED ON THAT BUILDER CLASS - an older
+         +29% (micro). Correctness of every tile is pinned by jinfer-kernels' surefire selection
+         matrix (one execution per -Djinfer.convTile value). VALIDATED ON THAT BUILDER CLASS - an older
          native-image whose allocator only uses 16 vector registers would spill exactly as the
          JIT does, so build with -Djinfer.convTile=auto there. Deeper does not pay: 4x6 and 6x4
          were measured and are slower than 4x4 everywhere (see Convolutions.TILE_CODE). -->

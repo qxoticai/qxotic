@@ -20,6 +20,15 @@ final class VectorMamba2 {
 
     private VectorMamba2() {}
 
+    /** The two {@code -Djinfer.mamba2.*} switches, for the selection tests. */
+    static boolean scanEnabled() {
+        return SCAN_ENABLED;
+    }
+
+    static boolean normEnabled() {
+        return NORM_ENABLED;
+    }
+
     static boolean appliesScan(int stateSize) {
         return SCAN_ENABLED && applies(stateSize);
     }

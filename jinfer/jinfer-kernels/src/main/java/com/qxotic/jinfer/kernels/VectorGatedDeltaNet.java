@@ -18,6 +18,13 @@ final class VectorGatedDeltaNet {
 
     private VectorGatedDeltaNet() {}
 
+    /**
+     * Whether {@code -Djinfer.gdn.vector} left the vector recurrence on. For the selection tests.
+     */
+    static boolean enabled() {
+        return ENABLED;
+    }
+
     static boolean applies(int headDim) {
         return ENABLED
                 && FAST_VECTOR_JIT
