@@ -75,6 +75,30 @@ class FetchDownloadTest {
     }
 
     @Test
+    void aParallelResumeRestartsWhenTheRemoteChanged(@TempDir Path dir) throws IOException {
+        // a chunk map trusted on sizes alone kept a stale chunk of a republished file of the
+        // same size; the parallel path now sends the first response's validator as If-Range,
+        // and a changed remote (200 to a ranged request) restarts the transfer from scratch
+        byte[] big = new byte[(int) Fetch.PARALLEL_FLOOR + 1];
+        new java.util.Random(12).nextBytes(big);
+        try (FileServer server =
+                FileServer.start().serve("/big.bin", big).etag("/big.bin", "\"v2\"")) {
+            Path dest = dir.resolve("big.bin");
+            Path part = dest.resolveSibling("big.bin.part");
+            byte[] stale = new byte[big.length]; // "chunk 0 done" of the previous file
+            Files.write(part, stale);
+            Files.write(dest.resolveSibling("big.bin.part.map"), new byte[] {1, 0, 0});
+            Files.writeString(dest.resolveSibling("big.bin.part.etag"), "\"v1\"");
+
+            Fetch.download(server.url("/big.bin"), dest, big.length, null, Map.of());
+
+            assertEquals("\"v1\"", server.lastHeader("/big.bin", "If-Range"));
+            assertArrayEquals(big, Files.readAllBytes(dest));
+            assertTrue(!Files.exists(dest.resolveSibling("big.bin.part.etag")), "cleaned up");
+        }
+    }
+
+    @Test
     void aPartAlreadyAtFullSizeIsNotResumed(@TempDir Path dir) throws IOException {
         // a crash between the last byte and the rename left a full-size .part; resuming it asked
         // for a range past the end, a 416 on every attempt
