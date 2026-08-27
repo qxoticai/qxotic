@@ -5,13 +5,18 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jam.internal.GGMLType;
+import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.ref.Reference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.IntConsumer;
+import java.util.function.ObjIntConsumer;
 
 /**
  * The native ({@code libjam}) {@link JAM} implementation — a handle to a jam context (a {@code
@@ -174,6 +179,99 @@ public final class NativeJAM implements JAM {
     /** Create the process-wide Java context through jam's existing context API. */
     private static native long createJni(int threads);
 
+    /** As createJni with a host executor: pf is an upcall stub with the jam_parallel_for signature. */
+    private static native long createPfJni(int threads, long pf);
+
+    /**
+     * {@code jam_pack_size} through Panama (a load-time call, so no JNI twin). Guarded by the pack
+     * ABI: the Java packer ({@code JamPack}) is written against jam.h {@code JAM_PACK_ABI} 1, so a
+     * library reading a different layout generation gets canonical weights instead.
+     */
+    private static final int PACK_ABI = 1;
+
+    @Override
+    public long packSize(int dtype, int m, int k) {
+        if (PACK_ABI_NATIVE != PACK_ABI) return 0;
+        try {
+            return (long) PACK_SIZE_FFM.invokeExact(ctx, dtype, m, k);
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable: jam_pack_size", t);
+        }
+    }
+
+    // ── host executor (-Djam.native.parallelFor=true): jam fans its row ranges through a
+    // Java-provided pool instead of owning native workers. The engine injects its pool via
+    // parallelExecutor(...); until then (or without one) upcalls run inline on the caller. ──
+
+    private static final boolean PARALLEL_FOR =
+            Boolean.parseBoolean(NativeLoader.config("jam.native.parallelFor", "false"));
+
+    private static volatile ObjIntConsumer<IntConsumer> fanOut; // (body, n) -> run body over [0,n)
+
+    /** Inject the engine's fan-out (e.g. jinfer's Parallel::forLoop). Takes effect on the next mm. */
+    public static void parallelExecutor(ObjIntConsumer<IntConsumer> fan) {
+        fanOut = fan;
+    }
+
+    // generic task downcall: (fn, arg, begin, end, tid) -> void
+    private static final MethodHandle TASK_FFM =
+            Linker.nativeLinker()
+                    .downcallHandle(
+                            FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_INT, JAVA_INT, JAVA_INT));
+
+    private static void runTask(long fn, long arg, int begin, int end, int tid) {
+        if (begin >= end) return;
+        try {
+            TASK_FFM.invokeExact(MemorySegment.ofAddress(fn), arg, begin, end, tid);
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable: jam task", t);
+        }
+    }
+
+    /** The jam_parallel_for upcall: split [0,n) across the injected pool, one tid per slice. */
+    private static void pfUpcall(long pool, int n, long fn, long arg) {
+        ObjIntConsumer<IntConsumer> fan = fanOut;
+        int t = PF_THREADS;
+        if (fan == null || n < 2 || t < 2) {
+            runTask(fn, arg, 0, n, 0);
+            return;
+        }
+        int per = (n + t - 1) / t;
+        int slices = (n + per - 1) / per;
+        fan.accept(s -> runTask(fn, arg, s * per, Math.min(n, s * per + per), s), slices);
+    }
+
+    private static final int PF_THREADS;
+    private static final MemorySegment PF_STUB;
+
+    static {
+        int t = nativeThreads();
+        PF_THREADS = t > 0 ? t : Runtime.getRuntime().availableProcessors();
+        MemorySegment stub = MemorySegment.NULL;
+        if (PARALLEL_FOR) {
+            try {
+                MethodHandle h =
+                        MethodHandles.lookup()
+                                .findStatic(
+                                        NativeJAM.class,
+                                        "pfUpcall",
+                                        MethodType.methodType(
+                                                void.class, long.class, int.class, long.class,
+                                                long.class));
+                stub =
+                        Linker.nativeLinker()
+                                .upcallStub(
+                                        h,
+                                        FunctionDescriptor.ofVoid(
+                                                JAVA_LONG, JAVA_INT, JAVA_LONG, JAVA_LONG),
+                                        Arena.global());
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError("unreachable: pfUpcall", e);
+            }
+        }
+        PF_STUB = stub;
+    }
+
     /** Panama binding: downcall straight to {@code jam_mm}. */
     private static int mmFfm(
             long ctx,
@@ -211,7 +309,10 @@ public final class NativeJAM implements JAM {
 
     static {
         NativeLoader.load(); // always: the JNI backend needs libjam loaded too
-        long ctx = createJni(nativeThreads());
+        long ctx =
+                PARALLEL_FOR
+                        ? createPfJni(nativeThreads(), PF_STUB.address())
+                        : createJni(nativeThreads());
         if (ctx == 0) throw new IllegalStateException("jam: failed to create native context");
         GLOBAL = new NativeJAM(ctx);
         MM_FFM =
@@ -235,6 +336,32 @@ public final class NativeJAM implements JAM {
                                                 JAVA_LONG, JAVA_INT, JAVA_INT, // a, at, lda
                                                 JAVA_LONG, JAVA_INT, JAVA_INT, // r, rt, ldr
                                                 JAVA_INT, JAVA_INT, JAVA_INT)); // m, n, k
+    }
+
+    /** {@code jam_pack_abi()} of the loaded library, read once. */
+    private static final int PACK_ABI_NATIVE;
+
+    /** {@code jam_pack_size(ctx, dtype, m, k)} downcall. */
+    private static final MethodHandle PACK_SIZE_FFM;
+
+    static {
+        Linker linker = Linker.nativeLinker();
+        SymbolLookup lookup = SymbolLookup.loaderLookup();
+        MethodHandle abi =
+                linker.downcallHandle(
+                        lookup.find("jam_pack_abi").orElseThrow(
+                                () -> new UnsatisfiedLinkError("jam: 'jam_pack_abi' not found")),
+                        FunctionDescriptor.of(JAVA_INT));
+        PACK_SIZE_FFM =
+                linker.downcallHandle(
+                        lookup.find("jam_pack_size").orElseThrow(
+                                () -> new UnsatisfiedLinkError("jam: 'jam_pack_size' not found")),
+                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, JAVA_INT, JAVA_INT, JAVA_INT));
+        try {
+            PACK_ABI_NATIVE = (int) abi.invokeExact();
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable: jam_pack_abi", t);
+        }
     }
 
     private static int nativeThreads() {

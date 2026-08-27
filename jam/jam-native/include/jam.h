@@ -40,6 +40,7 @@
  *     "metal"                                    (GPU backend, explicit opt-in via JAM_ISA/max_isa)
  */
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -78,6 +79,38 @@ typedef enum {
     JAM_NVFP4 = 40,   /* == GGML_TYPE_NVFP4 (llama.cpp): {d[4] UE4M3; qs[32]} interleaved, 64-elem, no global */
     JAM_Q1_0  = 41,   /* == GGML_TYPE_Q1_0 (llama.cpp): {fp16 d; 16 sign bytes}, 128-elem, bit ? +d : -d */
 } jam_dtype;
+
+/* ---- packed weight layouts (in-memory only; NEVER a wire format) ----
+ *
+ * Decode streams every weight byte per token, and the GGUF block layouts waste bandwidth there
+ * (unaligned fp16 scales) or instructions (k-quant bit unpacking). jam_pack_size(ctx, dt, m, k)
+ * returns the byte size of the packed form this context's kernels want for a [m x k] weight
+ * (0 = keep canonical: dtype not packable, shape unsupported, or no packed kernels on this ISA).
+ * The CALLER produces the packed bytes (layout below) once at load, drops the canonical copy,
+ * and passes wt | JAM_PACKED to jam_mm with ldw == k (packed rows are always dense). Values are
+ * EXACTLY the canonical dequant - the transform only reorders bytes and widens scales.
+ *
+ * ABI: the layout may change between jam versions. A packer verifies jam_pack_abi() == the
+ * JAM_PACK_ABI it was written against, and keeps canonical weights otherwise.
+ *
+ * Layout (JAM_PACK_ABI 1): rows in groups of 4 (m % 4 == 0 required); group g starts at
+ * base + g * GB, its sections in order (nb = k/32 blocks, sb = k/256 super-blocks; within a
+ * section the k-block index is the outer stride, the 4 rows r interleave inside):
+ *
+ *   Q4_0  GB = 80*nb           [nb x 64B nibble lines: 4 rows x 16B, elem e in the low nibble of
+ *                               byte e, elem e+16 in the high nibble (Q4_0 order)]
+ *                              [nb x 16B f32 scale[4], lane = row]
+ *   Q4_K  GB = 72*nb + 32*sb   [nb x 64B re-nibbled lines, Q4_0 order]
+ *                              [nb x 8B u8 sc[4] | mn[4] (6-bit values, decoded)]
+ *                              [sb x 32B f32 d[4] | dmin[4]]
+ *   Q5_K  GB = 136*nb + 32*sb  [nb x 128B int8: 4 rows x 32, q5 in 0..31]
+ *                              [nb x 8B u8 sc[4] | mn[4]]  [sb x 32B f32 d[4] | dmin[4]]
+ *   Q6_K  GB = 136*nb + 16*sb  [nb x 128B int8: 4 rows x 32, value q6 - 32]
+ *                              [nb x 8B i8 sc: first-half sc[4] | second-half sc[4] (per-16)]
+ *                              [sb x 16B f32 d[4]]
+ */
+#define JAM_PACKED   0x100    /* jam_mm wt flag: W holds the packed layout of (wt & ~JAM_PACKED) */
+#define JAM_PACK_ABI 1
 
 typedef enum {
     JAM_OK = 0,
@@ -144,8 +177,9 @@ JAM_API jam_status jam_mm(jam_ctx* ctx,
                   int m, int n, int k);
 
 JAM_API jam_isa     jam_active_isa(const jam_ctx* ctx);   /* the live kernel level; ctx==NULL -> global */
+JAM_API int         jam_pack_abi(void);                   /* the JAM_PACK_ABI this library reads */
+JAM_API size_t      jam_pack_size(jam_ctx* ctx, jam_dtype dt, int m, int k);  /* 0 = keep canonical */
 JAM_API const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label ("" if unnamed); ctx==NULL -> global */
-
 
 /* Destroy the process-global context (the one jam_mm(NULL,...) uses) and free its pool + scratch. A no-op
  * if it was never created; a later jam_mm(NULL,...) lazily re-creates it (idempotent). Most callers never

@@ -112,7 +112,9 @@ const char* jam_isa_name(jam_isa isa) {
     }
 }
 
-static jam_isa parse_isa(const char* s) {
+/* Internal (not in jam.h): shared by jam.c and the JNI shim, which seeds its Java "global" context
+ * from JAM_ISA exactly like the C global context does. */
+jam_isa jam_parse_isa(const char* s) {
     if (!s || !*s) return JAM_ISA_AUTO;
     for (jam_isa i = JAM_ISA_GENERIC; i <= JAM_ISA_METAL; ++i)
         if (strcmp(s, jam_isa_name(i)) == 0) return i;
@@ -162,9 +164,10 @@ static const char* q8_kernel_name(jam_task_fn k) {
 #endif
 #ifdef JAM_HAVE_DOTPROD
     if (k == jam_mm_q8_0_dotprod)  return "dotprod (sdot)";
+    if (k == jam_gemv_q8_0_dotprod_4x1) return "dotprod (sdot 4x1)";
 #endif
 #ifdef JAM_HAVE_I8MM
-    if (k == jam_mm_q8_0_i8mm)     return "i8mm (smmla 2x2)";
+    if (k == jam_mm_q8_0_i8mm_4x4) return "i8mm (smmla 4x4)";
 #endif
     return "?";
 }
@@ -198,6 +201,8 @@ static void debug_report(const jam_ctx* c, jam_isa cap) {
     fprintf(stderr, "[jam]   F32   kernel: %s\n", f32_kernel_name(c->f32_kernel));
     fprintf(stderr, "[jam]   Q8_0  kernel: %s%s (requant A)\n",
             c->q4k_avail ? "16-row VNNI repack (seq>=8) + " : "", q8_kernel_name(c->q8_kernel));
+    if (c->q8_decode_kernel != c->q8_kernel)
+        fprintf(stderr, "[jam]          decode: %s\n", q8_kernel_name(c->q8_decode_kernel));
     fprintf(stderr, "[jam]   MXFP4 kernel: %s\n",
             c->mxfp4_kernel ? "simd (FP4 decode + int8 dot, requant A)" : "generic (float)");
     fprintf(stderr, "[jam]   cpu set [%d]:", c->cpu.n);   /* the actual logical CPUs the pool runs on */
@@ -222,7 +227,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     /* JAM_ISA is a hard CEILING on EVERY context, not just the global one: an operator can force a lower ISA
      * (e.g. to dodge a virtualized AVX-512 that CPUID advertises but faults on). Only lowers — never raises a
      * caller's cfg cap; METAL/unknown is ignored (it's a GPU backend, not a CPU rung). */
-    {   jam_isa env_cap = parse_isa(getenv("JAM_ISA"));
+    {   jam_isa env_cap = jam_parse_isa(getenv("JAM_ISA"));
         if (env_cap != JAM_ISA_AUTO && env_cap != JAM_ISA_METAL && (cap == JAM_ISA_AUTO || env_cap < cap))
             cap = env_cap;
     }
@@ -310,8 +315,9 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #endif
     /* ARM: NEON/DOTPROD/I8MM are a clean superset chain (detect returns the highest fully present). */
 #ifdef JAM_HAVE_NEON
-    if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = jam_mm_q8_0_neon;
-                                c->q4_0_kernel = jam_mm_q4_0_neon; c->mxfp4_kernel = jam_mm_mxfp4_neon;
+    if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = c->q8_decode_kernel = jam_mm_q8_0_neon;
+                                c->q4_0_kernel = c->q4_0_decode_kernel = jam_mm_q4_0_neon;
+                                c->mxfp4_kernel = jam_mm_mxfp4_neon;
                                 c->kq[JAM_KQ_Q4K] = jam_mm_q4k_neon;
                                 c->kq[JAM_KQ_Q5K] = jam_mm_q5k_neon; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_neon;
                                 c->nvfp4_kernel = jam_mm_nvfp4_neon;
@@ -319,14 +325,31 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #endif
 #ifdef JAM_HAVE_DOTPROD
     if (cpu >= JAM_ISA_DOTPROD) { c->q8_kernel = jam_mm_q8_0_dotprod;   /* i8mm cores inherit these (sdot) */
-        c->q4_0_kernel = jam_mm_q4_0_dotprod; c->mxfp4_kernel = jam_mm_mxfp4_dotprod;
+        /* Q8_0 decode is bandwidth/stream-limited: its single-row loop wins. Q4_0 has enough nibble
+         * decode work for the 4-row activation reuse (4x1 GEMV) to pay off. */
+        c->q8_decode_kernel = jam_mm_q8_0_dotprod;
+        c->q4_0_kernel = jam_mm_q4_0_dotprod; c->q4_0_decode_kernel = jam_gemv_q4_0_dotprod_4x1;
+        c->mxfp4_kernel = jam_mm_mxfp4_dotprod;
         c->kq[JAM_KQ_Q4K] = jam_mm_q4k_dotprod; c->kq[JAM_KQ_Q5K] = jam_mm_q5k_dotprod; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_dotprod;
+        c->kq_decode[JAM_KQ_Q4K] = jam_gemv_q4k_dotprod_4x1;
+        c->kq_decode[JAM_KQ_Q5K] = jam_gemv_q5k_dotprod_4x1;
+        c->kq_decode[JAM_KQ_Q6K] = jam_gemv_q6k_dotprod_4x1;
+        c->dense_f16_kernel = jam_mm_f16_neon;   /* widen + FMA; the TU needs dotprod anyway */
+        c->dense_bf16_kernel = jam_mm_bf16_neon;
         c->nvfp4_kernel = jam_mm_nvfp4_dotprod;
         c->q1_0_kernel = jam_mm_q1_0_dotprod; }
 #endif
 #ifdef JAM_HAVE_I8MM
-    if (cpu >= JAM_ISA_I8MM)    c->q8_kernel = jam_mm_q8_0_i8mm;
+    if (cpu >= JAM_ISA_I8MM) { c->q8_kernel = jam_mm_q8_0_i8mm_4x4;
+                               c->q4_0_kernel = jam_mm_q4_0_i8mm_4x4; }
 #endif
+
+    /* Non-ARM ladders use their normal Q8_0/Q4_0 kernels for both shapes. ARM overrides these so an
+     * i8mm-capable CPU retains the measured SDOT choices for one-column decode. */
+    if (!c->q8_decode_kernel) c->q8_decode_kernel = c->q8_kernel;
+    if (!c->q4_0_decode_kernel) c->q4_0_decode_kernel = c->q4_0_kernel;
+    for (int kqi = 0; kqi < JAM_KQ_N; kqi++)
+        if (!c->kq_decode[kqi]) c->kq_decode[kqi] = c->kq[kqi];
 
     c->active = cpu;
 #ifdef JAM_HAVE_METAL
@@ -413,7 +436,7 @@ static void global_init(void) {
     const char* nt = getenv("JAM_NATIVE_THREADS");
     if (!nt || !*nt) nt = getenv("JAM_THREADS");
     cfg.nthreads = nt ? atoi(nt) : 0;            /* 0 = online cpus */
-    cfg.max_isa  = parse_isa(getenv("JAM_ISA")); /* AUTO if unset/unknown */
+    cfg.max_isa  = jam_parse_isa(getenv("JAM_ISA")); /* AUTO if unset/unknown */
     cfg.name     = "global";
     g_global = jam_ctx_create(&cfg);
 }
@@ -463,14 +486,61 @@ static void jam_run_bw(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
     else                 fn(arg, 0, n, 0);
 }
 
+/* ---- packed weights (jam.h: caller-produced layouts, JAM_PACK_ABI) ---- */
+
+int jam_pack_abi(void) { return JAM_PACK_ABI; }
+
+/* Per-4-row-group byte size of the packed layouts (jam.h, JAM_PACK_ABI 1). */
+size_t jam_pack_group_bytes(jam_dtype dt, int k) {
+    size_t nb = (size_t) k / 32, sb = (size_t) k / 256;
+    switch (dt) {
+        case JAM_Q4_0: return nb * 80;
+        case JAM_Q4_K: return nb * 72 + sb * 32;
+        case JAM_Q5_K: return nb * 136 + sb * 32;
+        case JAM_Q6_K: return nb * 136 + sb * 16;
+        default:       return 0;
+    }
+}
+
+size_t jam_pack_size(jam_ctx* ctx, jam_dtype dt, int m, int k) {
+    if (!ctx) ctx = jam_global();
+    if (!ctx || m <= 0 || k <= 0 || m % 4) return 0;
+    if (dt == JAM_Q4_0 ? (k % 32 != 0) : (k % 256 != 0)) return 0;
+#ifdef JAM_HAVE_DOTPROD
+    /* The packed kernels ride the 4-row dotprod GEMVs: offer the layout only where those bound. */
+    switch (dt) {
+        case JAM_Q4_0: if (ctx->q4_0_decode_kernel != jam_gemv_q4_0_dotprod_4x1) return 0; break;
+        case JAM_Q4_K: if (ctx->kq_decode[JAM_KQ_Q4K] != jam_gemv_q4k_dotprod_4x1) return 0; break;
+        case JAM_Q5_K: if (ctx->kq_decode[JAM_KQ_Q5K] != jam_gemv_q5k_dotprod_4x1) return 0; break;
+        case JAM_Q6_K: if (ctx->kq_decode[JAM_KQ_Q6K] != jam_gemv_q6k_dotprod_4x1) return 0; break;
+        default: return 0;
+    }
+    return (size_t) (m / 4) * jam_pack_group_bytes(dt, k);
+#else
+    return 0;
+#endif
+}
+
 /* ---- the op ---- */
 
 /* Shared quantized dispatch: every quant-weight @ F32 path is "requant activations -> int8, then the
  * SIMD matmul" (or the float floor if no SIMD kernel). Only the decode (inside `simd`) differs. */
+/* Stack requant bound for the single-thread-ctx gemv path below (aq k bytes + ad/asum k/32 floats). */
+#define JAM_GEMV_STACK_K 8192
+
 static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd, jam_task_fn floor_) {
     if (simd) {
-        if (!ensure_qscratch(ctx, q->n, q->k)) return JAM_EINVAL;
-        q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
+        /* A 1-thread or host-executor ctx may serve CONCURRENT jam_mm calls (row-sliced decode, or
+         * host workers each running nested gemvs inline). The ctx requant scratch would race across
+         * those callers, so the one-column requant lives on each caller's stack instead. */
+        int8_t stack_aq[JAM_GEMV_STACK_K] __attribute__((aligned(16)));
+        float  stack_ad[JAM_GEMV_STACK_K / 32], stack_asum[JAM_GEMV_STACK_K / 32];
+        if (q->n == 1 && (ctx->nthreads == 1 || ctx->parallel_for) && q->k <= JAM_GEMV_STACK_K) {
+            q->aq = stack_aq; q->ad = stack_ad; q->asum = stack_asum;
+        } else {
+            if (!ensure_qscratch(ctx, q->n, q->k)) return JAM_EINVAL;
+            q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
+        }
         if (q->n == 1) jam_q8_0_requant(q, 0, 1, 0);          /* gemv (n==1): requant the lone column inline */
         else           jam_run(ctx, q->n, jam_q8_0_requant, q);  /* phase 1: activations A -> int8 (shared) */
         if (q->n == 1) jam_run_bw(ctx, m, simd, q);   /* gemv is DRAM-bound: one thread per core */
@@ -587,11 +657,55 @@ static jam_status jam_mm_run(jam_ctx* ctx,
                   int m, int n, int k)
 {
 #ifdef JAM_HAVE_METAL
-    if (ctx->metal) {   /* GPU backend handles supported dtypes; returns EUNSUPPORTED to fall back to CPU */
+    /* Metal routing, measured on M3 Pro (8192-row projections, GB/s and GMAC/s vs the CPU kernels):
+     *  - DENSE weights: the GPU's wider DRAM path wins at every n (F16 decode 27 vs 10 GB/s).
+     *  - QUANT weights, n < 16: the CPU int8 kernels win (n==1: Q4_K 61 vs 10 GB/s — the scalar GPU
+     *    kernels can't amortize dequant on one column; n==8: 2-3x GMAC/s). 16 is also the MMA
+     *    kernels' minimum (JAM_MMA_MIN_N), so small-n never pays the ~15 us round trip for a
+     *    register-tiled kernel it can't feed.
+     *  - QUANT, n >= 16: Metal (n==32: Q8_0 448 vs 335, Q4_0 539 vs 282 GMAC/s).
+     * ponytail: one constant, no size table; split per-dtype thresholds only if a profile demands. */
+    const int jam_metal_ok = wt == JAM_F32 || wt == JAM_F16 || wt == JAM_BF16 || n >= 16;
+    if (ctx->metal && jam_metal_ok) {
         jam_status ms = jam_metal_mm(ctx->metal, w, wt, ldw, a, at, lda, c, ct, ldc, m, n, k);
-        if (ms != JAM_EUNSUPPORTED) return ms;
+        if (ms != JAM_EUNSUPPORTED) return ms;   /* EUNSUPPORTED -> CPU kernels below */
     }
 #endif
+
+    /* ---- packed weights (wt | JAM_PACKED): caller-produced 4-row-group layouts, see jam.h.
+     * Metal already had its shot above (packed MMA for aligned prefill shapes); here the CPU
+     * kernels read the same single copy - packed GEMVs for decode, the 4x4 group kernels for
+     * prefill. A ctx that never advertised the layout (jam_pack_size == 0) has no kernel that
+     * can read these bytes: EUNSUPPORTED, never a wrong result. */
+    if (wt & JAM_PACKED) {
+        const jam_dtype base = (jam_dtype) (wt & ~JAM_PACKED);
+        if (at != JAM_F32 || ct != JAM_F32) return JAM_EUNSUPPORTED;
+#ifdef JAM_HAVE_DOTPROD
+        jam_task_fn gemv, mmk;
+        switch (base) {
+            /* Q4_0 stays on the sdot kernel even on i8mm CPUs: an SMMLA packed twin measured
+             * SLOWER on M3 Pro at every n (183 vs 131 t/s LFM pp512) - the pair-combine shuffles
+             * cost more than the doubled MAC width buys. */
+            case JAM_Q4_0: gemv = jam_gemv_q4_0_packed_4x1; mmk = jam_mm_q4_0_packed_dotprod; break;
+            case JAM_Q4_K: gemv = jam_gemv_q4k_packed_4x1;  mmk = jam_mm_q4k_packed_dotprod;  break;
+            case JAM_Q5_K: gemv = jam_gemv_q5k_packed_4x1;  mmk = jam_mm_q5k_packed_dotprod;  break;
+            case JAM_Q6_K: gemv = jam_gemv_q6k_packed_4x1;  mmk = jam_mm_q6k_packed_dotprod;  break;
+            default: return JAM_EUNSUPPORTED;
+        }
+        if (jam_pack_size(ctx, base, m, k) == 0) return JAM_EUNSUPPORTED;
+        jam_q8_job q = { w, k, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
+        if (n == 1) return run_quant(ctx, &q, m, gemv, NULL);
+        /* prefill: the shared requant fan, then the 4-row x 4-col kernel over whole row GROUPS
+         * (m % 4 == 0 is part of the layout contract, enforced by jam_pack_size above). */
+        if (!ensure_qscratch(ctx, n, k)) return JAM_EINVAL;
+        q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
+        jam_run(ctx, n, jam_q8_0_requant, &q);
+        jam_run(ctx, m / 4, mmk, &q);
+        return JAM_OK;
+#else
+        return JAM_EUNSUPPORTED;
+#endif
+    }
 
     /* packed-panel F32: transpose activations once, broadcast-FMA at full port rate. Worth the
      * pack for prefill-sized n; decode (tiny n) keeps the direct tiles. */
@@ -708,7 +822,10 @@ static jam_status jam_mm_run(jam_ctx* ctx,
                 try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 34,
                                a, lda, c, ldc, m, n, k, jam_q8_0_band8_avx2)) return JAM_OK;
 #endif
-            return run_quant(ctx, &q, m, ctx->q8_kernel, jam_mm_q8_0_f32_generic);   /* decode / non-VNNI */
+            /* No Q8_0 packed layout: measured +1.8% only - the plain SDOT stream already sits at the
+             * DRAM ceiling, so the realign does not pay for its bytes. */
+            jam_task_fn q8_kernel = n == 1 ? ctx->q8_decode_kernel : ctx->q8_kernel;
+            return run_quant(ctx, &q, m, q8_kernel, jam_mm_q8_0_f32_generic);   /* decode / non-VNNI */
         }
         if (wt == JAM_MXFP4) {
 #ifdef JAM_HAVE_AVX512
@@ -734,7 +851,8 @@ static jam_status jam_mm_run(jam_ctx* ctx,
                 try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 18,
                                a, lda, c, ldc, m, n, k, jam_q4_0_band8_avx2)) return JAM_OK;
 #endif
-            return run_quant(ctx, &q, m, ctx->q4_0_kernel, jam_mm_q4_0_f32_generic);
+            jam_task_fn q4_kernel = n == 1 ? ctx->q4_0_decode_kernel : ctx->q4_0_kernel;
+            return run_quant(ctx, &q, m, q4_kernel, jam_mm_q4_0_f32_generic);
         }
     }
 
@@ -752,16 +870,19 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     };
     if (at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
         for (int i = 0; i < JAM_KQ_N; i++)
-            if (wt == kquant_info[i].dt)
+            if (wt == kquant_info[i].dt) {
                 return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, kquant_info[i].block_bytes,
-                                       kquant_info[i].band, kquant_info[i].band8, ctx->kq[i],
+                                       kquant_info[i].band, kquant_info[i].band8,
+                                       n == 1 ? ctx->kq_decode[i] : ctx->kq[i],
                                        kquant_info[i].floor);
+            }
 
     if (jam_debug())
         fprintf(stderr, "[jam] EUNSUPPORTED dtype combo: W=%d A=%d C=%d (built: F32, F16, BF16, Q8_0, Q4_0, "
                         "MXFP4, Q4_K/Q5_K/Q6_K weights @ F32 -> F32)\n", (int)wt, (int)at, (int)ct);
     return JAM_EUNSUPPORTED;
 }
+
 
 jam_status jam_mm(jam_ctx* ctx,
                   const void* w, jam_dtype wt, int ldw,    /* weights     [m × k] */

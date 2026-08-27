@@ -88,8 +88,26 @@ public interface JAM {
             NVFP4 = 40,
             Q1_0 = 41;
 
+    /**
+     * Weight-dtype flag for {@link #mm}: the W bytes hold the backend's packed in-memory layout of
+     * {@code wt & ~PACKED} (see {@link #packSize}). Never a wire format.
+     */
+    int PACKED = 0x100;
+
     // ── jam_status ──
     int OK = 0, EINVAL = 1, EUNSUPPORTED = 2, EBUSY = 3;
+
+    /**
+     * Byte size of the packed in-memory weight layout this backend wants for a {@code [m x k]}
+     * weight of {@code dtype}, or 0 to keep the canonical bytes (dtype not packable, shape
+     * unsupported, or no packed kernels on this hardware). The CALLER produces the packed bytes
+     * once at load (layout: jam.h {@code JAM_PACK_ABI}), drops the canonical copy, and calls
+     * {@link #mm} with {@code wt | PACKED} and {@code ldw == k}. Values are exactly the canonical
+     * dequant - packing only reorders bytes and widens scales.
+     */
+    default long packSize(int dtype, int m, int k) {
+        return 0;
+    }
 
     /**
      * {@code R = W @ Aᵀ}. Each operand is a native {@link MemorySegment} + BYTE offset; {@code

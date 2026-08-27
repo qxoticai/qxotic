@@ -35,6 +35,14 @@ int       jam_pool_spin_budget(const jam_pool* pool);    /* pauses before a spin
 /* Per-worker K-quant weight-repack scratch (VNNI layout). One per pool worker, indexed by jam tid. */
 typedef struct { uint8_t* qs; float* dw; float* mw; int cap_blocks; } jam_repack;
 
+/* Per-4-row-group byte size of the packed weight layouts (jam.h JAM_PACK_ABI); 0 = not packable.
+ * The ONE C-side source for these formulas (jam.c dispatch + the Metal router both use it). */
+#ifdef __cplusplus
+extern "C" size_t jam_pack_group_bytes(jam_dtype dt, int k);
+#else
+size_t jam_pack_group_bytes(jam_dtype dt, int k);
+#endif
+
 /* The 256-element K-quants share one dispatch path (dispatch_kquant); they differ only in a few values.
  * The ISA-bound int8 kernel (set per ISA at create) lives in ctx->kq[], indexed by jam_kq; the
  * compile-time ones (band kernel, block bytes, float floor) are jam.c's kquant_info[]. */
@@ -53,11 +61,15 @@ struct jam_ctx {
     jam_task_fn      f32_kernel;     /* best F32 row-range kernel for `active`, resolved at create */
     jam_task_fn      q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
                                       * by explicit feature check — AVX-VNNI is orthogonal to the ladder. */
+    jam_task_fn      q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
+                                        * SMMLA's two-dimensional tile cannot help a one-column GEMV. */
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
     jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> generic (float). Int8 pipeline. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
+    jam_task_fn      q4_0_decode_kernel; /* Q4_0 n==1 override; direct-layout 4x1 SDOT on ARM. */
     jam_task_fn      kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
+    jam_task_fn      kq_decode[JAM_KQ_N]; /* n==1 overrides: 4-row shared-activation GEMVs on ARM */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
@@ -255,6 +267,21 @@ void jam_mm_q1_0_neon(void* job, int rb, int re, int tid);                /* Q1_
 #ifdef JAM_HAVE_DOTPROD
 void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vdotq_s32 (sdot) */
 void jam_mm_q4_0_dotprod(void* job, int rb, int re, int tid);
+void jam_gemv_q8_0_dotprod_4x1(void* job, int rb, int re, int tid);        /* 4 rows share the activation */
+void jam_gemv_q4_0_dotprod_4x1(void* job, int rb, int re, int tid);
+void jam_gemv_q4_0_packed_4x1(void* job, int rb, int re, int tid);          /* packed layout (jam.h JAM_PACK_ABI) */
+void jam_gemv_q4k_dotprod_4x1(void* job, int rb, int re, int tid);         /* K-quant 4-row decode GEMVs */
+void jam_gemv_q5k_dotprod_4x1(void* job, int rb, int re, int tid);
+void jam_gemv_q6k_dotprod_4x1(void* job, int rb, int re, int tid);
+void jam_gemv_q6k_packed_4x1(void* job, int rb, int re, int tid);           /* packed layouts (jam.h JAM_PACK_ABI): */
+void jam_gemv_q4k_packed_4x1(void* job, int rb, int re, int tid);           /*   int8-expanded / re-nibbled decode */
+void jam_gemv_q5k_packed_4x1(void* job, int rb, int re, int tid);
+void jam_mm_q4_0_packed_dotprod(void* job, int gb, int ge, int tid);       /* packed prefill (n>1): 4-row GROUP */
+void jam_mm_q4k_packed_dotprod(void* job, int gb, int ge, int tid);        /*   ranges, KTN=4 column tile */
+void jam_mm_q5k_packed_dotprod(void* job, int gb, int ge, int tid);
+void jam_mm_q6k_packed_dotprod(void* job, int gb, int ge, int tid);
+void jam_mm_f16_neon(void* job, int rb, int re, int tid);                  /* F16/BF16 dense, widen + FMA */
+void jam_mm_bf16_neon(void* job, int rb, int re, int tid);
 void jam_mm_nvfp4_dotprod(void* job, int rb, int re, int tid);            /* NVFP4 sdot */
 void jam_mm_q1_0_dotprod(void* job, int rb, int re, int tid);             /* Q1_0 sdot */
 void jam_mm_mxfp4_dotprod(void* job, int rb, int re, int tid);
@@ -263,11 +290,14 @@ void jam_mm_q5k_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q6k_dotprod(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_I8MM
-void jam_mm_q8_0_i8mm(void* job, int a_begin, int a_end, int tid);         /* vmmlaq_s32 (smmla 2x2) */
+void jam_mm_q8_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* direct-layout 4x4 (smmla) */
+void jam_mm_q4_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* nibble decode + 4x4 */
 #endif
 
 /* ---- Metal GPU backend (Apple; opt-in via JAM_ISA=metal). A different executor, not a CPU row-range
  * kernel: jam_mm routes supported dtypes to it before the pool path. Implemented in jam_metal.mm. ---- */
+/* Shared ISA-name parser (jam.c); used by the JNI shim to seed the Java context from JAM_ISA. */
+jam_isa jam_parse_isa(const char* s);
 #ifdef JAM_HAVE_METAL
 typedef struct jam_metal jam_metal;
 #ifdef __cplusplus
