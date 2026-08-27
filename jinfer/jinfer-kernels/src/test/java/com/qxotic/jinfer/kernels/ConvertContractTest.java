@@ -8,6 +8,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
@@ -77,6 +78,34 @@ class ConvertContractTest {
                     new float[] {6.5f, 7f, 7.5f, 4f, 3.75f, 3.5f},
                     Views.toFloatArray(decoded, "decoded"),
                     0f);
+        }
+    }
+
+    @Test
+    void everyHalfDecodesExactly() {
+        // all 65536 halves through the vector body and the scalar tail: subnormals, +-Inf and
+        // NaN included, bit-identical to Float.float16ToFloat
+        int count = 1 << 16;
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            MemorySegment raw = arena.allocate(count * 2L);
+            for (int i = 0; i < count; i++) raw.set(ValueLayout.JAVA_SHORT, i * 2L, (short) i);
+            var f16 = Views.wrap(raw, DataType.FP16, Shape.flat(count));
+            var decoded = Views.allocateF32(memory, count);
+            Convert.f16ToF32(f16, 0, decoded, 0, count);
+            float[] actual = Views.toFloatArray(decoded, "decoded");
+            for (int i = 0; i < count; i++) {
+                float expected = Float.float16ToFloat((short) i);
+                if (Float.isNaN(expected)) { // payload kept, not quieted: still NaN
+                    org.junit.jupiter.api.Assertions.assertTrue(
+                            Float.isNaN(actual[i]), "half 0x" + Integer.toHexString(i));
+                    continue;
+                }
+                org.junit.jupiter.api.Assertions.assertEquals(
+                        Float.floatToRawIntBits(expected),
+                        Float.floatToRawIntBits(actual[i]),
+                        "half 0x" + Integer.toHexString(i));
+            }
         }
     }
 }

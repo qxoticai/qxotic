@@ -901,25 +901,8 @@ public final class FlashAttention {
                             f32.vseg(),
                             f32.vbase() + (f32Off + i) * Float.BYTES,
                             ByteOrder.LITTLE_ENDIAN);
-            // f16ToF32Vector inlined by hand for C2 (see Convert.f16ToF32Vector)
-            var bits32 =
-                    ShortVector.fromMemorySegment(
-                                    Segments.S_SPECIES_HALF,
-                                    f16.vseg(),
-                                    f16.vbase() + (f16Off + i) * 2L,
-                                    ByteOrder.LITTLE_ENDIAN)
-                            .castShape(Segments.I_SPECIES, 0)
-                            .reinterpretAsInts();
-            var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
             FloatVector thizVector =
-                    bits32.and(0x8000)
-                            .lanewise(VectorOperators.LSHL, 16)
-                            .or(
-                                    bits32.and(0x7FFF)
-                                            .add(0x1C000)
-                                            .lanewise(VectorOperators.LSHL, 13)
-                                            .and(zeroExponentMask))
-                            .reinterpretAsFloats();
+                    Convert.f16ToF32Vector(f16.vseg(), f16.vbase() + (f16Off + i) * 2L);
             val = thizVector.fma(thatVector, val);
         }
         float result = val.reduceLanes(VectorOperators.ADD);
