@@ -154,9 +154,13 @@ final class Http {
         error.put("message", message);
         error.put(
                 "type",
-                status == 404
-                        ? "not_found_error"
-                        : status >= 500 ? "internal_error" : "invalid_request_error");
+                switch (status) { // the OpenAI envelope types the SDKs surface
+                    case 401 -> "authentication_error";
+                    case 403 -> "permission_error";
+                    case 404 -> "not_found_error";
+                    case 429 -> "rate_limit_error";
+                    default -> status >= 500 ? "server_error" : "invalid_request_error";
+                });
         error.put("param", null);
         error.put("code", null);
         return error;
