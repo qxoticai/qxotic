@@ -2104,12 +2104,10 @@ public final class JinjaRenderer {
                     if (calleeName != null) {
                         yield callFunction(calleeName, args);
                     }
-                    // Calling the result of a member access that isn't a function — e.g. a string
-                    // method written WITH parentheses (`s.strip()`); the paren-less `s.strip`
-                    // works.
-                    throw unsupported(
-                            "call of a non-function value (string/array methods must be used"
-                                    + " without parentheses, e.g. `s.strip` not `s.strip()`)");
+                    // calling a value that is not a function (string/array methods with
+                    // parentheses, `s.strip()`, dispatch before this and work; the paren-less
+                    // `s.strip` is a function VALUE and renders as one)
+                    throw unsupported("call of a non-function value");
                 }
                 case TestNode t -> {
                     Val v = eval(t.operand());
@@ -2325,12 +2323,22 @@ public final class JinjaRenderer {
         }
 
         static boolean eq(Val a, Val b) {
-            if (a instanceof Val.Str sa && b instanceof Val.Str sb) return sa.v.equals(sb.v);
-            if (a instanceof Val.Int ia && b instanceof Val.Int ib) return ia.v == ib.v;
-            if (a instanceof Val.Bool ba && b instanceof Val.Bool bb) return ba.v == bb.v;
+            // Python: a string equals only an equal string; numbers and booleans compare by
+            // value across int/float/bool (1 == 1.0, True == 1); None equals None only
+            if (a instanceof Val.Str || b instanceof Val.Str)
+                return a instanceof Val.Str sa && b instanceof Val.Str sb && sa.v.equals(sb.v);
+            Double na = number(a), nb = number(b);
+            if (na != null && nb != null) return na.doubleValue() == nb.doubleValue();
             if (a instanceof Val.None && b instanceof Val.None) return true;
             if (a instanceof Val.None || b instanceof Val.None) return false;
             return a.asStr().equals(b.asStr());
+        }
+
+        private static Double number(Val v) {
+            if (v instanceof Val.Int i) return (double) i.v;
+            if (v instanceof Val.Flt f) return f.v;
+            if (v instanceof Val.Bool b) return b.v ? 1.0 : 0.0;
+            return null;
         }
 
         static boolean contains(Val container, Val item) {

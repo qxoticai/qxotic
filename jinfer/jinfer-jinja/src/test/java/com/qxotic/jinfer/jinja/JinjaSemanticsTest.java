@@ -138,4 +138,18 @@ class JinjaSemanticsTest {
         m.put("none_value", null);
         return m;
     }
+
+    @Test
+    void equalityFollowsPythonAcrossTypes() {
+        assertEquals("True", render("{{ 1 == 1.0 }}"));
+        assertEquals("True", render("{{ true == 1 }}"));
+        assertEquals("False", render("{{ '1' == 1 }}"));
+        assertEquals("True", render("{{ 'a' == 'a' }}"));
+        assertEquals("False", render("{{ none == 0 }}"));
+    }
+
+    @Test
+    void stringMethodsWorkWithParentheses() {
+        assertEquals("a", render("{{ ' a '.strip() }}"));
+    }
 }
