@@ -170,6 +170,9 @@ public final class Qwen3
                 gStart += fullSeqLen[j];
                 j++;
             }
+            if (j == fullSeqLen.length)
+                throw new IllegalArgumentException(
+                        "packed stream of " + gStart + " tokens ends before row " + (cs + r));
             int row0 = r, prior = (cs + r) - gStart, kvStart = gStart;
             int seqEnd = gStart + fullSeqLen[j];
             for (; r < n && cs + r < seqEnd; r++) s.posOf[r] = (cs + r) - gStart;
@@ -279,19 +282,11 @@ public final class Qwen3
             for (int p = 0; p < nPieces; p++) {
                 int r0 = state.pieceRow0[p], sl = state.pieceLen[p];
                 int kvStart = state.pieceKv[p], prior = state.piecePrior[p];
-                // jota's slice(dim, from, to-exclusive): rows r0 .. r0+sl of the flat scratch
-                MemoryView<MemorySegment> qP =
-                        state.query.slice(
-                                0, (long) r0 * config.queryDim, (long) (r0 + sl) * config.queryDim);
-                MemoryView<MemorySegment> oP =
-                        state.attnOut.slice(
-                                0, (long) r0 * config.queryDim, (long) (r0 + sl) * config.queryDim);
-                MemoryView<MemorySegment> bKP =
-                        state.batchK.slice(
-                                0, (long) r0 * config.kvDim, (long) (r0 + sl) * config.kvDim);
-                MemoryView<MemorySegment> bVP =
-                        state.batchV.slice(
-                                0, (long) r0 * config.kvDim, (long) (r0 + sl) * config.kvDim);
+                // the scratch buffers are [rows, dim]: slice rows r0 .. r0+sl (to-exclusive)
+                MemoryView<MemorySegment> qP = state.query.slice(0, r0, r0 + sl);
+                MemoryView<MemorySegment> oP = state.attnOut.slice(0, r0, r0 + sl);
+                MemoryView<MemorySegment> bKP = state.batchK.slice(0, r0, r0 + sl);
+                MemoryView<MemorySegment> bVP = state.batchV.slice(0, r0, r0 + sl);
                 // the sequence's own earlier rows: a slice at its global start (a packed
                 // neighbour's rows are outside it); the cache is [rows, kvDim] - slice by ROWS.
                 // prior == 0: nothing is read, pass the cache
