@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.BFloat16;
@@ -84,7 +86,7 @@ class ConvertContractTest {
     @Test
     void everyHalfDecodesExactly() {
         // all 65536 halves through the vector body and the scalar tail: subnormals, +-Inf and
-        // NaN included, bit-identical to Float.float16ToFloat
+        // NaN included, bit-identical to Float.float16ToFloat (NaN payloads excepted)
         int count = 1 << 16;
         try (Arena arena = Arena.ofConfined()) {
             var memory = MemoryAllocators.ofArena(arena);
@@ -97,11 +99,10 @@ class ConvertContractTest {
             for (int i = 0; i < count; i++) {
                 float expected = Float.float16ToFloat((short) i);
                 if (Float.isNaN(expected)) { // payload kept, not quieted: still NaN
-                    org.junit.jupiter.api.Assertions.assertTrue(
-                            Float.isNaN(actual[i]), "half 0x" + Integer.toHexString(i));
+                    assertTrue(Float.isNaN(actual[i]), "half 0x" + Integer.toHexString(i));
                     continue;
                 }
-                org.junit.jupiter.api.Assertions.assertEquals(
+                assertEquals(
                         Float.floatToRawIntBits(expected),
                         Float.floatToRawIntBits(actual[i]),
                         "half 0x" + Integer.toHexString(i));

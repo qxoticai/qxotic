@@ -50,7 +50,7 @@ public final class Convert {
      * identical to {@link Float#float16ToFloat} on every one of the 65536 inputs except that a NaN
      * keeps its payload instead of being quieted.
      */
-    public static FloatVector f16BitsToF32(IntVector bits32) {
+    private static FloatVector f16BitsToF32(IntVector bits32) {
         IntVector exponent = bits32.and(0x7C00);
         IntVector normal = bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13);
         IntVector subnormal =
