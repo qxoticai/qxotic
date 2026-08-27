@@ -40,6 +40,25 @@ public final class NemotronHChatTemplate implements ChatTemplate {
             "You are a helpful and harmless assistant.\n\nYou are not allowed to use any tools.";
 
     /**
+     * What a checkpoint's template does that the codec must mirror, read off its source. Nemotron
+     * Cascade 2 injects {@link #DEFAULT_SYSTEM} when no system turn is given, frames typed
+     * reasoning as {@code <think>\n{R}\n</think>\n} and trims a truncated call turn's tail;
+     * Nemotron 3.5 renders an EMPTY system turn, frames {@code <think>\n{R}</think>} and keeps the
+     * tail as it is.
+     */
+    public record Dialect(
+            String defaultSystem, boolean reasoningNewlines, boolean trimsTruncatedCallTail) {
+        public static final Dialect CASCADE = new Dialect(DEFAULT_SYSTEM, true, true);
+        public static final Dialect LIGHTNING = new Dialect("", false, false);
+
+        public static Dialect of(String templateSource) {
+            return templateSource.contains("You are a helpful and harmless assistant")
+                    ? CASCADE
+                    : LIGHTNING;
+        }
+    }
+
+    /**
      * The format-instructions block after the declarations - ONE constant, exactly the template's
      * string: {@link PromptWriter#trusted} mints the literal {@code <tool_call>} spellings (example
      * and reminder alike) as ids, matching the render+rescan.
@@ -73,6 +92,7 @@ public final class NemotronHChatTemplate implements ChatTemplate {
                 + "</IMPORTANT>";
 
     private final Tokenizer tokenizer;
+    private final Dialect dialect;
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
     private final int think; // <think>
@@ -86,7 +106,12 @@ public final class NemotronHChatTemplate implements ChatTemplate {
     private final IntSequence seedDirect; // <think>\n\n</think>\n\n
 
     public NemotronHChatTemplate(Tokenizer tokenizer) {
+        this(tokenizer, Dialect.CASCADE);
+    }
+
+    public NemotronHChatTemplate(Tokenizer tokenizer, Dialect dialect) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
+        this.dialect = Objects.requireNonNull(dialect, "dialect");
         imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
         imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
         think = SpecialTokens.require(tokenizer, "<think>");
@@ -111,16 +136,20 @@ public final class NemotronHChatTemplate implements ChatTemplate {
         Objects.requireNonNull(conversation, "conversation");
         List<Message> msgs = normalize(conversation.messages());
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
-        if (conversation.tools().isEmpty() && plainShape(msgs)) {
-            for (Message m : msgs) {
-                writePlainTurn(out, m);
+        // a tool-result turn renders as the template's folded user turn whether or not tools
+        // are offered on THIS request (the server's lowering shape carries history without them)
+        boolean toolTurns = msgs.stream().anyMatch(m -> m.role().equals(Role.TOOL));
+        if (conversation.tools().isEmpty() && plainShape(msgs) && !toolTurns) {
+            int lastUser = lastUser(msgs);
+            for (int i = 0; i < msgs.size(); i++) {
+                writePlainTurn(out, msgs.get(i), i < lastUser);
                 out.flush();
             }
         } else {
             requireToolShapes(msgs);
-            if (toolCall < 0) {
+            if (toolCall < 0 || toolResponse < 0) {
                 throw new UnsupportedConversation(
-                        "tools need the <tool_call> markers in the vocab");
+                        "tools need the <tool_call> and <tool_response> markers in the vocab");
             }
             writeToolConversation(out, conversation, msgs);
             out.flush();
@@ -138,42 +167,84 @@ public final class NemotronHChatTemplate implements ChatTemplate {
      * The template unconditionally renders a system turn: inject the default when absent, so every
      * caller frames identically.
      */
-    private static List<Message> normalize(List<Message> msgs) {
+    private List<Message> normalize(List<Message> msgs) {
         if (!msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM)) {
             return msgs;
         }
         List<Message> out = new ArrayList<>(msgs.size() + 1);
-        out.add(new Message(Role.SYSTEM, DEFAULT_SYSTEM));
+        out.add(new Message(Role.SYSTEM, dialect.defaultSystem()));
         out.addAll(msgs);
         return out;
     }
 
-    /** {@code <|im_start|>{role}\n{content}<|im_end|>\n} - one contiguous run per turn. */
-    private void writePlainTurn(PromptWriter out, Message m) {
+    private static int lastUser(List<Message> msgs) {
+        int last = -1;
+        for (int i = 0; i < msgs.size(); i++) if (msgs.get(i).role().equals(Role.USER)) last = i;
+        return last;
+    }
+
+    /**
+     * {@code <|im_start|>{role}\n{content}<|im_end|>\n} - one contiguous run per turn. An assistant
+     * turn before the last user is truncated to the empty pair plus its answer; one after it keeps
+     * its content (trimmed), inline think markers minted as the ids.
+     */
+    private void writePlainTurn(PromptWriter out, Message m, boolean truncate) {
         out.id(imStart);
         if (m.role().equals(Role.ASSISTANT)) {
-            String c = m.text();
-            int lastClose = c.lastIndexOf("</think>");
             out.text("assistant\n");
-            if (c.contains("<think>") == (lastClose >= 0)) {
-                // framed (both markers -> keep the tail after the last </think>) or plain (no
-                // markers -> the whole content): the empty pair, then the text with its trailing
-                // whitespace stripped (leading whitespace survives, as in the template)
-                String rest =
-                        (lastClose >= 0 ? c.substring(lastClose + "</think>".length()) : c)
-                                .stripTrailing();
-                out.id(think).id(endThink);
-                if (!rest.isEmpty()) out.text(rest);
-            } else {
-                // "broken thought" (unpaired marker): passthrough, fully stripped
-                String rest = c.strip();
-                if (!rest.isEmpty()) out.text(rest);
-            }
+            writeMarked(out, assistantBody(withPair(m.text()), truncate, false));
         } else {
             // user/system: role header + content is ONE contiguous run between the specials
             out.text(m.role().name() + "\n" + m.text());
         }
         out.id(imEnd).text("\n");
+    }
+
+    /** The template's first move on an assistant turn: no marker at all gets the empty pair. */
+    private static String withPair(String text) {
+        return text.contains("<think>") || text.contains("</think>")
+                ? text
+                : "<think></think>" + text;
+    }
+
+    /**
+     * The template's assistant content rule. Kept (at or after the last user): the content,
+     * trimmed. Truncated before it: the empty pair plus what follows the last close; the call
+     * branch also drops a dangling open's tail and trims per dialect, the plain branch trims the
+     * whole and leaves a broken thought as it is.
+     */
+    private String assistantBody(String content, boolean truncate, boolean callBranch) {
+        if (!truncate) return content.strip();
+        int close = content.lastIndexOf("</think>");
+        if (callBranch) {
+            String tail =
+                    close >= 0
+                            ? content.substring(close + "</think>".length())
+                            : content.contains("<think>")
+                                    ? content.substring(0, content.indexOf("<think>"))
+                                    : content;
+            return "<think></think>" + (dialect.trimsTruncatedCallTail() ? tail.strip() : tail);
+        }
+        boolean paired = content.contains("<think>") && close >= 0;
+        return (paired
+                        ? "<think></think>" + content.substring(close + "</think>".length())
+                        : content)
+                .strip();
+    }
+
+    /** Inline think markers are the ids, as the template path mints them; the rest is text. */
+    private void writeMarked(PromptWriter out, String text) {
+        int at = 0;
+        while (at < text.length()) {
+            int open = text.indexOf("<think>", at), close = text.indexOf("</think>", at);
+            int next = open < 0 ? close : close < 0 ? open : Math.min(open, close);
+            if (next < 0) break;
+            if (next > at) out.text(text.substring(at, next));
+            boolean isOpen = next == open;
+            out.id(isOpen ? think : endThink);
+            at = next + (isOpen ? "<think>".length() : "</think>".length());
+        }
+        if (at < text.length()) out.text(text.substring(at));
     }
 
     /** {@code <|im_start|>assistant\n<think>\n} to reason, {@code ...<think></think>} to answer. */
@@ -190,7 +261,7 @@ public final class NemotronHChatTemplate implements ChatTemplate {
     private void writeToolConversation(
             PromptWriter out, Conversation conversation, List<Message> msgs) {
         Message sys = msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
-        String sysText = sys != null ? sys.text() : DEFAULT_SYSTEM;
+        String sysText = sys != null ? sys.text() : dialect.defaultSystem();
         List<Message> loop = sys != null ? msgs.subList(1, msgs.size()) : msgs;
         int lastUser = -1;
         for (int i = 0; i < loop.size(); i++) {
@@ -237,19 +308,14 @@ public final class NemotronHChatTemplate implements ChatTemplate {
             out.id(imStart).text("assistant\n");
             Content.Reasoning reasoning = reasoningOf(m);
             boolean truncate = i < lastUser; // truncate_history_thinking, template default true
-            if (reasoning != null && !truncate) {
-                out.id(think).text("\n").text(reasoning.text()).text("\n").id(endThink);
-                // the "\n" after </think> survives the template's trim only when text follows
-                // (the call branch's own '\n' re-adds it before <tool_call> blocks)
-                String tail = m.text().stripTrailing();
-                if (!tail.isEmpty()) out.text("\n").text(tail);
-            } else {
-                // truncated (or no reasoning): the empty pair then the text - trailing-trimmed
-                // when kept as-is, fully stripped through the template's truncation split
-                out.id(think).id(endThink);
-                String tail = truncate ? m.text().strip() : m.text().stripTrailing();
-                if (!tail.isEmpty()) out.text(tail);
-            }
+            // typed reasoning is framed into the content first (the template's own move), then
+            // the content goes through the same keep-or-truncate rule as inline markers
+            String nl = dialect.reasoningNewlines() ? "\n" : "";
+            String content =
+                    reasoning != null
+                            ? "<think>\n" + reasoning.text() + nl + "</think>" + nl + m.text()
+                            : withPair(m.text());
+            writeMarked(out, assistantBody(content, truncate, !calls.isEmpty()));
             if (!calls.isEmpty()) {
                 out.text("\n"); // the call branch appends '\n' after the content
                 for (Content.ToolCall call : calls) {
