@@ -395,7 +395,8 @@ final class Lfm2ChatTemplateTest {
                             case Batch.Input.Tokens value ->
                                     tokens.addAll(IntSequence.of(value.ids()));
                             case Batch.Input.Embeddings value -> {
-                                assertTrue(value.bidirectional());
+                                assertFalse(
+                                        value.bidirectional(), "image rows are causal for LFM2-VL");
                                 assertEquals(key, value.contentKey());
                                 embeddingRows.add(value.count());
                             }
