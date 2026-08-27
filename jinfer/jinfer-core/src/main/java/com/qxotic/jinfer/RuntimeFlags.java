@@ -21,7 +21,7 @@ import java.util.Locale;
 public final class RuntimeFlags {
 
     /** Default scratch width for {@code newState}: prefill batches up to this many tokens. */
-    public static final int BATCH_CAPACITY = Integer.getInteger("jinfer.batchCapacity", 512);
+    public static final int BATCH_CAPACITY = positiveInt("jinfer.batchCapacity", 512);
 
     /** Worker count for compute-bound work such as prompt prefill. */
     // P-cores only, same as decode (user's call 2026-08-27): all-core prefill measured +10-13%
