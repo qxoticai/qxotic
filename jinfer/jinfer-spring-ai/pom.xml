@@ -117,6 +117,14 @@
       <artifactId>spring-ai-vector-store</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Spring AI's own reusable batteries: AbstractToolCallingAdvisorIT (ChatClient advisor
+         tool loops, call + stream), its @Tool auto-registration twin, AbstractChatOptionsTests. -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-test</artifactId>
+      <version>${spring-ai.version}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
