@@ -2,6 +2,8 @@ package com.qxotic.jinfer.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.llm.Sampling;
 import java.util.Map;
@@ -24,5 +26,16 @@ class GenerationTest {
         assertEquals(
                 "... Let me wrap up.",
                 Generation.reasoningMessage(Map.of("reasoning_message", "... Let me wrap up.")));
+    }
+
+    @Test
+    void malformedEchoedArgumentsAreTheClientsFault() {
+        // an assistant turn echoed with a model's broken JSON: a 400 through the worker's
+        // IllegalArgumentException mapping, never a 500 with a stack trace
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Generation.parseArguments("{\"city\": Paris"));
+        assertTrue(e.getMessage().contains("arguments"), e.getMessage());
     }
 }

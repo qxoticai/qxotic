@@ -287,9 +287,18 @@ final class Generation {
         return out;
     }
 
-    private static Map<String, Object> parseArguments(String json) {
+    static Map<String, Object> parseArguments(String json) {
         if (json.isBlank()) return Map.of();
-        Object parsed = JsonCodec.parse(json);
+        Object parsed;
+        try {
+            parsed = JsonCodec.parse(json);
+        } catch (com.qxotic.format.json.Json.ParseException e) {
+            // a model's broken JSON echoed back in history is the client's input, a 400, not a
+            // server failure (ParseException is a bare RuntimeException, which the worker
+            // reports as ours)
+            throw new IllegalArgumentException(
+                    "tool_calls[].function.arguments is not valid JSON: " + e.getMessage());
+        }
         if (!(parsed instanceof Map<?, ?> map)) {
             throw new IllegalArgumentException("tool arguments must be a JSON object");
         }
