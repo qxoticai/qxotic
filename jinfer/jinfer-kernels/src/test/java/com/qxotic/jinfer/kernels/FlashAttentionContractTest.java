@@ -65,6 +65,38 @@ class FlashAttentionContractTest {
         assertClose(out32, out16);
     }
 
+    @Test
+    void f16SubnormalValuesSurviveTheRemainderRows() {
+        // bidirectional prefill over an F16 batch (the ViT path) with seqLen = 5: four rows go
+        // through the 4-row tiles, the fifth through the per-row accumulate with its own decoder.
+        // Dim 0 of every V row holds a half subnormal, so dim 0 of every output row is that value
+        // whatever the attention weights; a decoder that flushes subnormals returns 0 there.
+        int seqLen = 5, elements = seqLen * KV_DIM;
+        float tiny = Float.float16ToFloat(Float.floatToFloat16(3e-5f));
+        MemoryView<MemorySegment> q = randomF32(seqLen * QUERY_DIM, 31);
+        MemoryView<MemorySegment> source = randomF32(2 * elements, 34);
+        for (int i = 0; i < elements; i += HEAD_SIZE) setFloat(source, elements + i, tiny);
+        MemoryView<MemorySegment> k16 = Views.allocateF16(memory, elements);
+        MemoryView<MemorySegment> v16 = Views.allocateF16(memory, elements);
+        MemoryView<MemorySegment> k32 = Views.allocateF32(memory, elements);
+        MemoryView<MemorySegment> v32 = Views.allocateF32(memory, elements);
+        for (int i = 0; i < elements; i++) {
+            roundToF16(source, i, k16, k32, i);
+            roundToF16(source, elements + i, v16, v32, i);
+        }
+
+        MemoryView<MemorySegment> out16 = Views.allocateF32(memory, seqLen * QUERY_DIM);
+        MemoryView<MemorySegment> out32 = Views.allocateF32(memory, seqLen * QUERY_DIM);
+        FlashAttention.bidirectionalPrefill(
+                q, out16, k16, v16, HEADS, seqLen, HEAD_SIZE, KV_DIM, QUERY_DIM, KV_MUL, 1f / 8f);
+        FlashAttention.bidirectionalPrefill(
+                q, out32, k32, v32, HEADS, seqLen, HEAD_SIZE, KV_DIM, QUERY_DIM, KV_MUL, 1f / 8f);
+        for (int i = 0; i < seqLen * QUERY_DIM; i += HEAD_SIZE) {
+            assertEquals(tiny, Views.getFloat(out32, i, "out32"), 1e-9f, "reference dim 0 at " + i);
+        }
+        assertClose(out32, out16);
+    }
+
     private MemoryView<MemorySegment> randomF32(int size, long seed) {
         float[] values = new float[size];
         long state = seed;
@@ -93,13 +125,15 @@ class FlashAttentionContractTest {
                         ValueLayout.JAVA_SHORT_UNALIGNED,
                         f16.byteOffset() + (long) targetIndex * Short.BYTES,
                         bits);
-        float value = Float.float16ToFloat(bits);
-        if (Math.abs(value) < 0x1p-14f) value = Math.copySign(0f, value);
-        widened.memory()
+        setFloat(widened, targetIndex, Float.float16ToFloat(bits));
+    }
+
+    private static void setFloat(MemoryView<MemorySegment> view, int index, float value) {
+        view.memory()
                 .base()
                 .set(
                         ValueLayout.JAVA_FLOAT_UNALIGNED,
-                        widened.byteOffset() + (long) targetIndex * Float.BYTES,
+                        view.byteOffset() + (long) index * Float.BYTES,
                         value);
     }
 

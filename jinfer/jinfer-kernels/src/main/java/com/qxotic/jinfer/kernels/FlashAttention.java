@@ -19,7 +19,6 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
-import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
@@ -121,8 +120,8 @@ public final class FlashAttention {
      * Decodes an F16 cache run into F32 scratch ONCE per kv-block. The F16 tile paths converted
      * every key per row-tile (Br/QT times) through the castShape pipeline - the measured 15x
      * cache-leg tax on F16-cache models. Decoding first runs the fast F32 tiles; f16->f32 uses the
-     * SAME vector converter (exact for normals, subnormals flushed), so results are bit-identical
-     * to the direct F16 tiles.
+     * SAME vector converter (exact on every half), so results are bit-identical to the direct F16
+     * tiles.
      */
     static void decodeF16Run(Src src, int[] kvOff, int count, int headSize, Raw dst) {
         if (!Segments.USE_VECTOR_API) {
@@ -338,25 +337,10 @@ public final class FlashAttention {
                                     out.vseg(),
                                     byteOffset,
                                     ByteOrder.LITTLE_ENDIAN);
-                    var bits32 =
-                            ShortVector.fromMemorySegment(
-                                            Segments.S_SPECIES_HALF,
-                                            f16Value.vseg(),
-                                            f16Value.vbase() + (long) (valueOffset + d) * F16_BYTES,
-                                            ByteOrder.LITTLE_ENDIAN)
-                                    .castShape(Segments.I_SPECIES, 0)
-                                    .reinterpretAsInts();
-                    var zeroExponentMask =
-                            bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
                     FloatVector v =
-                            bits32.and(0x8000)
-                                    .lanewise(VectorOperators.LSHL, 16)
-                                    .or(
-                                            bits32.and(0x7FFF)
-                                                    .add(0x1C000)
-                                                    .lanewise(VectorOperators.LSHL, 13)
-                                                    .and(zeroExponentMask))
-                                    .reinterpretAsFloats();
+                            Convert.f16ToF32Vector(
+                                    f16Value.vseg(),
+                                    f16Value.vbase() + (long) (valueOffset + d) * F16_BYTES);
                     v.fma(scaleVector, acc)
                             .intoMemorySegment(out.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
                 }

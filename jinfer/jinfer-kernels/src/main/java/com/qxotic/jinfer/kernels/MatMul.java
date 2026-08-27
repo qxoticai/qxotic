@@ -1106,24 +1106,7 @@ public final class MatMul {
         FloatVector val = FloatVector.zero(F_SPECIES);
         int upperBound = F_SPECIES.loopBound(k);
         for (int i = 0; i < upperBound; i += F_SPECIES.length()) {
-            var bits32 =
-                    ShortVector.fromMemorySegment(
-                                    S_SPECIES_HALF,
-                                    w,
-                                    wByte + (long) i * 2,
-                                    ByteOrder.LITTLE_ENDIAN)
-                            .castShape(I_SPECIES, 0)
-                            .reinterpretAsInts();
-            var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector wv =
-                    bits32.and(0x8000)
-                            .lanewise(VectorOperators.LSHL, 16)
-                            .or(
-                                    bits32.and(0x7FFF)
-                                            .add(0x1C000)
-                                            .lanewise(VectorOperators.LSHL, 13)
-                                            .and(zeroExponentMask))
-                            .reinterpretAsFloats();
+            FloatVector wv = Convert.f16ToF32Vector(w, wByte + (long) i * 2);
             val = wv.fma(floatsAt(x, xByte + 4L * i), val);
         }
         float result = val.reduceLanes(VectorOperators.ADD);
