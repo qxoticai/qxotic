@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,12 +18,17 @@ final class RenderMaps {
 
     static List<Object> messages(Conversation conversation) {
         List<Object> out = new ArrayList<>();
+        Map<String, String> callNames = new HashMap<>(); // id -> function, for name-keyed templates
         for (Message message : conversation.messages()) {
             String role = message.role().name();
             if (Role.TOOL.equals(message.role())) {
                 for (Content part : message.content()) {
                     if (part instanceof Content.ToolResult result) {
-                        out.add(toolResponse(result.text(), result.callId(), null));
+                        out.add(
+                                toolResponse(
+                                        result.text(),
+                                        result.callId(),
+                                        callNames.get(result.callId())));
                     }
                 }
                 continue;
@@ -32,6 +38,9 @@ final class RenderMaps {
             map.put("content", text(message.content()));
             List<Map<String, Object>> calls = toolCalls(message.content());
             if (!calls.isEmpty()) map.put("tool_calls", calls);
+            for (Content part : message.content()) {
+                if (part instanceof Content.ToolCall call) callNames.put(call.id(), call.name());
+            }
             out.add(map);
         }
         return out;
