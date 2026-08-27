@@ -89,7 +89,7 @@ final class Fetch {
     private static final long CHUNK = 32L << 20;
 
     /** Below two chunks, one stream is faster than the machinery to parallelize it. */
-    private static final long PARALLEL_FLOOR = 2 * CHUNK;
+    static final long PARALLEL_FLOOR = 2 * CHUNK; // package-private: the download tests size to it
 
     private static final int THREADS = threads();
 
@@ -500,10 +500,22 @@ final class Fetch {
         Path part = sibling(dest, ".part");
         Progress progress = new Progress(label, expectedSize);
         IOException last = null;
+        boolean parallel = expectedSize >= PARALLEL_FLOOR;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
-                if (expectedSize >= PARALLEL_FLOOR) {
-                    parallel(url, part, expectedSize, headers, progress);
+                if (parallel) {
+                    try {
+                        parallel(url, part, expectedSize, headers, progress);
+                    } catch (RangeIgnored ignored) {
+                        progress.note("the server ignores Range - downloading as one stream");
+                        parallel = false;
+                        Files.deleteIfExists(part); // chunk 0 may have landed; a stream restarts
+                        Files.deleteIfExists(sibling(part, ".map"));
+                        sequential(url, part, expectedSize, sha256, headers, progress);
+                        progress.finish();
+                        Files.move(part, dest, StandardCopyOption.ATOMIC_MOVE);
+                        return;
+                    }
                     verify(part, sha256, progress);
                 } else {
                     sequential(url, part, expectedSize, sha256, headers, progress);
@@ -511,6 +523,7 @@ final class Fetch {
                 progress.finish();
                 Files.move(part, dest, StandardCopyOption.ATOMIC_MOVE);
                 Files.deleteIfExists(sibling(part, ".map"));
+                Files.deleteIfExists(sibling(part, ".etag"));
                 return;
             } catch (IOException e) {
                 if (diskFull(e)) {
@@ -620,7 +633,16 @@ final class Fetch {
             ranged.put("Range", "bytes=" + start + "-" + (start + length - 1));
             long at = start;
             Stall stall = null;
-            try (InputStream in = body(send(URI.create(url), ranged, null), url, true)) {
+            HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
+            if (response.statusCode() == 200 && start > 0) {
+                // the whole file, not the chunk: writing it at `start` would corrupt the file
+                // (silently, when no sha256 is known). The transfer falls back to one stream.
+                try (InputStream drain = response.body()) {
+                    drain.readNBytes(8 * 1024);
+                }
+                throw new RangeIgnored(url);
+            }
+            try (InputStream in = body(response, url, true)) {
                 stall = new Stall(in);
                 byte[] buffer = new byte[BUFFER];
                 long remaining = length;
@@ -638,6 +660,8 @@ final class Fetch {
                     progress.at(written.addAndGet(n));
                 }
                 return;
+            } catch (RangeIgnored e) {
+                throw e; // retrying the same request cannot make the server honor Range
             } catch (IOException e) {
                 last = e;
                 written.addAndGet(start - at); // un-count what this failed attempt had reported
@@ -751,8 +775,10 @@ final class Fetch {
             Progress progress)
             throws IOException {
         long have = Files.exists(part) ? Files.size(part) : 0;
-        if (expectedSize > 0 && have > expectedSize) {
-            Files.delete(part); // a .part longer than the file it claims to be is not a resume
+        if (expectedSize > 0 && have >= expectedSize) {
+            // a .part as long as the file (a crash between its last byte and the rename) or
+            // longer is not a resume: a range past the end answers 416 on every attempt
+            Files.delete(part);
             have = 0;
         }
         MessageDigest digest = sha256 == null ? null : sha256Digest();
@@ -762,16 +788,31 @@ final class Fetch {
             digestFile(part, digest, null);
         }
         Map<String, String> ranged = headers;
+        Path validatorFile = sibling(part, ".etag");
         if (have > 0) {
             ranged = new LinkedHashMap<>(headers);
             ranged.put("Range", "bytes=" + have + "-");
+            // resume only the same bytes: with the first response's validator, a remote that
+            // changed since answers 200 (the whole file) instead of a tail of a different file
+            if (Files.exists(validatorFile)) {
+                ranged.put("If-Range", Files.readString(validatorFile).strip());
+            }
         }
         HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
         if (have > 0 && response.statusCode() == 200) {
-            // the server ignored the range: start over rather than append to a stale prefix
+            // the server ignored the range, or the file changed: start over rather than append
             have = 0;
             digest = sha256 == null ? null : sha256Digest();
             Files.deleteIfExists(part);
+        }
+        if (have == 0) {
+            String validator =
+                    response.headers()
+                            .firstValue("etag")
+                            .or(() -> response.headers().firstValue("last-modified"))
+                            .orElse(null);
+            if (validator != null) Files.writeString(validatorFile, validator);
+            else Files.deleteIfExists(validatorFile);
         }
         progress.start(have);
         long written = have;
@@ -860,6 +901,13 @@ final class Fetch {
             // capped: the interesting part of an error body is its first line, not its size
             throw new HttpStatusException(
                     status, url, new String(in.readNBytes(64 * 1024), StandardCharsets.UTF_8));
+        }
+    }
+
+    /** A ranged request answered with the whole file: the server does not serve Range. */
+    static final class RangeIgnored extends IOException {
+        RangeIgnored(String url) {
+            super("server ignored Range: " + url);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.hub;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,6 +56,55 @@ class FetchDownloadTest {
                     server.url("/m.gguf"), dest, PAYLOAD.length(), sha256(PAYLOAD), Map.of());
 
             assertEquals(PAYLOAD, Files.readString(dest));
+        }
+    }
+
+    @Test
+    void aServerIgnoringRangeStillDownloadsCorrectlyAboveTheParallelFloor(@TempDir Path dir)
+            throws IOException {
+        // every chunk beyond the first used to accept a 200 (the whole file) and write it at its
+        // own offset: a corrupt file, published silently when no sha256 was known
+        byte[] big = new byte[(int) Fetch.PARALLEL_FLOOR + 1];
+        new java.util.Random(11).nextBytes(big);
+        try (FileServer server =
+                FileServer.start().serve("/big.bin", big).ignoringRange("/big.bin")) {
+            Path dest = dir.resolve("big.bin");
+            Fetch.download(server.url("/big.bin"), dest, big.length, null, Map.of());
+            assertArrayEquals(big, Files.readAllBytes(dest));
+        }
+    }
+
+    @Test
+    void aPartAlreadyAtFullSizeIsNotResumed(@TempDir Path dir) throws IOException {
+        // a crash between the last byte and the rename left a full-size .part; resuming it asked
+        // for a range past the end, a 416 on every attempt
+        try (FileServer server = FileServer.start().serve("/m.gguf", PAYLOAD)) {
+            Path dest = dir.resolve("m.gguf");
+            Files.writeString(dest.resolveSibling("m.gguf.part"), PAYLOAD);
+
+            Fetch.download(
+                    server.url("/m.gguf"), dest, PAYLOAD.length(), sha256(PAYLOAD), Map.of());
+
+            assertEquals(PAYLOAD, Files.readString(dest));
+        }
+    }
+
+    @Test
+    void aResumeCarriesTheFirstResponsesValidator(@TempDir Path dir) throws IOException {
+        // If-Range with the validator the first response gave: a remote that changed answers
+        // the whole file, never a tail of a different file appended to the stale prefix
+        try (FileServer server = FileServer.start().serve("/m.gguf", PAYLOAD)) {
+            Path dest = dir.resolve("m.gguf");
+            Path part = dest.resolveSibling("m.gguf.part");
+            Files.writeString(part, PAYLOAD.substring(0, PAYLOAD.length() / 2));
+            Files.writeString(dest.resolveSibling("m.gguf.part.etag"), "\"v1\"");
+
+            Fetch.download(
+                    server.url("/m.gguf"), dest, PAYLOAD.length(), sha256(PAYLOAD), Map.of());
+
+            assertEquals("\"v1\"", server.lastHeader("/m.gguf", "If-Range"));
+            assertEquals(PAYLOAD, Files.readString(dest));
+            assertTrue(!Files.exists(dest.resolveSibling("m.gguf.part.etag")), "cleaned up");
         }
     }
 
