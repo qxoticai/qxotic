@@ -28,6 +28,11 @@ static void track_prec(const char* nm, double abserr, double ref) {
     if (fabs(ref) > 1.0) { double rel = abserr / fabs(ref); if (rel > g_prec[i].maxrel) g_prec[i].maxrel = rel; }
 }
 
+/* Extra reference consulted ONLY for Metal prefill contexts (half-staged MMA tier). Kept out of
+ * the shared refs[] so a CPU kernel drifting to half precision cannot hide behind it. Suites that
+ * provide one set it around their check_all_ctxs call; NULL means no half tier exists. */
+static const double* g_metal_half_ref = NULL;
+
 typedef struct { jam_ctx* c; char lbl[40]; } jctx;   /* c == NULL means the global context */
 static jctx CTX[48];
 static int  NCTX = 0;
@@ -49,7 +54,11 @@ static void add_ctx(jam_isa cap, int nth) {
 static void check_all_ctxs(const void* W, int dtype, const char* name,
                            const float* A, float* C, int m, int n, int k,
                            const double* const* refs, int nrefs, double at, double rt) {
+    const int bdt = dtype & ~JAM_PACKED;   /* base dtype for the precision-bucket mapping */
     for (int c = 0; c < NCTX; c++) {
+        /* Packed weights exist only where the ctx advertised the layout; elsewhere the call would
+         * be EUNSUPPORTED by design, so it is not a check. */
+        if ((dtype & JAM_PACKED) && jam_pack_size(CTX[c].c, (jam_dtype) bdt, m, k) == 0) continue;
         ++g_checks; memset(C, 0, 4*(size_t)m*n);
         int st = jam_mm(CTX[c].c, W, dtype, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
         int bad = 0;
@@ -60,7 +69,20 @@ static void check_all_ctxs(const void* W, int dtype, const char* name,
                 double d = fabs(kr - refs[r][(size_t)i*n+j]);
                 if (d < best) { best = d; ref = refs[r][(size_t)i*n+j]; }
             }
-            track_prec(name, best, ref);
+            /* Fast Metal prefill deliberately stages half MMA operands (with float accumulation), while
+             * CPU kernels and Metal decode retain their exact/requant reference tiers. Keep the MMA
+             * sentinels separate so accepting format noise cannot hide a CPU or scalar-GPU regression. */
+            const int metal_mma = n >= 16 && jam_active_isa(CTX[c].c) == JAM_ISA_METAL;
+            if (metal_mma && g_metal_half_ref) {
+                double d = fabs(kr - g_metal_half_ref[(size_t)i*n+j]);
+                if (d < best) { best = d; ref = g_metal_half_ref[(size_t)i*n+j]; }
+            }
+            const char* prec_name = metal_mma && bdt == JAM_Q8_0 ? "Q8_0h"
+                                  : metal_mma && bdt == JAM_Q4_0 ? "Q4_0h"
+                                  : metal_mma && bdt == JAM_Q4_K ? "Q4_Kh"
+                                  : metal_mma && bdt == JAM_Q5_K ? "Q5_Kh"
+                                  : metal_mma && bdt == JAM_Q6_K ? "Q6_Kh" : name;
+            track_prec(prec_name, best, ref);
             if (best > at + rt*fabs(ref)) ++bad;
         }
         if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -213,9 +235,10 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
     float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
     double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n); double* RF = malloc(8*(size_t)m*n);
     double* RP = malloc(8*(size_t)m*n);   /* per-256 (Q8_K) requant reference for the avx2 int-scale path */
+    double* RH = malloc(8*(size_t)m*n);   /* half-staged (Metal MMA): w and a rounded RTN to f16 */
     jam_ref_fill(A,(size_t)n*k,8);
     for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
-        double se=0, sr=0, sf=0;
+        double se=0, sr=0, sf=0, sh=0;
         for (int b=0;b<k/32;b++) {
             const float* aa=A+(size_t)j*k+b*32;
             float amax=0; for (int e=0;e<32;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
@@ -227,6 +250,8 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
                 int qa=(int)lrintf(aa[e]*id); if(qa>127)qa=127; else if(qa<-128)qa=-128;
                 sr += (double)wsc*((float)qa*dA) - (double)wmn*aa[e];  /* requant scale, EXACT min (repack) */
                 sf += (double)wv*((float)qa*dA);                 /* fully-requant (Q4_0 256-bit engine) */
+                sh += (double)jam_ref_h2f(jam_ref_f2h_rtn(wv))
+                    * (double)jam_ref_h2f(jam_ref_f2h_rtn(aa[e]));
             }
         }
         double sp=0;                                       /* per-256 requant: value × (qa256·dA256) */
@@ -240,10 +265,25 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
             }
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr; RF[(size_t)i*n+j]=sf; RP[(size_t)i*n+j]=sp;
+        RH[(size_t)i*n+j]=sh;
     }
     const double* refs[] = { RE, RR, RF, RP };
+    g_metal_half_ref = RH;
     check_all_ctxs(WQ, dtype, name, A, C, m, n, k, refs, 4, 2e-2, 2e-2);
+    /* Packed layout (jam.h JAM_PACK_ABI): same values, reordered bytes - the SAME references
+     * must hold. Contexts that never advertise the layout are skipped inside. */
+    size_t pgb = jam_ref_pack_group_bytes(dtype, k);
+    if (pgb && m % 4 == 0) {
+        uint8_t* WP = malloc((size_t) (m / 4) * pgb);
+        jam_ref_pack(dtype, WP, WQ, m, k);
+        const char* pname = dtype == JAM_Q4_0 ? "Q4_0p" : dtype == JAM_Q4_K ? "Q4_Kp"
+                          : dtype == JAM_Q5_K ? "Q5_Kp" : "Q6_Kp";   /* static: track_prec keeps the ptr */
+        check_all_ctxs(WP, dtype | JAM_PACKED, pname, A, C, m, n, k, refs, 4, 2e-2, 2e-2);
+        free(WP);
+    }
+    g_metal_half_ref = NULL;
     free(Wdq); free(Wmin); free(WQ); free(A); free(C); free(RE); free(RR); free(RF); free(RP);
+    free(RH);
 }
 
 /* F16 / BF16 DENSE weight @ F32. Build random half/bf16 weights, dot vs a reference that decodes the
@@ -352,6 +392,47 @@ static void suite_layout(int dtype, const char* name, int m, int n, int k) {
     free(WQ); free(WS); free(B); free(Cc); free(Cs); free(Cp);
 }
 
+/* Packed twin of suite_layout. Packed rows are always dense (the layout contract fixes ldw == k),
+ * so the live hazards are the OUTPUT stride and statelessness — and the packed kernels are exactly
+ * the "group kernels" whose ldc-as-row-count confusion this suite exists to catch. suite_layout's
+ * m=37 can never pack (m % 4), which is how the packed dtypes went uncovered here; m=36 also keeps
+ * the metal MMA M-edge (tile-unaligned) in play. Skips contexts that never advertise the layout. */
+static void suite_layout_packed(int dtype, const char* name, int m, int n, int k) {
+    int be, bb;
+    void* WQ = build_weight(dtype, m, k, &be, &bb);
+    uint8_t* WP = malloc((size_t)(m/4) * jam_ref_pack_group_bytes(dtype, k));
+    jam_ref_pack(dtype, WP, WQ, m, k);
+    int ldc2 = m + 3;
+    float* B  = malloc(4llu*(size_t)n*k); jam_ref_fill(B,(size_t)n*k,9);
+    float* Cc = malloc(4llu*(size_t)m*n);
+    float* Cs = malloc(4llu*(size_t)m*n);
+    float* Cp = malloc(4llu*(size_t)ldc2*n);
+    for (int c=0;c<NCTX;c++) {
+        if (jam_pack_size(CTX[c].c, (jam_dtype)dtype, m, k) == 0) continue;
+        ++g_checks; memset(Cc,0,4llu*(size_t)m*n);
+        int st0 = jam_mm(CTX[c].c, WP, dtype|JAM_PACKED, k, B, JAM_F32, k, Cc, JAM_F32, m, m, n, k);
+        if (st0){ printf("  [FAIL] %-5s tight  %-15s %dx%dx%d st=%d\n",name,CTX[c].lbl,m,n,k,st0); ++g_fail; continue; }
+
+        /* (1) padded output (ldc>m): matches the tight result AND the gap [m,ldc) stays untouched */
+        ++g_checks;
+        for (size_t i=0;i<(size_t)ldc2*n;i++) Cp[i] = -123456.0f;     /* sentinel */
+        int st1 = jam_mm(CTX[c].c, WP, dtype|JAM_PACKED, k, B, JAM_F32, k, Cp, JAM_F32, ldc2, m, n, k);
+        int bad1=0;
+        for (int t=0;t<n;t++) {
+            for (int f=0;f<m;f++)    if (Cp[(size_t)t*ldc2+f] != Cc[(size_t)t*m+f])  ++bad1;   /* result */
+            for (int f=m;f<ldc2;f++) if (Cp[(size_t)t*ldc2+f] != -123456.0f)          ++bad1;   /* gap */
+        }
+        if (st1||bad1){ printf("  [FAIL] %-5s ldc>m  %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad1,st1); ++g_fail; }
+
+        /* (2) a re-run must be bit-identical (kernels are stateless) */
+        ++g_checks; memset(Cs,0,4llu*(size_t)m*n);
+        int st2 = jam_mm(CTX[c].c, WP, dtype|JAM_PACKED, k, B, JAM_F32, k, Cs, JAM_F32, m, m, n, k);
+        int bad2=0; for (size_t i=0;i<(size_t)m*n;i++) if (Cc[i]!=Cs[i]) ++bad2;
+        if (st2||bad2){ printf("  [FAIL] %-5s re-run %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad2,st2); ++g_fail; }
+    }
+    free(WQ); free(WP); free(B); free(Cc); free(Cs); free(Cp);
+}
+
 /* Saturation / extreme inputs for the Q8_0 int8 dot — the one place a real accumulator cliff lives. Weights
  * AND activations at constant magnitude so EVERY value quantizes to ±127: this maximizes the maddubs int16
  * intermediate to 127·127·2 = 32258 (just under 32767 — the exact margin the sign-trick |a|·sign(w) buys vs
@@ -416,6 +497,26 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
         }
         if (nan||zc){ printf("  [FAIL] %-5s adversarial %-14s nan=%d zerocol=%d\n",name,CTX[c].lbl,nan,zc); ++g_fail; }
     }
+    /* Packed twin: the same degenerate activations through the packed gemv (n==1) / group prefill
+     * kernels — they share the requant fan but consume ad/asum through different code. */
+    size_t pgb = jam_ref_pack_group_bytes(dtype, k);
+    if (pgb && m % 4 == 0) {
+        uint8_t* WP = malloc((size_t)(m/4)*pgb);
+        jam_ref_pack(dtype, WP, WQ, m, k);
+        for (int c=0;c<NCTX;c++) {
+            if (jam_pack_size(CTX[c].c, (jam_dtype)dtype, m, k) == 0) continue;
+            ++g_checks; memset(C,0,4llu*(size_t)m*n);
+            jam_mm(CTX[c].c, WP, dtype|JAM_PACKED, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);
+            int nan=0, zc=0;
+            for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+                float v = C[(size_t)j*m+i];
+                if (!isfinite(v)) ++nan;
+                if (j==0 && v != 0.0f) ++zc;
+            }
+            if (nan||zc){ printf("  [FAIL] %-4sp adversarial %-14s nan=%d zerocol=%d\n",name,CTX[c].lbl,nan,zc); ++g_fail; }
+        }
+        free(WP);
+    }
     free(WQ); free(B); free(C);
 }
 
@@ -475,6 +576,14 @@ static void suite_api(void) {
     OK("ct != F32",   jam_mm(d, W, JAM_F32,  k,  A, JAM_F32, k,  C, JAM_F16, m, m, n, k)  == JAM_EUNSUPPORTED);
     OK("Q8_0 k%32!=0", jam_mm(d, W, JAM_Q8_0, 48, A, JAM_F32, 48, C, JAM_F32, m, m, n, 48) == JAM_EUNSUPPORTED);
 
+    /* packed-tag dispatch: never a wrong result — EUNSUPPORTED wherever the layout is unreadable
+     * (non-advertising ctx, unknown base, non-F32 activations, shape outside the pack contract).
+     * All four return before W is dereferenced, so the dummy buffer is safe. */
+    OK("packed on generic ctx", jam_mm(g, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
+    OK("packed unknown base",   jam_mm(d, W, JAM_Q8_0|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
+    OK("packed at != F32",      jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F16, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
+    OK("packed m % 4 != 0",     jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 6, 6, 1, 256) == JAM_EUNSUPPORTED);
+
     /* concurrency: a re-entrant jam_mm on a context already in flight must get JAM_EBUSY (serial stream) */
     memset(&cfg,0,sizeof cfg); cfg.parallel_for = reentry_pfor; cfg.name = "reentry";
     jam_ctx* r = jam_ctx_create(&cfg);
@@ -494,6 +603,35 @@ static void suite_api(void) {
     OK("global_destroy idempotent", 1);
 
     jam_ctx_destroy(d); jam_ctx_destroy(g); jam_ctx_destroy(r);
+    #undef OK
+}
+
+/* The pack policy oracle: jam_pack_size is the contract the Java packer plans slab offsets with,
+ * trusting it blindly — its shape/dtype gates must hold on EVERY ISA (0, never garbage), a
+ * non-advertising (generic-capped) ctx must never offer, and when it does offer the size must be
+ * exactly (m/4) * the spec group size (jam_ref_pack_group_bytes = the layout's executable spec).
+ * jam_pack_abi pins the layout revision the references encode. Zero coverage before: the numeric
+ * suites only USE jam_pack_size as a skip predicate, so a gating typo could offer a corrupt size
+ * without any test noticing. */
+static void suite_pack_api(void) {
+    #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] pack_api  %s\n", label); ++g_fail; } } while(0)
+    OK("pack_abi == JAM_PACK_ABI", jam_pack_abi() == JAM_PACK_ABI);
+    jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC;
+    jam_ctx* g = jam_ctx_create(&cfg);
+    static const jam_dtype PD[] = { JAM_Q4_0, JAM_Q4_K, JAM_Q5_K, JAM_Q6_K };
+    for (unsigned i = 0; i < sizeof PD / sizeof *PD; i++) {
+        jam_dtype dt = PD[i];
+        int k = dt == JAM_Q4_0 ? 64 : 512;
+        OK("m%4 != 0 -> 0",     jam_pack_size(NULL, dt, 6, k) == 0);
+        OK("m <= 0 -> 0",       jam_pack_size(NULL, dt, 0, k) == 0);
+        OK("k%block != 0 -> 0", jam_pack_size(NULL, dt, 8, dt == JAM_Q4_0 ? 48 : 128) == 0);
+        OK("generic never offers", jam_pack_size(g, dt, 8, k) == 0);
+        size_t sz = jam_pack_size(NULL, dt, 8, k);   /* 0 on ISAs without the packed kernels */
+        OK("offer == m/4 * spec GB", sz == 0 || sz == 2 * jam_ref_pack_group_bytes(dt, k));
+    }
+    OK("unpackable dtype -> 0", jam_pack_size(NULL, JAM_Q8_0, 8, 512) == 0);
+    OK("dense dtype -> 0",      jam_pack_size(NULL, JAM_F32, 8, 512) == 0);
+    jam_ctx_destroy(g);
     #undef OK
 }
 
@@ -586,11 +724,19 @@ int main(void) {
                    {7,16,5120},{16,512,5120},{33,64,5120},{49,512,128},{2,9,384},{31,8,1280},{104,7,512}};
                    /* band shapes: k=5120 (Bonsai), n=16/64/512, m tails 1..15 (scalar-tail + partial bands) */
     for (unsigned s=0;s<sizeof Q1/sizeof*Q1;++s) suite_q1_0(Q1[s][0],Q1[s][1],Q1[s][2]);   /* Q1_0 GGML (k%128) */
-    int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256}};  /* k%256, n</≥8, m tail */
+    int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256},
+                   {64,1,512},{4,1,256},{36,5,256},{36,16,256}};
+                   /* k%256, n</>=8, m tail, n==1 (packed decode gemvs). The 17/257-row shapes
+                    * skip the packed arm (m%4), so {4,1}/{36,*} are what reach the packed edges:
+                    * single-group gemv, small-n packed prefill (n-tail as the ONLY columns), and
+                    * m%4==0 but MMA-tile-unaligned (the metal edge loaders). */
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q4k, JAM_Q4_K, "Q4_K", KQ[s][0],KQ[s][1],KQ[s][2]);
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q6k, JAM_Q6_K, "Q6_K", KQ[s][0],KQ[s][1],KQ[s][2]);
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q5k, JAM_Q5_K, "Q5_K", KQ[s][0],KQ[s][1],KQ[s][2]);
-    int Q40[][3] = {{16,8,32},{32,16,64},{64,33,256},{17,5,128},{128,64,512},{257,40,32}};  /* Q4_0: k%32 */
+    int Q40[][3] = {{16,8,32},{32,16,64},{64,33,256},{17,5,128},{128,64,512},{257,40,32},
+                    {64,1,512},{4,1,64},{36,5,128},{36,16,64}};
+                    /* Q4_0: k%32. n==1 makes the packed Q4_0 decode gemv a unit-tested kernel
+                     * (it was e2e-only); {4,1}/{36,*} mirror the KQ packed edge shapes. */
     for (unsigned s=0;s<sizeof Q40/sizeof*Q40;++s) suite_kquant(jam_ref_make_q4_0, JAM_Q4_0, "Q4_0", Q40[s][0],Q40[s][1],Q40[s][2]);
     int DN[][3] = {{16,8,64},{32,16,128},{64,33,256},{17,5,48},{128,64,512},{40,7,80},{16,8,40},{33,9,24}};  /* k%16==0 (fast) + %16!=0 (floor) */
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_F16,  "F16",  DN[s][0],DN[s][1],DN[s][2]);
@@ -613,6 +759,16 @@ int main(void) {
         suite_layout(JAM_F32,   "F32",   37, nn, 80);
     }
 
+    /* Packed layout contract: ldw is fixed by the layout, but ldc>m and re-run determinism must
+     * hold for the packed group kernels too (m=36: whole groups, metal MMA M-edge; n=16 prefill
+     * incl. the metal route, n=1 the packed gemvs). */
+    for (int ni=0; ni<2; ni++) { int nn = ni ? 1 : 16;
+        suite_layout_packed(JAM_Q4_0, "Q4_0p", 36, nn, 64);
+        suite_layout_packed(JAM_Q4_K, "Q4_Kp", 36, nn, 256);
+        suite_layout_packed(JAM_Q5_K, "Q5_Kp", 36, nn, 256);
+        suite_layout_packed(JAM_Q6_K, "Q6_Kp", 36, nn, 256);
+    }
+
     /* extreme/saturation: drive the Q8_0 int8 dot to its ±127 accumulator edges + the requant clamp,
      * partial m, prefill (band/int8) + gemv (floor/dot). */
     for (int mode=0; mode<2; mode++) {
@@ -620,16 +776,21 @@ int main(void) {
         suite_extreme(33,  1, 512, mode);   /* gemv: the dot kernels + the generic floor */
         suite_extreme(64,  4, 128, mode);
     }
-    /* adversarial activations: degenerate scales (zero / all-equal / tiny) + rounding ties, every dtype */
-    suite_adversarial(JAM_Q8_0,"Q8_0",37,8,64);  suite_adversarial(JAM_Q4_0,"Q4_0",37,8,64);
+    /* adversarial activations: degenerate scales (zero / all-equal / tiny) + rounding ties, every
+     * dtype. Packable dtypes run at m=36 (m%4==0 engages the packed twin inside); the extra n==1
+     * rows drive the zero-activation column through the packed GEMV divide guard. */
+    suite_adversarial(JAM_Q8_0,"Q8_0",37,8,64);  suite_adversarial(JAM_Q4_0,"Q4_0",36,8,64);
     suite_adversarial(JAM_MXFP4,"MXFP4",37,8,64); suite_adversarial(JAM_NVFP4,"NVFP4",37,8,128);
-    suite_adversarial(JAM_Q4_K,"Q4_K",37,8,256);  suite_adversarial(JAM_Q5_K,"Q5_K",37,8,256);
-    suite_adversarial(JAM_Q6_K,"Q6_K",37,8,256);  suite_adversarial(JAM_F16,"F16",37,8,80);
+    suite_adversarial(JAM_Q4_K,"Q4_K",36,8,256);  suite_adversarial(JAM_Q5_K,"Q5_K",36,8,256);
+    suite_adversarial(JAM_Q6_K,"Q6_K",36,8,256);  suite_adversarial(JAM_F16,"F16",37,8,80);
     suite_adversarial(JAM_BF16,"BF16",37,8,80);   suite_adversarial(JAM_F32,"F32",37,8,80);
+    suite_adversarial(JAM_Q4_0,"Q4_0",36,1,64);   suite_adversarial(JAM_Q4_K,"Q4_K",36,1,256);
+    suite_adversarial(JAM_Q5_K,"Q5_K",36,1,256);  suite_adversarial(JAM_Q6_K,"Q6_K",36,1,256);
 
     suite_leak();       /* create/use/destroy cycles must not leak (mallinfo2 gate + LeakSanitizer) */
     suite_api();        /* context lifecycle (global + explicit), config, EUNSUPPORTED/EBUSY */
     suite_contract();   /* invalid-input error returns (context-independent) */
+    suite_pack_api();   /* jam_pack_size/jam_pack_abi: the policy oracle the Java packer trusts */
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
 
@@ -638,8 +799,17 @@ int main(void) {
      * handling, f16 instead of f32 accumulation, a wrong rounding) fails here long before it'd trip the floor.
      * Observed on a 9950X (deterministic int math + IEEE f16; ~2-3x slack for FMA contraction differences). */
     static const struct { const char* nm; double abs, rel; } PREC_MAX[] = {
-        {"F32",3e-3,2e-4}, {"Q8_0",5e-4,5e-5}, {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5},
+        {"F32",3e-3,2e-4}, {"Q8_0",5e-4,5e-5},
+        /* Metal prefill: half operands + float accumulation, matching the fast llama.cpp numeric tier.
+         * The ordinary per-element correctness gate above remains tighter than these drift sentinels. */
+        {"Q8_0h",2e-2,1e-2}, {"Q4_0h",2e-2,1e-2},
+        /* K-quant Metal MMA: same half tier; the error is judged vs the half-staged reference
+         * (g_metal_half_ref), so these bound only the accumulation-order noise on top of it. */
+        {"Q4_Kh",2e-2,1e-2}, {"Q5_Kh",2e-2,1e-2}, {"Q6_Kh",2e-2,1e-2},
+        {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5},
         {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5},
+        /* packed layouts: identical values, identical numeric tier */
+        {"Q4_Kp",4e-3,1.5e-3}, {"Q5_Kp",5e-3,2e-3}, {"Q6_Kp",6e-3,1.5e-3}, {"Q4_0p",5e-4,5e-5},
         {"F16",1e-3,1e-4},
         /* BF16: the vdpbf16ps path (Zen4+/CPX) rounds the ACTIVATIONS to bf16 too (llama.cpp's
          * tinyBLAS contract) - ~8 mantissa bits on both operands, so ~1e-2 relative on a dot is the
