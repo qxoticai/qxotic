@@ -321,8 +321,9 @@ public final class FrozenBlocks {
         ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
         flip.putInt(entries.size() + fresh.size()).putLong(newIndexOffset).flip();
         writeFully(ch, flip, COUNT_OFFSET);
-        ch.force(false); // in-place 12-byte publish: no size change to flush
-        // keep the parsed view coherent so a later append re-serializes the right index
+        // the disk now publishes the new index: the parsed view follows BEFORE the final force,
+        // or a failed fsync leaves the file ahead of the view and every later save() refuses
+        // with "another writer appended"
         for (int i = 0; i < fresh.size(); i++) {
             Entry e = fresh.get(i);
             entries.add(
@@ -337,6 +338,7 @@ public final class FrozenBlocks {
             keys.add(e.key());
         }
         indexOffset = newIndexOffset;
+        ch.force(false); // in-place 12-byte publish: no size change to flush
     }
 
     /**
