@@ -21,6 +21,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
@@ -40,17 +41,29 @@ public final class Convert {
         ShortVector bits16 =
                 ShortVector.fromMemorySegment(
                         Segments.S_SPECIES_HALF, memSeg, byteOffset, ByteOrder.LITTLE_ENDIAN);
-        var bits32 = bits16.castShape(Segments.I_SPECIES, 0).reinterpretAsInts();
-        var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-        bits32 =
-                bits32.and(0x8000)
-                        .lanewise(VectorOperators.LSHL, 16)
-                        .or(
-                                bits32.and(0x7FFF)
-                                        .add(0x1C000)
-                                        .lanewise(VectorOperators.LSHL, 13)
-                                        .and(zeroExponentMask));
-        return bits32.reinterpretAsFloats();
+        return f16BitsToF32(bits16.castShape(Segments.I_SPECIES, 0).reinterpretAsInts());
+    }
+
+    /**
+     * Exact IEEE half decode of one half per int lane (the low 16 bits): normals rebias the
+     * exponent, subnormals scale their mantissa by 2^-24, Inf/NaN keep the all-ones exponent. Bit
+     * identical to {@link Float#float16ToFloat} on every one of the 65536 inputs except that a NaN
+     * keeps its payload instead of being quieted.
+     */
+    public static FloatVector f16BitsToF32(IntVector bits32) {
+        IntVector exponent = bits32.and(0x7C00);
+        IntVector normal = bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13);
+        IntVector subnormal =
+                ((FloatVector) bits32.and(0x3FF).convert(VectorOperators.I2F, 0))
+                        .mul(0x1p-24f)
+                        .reinterpretAsInts();
+        IntVector magnitude =
+                normal.blend(subnormal, exponent.eq(0))
+                        .lanewise(VectorOperators.OR, 0x7F800000, exponent.eq(0x7C00));
+        return bits32.and(0x8000)
+                .lanewise(VectorOperators.LSHL, 16)
+                .or(magnitude)
+                .reinterpretAsFloats();
     }
 
     /**
