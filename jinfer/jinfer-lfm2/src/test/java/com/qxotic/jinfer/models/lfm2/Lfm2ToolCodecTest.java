@@ -36,6 +36,32 @@ final class Lfm2ToolCodecTest {
         assertTrue(wire.startsWith("[configure(text='it\\'s \\\\fine\\nnow'"), wire);
     }
 
+    /**
+     * Argument names where one is a literal PREFIX of another. llama.cpp's PEG parser matched the
+     * declared property names as an alternation in schema order, so a streaming parse committed to
+     * `password` and then broke when `_file` arrived (ggml-org/llama.cpp#23838, fixed there by
+     * sorting candidates longest-first). This parser lexes a whole identifier before it looks for
+     * `=` and never consults the tool's schema, so the ambiguity cannot arise - pinned here so a
+     * future rewrite toward name alternation has to notice.
+     */
+    @Test
+    void argumentNamesThatPrefixEachOtherStayDistinct() {
+        Content.ToolCall call =
+                Lfm2ToolCodec.parse("[login(password='a', password_file='/tmp/p', pass=1)]")
+                        .getFirst();
+        assertEquals(
+                List.of("password", "password_file", "pass"),
+                List.copyOf(call.arguments().keySet()));
+        assertEquals("a", call.arguments().get("password"));
+        assertEquals("/tmp/p", call.arguments().get("password_file"));
+
+        // and the same shape the other way round, longest declared first
+        Content.ToolCall reversed =
+                Lfm2ToolCodec.parse("[login(password_file='/tmp/p', password='a')]").getFirst();
+        assertEquals("/tmp/p", reversed.arguments().get("password_file"));
+        assertEquals("a", reversed.arguments().get("password"));
+    }
+
     @Test
     void acceptsMultipleBareAndJsonCalls() {
         assertEquals(
