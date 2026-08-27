@@ -1146,11 +1146,14 @@ public final class GrammarLegacyTest {
         System.out.println("-- builtin cache keys --");
         MockV v = new MockV();
         // a user grammar string that collides with a builtin's RESERVED name builds the user's
-        // text ("__json__" is not valid GBNF: no ::=, so a DISABLED spec), never the builtin
-        Grammar.Spec user = Grammar.of("__json__", v);
-        check(
-                "user __json__ does not resolve to the builtin",
-                !user.isValid() && user != Grammar.json(v));
+        // text ("__json__" is not valid GBNF: no ::=, so it is refused), never the builtin
+        boolean refused = false;
+        try {
+            Grammar.of("__json__", v);
+        } catch (IllegalArgumentException e) {
+            refused = true;
+        }
+        check("user __json__ does not resolve to the builtin", refused);
         // builtins are cached: same instance per vocab; compact is a different instance
         check("builtin cached", Grammar.json(v) == Grammar.json(v));
         check("compact distinct", Grammar.jsonCompact(v) != Grammar.json(v));

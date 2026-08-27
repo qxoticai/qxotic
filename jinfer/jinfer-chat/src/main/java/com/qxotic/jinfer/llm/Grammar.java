@@ -419,10 +419,11 @@ public final class Grammar {
     }
 
     static Spec build(String gbnf, Vocab v) {
+        if (gbnf.isBlank()) return Spec.DISABLED; // the absence of a grammar, not a broken one
         List<Rule> rules = parse(gbnf);
         if (rules.isEmpty()) {
-            // a source with no "::=" rule is a syntax error, not "no grammar": returning the
-            // pass-through spec would silently generate unconstrained
+            // text with no "::=" rule is a syntax error: the pass-through spec would silently
+            // generate unconstrained under a caller that believes otherwise
             throw new IllegalArgumentException("unparseable GBNF: no 'name ::= ...' rule found");
         }
         return new Spec(CFG.compile(rules), byteTable(v));
