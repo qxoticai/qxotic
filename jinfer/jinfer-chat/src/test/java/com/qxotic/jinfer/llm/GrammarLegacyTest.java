@@ -1505,8 +1505,14 @@ public final class GrammarLegacyTest {
         }
         check("brace non-repetition errors", threw);
 
-        // a hex escape with too few digits degrades to a literal 'x' (pinned)
-        check("short hex escape (pinned)", Grammar.unescape("\\x4").equals("x4"));
+        // a hex escape with too few digits is an error, as in llama.cpp ("expecting 2 hex chars")
+        threw = false;
+        try {
+            Grammar.literalBytes("\\x4");
+        } catch (IllegalArgumentException e) {
+            threw = true;
+        }
+        check("short hex escape throws", threw);
 
         // E{0} is epsilon
         Grammar.Cursor z = Grammar.of("root ::= [x]{0} \"b\"", v).cursor();
@@ -1582,16 +1588,21 @@ public final class GrammarLegacyTest {
         // sampler-level prefix pin itself is gone - every family forces through a selection
     }
 
+    private static String lit(String source) {
+        return new String(Grammar.literalBytes(source), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     static void testParser() {
         System.out.println("-- parser --");
 
-        check("unescape \\n", Grammar.unescape("a\\nb").equals("a\nb"));
-        check("unescape \\t", Grammar.unescape("a\\tb").equals("a\tb"));
-        check("unescape \\r", Grammar.unescape("a\\rb").equals("a\rb"));
-        check("unescape \\\"", Grammar.unescape("a\\\"b").equals("a\"b"));
-        check("unescape \\x41", Grammar.unescape("\\x41").equals("A"));
-        check("unescape \\x7e", Grammar.unescape("\\x7e").equals("~"));
-        check("unescape plain", Grammar.unescape("hello").equals("hello"));
+        check("literal \\n", lit("a\\nb").equals("a\nb"));
+        check("literal \\t", lit("a\\tb").equals("a\tb"));
+        check("literal \\r", lit("a\\rb").equals("a\rb"));
+        check("literal \\\"", lit("a\\\"b").equals("a\"b"));
+        check("literal \\x41", lit("\\x41").equals("A"));
+        check("literal \\x7e", lit("\\x7e").equals("~"));
+        check("literal plain", lit("hello").equals("hello"));
+        check("literal \\xC3\\xA9 is é", lit("\\xC3\\xA9").equals("é"));
 
         check("unescChar \\n", Grammar.unescChar('n') == '\n');
         check("unescChar \\t", Grammar.unescChar('t') == '\t');
@@ -2800,18 +2811,26 @@ public final class GrammarLegacyTest {
     static void testStringLiteralEscapes() {
         System.out.println("-- string literal escapes --");
 
-        // incomplete \x with only one hex digit
-        check("unescape \\x", Grammar.unescape("\\x").equals("x")); // fallback to 'x'
-        check("unescape \\x5 fallback", Grammar.unescape("\\x5").charAt(0) == 'x'); // only 1 hex
-        check("unescape \\xFF", Grammar.unescape("\\xFF").charAt(0) == 0xFF);
-        check("unescape \\x00 null byte", Grammar.unescape("\\x00").charAt(0) == '\0');
+        // incomplete \x (llama.cpp: "expecting 2 hex chars") is an error, not a silent 'x'
+        for (String bad : new String[] {"\\x", "\\x5"}) {
+            boolean shortHex = false;
+            try {
+                Grammar.literalBytes(bad);
+            } catch (IllegalArgumentException e) {
+                shortHex = true;
+            }
+            check("literal " + bad + " throws", shortHex);
+        }
+        check("literal \\xFF is one raw byte", Grammar.literalBytes("\\xFF")[0] == (byte) 0xFF);
+        check("literal \\xFF is one raw byte", Grammar.literalBytes("\\xFF").length == 1);
+        check("literal \\x00 null byte", Grammar.literalBytes("\\x00")[0] == 0);
 
         // backslash at end of string
-        check("unescape trailing \\", Grammar.unescape("a\\").equals("a\\"));
+        check("literal trailing \\", lit("a\\").equals("a\\"));
 
         // multiple escapes in sequence
-        check("unescape multi", Grammar.unescape("\\n\\t\\r").equals("\n\t\r"));
-        check("unescape mixed", Grammar.unescape("\\x41\\x42").equals("AB"));
+        check("literal multi", lit("\\n\\t\\r").equals("\n\t\r"));
+        check("literal mixed", lit("\\x41\\x42").equals("AB"));
 
         // Verify via grammar compile
         MockV v = new MockV();

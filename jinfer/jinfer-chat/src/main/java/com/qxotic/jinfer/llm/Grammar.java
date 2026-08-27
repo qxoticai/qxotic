@@ -41,9 +41,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * works). Bodies compose:
  *
  * <ul>
- *   <li>{@code "literal"} — exact bytes; escapes {@code \" \\ \n \r \t \xNN}.
- *   <li>{@code [abc]} {@code [a-z0-9]} {@code [^,\n]} — byte classes: members, ranges, negation,
- *       the same escapes. {@code .} matches any byte.
+ *   <li>{@code "literal"} — its UTF-8 bytes; escapes {@code \" \\ \n \r \t}, and {@code \xNN} for
+ *       the raw byte 0xNN.
+ *   <li>{@code [abc]} {@code [a-z0-9]} {@code [^,\n]} — BYTE classes: members, ranges, negation,
+ *       the same escapes. {@code .} matches any one byte. The engine matches UTF-8 bytes, not code
+ *       points (llama.cpp matches code points): a non-ASCII character inside a class is its bytes
+ *       as separate members, so put non-ASCII text in literals, and read {@code [^"]*} as "any
+ *       bytes but a quote", which is what free text wants.
  *   <li>{@code x | y} — alternation; {@code ( … )} — grouping.
  *   <li>{@code * + ?} and bounded {@code {m} {m,} {m,n}} — repetition of the preceding element
  *       ({@code "ab"{2,4}}, {@code [0-9]{1,3}}, {@code (num ",")*}).
@@ -1455,8 +1459,7 @@ public final class Grammar {
                     throw new IllegalArgumentException(
                             "unterminated string literal in rule body: " + body);
                 }
-                String s = unescape(body.substring(i + 1, end));
-                for (byte b : s.getBytes(StandardCharsets.UTF_8))
+                for (byte b : literalBytes(body.substring(i + 1, end)))
                     res.add(new Rule.Element.Value(b));
                 i = end + 1;
                 i = applyMod(body, i, res);
@@ -1649,28 +1652,35 @@ public final class Grammar {
         return d == 0 ? end : -1;
     }
 
-    static String unescape(String s) {
-        StringBuilder sb = new StringBuilder();
+    /**
+     * A literal's bytes: text is UTF-8, {@code \n \r \t \" \\} are their bytes, and {@code \xNN} is
+     * the raw byte 0xNN - the same byte a class member {@code [\xNN]} matches, so the two spellings
+     * of a non-ASCII byte sequence ({@code "\xC3\xA9"} and {@code "é"}) are one language.
+     */
+    static byte[] literalBytes(String s) {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(s.length());
+        StringBuilder text = new StringBuilder(); // pending plain text, encoded as one run
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                char n = s.charAt(++i);
-                switch (n) {
-                    case 'n' -> sb.append('\n');
-                    case 'r' -> sb.append('\r');
-                    case 't' -> sb.append('\t');
-                    case 'x' -> {
-                        if (i + 2 < s.length()) {
-                            String hex = s.substring(i + 1, i + 3);
-                            sb.append((char) Integer.parseInt(hex, 16));
-                            i += 2;
-                        } else sb.append('x');
-                    }
-                    default -> sb.append(n);
+            if (c != '\\' || i + 1 >= s.length()) {
+                text.append(c);
+                continue;
+            }
+            char n = s.charAt(++i);
+            if (n == 'x') {
+                if (i + 2 >= s.length()) {
+                    throw new IllegalArgumentException("\\x needs two hex digits: " + s);
                 }
-            } else sb.append(c);
+                out.writeBytes(text.toString().getBytes(StandardCharsets.UTF_8));
+                text.setLength(0);
+                out.write(Integer.parseInt(s.substring(i + 1, i + 3), 16));
+                i += 2;
+            } else {
+                text.append(unescChar(n));
+            }
         }
-        return sb.toString();
+        out.writeBytes(text.toString().getBytes(StandardCharsets.UTF_8));
+        return out.toByteArray();
     }
 
     static char unescChar(char c) {
