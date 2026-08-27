@@ -35,6 +35,28 @@ class ValidationTest {
     }
 
     @Test
+    void rejectsEmptyStopStrings() {
+        // "" would stop every reply at its first fragment, an empty answer with finish "stop"
+        ServerConfig config = ServerConfig.local(0);
+        for (Object stop : List.of("", List.of(""), List.of("###", ""))) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.put("stop", stop);
+            assertTrue(
+                    assertThrows(
+                                    IllegalArgumentException.class,
+                                    () ->
+                                            Validation.validateGenerationParams(
+                                                    request, "model", config))
+                            .getMessage()
+                            .contains("stop strings must not be empty"),
+                    "stop=" + stop);
+        }
+        Map<String, Object> fine = new HashMap<>(user("hi"));
+        fine.put("stop", List.of("###"));
+        Validation.validateGenerationParams(fine, "model", config);
+    }
+
+    @Test
     void validatesOnlyValuesTheClientProvided() {
         ServerConfig config = ServerConfig.local(0);
         Map<String, Object> request = new HashMap<>(user("hi"));

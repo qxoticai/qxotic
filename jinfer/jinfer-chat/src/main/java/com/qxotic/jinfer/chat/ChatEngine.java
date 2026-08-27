@@ -442,7 +442,7 @@ public final class ChatEngine implements AutoCloseable {
             }
             messages = List.copyOf(messages);
             tools = tools == null ? List.of() : List.copyOf(tools);
-            stops = stops == null ? List.of() : List.copyOf(stops);
+            stops = TextStops.checked(stops);
             forcedTool = forcedTool == null ? ForcedTool.NONE : forcedTool;
             if (forcedTool != ForcedTool.NONE) {
                 if (tools.isEmpty()) {
@@ -523,7 +523,8 @@ public final class ChatEngine implements AutoCloseable {
                                 .walk();
                 sampler = walk.sampler(sampler, endTurn());
             }
-            return Prepared.raw(promptTokens, sampler, maxTokens, timeout, stops);
+            return Prepared.raw(
+                    promptTokens, sampler, maxTokens, timeout, TextStops.checked(stops));
         } finally {
             lock.unlock();
         }
