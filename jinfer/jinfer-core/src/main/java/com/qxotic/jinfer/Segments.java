@@ -164,6 +164,11 @@ public final class Segments {
      * uses one exact segment type with absolute addresses so bounds/liveness checks fold away (and
      * native-image call sites stay monomorphic); otherwise fall back to the segment itself.
      */
+    /** True when kernels address memory absolutely (the GLOBAL_SEGMENT route). */
+    public static boolean absoluteAddressing() {
+        return GLOBAL_SEGMENT != null;
+    }
+
     public static MemorySegment vectorSegment(MemorySegment segment) {
         return GLOBAL_SEGMENT != null ? GLOBAL_SEGMENT : segment;
     }

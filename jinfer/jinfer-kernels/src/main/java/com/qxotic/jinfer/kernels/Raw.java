@@ -31,6 +31,14 @@ public record Raw(MemorySegment vseg, long vbase) {
         Views.requireDense(view, expected, name);
         MemoryView<MemorySegment> v = Views.castToSegmentBacked(view, name);
         MemorySegment segment = v.memory().base();
+        if (Segments.absoluteAddressing() && !segment.isNative()) {
+            // a heap segment's address() is its offset inside the array object: absolute
+            // addressing would dereference ~16, a segfault with no Java exception
+            throw new IllegalArgumentException(
+                    name
+                            + ": heap-backed view; kernels address memory absolutely, copy it into"
+                            + " a native arena first");
+        }
         return new Raw(
                 Segments.vectorSegment(segment), Segments.vectorBase(segment) + v.byteOffset());
     }
