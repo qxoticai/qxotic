@@ -106,7 +106,7 @@ public final class Moe {
         for (int s = 0; s < rows; s++) {
             long ro = (long) s * experts;
             for (int ki = 0; ki < topK; ki++) {
-                int best = 0;
+                int best = -1;
                 float bestVal = Float.NEGATIVE_INFINITY;
                 for (int ei = 0; ei < experts; ei++) {
                     float v = readFloat(sel.vseg(), sel.vbase() + (ro + ei) * Float.BYTES);
@@ -115,6 +115,9 @@ public final class Moe {
                         best = ei;
                     }
                 }
+                // a row with nothing above -inf (NaN logits) still routes to topK DISTINCT
+                // experts: the NaN travels in the weight, the per-expert counts stay <= rows
+                if (best < 0) best = firstUnpicked(rowTopE, s * topK, ki, experts);
                 rowTopE[s * topK + ki] = best;
                 rowTopP[s * topK + ki] = readFloat(w.vseg(), w.vbase() + (ro + best) * Float.BYTES);
                 writeFloat(
@@ -124,6 +127,15 @@ public final class Moe {
                 counts[best]++;
             }
         }
+    }
+
+    private static int firstUnpicked(int[] rowTopE, int rowBase, int picked, int experts) {
+        for (int e = 0; e < experts; e++) {
+            boolean taken = false;
+            for (int k = 0; k < picked && !taken; k++) taken = rowTopE[rowBase + k] == e;
+            if (!taken) return e;
+        }
+        throw new IllegalStateException("topK exceeds the expert count");
     }
 
     /**
