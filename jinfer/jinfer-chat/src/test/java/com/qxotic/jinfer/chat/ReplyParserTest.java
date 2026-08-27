@@ -367,4 +367,39 @@ public final class ReplyParserTest {
             return entries.iterator();
         }
     }
+
+    @Test
+    void aThinkCloseInsideAnOpenCallSpanClosesTheThought() {
+        // the thinking cap forces </think> wherever the model is; inside a call span the
+        // detector must not swallow it: the partial span stays reasoning text, the answer
+        // after it is content
+        ReplyParser p =
+                ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
+        List<Step> steps = run(p, 0, 5, 2, 11, 1, 19);
+        Assertions.assertEquals(
+                List.of(new Step("Hello", true), new Step("[f(", true), new Step("Hi", false)),
+                steps);
+        Message m = p.finish();
+        Assertions.assertEquals("Hi", ((Content.Text) m.content().get(1)).text());
+    }
+
+    @Test
+    void anUnterminatedUnclaimedSpanKeepsItsTextAndIds() {
+        // no tools offered: a call span is visible text by contract, and a span cut by
+        // maxTokens is still the model's text with the ids the cache already ingested
+        ReplyParser p =
+                ReplyParser.spans(
+                        TOK,
+                        "<|call|>",
+                        "<|/call|>",
+                        ReplyParserTest::parseCalls,
+                        "<think>",
+                        "</think>",
+                        false);
+        run(p, 5, 2, 11);
+        Message m = p.finish();
+        Content.Text text = (Content.Text) m.content().get(m.content().size() - 1);
+        Assertions.assertEquals("[f(", text.text());
+        Assertions.assertEquals(IntSequence.of(2, 11), text.verbatim(), "ids verbatim");
+    }
 }
