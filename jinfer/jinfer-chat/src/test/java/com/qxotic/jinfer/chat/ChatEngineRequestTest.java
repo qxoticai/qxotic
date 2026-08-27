@@ -323,4 +323,26 @@ final class ChatEngineRequestTest {
                                 null)
                         .cancelled());
     }
+
+    @Test
+    void aForcedCallAndAContentGrammarCannotBothBeTheReply() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                new ChatEngine.Request(
+                                        ONE_TURN,
+                                        ONE_TOOL,
+                                        true,
+                                        -1,
+                                        null,
+                                        null,
+                                        Duration.ZERO,
+                                        SAMPLING,
+                                        "root ::= \"x\"",
+                                        ChatEngine.ForcedTool.ANY,
+                                        List.of(),
+                                        null));
+        assertTrue(e.getMessage().contains("both"), e.getMessage());
+    }
 }
