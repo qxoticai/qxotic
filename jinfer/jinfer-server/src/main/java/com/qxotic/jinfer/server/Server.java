@@ -6,17 +6,17 @@ import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -33,6 +33,8 @@ public final class Server {
 
     private final Worker worker;
     private final ServerConfig config;
+    // active handlers plus the ones waiting on the worker: the bound the old executor queue held
+    private final Semaphore admissions;
     private final Metrics metrics = new Metrics();
     private final Generation generation;
 
@@ -43,6 +45,7 @@ public final class Server {
         this.servedModel = engine.modelName();
         this.worker = new Worker(config.limits().queueCapacity());
         this.config = config;
+        this.admissions = new Semaphore(2 * config.limits().threads());
     }
 
     /**
@@ -156,7 +159,8 @@ public final class Server {
         String servedId = servedModel;
         Map<String, Object> modelCard =
                 Map.of("id", servedId, "object", "model", "created", 0, "owned_by", "jinfer");
-        server.createContext(
+        route(
+                server,
                 "/v1/models",
                 exchange -> { // also serves /v1/models/{id} -> card or 404
                     if (Http.preamble(exchange, config.access())) return;
@@ -185,10 +189,9 @@ public final class Server {
                         Http.sendError(exchange, 404, "Not found");
                     }
                 });
-        server.createContext(
-                "/v1/chat/completions", exchange -> handleChatCompletion(exchange, config));
-        server.createContext("/v1/completions", exchange -> handleCompletion(exchange, config));
-        server.createContext("/v1/responses", exchange -> handleResponse(exchange, config));
+        route(server, "/v1/chat/completions", exchange -> handleChatCompletion(exchange, config));
+        route(server, "/v1/completions", exchange -> handleCompletion(exchange, config));
+        route(server, "/v1/responses", exchange -> handleResponse(exchange, config));
         // liveness probes carry no key: /health is open (llama.cpp's is too); it says nothing
         // a probe should not know (up, busy, queue depth)
         jsonRoute(
@@ -272,8 +275,9 @@ public final class Server {
         jsonRoute(server, "/v1/tokenize", "POST", tokenize); // /v1-prefixed aliases
         jsonRoute(server, "/detokenize", "POST", detokenize);
         jsonRoute(server, "/v1/detokenize", "POST", detokenize);
-        server.createContext("/metrics", this::handleMetrics);
-        server.createContext(
+        route(server, "/metrics", this::handleMetrics);
+        route(
+                server,
                 "/",
                 exchange -> {
                     if (Http.preamble(exchange, config.access())) return;
@@ -290,15 +294,33 @@ public final class Server {
         return new Running(server, worker, (int) Math.min(Integer.MAX_VALUE, stopDelay));
     }
 
-    /** Bounds both active handlers and requests waiting to enter one. */
+    /**
+     * Every exchange gets a thread at once; {@link #gated} bounds how many are admitted into a
+     * handler. A bounded pool rejected the excess inside the JDK server, which closed the
+     * connection with no status at all; the gate answers 503 + Retry-After instead.
+     */
     static ExecutorService requestExecutor(int threads) {
-        return new ThreadPoolExecutor(
-                threads,
-                threads,
-                0,
-                TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(threads),
-                new ThreadPoolExecutor.AbortPolicy());
+        return Executors.newCachedThreadPool();
+    }
+
+    private void route(HttpServer server, String path, HttpHandler handler) {
+        server.createContext(path, gated(handler, admissions, config.limits().retryAfterSeconds()));
+    }
+
+    /** Admits {@code handler} while a permit is free; otherwise 503 + Retry-After, quietly. */
+    static HttpHandler gated(HttpHandler handler, Semaphore admissions, int retryAfterSeconds) {
+        return exchange -> {
+            if (!admissions.tryAcquire()) {
+                exchange.getResponseHeaders().set("Retry-After", String.valueOf(retryAfterSeconds));
+                Http.sendErrorQuietly(exchange, 503, "Server busy: too many concurrent requests");
+                return;
+            }
+            try {
+                handler.handle(exchange);
+            } finally {
+                admissions.release();
+            }
+        };
     }
 
     /**
@@ -320,7 +342,8 @@ public final class Server {
             String method,
             Function<Map<String, Object>, Object> body,
             ServerConfig.Access access) {
-        server.createContext(
+        route(
+                server,
                 path,
                 exchange -> {
                     if (Http.preamble(exchange, access)) return;
