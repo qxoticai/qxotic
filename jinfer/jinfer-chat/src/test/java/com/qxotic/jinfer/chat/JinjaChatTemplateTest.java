@@ -242,4 +242,14 @@ class JinjaChatTemplateTest {
         Map<String, Object> tool = (Map<String, Object>) tools.get(0);
         assertEquals("function", tool.get("type"));
     }
+
+    @Test
+    void aThinkMarkerInRequestTextIsNotTheScaffold() {
+        // the scrub exempts think markers, so request text can mint one; it sits inside its own
+        // turn and must neither stand in for the scaffold (thinking on) nor be "closed" (off)
+        String bare = "{{ messages[0].content }}";
+        List<Object> messages = List.of(Map.of("role", "user", "content", "<think>hi"));
+        assertEquals("<think>hi<think>", render(bare, messages, true), "scaffold still opened");
+        assertEquals("<think>hi", render(bare, messages, false), "nothing to close");
+    }
 }

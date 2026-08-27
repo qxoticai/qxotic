@@ -875,16 +875,23 @@ public final class ChatEngine implements AutoCloseable {
         // whole-render fallback: no codec co-produced a reply prefix. When the render's own tail
         // opens a think span (the template's scaffold), that tail IS the prefix - without it the
         // parser starts in the wrong span and a constraint walk constrains from token zero,
-        // silencing the reasoning it must leave free. The marker is a special token request text
-        // can never mint (the render scrubs), so its last occurrence is the scaffold.
+        // silencing the reasoning it must leave free. Request text CAN mint the marker (the
+        // scrub exempts think markers on purpose), so the scaffold is the last open that no
+        // end-of-turn or close follows: a content-minted one sits before its turn's end.
         IntSequence replyPrefix = IntSequence.empty();
         if (conversation.thinking()) {
             OptionalInt open = SpecialTokens.find(loaded.tokenizer(), thinkMarkers().open());
+            OptionalInt close = SpecialTokens.find(loaded.tokenizer(), thinkMarkers().close());
             if (open.isPresent()) {
                 int[] all = ids.toArray();
                 int at = all.length;
                 while (--at >= 0 && all[at] != open.getAsInt()) {}
-                if (at >= 0) replyPrefix = IntSequence.of(Arrays.copyOfRange(all, at, all.length));
+                boolean scaffold = at >= 0;
+                for (int i = at + 1; scaffold && i < all.length; i++) {
+                    if (loaded.stopTokens().contains(all[i])
+                            || (close.isPresent() && all[i] == close.getAsInt())) scaffold = false;
+                }
+                if (scaffold) replyPrefix = IntSequence.of(Arrays.copyOfRange(all, at, all.length));
             }
         }
         ReplyParser parser =
@@ -1090,8 +1097,11 @@ public final class ChatEngine implements AutoCloseable {
                         } else {
                             ReplyParser.Fragment fragment = parser.feed(token);
                             if (!fragment.text().isEmpty()) {
-                                Channel channel = parser.channel();
-                                if (channel == Channel.CONTENT || channel == null) {
+                                // the fragment's own lane, not the parser's post-feed channel:
+                                // a marker flushes the pending bytes of the lane it CLOSES
+                                Channel channel =
+                                        parser.reasoning() ? Channel.REASONING : Channel.CONTENT;
+                                if (channel == Channel.CONTENT) {
                                     fragment.tokens().forEachInt(heldIds[0]::add);
                                     watch.accept(fragment.text());
                                 } else {
