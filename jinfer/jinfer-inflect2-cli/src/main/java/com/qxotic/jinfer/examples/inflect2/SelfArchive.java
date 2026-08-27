@@ -71,7 +71,7 @@ final class SelfArchive implements AutoCloseable {
     }
 
     /** One STORED entry: its name, the absolute offset of its data, and its length. */
-    record Entry(String name, long offset, int size) {}
+    record Entry(String name, long offset, long size) {}
 
     /** Look up an entry by name, following Unix symlinks. */
     Entry entry(String name) throws IOException {
@@ -93,7 +93,7 @@ final class SelfArchive implements AutoCloseable {
         if (entry.getMethod() != ZipArchiveEntry.STORED)
             throw new IOException("entry must be STORED to be mapped: " + name);
         // Keep the name the caller asked for, so a listing shows the link, not its target.
-        return new Entry(as, entry.getDataOffset(), (int) entry.getSize());
+        return new Entry(as, entry.getDataOffset(), entry.getSize());
     }
 
     /**

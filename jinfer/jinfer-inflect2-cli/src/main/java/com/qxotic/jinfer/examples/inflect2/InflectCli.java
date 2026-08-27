@@ -79,7 +79,7 @@ public final class InflectCli {
         try (SelfArchive archive = SelfArchive.open()) {
             SelfArchive.Entry entry = archive.entry(name);
             // The header is small (< 64 KB even for Inflect2's 302 tensors).
-            byte[] header = archive.readAt(entry.offset(), Math.min(entry.size(), 1 << 16));
+            byte[] header = archive.readAt(entry.offset(), (int) Math.min(entry.size(), 1 << 16));
             GGUF gguf = GGUF.read(Channels.newChannel(new ByteArrayInputStream(header)));
             return InflectTTS.load(archive.channel(), gguf, entry.offset(), arena);
         }

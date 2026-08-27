@@ -61,7 +61,7 @@ class SelfArchiveTest {
             assertTrue(
                     entry.offset() > EXECUTABLE.length(),
                     "data must start past the executable prefix");
-            assertArrayEquals(PAYLOAD, archive.readAt(entry.offset(), entry.size()));
+            assertArrayEquals(PAYLOAD, archive.readAt(entry.offset(), (int) entry.size()));
         }
     }
 
