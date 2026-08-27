@@ -48,8 +48,20 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     /** Builds the native template with the checkpoint's generation-prompt behavior. */
     public static Lfm2ChatTemplate fromGguf(Tokenizer tokenizer, GGUF gguf) {
         Objects.requireNonNull(gguf, "gguf");
-        String source = gguf.getStringOrDefault("tokenizer.chat_template", "");
-        return new Lfm2ChatTemplate(tokenizer, source.contains("<|im_start|>assistant\\n<think>"));
+        return new Lfm2ChatTemplate(
+                tokenizer,
+                promptOpensThinking(gguf.getStringOrDefault("tokenizer.chat_template", "")));
+    }
+
+    /**
+     * Whether a checkpoint's Jinja template opens the think span in its generation prompt, as
+     * LFM2.5-2.6B's does ({@code "<|im_start|>assistant\n<think>"}, a pure reasoning model). The
+     * stored source spells the newline as the two-character Jinja escape; a literal newline is
+     * accepted too. Read as unconditional: a template that opened the span only under {@code
+     * enable_thinking} would need the codec to grow that switch.
+     */
+    public static boolean promptOpensThinking(String templateSource) {
+        return templateSource.replace("\\n", "\n").contains("<|im_start|>assistant\n<think>");
     }
 
     public Lfm2ChatTemplate(Tokenizer tokenizer, boolean promptOpensThinking) {
