@@ -236,6 +236,12 @@ final class Validation {
         require(
                 !usesGrammar || config.limits().grammar(),
                 "Grammar constraints disabled (--no-grammar)");
+        if (present(request, "reasoning_effort")) {
+            String effort = Values.stringValue(request.get("reasoning_effort"), "");
+            require(
+                    java.util.Set.of("none", "minimal", "low", "medium", "high").contains(effort),
+                    "reasoning_effort must be one of none, minimal, low, medium, high");
+        }
         if (present(request, "chat_template_kwargs")) {
             Map<String, Object> kwargs =
                     Values.asObject(request.get("chat_template_kwargs"), "chat_template_kwargs");
