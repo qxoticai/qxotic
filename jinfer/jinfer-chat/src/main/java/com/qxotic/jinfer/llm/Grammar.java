@@ -5,6 +5,7 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -145,24 +146,43 @@ public final class Grammar {
     private static final byte[] NO_BYTES = new byte[0];
 
     static Vocab vocab(Tokenizer tok) {
-        return WRAPPERS.computeIfAbsent(
-                tok,
-                t ->
-                        new Vocab() {
-                            public int size() {
-                                return t.vocabulary().size();
-                            }
+        return WRAPPERS.computeIfAbsent(tok, TokenizerVocab::new);
+    }
 
-                            public byte[] bytes(int id) {
-                                // Specials are CONTROL, not content, whatever their literal
-                                // rendering (LFM2's <|im_end|> decodes to its 10-char string).
-                                // Empty bytes makes every special unsamplable mid-grammar and
-                                // samplable exactly at accept states - the model can always END
-                                // a completed constrained span with its natural stop token.
-                                if (SpecialTokens.isSpecial(t, id)) return NO_BYTES;
-                                return t.decodeBytes(new int[] {id});
-                            }
-                        });
+    /**
+     * The {@link Vocab} over a tokenizer, holding it weakly: this is the VALUE of a weak-keyed map
+     * whose KEY is the tokenizer, and a strong reference from value to key would pin every
+     * tokenizer that ever compiled a grammar (and its byte table and mask caches) for the JVM's
+     * lifetime. A Vocab in use belongs to a live model, which holds its tokenizer strongly.
+     */
+    private static final class TokenizerVocab implements Vocab {
+        private final WeakReference<Tokenizer> tokenizer;
+
+        TokenizerVocab(Tokenizer tokenizer) {
+            this.tokenizer = new WeakReference<>(tokenizer);
+        }
+
+        private Tokenizer tokenizer() {
+            Tokenizer t = tokenizer.get();
+            if (t == null) throw new IllegalStateException("the tokenizer of this grammar is gone");
+            return t;
+        }
+
+        @Override
+        public int size() {
+            return tokenizer().vocabulary().size();
+        }
+
+        @Override
+        public byte[] bytes(int id) {
+            // Specials are CONTROL, not content, whatever their literal rendering (LFM2's
+            // <|im_end|> decodes to its 10-char string). Empty bytes makes every special
+            // unsamplable mid-grammar and samplable exactly at accept states - the model can
+            // always END a completed constrained span with its natural stop token.
+            Tokenizer t = tokenizer();
+            if (SpecialTokens.isSpecial(t, id)) return NO_BYTES;
+            return t.decodeBytes(new int[] {id});
+        }
     }
 
     private static Map<String, Spec> cache(Vocab v) {
