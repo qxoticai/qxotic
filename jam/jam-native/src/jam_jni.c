@@ -1,8 +1,10 @@
 /* JNI binding: com.qxotic.jam.libjam.NativeJAM -> libjam. Java creates one process-lifetime context and
  * passes it to each mm call. Flat scalars in, an int status out; no JNI calls on the hot path. */
 #include "jam.h"
+#include "jam_internal.h"   /* jam_parse_isa */
 #include <jni.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 JNIEXPORT jlong JNICALL
 Java_com_qxotic_jam_libjam_NativeJAM_createJni(JNIEnv* env, jclass cls, jint threads)
@@ -11,6 +13,23 @@ Java_com_qxotic_jam_libjam_NativeJAM_createJni(JNIEnv* env, jclass cls, jint thr
     jam_config cfg = {0};
     cfg.nthreads = threads;
     cfg.name = "java";
+    /* Same env contract as the C global context: JAM_ISA seeds max_isa, so JAM_ISA=metal opts this
+     * context into the GPU backend (the ceiling rule in jam_ctx_create still applies on top). */
+    cfg.max_isa = jam_parse_isa(getenv("JAM_ISA"));
+    return (jlong)(intptr_t) jam_ctx_create(&cfg);
+}
+
+/* As createJni, but with a host executor: pf is a C function pointer (a Java FFM upcall stub) with
+ * the jam_parallel_for signature. The ctx owns no pool; every fan-out runs through the host. */
+JNIEXPORT jlong JNICALL
+Java_com_qxotic_jam_libjam_NativeJAM_createPfJni(JNIEnv* env, jclass cls, jint threads, jlong pf)
+{
+    (void) env; (void) cls;
+    jam_config cfg = {0};
+    cfg.nthreads = threads;
+    cfg.name = "java-pf";
+    cfg.max_isa = jam_parse_isa(getenv("JAM_ISA"));
+    cfg.parallel_for = (jam_parallel_for)(intptr_t) pf;
     return (jlong)(intptr_t) jam_ctx_create(&cfg);
 }
 
