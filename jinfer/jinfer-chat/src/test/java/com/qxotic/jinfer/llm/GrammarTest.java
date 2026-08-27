@@ -2,6 +2,7 @@ package com.qxotic.jinfer.llm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Views;
@@ -72,5 +73,16 @@ final class GrammarTest {
         assertEquals(text, Float.isFinite(values[2]));
         assertEquals(eos, Float.isFinite(values[3]));
         assertFalse(Float.isNaN(values[0]));
+    }
+
+    @Test
+    void aSourceWithoutARuleIsAnErrorNotAPassThrough() {
+        // ":=" for "::=": every other syntax error throws; this one used to compile to the
+        // unmasked DISABLED spec and generate free text under a caller that believed otherwise
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Grammar.of("root := \"yes\" | \"no\"", VOCAB));
+        assertTrue(e.getMessage().contains("::="), e.getMessage());
     }
 }
