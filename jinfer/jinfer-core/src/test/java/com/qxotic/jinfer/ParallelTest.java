@@ -117,6 +117,22 @@ final class ParallelTest {
         assumeTrue(RuntimeFlags.DECODE_SPIN);
         IllegalStateException marker = new IllegalStateException("marker");
 
+        // a forLoop nested in a forLoop on the spin submitter would overwrite the live region
+        // and reset its barrier under the workers: it is refused, loudly
+        IllegalStateException nested =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                Parallel.runDecodeStep(
+                                        () -> {
+                                            // from every index: the submitter runs a share of
+                                            // them itself, a worker's nested loop is legal
+                                            Parallel.forLoop(
+                                                    0, 64, i -> Parallel.forLoop(0, 64, j -> {}));
+                                            return null;
+                                        }));
+        assertTrue(nested.getMessage().contains("nested"), nested.getMessage());
+
         // spin path: sole submitter, the step throws raw
         try {
             Parallel.runDecodeStep(
