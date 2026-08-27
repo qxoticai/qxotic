@@ -447,7 +447,7 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_nativeDeviceName(JNIEnv *env, jc
       return NULL;
     }
     NSString *name = [device name];
-    return (*env)->NewStringUTF(env, [name UTF8String]);
+    return env->NewStringUTF([name UTF8String]);
   }
 }
 
