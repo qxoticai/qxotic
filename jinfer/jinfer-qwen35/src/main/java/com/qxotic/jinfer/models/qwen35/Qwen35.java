@@ -866,6 +866,7 @@ public final class Qwen35
                 moeRowTopP = null;
                 moeRouting = null;
             }
+            clearHistory(); // the recurrent state starts at zero whatever the arena hands out
         }
 
         private void advance(Batch batch) {
