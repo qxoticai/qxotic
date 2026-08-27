@@ -70,6 +70,12 @@ final class JinjaChatTemplate {
             return chatMl(messages, tools, addGenerationPrompt);
         }
         var vars = new LinkedHashMap<String, Object>();
+        // Request extras go in FIRST and scrubbed like everything else request-supplied: a kwarg
+        // string a template prints cannot mint control ids, and a kwarg named after one of the
+        // engine's own bindings below is simply overwritten by it, so the scaffold stays the
+        // engine's whatever the request calls its keys.
+        vars.put("preserve_thinking", false);
+        if (kwargs != null) vars.putAll(scrubbed(kwargs));
         vars.put("messages", preprocessToolCalls(messages));
         vars.put("add_generation_prompt", addGenerationPrompt);
         // A template that opens with {{ bos_token }} - Llama 3's does - printed the literal string
@@ -82,8 +88,6 @@ final class JinjaChatTemplate {
         vars.put("eos_token", specialString(SpecialTokens.eos(tokenizer)));
         vars.put("tools", tools);
         vars.put("enable_thinking", enableThinking);
-        vars.put("preserve_thinking", false);
-        if (kwargs != null) vars.putAll(kwargs);
         String rendered = tpl.render(vars);
         // Prompt-opened thinking for whole-render families: a /think scaffold that does NOT open
         // the span itself leaves the model to mint <think> from a bare role header - and a
@@ -219,6 +223,11 @@ final class JinjaChatTemplate {
     @SuppressWarnings("unchecked")
     private <T> List<T> scrubbed(List<T> values) {
         return (List<T>) scrubValue(values, specialNames);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> scrubbed(Map<String, Object> values) {
+        return (Map<String, Object>) scrubValue(values, specialNames);
     }
 
     static Object scrubValue(Object value, List<String> names) {
