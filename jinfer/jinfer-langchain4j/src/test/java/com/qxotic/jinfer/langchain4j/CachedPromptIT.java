@@ -373,8 +373,8 @@ class CachedPromptIT {
         assertTrue(warnings.contains("open_reset_portal"), warnings);
         assertTrue(warnings.contains("get_time"), warnings);
         assertEquals(
-                warnings.indexOf("WARNING"),
-                warnings.lastIndexOf("WARNING"),
+                warnings.indexOf("warned once per view"),
+                warnings.lastIndexOf("warned once per view"),
                 "the override warns ONCE per view: " + warnings);
 
         ChatResponse plain =

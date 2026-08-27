@@ -372,7 +372,10 @@ class JinferEmbeddingModelIT {
         }
         String notes = err.toString();
         assertTrue(notes.contains("embeddingInputType"), notes);
-        assertEquals(notes.indexOf("NOTE"), notes.lastIndexOf("NOTE"), "hinted ONCE: " + notes);
+        assertEquals(
+                notes.indexOf("noted once per model"),
+                notes.lastIndexOf("noted once per model"),
+                "hinted ONCE: " + notes);
     }
 
     @Test

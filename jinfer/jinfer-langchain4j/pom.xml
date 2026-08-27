@@ -40,6 +40,12 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
     </dependency>
+    <!-- Tests capture System.err to assert on once-per-instance hints. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- Jinfer APIs and memory types used directly by the provider. -->
     <dependency>
       <groupId>com.qxotic</groupId>

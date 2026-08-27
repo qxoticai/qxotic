@@ -150,7 +150,7 @@ public record LoadedEmbedder<S extends ContextState>(
                                 + sequence.length()
                                 + " tokens, over the state's "
                                 + contextCapacity
-                                + "-token context - use a larger state or chunk smaller");
+                                + "-token context - raise contextLength or chunk smaller");
             }
             sequences[i] = sequence;
             total = Math.addExact(total, sequence.length());
