@@ -183,8 +183,30 @@ class JinferChatOptionsTest {
                         new Prompt(new UserMessage("hello"), request), defaults);
         JinferChatOptions merged = (JinferChatOptions) effective.getOptions();
 
-        assertEquals(List.of(first, second), merged.getToolCallbacks());
+        // Spring AI's rule (ToolCallingChatOptions.mergeToolCallbacks): a request that names
+        // tools replaces the defaults' list; combineWith concatenated them, so every default tool
+        // was declared twice and no request could drop one
+        assertEquals(List.of(second), merged.getToolCallbacks());
         assertEquals(Map.of("shared", "request", "left", 1, "right", 2), merged.getToolContext());
+
+        JinferChatOptions silent = JinferChatOptions.builder().temperature(0.1).build();
+        JinferChatOptions inherited =
+                (JinferChatOptions)
+                        JinferChatModel.effectivePrompt(
+                                        new Prompt(new UserMessage("hello"), silent), defaults)
+                                .getOptions();
+        assertEquals(List.of(first), inherited.getToolCallbacks(), "no tools named: inherit");
+        JinferChatOptions same =
+                (JinferChatOptions)
+                        JinferChatModel.effectivePrompt(
+                                        new Prompt(
+                                                new UserMessage("hello"),
+                                                JinferChatOptions.builder()
+                                                        .toolCallbacks(List.of(first))
+                                                        .build()),
+                                        defaults)
+                                .getOptions();
+        assertEquals(List.of(first), same.getToolCallbacks(), "the same tool, once");
     }
 
     @Test
