@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.cli;
 
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
@@ -26,7 +27,8 @@ import java.util.TreeSet;
  *
  * @param maxOutputTokens tokens GENERATED per turn, -1 = as many as the context allows
  * @param contextCapacity the size of a session's state, and the ceiling on every one-shot; {@code
- *     0} uses the model's declared context length; positive values above it are refused
+ *     null} (not given) is the engine's bounded default, min(4096, the model's context length);
+ *     {@code 0} uses the model's context length; positive values above it are refused at load
  */
 public record Options(
         Path modelPath,
@@ -41,7 +43,7 @@ public record Options(
         Float minp,
         Long seed,
         int maxOutputTokens,
-        int contextCapacity,
+        Integer contextCapacity,
         boolean stream,
         boolean echo,
         boolean think,
@@ -89,7 +91,7 @@ public record Options(
                 minp == null || (0 <= minp && minp <= 1),
                 "Invalid argument: --min-p must be within [0, 1]");
         require(
-                contextCapacity >= 0,
+                contextCapacity == null || contextCapacity >= 0,
                 "Invalid argument: --context-capacity must be non-negative"
                         + " (0 uses the model maximum)");
         require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
@@ -137,7 +139,7 @@ public record Options(
             Float minp,
             Long seed,
             int maxOutputTokens,
-            int contextCapacity,
+            Integer contextCapacity,
             boolean stream,
             boolean echo,
             boolean think,
@@ -200,15 +202,6 @@ public record Options(
      * checked once, right after the load, rather than in the compact constructor with the flags
      * that stand on their own.
      */
-    public void requireFitsModel(LoadedModel<?> model) {
-        int trained = model.model().configuration().contextLength();
-        require(
-                contextCapacity <= trained,
-                "Invalid argument: --context-capacity %d exceeds what %s was trained for (%d)",
-                contextCapacity,
-                modelPath.getFileName(),
-                trained);
-    }
 
     /**
      * The sampling stack these flags describe, over the model's own recommendations: an explicit
@@ -302,9 +295,6 @@ public record Options(
         };
     }
 
-    /** llama.cpp's default too: big enough for real work, small enough to allocate blind. */
-    static final int DEFAULT_CONTEXT_CAPACITY = 4096;
-
     /** A model ref that could not be resolved: the cause already says what to do about it. */
     static final class ResolveFailure extends RuntimeException {
         ResolveFailure(RuntimeException cause) {
@@ -335,7 +325,7 @@ public record Options(
         Map<String, String> companionRefs = new LinkedHashMap<>();
         Long seed = null; // unset = a fresh random seed per request
         int maxOutputTokens = -1;
-        int contextCapacity = DEFAULT_CONTEXT_CAPACITY;
+        Integer contextCapacity = null; // the engine's bounded default
         boolean interactive = false;
         boolean server = false;
         String host = "127.0.0.1";
@@ -644,10 +634,10 @@ public record Options(
                 "  --seed, -s <long>             pins the sampling seed; default: a fresh random"
                         + " seed per request");
         out.println(
-                "  --context-capacity, -c <int>  allocated context positions; 0 uses the model"
-                        + " maximum; default "
-                        + DEFAULT_CONTEXT_CAPACITY
-                        + ", refused above the model's own context length");
+                "  --context-capacity, -c <int>  allocated context positions (default: "
+                        + PromptCache.Options.DEFAULT_CONTEXT_CAPACITY
+                        + ", or the model's context length when smaller); 0 uses the model"
+                        + " maximum; refused above the model's context length");
         out.println(
                 "  --max-output-tokens, -n <int> how much it may produce in one turn; -1 (the"
                         + " default) = whatever the remaining context allows");

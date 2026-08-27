@@ -54,12 +54,22 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         private static final long DEFAULT_MAX_CHECKPOINT_OVERHEAD = 1L << 20;
 
         /**
-         * What a caller with no opinion gets: 4 live conversations, a 2 GB RAM-only block layer and
-         * a 1 MiB incremental-checkpoint overhead limit. Turning the block layer off is {@code
-         * withBlockBudget(0)}.
+         * The context capacity a caller with no opinion gets, bounded so a state allocates blind on
+         * any machine (llama.cpp's default too), and never more than the model's own length.
+         */
+        public static final int DEFAULT_CONTEXT_CAPACITY = 4096;
+
+        /** contextCapacity not chosen by the caller: resolved to min(default, model) at build. */
+        private static final int AUTO = -1;
+
+        /**
+         * What a caller with no opinion gets: the bounded default context ({@link
+         * #DEFAULT_CONTEXT_CAPACITY} or the model's length when that is smaller), 4 live
+         * conversations, a 2 GB RAM-only block layer and a 1 MiB incremental-checkpoint overhead
+         * limit. Turning the block layer off is {@code withBlockBudget(0)}.
          */
         public static final Options DEFAULTS =
-                new Options(4, 4096, 2048L << 20, null, false, DEFAULT_MAX_CHECKPOINT_OVERHEAD);
+                new Options(4, AUTO, 2048L << 20, null, false, DEFAULT_MAX_CHECKPOINT_OVERHEAD);
 
         private final int retainedSessions;
         private final int contextCapacity;
@@ -77,7 +87,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
                 long maxCheckpointOverheadBytes) {
             if (retainedSessions < 0)
                 throw new IllegalArgumentException("retainedSessions " + retainedSessions);
-            if (contextCapacity < 0)
+            if (contextCapacity < 0 && contextCapacity != AUTO)
                 throw new IllegalArgumentException(
                         "contextCapacity must be >= 0 (0 uses the model context length): "
                                 + contextCapacity);
@@ -135,6 +145,10 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
          * @throws IllegalArgumentException if {@code contextCapacity < 0}
          */
         public Options withContextCapacity(int contextCapacity) {
+            if (contextCapacity < 0)
+                throw new IllegalArgumentException(
+                        "contextCapacity must be >= 0 (0 uses the model context length): "
+                                + contextCapacity);
             return new Options(
                     retainedSessions,
                     contextCapacity,
@@ -210,12 +224,25 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
             LanguageModel<?, ?, S> model, ContentKey seed, Options o) {
         if (seed == null) throw new IllegalArgumentException("null seed");
         int modelCapacity = model.configuration().contextLength();
-        int requestedCapacity = o.contextCapacity;
-        o =
-                o.withContextCapacity(
-                        requestedCapacity == 0
-                                ? modelCapacity
-                                : Math.min(requestedCapacity, modelCapacity));
+        int requested = o.contextCapacity;
+        int capacity;
+        if (requested == Options.AUTO) {
+            capacity = Math.min(Options.DEFAULT_CONTEXT_CAPACITY, modelCapacity);
+        } else if (requested == 0) {
+            capacity = modelCapacity;
+        } else if (requested > modelCapacity) {
+            // an explicit capacity is a promise about what will fit: a state the model cannot
+            // honor is refused here, at construction, not at the first long prompt
+            throw new IllegalArgumentException(
+                    "contextCapacity "
+                            + requested
+                            + " exceeds the model's context length "
+                            + modelCapacity
+                            + "; pass 0 for the model's maximum");
+        } else {
+            capacity = requested;
+        }
+        o = o.withContextCapacity(capacity);
         CheckpointCodec<S> codec = model.checkpointCodec().orElse(null);
         if (codec == null) PerformanceCliff.CACHE_SESSIONS_ONLY.report();
         if (codec == null && o.catalog != null) {

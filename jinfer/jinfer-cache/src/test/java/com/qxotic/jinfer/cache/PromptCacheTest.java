@@ -368,13 +368,9 @@ public final class PromptCacheTest {
                                 PromptCache.Options.DEFAULTS
                                         .withContextCapacity(0)
                                         .withBlockBudget(0));
-                var clamped =
+                var unset =
                         PromptCache.of(
-                                fine(),
-                                SEED,
-                                PromptCache.Options.DEFAULTS
-                                        .withContextCapacity(CONTEXT + 1)
-                                        .withBlockBudget(0));
+                                fine(), SEED, PromptCache.Options.DEFAULTS.withBlockBudget(0));
                 var bounded =
                         PromptCache.of(
                                 fine(),
@@ -383,9 +379,29 @@ public final class PromptCacheTest {
                                         .withContextCapacity(CONTEXT - 1)
                                         .withBlockBudget(0))) {
             assertEquals(CONTEXT, maximum.contextCapacity());
-            assertEquals(CONTEXT, clamped.contextCapacity());
+            assertEquals(
+                    Math.min(PromptCache.Options.DEFAULT_CONTEXT_CAPACITY, CONTEXT),
+                    unset.contextCapacity(),
+                    "no opinion: the bounded default, never above the model");
             assertEquals(CONTEXT - 1, bounded.contextCapacity());
         }
+        // an explicit capacity the model cannot honor is refused at construction, naming both
+        // numbers and the 0 that means "the model's maximum" (the old clamp made a promise the
+        // first long prompt broke)
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                PromptCache.of(
+                                        fine(),
+                                        SEED,
+                                        PromptCache.Options.DEFAULTS
+                                                .withContextCapacity(CONTEXT + 1)
+                                                .withBlockBudget(0)));
+        assertTrue(
+                e.getMessage().contains("exceeds the model's context length " + CONTEXT),
+                e.getMessage());
+        assertTrue(e.getMessage().contains("pass 0"), e.getMessage());
     }
 
     @Test

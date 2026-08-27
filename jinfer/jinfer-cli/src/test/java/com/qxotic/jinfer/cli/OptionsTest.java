@@ -29,7 +29,7 @@ final class OptionsTest {
                 null,
                 null,
                 128,
-                4096,
+                null,
                 true,
                 false,
                 true,
@@ -39,6 +39,17 @@ final class OptionsTest {
                 null,
                 false,
                 4);
+    }
+
+    @Test
+    void contextCapacityIsUnsetUnlessGiven() throws Exception {
+        // the engine resolves "not given" to min(4096, model); a typed value is the user's promise
+        java.nio.file.Path model = java.nio.file.Files.createTempFile("options", ".gguf");
+        model.toFile().deleteOnExit();
+        assertEquals(
+                null,
+                Options.parse(new String[] {"--model", model.toString(), "--prompt", "hi"})
+                        .contextCapacity());
     }
 
     @Test
@@ -199,7 +210,10 @@ final class OptionsTest {
                             "-m", m, "-p", "hi", "--temp", "0.5", "--context-capacity=512"
                         });
         assertEquals(0.5f, options.temperature());
-        assertEquals(512, options.contextCapacity(), "--flag=value works like --flag value");
+        assertEquals(
+                Integer.valueOf(512),
+                options.contextCapacity(),
+                "--flag=value works like --flag value");
     }
 
     @Test
@@ -207,7 +221,7 @@ final class OptionsTest {
         String m = model(dir).toString();
         Options options =
                 Options.parse(new String[] {"-m", m, "-p", "hi", "--context-capacity", "0"});
-        assertEquals(0, options.contextCapacity());
+        assertEquals(Integer.valueOf(0), options.contextCapacity());
     }
 
     @Test
