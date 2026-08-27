@@ -6,6 +6,7 @@ import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
+import com.qxotic.jinfer.kernels.FlashAttention;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
@@ -95,6 +96,8 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                 || merge <= 1
                 || positionSide <= 0)
             throw new IllegalArgumentException("vision dimensions must be positive");
+        // the merger scratch and tokenX/tokenY assume 2x2 blocks (Qwen3-VL's only geometry)
+        if (merge != 2) throw new IllegalArgumentException("unsupported spatial merge " + merge);
         if (visionDim % headCount != 0)
             throw new IllegalArgumentException(
                     "head_count " + headCount + " does not divide embedding_length " + visionDim);
@@ -251,17 +254,24 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> hidden = Views.allocateF32(scratch, nPos, visionDim);
         MemoryView<MemorySegment> qkv = Views.allocateF32(scratch, nPos, 3 * visionDim);
         MemoryView<MemorySegment> attn = Views.allocateF32(scratch, nPos, visionDim);
-        MemoryView<MemorySegment> scores = Views.allocateF32(scratch, nPos, nPos);
-        MemoryView<MemorySegment> q = Views.allocateF32(scratch, nPos, headDim);
-        MemoryView<MemorySegment> k = Views.allocateF32(scratch, nPos, headDim);
-        MemoryView<MemorySegment> vT = Views.allocateF32(scratch, headDim, nPos);
-        MemoryView<MemorySegment> o = Views.allocateF32(scratch, nPos, headDim);
         MemoryView<MemorySegment> ffn = Views.allocateF32(scratch, nPos, ffnDim);
+        boolean flash = flashAttention();
+        // flash: per-head Q/K/V rows at the tower width; legacy: per-head gathers plus the full
+        // nPos x nPos score matrix
+        MemoryView<MemorySegment> q = Views.allocateF32(scratch, nPos, flash ? visionDim : headDim);
+        MemoryView<MemorySegment> k = Views.allocateF32(scratch, nPos, flash ? visionDim : headDim);
+        MemoryView<MemorySegment> v =
+                flash
+                        ? Views.allocateF32(scratch, nPos, visionDim)
+                        : Views.allocateF32(scratch, headDim, nPos);
+        MemoryView<MemorySegment> scores = flash ? null : Views.allocateF32(scratch, nPos, nPos);
+        MemoryView<MemorySegment> o = flash ? null : Views.allocateF32(scratch, nPos, headDim);
         for (Layer layer : layers) {
             Norms.layerNorm(hidden, tokens, layer.ln1W(), layer.ln1B(), visionDim, nPos, normEps);
             MatMul.gemm(layer.qkvW(), hidden, qkv, nPos);
             Ops.addRowBiasInPlace(qkv, 0, layer.qkvB(), 0, nPos, 3 * visionDim);
-            attention(qkv, attn, scores, q, k, vT, o, nPos, patchesX);
+            if (flash) flashAttention(qkv, attn, q, k, v, nPos, patchesX);
+            else attention(qkv, attn, scores, q, k, v, o, nPos, patchesX);
             MatMul.gemm(layer.attnOutW(), attn, hidden, nPos);
             Ops.addRowBiasInPlace(hidden, 0, layer.attnOutB(), 0, nPos, visionDim);
             Ops.addInPlace(tokens, 0, hidden, 0, nPos * visionDim);
@@ -294,13 +304,56 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         return out;
     }
 
+    /** Set {@code -Djinfer.qwen35.visionFlash=false} to run the reference softmax attention. */
+    static boolean flashAttention() {
+        return Boolean.parseBoolean(System.getProperty("jinfer.qwen35.visionFlash", "true"));
+    }
+
     /**
-     * Fused-QKV attention for one tower layer. Q/K are gathered per head, vision M-RoPE'd, then
-     * attended over all tokens. V is gathered transposed so the OV gemm contracts tokens.
-     *
-     * <p>this keeps the hand-rolled no-mask softmax instead of FlashAttention - the flash kernel's
-     * online softmax differs in last-ulp from llama.cpp's flash-disabled reference this tower is
-     * matched against, so switching to flash is a correctness regression, not an optimization.
+     * Fused-QKV attention for one tower layer through the shared flash kernel: Q/K/V are split per
+     * head into [nPos, visionDim] rows, Q/K vision M-RoPE'd in place, then one bidirectional (no
+     * mask) pass over all tokens. Scratch is O(nPos * visionDim) instead of the reference path's
+     * O(nPos^2).
+     */
+    private void flashAttention(
+            MemoryView<MemorySegment> qkv,
+            MemoryView<MemorySegment> attn,
+            MemoryView<MemorySegment> q,
+            MemoryView<MemorySegment> k,
+            MemoryView<MemorySegment> v,
+            int nPos,
+            int patchesX) {
+        for (int t = 0; t < nPos; t++) {
+            long src = (long) t * 3 * visionDim, dst = (long) t * visionDim;
+            Convert.copyF32(qkv, src, q, dst, visionDim);
+            Convert.copyF32(qkv, src + visionDim, k, dst, visionDim);
+            Convert.copyF32(qkv, src + 2L * visionDim, v, dst, visionDim);
+            int py = tokenY(t, patchesX), px = tokenX(t, patchesX);
+            for (int h = 0; h < headCount; h++) {
+                rope(q, dst + (long) h * headDim, py, px);
+                rope(k, dst + (long) h * headDim, py, px);
+            }
+        }
+        FlashAttention.bidirectionalPrefill(
+                q,
+                attn,
+                k,
+                v,
+                headCount,
+                nPos,
+                headDim,
+                visionDim,
+                visionDim,
+                1,
+                (float) (1.0 / Math.sqrt(headDim)));
+    }
+
+    /**
+     * Reference attention for one tower layer, kept behind {@link #flashAttention()} for parity
+     * work: Q/K are gathered per head, vision M-RoPE'd, then attended over all tokens through an
+     * explicit nPos x nPos softmax. V is gathered transposed so the OV gemm contracts tokens. It
+     * matches llama.cpp's flash-disabled clip output to the last ulp; the flash kernel's online
+     * softmax does not.
      */
     private void attention(
             MemoryView<MemorySegment> qkv,

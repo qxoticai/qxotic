@@ -199,6 +199,90 @@ class Qwen35VisionComponentsTest {
         }
     }
 
+    @Test
+    void flashAttentionMatchesTheReferenceSoftmax() {
+        // Random (seeded) weights so every attention head, the M-RoPE and the merger carry
+        // signal; the two paths differ only in summation order (online vs explicit softmax).
+        int visionDim = 8, headCount = 2, ffnDim = 8, merge = 2, modelDim = 4;
+        int projectorDim = 16, patchVector = 3, projectorInput = merge * merge * visionDim;
+        java.util.Random rnd = new java.util.Random(7);
+        try (Arena arena = Arena.ofConfined()) {
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
+            Qwen35Vision.Layer layer =
+                    new Qwen35Vision.Layer(
+                            ones(memory, visionDim),
+                            random(memory, rnd, visionDim),
+                            random(memory, rnd, 3 * visionDim, visionDim),
+                            random(memory, rnd, 3 * visionDim),
+                            random(memory, rnd, visionDim, visionDim),
+                            random(memory, rnd, visionDim),
+                            ones(memory, visionDim),
+                            random(memory, rnd, visionDim),
+                            random(memory, rnd, ffnDim, visionDim),
+                            random(memory, rnd, ffnDim),
+                            random(memory, rnd, visionDim, ffnDim),
+                            random(memory, rnd, visionDim));
+            Qwen35Vision tower =
+                    new Qwen35Vision(
+                            1,
+                            visionDim,
+                            modelDim,
+                            headCount,
+                            ffnDim,
+                            merge,
+                            1,
+                            1e-6f,
+                            random(memory, rnd, visionDim, patchVector),
+                            random(memory, rnd, visionDim, patchVector),
+                            random(memory, rnd, visionDim),
+                            random(memory, rnd, 1, visionDim),
+                            ones(memory, visionDim),
+                            random(memory, rnd, visionDim),
+                            new Qwen35Vision.Linear(
+                                    random(memory, rnd, projectorDim, projectorInput),
+                                    random(memory, rnd, projectorDim),
+                                    projectorDim,
+                                    projectorInput),
+                            new Qwen35Vision.Linear(
+                                    random(memory, rnd, modelDim, projectorDim),
+                                    random(memory, rnd, modelDim),
+                                    modelDim,
+                                    projectorDim),
+                            new Qwen35Vision.Layer[] {layer, layer});
+            float[] pixels = new float[4 * 4 * 3];
+            for (int i = 0; i < pixels.length; i++) pixels[i] = rnd.nextFloat();
+            Media.Image image = new Media.Image(pixels, 4, 4, 3);
+
+            String property = "jinfer.qwen35.visionFlash";
+            String saved = System.getProperty(property);
+            float[] reference, flash;
+            try {
+                System.setProperty(property, "false");
+                assertFalse(Qwen35Vision.flashAttention());
+                reference = projectAll(tower, image);
+                System.setProperty(property, "true");
+                assertTrue(Qwen35Vision.flashAttention());
+                flash = projectAll(tower, image);
+            } finally {
+                if (saved == null) System.clearProperty(property);
+                else System.setProperty(property, saved);
+            }
+            float scale = 0f;
+            for (float v : reference) scale = Math.max(scale, Math.abs(v));
+            assertTrue(scale > 0.1f, "reference output carries signal: " + scale);
+            assertArrayEquals(reference, flash, scale * 1e-5f);
+        }
+    }
+
+    private static MemoryView<MemorySegment> random(
+            MemoryArena<MemorySegment> arena, java.util.Random rnd, long... dims) {
+        long n = 1;
+        for (long d : dims) n *= d;
+        float[] values = new float[Math.toIntExact(n)];
+        for (int i = 0; i < values.length; i++) values[i] = (rnd.nextFloat() - 0.5f);
+        return tensor(arena, dims, values);
+    }
+
     private static float[] projectAll(Qwen35Vision tower, Media.Image image) {
         List<float[]> chunks = new ArrayList<>();
         tower.project(
