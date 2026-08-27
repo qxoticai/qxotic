@@ -74,11 +74,21 @@ final class Mappings {
                 case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.text()));
                 case UserMessage u -> out.add(new Message(Role.USER, userParts(u, videoSampler)));
                 case AiMessage ai -> out.add(assistant(ai));
-                case ToolExecutionResultMessage r ->
-                        out.add(
-                                new Message(
-                                        Role.TOOL,
-                                        List.of(new Content.ToolResult(r.id(), r.text()))));
+                case ToolExecutionResultMessage r -> {
+                    // A tool result reaches the model as TEXT: the chat templates render it into
+                    // the family's tool-result span, and no family has a syntax for an image (or
+                    // several parts) coming back from a tool. text() THROWS on anything else, so
+                    // ask first and decline in the API's own vocabulary - an unsupported feature,
+                    // not an IllegalStateException from inside the accessor.
+                    if (!r.hasSingleText()) {
+                        throw new UnsupportedFeatureException(
+                                "a tool result with non-text content is not supported: tool"
+                                        + " results reach the model as text");
+                    }
+                    out.add(
+                            new Message(
+                                    Role.TOOL, List.of(new Content.ToolResult(r.id(), r.text()))));
+                }
                 default ->
                         throw new UnsupportedFeatureException(
                                 "message type " + m.type() + " is not supported");
