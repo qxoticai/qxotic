@@ -87,16 +87,22 @@ public final class ChatEngine implements AutoCloseable {
     // concurrent streaming requests cannot accumulate without limit behind a long generation (an
     // accidental memory-pressure failure); excess work is rejected loudly instead.
     // -Djinfer.chat.streamQueueCapacity: -1 unbounded (the old behavior), >= 1 bounded FIFO.
-    private static final int STREAM_QUEUE_CAPACITY =
-            Integer.getInteger("jinfer.chat.streamQueueCapacity", 1024);
+    // validated when the class loads: a bad flag fails here, before any weights are mapped (an
+    // instance-field check ran after the constructor's load(...) argument and leaked the arena)
+    private static final int STREAM_QUEUE_CAPACITY = streamQueueCapacity();
 
-    private static BlockingQueue<Runnable> streamQueue() {
-        if (STREAM_QUEUE_CAPACITY == 0) {
+    private static int streamQueueCapacity() {
+        int capacity = Integer.getInteger("jinfer.chat.streamQueueCapacity", 1024);
+        if (capacity == 0) {
             // 0 admits nothing, not even the one generating stream - a config bug, say so
             throw new IllegalArgumentException(
                     "jinfer.chat.streamQueueCapacity=0 leaves no room for any stream; use -1"
                             + " (unbounded) or >= 1");
         }
+        return capacity;
+    }
+
+    private static BlockingQueue<Runnable> streamQueue() {
         return STREAM_QUEUE_CAPACITY < 0
                 ? new LinkedBlockingQueue<>()
                 : new LinkedBlockingQueue<>(STREAM_QUEUE_CAPACITY);
