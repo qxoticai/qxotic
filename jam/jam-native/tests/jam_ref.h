@@ -27,6 +27,21 @@ static inline uint16_t jam_ref_f2h(float f) {
     return (uint16_t)(sign | ((uint32_t) e << 10) | (m >> 13));
 }
 
+/* Round-to-nearest-even f32->f16, matching hardware conversions (Metal, FCVT). jam_ref_f2h above
+ * truncates; a truncated half reference carries a BIAS that accumulates linearly over a dot, so
+ * references for half-staged kernels must use this one. */
+static inline uint16_t jam_ref_f2h_rtn(float f) {
+    uint32_t x; memcpy(&x, &f, 4);
+    uint32_t sign = (x >> 16) & 0x8000u;
+    int32_t  e    = (int32_t)((x >> 23) & 0xFF) - 127 + 15;
+    uint32_t m    = x & 0x7FFFFFu;
+    if (e <= 0)  return (uint16_t) sign;
+    if (e >= 31) return (uint16_t)(sign | 0x7C00u);
+    m += 0xFFFu + ((m >> 13) & 1u);                            /* round half to even */
+    if (m & 0x800000u) { m = 0; if (++e >= 31) return (uint16_t)(sign | 0x7C00u); }
+    return (uint16_t)(sign | ((uint32_t) e << 10) | (m >> 13));
+}
+
 static inline float jam_ref_h2f(uint16_t h) {
     uint32_t sign = (uint32_t)(h & 0x8000u) << 16;
     uint32_t e = (h >> 10) & 0x1Fu, m = h & 0x3FFu, f;
@@ -264,6 +279,110 @@ static inline uint8_t* jam_ref_make_q5k(int rows, int k, unsigned seed, float* w
     }
     #undef JAM_RND
     return W;
+}
+
+/* ---- reference packers for the jam.h JAM_PACK_ABI 1 layouts (per-4-row-group; the Java loader
+ * is the production packer - these exist so the C tests can exercise the packed kernels, and they
+ * are the layout's executable spec). src = canonical blocks, rows dense (row stride k). ---- */
+
+static inline size_t jam_ref_pack_group_bytes(int dt, int k) {
+    size_t nb = (size_t) k / 32, sb = (size_t) k / 256;
+    switch (dt) {
+        case JAM_Q4_0: return nb * 80;
+        case JAM_Q4_K: return nb * 72 + sb * 32;
+        case JAM_Q5_K: return nb * 136 + sb * 32;
+        case JAM_Q6_K: return nb * 136 + sb * 16;
+        default: return 0;
+    }
+}
+
+/* get_scale_min_k4: the 8 6-bit (scale,min) pairs of a Q4_K/Q5_K super-block. */
+static inline void jam_ref_scales_mins(const uint8_t* q, uint8_t* sc, uint8_t* mn) {
+    for (int t = 0; t < 4; t++) {
+        sc[t] = q[t] & 63; mn[t] = q[t + 4] & 63;
+        sc[t + 4] = (uint8_t) ((q[t + 8] & 0xF) | ((q[t] >> 6) << 4));
+        mn[t + 4] = (uint8_t) ((q[t + 8] >> 4) | ((q[t + 4] >> 6) << 4));
+    }
+}
+
+static inline void jam_ref_pack(int dt, uint8_t* dst, const uint8_t* src, int m, int k) {
+    const int nb = k / 32, sb = k / 256;
+    const size_t GB = jam_ref_pack_group_bytes(dt, k);
+    for (int g = 0; g < m / 4; g++, dst += GB)
+        for (int r = 0; r < 4; r++) {
+            const int row = g * 4 + r;
+            if (dt == JAM_Q4_0) {
+                const uint8_t* w = src + (size_t) row * nb * 18;
+                float* S = (float*) (dst + (size_t) nb * 64);
+                for (int b = 0; b < nb; b++) {
+                    memcpy(dst + (size_t) b * 64 + (size_t) r * 16, w + (size_t) b * 18 + 2, 16);
+                    uint16_t h; memcpy(&h, w + (size_t) b * 18, 2);
+                    S[(size_t) b * 4 + r] = jam_ref_h2f(h);
+                }
+            } else if (dt == JAM_Q6_K) {
+                int8_t* P = (int8_t*) dst;
+                int8_t* SC = P + (size_t) nb * 128;
+                float*  D  = (float*) (SC + (size_t) nb * 8);
+                for (int B = 0; B < sb; B++) {
+                    const uint8_t* w = src + ((size_t) row * sb + B) * 210;
+                    const uint8_t* ql = w; const uint8_t* qh = w + 128;
+                    const int8_t* sc = (const int8_t*) (w + 192);
+                    uint16_t h; memcpy(&h, w + 208, 2);
+                    D[(size_t) B * 4 + r] = jam_ref_h2f(h);
+                    for (int hh = 0; hh < 2; hh++)
+                        for (int gg = 0; gg < 4; gg++) {
+                            int blk = B * 8 + hh * 4 + gg;
+                            const uint8_t* qlb = ql + hh * 64 + (gg & 1) * 32;
+                            const uint8_t* qhb = qh + hh * 32;
+                            int8_t* d = P + (size_t) blk * 128 + (size_t) r * 32;
+                            for (int j = 0; j < 32; j++) {
+                                int lo = (gg < 2) ? (qlb[j] & 0xF) : (qlb[j] >> 4);
+                                d[j] = (int8_t) ((lo | (((qhb[j] >> (2 * gg)) & 3) << 4)) - 32);
+                            }
+                            SC[(size_t) blk * 8 + r]     = sc[hh * 8 + gg * 2];
+                            SC[(size_t) blk * 8 + 4 + r] = sc[hh * 8 + gg * 2 + 1];
+                        }
+                }
+            } else {                                             /* Q4_K / Q5_K */
+                const int q5 = dt == JAM_Q5_K, pb = q5 ? 128 : 64, bytes = q5 ? 176 : 144;
+                uint8_t* P = dst;
+                uint8_t* SM = P + (size_t) nb * pb;
+                float*   DD = (float*) (SM + (size_t) nb * 8);
+                for (int B = 0; B < sb; B++) {
+                    const uint8_t* w = src + ((size_t) row * sb + B) * bytes;
+                    uint16_t hd, hm; memcpy(&hd, w, 2); memcpy(&hm, w + 2, 2);
+                    DD[(size_t) B * 8 + r]     = jam_ref_h2f(hd);
+                    DD[(size_t) B * 8 + 4 + r] = jam_ref_h2f(hm);
+                    uint8_t sc[8], mn[8];
+                    jam_ref_scales_mins(w + 4, sc, mn);
+                    const uint8_t* qh = w + 16;
+                    const uint8_t* qs = w + (q5 ? 48 : 16);
+                    for (int gg = 0; gg < 4; gg++) {
+                        int bl = B * 8 + 2 * gg, bh = bl + 1;
+                        if (q5) {
+                            int8_t* dl = (int8_t*) P + (size_t) bl * 128 + (size_t) r * 32;
+                            int8_t* dh = (int8_t*) P + (size_t) bh * 128 + (size_t) r * 32;
+                            for (int j = 0; j < 32; j++) {
+                                dl[j] = (int8_t) ((qs[gg*32+j] & 0xF) | (((qh[j] >> (2*gg))     & 1) << 4));
+                                dh[j] = (int8_t) ((qs[gg*32+j] >> 4)  | (((qh[j] >> (2*gg + 1)) & 1) << 4));
+                            }
+                        } else {
+                            uint8_t* dl = P + (size_t) bl * 64 + (size_t) r * 16;
+                            uint8_t* dh = P + (size_t) bh * 64 + (size_t) r * 16;
+                            for (int j = 0; j < 16; j++) {   /* elem e low nibble, e+16 high */
+                                uint8_t alo = qs[gg*32 + j], ahi = qs[gg*32 + 16 + j];
+                                dl[j] = (uint8_t) ((alo & 0xF) | ((ahi & 0xF) << 4));
+                                dh[j] = (uint8_t) ((alo >> 4) | ((ahi >> 4) << 4));
+                            }
+                        }
+                        SM[(size_t) bl * 8 + r]     = sc[2*gg];
+                        SM[(size_t) bl * 8 + 4 + r] = mn[2*gg];
+                        SM[(size_t) bh * 8 + r]     = sc[2*gg + 1];
+                        SM[(size_t) bh * 8 + 4 + r] = mn[2*gg + 1];
+                    }
+                }
+            }
+        }
 }
 
 /* Q4_0: { fp16 d; nibble qs[16] } = 18B; value = d·(nibble-8), no min (wmin=0). Builder signature
