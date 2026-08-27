@@ -111,6 +111,28 @@ public final class FrozenBlocksTest {
         corrupted.resume(a, 16, cr);
         assertEquals(0, cr.position(), "corrupted frozen block degrades to a miss, never restores");
 
+        // export before anything verified the corrupt block: the artifact must not carry it
+        // under a fresh CRC (the laundering path); a cache over the export misses prompt A too
+        Path exported = Files.createTempFile("frozen-export", ".jkv");
+        exported.toFile().deleteOnExit();
+        new BlockTree<>(
+                        codec,
+                        CacheStore.inMemory(),
+                        1 << 20,
+                        seed,
+                        FrozenBlocks.open(corrupt, seed))
+                .freeze(exported);
+        BlockTree<BlockResumeTest.FakeState> reexported =
+                new BlockTree<>(
+                        codec,
+                        CacheStore.inMemory(),
+                        1 << 20,
+                        seed,
+                        FrozenBlocks.open(exported, seed));
+        BlockResumeTest.FakeState er = new BlockResumeTest.FakeState();
+        reexported.resume(a, 16, er);
+        assertEquals(0, er.position(), "an unverified corrupt block is never exported");
+
         // commit dedup against a frozen block: re-ingesting prompt A stores nothing new
         String before = live.stats().replaceAll(" hits=.*", "");
         BlockResumeTest.FakeState again = new BlockResumeTest.FakeState();

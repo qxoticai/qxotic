@@ -331,7 +331,19 @@ public final class BlockTree<S extends ContextState> {
         queue.add(sentinel);
         while (!queue.isEmpty()) { // BFS: parents before children
             Block b = queue.poll();
-            if (b != sentinel) order.add(b);
+            if (b != sentinel) {
+                // a frozen block that never verified is checked now: a corrupt one (and its
+                // chain) must not be re-stamped with a fresh CRC and laundered into the export
+                boolean valid =
+                        !b.frozen
+                                || b.frozenVerified
+                                || (b.frozenVerified = FrozenBlocks.crc32c(b.mem) == b.frozenCrc);
+                if (!valid) {
+                    discard(b);
+                    continue;
+                }
+                order.add(b);
+            }
             queue.addAll(b.children);
         }
         long[] offsets = new long[order.size()];
