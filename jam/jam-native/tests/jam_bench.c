@@ -16,8 +16,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>   /* usleep, sysconf */
 #include <pthread.h>
+#ifdef _WIN32
+#include <windows.h>   /* Sleep, GetSystemInfo — MinGW has no sysconf/usleep (clock_gettime is winpthreads') */
+static void sleep_us(long us) { Sleep((DWORD) (us / 1000)); }
+static int  ncpus(void) { SYSTEM_INFO si; GetSystemInfo(&si); return (int) si.dwNumberOfProcessors; }
+#else
+#include <unistd.h>    /* usleep, sysconf */
+static void sleep_us(long us) { usleep((unsigned) us); }
+static int  ncpus(void) { long n = sysconf(_SC_NPROCESSORS_ONLN); return n > 0 ? (int) n : 1; }
+#endif
 
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec*1e-9; }
 
@@ -59,12 +67,12 @@ static double wbytes_per_val(int at) {
 }
 
 static perf bench(jam_ctx* ctx, const void* A, int at, const float* B, float* C, int m, int n, int k, int iters) {
-    jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);                 /* warm (scratch alloc + repack cache) */
+    jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);                 /* warm (scratch alloc) */
     double dt = 0;
     for (int i=0;i<iters;i++) {
         scrub_caches();                                                          /* evict A/B/C -> cold DRAM read */
         double t0 = now();
-        jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);   /* ldc = m (token-major output) */
+        jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);       /* ldc = m (token-major output) */
         dt += now() - t0;
     }
     dt /= iters;
@@ -88,7 +96,7 @@ int main(int argc, char** argv) {
      * Override with JAM_BENCH_SCRUB_MB on big-iron (>256MB L3) or to shrink it on small machines. */
     int scrub_mb = getenv("JAM_BENCH_SCRUB_MB") ? atoi(getenv("JAM_BENCH_SCRUB_MB")) : 256;
     g_scrub_sz = (size_t)scrub_mb << 20; g_scrub = malloc(g_scrub_sz); memset(g_scrub, 1, g_scrub_sz);
-    g_scrub_threads = nt > 0 ? nt : (int) sysconf(_SC_NPROCESSORS_ONLN);   /* one scrub per core (all CCDs) */
+    g_scrub_threads = nt > 0 ? nt : ncpus();   /* one scrub per core (all CCDs) */
 
     float* Wf = malloc(4*(size_t)M*K); float* B = malloc(4*(size_t)N*K); float* C = malloc(4*(size_t)M*N);
     jam_ref_fill(Wf,(size_t)M*K,1); jam_ref_fill(B,(size_t)N*K,2);
@@ -137,7 +145,7 @@ int main(int argc, char** argv) {
         for (unsigned Q=0; Q<sizeof QS/sizeof*QS; ++Q) {
             if (wantdt && strcmp(wantdt, QS[Q].nm) != 0) continue;                 /* JAM_DTYPE filter */
             if (!QS[Q].W) continue;                                                 /* weight not built (dtype filter / k alignment) */
-            usleep(300000);   /* cooldown so back-to-back kernels aren't thermally coupled */
+            sleep_us(300000);   /* cooldown so back-to-back kernels aren't thermally coupled */
             perf p = bench(c, QS[Q].W, QS[Q].at, B, C, M, N, K, iters);
             printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(lvl), QS[Q].nm, p.gmac, p.gbs);
         }
