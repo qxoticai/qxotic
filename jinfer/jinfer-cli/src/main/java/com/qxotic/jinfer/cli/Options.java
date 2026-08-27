@@ -119,9 +119,22 @@ public record Options(
         if (server) {
             InetSocketAddress address = new InetSocketAddress(host, port);
             require(
-                    address.getAddress() != null
-                            && (address.getAddress().isLoopbackAddress() || apiKey != null),
+                    !address.isUnresolved(),
+                    "Invalid argument: --host " + host + " does not resolve");
+            require(
+                    address.getAddress().isLoopbackAddress() || apiKey != null,
                     "Invalid argument: a non-loopback --host requires --api-key");
+        }
+        // a raw prompt is the model's input verbatim: nothing that the chat template would
+        // have framed can apply, and the chat loop is all template
+        if (rawPrompt) {
+            require(!interactive, "Invalid argument: --raw-prompt applies to --prompt, not --chat");
+            require(
+                    systemPrompt == null
+                            && reasoningBudget == null
+                            && reasoningBudgetMessage == null,
+                    "Invalid argument: --raw-prompt bypasses the chat template, so --system-prompt"
+                            + " and --reasoning-budget* cannot apply");
         }
     }
 
@@ -435,7 +448,10 @@ public record Options(
                         }
                         case "--reasoning-budget-message" -> reasoningBudgetMessage = nextArg;
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
-                        case "--cache" -> promptCache = Path.of(nextArg);
+                        case "--cache" -> {
+                            promptCache = Path.of(nextArg);
+                            promptCacheReadOnly = false; // the later flag wins
+                        }
                         case "--cache-ro" -> {
                             promptCache = Path.of(nextArg);
                             promptCacheReadOnly = true;
@@ -661,6 +677,7 @@ public record Options(
                         + " runs out, e.g. \"... Let me wrap up.\" (default: a paragraph break)");
         out.println(
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
+                        + " directly (no system prompt, thinking or budget)"
                         + " directly");
         out.println(
                 "  --cache <file>                persistent prompt cache (instruct/server) -"
