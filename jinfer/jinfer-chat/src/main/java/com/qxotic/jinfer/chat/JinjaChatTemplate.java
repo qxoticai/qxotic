@@ -96,8 +96,12 @@ final class JinjaChatTemplate {
         // cap and seeds the parser from exactly this tail. Skip when the render already left a
         // span open (Qwen3-style scaffolds end with "<think>\n").
         if (addGenerationPrompt && SpecialTokens.find(tokenizer, Thinking.OPEN).isPresent()) {
+            // the scaffold's open is the render's TAIL: a think marker inside request text (the
+            // scrub exempts them) sits before its turn's end and must not pass for the scaffold
+            int lastOpen = rendered.lastIndexOf(Thinking.OPEN);
             boolean tailOpen =
-                    rendered.lastIndexOf(Thinking.OPEN) > rendered.lastIndexOf(Thinking.CLOSE);
+                    lastOpen > rendered.lastIndexOf(Thinking.CLOSE)
+                            && rendered.substring(lastOpen + Thinking.OPEN.length()).isBlank();
             if (enableThinking && !tailOpen) rendered += Thinking.OPEN;
             // the mirror image: a scaffold that always opens the span (LFM2.5-2.6B, a pure
             // reasoning model) is closed at once when thinking is off - the model's own shape
