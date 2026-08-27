@@ -1142,10 +1142,13 @@ public final class Grammar {
      *
      * <p>Supported: {@code type} (object, array, string, number, integer, boolean, null, or an
      * array of those), {@code properties} + {@code required}, {@code items}, {@code enum}, {@code
-     * const}, and {@code anyOf}/{@code oneOf}. Object properties are emitted in the order of {@code
-     * required} (or, when {@code required} is absent, all declared properties); other keywords
-     * ({@code patternProperties}, {@code $ref}, numeric/length bounds, …) are ignored — the result
-     * is always valid JSON satisfying the supported constraints, never a broken grammar.
+     * const}, {@code anyOf}/{@code oneOf}, and {@code $ref} into the root document ({@code $defs},
+     * {@code definitions}, any local JSON Pointer) — how a generated schema spells a type it uses
+     * twice, and the only way a RECURSIVE type can be written at all. Object properties are emitted
+     * in the order of {@code required} (or, when {@code required} is absent, all declared
+     * properties); other keywords ({@code patternProperties}, numeric/length bounds, …) are ignored
+     * — the result is always valid JSON satisfying the supported constraints, never a broken
+     * grammar.
      */
     static Spec fromSchema(Map<String, Object> schema, Vocab v) {
         return of(Schema.toGbnf(schema, true), v);
@@ -1187,9 +1190,13 @@ public final class Grammar {
     static final class Schema {
         private final StringBuilder rules = new StringBuilder();
         private int counter;
+        // the document $ref pointers resolve against, and one rule per pointer already emitted
+        private Map<String, Object> root = Map.of();
+        private final Map<String, String> refRules = new LinkedHashMap<>();
 
         static String toGbnf(Map<String, Object> schema, boolean leadingWs) {
             Schema s = new Schema();
+            s.root = schema;
             // shared leaf rules (any-JSON fallbacks + scalars)
             // BOUNDED whitespace (llama.cpp-style): unbounded ws lets a reluctant model stall
             // forever without progress, growing a fresh matcher state (and a full-vocab mask
@@ -1213,6 +1220,58 @@ public final class Grammar {
             return "root ::= " + (leadingWs ? "ws (" : "(") + root + ") ws\n" + s.rules;
         }
 
+        /**
+         * A {@code $ref} as a NAMED rule, so the pointed-at shape is written once however many
+         * times it is referenced. The name is registered BEFORE the target's body is built: a
+         * definition that reaches itself (a tree node, a linked list, mutually recursive types)
+         * then closes into a recursive GBNF rule instead of recursing forever here. A pointer that
+         * resolves to nothing - an external document, a name the producer never emitted - degrades
+         * to {@code value}: this compiler's law is a permissive grammar, never a broken one.
+         */
+        private String refRule(String pointer) {
+            String named = refRules.get(pointer);
+            if (named != null) return named;
+            Object target = resolve(pointer);
+            if (target == null) return "value";
+            String name = "r" + (counter++);
+            refRules.put(pointer, name);
+            String b = body(target); // built BEFORE appending: nested rules own whole lines
+            rules.append(name).append(" ::= ").append(b).append("\n");
+            return name;
+        }
+
+        /**
+         * RFC 6901 JSON Pointer against the root schema ({@code #}, {@code #/$defs/Name}, {@code
+         * #/definitions/Name/properties/x}, array indices included); {@code null} when the pointer
+         * leaves the document or names something absent.
+         */
+        private Object resolve(String pointer) {
+            if (!pointer.startsWith("#")) return null; // another document: nothing to resolve with
+            Object node = root;
+            for (String segment : pointer.substring(1).split("/")) {
+                if (segment.isEmpty()) continue; // the empty head of "#/..."
+                String key = segment.replace("~1", "/").replace("~0", "~"); // ~1 first (RFC 6901)
+                node =
+                        switch (node) {
+                            case Map<?, ?> map -> map.get(key);
+                            case List<?> list -> element(list, key);
+                            default -> null;
+                        };
+                if (node == null) return null;
+            }
+            return node;
+        }
+
+        /** A pointer segment indexing an array: the element, or null when it is not an index. */
+        private static Object element(List<?> list, String key) {
+            try {
+                int i = Integer.parseInt(key);
+                return i >= 0 && i < list.size() ? list.get(i) : null;
+            } catch (NumberFormatException notAnIndex) {
+                return null;
+            }
+        }
+
         /** Allocate a named rule for {@code node} and return its name (for refs / recursion). */
         private String rule(Object node) {
             String name = "r" + (counter++);
@@ -1225,6 +1284,9 @@ public final class Grammar {
         private String body(Object node) {
             if (!(node instanceof Map)) return "value";
             Map<String, Object> m = (Map<String, Object>) node;
+            // $ref REPLACES the node it sits on (draft semantics), so it answers before anything
+            // else this node might also carry
+            if (m.get("$ref") instanceof String pointer) return refRule(pointer);
             if (m.containsKey("const")) return gbnfLiteral(jsonEncode(m.get("const")));
             if (m.get("enum") instanceof List<?> en) return joinLiterals(en);
             Object union = m.containsKey("anyOf") ? m.get("anyOf") : m.get("oneOf");
