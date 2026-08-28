@@ -1,6 +1,5 @@
 package com.qxotic.jam.vector;
 
-import static com.qxotic.jam.vector.Q4KKernel.getScaleMinK4;
 import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
 import static com.qxotic.jam.vector.VectorSupport.readFloat16;
 
@@ -52,7 +51,7 @@ public final class Q5KKernel {
                 Q5KKernel::dequantizeRow);
     }
 
-    /** Dequantize one Q5_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstBase}. */
+    /** Dequantize one Q5_K weight row run (block-aligned) into {@code dst} at {@code dstBase}. */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;
@@ -61,6 +60,8 @@ public final class Q5KKernel {
             long b = (firstBlock + blk) * TYPE;
             float d = readFloat16(w, b);
             float dmin = readFloat16(w, b + 2);
+            long packedSc = Q4KKernel.packedScales(w, b + 4);
+            long packedMn = Q4KKernel.packedMins(w, b + 4);
             var qh0 =
                     ByteVector.fromMemorySegment(
                             ByteVector.SPECIES_128, w, b + 16, ByteOrder.LITTLE_ENDIAN);
@@ -68,19 +69,24 @@ public final class Q5KKernel {
                     ByteVector.fromMemorySegment(
                             ByteVector.SPECIES_128, w, b + 32, ByteOrder.LITTLE_ENDIAN);
             long blockBase = dstBase + (long) blk * BLOCK * 4;
-            for (int g = 0; g < 4; g++) {
+            // High bits: the qh vectors rotate right by 2 per group with CONSTANT shift counts
+            // (a variable byte-shift count is not intrinsified by C2).
+            for (int g = 0;
+                    g < 4;
+                    g++, qh0 = qh0.lanewise(VectorOperators.LSHR, 2),
+                            qh1 = qh1.lanewise(VectorOperators.LSHR, 2)) {
                 var vd0 =
-                        FloatVector.broadcast(F_SPECIES, d * getScaleMinK4(g * 2, w, b + 4, false));
+                        FloatVector.broadcast(
+                                F_SPECIES, d * (int) ((packedSc >>> (16 * g)) & 0xFF));
                 var vm0 =
                         FloatVector.broadcast(
-                                F_SPECIES, -(dmin * getScaleMinK4(g * 2, w, b + 4, true)));
+                                F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g)) & 0xFF)));
                 var vd1 =
                         FloatVector.broadcast(
-                                F_SPECIES, d * getScaleMinK4(g * 2 + 1, w, b + 4, false));
+                                F_SPECIES, d * (int) ((packedSc >>> (16 * g + 8)) & 0xFF));
                 var vm1 =
                         FloatVector.broadcast(
-                                F_SPECIES, -(dmin * getScaleMinK4(g * 2 + 1, w, b + 4, true)));
-                int bitLo = 2 * g, bitHi = 2 * g + 1;
+                                F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF)));
                 for (int c = 0; c < 2; c++) {
                     var wb =
                             ByteVector.fromMemorySegment(
@@ -91,14 +97,11 @@ public final class Q5KKernel {
                     var qhb = (c == 0) ? qh0 : qh1;
                     var loB =
                             wb.and((byte) 0xF)
-                                    .or(
-                                            qhb.lanewise(VectorOperators.LSHR, bitLo)
-                                                    .and((byte) 1)
-                                                    .lanewise(VectorOperators.LSHL, 4));
+                                    .or(qhb.and((byte) 1).lanewise(VectorOperators.LSHL, 4));
                     var hiB =
                             wb.lanewise(VectorOperators.LSHR, 4)
                                     .or(
-                                            qhb.lanewise(VectorOperators.LSHR, bitHi)
+                                            qhb.lanewise(VectorOperators.LSHR, 1)
                                                     .and((byte) 1)
                                                     .lanewise(VectorOperators.LSHL, 4));
                     VectorSupport.storeAffine(

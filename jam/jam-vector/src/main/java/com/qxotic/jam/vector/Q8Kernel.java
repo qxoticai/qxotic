@@ -56,12 +56,17 @@ public final class Q8Kernel {
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
         long b1 = b0 + rowStride;
         long b2 = b1 + rowStride;
-        int x0 = s * thatStride;
-        int x1 = x0 + thatStride;
+        // Pointer phis for the activation streams: a jvmci JIT (Graal) otherwise recomputes
+        // xBase + 4L*(x0+j) per load (movslq/shl/add chains); bumping two longs folds every
+        // load to [reg]/[reg+64]. Only ~1% here (decode work dominates the 3x2 tile), but free.
+        long p0 = xBase + 4L * s * thatStride, p1 = p0 + 4L * thatStride;
         FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES);
         FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES);
         FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES);
-        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
+        for (int j = 0;
+                j < dim1;
+                j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize,
+                        p0 += 4L * blockSize, p1 += 4L * blockSize) {
             var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b0));
             var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b1));
             var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b2));
@@ -120,21 +125,13 @@ public final class Q8Kernel {
                                             .castShape(F_SPECIES, 0))
                             .mul(vd2);
             FloatVector a0, a1;
-            a0 =
-                    FloatVector.fromMemorySegment(
-                            F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
-            a1 =
-                    FloatVector.fromMemorySegment(
-                            F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, p0, ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, p0 + 64, ByteOrder.LITTLE_ENDIAN);
             c00 = c00.add(w01.fma(a1, w00.mul(a0)));
             c10 = c10.add(w11.fma(a1, w10.mul(a0)));
             c20 = c20.add(w21.fma(a1, w20.mul(a0)));
-            a0 =
-                    FloatVector.fromMemorySegment(
-                            F_SPECIES, x, xBase + 4L * (x1 + j), ByteOrder.LITTLE_ENDIAN);
-            a1 =
-                    FloatVector.fromMemorySegment(
-                            F_SPECIES, x, xBase + 4L * (x1 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, p1, ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, p1 + 64, ByteOrder.LITTLE_ENDIAN);
             c01 = c01.add(w01.fma(a1, w00.mul(a0)));
             c11 = c11.add(w11.fma(a1, w10.mul(a0)));
             c21 = c21.add(w21.fma(a1, w20.mul(a0)));
@@ -2196,6 +2193,39 @@ public final class Q8Kernel {
         putFloat(outAddr + 4L * (o1 + 7), c71.reduceLanes(VectorOperators.ADD));
     }
 
+    /**
+     * Q8_0 route: the dequant-to-scratch band gemm (decode amortized once per row over every
+     * column; measured 10752x2048x512 Zen 5 16T: register tiles 1400/2400 GF/s Graal/C2 vs band see
+     * BandGemm). {@code -Djam.vector.q8=tile} keeps the legacy register-tile kernels.
+     */
+    private static final boolean BAND_ROUTE =
+            !VectorSupport.jamProp("jam.vector.q8", "band").equals("tile");
+
+    /** Context-free scratch for the band route (pooled, GC'd with the class loader). */
+    private static final Scratch SCRATCH = new Scratch();
+
+    /**
+     * Dequantize {@code count} Q8_0 elements of one weight row (from element offset {@code
+     * rowElemOffset}, block-aligned) into F32 at {@code dstBase} of the routed {@code dst}: per
+     * 34-byte block, two 16-byte int8 chunks scaled by the block's fp16 {@code d}.
+     */
+    static void dequantizeRow(
+            MemorySegment w, long rowElemOffset, int count, MemorySegment dst, long dstBase) {
+        long blkOff = rowElemOffset / BLOCK * TYPE;
+        long d = dstBase;
+        for (int j = 0; j < count; j += BLOCK, blkOff += TYPE, d += (long) BLOCK * 4) {
+            var vd = FloatVector.broadcast(F_SPECIES, readFloat16(w, blkOff));
+            var lo =
+                    ByteVector.fromMemorySegment(
+                            ByteVector.SPECIES_128, w, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
+            var hi =
+                    ByteVector.fromMemorySegment(
+                            ByteVector.SPECIES_128, w, blkOff + 18, ByteOrder.LITTLE_ENDIAN);
+            VectorSupport.storeScaled(lo, vd, dst, d);
+            VectorSupport.storeScaled(hi, vd, dst, d + 64);
+        }
+    }
+
     public static void gemm(
             MemorySegment w,
             MemorySegment a,
@@ -2208,6 +2238,23 @@ public final class Q8Kernel {
             int dim0,
             int dim1,
             long thisOffset) {
+        if (BAND_ROUTE && thisOffset % BLOCK == 0 && dim1 % BLOCK == 0) {
+            BandGemm.gemm(
+                    w,
+                    a,
+                    aBase,
+                    o,
+                    oBase,
+                    thatStride,
+                    outStride,
+                    sequenceLength,
+                    dim0,
+                    dim1,
+                    thisOffset,
+                    SCRATCH,
+                    Q8Kernel::dequantizeRow);
+            return;
+        }
         final int seqTile = Math.max(1, VectorSupport.SEQ_TILE);
         final int rowTile = Math.max(1, VectorSupport.ROW_TILE);
         final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;

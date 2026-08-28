@@ -12,6 +12,7 @@ import java.nio.ByteOrder;
 import java.util.Locale;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntConsumer;
@@ -112,13 +113,39 @@ final class VectorSupport {
     static final boolean WIDE_TILES_COMPILABLE =
             !IN_NATIVE_IMAGE || Boolean.getBoolean("jam.vector.wideTiles");
 
+    /**
+     * Whether the ACTIVE top-tier JIT is Graal (jvmci), as opposed to C2. GraalVM runs Graal by
+     * default and plain OpenJDK runs C2; an explicit {@code -XX:(+|-)UseJVMCICompiler} on the
+     * command line overrides. Needed because Graal's register allocator uses only zmm0-15 (wide
+     * register tiles spill), while C2 uses all 32. ({@code java.vm.version} contains "jvmci" on
+     * GraalVM even when C2 is active, so it is not sufficient on its own.)
+     */
+    static final boolean GRAAL_JIT = detectGraalJit();
+
+    private static boolean detectGraalJit() {
+        try {
+            String args =
+                    String.join(
+                            " ",
+                            java.lang.management.ManagementFactory.getRuntimeMXBean()
+                                    .getInputArguments());
+            if (args.contains("-XX:-UseJVMCICompiler")) return false;
+            if (args.contains("-XX:+UseJVMCICompiler")) return true;
+        } catch (Throwable noManagement) {
+            // java.management absent (requires static): fall through to the vendor heuristic
+        }
+        String version = System.getProperty("java.vm.version", "");
+        String vendor = System.getProperty("java.vm.vendor", "");
+        return version.contains("jvmci") || vendor.contains("GraalVM");
+    }
+
     /** Register-tiling knobs (same defaults as jinfer's GEMM_* tunables). */
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
 
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
     static final int PARALLELISM = vectorThreads();
 
-    private static final int TASKS_PER_WORKER = 4;
+    private static final int TASKS_PER_WORKER = jamPropInt("jam.vector.tasksPerWorker", 4);
     private static final ForkJoinPool WORKERS = newPool(PARALLELISM);
 
     private static int vectorThreads() {
@@ -168,17 +195,17 @@ final class VectorSupport {
 
     /**
      * MEASURED gate for the {@link BandGemm} 4x4 default (its only consumer; the Q8_0 register tile
-     * defaults to the spill-free 3x2 regardless, see {@link #autoTileCode}). LFM2.5-8B Q4_K
-     * java-only prefill, pp512: Oracle GraalVM 25.1.3 (jvmci) 3x3 441 vs 4x4 302 t/s - Graal's JIT
-     * allocates only zmm0-15 for this shape, so the 4x4 band spills; OpenJDK 26 C2 4x4 351 vs 3x3
-     * 319 - C2's ILP hides the spills. So: wide only on non-jvmci HotSpot; a jvmci JIT (any Graal)
-     * takes 3x3; native-image keeps the wide-tile compilability opt-in.
+     * has its own JIT-aware default, see {@link #autoTileCode}). LFM2.5-8B Q4_K java-only prefill,
+     * pp512: Oracle GraalVM 25.1.3 (jvmci) 3x3 441 vs 4x4 302 t/s - Graal's JIT allocates only
+     * zmm0-15 for this shape, so the 4x4 band spills; OpenJDK 26 C2 4x4 351 vs 3x3 319 - C2's ILP
+     * hides the spills. So: wide only on C2; a jvmci JIT (any Graal) takes 3x3; native-image keeps
+     * the wide-tile compilability opt-in.
      */
     static final boolean WIDE_TILE = bandWideDefault();
 
     private static boolean bandWideDefault() {
         if (IN_NATIVE_IMAGE) return WIDE_TILES_COMPILABLE;
-        if (System.getProperty("java.vm.version", "").contains("jvmci")) return false;
+        if (GRAAL_JIT) return false;
         String name = System.getProperty("java.vm.name", "");
         return name.contains("HotSpot") || name.contains("OpenJDK");
     }
@@ -194,16 +221,16 @@ final class VectorSupport {
                 // VEX encoding at xmm16+). A 32-ZMM Graal (jam.vector.wideTiles=true) takes 4x4.
                 return WIDE_TILES_COMPILABLE ? 2 : 0;
             }
-            // 3x2 fits entirely in zmm0-15, so it is spill-free on EVERY current JIT. 4x4 needs 32
-            // ZMM to
-            // avoid spilling, which today only a patched Graal provides: stock HotSpot C2 and
-            // Oracle GraalVM
-            // allocate only zmm0-15, so 4x4 spills (disassembly: 519 zmm<->stack moves vs 23 for
-            // 3x2; 632 vs
-            // 706 t/s on Oracle EE Q8_0 prefill). Force 4x4 with -Djam.vector.tile=4x4 on a 32-ZMM
-            // build (or
-            // on C2, where its ILP hides the spills).
-            return 0; // 3x2
+            // C2 (OpenJDK HotSpot) allocates zmm16-31: 4x4 is spill-free and wins big (measured
+            // 214 vs 141 GF/s for 3x2, Zen 5). A jvmci JIT (any Graal) allocates only zmm0-15:
+            // 3x2 fits entirely in zmm0-15, so it is spill-free there; 4x4 needs 32 ZMM, which
+            // today only a patched Graal provides: stock GraalVM JIT spills (disassembly: 519
+            // zmm<->stack moves vs 23 for 3x2; 632 vs 706 t/s on Oracle EE Q8_0 prefill; 68 vs
+            // 126 GF/s on Zen 5). Force 4x4 with -Djam.vector.tile=4x4 on a 32-ZMM build.
+            if (GRAAL_JIT) return 0; // Graal JIT: 3x2
+            String name = System.getProperty("java.vm.name", "");
+            if (name.contains("HotSpot") || name.contains("OpenJDK")) return 2; // C2: 4x4
+            return 0; // unknown JIT: spill-safe 3x2
         }
         if (width >= 256) return 6; // AVX2 2x4
         return 12; // scalar
@@ -284,10 +311,31 @@ final class VectorSupport {
                 : seg.get(JAVA_LONG_UNALIGNED, off);
     }
 
+    /**
+     * Slot of the calling thread for per-worker state: the pool index of a Vector JAM worker, or
+     * {@link #PARALLELISM} for any other thread (the caller running a small job inline).
+     */
+    static int workerIndex() {
+        if (Thread.currentThread() instanceof ForkJoinWorkerThread t && t.getPool() == WORKERS)
+            return t.getPoolIndex();
+        return PARALLELISM;
+    }
+
     /** Run {@code body} for every index in {@code [from, to)} on Vector JAM's workers. */
     static void parallelFor(int from, int to, IntConsumer body) {
+        parallelFor(from, to, body, maxChunkSize(from, to));
+    }
+
+    /**
+     * {@link #parallelFor} with one index per task: for coarse bodies (a whole gemm panel) where
+     * the pool must balance every item, not chunks of them.
+     */
+    static void parallelForEach(int from, int to, IntConsumer body) {
+        parallelFor(from, to, body, 1);
+    }
+
+    private static void parallelFor(int from, int to, IntConsumer body, int maxChunkSize) {
         if (from >= to) return;
-        int maxChunkSize = maxChunkSize(from, to);
         if (PARALLELISM == 1 || (long) to - from <= maxChunkSize) {
             for (int i = from; i < to; i++) body.accept(i);
             return;
@@ -329,7 +377,7 @@ final class VectorSupport {
     private static ForkJoinPool newPool(int threads) {
         return new ForkJoinPool(
                 threads,
-                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                pool -> new PinnedWorker(pool),
                 null,
                 false,
                 0,
@@ -338,6 +386,19 @@ final class VectorSupport {
                 null,
                 60,
                 TimeUnit.SECONDS);
+    }
+
+    /** A pool worker pinned to its own core on start (see {@link Affinity}). */
+    private static final class PinnedWorker extends ForkJoinWorkerThread {
+        PinnedWorker(ForkJoinPool pool) {
+            super(pool);
+        }
+
+        @Override
+        protected void onStart() {
+            super.onStart();
+            Affinity.pin(getPoolIndex());
+        }
     }
 
     private static int maxChunkSize(int from, int to) {

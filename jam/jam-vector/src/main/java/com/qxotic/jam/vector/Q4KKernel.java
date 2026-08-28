@@ -10,7 +10,9 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Q4_K gemm, relocated from jinfer (segment-based). Q4_K super-block: 256 elements / 144 bytes
@@ -103,52 +105,66 @@ public final class Q4KKernel {
                 Q4KKernel::dequantizeRow);
     }
 
-    /** Dequantize one Q4_K weight row (dim1 % 256 == 0) into {@code dst} at {@code dstBase}. */
+    /** Dequantize one Q4_K weight row run (block-aligned) into {@code dst} at {@code dstBase}. */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;
         long firstBlock = rowElemOffset / BLOCK;
+        final MemorySegment ws = VectorSupport.vectorSegment(w);
+        final long wb = VectorSupport.vectorBase(w);
         for (int blk = 0; blk < kblocks; blk++) {
             long b = (firstBlock + blk) * TYPE;
             float d = readFloat16(w, b);
             float dmin = readFloat16(w, b + 2);
             long packedSc = packedScales(w, b + 4);
             long packedMn = packedMins(w, b + 4);
-            long blockBase = dstBase + (long) blk * BLOCK * 4;
+            long o = dstBase + (long) blk * BLOCK * 4;
             for (int g = 0; g < 4; g++) {
-                var vdsc0 =
-                        FloatVector.broadcast(
-                                F_SPECIES, d * (int) ((packedSc >>> (16 * g)) & 0xFF));
-                var vnegm0 =
-                        FloatVector.broadcast(
-                                F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g)) & 0xFF)));
-                var vdsc1 =
-                        FloatVector.broadcast(
-                                F_SPECIES, d * (int) ((packedSc >>> (16 * g + 8)) & 0xFF));
-                var vnegm1 =
-                        FloatVector.broadcast(
-                                F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF)));
-                for (int c = 0; c < 2; c++) {
-                    var wb =
-                            ByteVector.fromMemorySegment(
-                                    ByteVector.SPECIES_128,
-                                    w,
-                                    b + 16 + (long) g * 32 + c * 16,
-                                    ByteOrder.LITTLE_ENDIAN);
-                    VectorSupport.storeAffine(
-                            wb.and((byte) 0xF),
-                            vdsc0,
-                            vnegm0,
-                            dst,
-                            blockBase + (g * 64 + c * 16) * 4L);
-                    VectorSupport.storeAffine(
-                            wb.lanewise(VectorOperators.LSHR, 4),
-                            vdsc1,
-                            vnegm1,
-                            dst,
-                            blockBase + (g * 64 + 32 + c * 16) * 4L);
-                }
+                float sc0 = d * (int) ((packedSc >>> (16 * g)) & 0xFF);
+                float mn0 = -(dmin * (int) ((packedMn >>> (16 * g)) & 0xFF));
+                float sc1 = d * (int) ((packedSc >>> (16 * g + 8)) & 0xFF);
+                float mn1 = -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF));
+                long qs = wb + b + 16 + g * 32, og = o + g * 64 * 4L;
+                // per 16-byte chunk: low nibbles -> 16 elements, high nibbles -> 16 elements at +32
+                pair(ws, qs, sc0, mn0, sc1, mn1, dst, og);
+                pair(ws, qs + 16, sc0, mn0, sc1, mn1, dst, og + 16 * 4L);
             }
+        }
+    }
+
+    private static final VectorSpecies<Integer> I_SPECIES =
+            VectorSpecies.of(int.class, F_SPECIES.vectorShape());
+
+    /**
+     * One 16-byte chunk of nibbles at {@code qs} of the routed segment: the low nibbles into 16
+     * elements at {@code o}, the high nibbles into 16 elements at {@code o + 32} elements. The
+     * unpack runs in 32-bit lanes; width-generic via {@link VectorSupport#DECODE_PARTS}.
+     */
+    private static void pair(
+            MemorySegment ws,
+            long qs,
+            float sc0,
+            float mn0,
+            float sc1,
+            float mn1,
+            MemorySegment dst,
+            long o) {
+        var qb =
+                ByteVector.fromMemorySegment(
+                        ByteVector.SPECIES_128, ws, qs, ByteOrder.LITTLE_ENDIAN);
+        FloatVector vs0 = FloatVector.broadcast(F_SPECIES, sc0),
+                vm0 = FloatVector.broadcast(F_SPECIES, mn0);
+        FloatVector vs1 = FloatVector.broadcast(F_SPECIES, sc1),
+                vm1 = FloatVector.broadcast(F_SPECIES, mn1);
+        for (int p = 0; p < VectorSupport.DECODE_PARTS; p++) {
+            IntVector q = (IntVector) qb.castShape(I_SPECIES, p);
+            long po = o + (long) p * VectorSupport.F_LEN * 4;
+            ((FloatVector) q.and(0xF).castShape(F_SPECIES, 0))
+                    .fma(vs0, vm0)
+                    .intoMemorySegment(dst, po, ByteOrder.LITTLE_ENDIAN);
+            ((FloatVector) q.lanewise(VectorOperators.LSHR, 4).and(0xF).castShape(F_SPECIES, 0))
+                    .fma(vs1, vm1)
+                    .intoMemorySegment(dst, po + 32 * 4L, ByteOrder.LITTLE_ENDIAN);
         }
     }
 }
