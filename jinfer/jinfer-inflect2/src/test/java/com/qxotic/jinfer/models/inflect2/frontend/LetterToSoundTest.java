@@ -53,4 +53,11 @@ class LetterToSoundTest {
                 assertTrue(Symbols.idOf(cp) != 0, word + " emits a symbol outside the table");
         }
     }
+
+    @Test
+    void accentedLettersAreReadNotDropped() {
+        // "café" used to be guessed from "caf"; the accent folds to its base letter
+        assertEquals(LetterToSound.guess("cafe"), LetterToSound.guess("café"));
+        assertEquals(LetterToSound.guess("uber"), LetterToSound.guess("über"));
+    }
 }
