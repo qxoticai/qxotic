@@ -34,6 +34,12 @@ public final class InflectTTS
     /** Longest chunk handed to the model; longer sentences are split at a comma, then a space. */
     private static final int CHUNK_LIMIT = 280;
 
+    /** Where a cut may fall, leaving room for the mark {@link #terminated} adds. */
+    private static final int CUT_LIMIT = CHUNK_LIMIT - 1;
+
+    /** Marks the model can rest on - anything here ends a chunk. */
+    private static final String MARKS = ".!?;:,";
+
     /** Edge fade applied to every chunk, to keep the joins from clicking. */
     private static final double FADE_MILLIS = 5;
 
@@ -276,25 +282,45 @@ public final class InflectTTS
         List<String> chunks = new ArrayList<>();
         for (String sentence : normalized.split("(?<=[.!?;:])\\s+")) {
             String rest = sentence.trim();
-            while (rest.length() > CHUNK_LIMIT) {
+            while (rest.length() > CUT_LIMIT) {
                 int at = breakPoint(rest);
                 chunks.add(rest.substring(0, at).trim());
                 rest = rest.substring(at).trim();
             }
             if (!rest.isEmpty()) chunks.add(rest);
         }
-        return chunks.isEmpty() ? List.of(normalized) : chunks;
+        if (chunks.isEmpty()) chunks.add(normalized);
+        // A full stop only where the utterance actually stops; a cut mid-sentence rests on a
+        // comma, because more of the sentence is still coming.
+        for (int i = 0; i < chunks.size(); i++)
+            chunks.set(i, terminated(chunks.get(i), i == chunks.size() - 1));
+        return chunks;
+    }
+
+    /**
+     * A chunk the model can finish saying. Inflect2 renders a chunk's final phoneme only when a
+     * mark closes it: given "one two three four five" the waveform stops while still at full level,
+     * mid-"five", and "Hello, GraalVM" loses the "em" the frontend worked to produce. Written text
+     * that ends without punctuation is ordinary - a title, a CLI argument, a form field - so the
+     * frontend supplies what the writer left off rather than clipping the word.
+     */
+    private static String terminated(String chunk, boolean last) {
+        String bare = chunk.replaceAll("[\"'»”]+$", ""); // "He left." keeps its mark inside
+        if (bare.isEmpty()) return chunk; // empty, or all quotes: no word to cut short
+        return MARKS.indexOf(bare.charAt(bare.length() - 1)) >= 0
+                ? chunk
+                : chunk + (last ? '.' : ',');
     }
 
     /** Where to cut an over-long sentence: last clause break, else last space, else hard cut. */
     private static int breakPoint(String sentence) {
-        int minimum = CHUNK_LIMIT / 2;
+        int minimum = CUT_LIMIT / 2;
         for (char mark : new char[] {',', ';', ':'}) {
-            int at = sentence.lastIndexOf(mark, CHUNK_LIMIT);
+            int at = sentence.lastIndexOf(mark, CUT_LIMIT);
             if (at >= minimum) return at + 1;
         }
-        int space = sentence.lastIndexOf(' ', CHUNK_LIMIT);
-        return space >= minimum ? space : CHUNK_LIMIT;
+        int space = sentence.lastIndexOf(' ', CUT_LIMIT);
+        return space >= minimum ? space : CUT_LIMIT;
     }
 
     /** Pause after a chunk, by its final punctuation - a question rests longer than a comma. */

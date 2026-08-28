@@ -93,7 +93,27 @@ class Inflect2Test {
         assertEquals(
                 List.of("Hello world.", "How are you?"),
                 InflectTTS.split("Hello world.  How are you?"));
-        assertEquals(List.of("No punctuation here"), InflectTTS.split("No punctuation here"));
+        // The model renders a chunk's last phoneme only when a mark closes it: unterminated,
+        // the waveform stops at full level mid-word ("one two three four five" loses "five",
+        // "Hello, GraalVM" loses the "em"). Text that ends without punctuation is ordinary,
+        // so the frontend supplies the stop rather than clipping the word.
+        assertEquals(List.of("No punctuation here."), InflectTTS.split("No punctuation here"));
+        assertEquals(List.of("Already asked?"), InflectTTS.split("Already asked?"));
+        assertEquals(List.of("\"Quoted.\""), InflectTTS.split("\"Quoted.\""));
+    }
+
+    @Test
+    void everyChunkOfALongSentenceCanBeFinished() {
+        // the same clipping hits each interior join, where it sounds like a swallowed word
+        String sentence = "word ".repeat(120).trim();
+        List<String> chunks = InflectTTS.split(sentence);
+        assertTrue(chunks.size() > 1, "a 600-char sentence must be split");
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunk = chunks.get(i);
+            assertTrue(chunk.length() <= 280, "chunk over the model limit: " + chunk.length());
+            // a full stop only at the end; an interior cut is mid-sentence and rests on a comma
+            assertEquals(i == chunks.size() - 1 ? '.' : ',', chunk.charAt(chunk.length() - 1));
+        }
     }
 
     @Test
