@@ -116,7 +116,11 @@ final class EspeakPhonemizer implements Phonemizer {
                         .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
         try (var stdin = espeak.getOutputStream()) {
-            stdin.write(words.getBytes(StandardCharsets.UTF_8));
+            // The newline is NOT cosmetic. espeak reads stdin a line at a time and phonemizes the
+            // last word of an unterminated line as a word fragment: "world" comes back "wˈɜːl",
+            // "five" as "fˈɪv", "hello" as "hˈɛl", "em" as "ˈiː". 46 of 56 common words measured
+            // wrong that way - every run's final word, on every espeak call.
+            stdin.write((words + "\n").getBytes(StandardCharsets.UTF_8));
         }
         String ipa;
         try (var reader =
