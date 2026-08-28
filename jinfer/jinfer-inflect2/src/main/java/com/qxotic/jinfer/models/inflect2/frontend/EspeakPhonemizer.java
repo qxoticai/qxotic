@@ -77,10 +77,6 @@ final class EspeakPhonemizer implements Phonemizer {
         run.setLength(0);
     }
 
-    /**
-     * Where the word ends and its trailing punctuation begins; shared with the lexicon path. An
-     * apostrophe between letters is part of the word ("don't"), not punctuation.
-     */
     /** Where the word begins: past any opening punctuation ("\"hello", "(yes"). */
     static int wordStart(String token) {
         int start = 0;
@@ -90,6 +86,10 @@ final class EspeakPhonemizer implements Phonemizer {
         return start == token.length() ? 0 : start; // all punctuation: nothing to split off
     }
 
+    /**
+     * Where the word ends and its trailing punctuation begins; shared with the lexicon path. An
+     * apostrophe between letters is part of the word ("don't"), not punctuation.
+     */
     static int wordEnd(String token) {
         int end = token.length();
         while (end > 0) {

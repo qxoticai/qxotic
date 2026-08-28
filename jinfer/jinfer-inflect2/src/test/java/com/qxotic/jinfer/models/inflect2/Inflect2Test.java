@@ -97,13 +97,12 @@ class Inflect2Test {
     }
 
     @Test
-    @Tag("integration")
-    void anAbbreviationDoesNotEndASentence() throws IOException {
+    void anAbbreviationDoesNotEndASentence() {
         // the utterance is normalized before it is chunked: "Dr." is "doctor" by the time the
         // sentence split runs, so the title and the name stay in one breath
-        InflectTTS tts = InflectTTS.load(TestModels.require(REF), Arena.ofAuto());
         assertEquals(
-                List.of("doctor Smith is here.", "Fine."), tts.chunks("Dr. Smith is here. Fine."));
+                List.of("doctor Smith is here.", "Fine."),
+                InflectTTS.chunks("Dr. Smith is here. Fine.", Map.of()));
     }
 
     @Test
