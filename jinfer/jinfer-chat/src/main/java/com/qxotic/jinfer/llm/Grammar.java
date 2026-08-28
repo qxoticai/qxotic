@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.llm;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
@@ -1308,6 +1309,12 @@ public final class Grammar {
                 return sb.length() == 0 ? "value" : sb.toString();
             }
             if (type instanceof String t) return typeBody(t, m);
+            // "type" is not mandatory in JSON Schema, and generators leave it out: a node carrying
+            // "properties" IS an object, one carrying "items" IS an array. Without this the whole
+            // node fell through to any-JSON and constrained nothing at all - the shape langchain4j
+            // sends for a nested record, silently unconstrained. llama.cpp infers the same way.
+            if (m.containsKey("properties") || m.containsKey("required")) return objectBody(m);
+            if (m.containsKey("items")) return arrayBody(m);
             return "value";
         }
 
@@ -1326,9 +1333,9 @@ public final class Grammar {
 
         /**
          * JSON Schema's object rule, as llama.cpp builds it: the required properties in the
-         * schema's required order, every one present, then the optional properties as an ORDERED
-         * SUBSET in declaration order (any of them may be omitted, none may be invented). Property
-         * order is fixed by the grammar, a documented limitation shared with llama.cpp.
+         * schema's DECLARATION order, every one present, then the optional properties as an ORDERED
+         * SUBSET, also in declaration order (any of them may be omitted, none may be invented).
+         * Property order is fixed by the grammar, a documented limitation shared with llama.cpp.
          */
         @SuppressWarnings("unchecked")
         private String objectBody(Map<String, Object> m) {
@@ -1336,14 +1343,19 @@ public final class Grammar {
             if (!(propsObj instanceof Map) || ((Map<?, ?>) propsObj).isEmpty())
                 return "\"{\" ws \"}\"";
             Map<String, Object> props = (Map<String, Object>) propsObj;
-            List<String> required = new ArrayList<>();
+            Set<String> required = new HashSet<>();
             if (m.get("required") instanceof List<?> req)
-                for (Object k : req)
-                    if (props.containsKey(String.valueOf(k))) required.add(String.valueOf(k));
+                for (Object k : req) required.add(String.valueOf(k));
+            // BOTH groups walk the DECLARATION order, and only membership decides which group a
+            // property joins: the "required" array states WHICH properties are mandatory, never
+            // the order they appear in. Ordering by that array instead (this compiler's first
+            // reading) put {"a":..,"b":..} in the language of a schema declaring b before a - a
+            // shape llama.cpp rejects, and the wrong bet besides: a generated schema lists
+            // properties in its source type's field order, which is the order a model reading
+            // that schema emits them.
             List<String> head = new ArrayList<>(), tail = new ArrayList<>();
-            for (String k : required) head.add(pair(k, props.get(k)));
             for (String k : props.keySet())
-                if (!required.contains(k)) tail.add(pair(k, props.get(k)));
+                (required.contains(k) ? head : tail).add(pair(k, props.get(k)));
             String optional = tail.isEmpty() ? null : optionalSubset(tail, 0);
             if (head.isEmpty()) {
                 return optional == null
@@ -1399,7 +1411,11 @@ public final class Grammar {
     /** JSON-encode a scalar/array/object value to its on-the-wire form. */
     @SuppressWarnings("unchecked")
     static String jsonEncode(Object v) {
-        if (v == null) return "null";
+        // A schema that arrived as TEXT carries the parser's null SENTINEL, not a Java null (a raw
+        // JsonRawSchema, Spring's outputSchema string, any Json.parse'd document). Without this the
+        // stringify fallback below quoted it, so {"enum":[...,null]} could never emit null and
+        // accepted the four-character string "null" instead. Caught by llama.cpp's corpus.
+        if (v == null || v == Json.NULL) return "null";
         if (v instanceof String s) return "\"" + jsonEsc(s) + "\"";
         if (v instanceof Boolean b) return b ? "true" : "false";
         if (v instanceof Number n) {
