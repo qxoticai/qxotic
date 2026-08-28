@@ -232,4 +232,169 @@ class StructuredOutputIT {
         assertEquals("Paris", capital.city());
         assertTrue(!capital.country().isBlank());
     }
+
+    // ---- the upstream provider-IT shapes (OpenAiChatModelResponseFormatIT, OpenAiChatModel
+    // TypeReferenceBeanOutputConverterIT, OpenAiPaymentTransactionIT), on the native path ----
+
+    record Ingredient(String name, int quantity) {}
+
+    record Recipe(String title, List<Ingredient> ingredients, String note) {}
+
+    @Test
+    void nestedRecordsAndArraysBindTheGeneratedSchema() {
+        // the jsonSchemaBeanConverter shape: a record holding a list of records; the generated
+        // schema marks the components required and the grammar must admit the nested array.
+        // `note` has no source in the text: an optional the model may leave out
+        Recipe recipe =
+                ChatClient.create(model)
+                        .prompt(
+                                "Extract the recipe: 'Pancakes' needs 2 eggs and 1 cup of flour."
+                                        + " Give the title and both ingredients with quantities.")
+                        .call()
+                        .entity(
+                                Recipe.class,
+                                ChatClient.EntityParamSpec::useProviderStructuredOutput);
+        // the shape is the point: both named ingredients land as nested records with their
+        // quantities (a duplicated entry is the model's near-tie, not a structural miss)
+        assertNotNull(recipe);
+        assertTrue(recipe.title().toLowerCase().contains("pancake"), recipe.title());
+        assertTrue(recipe.ingredients().size() >= 2, recipe.toString());
+        assertTrue(
+                recipe.ingredients().stream()
+                        .anyMatch(i -> i.name().toLowerCase().contains("egg") && i.quantity() == 2),
+                recipe.toString());
+        assertTrue(
+                recipe.ingredients().stream()
+                        .anyMatch(
+                                i -> i.name().toLowerCase().contains("flour") && i.quantity() == 1),
+                recipe.toString());
+    }
+
+    record ActorFilms(String actor, List<String> movies) {}
+
+    @Test
+    void listOfRecordsByCallAndByStream() {
+        // entity(ParameterizedTypeReference<List<record>>) by call, then by stream with the
+        // chunks concatenated and converted (the TypeReferenceBeanOutputConverterIT shape).
+        // The array must be asked for explicitly: an empty array is a legal document of this
+        // schema, and a reasoning model at a near-tie takes it
+        var type = new org.springframework.core.ParameterizedTypeReference<List<ActorFilms>>() {};
+        var converter = new org.springframework.ai.converter.BeanOutputConverter<>(type);
+        String prompt =
+                "Produce an array with exactly these two entries: Tom Hanks with the movies"
+                        + " Forrest Gump and Cast Away; Meryl Streep with the movies Doubt and"
+                        + " Julie & Julia.";
+        List<ActorFilms> byCall =
+                ChatClient.create(model)
+                        .prompt(prompt)
+                        .call()
+                        .entity(type, ChatClient.EntityParamSpec::useProviderStructuredOutput);
+        assertEquals(2, byCall.size(), byCall.toString());
+        assertTrue(byCall.stream().allMatch(a -> a.movies().size() == 2), byCall.toString());
+
+        // ChatClient.stream().content() joins EVERY chunk's text; the adapter streams reasoning
+        // flagged (IS_THOUGHT_KEY) rather than hidden, so the content lane is selected here
+        String streamed =
+                String.join(
+                        "",
+                        ChatClient.create(model)
+                                .prompt()
+                                .user(prompt)
+                                .options(
+                                        JinferChatOptions.builder()
+                                                .outputSchema(converter.getJsonSchema())
+                                                .maxTokens(512))
+                                .stream()
+                                .chatResponse()
+                                .filter(r -> r.getResult() != null)
+                                .map(r -> r.getResult().getOutput())
+                                .filter(
+                                        m ->
+                                                !Boolean.TRUE.equals(
+                                                        m.getMetadata()
+                                                                .get(
+                                                                        JinferChatModel
+                                                                                .IS_THOUGHT_KEY)))
+                                .map(m -> m.getText() == null ? "" : m.getText())
+                                .collectList()
+                                .block(Duration.ofMinutes(5)));
+        List<ActorFilms> byStream = converter.convert(streamed);
+        assertEquals(2, byStream.size(), streamed);
+        assertTrue(byStream.stream().anyMatch(a -> a.actor().contains("Hanks")), streamed);
+    }
+
+    record Transaction(String id, double amount, String status) {}
+
+    @Test
+    void toolCallThenListOfRecords() {
+        // the PaymentTransactionIT shape: tool round trips first, then the final answer as a
+        // List<record> under the native schema. The rounds are driven by hand, as upstream
+        // does, because this model re-issues its calls once before answering and the client's
+        // per-turn tool limit would otherwise end the turn with its own message as the text
+        var type = new org.springframework.core.ParameterizedTypeReference<List<Transaction>>() {};
+        var converter = new org.springframework.ai.converter.BeanOutputConverter<>(type);
+        ToolCallback status =
+                org.springframework.ai.tool.function.FunctionToolCallback.builder(
+                                "get_transaction_status",
+                                (java.util.function.Function<Map<String, Object>, String>)
+                                        input ->
+                                                "001".equals(input.get("id"))
+                                                        ? "APPROVED"
+                                                        : "REJECTED")
+                        .description("The status of a payment transaction by its id")
+                        .inputType(Map.class)
+                        .inputSchema(
+                                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"the"
+                                    + " transaction id\"}},\"required\":[\"id\"]}")
+                        .build();
+        JinferChatOptions options =
+                JinferChatOptions.builder()
+                        .outputSchema(converter.getJsonSchema())
+                        .toolCallbacks(List.of(status))
+                        .thinking(false)
+                        .temperature(0.0)
+                        .seed(7L)
+                        .maxTokens(768)
+                        .build();
+        List<org.springframework.ai.chat.messages.Message> conversation =
+                new java.util.ArrayList<>(
+                        List.of(
+                                new UserMessage(
+                                        "Transaction 001 is 12.5 and transaction 002 is 40. Look"
+                                                + " up the status of each with the tool - do not"
+                                                + " guess.\nWhen you know both statuses, reply"
+                                                + " with JSON matching this schema, and nothing"
+                                                + " else:\n"
+                                                + converter.getJsonSchema())));
+        AssistantMessage answer = null;
+        for (int round = 0; round < 4 && answer == null; round++) {
+            AssistantMessage a =
+                    model.call(new Prompt(conversation, options)).getResult().getOutput();
+            if (!a.hasToolCalls()) {
+                answer = a;
+                break;
+            }
+            assertTrue(round < 3, "the model never stopped calling");
+            conversation.add(a);
+            conversation.add(
+                    ToolResponseMessage.builder()
+                            .responses(
+                                    a.getToolCalls().stream()
+                                            .map(
+                                                    c ->
+                                                            new ToolResponseMessage.ToolResponse(
+                                                                    c.id(),
+                                                                    c.name(),
+                                                                    status.call(c.arguments())))
+                                            .toList())
+                            .build());
+        }
+        assertNotNull(answer, "no answer within four rounds");
+        List<Transaction> transactions = converter.convert(answer.getText());
+        assertEquals(2, transactions.size(), answer.getText());
+        Transaction first =
+                transactions.stream().filter(t -> t.id().contains("001")).findFirst().orElseThrow();
+        assertEquals("APPROVED", first.status().toUpperCase(), answer.getText());
+        assertEquals(12.5, first.amount(), 0.01, answer.getText());
+    }
 }
