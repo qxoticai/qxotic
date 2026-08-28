@@ -24,6 +24,7 @@ final class EspeakPhonemizer implements Phonemizer {
                 var probe = new ProcessBuilder(name, "--version").redirectErrorStream(true).start();
                 if (probe.waitFor(2, TimeUnit.SECONDS) && probe.exitValue() == 0)
                     return new EspeakPhonemizer(name);
+                probe.destroyForcibly(); // a hung probe is not left behind as a zombie
             } catch (IOException ignored) {
                 // not installed under this name
             } catch (InterruptedException e) {
@@ -53,8 +54,13 @@ final class EspeakPhonemizer implements Phonemizer {
         var run = new StringBuilder();
         for (String token : text.split("\\s+")) {
             if (token.isEmpty()) continue;
+            int start = wordStart(token);
             int end = wordEnd(token);
-            if (end > 0) run.append(token, 0, end).append(' ');
+            if (start > 0) {
+                flush(run, out);
+                out.append(token, 0, start).append(' '); // an opening quote, before its word
+            }
+            if (end > start) run.append(token, start, end).append(' ');
             if (end < token.length()) {
                 flush(run, out);
                 out.append(token, end, token.length()).append(' ');
@@ -75,6 +81,15 @@ final class EspeakPhonemizer implements Phonemizer {
      * Where the word ends and its trailing punctuation begins; shared with the lexicon path. An
      * apostrophe between letters is part of the word ("don't"), not punctuation.
      */
+    /** Where the word begins: past any opening punctuation ("\"hello", "(yes"). */
+    static int wordStart(String token) {
+        int start = 0;
+        while (start < token.length() && !Character.isLetterOrDigit(token.codePointAt(start))) {
+            start += Character.charCount(token.codePointAt(start));
+        }
+        return start == token.length() ? 0 : start; // all punctuation: nothing to split off
+    }
+
     static int wordEnd(String token) {
         int end = token.length();
         while (end > 0) {

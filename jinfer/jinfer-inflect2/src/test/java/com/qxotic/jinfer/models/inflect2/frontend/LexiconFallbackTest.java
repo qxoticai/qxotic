@@ -97,4 +97,32 @@ class LexiconFallbackTest {
         assertArrayEquals(
                 Symbols.blankIntersperse(new int[] {Symbols.idOf('.')}), p.phonemize("."));
     }
+
+    @Test
+    void lookupIsLocaleIndependent() throws IOException {
+        // under a Turkish default locale toLowerCase() turns "I" into dotless i, misses the
+        // lexicon, and the letter-to-sound guess of a non-ASCII letter was empty: a silent word
+        java.util.Locale saved = java.util.Locale.getDefault();
+        java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+        try {
+            Phonemizer p = LexiconPhonemizer.of(LEXICON, null);
+            assertArrayEquals(p.phonemize("hello"), p.phonemize("HELLO"));
+            assertArrayEquals(p.phonemize("hi"), p.phonemize("HI"));
+        } finally {
+            java.util.Locale.setDefault(saved);
+        }
+    }
+
+    @Test
+    void anOpeningQuoteIsAMarkNotPartOfTheWord() throws IOException {
+        // "\"hello" missed the lexicon (and reached espeak whole); the opening quote is a symbol
+        // before the word, spaced like the closing one already was after it
+        Phonemizer p = LexiconPhonemizer.of(LEXICON, null);
+        int[] quote = Symbols.toRaw("\"");
+        int[] space = Symbols.toRaw(" ");
+        assertArrayEquals(
+                Symbols.blankIntersperse(
+                        concat(quote, space, Symbols.toRaw("həloʊ"), space, quote)),
+                p.phonemize("\"hello\""));
+    }
 }
