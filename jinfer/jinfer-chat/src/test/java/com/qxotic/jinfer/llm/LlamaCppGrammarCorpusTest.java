@@ -38,7 +38,8 @@ final class LlamaCppGrammarCorpusTest {
      */
     private static final Map<String, String> DIVERGENCES =
             Map.ofEntries(
-                    // --- keywords documented as ignored: permissive where llama.cpp constrains ---
+                    // --- keywords documented as ignored: PERMISSIVE where llama.cpp constrains,
+                    //     so this compiler accepts documents llama.cpp rejects ---
                     Map.entry("min 0", "numeric bounds"),
                     Map.entry("min 2", "numeric bounds"),
                     Map.entry("min 456", "numeric bounds"),
@@ -52,12 +53,27 @@ final class LlamaCppGrammarCorpusTest {
                     Map.entry("exclusive min / max", "numeric bounds"),
                     Map.entry("simple pattern", "pattern"),
                     Map.entry("pattern with escapes", "pattern"),
+
+                    // --- STRICTER than llama.cpp, and deliberately left so ---
+
+                    // additionalProperties. The object rule admits exactly the declared properties,
+                    // so an undeclared key has no path: this compiler behaves as
+                    // additionalProperties:false ALWAYS. That is right for the common case - a
+                    // generated schema for a closed POJO says false - and safe when it is wrong,
+                    // since the model is held to the declared fields rather than inventing some.
+                    // Supporting `true` means spelling out "any string EXCEPT these", which GBNF
+                    // cannot say directly: llama.cpp builds a trie of the declared names and emits
+                    // its complement (~60 lines), then interleaves the extra pairs with the ordered
+                    // subset already built here. Declined on purpose: highest cost of anything
+                    // left,
+                    // to support schemas that ask a CONSTRAINED decode to also accept anything
+                    // else.
                     Map.entry(
                             "additional properties can't override other properties",
-                            "additionalProperties"),
+                            "additionalProperties (stricter: declared keys only)"),
                     Map.entry(
                             "object properties, additionalProperties: true",
-                            "additionalProperties"),
+                            "additionalProperties (stricter: declared keys only)"),
 
                     // --- semantic choices that differ ---
 
