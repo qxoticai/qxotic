@@ -215,7 +215,7 @@ public final class InflectTTS
     public void speak(
             Inflect2.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
         double speed = speed(options);
-        List<String> chunks = chunks(text);
+        List<String> chunks = chunks(text, wordOverrides);
         // Hold the state for the WHOLE utterance, not per chunk: a close arriving between chunks
         // would otherwise free the arena mid-utterance. Reentrant, so the per-chunk synthesize
         // nests inside this one.
@@ -266,7 +266,7 @@ public final class InflectTTS
      * measures the expanded text (a run of ids grows 4x in normalization; at ~5 frames per
      * character the 4000-frame ceiling holds ~850 characters).
      */
-    List<String> chunks(String text) {
+    static List<String> chunks(String text, Map<String, String> wordOverrides) {
         return split(TextNormalizer.normalize(text, wordOverrides));
     }
 
