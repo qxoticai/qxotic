@@ -92,7 +92,7 @@ class VectorKernelTest {
 
     @Test
     void q4_0() {
-        eachShape("Q4_0", JAM.Q4_0, Q4Kernel::gemm);
+        eachShape("Q4_0", JAM.Q4_0, withScratch(Q4Kernel::gemm));
     }
 
     @Test
@@ -128,6 +128,47 @@ class VectorKernelTest {
     /**
      * Check one dtype's kernel against ScalarJAM at n in {8,13,16} (full tile + both remainders).
      */
+    /**
+     * The band gemm's blocking: k cut into kc-blocks accumulating into the output, panels of
+     * several bands, a trailing partial band and a trailing partial tile - on a k that is neither
+     * one block nor a multiple of the panel.
+     */
+    /**
+     * The band gemm's blocking, for every dequant-to-scratch dtype: k cut into kc-blocks
+     * accumulating into the output (each block's dequant starts at a non-zero element offset),
+     * panels of several bands, a trailing partial band and a trailing partial tile - on a k that is
+     * neither one block nor a multiple of the panel.
+     */
+    @Test
+    void bandBlocking() {
+        Assumptions.assumeTrue(VectorSupport.F_SPECIES.vectorBitSize() >= 128);
+        Scratch s = new Scratch();
+        int m = 61, k = 768; // 3 k-blocks of 256; m not a multiple of MR
+        record Deq(String name, int tag, com.qxotic.jam.vector.BandGemm.RowDequant deq) {}
+        Deq[] deqs = {
+            new Deq("Q8_0", JAM.Q8_0, Q8Kernel::dequantizeRow),
+            new Deq("Q4_0", JAM.Q4_0, Q4Kernel::dequantizeRow),
+            new Deq("Q4_K", JAM.Q4_K, Q4KKernel::dequantizeRow),
+            new Deq("Q5_K", JAM.Q5_K, Q5KKernel::dequantizeRow),
+            new Deq("Q6_K", JAM.Q6_K, Q6KKernel::dequantizeRow),
+        };
+        for (Deq d : deqs)
+            for (int n : new int[] {1, 7, 16, 50}) {
+                Gemm blocked =
+                        (w, a, aBase, o, oBase, aStride, oStride, nn, mm, kk, wOff) ->
+                                com.qxotic.jam.vector.BandGemm.gemm(
+                                        w, a, aBase, o, oBase, aStride, oStride, nn, mm, kk, wOff,
+                                        s, d.deq(), 256);
+                check(
+                        d.name() + " blocked n=" + n,
+                        QuantWeights.encode(d.tag(), m, k, A, RNG),
+                        blocked,
+                        m,
+                        n,
+                        k);
+            }
+    }
+
     private static void eachShape(String name, int tag, Gemm kernel) {
         Assumptions.assumeTrue(
                 VectorSupport.F_SPECIES.vectorBitSize() >= 128,

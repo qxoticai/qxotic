@@ -2,6 +2,7 @@ package com.qxotic.jam.vector;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
@@ -26,23 +27,56 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public final class Scratch {
 
-    private final ConcurrentLinkedQueue<MemorySegment> pool = new ConcurrentLinkedQueue<>();
-
     /**
-     * A native segment of ≥ {@code need} floats (64-byte aligned), reused from the pool when one
-     * fits, else freshly allocated on an auto arena (collected with this pool).
+     * Free buffers by size class (byte size rounded up to a 64 KiB multiple). A single mixed queue
+     * let a 4 MB packed-activation buffer be taken by a 400 KB panel request and then discarded the
+     * small ones on the next big request, so every gemm allocated (and page-faulted) fresh
+     * megabytes: measured as run-to-run jitter of 20% and a steady downward drift.
      */
-    MemorySegment acquire(int need) {
-        MemorySegment b;
-        while ((b = pool.poll()) != null) {
-            if (b.byteSize() >= (long) need * Float.BYTES)
-                return b; // discard undersized buffers; a right-sized one replaces them
-        }
-        return Arena.ofAuto().allocate((long) need * Float.BYTES, 64);
+    private final ConcurrentHashMap<Long, ConcurrentLinkedQueue<MemorySegment>> pools =
+            new ConcurrentHashMap<>();
+
+    private static final long CLASS = 64 * 1024;
+
+    private static long sizeClass(long bytes) {
+        return (bytes + CLASS - 1) / CLASS * CLASS;
     }
 
-    /** Return a buffer for reuse by a later {@code acquire} (on this or a subsequent gemm). */
+    /**
+     * Per-worker buffers for the parallel tasks' private panels, indexed by the worker's pool
+     * index. A task reuses the buffer its own core wrote last time: buffers rotated through the
+     * shared free-list came back from another core's L2, so every dequant store was a remote RFO
+     * (measured: L2 misses grew 3.4x from 1 to 8 threads for the same per-thread work).
+     */
+    private final MemorySegment[] perWorker = new MemorySegment[VectorSupport.PARALLELISM + 1];
+
+    /**
+     * A 64-byte-aligned buffer of at least {@code need} floats private to the calling worker for
+     * the duration of its task. Not released: the slot keeps it for the worker's next task (tasks
+     * never nest). Callers outside the pool share one extra slot, serialized by the gemm lock.
+     */
+    MemorySegment acquireLocal(long need) {
+        int slot = VectorSupport.workerIndex();
+        MemorySegment b = perWorker[slot];
+        long bytes = sizeClass(need * Float.BYTES);
+        if (b == null || b.byteSize() < bytes) {
+            b = Arena.ofAuto().allocate(bytes, 64);
+            perWorker[slot] = b;
+        }
+        return b;
+    }
+
+    /**
+     * A 64-byte-aligned buffer of at least {@code need} floats; return it with {@link #release}.
+     */
+    MemorySegment acquire(long need) {
+        long bytes = sizeClass(need * Float.BYTES);
+        ConcurrentLinkedQueue<MemorySegment> pool = pools.get(bytes);
+        MemorySegment b = pool != null ? pool.poll() : null;
+        return b != null ? b : Arena.ofAuto().allocate(bytes, 64);
+    }
+
     void release(MemorySegment b) {
-        pool.offer(b);
+        pools.computeIfAbsent(b.byteSize(), k -> new ConcurrentLinkedQueue<>()).offer(b);
     }
 }

@@ -42,7 +42,28 @@ public final class Q4Kernel {
             int n,
             int m,
             int k,
-            long wOff) {
+            long wOff,
+            Scratch scratch) {
+        // 512-bit: dequant-to-scratch band gemm wins over the register tile (decode amortized
+        // per row instead of per row x col-tile; measured Q4_0 4096x4096x512, 1T: Graal 91->123
+        // GF/s, C2 121->160).
+        if (TILE512 && wOff % BLOCK == 0 && k % BLOCK == 0) {
+            BandGemm.gemm(
+                    w,
+                    a,
+                    aBase,
+                    o,
+                    oBase,
+                    aStride,
+                    oStride,
+                    n,
+                    m,
+                    k,
+                    wOff,
+                    scratch,
+                    Q4Kernel::dequantizeRow);
+            return;
+        }
         final int seqTile = Math.max(4, VectorSupport.SEQ_TILE);
         final int rowTile = Math.max(2, VectorSupport.ROW_TILE);
         final int seqTileCount = (n + seqTile - 1) / seqTile;
@@ -197,6 +218,35 @@ public final class Q4Kernel {
         store(o, oBase, base + 2L * oStride + 1, c12.reduceLanes(VectorOperators.ADD));
         store(o, oBase, base + 3L * oStride, c03.reduceLanes(VectorOperators.ADD));
         store(o, oBase, base + 3L * oStride + 1, c13.reduceLanes(VectorOperators.ADD));
+    }
+
+    /**
+     * Dequantize one Q4_0 weight row ({@code dim1 % 32 == 0}, block-aligned {@code rowElemOffset})
+     * into {@code dst} at {@code dstBase}: per 32-elem block the 16 nibble bytes fan out as
+     * (lo-8)*d into elements [0,16) and (hi-8)*d into [16,32). 512-bit route only (one SPECIES_128
+     * load = one F_SPECIES f32 vector per half-block).
+     */
+    static void dequantizeRow(
+            MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
+        long blkOff = rowElemOffset / BLOCK * TYPE;
+        long d = dstBase;
+        for (int j = 0; j < dim1; j += BLOCK, blkOff += TYPE, d += (long) BLOCK * 4) {
+            var vd = FloatVector.broadcast(F_SPECIES, readFloat16(w, blkOff));
+            var bytes =
+                    ByteVector.fromMemorySegment(
+                            ByteVector.SPECIES_128, w, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
+            var lo =
+                    ((FloatVector) bytes.and((byte) 0xF).sub((byte) 8).castShape(F_SPECIES, 0))
+                            .mul(vd);
+            var hi =
+                    ((FloatVector)
+                                    bytes.lanewise(VectorOperators.LSHR, 4)
+                                            .sub((byte) 8)
+                                            .castShape(F_SPECIES, 0))
+                            .mul(vd);
+            lo.intoMemorySegment(dst, d, ByteOrder.LITTLE_ENDIAN);
+            hi.intoMemorySegment(dst, d + 64, ByteOrder.LITTLE_ENDIAN);
+        }
     }
 
     /**
