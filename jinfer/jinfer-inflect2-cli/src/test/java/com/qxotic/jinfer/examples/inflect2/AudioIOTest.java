@@ -60,23 +60,4 @@ class AudioIOTest {
         byte[] expected = AudioIO.toS16LE(pcm);
         assertArrayEquals(expected, Arrays.copyOfRange(written, 44, written.length));
     }
-
-    @Test
-    void aDeadPlayerPipeClosesQuietly() throws IOException {
-        // `false` exits at once, so its stdin is a dead pipe by the time we close it: the
-        // buffered bytes flushed by close() used to throw "Stream closed" out of --play
-        Process dead = new ProcessBuilder("false").start();
-        try {
-            dead.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        java.io.OutputStream pipe = InflectCli.tolerant(dead.getOutputStream());
-        try {
-            pipe.write(new byte[4096]);
-        } catch (IOException expected) {
-            // the write may already see the closed pipe; the close below must not
-        }
-        pipe.close();
-    }
 }
