@@ -37,6 +37,21 @@
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
+    <!-- the fast kernels: jam-native extracts and loads its bundled libjam at first use and ships
+         its own native-image metadata (run-time init, the library as an image resource), so the
+         image carries it without further arguments; jam-vector is the Vector API rung beneath it.
+         jam-core is intentionally not bundled, as in jinfer-cli: MatMul falls through to the Java
+         floor, so the scalar backend would be dead weight. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <scope>runtime</scope>
+    </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-compress</artifactId>
