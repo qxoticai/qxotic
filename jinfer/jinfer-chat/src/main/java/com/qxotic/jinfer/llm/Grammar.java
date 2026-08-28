@@ -1203,9 +1203,11 @@ public final class Grammar {
             // forever without progress, growing a fresh matcher state (and a full-vocab mask
             // recompute) per whitespace token. Eight chars covers pretty-printing.
             s.rules.append("ws ::= [ \\t\\n\\r]{0,8}\n");
+            // one JSON character, named so minLength/maxLength can bound a repetition of it
             s.rules.append(
-                    "string ::= \"\\\"\" ([^\"\\\\\\x00-\\x1F] | \"\\\\\" ([\"\\\\/bfnrt] | \"u\""
-                            + " [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* \"\\\"\"\n");
+                    "char ::= [^\"\\\\\\x00-\\x1F] | \"\\\\\" ([\"\\\\/bfnrt] | \"u\""
+                            + " [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])\n");
+            s.rules.append("string ::= \"\\\"\" char* \"\\\"\"\n");
             s.rules.append("integer ::= \"-\"? (\"0\" | [1-9] [0-9]*)\n");
             s.rules.append(
                     "number ::= \"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]?"
@@ -1326,7 +1328,7 @@ public final class Grammar {
                 case "number" -> "number";
                 case "boolean" -> "(\"true\" | \"false\")";
                 case "null" -> "\"null\"";
-                case "string" -> "string";
+                case "string" -> stringBody(m);
                 default -> "value";
             };
         }
@@ -1393,9 +1395,38 @@ public final class Grammar {
             return name;
         }
 
+        /** {@code minLength}/{@code maxLength} bound a repetition of {@code char}. */
+        private String stringBody(Map<String, Object> m) {
+            long min = bound(m, "minLength", 0), max = bound(m, "maxLength", -1);
+            if (min == 0 && max < 0) return "string";
+            return "\"\\\"\" " + repeat("char", min, max) + " \"\\\"\"";
+        }
+
         private String arrayBody(Map<String, Object> m) {
             String item = m.containsKey("items") ? rule(m.get("items")) : "value";
-            return "\"[\" ws (" + item + " (ws \",\" ws " + item + ")*)? ws \"]\"";
+            long min = bound(m, "minItems", 0), max = bound(m, "maxItems", -1);
+            if (min == 0 && max < 0)
+                return "\"[\" ws (" + item + " (ws \",\" ws " + item + ")*)? ws \"]\"";
+            // the FIRST item carries no separator, so the bounds move to the comma-led tail
+            String tail = "(ws \",\" ws " + item + ")";
+            if (min >= 1)
+                return "\"[\" ws " + item + " " + repeat(tail, min - 1, max - 1) + " ws \"]\"";
+            // nothing is required: the whole list, tail included, becomes optional
+            return "\"[\" ws (" + item + " " + repeat(tail, 0, max - 1) + ")? ws \"]\"";
+        }
+
+        /**
+         * {@code term{min,max}} in GBNF; {@code max < 0} is unbounded, and {0,} is just {@code *}.
+         */
+        private static String repeat(String term, long min, long max) {
+            if (max < 0) return min == 0 ? term + "*" : term + "{" + min + ",}";
+            if (max == 0) return "";
+            return min == max ? term + "{" + min + "}" : term + "{" + min + "," + max + "}";
+        }
+
+        /** A non-negative integer keyword, or {@code missing} when absent or not a number. */
+        private static long bound(Map<String, Object> m, String key, long missing) {
+            return m.get(key) instanceof Number n && n.longValue() >= 0 ? n.longValue() : missing;
         }
 
         private String joinLiterals(List<?> values) {
