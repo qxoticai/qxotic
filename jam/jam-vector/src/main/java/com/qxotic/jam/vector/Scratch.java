@@ -48,20 +48,32 @@ public final class Scratch {
      * shared free-list came back from another core's L2, so every dequant store was a remote RFO
      * (measured: L2 misses grew 3.4x from 1 to 8 threads for the same per-thread work).
      */
-    private final MemorySegment[] perWorker = new MemorySegment[VectorSupport.PARALLELISM + 1];
+    private volatile MemorySegment[] perWorker = new MemorySegment[VectorSupport.PARALLELISM + 1];
 
     /**
      * A 64-byte-aligned buffer of at least {@code need} floats private to the calling worker for
      * the duration of its task. Not released: the slot keeps it for the worker's next task (tasks
-     * never nest). Callers outside the pool share one extra slot, serialized by the gemm lock.
+     * never nest). Callers outside the pool share one extra slot, serialized by the gemm lock. A
+     * ForkJoinPool hands out indices beyond its parallelism (compensating workers), so the slot
+     * table grows on demand.
      */
     MemorySegment acquireLocal(long need) {
         int slot = VectorSupport.workerIndex();
-        MemorySegment b = perWorker[slot];
+        MemorySegment[] slots = perWorker;
+        if (slot >= slots.length) {
+            synchronized (this) {
+                if (slot >= perWorker.length)
+                    perWorker =
+                            java.util.Arrays.copyOf(
+                                    perWorker, Math.max(slot + 1, 2 * perWorker.length));
+                slots = perWorker;
+            }
+        }
+        MemorySegment b = slots[slot];
         long bytes = sizeClass(need * Float.BYTES);
         if (b == null || b.byteSize() < bytes) {
             b = Arena.ofAuto().allocate(bytes, 64);
-            perWorker[slot] = b;
+            slots[slot] = b;
         }
         return b;
     }
