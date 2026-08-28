@@ -229,56 +229,6 @@ final class Mappings {
         return out;
     }
 
-    /**
-     * States {@code schema} to the model, appended to the last user message - the other half of a
-     * schema-constrained request.
-     *
-     * <p>A grammar decides what the reply may LOOK like; only the prompt says what it must MEAN. A
-     * schema applied as a grammar alone yields well-formed nonsense: asked to extract a person from
-     * "Johann is 42", a model that never saw the schema answers {@code
-     * {"name":"user_agent","age":42}} - valid under the grammar, wrong in every way that matters.
-     * Hosted providers hide this because their models are trained on a schema channel; a local GGUF
-     * has no such channel, so the schema must be said out loud.
-     *
-     * <p>Appended to the LAST user message rather than added as a message of its own: it is that
-     * request's instruction, it keeps a cached prefix's bytes untouched, and it is where
-     * langchain4j itself puts the schema when a provider declares no schema support - so a jinfer
-     * prompt reads like every other provider's.
-     *
-     * <p>{@code toolsOffered} switches to the composed wording - "and nothing else" talks a model
-     * out of CALLING its tools first, so with tools present the statement binds the eventual
-     * answer, not the whole reply.
-     *
-     * <p>Returns {@code messages} unchanged when {@code schema} is null/empty or no user message is
-     * present (a schema stated to nobody would be a silent prompt mutation).
-     */
-    static List<Message> stating(
-            List<Message> messages, Map<String, Object> schema, boolean toolsOffered) {
-        if (schema == null || schema.isEmpty()) return messages;
-        int last = -1;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            if (messages.get(i).role() == Role.USER) {
-                last = i;
-                break;
-            }
-        }
-        if (last < 0) return messages;
-        List<Message> out = new ArrayList<>(messages);
-        Message user = out.get(last);
-        List<Content> content = new ArrayList<>(user.content());
-        content.add(new Content.Text(statement(schema, toolsOffered), null));
-        out.set(last, new Message(user.role(), content));
-        return out;
-    }
-
-    private static String statement(Map<String, Object> schema, boolean toolsOffered) {
-        return (toolsOffered
-                        ? "\nWhen you can answer, reply with JSON matching this schema, and"
-                                + " nothing else:\n"
-                        : "\nYou must answer with JSON matching this schema, and nothing else:\n")
-                + Json.stringify(schema);
-    }
-
     // ---- JSON Schema: langchain4j's typed tree -> the plain map jinfer's grammar and templates
     // consume. Deliberately written against the PUBLIC dev.langchain4j.model.chat.request.json
     // types: langchain4j ships an internal JsonSchemaElementUtils.toMap that does this, but an
