@@ -817,7 +817,9 @@ public final class GrammarLegacyTest {
         System.out.println("-- schema pinned limitations (documented, not bugs) --");
         MockV v = new MockV();
 
-        // minItems/maxItems are IGNORED (documented: length bounds unsupported)
+        // minItems/maxItems are HONOURED: exactly two items here, so [1] and [1,2,3,4] are out
+        // (this block once pinned them as ignored - the limitation is gone, see the llama.cpp
+        // corpus cases "min+max items" and "required props")
         Grammar.Spec arr =
                 Grammar.fromSchema(
                         linked(
@@ -830,8 +832,9 @@ public final class GrammarLegacyTest {
                                 "maxItems",
                                 2),
                         v);
-        check("minItems ignored (pinned)", acceptsDoc(arr, v, "[1]"));
-        check("maxItems ignored (pinned)", acceptsDoc(arr, v, "[1,2,3,4]"));
+        check("minItems honoured", !acceptsDoc(arr, v, "[1]"));
+        check("maxItems honoured", !acceptsDoc(arr, v, "[1,2,3,4]"));
+        check("item count in range", acceptsDoc(arr, v, "[1,2]"));
 
         // optional (non-required) properties are an ordered subset after the required ones
         Grammar.Spec opt =

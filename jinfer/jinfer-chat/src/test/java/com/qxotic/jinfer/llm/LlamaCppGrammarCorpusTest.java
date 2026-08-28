@@ -50,15 +50,8 @@ final class LlamaCppGrammarCorpusTest {
                     Map.entry("min -1 max 1", "numeric bounds"),
                     Map.entry("min -123 max 42", "numeric bounds"),
                     Map.entry("exclusive min / max", "numeric bounds"),
-                    Map.entry("string w/ min length 1", "string length bounds"),
-                    Map.entry("string w/ min length 3", "string length bounds"),
-                    Map.entry("string w/ max length", "string length bounds"),
-                    Map.entry("string w/ min & max length", "string length bounds"),
                     Map.entry("simple pattern", "pattern"),
                     Map.entry("pattern with escapes", "pattern"),
-                    Map.entry("min+max items", "item counts"),
-                    // ordering now matches; what is left in this case is tags:[] vs minItems 1
-                    Map.entry("required props", "item counts"),
                     Map.entry("exotic formats (list)", "format"),
                     Map.entry(
                             "additional properties can't override other properties",
