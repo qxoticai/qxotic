@@ -1194,6 +1194,7 @@ public final class Grammar {
         // the document $ref pointers resolve against, and one rule per pointer already emitted
         private Map<String, Object> root = Map.of();
         private final Map<String, String> refRules = new LinkedHashMap<>();
+        private final Set<String> formats = new HashSet<>(); // format rules already emitted
 
         static String toGbnf(Map<String, Object> schema, boolean leadingWs) {
             Schema s = new Schema();
@@ -1301,6 +1302,14 @@ public final class Grammar {
                 }
                 return sb.length() == 0 ? "value" : sb.toString();
             }
+            // "format" shapes a STRING, and a node may carry it without saying so (the schema
+            // {"format":"date"} is a date string). An unknown format degrades to a plain string:
+            // the compiler's law is permissive, never broken.
+            if ((m.get("type") == null || "string".equals(m.get("type")))
+                    && m.get("format") instanceof String fmt) {
+                String rule = formatRule(fmt);
+                if (rule != null) return rule;
+            }
             Object type = m.get("type");
             if (type instanceof List<?> types) {
                 StringBuilder sb = new StringBuilder();
@@ -1395,6 +1404,37 @@ public final class Grammar {
             return name;
         }
 
+        /**
+         * The {@code format} shapes llama.cpp defines, emitted on first use so an ordinary grammar
+         * does not carry them. STRUCTURAL only: the month is 01-12 and the day 01-31, so February
+         * 31st parses - a grammar can pin a shape, never a calendar.
+         */
+        private String formatRule(String format) {
+            String body =
+                    switch (format) {
+                        case "date" ->
+                                "[0-9]{4} \"-\" (\"0\" [1-9] | \"1\" [0-2]) \"-\" (\"0\" [1-9]"
+                                        + " | [1-2] [0-9] | \"3\" [0-1])";
+                        case "time" ->
+                                "([01] [0-9] | \"2\" [0-3]) \":\" [0-5] [0-9] \":\" [0-5] [0-9]"
+                                        + " (\".\" [0-9]{3})? (\"Z\" | (\"+\" | \"-\") ([01] [0-9]"
+                                        + " | \"2\" [0-3]) \":\" [0-5] [0-9])";
+                        case "date-time" -> "fmt-date \"T\" fmt-time";
+                        case "uuid" ->
+                                "[0-9a-fA-F]{8} \"-\" [0-9a-fA-F]{4} \"-\" [0-9a-fA-F]{4} \"-\""
+                                        + " [0-9a-fA-F]{4} \"-\" [0-9a-fA-F]{12}";
+                        default -> null;
+                    };
+            if (body == null) return null;
+            if ("date-time".equals(format)) { // its body names the other two
+                formatRule("date");
+                formatRule("time");
+            }
+            if (formats.add(format))
+                rules.append("fmt-").append(format).append(" ::= ").append(body).append("\n");
+            return "\"\\\"\" fmt-" + format + " \"\\\"\"";
+        }
+
         /** {@code minLength}/{@code maxLength} bound a repetition of {@code char}. */
         private String stringBody(Map<String, Object> m) {
             long min = bound(m, "minLength", 0), max = bound(m, "maxLength", -1);
@@ -1403,6 +1443,17 @@ public final class Grammar {
         }
 
         private String arrayBody(Map<String, Object> m) {
+            // "items" as a LIST is tuple validation: one schema per position, length fixed by the
+            // list. Length keywords do not apply - the tuple already states the length.
+            if (m.get("items") instanceof List<?> tuple) {
+                if (tuple.isEmpty()) return "\"[\" ws \"]\"";
+                StringBuilder sb = new StringBuilder("\"[\" ws ");
+                for (int i = 0; i < tuple.size(); i++) {
+                    if (i > 0) sb.append(" ws \",\" ws ");
+                    sb.append(rule(tuple.get(i)));
+                }
+                return sb.append(" ws \"]\"").toString();
+            }
             String item = m.containsKey("items") ? rule(m.get("items")) : "value";
             long min = bound(m, "minItems", 0), max = bound(m, "maxItems", -1);
             if (min == 0 && max < 0)
