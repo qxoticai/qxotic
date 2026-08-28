@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -92,6 +94,16 @@ class Inflect2Test {
                 List.of("Hello world.", "How are you?"),
                 InflectTTS.split("Hello world.  How are you?"));
         assertEquals(List.of("No punctuation here"), InflectTTS.split("No punctuation here"));
+    }
+
+    @Test
+    @Tag("integration")
+    void anAbbreviationDoesNotEndASentence() throws IOException {
+        // the utterance is normalized before it is chunked: "Dr." is "doctor" by the time the
+        // sentence split runs, so the title and the name stay in one breath
+        InflectTTS tts = InflectTTS.load(TestModels.require(REF), Arena.ofAuto());
+        assertEquals(
+                List.of("doctor Smith is here.", "Fine."), tts.chunks("Dr. Smith is here. Fine."));
     }
 
     @Test
@@ -202,5 +214,19 @@ class Inflect2Test {
                                 IllegalArgumentException.class,
                                 () -> synthesize(model, HELLO, 1f, -1f, 1),
                                 "negative variation"));
+    }
+
+    @Test
+    @Tag("integration")
+    void aRunOfIdentifiersIsSpokenNotRefused() throws IOException {
+        // 277 raw characters, 1174 once every digit is a word: chunked on the raw text the
+        // whole run was one chunk and the model refused it over the frame ceiling, with no
+        // audio at all for the sentences before it
+        InflectTTS tts = InflectTTS.load(TestModels.require(REF), Arena.ofAuto());
+        try (Inflect2.State state = tts.newState()) {
+            String text = "Your reference number is " + "4829173650 ".repeat(23);
+            Media.Audio audio = tts.speak(state, text.strip(), SpeechOptions.NONE);
+            assertTrue(audio.pcm().length > 24000 * 30, "half a minute of digits at least");
+        }
     }
 }
