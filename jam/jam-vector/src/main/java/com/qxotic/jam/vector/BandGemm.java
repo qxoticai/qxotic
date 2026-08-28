@@ -66,19 +66,20 @@ final class BandGemm {
     private static int tileStepRt = TILE_CHUNK;
 
     /**
-     * k-block length in elements ({@code -Djam.vector.kc}, default 2048): a tile of NR columns x KC
-     * floats (32 KB at 4x4) must stay L1-resident while one band (same size) streams past it. Kept
-     * a multiple of 256 so every k-quant super-block stays whole.
+     * k-block length in elements ({@code -Djam.vector.kc}, default 512): a tile of NR columns x KC
+     * floats plus one streaming band must stay L1-resident - 16 KB at 4x4, which fits any 32 KB
+     * L1D. Kept a multiple of 256 so every k-quant super-block stays whole. Portable default: on
+     * Zen 5 (48 KB L1D) 1024 measured within noise of it once the tail scheduling landed.
      */
-    static final int KC =
-            Math.max(256, VectorSupport.jamPropInt("jam.vector.kc", 1024) / 256 * 256);
+    static final int KC = Math.max(256, VectorSupport.jamPropInt("jam.vector.kc", 512) / 256 * 256);
 
     /**
      * Dequant panel cap in bytes ({@code -Djam.vector.panelKb}, default 256 KiB): the bands of one
-     * panel are what an activation tile is swept against while L1-hot, and they must stream from L2
-     * - measured 4x4, k=2048: 256 KB panel 323 GF/s, 512 KB 297, 1 MB 239.
+     * panel are what an activation tile is swept against while L1-hot, and they must stay in the L2
+     * available to the core - half of a 512 KB private L2, and 8 cores x 256 KB inside a shared
+     * cluster L2. Portable default: 512 KB measured within noise of it on Zen 5 (1 MB L2).
      */
-    static final int PANEL_BYTES = VectorSupport.jamPropInt("jam.vector.panelKb", 512) * 1024;
+    static final int PANEL_BYTES = VectorSupport.jamPropInt("jam.vector.panelKb", 256) * 1024;
 
     /**
      * Decode one weight row run ({@code count} elements from element offset {@code rowElemOffset})
