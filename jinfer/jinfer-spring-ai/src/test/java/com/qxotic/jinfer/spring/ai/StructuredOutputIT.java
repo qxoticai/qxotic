@@ -9,8 +9,10 @@ import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,9 +24,12 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.ai.tool.function.FunctionToolCallback;
+import org.springframework.core.ParameterizedTypeReference;
 
 /**
  * Native structured output (grammar-constrained decoding) against a real GGUF. Model-gated via
@@ -258,16 +263,13 @@ class StructuredOutputIT {
         // quantities (a duplicated entry is the model's near-tie, not a structural miss)
         assertNotNull(recipe);
         assertTrue(recipe.title().toLowerCase().contains("pancake"), recipe.title());
-        assertTrue(recipe.ingredients().size() >= 2, recipe.toString());
-        assertTrue(
-                recipe.ingredients().stream()
-                        .anyMatch(i -> i.name().toLowerCase().contains("egg") && i.quantity() == 2),
-                recipe.toString());
-        assertTrue(
-                recipe.ingredients().stream()
-                        .anyMatch(
-                                i -> i.name().toLowerCase().contains("flour") && i.quantity() == 1),
-                recipe.toString());
+        assertTrue(hasIngredient(recipe, "egg", 2), recipe.toString());
+        assertTrue(hasIngredient(recipe, "flour", 1), recipe.toString());
+    }
+
+    private static boolean hasIngredient(Recipe recipe, String name, int quantity) {
+        return recipe.ingredients().stream()
+                .anyMatch(i -> i.name().toLowerCase().contains(name) && i.quantity() == quantity);
     }
 
     record ActorFilms(String actor, List<String> movies) {}
@@ -278,8 +280,8 @@ class StructuredOutputIT {
         // chunks concatenated and converted (the TypeReferenceBeanOutputConverterIT shape).
         // The array must be asked for explicitly: an empty array is a legal document of this
         // schema, and a reasoning model at a near-tie takes it
-        var type = new org.springframework.core.ParameterizedTypeReference<List<ActorFilms>>() {};
-        var converter = new org.springframework.ai.converter.BeanOutputConverter<>(type);
+        var type = new ParameterizedTypeReference<List<ActorFilms>>() {};
+        var converter = new BeanOutputConverter<>(type);
         String prompt =
                 "Produce an array with exactly these two entries: Tom Hanks with the movies"
                         + " Forrest Gump and Cast Away; Meryl Streep with the movies Doubt and"
@@ -295,32 +297,29 @@ class StructuredOutputIT {
         // ChatClient.stream().content() joins EVERY chunk's text; the adapter streams reasoning
         // flagged (IS_THOUGHT_KEY) rather than hidden, so the content lane is selected here
         String streamed =
-                String.join(
-                        "",
-                        ChatClient.create(model)
-                                .prompt()
-                                .user(prompt)
-                                .options(
-                                        JinferChatOptions.builder()
-                                                .outputSchema(converter.getJsonSchema())
-                                                .maxTokens(512))
-                                .stream()
-                                .chatResponse()
-                                .filter(r -> r.getResult() != null)
-                                .map(r -> r.getResult().getOutput())
-                                .filter(
-                                        m ->
-                                                !Boolean.TRUE.equals(
-                                                        m.getMetadata()
-                                                                .get(
-                                                                        JinferChatModel
-                                                                                .IS_THOUGHT_KEY)))
-                                .map(m -> m.getText() == null ? "" : m.getText())
-                                .collectList()
-                                .block(Duration.ofMinutes(5)));
+                ChatClient.create(model)
+                        .prompt()
+                        .user(prompt)
+                        .options(
+                                JinferChatOptions.builder()
+                                        .outputSchema(converter.getJsonSchema())
+                                        .maxTokens(512))
+                        .stream()
+                        .chatResponse()
+                        .map(StructuredOutputIT::contentChunk)
+                        .collect(java.util.stream.Collectors.joining())
+                        .block(Duration.ofMinutes(5));
         List<ActorFilms> byStream = converter.convert(streamed);
         assertEquals(2, byStream.size(), streamed);
         assertTrue(byStream.stream().anyMatch(a -> a.actor().contains("Hanks")), streamed);
+    }
+
+    /** A streamed chunk's text on the content lane; a reasoning chunk contributes nothing. */
+    private static String contentChunk(ChatResponse chunk) {
+        if (chunk.getResult() == null) return "";
+        AssistantMessage m = chunk.getResult().getOutput();
+        boolean thought = Boolean.TRUE.equals(m.getMetadata().get(JinferChatModel.IS_THOUGHT_KEY));
+        return thought || m.getText() == null ? "" : m.getText();
     }
 
     record Transaction(String id, double amount, String status) {}
@@ -333,16 +332,12 @@ class StructuredOutputIT {
         // tool turn instead of answering. The composed mask admits BOTH calling and answering
         // (the choice is the model's, and llama.cpp flips the same way run to run), so a model
         // that never settles within four rounds is assumed away, as in the tools+schema test
-        var type = new org.springframework.core.ParameterizedTypeReference<List<Transaction>>() {};
-        var converter = new org.springframework.ai.converter.BeanOutputConverter<>(type);
+        var type = new ParameterizedTypeReference<List<Transaction>>() {};
+        var converter = new BeanOutputConverter<>(type);
+        Function<Map<String, Object>, String> lookup =
+                input -> "001".equals(input.get("id")) ? "APPROVED" : "REJECTED";
         ToolCallback status =
-                org.springframework.ai.tool.function.FunctionToolCallback.builder(
-                                "get_transaction_status",
-                                (java.util.function.Function<Map<String, Object>, String>)
-                                        input ->
-                                                "001".equals(input.get("id"))
-                                                        ? "APPROVED"
-                                                        : "REJECTED")
+                FunctionToolCallback.builder("get_transaction_status", lookup)
                         .description("The status of a payment transaction by its id")
                         .inputType(Map.class)
                         .inputSchema(
@@ -357,30 +352,27 @@ class StructuredOutputIT {
                         .seed(7L)
                         .maxTokens(2048)
                         .build();
-        List<org.springframework.ai.chat.messages.Message> conversation =
-                new java.util.ArrayList<>(
-                        List.of(
-                                new UserMessage(
-                                        "Transaction 001 is 12.5 and transaction 002 is 40. Look"
-                                                + " up the status of each with the tool - do not"
-                                                + " guess.\nWhen you know both statuses, reply"
-                                                + " with JSON matching this schema, and nothing"
-                                                + " else:\n"
-                                                + converter.getJsonSchema())));
+        List<org.springframework.ai.chat.messages.Message> conversation = new ArrayList<>();
+        conversation.add(
+                new UserMessage(
+                        "Transaction 001 is 12.5 and transaction 002 is 40. Look up the status of"
+                                + " each with the tool - do not guess.\nWhen you know both"
+                                + " statuses, reply with JSON matching this schema, and nothing"
+                                + " else:\n"
+                                + converter.getJsonSchema()));
         AssistantMessage answer = null;
         for (int round = 0; round < 4 && answer == null; round++) {
-            AssistantMessage a =
+            AssistantMessage reply =
                     model.call(new Prompt(conversation, options)).getResult().getOutput();
-            if (!a.hasToolCalls()) {
-                answer = a;
-                break;
+            if (!reply.hasToolCalls()) {
+                answer = reply;
+                continue;
             }
-            Assumptions.assumeTrue(round < 3, "the model never stopped calling");
-            conversation.add(a);
+            conversation.add(reply);
             conversation.add(
                     ToolResponseMessage.builder()
                             .responses(
-                                    a.getToolCalls().stream()
+                                    reply.getToolCalls().stream()
                                             .map(
                                                     c ->
                                                             new ToolResponseMessage.ToolResponse(
@@ -392,7 +384,7 @@ class StructuredOutputIT {
         }
         Assumptions.assumeTrue(
                 answer != null && answer.getText() != null && !answer.getText().isBlank(),
-                "the model spent its budget deliberating instead of answering");
+                "the model kept calling or deliberating instead of answering");
         List<Transaction> transactions = converter.convert(answer.getText());
         assertEquals(2, transactions.size(), answer.getText());
         Transaction first =
