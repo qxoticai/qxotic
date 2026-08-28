@@ -1,6 +1,7 @@
 // Best-effort English letter-to-sound: the last rung of the pronunciation ladder.
 package com.qxotic.jinfer.models.inflect2.frontend;
 
+import java.text.Normalizer;
 import java.util.Locale;
 
 /**
@@ -16,9 +17,14 @@ final class LetterToSound {
 
     private LetterToSound() {}
 
-    /** The guess for one lowercase-or-mixed word, stress mark included, or "" for no letters. */
+    /**
+     * The guess for one lowercase-or-mixed word, stress mark included, or "" for no letters. An
+     * accented letter is read as its base letter (café as cafe), never dropped.
+     */
     static String guess(String word) {
-        String w = word.toLowerCase(Locale.ROOT);
+        String w =
+                Normalizer.normalize(word.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}", "");
         StringBuilder out = new StringBuilder(w.length() * 2);
         int i = 0;
         int n = w.length();

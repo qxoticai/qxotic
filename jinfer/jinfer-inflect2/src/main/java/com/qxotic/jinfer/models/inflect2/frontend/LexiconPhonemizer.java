@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 final class LexiconPhonemizer implements Phonemizer {
@@ -95,9 +96,11 @@ final class LexiconPhonemizer implements Phonemizer {
         boolean runHasUnknown = false;
         for (String token : text.split("\\s+")) {
             if (token.isEmpty()) continue;
+            int start = EspeakPhonemizer.wordStart(token);
             int end = EspeakPhonemizer.wordEnd(token);
-            if (end > 0) {
-                String word = token.substring(0, end).toLowerCase();
+            if (start > 0) out.put(Symbols.toRaw(token.substring(0, start))); // an opening quote
+            if (end > start) {
+                String word = token.substring(start, end).toLowerCase(Locale.ROOT);
                 int[] ids = lookup(word);
                 if (ids == null || ids.length == 0) runHasUnknown = true;
                 runWords.add(word);
