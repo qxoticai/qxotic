@@ -99,6 +99,39 @@ class EspeakPhonemizerTest {
         assertTrue(run.length != words.length || !Arrays.equals(run, words));
     }
 
+    @Test
+    void espeakReceivesATerminatedLine() throws IOException {
+        // espeak reads stdin a line at a time. An unterminated final line is a word FRAGMENT to
+        // it, and it answers with a fragment: "world" came back "wˈɜːl", "five" as "fˈɪv",
+        // "hello" as "hˈɛl", "em" as "ˈiː" - 46 of 56 common words measured wrong, once per run.
+        Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "needs a shell");
+        Path dir = Files.createTempDirectory("espeak-stub");
+        Path seen = dir.resolve("seen.txt"), stub = dir.resolve("stub.sh");
+        Files.writeString(stub, "#!/bin/sh\ncat > '" + seen + "'\necho 'həlˈoʊ'\n");
+        stub.toFile().setExecutable(true);
+
+        new EspeakPhonemizer(stub.toString()).phonemize("hello world");
+
+        String sent = Files.readString(seen);
+        assertTrue(sent.endsWith("\n"), "espeak was handed an unterminated line: " + sent);
+        assertEquals("hello world", sent.strip(), "only the run itself, plus the terminator");
+    }
+
+    @Test
+    void aWordIsTheSameWordWhereverItFallsInTheRun() throws IOException {
+        // The version-independent form of the same defect: whatever espeak thinks "world"
+        // sounds like, it must think so in final position too. Unterminated, the halves diverged.
+        int[] tokens = espeak().phonemize("world world");
+        List<Integer> spoken = new ArrayList<>();
+        for (int token : tokens) if (token != 0) spoken.add(token); // drop the blanks
+        int split = spoken.indexOf(Symbols.idOf(' '));
+        assertTrue(split > 0, "the run must keep a separator between the two words");
+        assertEquals(
+                spoken.subList(0, split),
+                spoken.subList(split + 1, spoken.size()),
+                "the same word twice must phonemize the same twice");
+    }
+
     private static int[] concat(Phonemizer espeak, String... words) throws IOException {
         int[] tokens = new int[0];
         for (String word : words) {
