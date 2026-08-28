@@ -109,6 +109,15 @@ public final class TextNormalizer {
             Pattern.compile("\\b(\\d+)(st|nd|rd|th)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern NUMBER = Pattern.compile("\\b\\d[\\d,]*\\b");
     private static final Pattern UPPERCASE_ACRONYM = Pattern.compile("\\b[A-Z]{2,}\\b");
+    // An acronym glued to the end of a word - "GraalVM", "macOS", "OpenAI". \b needs a
+    // non-letter on both sides, so the rule above cannot see one of these, and the whole
+    // compound reaches the phonemizer as a single unpronounceable token: espeak makes
+    // "GraalVM" into one word ending in a schwa, and the letter-to-sound rules make "lvm",
+    // a consonant run with no vowel in it at all, which is silence with extra steps.
+    private static final Pattern GLUED_ACRONYM = Pattern.compile("(?<=[a-z0-9])(?=[A-Z]{2,}\\b)");
+    // The mirror case, an acronym in front of a capitalized word: "HTTPServer". Two capitals
+    // must already precede the split, so "VMware" stays whole rather than becoming "V Mware".
+    private static final Pattern ACRONYM_THEN_WORD = Pattern.compile("(?<=[A-Z]{2})(?=[A-Z][a-z])");
     private static final Pattern IDENTIFIER = Pattern.compile("([A-Za-z]?)(\\d+)([A-Za-z]?)");
 
     private static final Pattern REPEATED_COMMA = Pattern.compile(",(?:\\s*,)+");
@@ -165,6 +174,9 @@ public final class TextNormalizer {
                                                 + digitWords(r.group(2)));
         text = ORDINAL.matcher(text).replaceAll(r -> ordinal(r.group(1)));
         text = NUMBER.matcher(text).replaceAll(TextNormalizer::number);
+        // Free the embedded acronyms first, so the rule below can see them as words.
+        text = GLUED_ACRONYM.matcher(text).replaceAll(" ");
+        text = ACRONYM_THEN_WORD.matcher(text).replaceAll(" ");
         text = UPPERCASE_ACRONYM.matcher(text).replaceAll(r -> spellLetters(r.group()));
 
         return tidy(text);
