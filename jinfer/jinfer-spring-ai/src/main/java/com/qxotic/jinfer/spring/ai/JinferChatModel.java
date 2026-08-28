@@ -342,9 +342,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * the think gating and the dead-end stop token are the engine's. Specs are cached per (schema,
      * vocab), so repeated schemas reuse the compiled masks.
      *
-     * <p>Grammar ONLY, deliberately - unlike the langchain4j provider, which also states the schema
-     * in the prompt ({@code Mappings.stating}). Spring AI's own {@code BeanOutputConverter} already
-     * appends the schema as format instructions, so stating it here would say it twice.
+     * <p>Grammar ONLY: neither adapter restates the schema in the prompt. Spring AI's own {@code
+     * BeanOutputConverter} appends it as format instructions on the paths that use it, and where it
+     * does not ({@code useProviderStructuredOutput}, or a caller setting {@code outputSchema}),
+     * saying it is the caller's to do - see the package docs.
      *
      * <p>The output schema as GBNF source - the engine compiles the family's constrained selection.
      */

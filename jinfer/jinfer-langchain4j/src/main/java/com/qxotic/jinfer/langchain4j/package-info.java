@@ -74,12 +74,55 @@
  * cost reasoning quality. Expect grammar-valid output always; expect FIELD QUALITY to track the
  * model - a constrained small model produces well-formed JSON with weak content.
  *
+ * <h2>Constrained output: the prompt still has a job</h2>
+ *
+ * <p>THE GRAMMAR GUARANTEES THE FORM; THE PROMPT SETS THE PLAN. A mask says, at each step, "not
+ * that token" - it never says "here is the target". The model decides WHAT to write from the prompt
+ * alone, and the mask then edits how that decision is spelled, one token at a time. When the two
+ * agree the grammar never fires and costs nothing. When they disagree the grammar wins on syntax
+ * and the CONTENT pays, because a greedy decoder cannot revise a prefix it has already committed
+ * to.
+ *
+ * <p>What that looks like: asked to extract "Apollo 11 launched on 16 July 1969" into a record with
+ * a {@code LocalDate}, and given the schema ONLY as a grammar, LFM2.5-2.6B answered {@code
+ * "1677-11-19"}. It began writing the DAY, as the sentence spells it; the date rule admits only
+ * digits; that 16 was stranded in the year field with no way back. The output is perfectly valid
+ * JSON against the schema - which is the danger, since nothing throws and nothing logs.
+ *
+ * <p>This does NOT improve with model size. On the langchain4j POJO battery, stating the schema in
+ * the prompt is worth 36 vs 32 of 39 on LFM2.5-2.6B and 34 vs 28 on gemma-4-26B: the larger model
+ * loses MORE, because it has stronger ideas of its own for the mask to fight. So state the shape
+ * you are about to enforce - this provider will not do it for you, and neither will langchain4j
+ * once a provider declares {@code RESPONSE_FORMAT_JSON_SCHEMA}, as this one must to get grammars at
+ * all.
+ *
+ * <p>SAY IT IN PLAIN WORDS, not schema jargon. "Write dates as YYYY-MM-DD" fixed the case above;
+ * the same schema carrying {@code "format": "date"} did not, reliably - that spelling asks the
+ * model to know a JSON Schema convention, the sentence asks it to know nothing. An example of the
+ * output you want is better still. And prefer to CONSTRAIN WHAT YOU ALREADY ASKED FOR: "answer yes
+ * or no" with a two-way choice grammar cannot diverge, because the plan and the form are the same
+ * thing.
+ *
+ * <p>None of which makes the grammar redundant - it buys what a prompt cannot promise. A
+ * well-prompted UNCONSTRAINED run of the same request returned the right date wrapped in a {@code
+ * ```json} fence; elsewhere it returned prose. The grammar makes a fence, a preamble, an invented
+ * field, a truncated string and malformed JSON unrepresentable rather than unlikely. Prompt for
+ * CORRECT, constrain for WELL-FORMED; neither substitutes for the other.
+ *
+ * <p>Where to put it: in your system prompt, welded with {@link
+ * com.qxotic.jinfer.langchain4j.JinferChatModel#withCachedPrompt} - a fixed schema in a fixed
+ * prefix is prefilled ONCE per process (or zero times, mounted from {@code Builder.promptCache}),
+ * where the same text on each request's user message is re-prefilled every time. In multi-turn it
+ * also matters that a prefix stays byte-identical: text appended to the newest user message moves
+ * each turn, so the reusable prefix ends at the previous turn and every earlier assistant answer is
+ * recomputed.
+ *
  * <h2>Tool declarations</h2>
  *
  * <p>DESCRIBE EVERY TOOL. A local model decides from the declaration alone whether a tool applies,
  * and a small checkpoint skips an undescribed one and answers from its own knowledge instead.
- * langchain4j builds the declaration by reflecting the method, so a tool written without {@code
- * @Tool("...")}, without {@code @P("...")} on its parameters, or compiled without {@code
+ * langchain4j builds the declaration by reflecting the method, so a tool written without
+ * {@code @Tool("...")}, without {@code @P("...")} on its parameters, or compiled without {@code
  * -parameters} (which leaves the argument names as {@code arg0}, {@code arg1}) reaches the model
  * with nothing to reason about.
  *

@@ -375,16 +375,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             LOG.warn(prefix.toolsOverrideWarning(tools));
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
-        // a schema constrains the SHAPE through the grammar below; stating says its MEANING,
-        // which no local model can infer from a mask - to the REQUEST's messages only, a cached
-        // prefix keeps its bytes (see Mappings.stating). The engine derives the fallback's
-        // render maps from this same conversation, so both encode paths state it identically.
+        // The schema constrains the SHAPE through the grammar below and is NOT restated in the
+        // prompt: the caller owns their prompt, and a provider that appends to it spends the
+        // caller's tokens invisibly (measured on LFM2.5: 119 for a two-field record, 358 for a
+        // nine-field one, against a 22-token question). A model that must be TOLD the shape in
+        // words should be told by whoever wrote the request.
         Map<String, Object> schema = schemaOf(p);
-        messages.addAll(
-                Mappings.stating(
-                        Mappings.toMessages(request.messages(), videoSampler),
-                        schema,
-                        !tools.isEmpty()));
+        messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
