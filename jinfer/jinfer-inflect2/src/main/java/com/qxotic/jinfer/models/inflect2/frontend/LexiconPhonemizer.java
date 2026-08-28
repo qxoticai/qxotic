@@ -100,8 +100,11 @@ final class LexiconPhonemizer implements Phonemizer {
             int end = EspeakPhonemizer.wordEnd(token);
             if (start > 0) out.put(Symbols.toRaw(token.substring(0, start))); // an opening quote
             if (end > start) {
-                String word = token.substring(start, end).toLowerCase(Locale.ROOT);
-                int[] ids = lookup(word);
+                // Keep the spelling the writer used. Only the lexicon key is lowercased: espeak
+                // reads capitals as information (it says "GraalVM" as "graal vee em" and
+                // "graalvm" as one mangled word), and letter-to-sound lowercases for itself.
+                String word = token.substring(start, end);
+                int[] ids = lookup(word.toLowerCase(Locale.ROOT));
                 if (ids == null || ids.length == 0) runHasUnknown = true;
                 runWords.add(word);
                 runIds.add(ids);

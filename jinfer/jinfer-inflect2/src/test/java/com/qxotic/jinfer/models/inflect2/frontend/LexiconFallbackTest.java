@@ -67,6 +67,24 @@ class LexiconFallbackTest {
     }
 
     @Test
+    void theFallbackSeesTheSpellingTheWriterUsed() throws IOException {
+        // Only the lexicon KEY is lowercased. espeak reads capitals as information - it says
+        // "GraalVM" as "graal vee em" and the lowercased "graalvm" as one mangled word - so
+        // handing it a flattened run threw away the only clue it had, and the VM went silent.
+        var seen = new AtomicInteger();
+        Phonemizer p =
+                LexiconPhonemizer.of(
+                        LEXICON,
+                        run -> {
+                            seen.incrementAndGet();
+                            assertEquals("Hello GraalVM", run);
+                            return "həloʊ";
+                        });
+        p.phonemize("Hello GraalVM");
+        assertEquals(1, seen.get());
+    }
+
+    @Test
     void withoutAFallbackUnknownWordsAreGuessedByRule() throws IOException {
         Phonemizer p = LexiconPhonemizer.of(LEXICON, null);
         int[] expected =
