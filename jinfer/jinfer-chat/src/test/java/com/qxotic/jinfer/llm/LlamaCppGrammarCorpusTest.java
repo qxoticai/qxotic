@@ -52,7 +52,6 @@ final class LlamaCppGrammarCorpusTest {
                     Map.entry("exclusive min / max", "numeric bounds"),
                     Map.entry("simple pattern", "pattern"),
                     Map.entry("pattern with escapes", "pattern"),
-                    Map.entry("exotic formats (list)", "format"),
                     Map.entry(
                             "additional properties can't override other properties",
                             "additionalProperties"),
