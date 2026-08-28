@@ -215,7 +215,7 @@ public final class InflectTTS
     public void speak(
             Inflect2.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
         double speed = speed(options);
-        List<String> chunks = split(text);
+        List<String> chunks = chunks(text);
         // Hold the state for the WHOLE utterance, not per chunk: a close arriving between chunks
         // would otherwise free the arena mid-utterance. Reentrant, so the per-chunk synthesize
         // nests inside this one.
@@ -250,11 +250,7 @@ public final class InflectTTS
 
     private float[] synthesizeChunk(Inflect2.State state, String chunk, double speed, long seed)
             throws IOException {
-        String normalized = TextNormalizer.normalize(chunk, wordOverrides);
-        int[] tokens =
-                phonemizer != null
-                        ? phonemizer.phonemize(normalized)
-                        : Symbols.toTokens(normalized);
+        int[] tokens = phonemizer != null ? phonemizer.phonemize(chunk) : Symbols.toTokens(chunk);
         if (tokens.length == 0) return new float[0];
         // The model takes a length scale, which is the reciprocal of a speaking rate.
         Media.Audio audio =
@@ -263,6 +259,16 @@ public final class InflectTTS
     }
 
     // ── chunking ──────────────────────────────────────────────────────────
+
+    /**
+     * The utterance as the model will see it, in chunks: normalized FIRST, then split. An
+     * abbreviation's period is gone before the sentence split can pause on it, and the chunk limit
+     * measures the expanded text (a run of ids grows 4x in normalization; at ~5 frames per
+     * character the 4000-frame ceiling holds ~850 characters).
+     */
+    List<String> chunks(String text) {
+        return split(TextNormalizer.normalize(text, wordOverrides));
+    }
 
     /** Sentence-sized chunks: split on sentence punctuation, then break anything still too long. */
     static List<String> split(String text) {
