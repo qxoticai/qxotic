@@ -334,8 +334,63 @@ final class VectorSupport {
         parallelFor(from, to, body, 1);
     }
 
+    /** {@code -Djam.vector.stats=true}: per-region wall/busy accounting, printed at exit. */
+    static final boolean STATS = Boolean.getBoolean("jam.vector.stats");
+
+    static final java.util.concurrent.atomic.AtomicLong
+            ST_WALL = new java.util.concurrent.atomic.AtomicLong(),
+            ST_BUSY = new java.util.concurrent.atomic.AtomicLong(),
+            ST_REGIONS = new java.util.concurrent.atomic.AtomicLong(),
+            ST_ITEMS = new java.util.concurrent.atomic.AtomicLong();
+
+    static {
+        if (STATS)
+            Runtime.getRuntime()
+                    .addShutdownHook(
+                            new Thread(
+                                    () ->
+                                            System.err.printf(
+                                                    "jam.vector.stats: regions=%d items=%d"
+                                                            + " wall=%.3fs busy=%.3fs"
+                                                            + " busy/(wall*T)=%.1f%% avg"
+                                                            + " region=%.0fus%n",
+                                                    ST_REGIONS.get(),
+                                                    ST_ITEMS.get(),
+                                                    ST_WALL.get() / 1e9,
+                                                    ST_BUSY.get() / 1e9,
+                                                    100.0
+                                                            * ST_BUSY.get()
+                                                            / (ST_WALL.get()
+                                                                    * (double) PARALLELISM),
+                                                    ST_WALL.get()
+                                                            / 1e3
+                                                            / Math.max(1, ST_REGIONS.get()))));
+    }
+
     private static void parallelFor(int from, int to, IntConsumer body, int maxChunkSize) {
         if (from >= to) return;
+        if (STATS) {
+            IntConsumer inner = body;
+            body =
+                    i -> {
+                        long t0 = System.nanoTime();
+                        inner.accept(i);
+                        ST_BUSY.addAndGet(System.nanoTime() - t0);
+                    };
+            long t0 = System.nanoTime();
+            try {
+                parallelForImpl(from, to, body, maxChunkSize);
+            } finally {
+                ST_WALL.addAndGet(System.nanoTime() - t0);
+                ST_REGIONS.incrementAndGet();
+                ST_ITEMS.addAndGet(to - from);
+            }
+            return;
+        }
+        parallelForImpl(from, to, body, maxChunkSize);
+    }
+
+    private static void parallelForImpl(int from, int to, IntConsumer body, int maxChunkSize) {
         if (PARALLELISM == 1 || (long) to - from <= maxChunkSize) {
             for (int i = from; i < to; i++) body.accept(i);
             return;
