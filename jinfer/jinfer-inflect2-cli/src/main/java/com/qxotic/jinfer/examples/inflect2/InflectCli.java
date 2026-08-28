@@ -1,4 +1,4 @@
-// Command line for Inflect2: synthesize text to a WAV file, or pipe it to a system player.
+// Command line for Inflect2: synthesize text to a WAV file, or speak it aloud.
 //
 //   inflect model.gguf --text "Hello world." --output hello.wav
 //   inflect --model z://default.gguf --play --speed 1.1
@@ -11,9 +11,7 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.models.inflect2.Inflect2;
 import com.qxotic.jinfer.models.inflect2.InflectTTS;
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.nio.channels.Channels;
@@ -28,37 +26,40 @@ public final class InflectCli {
     private static final String SELF_ARCHIVE = "z://";
     private static final String DEFAULT_ENTRY = "default.gguf";
 
-    public static void main(String[] args) throws IOException {
-        Options options;
+    public static void main(String[] args) {
         try {
-            options = Options.parse(args);
-        } catch (IllegalArgumentException e) {
-            System.err.println("inflect: " + e.getMessage());
+            run(Options.parse(args));
+        } catch (IllegalArgumentException badCommandLine) {
+            System.err.println("inflect: " + badCommandLine.getMessage());
             usage(System.err);
             System.exit(2);
-            return;
+        } catch (Player.Failed playerQuit) {
+            // The player's status becomes ours: a script can tell a refused format from a
+            // missing device without parsing anything we print.
+            System.err.println("inflect: " + playerQuit.getMessage());
+            System.exit(playerQuit.status);
+        } catch (IOException e) {
+            // A player that will not start and a path that will not open are both the user's to
+            // fix, and the message says how. A stack trace through the synthesis loop does not.
+            System.err.println("inflect: " + e.getMessage());
+            System.exit(1);
         }
+    }
+
+    /** The whole program, once the command line is understood: load a voice, then use it. */
+    private static void run(Options options) throws IOException {
         if (options.help) {
             usage(System.out);
-            return;
-        }
-        if (options.list) {
+        } else if (options.list) {
             list(options.model);
-            return;
-        }
-
-        InflectTTS tts = tuned(open(options.model), options);
-        // one state for the whole run: minting one per utterance repays every sizing allocation
-        // and closes a shared arena, which is a JVM-wide handshake
-        try (Inflect2.State state = tts.newState()) {
-            if (options.play) {
-                int exit = play(tts, state, options);
-                if (exit != 0) {
-                    // the player said why on stderr; ours is the status, as its exit code
-                    System.err.println("inflect: the audio player exited with status " + exit);
-                    System.exit(exit);
-                }
-            } else write(tts, state, options);
+        } else {
+            InflectTTS tts = tuned(open(options.model), options);
+            // One state for the whole run: minting one per utterance repays every sizing
+            // allocation, and closes a shared arena, which is a JVM-wide handshake.
+            try (Inflect2.State state = tts.newState()) {
+                if (options.play) play(tts, state, options);
+                else write(tts, state, options);
+            }
         }
     }
 
@@ -91,24 +92,23 @@ public final class InflectCli {
         }
     }
 
+    /** Synthesize the whole utterance into {@code wav}, saying how fast the model ran. */
+    private static Path render(InflectTTS tts, Inflect2.State state, Options options, Path wav)
+            throws IOException {
+        long from = System.nanoTime();
+        var audio = tts.speak(state, options.text, delivery(options));
+        double elapsed = (System.nanoTime() - from) / 1e9;
+        double seconds = audio.pcm().length / (double) audio.sampleRate();
+        AudioIO.writeWav(audio.pcm(), audio.sampleRate(), wav);
+        System.out.printf(
+                "%.2f s of audio in %.2f s (%.1fx realtime)%n",
+                seconds, elapsed, seconds / elapsed);
+        return wav;
+    }
+
     private static void write(InflectTTS tts, Inflect2.State state, Options options)
             throws IOException {
-        long start = System.nanoTime();
-        var audio = tts.speak(state, options.text, delivery(options));
-        double elapsed = (System.nanoTime() - start) / 1e9;
-        float[] pcm = audio.pcm();
-        double seconds = pcm.length / (double) audio.sampleRate();
-        float peak = 0;
-        double energy = 0;
-        for (float sample : pcm) {
-            peak = Math.max(peak, Math.abs(sample));
-            energy += (double) sample * sample;
-        }
-        AudioIO.writeWav(pcm, audio.sampleRate(), options.output);
-        System.out.printf(
-                "%.2f s of audio in %.2f s (%.1fx realtime), peak %.3f, rms %.4f%n",
-                seconds, elapsed, seconds / elapsed, peak, Math.sqrt(energy / pcm.length));
-        System.out.println("wrote " + options.output.toAbsolutePath());
+        System.out.println("wrote " + render(tts, state, options, options.output).toAbsolutePath());
     }
 
     /** The speaking rate, the one option the boundary carries. */
@@ -117,106 +117,50 @@ public final class InflectCli {
     }
 
     /**
-     * Stream to a system player. The player is a separate process, so writing into its pipe is
-     * already the overlap: synthesis of the next chunk proceeds while the player drains this one.
+     * Speak it aloud: streamed to the player clip by clip where that is possible, and through a
+     * temporary WAV where it is not. {@link Player} says which players are which, and why.
      */
-    private static int play(InflectTTS tts, Inflect2.State state, Options options)
+    private static void play(InflectTTS tts, Inflect2.State state, Options options)
             throws IOException {
-        // the player's stderr stays visible: when it refuses the stream, its reason is the
-        // diagnosis (ffplay on a box without an audio device, an unknown format flag)
-        Process player =
-                new ProcessBuilder(playerCommand(tts.sampleRate()))
-                        .redirectErrorStream(false)
-                        .redirectError(ProcessBuilder.Redirect.INHERIT)
-                        .start();
-        long start = System.nanoTime();
-        int[] samples = {0};
+        int rate = tts.sampleRate();
+        Player speaker = Player.streaming(rate);
+        if (speaker == null) {
+            // Nothing installed can read a pipe: finish the utterance and hand over the file.
+            Player.requireFilePlayer();
+            Path wav = Files.createTempFile("inflect", ".wav");
+            try {
+                Player.play(render(tts, state, options, wav));
+            } finally {
+                Files.deleteIfExists(wav);
+            }
+            return;
+        }
+        long from = System.nanoTime();
         boolean[] first = {true};
-        try (OutputStream pipe = tolerant(player.getOutputStream())) {
-            // A short lead-in keeps the player from starving before the first chunk lands.
-            pipe.write(
-                    AudioCodec.pcm16(
-                            new Media.Audio(
-                                    new float[tts.sampleRate() / 32], tts.sampleRate(), 1)));
-            // Headerless PCM, so the pieces concatenate; the player was told the format on its
-            // command line. A pipe that closes (the user quit the player) cancels the synthesis
-            // instead of filling a dead buffer.
+        try (speaker) {
+            // A moment of silence, so the player has something to chew on while the first clip is
+            // still being synthesized.
+            speaker.offer(AudioCodec.pcm16(new Media.Audio(new float[rate / 32], rate, 1)));
+            // Headerless PCM, so the clips concatenate; the player was told the format up front.
+            // The pipe IS the overlap: offer() blocks once it is full, so the next clip is
+            // synthesized while the player drains this one.
             tts.speak(
                     state,
                     options.text,
                     delivery(options),
                     clip -> {
+                        if (!speaker.offer(AudioCodec.pcm16(clip))) return false;
+                        // Latency is what streaming is about, and the only honest number here:
+                        // past the first clip the pipe paces us, so a rate would be measuring the
+                        // speaker. --output measures how fast the model runs.
                         if (first[0]) {
-                            System.out.printf(
-                                    "first audio after %.2f s%n",
-                                    (System.nanoTime() - start) / 1e9);
                             first[0] = false;
+                            System.out.printf(
+                                    "first audio after %.2f s%n", (System.nanoTime() - from) / 1e9);
                         }
-                        samples[0] += clip.pcm().length;
-                        try {
-                            pipe.write(AudioCodec.pcm16(clip));
-                            pipe.flush();
-                            return true;
-                        } catch (IOException e) {
-                            return false; // the player quit: stop synthesizing for a dead pipe
-                        }
+                        return true;
                     });
         }
-        double elapsed = (System.nanoTime() - start) / 1e9;
-        double seconds = samples[0] / (double) tts.sampleRate();
-        System.out.printf(
-                "%.2f s of audio in %.2f s (%.1fx realtime)%n",
-                seconds, elapsed, seconds / elapsed);
-        try {
-            return player.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            player.destroy();
-            return 130;
-        }
-    }
-
-    /**
-     * The player's stdin, whose close never throws: a player that quit (or refused the stream)
-     * leaves a dead pipe, and the buffered bytes it will never read are not an error of ours - the
-     * exit status the caller reads afterwards is the diagnosis.
-     */
-    static OutputStream tolerant(OutputStream pipe) {
-        return new java.io.FilterOutputStream(pipe) {
-            @Override
-            public void write(byte[] b, int off, int len) throws IOException {
-                out.write(b, off, len); // FilterOutputStream's default is one byte at a time
-            }
-
-            @Override
-            public void close() {
-                try {
-                    out.close();
-                } catch (IOException ignored) {
-                    // a dead pipe: nothing left to deliver
-                }
-            }
-        };
-    }
-
-    /** Raw S16LE over stdin - aplay where present, else ffplay. */
-    private static String[] playerCommand(int sampleRate) throws IOException {
-        String rate = String.valueOf(sampleRate);
-        if (onPath("aplay"))
-            return new String[] {"aplay", "-f", "S16_LE", "-r", rate, "-c", "1", "-"};
-        if (onPath("ffplay"))
-            return new String[] {
-                "ffplay", "-f", "s16le", "-ar", rate, "-ac", "1", "-nodisp", "-autoexit", "-"
-            };
-        throw new IOException("no audio player found - install aplay or ffplay");
-    }
-
-    private static boolean onPath(String command) {
-        String path = System.getenv("PATH");
-        if (path == null) return false;
-        for (String directory : path.split(File.pathSeparator))
-            if (Files.isExecutable(Path.of(directory, command))) return true;
-        return false;
     }
 
     /** Models inside the executable's ZIP overlay, with the config of the selected one. */
@@ -260,7 +204,7 @@ public final class InflectCli {
                   --variation <0-1>   latent noise scale (default: 0.667)
                   --seed <int>        random seed (default: 7)
                   --override <k> <v>  pronunciation override, repeatable
-                  --play              pipe audio to aplay/ffplay instead of writing a file
+                  --play              play it instead of writing a file (aplay/ffplay/afplay)
                   --list              list models in the executable's overlay, and their config
                   --help              show this message\
                 """);
