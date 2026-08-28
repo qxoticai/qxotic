@@ -74,6 +74,22 @@
  * cost reasoning quality. Expect grammar-valid output always; expect FIELD QUALITY to track the
  * model - a constrained small model produces well-formed JSON with weak content.
  *
+ * <h2>Tool declarations</h2>
+ *
+ * <p>DESCRIBE EVERY TOOL. A local model decides from the declaration alone whether a tool applies,
+ * and a small checkpoint skips an undescribed one and answers from its own knowledge instead.
+ * langchain4j builds the declaration by reflecting the method, so a tool written without {@code
+ * @Tool("...")}, without {@code @P("...")} on its parameters, or compiled without {@code
+ * -parameters} (which leaves the argument names as {@code arg0}, {@code arg1}) reaches the model
+ * with nothing to reason about.
+ *
+ * <p>Measured, same model and question: given {@code add(arg0, arg1)} with no descriptions,
+ * LFM2.5-8B-A1B answered "the provided tools are not applicable for basic arithmetic calculations"
+ * and called nothing; given a described {@code add(a, b)} it called the tool on the first try.
+ * Hosted frontier models tolerate bare declarations because they were trained to - local ones
+ * should not be asked to. The same law as structured output: the wire is always well-formed, the
+ * DECISION tracks the model.
+ *
  * <h2>Prompt caching and speed, diagnosable</h2>
  *
  * <p>{@code withCachedPrompt(messages, tools)} pins a view's prefix and default tools, prefilled
