@@ -51,8 +51,14 @@ public final class InflectCli {
         // one state for the whole run: minting one per utterance repays every sizing allocation
         // and closes a shared arena, which is a JVM-wide handshake
         try (Inflect2.State state = tts.newState()) {
-            if (options.play) play(tts, state, options);
-            else write(tts, state, options);
+            if (options.play) {
+                int exit = play(tts, state, options);
+                if (exit != 0) {
+                    // the player said why on stderr; ours is the status, as its exit code
+                    System.err.println("inflect: the audio player exited with status " + exit);
+                    System.exit(exit);
+                }
+            } else write(tts, state, options);
         }
     }
 
@@ -114,16 +120,19 @@ public final class InflectCli {
      * Stream to a system player. The player is a separate process, so writing into its pipe is
      * already the overlap: synthesis of the next chunk proceeds while the player drains this one.
      */
-    private static void play(InflectTTS tts, Inflect2.State state, Options options)
+    private static int play(InflectTTS tts, Inflect2.State state, Options options)
             throws IOException {
+        // the player's stderr stays visible: when it refuses the stream, its reason is the
+        // diagnosis (ffplay on a box without an audio device, an unknown format flag)
         Process player =
                 new ProcessBuilder(playerCommand(tts.sampleRate()))
-                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .redirectErrorStream(false)
+                        .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
         long start = System.nanoTime();
         int[] samples = {0};
         boolean[] first = {true};
-        try (OutputStream pipe = player.getOutputStream()) {
+        try (OutputStream pipe = tolerant(player.getOutputStream())) {
             // A short lead-in keeps the player from starving before the first chunk lands.
             pipe.write(
                     AudioCodec.pcm16(
@@ -159,11 +168,35 @@ public final class InflectCli {
                 "%.2f s of audio in %.2f s (%.1fx realtime)%n",
                 seconds, elapsed, seconds / elapsed);
         try {
-            player.waitFor();
+            return player.waitFor();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             player.destroy();
+            return 130;
         }
+    }
+
+    /**
+     * The player's stdin, whose close never throws: a player that quit (or refused the stream)
+     * leaves a dead pipe, and the buffered bytes it will never read are not an error of ours - the
+     * exit status the caller reads afterwards is the diagnosis.
+     */
+    static OutputStream tolerant(OutputStream pipe) {
+        return new java.io.FilterOutputStream(pipe) {
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                out.write(b, off, len); // FilterOutputStream's default is one byte at a time
+            }
+
+            @Override
+            public void close() {
+                try {
+                    out.close();
+                } catch (IOException ignored) {
+                    // a dead pipe: nothing left to deliver
+                }
+            }
+        };
     }
 
     /** Raw S16LE over stdin - aplay where present, else ffplay. */
