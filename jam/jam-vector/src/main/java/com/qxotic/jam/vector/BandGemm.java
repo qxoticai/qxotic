@@ -171,58 +171,85 @@ final class BandGemm {
         final int tiles = (n + NR - 1) / NR;
         final int kBlocks = (k + kc - 1) / kc;
         final int panel = panelRows(kc, m);
-        final int panels = (m + panel - 1) / panel;
         final long panelFloats = (long) panel * kc;
+        // Guided tail: the bulk of the rows go out as full panels, the last ~2 tasks per worker as
+        // quarter panels (>= one granule), so the region's tail is a quarter of a task instead
+        // of half a task. Tasks are dispensed in order from an atomic counter (big first): the
+        // recursive range split would hand the small tail out FIRST to stealing workers.
+        final int tailPanel = Math.max(PANEL_GRANULE, panel / 4 / PANEL_GRANULE * PANEL_GRANULE);
+        final int tailRows =
+                tailPanel == panel ? 0 : Math.min(m, 2 * VectorSupport.PARALLELISM * tailPanel);
+        final int bulkRows = m - tailRows;
+        final int bulkPanels = (bulkRows + panel - 1) / panel;
+        final int tailPanels = (tailRows + tailPanel - 1) / tailPanel;
+        final int panels = bulkPanels + tailPanels;
         // Few panels even at one granule (small m): split the tokens too. Each task dequantizes
         // its panel privately (redundant across splits, but a granule panel is cheap) - no
         // barriers, no shared buffers.
         final int wanted = TASKS_PER_WORKER * VectorSupport.PARALLELISM;
         final int splits = panels >= wanted ? 1 : Math.min(tiles, (wanted + panels - 1) / panels);
         final int tilesPerSplit = (tiles + splits - 1) / splits;
+        final int packItems = tiles * kBlocks;
+        final int total = packItems + panels * splits;
 
         // Packed A, k-block-major: block kb holds its `tiles` tiles back to back, so a panel's
-        // tile stream is one contiguous run of tiles*NR*kcb floats (prefetcher-friendly).
+        // tile stream is one contiguous run of tiles*NR*kcb floats (prefetcher-friendly). The
+        // packing is the first `packItems` tasks of the SAME region as the sweeps (one fork/join
+        // round per gemm, not two); a sweep task spins until the pack count is complete.
         MemorySegment packedA = scratch.acquire((long) tiles * NR * k);
         MemorySegment pa = VectorSupport.vectorSegment(packedA);
         long pab = VectorSupport.vectorBase(packedA);
+        final java.util.concurrent.atomic.AtomicInteger next =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger packed =
+                new java.util.concurrent.atomic.AtomicInteger();
         try {
-            VectorSupport.parallelFor(
-                    0,
-                    tiles * kBlocks,
-                    i -> {
-                        int kb = i / tiles, t = i % tiles;
-                        int kOff = kb * kc, kcb = Math.min(kc, k - kOff);
-                        packTile(
-                                a,
-                                aBase + (long) kOff * 4L,
-                                aStride,
-                                pa,
-                                pab + ((long) kOff * tiles + (long) t * kcb) * NR * 4L,
-                                t * NR,
-                                n,
-                                kcb);
-                    });
-            // One (panel, tile range) per task: its dequantized bands are private (L2-resident)
-            // and swept against its tiles; the pool balances at task granularity.
             VectorSupport.parallelForEach(
                     0,
-                    panels * splits,
-                    i -> {
-                        int p = i / splits, sp = i % splits;
-                        int r0 = p * panel, rows = Math.min(m - r0, panel);
-                        int tLo = sp * tilesPerSplit, tHi = Math.min(tiles, tLo + tilesPerSplit);
-                        if (tLo >= tHi) return;
-                        MemorySegment raw = scratch.acquireLocal(panelFloats + (long) MR * kc);
-                        MemorySegment sv = VectorSupport.vectorSegment(raw);
-                        long sb = VectorSupport.vectorBase(raw); // interleaved bands
-                        long lin = sb + panelFloats * 4L; // MR linear rows, dequant staging
-                        zeroRows(o, oBase, oStride, tLo * NR, Math.min(n, tHi * NR), r0, rows);
-                        for (int kOff = 0; kOff < k; kOff += kc) {
-                            int kcb = Math.min(kc, k - kOff);
-                            dequantPanel(w, wOff, m, k, kOff, kcb, sv, sb, lin, r0, rows, deq);
-                            sweepTiles(
-                                    pa, pab, o, oBase, oStride, n, k, kOff, kcb, tiles, sv, sb, r0,
-                                    rows, tLo, tHi);
+                    Math.min(total, VectorSupport.PARALLELISM),
+                    worker -> {
+                        for (int i; (i = next.getAndIncrement()) < total; ) {
+                            if (i < packItems) {
+                                int kb = i / tiles, t = i % tiles;
+                                int kOff = kb * kc, kcb = Math.min(kc, k - kOff);
+                                packTile(
+                                        a,
+                                        aBase + (long) kOff * 4L,
+                                        aStride,
+                                        pa,
+                                        pab + ((long) kOff * tiles + (long) t * kcb) * NR * 4L,
+                                        t * NR,
+                                        n,
+                                        kcb);
+                                packed.incrementAndGet();
+                                continue;
+                            }
+                            int j = i - packItems;
+                            int p = j / splits, sp = j % splits;
+                            int r0, rows;
+                            if (p < bulkPanels) {
+                                r0 = p * panel;
+                                rows = Math.min(bulkRows - r0, panel);
+                            } else {
+                                r0 = bulkRows + (p - bulkPanels) * tailPanel;
+                                rows = Math.min(m - r0, tailPanel);
+                            }
+                            int tLo = sp * tilesPerSplit,
+                                    tHi = Math.min(tiles, tLo + tilesPerSplit);
+                            if (tLo >= tHi) continue;
+                            while (packed.get() < packItems) Thread.onSpinWait();
+                            MemorySegment raw = scratch.acquireLocal(panelFloats + (long) MR * kc);
+                            MemorySegment sv = VectorSupport.vectorSegment(raw);
+                            long sb = VectorSupport.vectorBase(raw); // interleaved bands
+                            long lin = sb + panelFloats * 4L; // MR linear rows, dequant staging
+                            zeroRows(o, oBase, oStride, tLo * NR, Math.min(n, tHi * NR), r0, rows);
+                            for (int kOff = 0; kOff < k; kOff += kc) {
+                                int kcb = Math.min(kc, k - kOff);
+                                dequantPanel(w, wOff, m, k, kOff, kcb, sv, sb, lin, r0, rows, deq);
+                                sweepTiles(
+                                        pa, pab, o, oBase, oStride, n, k, kOff, kcb, tiles, sv, sb,
+                                        r0, rows, tLo, tHi);
+                            }
                         }
                     });
         } finally {
