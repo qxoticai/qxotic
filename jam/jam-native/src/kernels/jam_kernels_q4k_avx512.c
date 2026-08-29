@@ -1052,3 +1052,152 @@ void jam_mm_q4k_avx512vnni(void* arg, int rb, int re, int tid) {
         }
     }
 }
+
+/* ---- Q5_K / Q6_K decode floors at full width: the jam_mm_q4k_avx512vnni scheme (pair dots over
+ * 64 contiguous activations, per-pair scale permute, 4-row streaming per column), one per quant.
+ * KQ_VNNI_ROWS is the shared row skeleton: PRO() runs once per super-block per column and defines
+ * what ROW reads (acts[4] is already loaded); ROW(w, f, m) folds one super-block of one row into
+ * the f32 lanes f (and the min term m). */
+#define KQ_VNNI_ROWS(BYTES, PRO, ROW) \
+    for (int j = 0; j < n; ++j) { \
+        const int8_t* aq = AQ + (size_t) j * k; \
+        const float* ad = AD + (size_t) j * nb; \
+        const float* as = AS ? AS + (size_t) j * nb : ad; (void) as; \
+        int i = rb; \
+        for (; i + 3 < re; i += 4) { \
+            const uint8_t* w0 = (const uint8_t*) (W + (size_t) i * w_stride); \
+            const uint8_t* w1 = w0 + w_stride, *w2 = w1 + w_stride, *w3 = w2 + w_stride; \
+            __m512 f0 = _mm512_setzero_ps(), f1 = f0, f2 = f0, f3 = f0; \
+            float m0 = 0.f, m1 = 0.f, m2 = 0.f, m3 = 0.f; \
+            for (int B = 0; B < sblocks; ++B) { \
+                _mm_prefetch((const char*) (w0 + 4 * (BYTES)), _MM_HINT_T0); \
+                _mm_prefetch((const char*) (w1 + 4 * (BYTES)), _MM_HINT_T0); \
+                _mm_prefetch((const char*) (w2 + 4 * (BYTES)), _MM_HINT_T0); \
+                _mm_prefetch((const char*) (w3 + 4 * (BYTES)), _MM_HINT_T0); \
+                __m512i acts[4]; \
+                for (int g = 0; g < 4; ++g) \
+                    acts[g] = _mm512_loadu_si512((const void*) (aq + (size_t) B * JAM_QKK + g * 64)); \
+                PRO(); \
+                ROW(w0, f0, m0); ROW(w1, f1, m1); ROW(w2, f2, m2); ROW(w3, f3, m3); \
+                w0 += (BYTES); w1 += (BYTES); w2 += (BYTES); w3 += (BYTES); \
+            } \
+            C[(size_t) j * ldc + i]     = _mm512_reduce_add_ps(f0) - m0; \
+            C[(size_t) j * ldc + i + 1] = _mm512_reduce_add_ps(f1) - m1; \
+            C[(size_t) j * ldc + i + 2] = _mm512_reduce_add_ps(f2) - m2; \
+            C[(size_t) j * ldc + i + 3] = _mm512_reduce_add_ps(f3) - m3; \
+        } \
+        for (; i < re; ++i) {   /* row tail */ \
+            const uint8_t* w0 = (const uint8_t*) (W + (size_t) i * w_stride); \
+            __m512 f0 = _mm512_setzero_ps(); float m0 = 0.f; \
+            for (int B = 0; B < sblocks; ++B, w0 += (BYTES)) { \
+                __m512i acts[4]; \
+                for (int g = 0; g < 4; ++g) \
+                    acts[g] = _mm512_loadu_si512((const void*) (aq + (size_t) B * JAM_QKK + g * 64)); \
+                PRO(); \
+                ROW(w0, f0, m0); \
+            } \
+            C[(size_t) j * ldc + i] = _mm512_reduce_add_ps(f0) - m0; \
+        } \
+    }
+
+/* Q5_K: Q4_K plus the 5th bit plane. Layout d(f16) dmin(f16) scales[12] qh[32] qs[128]; sub-block
+ * 2g takes bit 2g of qh[e] into nibble bit 4, sub-block 2g+1 takes bit 2g+1. Weights stay 0..31
+ * (unsigned dpbusd operand); the dmin*min term is the same float correction as Q4_K. */
+void jam_mm_q5k_avx512vnni(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char* W = (const char*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad; const float* AS = J->asum;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
+    const int sblocks = k / JAM_QKK;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q5K_BYTES;
+    const __m256i m4 = _mm256_set1_epi8(0x0F), bit1 = _mm256_set1_epi8(1);
+    #define Q5K_PRO() \
+        __m256 ad8 = _mm256_loadu_ps(ad + B * 8); \
+        __m256 asd8 = _mm256_mul_ps(_mm256_loadu_ps(as + B * 8), ad8)
+    #define Q5K_ROW(WR, FR, MR) do { \
+        float d = jam_half2float(*(const uint16_t*) (WR)); \
+        float dmin = jam_half2float(*(const uint16_t*) ((WR) + 2)); \
+        uint32_t sm[4]; q4k_scales_mins_words((WR) + 4, sm); \
+        __m256 sc8 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) sm))); \
+        __m256 mn8 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) (sm + 2)))); \
+        __m256 f8 = _mm256_mul_ps(_mm256_mul_ps(ad8, sc8), _mm256_set1_ps(d)); \
+        __m512 f16 = _mm512_insertf32x8(_mm512_castps256_ps512(f8), f8, 1); \
+        __m256i qh = _mm256_loadu_si256((const __m256i*) ((WR) + 16)); \
+        const uint8_t* q = (WR) + 48; \
+        for (int g = 0; g < 4; ++g) { \
+            __m256i qb = _mm256_loadu_si256((const __m256i*) (q + g * 32)); \
+            __m256i hl = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh, 2 * g), bit1), 4); \
+            __m256i hh = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh, 2 * g + 1), bit1), 4); \
+            __m256i lo = _mm256_or_si256(_mm256_and_si256(qb, m4), hl); \
+            __m256i hi = _mm256_or_si256(_mm256_and_si256(_mm256_srli_epi16(qb, 4), m4), hh); \
+            __m512i wp = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1); \
+            __m512i idot = _mm512_dpbusd_epi32(_mm512_setzero_si512(), wp, acts[g]); \
+            __m512 scale = _mm512_permutexvar_ps(_mm512_loadu_si512((const void*) q4k_pair_idx[g]), f16); \
+            (FR) = _mm512_fmadd_ps(_mm512_cvtepi32_ps(idot), scale, (FR)); \
+        } \
+        (MR) += dmin * hsum256(_mm256_mul_ps(mn8, asd8)); \
+    } while (0)
+    KQ_VNNI_ROWS(JAM_Q5K_BYTES, Q5K_PRO, Q5K_ROW)
+    #undef Q5K_PRO
+    #undef Q5K_ROW
+}
+
+/* Q6_K: value = d*sc16*(q-32), q 6-bit = ql nibble | qh 2 bits << 4, one int8 scale per 16 elements,
+ * no min term. Layout ql[128] qh[64] scales[16] d(f16). Per half h of the super-block, the 64 ql
+ * bytes' low nibbles are sub-blocks (0,1) and the high nibbles (2,3) - each pair is one 64-byte
+ * dpbusd against 64 contiguous activations. The weight stays unsigned 0..63 for dpbusd; the -32 is
+ * folded into the accumulator start: bias[g] = -32 * (per-4-lane activation sums), computed once
+ * per super-block per column and shared by all rows. The 16 per-16 scales map 1:1 onto the 16 f32
+ * lanes of the two pair dots of a half (lane l of pair g reads scale 4g + l/4). */
+static const int32_t q6k_lane_idx[4][16] = {
+    {0,0,0,0, 1,1,1,1, 2,2,2,2, 3,3,3,3},     {4,4,4,4, 5,5,5,5, 6,6,6,6, 7,7,7,7},
+    {8,8,8,8, 9,9,9,9, 10,10,10,10, 11,11,11,11}, {12,12,12,12, 13,13,13,13, 14,14,14,14, 15,15,15,15}};
+static const int32_t q6k_ad_idx[16] = {0,0, 1,1, 2,2, 3,3, 4,4, 5,5, 6,6, 7,7};
+
+void jam_mm_q6k_avx512vnni(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char* W = (const char*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad; const float* AS = NULL;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
+    const int sblocks = k / JAM_QKK;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q6K_BYTES;
+    const __m512i m4z = _mm512_set1_epi8(0x0F), c32 = _mm512_set1_epi8(32), zero = _mm512_setzero_si512();
+    const __m256i two = _mm256_set1_epi8(3);
+    const __m512i adidx = _mm512_loadu_si512((const void*) q6k_ad_idx);
+    #define Q6K_PRO() \
+        __m512i bias[4]; \
+        for (int g = 0; g < 4; ++g) bias[g] = _mm512_sub_epi32(zero, _mm512_dpbusd_epi32(zero, c32, acts[g])); \
+        __m512 adx = _mm512_permutexvar_ps(adidx, _mm512_castps256_ps512(_mm256_loadu_ps(ad + B * 8)))
+    #define Q6K_ROW(WR, FR, MR) do { \
+        float d = jam_half2float(*(const uint16_t*) ((WR) + 208)); \
+        __m512 f16 = _mm512_mul_ps(_mm512_mul_ps(adx, _mm512_set1_ps(d)), _mm512_cvtepi32_ps( \
+                _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) ((WR) + 192))))); \
+        for (int h = 0; h < 2; ++h) { \
+            __m512i L = _mm512_loadu_si512((const void*) ((WR) + h * 64)); \
+            __m256i H = _mm256_loadu_si256((const __m256i*) ((WR) + 128 + h * 32)); \
+            __m256i h0 = _mm256_slli_epi16(_mm256_and_si256(H, two), 4); \
+            __m256i h1 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(H, 2), two), 4); \
+            __m256i h2 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(H, 4), two), 4); \
+            __m256i h3 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(H, 6), two), 4); \
+            __m512i w01 = _mm512_or_si512(_mm512_and_si512(L, m4z), \
+                                          _mm512_inserti64x4(_mm512_castsi256_si512(h0), h1, 1)); \
+            __m512i w23 = _mm512_or_si512(_mm512_and_si512(_mm512_srli_epi16(L, 4), m4z), \
+                                          _mm512_inserti64x4(_mm512_castsi256_si512(h2), h3, 1)); \
+            __m512i d01 = _mm512_dpbusd_epi32(bias[2 * h], w01, acts[2 * h]); \
+            __m512i d23 = _mm512_dpbusd_epi32(bias[2 * h + 1], w23, acts[2 * h + 1]); \
+            (FR) = _mm512_fmadd_ps(_mm512_cvtepi32_ps(d01), \
+                    _mm512_permutexvar_ps(_mm512_loadu_si512((const void*) q6k_lane_idx[2 * h]), f16), (FR)); \
+            (FR) = _mm512_fmadd_ps(_mm512_cvtepi32_ps(d23), \
+                    _mm512_permutexvar_ps(_mm512_loadu_si512((const void*) q6k_lane_idx[2 * h + 1]), f16), (FR)); \
+        } \
+        (void) (MR); \
+    } while (0)
+    KQ_VNNI_ROWS(JAM_Q6K_BYTES, Q6K_PRO, Q6K_ROW)
+    #undef Q6K_PRO
+    #undef Q6K_ROW
+}
+#undef KQ_VNNI_ROWS

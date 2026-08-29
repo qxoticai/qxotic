@@ -233,6 +233,8 @@ void jam_mm_q4_0_sse3(void* job, int rb, int re, int tid);                 /* + 
 void jam_mm_mxfp4_sse3(void* job, int rb, int re, int tid);               /* + scalar FP4-LUT decode (no pshufb) */
 void jam_mm_q4k_sse3(void* job, int rb, int re, int tid);                 /* K-quant int8 dot (sign-extend+madd, SSE3 floor) */
 void jam_mm_q4k_avx512vnni(void* job, int rb, int re, int tid);           /* K-quant int8 dot, 512-bit VNNI (decode floor) */
+void jam_mm_q5k_avx512vnni(void* job, int rb, int re, int tid);
+void jam_mm_q6k_avx512vnni(void* job, int rb, int re, int tid);
 void jam_mm_q5k_sse3(void* job, int rb, int re, int tid);
 void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
 #endif
