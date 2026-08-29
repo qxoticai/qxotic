@@ -15,7 +15,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 public class Json {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0";
+            "unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0";
 
     private static final String GRAMMAR = """
             root ::= "{" ws "\\"name\\":" ws str "," ws "\\"year\\":" ws num "," ws "\\"city\\":" ws str ws "}"

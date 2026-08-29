@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
 public class Chat {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0";
+            "unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0";
 
     public static void main(String[] args) {
         String prompt = args.length > 0 ? args[0] : "Explain HTTP/3 in two sentences.";

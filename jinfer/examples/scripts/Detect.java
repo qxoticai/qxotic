@@ -29,9 +29,9 @@ import java.util.Map;
 public class Detect {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0";
+            "unsloth/gemma-4-12b-it-GGUF:Q8_0";
     private static final String DEFAULT_MEDIA =
-            "hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf";
+            "unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf";
 
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {

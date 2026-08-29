@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Spring AI integration
 
-**Spring AI, fully local.** In-process [Spring AI](https://spring.io/projects/spring-ai) chat, embeddings and reranking over GGUF models — with a Spring Boot starter. No server, no HTTP hop.
+**Spring AI, fully local.** In-process [Spring AI](https://spring.io/projects/spring-ai) chat, embeddings and reranking over GGUF models, with a Spring Boot starter. No server, no HTTP hop.
 
 ## Installation
 
@@ -26,7 +26,7 @@ Run with:
 
 ```java
 try (var model = JinferChatModel.builder()
-        .model("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
+        .model("LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
         .contextLength(8192) // 0 = the model maximum; negative values are rejected
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
@@ -39,7 +39,7 @@ try (var model = JinferChatModel.builder()
 }
 ```
 
-`model(String)` accepts a model ref (`hf.co/...` or `modelscope.cn/...`). `modelPath(Path)` is the
+`model(String)` accepts a model ref (`owner/repo:quant`, or `modelscope.cn/...` for another source). `modelPath(Path)` is the
 local form and never touches the network. Companions use the same split:
 `companion(capability, String)` accepts a model reference; `companionPath(capability, Path)`
 accepts a local file. Spring Boot properties remain path-or-ref strings and the autoconfiguration
@@ -65,10 +65,10 @@ Attach the projector as the `media` companion and pass Spring `Media` values:
 
 ```java
 ChatModel vision = JinferChatModel.builder()
-        .model("hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q8_0")
+        .model("LiquidAI/LFM2.5-VL-3B-GGUF:Q8_0")
         .companion(
                 "media",
-                "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf")
+                "LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf")
         .build();
 
 ChatResponse response = vision.call(new Prompt(UserMessage.builder()
@@ -83,9 +83,9 @@ Media bytes are decoded locally, then projected into embeddings. `videoSampler` 
 
 Three separate controls:
 
-- `retainSessions(n)` — keep up to `n` finished states in RAM for append-only reuse
-- `withCachedPrompt(messages, tools)` — define a reusable, content-addressed prefix
-- `promptCache(path)` / `saveCachedPrompts(path)` — mount / export a persisted catalog
+- `retainSessions(n)`: keep up to `n` finished states in RAM for append-only reuse
+- `withCachedPrompt(messages, tools)`: define a reusable, content-addressed prefix
+- `promptCache(path)` / `saveCachedPrompts(path)`: mount or export a persisted catalog
 
 ```java
 JinferChatModel base = JinferChatModel.builder()
@@ -113,7 +113,7 @@ The catalog is model-identity checked. An edited prompt reuses only its matching
 
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
-        .model("hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
+        .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
         .contextLength(2048)
         .build();
 
@@ -137,7 +137,7 @@ spring:
   ai:
     jinfer:
       chat:
-        model: hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
+        model: LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
         context-length: 8192
         max-tokens: 512
 ```

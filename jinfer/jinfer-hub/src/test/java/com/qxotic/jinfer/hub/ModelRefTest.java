@@ -90,17 +90,47 @@ class ModelRefTest {
     // ---- remote versus local ----
 
     @Test
-    void onlyAKnownHostMakesARef() {
+    void aKnownHostOrABareRepositoryMakesARef() {
         assertTrue(ModelRef.isRef("hf.co/a/b"));
         assertTrue(ModelRef.isRef("modelscope.cn/a/b:Q8_0"));
+        assertTrue(ModelRef.isRef("unsloth/gemma-4-E2B-it-GGUF"), "a bare repo is a ref");
 
         assertFalse(ModelRef.isRef("https://huggingface.co/a/b"));
-        assertFalse(ModelRef.isRef("unsloth/gemma-4-E2B-it-GGUF"), "a bare repo is a path");
         assertFalse(ModelRef.isRef("/models/mine.gguf"));
         assertFalse(ModelRef.isRef("./mine.gguf"));
-        assertFalse(ModelRef.isRef("mine.gguf"));
+        assertFalse(ModelRef.isRef("mine.gguf"), "one segment is not owner/repo");
         assertFalse(ModelRef.isRef("C:\\models\\mine.gguf"), "a drive letter is not a host");
-        assertFalse(ModelRef.isRef("example.org/models/x.gguf"), "an unknown host is a path");
+        assertFalse(
+                ModelRef.isRef("example.org/models/x.gguf"),
+                "a dotted first segment is a misspelled host, not an owner");
+    }
+
+    @Test
+    void aBareRepositoryIsCarriedByHuggingFace() {
+        assertEquals(
+                "hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0",
+                ModelRef.parse("unsloth/gemma-4-E2B-it-GGUF:Q8_0").toString());
+        assertEquals("hf.co", ModelRef.parse("unsloth/gemma-4-E2B-it-GGUF").host());
+        assertEquals("unsloth", ModelRef.parse("unsloth/gemma-4-E2B-it-GGUF").owner());
+    }
+
+    @Test
+    void aBareRepositoryKeepsTheRestOfTheGrammar() {
+        ModelRef ref = ModelRef.parse("LiquidAI/LFM2.5-VL-3B-GGUF@main/mmproj-Q8_0.gguf:Q8_0");
+        assertEquals("hf.co", ref.host());
+        assertEquals("LiquidAI", ref.owner());
+        assertEquals("LFM2.5-VL-3B-GGUF", ref.repo());
+        assertEquals("main", ref.revision());
+        assertEquals("mmproj-Q8_0.gguf", ref.path());
+        assertEquals("Q8_0", ref.quant());
+    }
+
+    @Test
+    void anExplicitHostIsConsumedAsTheHostNotTheOwner() {
+        ModelRef ref = ModelRef.parse("modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+        assertEquals("modelscope.cn", ref.host(), "the default must not swallow a named host");
+        assertEquals("Qwen", ref.owner());
+        assertEquals("Qwen3-0.6B-GGUF", ref.repo());
     }
 
     @Test
@@ -112,12 +142,26 @@ class ModelRefTest {
     }
 
     @Test
-    void aBareRepositoryIsRefusedWithTheHostFormInTheMessage() {
-        var failure =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> ModelStore.standard().resolve("unsloth/gemma-4-E2B-it-GGUF"));
-        assertTrue(failure.getMessage().contains("hf.co/"), failure.getMessage());
+    void aRelativeModelFileIsAPathNotARepository() {
+        // the mistake this catches: a relative path handed to model(String) instead of modelPath
+        assertFalse(ModelRef.isRef("models/llama.gguf"), "no repository is called llama.gguf");
+        assertFalse(ModelRef.isRef("out/model.safetensors"));
+
+        // three segments is the file-in-repository form, which must keep working
+        assertTrue(ModelRef.isRef("unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf"));
+        assertTrue(ModelRef.isRef("hf.co/owner/repo/mmproj.gguf"));
+        assertTrue(ModelRef.isRef("LiquidAI/LFM2.5-350M-GGUF:Q8_0"));
+    }
+
+    @Test
+    void aFileHereWinsOverABareRepository() {
+        assertTrue(
+                Files.exists(Path.of("src/main")),
+                "precondition: tests run with the module root as the working directory");
+
+        assertFalse(ModelRef.isRef("src/main"), "a directory here is not a repository");
+        assertFalse(ModelRef.isRef("src/test"), "a directory here is not a repository");
+        assertTrue(ModelRef.isRef("src/nothing-by-this-name"), "nothing here: a repository");
     }
 
     @Test
@@ -156,14 +200,14 @@ class ModelRefTest {
     }
 
     @Test
-    void aStringThePlatformCannotParseAsAPathIsNotAFile() {
+    void aStringThePlatformCannotParseAsAPathIsRefused() {
         // A NUL is an illegal path on every platform, as a colon is on Windows. Neither may escape
-        // out of resolve: an unparseable path is simply not a file.
+        // out of resolve: the segment check refuses it before anything reaches the network.
         var failure =
                 assertThrows(
                         IllegalArgumentException.class,
                         () -> ModelStore.standard().resolve("us\0er/repo"));
-        assertTrue(failure.getMessage().contains("no such model file"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("single path component"), failure.getMessage());
     }
 
     // ---- the cache mapping ----

@@ -20,11 +20,11 @@ import java.nio.file.Path;
 public class Narrate {
 
     private static final String DEFAULT_VISION_MODEL =
-            "hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0";
+            "unsloth/gemma-4-E2B-it-GGUF:Q8_0";
     private static final String DEFAULT_MEDIA =
-            "hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf";
+            "unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf";
     private static final String DEFAULT_SPEECH_MODEL =
-            "hf.co/remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
+            "remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
 
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {

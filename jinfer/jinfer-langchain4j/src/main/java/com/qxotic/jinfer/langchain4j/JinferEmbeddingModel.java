@@ -254,7 +254,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
          * {@link #build()}.
          *
          * <pre>{@code
-         * model("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+         * model("unsloth/gemma-4-E2B-it-GGUF:Q8_0");
          * }</pre>
          *
          * <p>The full grammar - the default quant, pinned revisions, a file inside a repository,
@@ -303,7 +303,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 case LoadedEmbedder<?> l -> loaded = l;
                 case null, default ->
                         throw new IllegalArgumentException(
-                                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"),"
+                                "a model is required: model(\"owner/repo:Q4_K_M\"),"
                                         + " modelPath(...) or model(LoadedEmbedder)");
             }
             return new JinferEmbeddingModel(this);

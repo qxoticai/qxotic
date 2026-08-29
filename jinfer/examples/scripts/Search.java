@@ -18,7 +18,7 @@ import java.util.List;
 public class Search {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0";
+            "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0";
 
     private static final List<String> DOCUMENTS = List.of(
             "Grind the beans, then pour water just off the boil over them.",

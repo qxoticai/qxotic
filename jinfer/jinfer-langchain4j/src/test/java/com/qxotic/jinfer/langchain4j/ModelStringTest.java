@@ -33,11 +33,18 @@ class ModelStringTest {
     }
 
     @Test
-    void aBareRepoIsToldItsMissingHost() {
-        assertThatThrownBy(() -> JinferChatModel.builder().model("unsloth/Qwen3.5-4B-GGUF:Q4_K_M"))
+    void aBareRepoIsAcceptedAndCarriedByHuggingFace() {
+        assertThatNoException()
+                .isThrownBy(
+                        () -> JinferChatModel.builder().model("unsloth/Qwen3.5-4B-GGUF:Q4_K_M"));
+    }
+
+    @Test
+    void anUnknownHostIsToldWhichHostsExist() {
+        assertThatThrownBy(() -> JinferChatModel.builder().model("example.org/owner/repo:Q8_0"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("missing its host")
-                .hasMessageContaining("hf.co/unsloth/Qwen3.5-4B-GGUF:Q4_K_M");
+                .hasMessageContaining("does not name a known host")
+                .hasMessageContaining("modelscope.cn/");
     }
 
     @Test
@@ -71,7 +78,20 @@ class ModelStringTest {
                                 JinferChatModel.builder()
                                         .companionPath("media", Path.of("models/mmproj.gguf")));
 
-        assertThatThrownBy(() -> JinferChatModel.builder().companion("media", "models/mmproj.gguf"))
+        // a path-shaped string is still a file, and still points at companionPath
+        assertThatThrownBy(
+                        () -> JinferChatModel.builder().companion("media", "./models/mmproj.gguf"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("companionPath");
+        // a host-less file-in-repository ref is fine, the same as any other repository
+        assertThatNoException()
+                .isThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .companion("media", "owner/repo/mmproj-F16.gguf"));
+
+        // owner/mmproj.gguf names no repository: it is a relative path, and says so
+        assertThatThrownBy(() -> JinferChatModel.builder().companion("media", "owner/mmproj.gguf"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("companionPath");
         assertThatThrownBy(

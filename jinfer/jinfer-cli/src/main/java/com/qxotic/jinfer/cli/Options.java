@@ -596,13 +596,14 @@ public record Options(
         out.println();
         out.println(
                 "A remote model is a URL without the scheme: "
-                        + " <host>/<owner>/<repo>[@rev][/path][:quant]");
+                        + " [<host>/]<owner>/<repo>[@rev][/path][:quant]");
         out.println(
-                "  hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0       "
+                "  unsloth/gemma-4-E2B-it-GGUF:Q8_0             "
                         + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
         out.println(
-                "Hosts: hf.co, modelscope.cn. Quant defaults to Q4_K_M. Anything else is a local"
-                        + " file path.");
+                "Host is optional and defaults to hf.co; modelscope.cn is the other one. Quant"
+                        + " defaults to Q4_K_M.");
+        out.println("An existing file of that name wins, and anything else is a local file path.");
         out.println(
                 "Cache: $JINFER_MODELS, else the platform cache dir. HF_TOKEN for gated repos,"
                         + " JINFER_OFFLINE=1 to never fetch.");
@@ -695,19 +696,17 @@ public record Options(
         out.println("  /context                      show context token usage");
         out.println();
         out.println("Examples:");
+        out.println("  java -jar jinfer.jar --model unsloth/gemma-4-E2B-it-GGUF:Q8_0" + " --chat");
         out.println(
-                "  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0"
-                        + " --chat");
-        out.println(
-                "  java -jar jinfer.jar --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0 --mmproj"
-                        + " hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf --chat");
-        out.println("  java -jar jinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0");
+                "  java -jar jinfer.jar --model unsloth/gemma-4-E2B-it-GGUF:Q8_0 --mmproj"
+                        + " unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf --chat");
+        out.println("  java -jar jinfer.jar pull ggml-org/stories15M_MOE:Q8_0");
         out.println(
                 "  java -jar jinfer.jar --model"
-                        + " hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0 --prompt \"Tell me a joke\"");
+                        + " LiquidAI/LFM2.5-350M-GGUF:Q8_0 --prompt \"Tell me a joke\"");
         out.println(
                 "  java -jar jinfer.jar --model"
-                        + " hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0 --chat"
+                        + " LiquidAI/LFM2.5-350M-GGUF:Q8_0 --chat"
                         + " --system-prompt \"You are a helpful assistant\"");
     }
 }

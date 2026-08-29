@@ -10,10 +10,9 @@ import org.opentest4j.TestAbortedException;
 
 /**
  * The one place tests acquire their checkpoints, by REF - the same string the CLI takes. The ref
- * ALWAYS pins what it wants: a model names its quant ({@code
- * hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0} - never the bare repo, whose default quant is a guess), a
- * companion (mmproj, mtp) names its exact file ({@code
- * hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf} - the hub keeps companions out of quant
+ * ALWAYS pins what it wants: a model names its quant ({@code unsloth/gemma-4-E2B-it-GGUF:Q8_0} -
+ * never the repo alone, whose default quant is a guess), a companion (mmproj, mtp) names its exact
+ * file ({@code unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf} - the hub keeps companions out of quant
  * matching on purpose). LOOKUP ONLY: a test never downloads; an absent model aborts the test with
  * the fix in the message. Resolution is {@link ModelStore#find}: jinfer's own cache ({@code
  * -Djinfer.models} / {@code JINFER_MODELS}) first, then the HuggingFace hub cache.

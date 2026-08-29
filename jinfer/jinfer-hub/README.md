@@ -33,24 +33,37 @@ supports Hugging Face and ModelScope repositories.
 One string identifies a file in a supported model repository:
 
 ```text
-hf.co/owner/repo[@revision][/path][:quant]
+[host/]owner/repo[@revision][/path][:quant]
 ```
 
 | Reference | Meaning |
 |-----------|---------|
-| `hf.co/unsloth/Qwen3.5-4B-GGUF` | Select the default quant from a Hugging Face repository |
-| `hf.co/unsloth/Qwen3.5-4B-GGUF:Q8_0` | Select a quant explicitly |
-| `hf.co/LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf` | Select a companion file |
-| `hf.co/unsloth/gemma-4-E2B-it-GGUF/MTP/mtp-gemma-4-E2B-it-Q8_0.gguf` | Select a file in a subdirectory |
-| `hf.co/unsloth/Qwen3.5-4B-GGUF@a1b2c3d:Q8_0` | Pin a branch, tag or commit |
+| `unsloth/Qwen3.5-4B-GGUF` | Select the default quant from a Hugging Face repository |
+| `unsloth/Qwen3.5-4B-GGUF:Q8_0` | Select a quant explicitly |
+| `LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf` | Select a companion file |
+| `unsloth/gemma-4-E2B-it-GGUF/MTP/mtp-gemma-4-E2B-it-Q8_0.gguf` | Select a file in a subdirectory |
+| `unsloth/Qwen3.5-4B-GGUF@a1b2c3d:Q8_0` | Pin a branch, tag or commit |
+| `hf.co/unsloth/Qwen3.5-4B-GGUF:Q8_0` | Name the host explicitly |
 | `modelscope.cn/unsloth/Qwen3.5-4B-GGUF:Q8_0` | Resolve from ModelScope |
 
-`@revision` is optional. `/path` selects an exact file or subdirectory. `:quant` selects a file by
-quant name. A reference is not a URL: it has no scheme, query or `/blob/` browser path.
+`host/` is optional and defaults to `hf.co`, which is also the form every resolved reference prints
+back as. Name a host to reach another source. `@revision` is optional. `/path` selects an exact
+file or subdirectory. `:quant` selects a file by quant name. A reference is not a URL: it has no
+scheme, query or `/blob/` browser path.
+
+Three rules keep a host-less reference from swallowing a local path:
+
+- A file that already exists under that name wins, so no working local path changes meaning.
+- Anything spelled like a path is a path: a leading `/`, `.` or `~`, a backslash, a drive letter.
+- `owner/model.gguf` is a path, because no repository is named after a model file. The
+  file-in-repository form has three segments or more, as in `owner/repo/mmproj-F32.gguf`.
+
+A dot in the first segment reserves it for the host table, so a misspelled host is reported rather
+than read as an owner.
 
 ## Quant shorthand
 
-A bare repository reference (`hf.co/owner/repo`) selects `Q4_K_M`, matching llama.cpp's default so
+A reference with no `:quant` selects `Q4_K_M`, matching llama.cpp's default so
 the same shorthand selects the same file in both tools. Jinfer's best-supported quant is `Q8_0`, so
 examples pin it explicitly. When a repository ships exactly one GGUF, that file is selected without
 a quant; otherwise the quant name is matched against the file names in the repository listing.
@@ -60,7 +73,7 @@ lists what the repository ships; a quant that matches several files prints a men
 
 ```text
 no Q8_0 in owner/repo. Available: repo-Q4_K_M.gguf, repo-Q5_K_M.gguf
-Q4_K matches 2 files in owner/repo - name the one you want:
+Q4_K matches 2 files in owner/repo - name the intended one:
   repo-Q4_K_M.gguf
   repo-Q4_K_S.gguf
 ```
@@ -125,13 +138,13 @@ by `hf download` or `llama-server -hf` are reused.
 `ModelStore.standard()` is the entry point:
 
 ```java
-String ref = "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0";
+String ref = "LiquidAI/LFM2.5-350M-GGUF:Q8_0";
 
 Path model = ModelStore.standard().resolve(ref);
 
 List<Path> files = ModelStore.standard().resolveAll(List.of(
         ref,
-        "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf"));
+        "LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf"));
 
 Optional<Path> hit = ModelStore.standard().find(ref);            // cached file only, no network
 List<ModelStore.Cached> cached = ModelStore.standard().cached();  // list what the cache holds

@@ -52,7 +52,7 @@ class JinferChatModelTest {
                 assertThrows(
                         IllegalArgumentException.class, () -> JinferChatModel.builder().build());
         assertEquals(
-                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"), modelPath(...) or"
+                "a model is required: model(\"owner/repo:Q4_K_M\"), modelPath(...) or"
                         + " model(LoadedModel)",
                 e.getMessage());
     }
@@ -63,11 +63,22 @@ class JinferChatModelTest {
                 .companion("media", "hf.co/owner/repo/mmproj-F16.gguf")
                 .companionPath("speculation", Path.of("models/mtp.gguf"));
 
+        // a path-shaped string is still a file, and still points at companionPath
         IllegalArgumentException path =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JinferChatModel.builder().companion("media", "models/mmproj.gguf"));
+                        () -> JinferChatModel.builder().companion("media", "./models/mmproj.gguf"));
         assertTrue(path.getMessage().contains("companionPath"));
+
+        // a host-less file-in-repository ref is fine, the same as any other repository
+        JinferChatModel.builder().companion("media", "owner/repo/mmproj-F16.gguf");
+
+        // owner/mmproj.gguf names no repository: it is a relative path, and says so
+        IllegalArgumentException relative =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferChatModel.builder().companion("media", "owner/mmproj.gguf"));
+        assertTrue(relative.getMessage().contains("companionPath"));
 
         IllegalArgumentException url =
                 assertThrows(
@@ -137,7 +148,7 @@ class JinferChatModelTest {
                         () -> JinferEmbeddingModel.builder().build());
         // the message teaches ALL THREE doors, ref form first
         assertEquals(
-                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"), modelPath(...) or"
+                "a model is required: model(\"owner/repo:Q4_K_M\"), modelPath(...) or"
                         + " model(LoadedEmbedder)",
                 e.getMessage());
     }

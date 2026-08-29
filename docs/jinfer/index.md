@@ -23,7 +23,7 @@ mvn -pl jinfer/jinfer-cli -am package -DskipTests
 java --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
-  --model hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
+  --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
   --chat
 ```
 
@@ -31,8 +31,8 @@ Replace `--chat` with `--prompt "..."` for one-shot generation. `--context-capac
 
 Use a framework adapter for application code:
 
-- LangChain4j: `com.qxotic:jinfer-langchain4j` — [guide](/jinfer/langchain4j)
-- Spring AI: `com.qxotic:jinfer-spring-ai` — [guide](/jinfer/spring-ai)
+- LangChain4j: `com.qxotic:jinfer-langchain4j`, [guide](/jinfer/langchain4j)
+- Spring AI: `com.qxotic:jinfer-spring-ai`, [guide](/jinfer/spring-ai)
 
 Single-file demos live in [`jinfer/examples/scripts`](https://github.com/qxoticai/qxotic/tree/main/jinfer/examples/scripts).
 
@@ -42,7 +42,7 @@ Single-file demos live in [`jinfer/examples/scripts`](https://github.com/qxotica
 java --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
-  --model hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
+  --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
   --server --port 54154
 ```
 
@@ -78,7 +78,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, N
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
 | OpenAI server | `jinfer-server` | `/v1/*` |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
-| hub + downloads | `jinfer-hub` | `hf.co/...`, `modelscope.cn/...` |
+| hub + downloads | `jinfer-hub` | `owner/repo`, `modelscope.cn/...` |
 
 Add `jinfer-models-all` for every provider, or individual `jinfer-<model>` artifacts. `Models.load` discovers present providers and names the missing artifact when an architecture is unsupported.
 
@@ -104,8 +104,8 @@ Attach multimodal projectors by capability:
 
 ```bash
 jinfer \
-  --model hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
-  --with media=hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
+  --model unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
+  --with media=unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
   --chat
 ```
 
@@ -122,19 +122,25 @@ same rule: `companion(capability, String)` accepts a model reference and
 Model references use one of these forms:
 
 ```text
-hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0
-hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
-hf.co/ggml-org/models@a1b2c3d/bert-bge-small
-modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0
+unsloth/gemma-4-E2B-it-GGUF:Q8_0
+unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
+ggml-org/models@a1b2c3d/bert-bge-small
+hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0          the host, written out
+modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0         another source
 ```
 
-A bare repository reference uses llama.cpp's `Q4_K_M` default so the same shorthand selects the
-same file in both tools. Jinfer's best-supported quant is `Q8_0`, so the examples pin it explicitly.
+The host is optional and defaults to `hf.co`. Name one to reach another source. A host-less
+reference never swallows a local path: an existing file of that name wins, anything spelled like a
+path is a path, and `owner/model.gguf` is a path too, since no repository is named after a model
+file. Pass local files to `modelPath(...)`.
+
+A reference with no quant uses llama.cpp's `Q4_K_M` default so the same shorthand selects the same
+file in both tools. Jinfer's best-supported quant is `Q8_0`, so the examples pin it explicitly.
 
 Downloads are resumable and checksum-verified. Warm resolution makes no request. `JINFER_MODELS` moves the cache, `HF_TOKEN` unlocks gated repos, `JINFER_OFFLINE=1` (or `-Djinfer.offline`) forbids network access.
 
 ```bash
-java -jar jinfer-cli/target/jinfer.jar pull hf.co/ggml-org/stories15M_MOE:Q8_0
+java -jar jinfer-cli/target/jinfer.jar pull ggml-org/stories15M_MOE:Q8_0
 java -jar jinfer-cli/target/jinfer.jar list
 ```
 
