@@ -86,9 +86,9 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 |---|---|---|
 | x86 | `sse3` → `ssse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
-| GPU | `metal` (Apple, opt-in) | MSL compute |
+| GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (default) picks the best; `JAM_ISA=metal` runs on the Apple GPU. SVE, AMX, and SME are not implemented.
+`JAM_ISA=auto` (default) picks the best — on Apple Silicon that includes the Metal backend (prefill on the GPU, one-column decode stays on the CPU SDOT kernels). Name a CPU rung (`JAM_ISA=i8mm`) to stay CPU-only. SVE, AMX, and SME are not implemented.
 
 ## Performance
 
@@ -101,7 +101,7 @@ These are one machine / one model. Run `jam_bench` and llama.cpp's `pp512` to me
 ```sh
 JAM_THREADS=16 JAM_ISA=avx2          ./app   # all providers: 16 threads, capped at AVX2
 JAM_VECTOR_THREADS=8                 ./app   # override one provider
-JAM_ISA=metal                        ./app   # Apple GPU
+JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
 JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
 

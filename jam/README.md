@@ -99,9 +99,10 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 |---|---|---|
 | x86 | `sse3` → `ssse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
-| GPU | `metal` (Apple, opt-in) | MSL compute |
+| GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (the default) picks the best; `JAM_ISA=metal` runs on the Apple GPU. With Metal active the
+`JAM_ISA=auto` (the default) picks the best — on Apple Silicon that includes the Metal backend; name a
+CPU rung (`JAM_ISA=i8mm`) to stay CPU-only, or `JAM_ISA=metal` to insist on it. With Metal active the
 ctx keeps both executors and routes by measured shape: dense weights go to the GPU at every n (its wider DRAM
 path wins even at n==1); quantized weights go to the GPU only for n>=16 — prefill, where the block quants run
 simdgroup-matrix MMA kernels (half operands, float accumulation, 64x32 tiles) — while one-column/small-n
@@ -148,7 +149,7 @@ k-quants jam is at or above parity at every tier. These numbers cover one machin
 ```sh
 JAM_THREADS=16 JAM_ISA=avx2          ./app   # all providers: 16 threads, capped at AVX2
 JAM_VECTOR_THREADS=8                 ./app   # override one provider
-JAM_ISA=metal                        ./app   # Apple GPU
+JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
 JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
 

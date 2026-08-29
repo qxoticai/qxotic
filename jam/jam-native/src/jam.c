@@ -353,7 +353,17 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 
     c->active = cpu;
 #ifdef JAM_HAVE_METAL
-    if (cap == JAM_ISA_METAL) {                  /* opt-in GPU backend; CPU kernels remain as fallback */
+    /* GPU backend, CPU kernels stay bound as fallback. Apple Silicon AUTO turns it on by default:
+     * unified memory makes every call zero-copy and the n>=16 router keeps decode/small-n quantized
+     * work on the CPU SDOT/I8MM kernels, so Metal only takes shapes it measured faster (M3 Pro Q4_0
+     * 2.6B: pp512 185 -> 503 t/s, tg unchanged). Any CPU rung (JAM_ISA=i8mm) opts out via the ceiling
+     * rule; failed device/pipeline setup silently stays pure CPU. Intel Macs (discrete GPUs, no
+     * unified memory) keep Metal opt-in. */
+    int metal_on = cap == JAM_ISA_METAL;
+#ifdef __aarch64__
+    metal_on |= cap == JAM_ISA_AUTO;
+#endif
+    if (metal_on) {
         c->metal = jam_metal_create();
         if (c->metal) c->active = JAM_ISA_METAL;
     }
