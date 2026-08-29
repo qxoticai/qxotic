@@ -54,8 +54,9 @@ import java.util.Map;
  *       Logits projected every step, never argmaxed: llama-bench feeds back {@code rand() %
  *       n_vocab}, this feeds a cheap LCG successor (throughput is content-independent for dense
  *       models; MoE routing sees pseudo-random tokens either way)
- *   <li>threads: physical cores by default ({@code common_cpu_get_num_math}), the SAME count for pp
- *       and tg ({@code llama_set_n_threads(ctx, t, t)}), plus the JAM thread-count guard
+ *   <li>threads: the engine's own defaults (P-cores on Apple Silicon, matching {@code
+ *       common_cpu_get_num_math}); {@code -t} forces the SAME count for pp and tg ({@code
+ *       llama_set_n_threads(ctx, t, t)}), plus the JAM thread-count guard
  *   <li>reporting: mean ± stddev of per-rep tokens/second - llama-bench's avg_ts / stdev_ts
  * </ul>
  *
@@ -128,15 +129,21 @@ public final class JinferBench {
         }
         if (depth < 0) throw new IllegalArgumentException("n-depth must be >= 0");
 
-        if (threads <= 0) threads = physicalCores();
-        System.setProperty("jinfer.computeThreads", Integer.toString(threads));
-        System.setProperty("jinfer.decodeThreads", Integer.toString(threads));
-        System.setProperty("jam.threads", Integer.toString(threads));
+        // -t forces one width onto every pool (set BEFORE RuntimeFlags initializes). Without it
+        // nothing is overridden: the run measures the engine's own defaults - P-cores on Apple
+        // Silicon, jam's native pool self-sizing to the same set, the count llama-bench uses.
+        if (threads > 0) {
+            System.setProperty("jinfer.computeThreads", Integer.toString(threads));
+            System.setProperty("jinfer.decodeThreads", Integer.toString(threads));
+            System.setProperty("jam.threads", Integer.toString(threads));
+        }
         int prefillThreads = RuntimeFlags.COMPUTE_THREADS;
         int decodeThreads = RuntimeFlags.DECODE_THREADS;
         System.err.printf(
-                "threads: prefill=%d decode=%d jam.native=%s jam.vector=%s (requested %d)%n",
-                prefillThreads, decodeThreads, jamThreads("native"), jamThreads("vector"), threads);
+                "threads: prefill=%d decode=%d jam.native=%s jam.vector=%s (%s)%n",
+                prefillThreads, decodeThreads, jamThreads("native"), jamThreads("vector"),
+                threads > 0 ? "requested " + threads : "engine defaults");
+        if (threads <= 0) threads = decodeThreads;
 
         List<Row> rows = new ArrayList<>();
         List<CapRow> caps = new ArrayList<>();
@@ -260,27 +267,6 @@ public final class JinferBench {
         float logits0() {
             return Views.getFloat(
                     Views.castToSegmentBacked(loaded.model().logits(state), "logits"), 0, "logits");
-        }
-    }
-
-    /**
-     * Physical cores, the same quantity llama-bench defaults to. Duplicated from RuntimeFlags
-     * rather than imported because it must run BEFORE RuntimeFlags is initialized.
-     */
-    private static int physicalCores() {
-        int logical = Runtime.getRuntime().availableProcessors();
-        try {
-            boolean smt =
-                    !"0"
-                            .equals(
-                                    Files.readString(Path.of("/sys/devices/system/cpu/smt/active"))
-                                            .trim());
-            return smt ? Math.max(1, logical / 2) : logical;
-        } catch (Exception notLinux) {
-            String arch = System.getProperty("os.arch", "");
-            return arch.contains("aarch64") || arch.contains("arm")
-                    ? logical
-                    : Math.max(1, logical / 2);
         }
     }
 
@@ -652,7 +638,7 @@ public final class JinferBench {
             value = System.getenv(property.toUpperCase(Locale.ROOT).replace('.', '_'));
         if (value == null || value.isBlank()) value = System.getProperty("jam.threads");
         if (value == null || value.isBlank()) value = System.getenv("JAM_THREADS");
-        return value;
+        return value == null || value.isBlank() ? "auto" : value;
     }
 
     private static void usage(PrintStream out) {
@@ -669,7 +655,8 @@ public final class JinferBench {
                   -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 2)
                       --no-warmup         skip warmup runs before benchmarking
                       --no-capabilities   skip engine capability benchmarks
-                  -t, --threads <N>       pp and tg threads (default physical cores)
+                  -t, --threads <N>       force pp and tg threads (default: engine defaults,
+                                          P-cores only on Apple Silicon)
                       --ctx <N>           override context size for both tests
                                           (default per test, as llama-bench: p for pp, n for tg)
                       --media <path>      also benchmark projected-media cold vs warm latency
