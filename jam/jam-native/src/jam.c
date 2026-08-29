@@ -308,10 +308,13 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->bf16zp_kernel = jam_mm_bf16p_avx512bf16; c->bf16zp_pack = jam_bf16_pack_avx512bf16; }
 #endif
     c->q4k_avail = (cpu >= JAM_ISA_AVX512_VNNI);                               /* Q4_K is VNNI-only */
-    if (cpu >= JAM_ISA_AVX512_VNNI)
-        c->kq[JAM_KQ_Q4K] = jam_mm_q4k_avx512vnni;   /* the int8 floor at full width: DECODE
+    if (cpu >= JAM_ISA_AVX512_VNNI) {              /* the int8 floor at full width: DECODE
                                                         (seq < JAM_VNNI_MIN_SEQ) no longer drops
                                                         to the SSE3 quarter-width kernel */
+        c->kq[JAM_KQ_Q4K] = jam_mm_q4k_avx512vnni;
+        c->kq[JAM_KQ_Q5K] = jam_mm_q5k_avx512vnni;
+        c->kq[JAM_KQ_Q6K] = jam_mm_q6k_avx512vnni;
+    }
 #endif
     /* ARM: NEON/DOTPROD/I8MM are a clean superset chain (detect returns the highest fully present). */
 #ifdef JAM_HAVE_NEON
