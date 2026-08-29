@@ -163,7 +163,7 @@ endif()
 # jota-metal, which GENERATES/fuses kernels — jam-metal is the single absolute-fastest matmul. Wraps
 # host pointers via newBufferWithBytesNoCopy (needs 16 KB page-aligned buffers), big-GEMM-gated.
 if (APPLE AND JAM_METAL)
-    # Metal GPU backend (opt-in via JAM_ISA=metal). MSL compiled at runtime; no .metallib step.
+    # Metal GPU backend (default-on for Apple Silicon AUTO; JAM_ISA=<cpu rung> opts out). MSL compiled at runtime; no .metallib step.
     enable_language(OBJCXX)
     target_sources(jam PRIVATE src/jam_metal.mm)
     set_source_files_properties(src/jam_metal.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")

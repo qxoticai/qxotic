@@ -584,8 +584,11 @@ static void suite_api(void) {
     OK("packed at != F32",      jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F16, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
     OK("packed m % 4 != 0",     jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 6, 6, 1, 256) == JAM_EUNSUPPORTED);
 
-    /* concurrency: a re-entrant jam_mm on a context already in flight must get JAM_EBUSY (serial stream) */
+    /* concurrency: a re-entrant jam_mm on a context already in flight must get JAM_EBUSY (serial stream).
+     * Cap below METAL: the re-entry happens inside the host executor, and on Apple Silicon an AUTO ctx
+     * would send this F32 matmul to the GPU and never fan out. */
     memset(&cfg,0,sizeof cfg); cfg.parallel_for = reentry_pfor; cfg.name = "reentry";
+    cfg.max_isa = JAM_ISA_GENERIC;
     jam_ctx* r = jam_ctx_create(&cfg);
     OK("host-pool ctx non-null", r != NULL);
     g_reentry_ctx = r; g_reentry_status = 99;
