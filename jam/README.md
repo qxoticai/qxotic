@@ -150,6 +150,7 @@ k-quants jam is at or above parity at every tier. These numbers cover one machin
 JAM_THREADS=16 JAM_ISA=avx2          ./app   # all providers: 16 threads, capped at AVX2
 JAM_VECTOR_THREADS=8                 ./app   # override one provider
 JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
+JAM_POOL=condvar                     ./app   # park workers between jobs (default: spin-then-park, JAM_SPIN=16384 pauses)
 JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
 

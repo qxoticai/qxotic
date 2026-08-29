@@ -1,10 +1,13 @@
 /* A small persistent worker pool. Two barrier implementations, selectable per pool via JAM_POOL:
- *  - CONDVAR (default): workers park on a condvar between jobs — yields the CPU, ~µs wakeup.
- *  - SPIN (JAM_POOL=spin): workers busy-wait on the atomic job counter (~100 ns wakeup), falling back
- *    to parking after JAM_SPIN pauses so they don't burn cores when idle (e.g. during jinfer's Java
- *    decode). The submitter publishes via an atomic store and spins on `remaining` for the join. Wins
- *    when fan-outs come back-to-back (two-phase matmul, MoE small matmuls) — workers stay hot so the
- *    gap between fan-outs collapses.
+ *  - SPIN (default): workers busy-wait on the atomic job counter (~100 ns wakeup), parking after
+ *    JAM_SPIN pauses (default 16384) so they don't burn cores when idle (e.g. during jinfer's Java
+ *    decode). The submitter publishes via an atomic store and spins on `remaining` for the join.
+ *    Wins when fan-outs come back-to-back; MoE decode is the extreme case — per-expert GEMVs every
+ *    few µs, and each park costs a condvar wake (M3 Pro tg64 over condvar: gemma-4-26B-A4B
+ *    26.6 -> 37.6, LFM2.5-8B-A1B 45.2 -> 58.3; the sweep's knee is 16384 — 2048 parks mid-token,
+ *    65536 measures no better; prefill unhurt).
+ *  - CONDVAR (JAM_POOL=condvar): workers park between jobs — yields the CPU, ~µs wakeup, for hosts
+ *    where even a bounded spin window is unwelcome.
  * The submitting thread participates as worker 0, so `nthreads` participants share each parallel_for. */
 #include "jam_internal.h"
 #include "jam_cpu.h"
@@ -104,9 +107,9 @@ jam_pool* jam_pool_create(int nthreads, const int* cpu, int nprimary) {
     pool->nworkers = nthreads - 1;   /* submitter is the +1 participant */
     pool->nprimary = (nprimary >= 1 && nprimary <= nthreads) ? nprimary : nthreads;
     const char* pm = getenv("JAM_POOL");
-    pool->spin = (pm && strcmp(pm, "spin") == 0);
+    pool->spin = !(pm && strcmp(pm, "condvar") == 0);
     const char* sb = getenv("JAM_SPIN");
-    pool->spin_budget = sb ? atoi(sb) : 2048;
+    pool->spin_budget = sb ? atoi(sb) : 16384;
     if (pool->spin_budget < 1) pool->spin_budget = 1;
     pthread_mutex_init(&pool->mtx, NULL);
     pthread_cond_init(&pool->cv_work, NULL);

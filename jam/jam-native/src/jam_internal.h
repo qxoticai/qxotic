@@ -29,7 +29,7 @@ jam_pool* jam_pool_create(int nthreads, const int* cpu, int nprimary); /* nthrea
 void      jam_pool_destroy(jam_pool* pool);
 void      jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg);  /* blocks till done */
 void      jam_pool_parallel_for_capped(jam_pool* pool, int n, jam_task_fn fn, void* arg, int cap);
-int       jam_pool_is_spin(const jam_pool* pool);        /* 1 if JAM_POOL=spin (spin-then-park barrier) */
+int       jam_pool_is_spin(const jam_pool* pool);        /* 1 unless JAM_POOL=condvar (spin-then-park is the default barrier) */
 int       jam_pool_spin_budget(const jam_pool* pool);    /* pauses before a spinning worker parks */
 
 /* Per-worker K-quant weight-repack scratch (VNNI layout). One per pool worker, indexed by jam tid. */
