@@ -56,7 +56,7 @@ java $BENCH_FLAGS -cp "$CP" com.qxotic.jinfer.bench.JinferBench \
 | `-r, --repetitions <N>` | timed reps, default 5 |
 | `-w, --warmup <N>` | minimum warmup passes; then adaptive until throughput settles within 3% (max 30) |
 | `--no-warmup` | skip warmup entirely (native code only) |
-| `-t, --threads <N>` | worker count for both tests, default physical cores; sets `jinfer.computeThreads`, `jinfer.decodeThreads` and `jam.threads` |
+| `-t, --threads <N>` | force the worker count for both tests (sets `jinfer.computeThreads`, `jinfer.decodeThreads`, `jam.threads`); default: no override, the engine's own defaults apply (P-cores only on Apple Silicon, same as llama-bench) |
 | `--ctx <N>` | override context for both tests (default: `p` for pp, `n` for tg, as llama-bench) |
 | `--with media=<mmproj.gguf>` | attach a companion (repeatable; CLI convention) |
 | `--media <path>` | also measure projected-media cold/warm latency (needs a vision projector) |
