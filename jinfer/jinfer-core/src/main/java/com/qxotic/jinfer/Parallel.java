@@ -23,10 +23,68 @@ public final class Parallel {
      * <p>Iterations may run concurrently and in any order. Nested calls are supported; iterations
      * must be independent and non-blocking.
      */
+    static final boolean STATS = Boolean.getBoolean("jinfer.parallel.stats");
+
+    static final java.util.concurrent.atomic.AtomicLong
+            ST_WALL = new java.util.concurrent.atomic.AtomicLong(),
+            ST_BUSY = new java.util.concurrent.atomic.AtomicLong(),
+            ST_REGIONS = new java.util.concurrent.atomic.AtomicLong(),
+            ST_NESTED = new java.util.concurrent.atomic.AtomicLong();
+
+    static {
+        if (STATS)
+            Runtime.getRuntime()
+                    .addShutdownHook(
+                            new Thread(
+                                    () ->
+                                            System.err.printf(
+                                                    "jinfer.parallel.stats: regions=%d (nested %d)"
+                                                            + " wall=%.3fs busy=%.3fs"
+                                                            + " busy/(wall*T)=%.1f%% avg"
+                                                            + " region=%.0fus%n",
+                                                    ST_REGIONS.get(),
+                                                    ST_NESTED.get(),
+                                                    ST_WALL.get() / 1e9,
+                                                    ST_BUSY.get() / 1e9,
+                                                    100.0
+                                                            * ST_BUSY.get()
+                                                            / (ST_WALL.get()
+                                                                    * (double)
+                                                                            RuntimeFlags
+                                                                                    .COMPUTE_THREADS),
+                                                    ST_WALL.get()
+                                                            / 1e3
+                                                            / Math.max(1, ST_REGIONS.get()))));
+    }
+
     public static void forLoop(int startInclusive, int endExclusive, IntConsumer action) {
         if (startInclusive >= endExclusive) {
             return;
         }
+        if (STATS
+                && ForkJoinTask.getPool() == null
+                && ACTIVE_SPIN_SUBMITTER.get() != Thread.currentThread()) {
+            IntConsumer inner = action;
+            action =
+                    i -> {
+                        long t0 = System.nanoTime();
+                        inner.accept(i);
+                        ST_BUSY.addAndGet(System.nanoTime() - t0);
+                    };
+            long t0 = System.nanoTime();
+            try {
+                forLoopImpl(startInclusive, endExclusive, action);
+            } finally {
+                ST_WALL.addAndGet(System.nanoTime() - t0);
+                ST_REGIONS.incrementAndGet();
+            }
+            return;
+        }
+        if (STATS && ForkJoinTask.getPool() != null) ST_NESTED.incrementAndGet();
+        forLoopImpl(startInclusive, endExclusive, action);
+    }
+
+    private static void forLoopImpl(int startInclusive, int endExclusive, IntConsumer action) {
         if ((long) endExclusive - startInclusive == 1) {
             action.accept(startInclusive);
             return;
