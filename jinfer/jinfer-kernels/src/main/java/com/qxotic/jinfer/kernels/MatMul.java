@@ -1825,7 +1825,7 @@ public final class MatMul {
 
     private static final System.Logger LOG = System.getLogger("jinfer.jam");
 
-    private static final JamMm NATIVE = boolFlag("jinfer.disableJam") ? null : load("native");
+    private static final JamMm NATIVE = load("native");
     private static final JamMm VECTOR = load("vector");
 
     /** The JAM rungs that loaded ("native", "vector"), for the selection tests. */
@@ -1912,22 +1912,6 @@ public final class MatMul {
             }
         }
         return null;
-    }
-
-    /**
-     * Strict boolean system property (Dispatch.boolFlag verbatim: "1"/"yes"/typos warn + false).
-     */
-    private static boolean boolFlag(String name) {
-        String v = System.getProperty(name);
-        if (v == null) return false;
-        if (v.equalsIgnoreCase("true")) return true;
-        if (v.equalsIgnoreCase("false")) return false;
-        LOG.log(
-                System.Logger.Level.WARNING,
-                "ignoring -D{0}={1} (expected true or false)",
-                name,
-                v);
-        return false;
     }
 
     /**
