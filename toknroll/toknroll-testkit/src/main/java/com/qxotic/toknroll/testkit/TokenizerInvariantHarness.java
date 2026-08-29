@@ -183,7 +183,7 @@ public final class TokenizerInvariantHarness {
     }
 
     // ------------------------------------------------------------------
-    // Slicing invariants — encodeInto(4-arg) and countTokens(3-arg)
+    // Slicing invariants - encodeInto(4-arg) and countTokens(3-arg)
     // ------------------------------------------------------------------
 
     /**
@@ -237,7 +237,7 @@ public final class TokenizerInvariantHarness {
     }
 
     // ------------------------------------------------------------------
-    // Convenience overload invariants — encodeToArray, decode(int[]), etc.
+    // Convenience overload invariants - encodeToArray, decode(int[]), etc.
     // ------------------------------------------------------------------
 
     /**

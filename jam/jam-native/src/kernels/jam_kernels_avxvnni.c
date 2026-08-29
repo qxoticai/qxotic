@@ -1,9 +1,9 @@
-/* AVX-VNNI kernels — this TU only, built with -mavxvnni -mavx2 -mfma -mf16c. Bound at create when the
- * CPU has AVX-VNNI (256-bit vpdpbusd in the VEX encoding) but NOT AVX-512 — i.e. modern CLIENT chips
+/* AVX-VNNI kernels - this TU only, built with -mavxvnni -mavx2 -mfma -mf16c. Bound at create when the
+ * CPU has AVX-VNNI (256-bit vpdpbusd in the VEX encoding) but NOT AVX-512 - i.e. modern CLIENT chips
  * (Alder/Raptor Lake). The F32 path reuses the AVX2 kernel (same 256-bit float); only Q8_0 changes:
  * the int8 dot is one vpdpbusd instead of AVX2's maddubs+madd (no int16 saturation edge, fewer ops).
  *
- * NOTE: _mm256_dpbusd_avx_epi32 (the _avx_ spelling) is the AVX-VNNI VEX intrinsic — distinct from the
+ * NOTE: _mm256_dpbusd_avx_epi32 (the _avx_ spelling) is the AVX-VNNI VEX intrinsic - distinct from the
  * AVX-512-VL _mm256_dpbusd_epi32 used by the AVX-512 TU. */
 #include "jam_internal.h"
 #include "jam_kquant.h"
@@ -42,7 +42,7 @@
 #undef JAM_MM_NAME
 #undef JAM_DOT
 
-/* ================= Q8_0 8-row 256-bit AVX-VNNI repack band — the AVX-512 jam_q8_0_repack_band ported to
+/* ================= Q8_0 8-row 256-bit AVX-VNNI repack band - the AVX-512 jam_q8_0_repack_band ported to
  * ymm (8 i32 lanes = 8 rows/group, _mm256_dpbusd_avx_epi32). Same scheme: weight s8 is the signed operand,
  * activation a+128 the unsigned one, +128 bias corrected per row via cw = d·128·Σw. The per-worker repack
  * scratch is byte-for-byte the AVX-512 one (4 groups of 8 == 2 groups of 16). ================= */
@@ -145,7 +145,7 @@ void jam_q8_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
 }
 
 /* Pure (no-AVX-512) phase-1 activation requant feeding jam_q8_0_repack_band_avxvnni: F32 [seq×k] -> s8 xq +
- * per-32-block scale dx (amax/127). Per-token task (jam_run over seq). Scalar today — correct and portable;
+ * per-32-block scale dx (amax/127). Per-token task (jam_run over seq). Scalar today - correct and portable;
  * AVX2-vectorize the max-abs + convert if it ever shows up in a profile. Q8_0 ignores xsum. */
 void jam_q8_0_requant_256(void* arg, int s0, int s1, int tid) {
     (void) tid;

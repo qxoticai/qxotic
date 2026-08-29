@@ -1,4 +1,4 @@
-/* Shared NEON simple-block (32-element) weight @ F32 -> F32 matmul body — the ARM analog of jam_gemm_q256.inc.
+/* Shared NEON simple-block (32-element) weight @ F32 -> F32 matmul body - the ARM analog of jam_gemm_q256.inc.
  * Decode each weight block to two signed int8x16 halves + a float scale, signed-dot it against the int8-
  * requantized activation, scale-accumulate in float (reduced once per output). The includer defines, before
  * #include:

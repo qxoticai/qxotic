@@ -2,9 +2,9 @@
 // (selectTopK, with an optional separate weights source for llama.cpp's selection-only exp_probs_b
 // bias), the softmax+renormalize spine (softmaxSelectTopK), the CSR grouping of tokens by routed
 // expert, the gather (a raw row copy), and the prob-weighted scatter-add (Ops.saxpyInPlace).
-// Per-architecture — the model's identity — stay the gating flavor (softmax/sigmoid, extra
+// Per-architecture - the model's identity - stay the gating flavor (softmax/sigmoid, extra
 // scales), the normalization policy, and the per-expert FFN math (gated/ungated, activation,
-// biases, layout), the latter supplied as an ExpertKernel closure — called once per expert
+// biases, layout), the latter supplied as an ExpertKernel closure - called once per expert
 // (never per element), so the vector kernels inside stay monomorphic.
 package com.qxotic.jinfer.kernels;
 
@@ -21,7 +21,7 @@ public final class Moe {
 
     /**
      * Per-route routing produced by a model's gating + top-k + normalize. Wraps the State's
-     * existing CSR scratch arrays — no new buffers. {@code rowTopE[s*topK+k]}/{@code rowTopP[...]}
+     * existing CSR scratch arrays - no new buffers. {@code rowTopE[s*topK+k]}/{@code rowTopP[...]}
      * are the selected expert and its combine weight for route k of row s; {@code counts[e]} is how
      * many routes landed on expert e (the rest are filled by {@link #dispatch}).
      */
@@ -88,7 +88,7 @@ public final class Moe {
      * Two-source variant: the argmax runs over {@code selection} (consumed, masked in place) but
      * the recorded combine weight is read from {@code weights}. This is llama.cpp's {@code
      * exp_probs_b} semantics (build_moe_ffn): the bias steers WHICH experts are picked, not HOW
-     * MUCH they contribute — callers pass a bias-added scratch as {@code selection} and the
+     * MUCH they contribute - callers pass a bias-added scratch as {@code selection} and the
      * unbiased gating probabilities as {@code weights}.
      */
     public static void selectTopK(
@@ -184,7 +184,7 @@ public final class Moe {
      * expert's rows out of {@code input}, run its {@code kernel}, and scatter-add the result into
      * {@code out} weighted by the route's combine weight. {@code expertScale} (nullable) folds a
      * per-expert output scale into the combine weight at build time (e.g. Gemma's per-expert down
-     * scale) — equivalent to applying it at the scatter, up to float rounding. {@code expertOut} is
+     * scale) - equivalent to applying it at the scatter, up to float rounding. {@code expertOut} is
      * the kernel's per-group output scratch.
      */
     public static void dispatch(

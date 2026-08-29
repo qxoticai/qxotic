@@ -1,4 +1,4 @@
-/* SSE3 (true SSE3: no SSSE3 maddubs, no F16C) 128-bit int8 GEMM — the pre-AVX2 x86 floor, replacing the
+/* SSE3 (true SSE3: no SSSE3 maddubs, no F16C) 128-bit int8 GEMM - the pre-AVX2 x86 floor, replacing the
  * generic dequant-to-float path on machines without AVX2. Built with -msse3, dispatched when the CPU has
  * SSE3 but not AVX2. The q128 engine + the 128-bit decoders cover Q8_0, Q4_0 and MXFP4. */
 #include <pmmintrin.h>

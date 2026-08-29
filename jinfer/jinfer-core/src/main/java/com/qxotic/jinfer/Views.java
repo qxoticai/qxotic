@@ -217,9 +217,9 @@ public final class Views {
 
     /**
      * Checked CAST of an opaque boundary view ({@code MemoryView<?>}) to its segment-backed reality
-     * — same reference, no wrap, no copy, fail-fast. The wildcard at the boundary exists for a
+     * - same reference, no wrap, no copy, fail-fast. The wildcard at the boundary exists for a
      * future non-segment backing (a GPU buffer); today every weight mmap and state scratch in the
-     * slice IS MemorySegment-backed, so this is the ONE sanctioned downcast — everywhere else the
+     * slice IS MemorySegment-backed, so this is the ONE sanctioned downcast - everywhere else the
      * compiler already knows. (when a non-segment backing lands, this seam grows a second arm
      * rather than the cast spreading back out.)
      */

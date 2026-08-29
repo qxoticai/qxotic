@@ -4,7 +4,7 @@
  *   GB/s   = bytes / t            min DRAM traffic: read weights A + activation B, write output C, once
  * GMAC/s is the metric in the compute-bound regime (prefill, large n); GB/s in the bandwidth-bound regime
  * (gemv/decode, n small) where it should approach peak DRAM. Q8_0 weight = 34 B / 32 vals = 1.0625 B/val
- * vs F32's 4 — that byte reduction is exactly what GB/s captures and GFLOP/s hid.
+ * vs F32's 4 - that byte reduction is exactly what GB/s captures and GFLOP/s hid.
  * One context per ISA level (capped via max_isa); levels the hardware lacks are skipped. Configure with
  * JAM_NATIVE_THREADS and args:
  *   jam_bench [size=1024] [iters]      square m=n=k=size  (compute-bound -> GMAC/s is the metric)
@@ -18,7 +18,7 @@
 #include <time.h>
 #include <pthread.h>
 #ifdef _WIN32
-#include <windows.h>   /* Sleep, GetSystemInfo — MinGW has no sysconf/usleep (clock_gettime is winpthreads') */
+#include <windows.h>   /* Sleep, GetSystemInfo - MinGW has no sysconf/usleep (clock_gettime is winpthreads') */
 static void sleep_us(long us) { Sleep((DWORD) (us / 1000)); }
 static int  ncpus(void) { SYSTEM_INFO si; GetSystemInfo(&si); return (int) si.dwNumberOfProcessors; }
 #else
@@ -30,7 +30,7 @@ static int  ncpus(void) { long n = sysconf(_SC_NPROCESSORS_ONLN); return n > 0 ?
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec*1e-9; }
 
 /* Cache scrub: a buffer larger than the LLC, read between timed calls so the weight A (and B/C) are
- * evicted and each jam_mm streams them from DRAM — otherwise iters 2+ measure CACHE bandwidth, not DRAM.
+ * evicted and each jam_mm streams them from DRAM - otherwise iters 2+ measure CACHE bandwidth, not DRAM.
  * Run on EVERY core: caches like AMD per-CCD L3 are not shared, so a single-threaded scrub leaves the
  * other CCD's L3 warm. Each worker thrashing the buffer evicts its own core's cache path. */
 static char*  g_scrub = NULL;
@@ -50,7 +50,7 @@ static void scrub_caches(void) {
 
 typedef struct { double gmac, gbs; } perf;   /* MAC rate and effective DRAM-traffic rate */
 
-/* weight bytes per value, by dtype — the byte reduction GB/s captures (vs F32's 4). */
+/* weight bytes per value, by dtype - the byte reduction GB/s captures (vs F32's 4). */
 static double wbytes_per_val(int at) {
     switch (at) {
         case JAM_Q8_0: return 34.0  / 32.0;    /* 1.0625 */
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     int nt = nts?atoi(nts):0;
     const char* want = getenv("JAM_ISA");   /* if set, bench only this isa (isolated -> stable numbers) */
     const char* wantdt = getenv("JAM_DTYPE"); /* if set, bench only this dtype (perf isolation) */
-    /* scrub buffer must exceed the LLC to force DRAM reads — default 256MB covers up to a 128MB V-cache.
+    /* scrub buffer must exceed the LLC to force DRAM reads - default 256MB covers up to a 128MB V-cache.
      * Override with JAM_BENCH_SCRUB_MB on big-iron (>256MB L3) or to shrink it on small machines. */
     int scrub_mb = getenv("JAM_BENCH_SCRUB_MB") ? atoi(getenv("JAM_BENCH_SCRUB_MB")) : 256;
     g_scrub_sz = (size_t)scrub_mb << 20; g_scrub = malloc(g_scrub_sz); memset(g_scrub, 1, g_scrub_sz);
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
         Wq40 = jam_ref_make_q4_0(M,K,1,dq1,dq2); free(dq1); free(dq2); }
 
     /* K-quants are 256-element super-blocks (only when k%256==0). The makers also emit dequant scratch
-     * (wdq/wmin) the bench doesn't need — one reused pair, freed after. */
+     * (wdq/wmin) the bench doesn't need - one reused pair, freed after. */
     uint8_t *Wq4k=NULL, *Wq5k=NULL, *Wq6k=NULL;
     if (K % 256 == 0 && (BW_WANT("Q4_K") || BW_WANT("Q5_K") || BW_WANT("Q6_K"))) {
         float* wdq = malloc(4*(size_t)M*K); float* wmin = malloc(4*(size_t)M*K);

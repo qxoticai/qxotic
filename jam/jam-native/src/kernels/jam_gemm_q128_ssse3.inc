@@ -1,6 +1,6 @@
 /* 128-bit SSSE3 quantized GEMM engine: C = W @ Aᵀ, W decoded to int8 (two __m128i halves), A int8. Same
- * shape as jam_gemm_q128.inc (the true-SSE3 floor) but the int8 dot uses the SSSE3 maddubs sign-trick —
- * maddubs(|a|, sign(w,a)) -> int16 pairs, madd_epi16(.,1) -> int32 — instead of sign-extend + madd, halving
+ * shape as jam_gemm_q128.inc (the true-SSE3 floor) but the int8 dot uses the SSSE3 maddubs sign-trick  -
+ * maddubs(|a|, sign(w,a)) -> int16 pairs, madd_epi16(.,1) -> int32 - instead of sign-extend + madd, halving
  * the dot's op count. Weights are assumed in [-127,127] (real Q8_0/Q4_0 quantization; the sign-trick's only
  * pitfall is w=-128, which symmetric quant never produces). The includer defines, before #include:
  *

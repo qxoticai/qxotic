@@ -305,7 +305,7 @@ class JamBackendParityTest {
     // ---------------------------------
     // Every gemm above starts the weight at byte 0. A MoE expert gemm instead reads a slice of a
     // packed
-    // expert tensor at a non-zero (block-aligned) row offset — a code path the offset-0 cases never
+    // expert tensor at a non-zero (block-aligned) row offset - a code path the offset-0 cases never
     // touch
     // (base-address arithmetic, repack-cache keying). Sweep a couple of offsets × the seq range so
     // an
@@ -410,7 +410,7 @@ class JamBackendParityTest {
     // ---- 2d. Large-m native DETERMINISM (the multi-threaded race)
     // ----------------------------------
     // The model's real gemms have thousands of output rows, so jam fans them across many worker
-    // threads —
+    // threads  -
     // far more parallel work units than the m≤104 shapes above ever create. A race on shared worker
     // state
     // surfaces only at that scale, and is non-deterministic (thread-count dependent:
@@ -458,7 +458,7 @@ class JamBackendParityTest {
     }
 
     /**
-     * Large-m AND non-zero weight offset, run twice — the MoE expert gemm is both (big + sliced).
+     * Large-m AND non-zero weight offset, run twice - the MoE expert gemm is both (big + sliced).
      */
     @Test
     void nativeDeterministicLargeMOffset() {
@@ -514,7 +514,7 @@ class JamBackendParityTest {
     // ---- 2e. The EXACT A4B prefill gemm shapes (from -Djinfer.mmTrace), run many times
     // -------------
     // dim=2816. These are the shapes the live model issues at prefill (n=6) where native output is
-    // non-deterministic run-to-run. Reproduces the bug from the real shapes (k=2816 — never swept
+    // non-deterministic run-to-run. Reproduces the bug from the real shapes (k=2816 - never swept
     // above).
     private static final int[][] A4B_PREFILL_SHAPES = {
         {JAM.Q8_0, 2112, 2816}, // shared MLP gate/up
@@ -573,7 +573,7 @@ class JamBackendParityTest {
     // to
     // (shared-MLP + router at offset 0 are bit-stable; only these offset gemms diverge). Big
     // offsets
-    // (~0.5 GB byte) — never hit by the small-offset sweep above. Native vs the reference at each
+    // (~0.5 GB byte) - never hit by the small-offset sweep above. Native vs the reference at each
     // slice. ----
     @Test
     void moeExpertOffsetParityNative() {
@@ -649,8 +649,8 @@ class JamBackendParityTest {
     // tokens routed to each), all reusing one jam ctx's requant/repack scratch. The shared-MLP
     // (n=6) is
     // bit-stable but the variable-n experts jitter in the live model. This drives that exact
-    // pattern —
-    // varying n against a persistent ctx — and checks every result against the reference (guards
+    // pattern  -
+    // varying n against a persistent ctx - and checks every result against the reference (guards
     // the rp
     // path's correctness for the variable-n case; the bit-level non-determinism is caught
     // model-side by

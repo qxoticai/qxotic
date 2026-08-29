@@ -5,7 +5,7 @@
 # them into their hot loop, the vector escapes the method boundary and is boxed (a FloatVector object + its
 # backing float[] are allocated per call) instead of scalar-replaced into a SIMD register. On a strong inliner
 # (Oracle GraalVM) this happens automatically; weaker inliners (GraalVM CE, plain C2 under budget pressure)
-# need the hint. Forcing the inline makes the whole loop allocation-free — measured +~45% prefill on GraalVM CE.
+# need the hint. Forcing the inline makes the whole loop allocation-free - measured +~45% prefill on GraalVM CE.
 #
 # Use with:  -XX:CompileCommandFile=<path>/hotspot_compile_commands
 # Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.

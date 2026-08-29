@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
  * <p>Trick that makes this a real membership oracle: every mock vocab contains one <b>EOS</b> token
  * whose decoded bytes are empty. The engine permits an empty-byte token <i>iff</i> it is in an
  * accepting state, so "EOS is unmasked after walking S" == "S is a complete sentence of the
- * grammar". That lets the helpers below distinguish accepted sentences from mere valid prefixes —
+ * grammar". That lets the helpers below distinguish accepted sentences from mere valid prefixes -
  * the distinction the old (broken) implementation never enforced.
  */
 public final class GrammarSpecTest {
@@ -234,7 +234,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // JSON — valid sentences
+    // JSON - valid sentences
     // ========================================================================
 
     static final String[] VALID_JSON = {
@@ -288,7 +288,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // JSON — non-sentences (rejected outright, or incomplete prefixes)
+    // JSON - non-sentences (rejected outright, or incomplete prefixes)
     // ========================================================================
 
     static final String[] INVALID_JSON = {
@@ -345,7 +345,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // JSON — precise rejection point (the original bug class: missing ':')
+    // JSON - precise rejection point (the original bug class: missing ':')
     // ========================================================================
 
     static void testJsonPreciseRejection() {
@@ -363,7 +363,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // JSON — whitespace is optional and allowed between structural tokens
+    // JSON - whitespace is optional and allowed between structural tokens
     // ========================================================================
 
     static void testJsonWhitespace() {
@@ -385,7 +385,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // compact (minified) JSON — no whitespace permitted anywhere
+    // compact (minified) JSON - no whitespace permitted anywhere
     // ========================================================================
 
     static void testJsonCompact() {
@@ -406,7 +406,7 @@ public final class GrammarSpecTest {
                     "true",
                     "null"
                 }) acc("compact", j, s);
-        // rejects ANY whitespace — between tokens or at the top level
+        // rejects ANY whitespace - between tokens or at the top level
         rej("compact", j, "{ }");
         rej("compact", j, "[ ]");
         rej("compact", j, "{\"a\": 1}");
@@ -426,14 +426,14 @@ public final class GrammarSpecTest {
         rej("compact", j, "{\"a\"1}");
         rej("compact", j, "[1,]");
         rej("compact", j, "\"raw\nnl\"");
-        // and json() (pretty) accepts a spaced form the compact one rejects — sanity contrast
+        // and json() (pretty) accepts a spaced form the compact one rejects - sanity contrast
         check(
                 "compact vs pretty contrast",
                 accepts(Grammar.json(BV), BV, "[1, 2]") && notMember(j, BV, "[1, 2]"));
     }
 
     // ========================================================================
-    // JSON — strings & escapes
+    // JSON - strings & escapes
     // ========================================================================
 
     static void testJsonStrings() {
@@ -463,7 +463,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // JSON — numbers
+    // JSON - numbers
     // ========================================================================
 
     static void testJsonNumbers() {
@@ -496,7 +496,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // JSON — multi-byte UTF-8 passes through inside strings
+    // JSON - multi-byte UTF-8 passes through inside strings
     // ========================================================================
 
     static void testJsonUnicodeBytes() {
@@ -508,7 +508,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — literals
+    // GBNF - literals
     // ========================================================================
 
     static void testGbnfLiterals() {
@@ -532,7 +532,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — character classes
+    // GBNF - character classes
     // ========================================================================
 
     static void testGbnfCharClasses() {
@@ -575,22 +575,22 @@ public final class GrammarSpecTest {
         acc("cchex", hex, "C");
         rej("cchex", hex, "D");
 
-        // hex ranges must be EXACT — regression for the off-by-one that re-read the range-end
+        // hex ranges must be EXACT - regression for the off-by-one that re-read the range-end
         // token's last hex digit as a spurious extra member (e.g. wrongly admitting ':' or 'F').
         Grammar.Spec dig = g("root ::= [\\x30-\\x39]"); // exactly '0'..'9'
         acc("cchexexact", dig, "0");
         acc("cchexexact", dig, "9");
-        rej("cchexexact", dig, ":"); // 0x3A, one past '9' — the bug's victim
+        rej("cchexexact", dig, ":"); // 0x3A, one past '9' - the bug's victim
         rej("cchexexact", dig, "/"); // 0x2F, one before '0'
         Grammar.Spec ctl = g("root ::= [\\x00-\\x1F]"); // control chars only
         acc("cchexctl", ctl, "\u0005");
         acc("cchexctl", ctl, "\u001f");
-        rej("cchexctl", ctl, "F"); // 0x46 — was spuriously admitted
+        rej("cchexctl", ctl, "F"); // 0x46 - was spuriously admitted
         rej("cchexctl", ctl, " "); // 0x20, one past the range
     }
 
     // ========================================================================
-    // GBNF — dot
+    // GBNF - dot
     // ========================================================================
 
     static void testGbnfDot() {
@@ -610,7 +610,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — alternation
+    // GBNF - alternation
     // ========================================================================
 
     static void testGbnfAlternation() {
@@ -638,7 +638,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — groups
+    // GBNF - groups
     // ========================================================================
 
     static void testGbnfGroups() {
@@ -657,7 +657,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — repetition  *  +  ?
+    // GBNF - repetition  *  +  ?
     // ========================================================================
 
     static void testGbnfRepetition() {
@@ -700,7 +700,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — references / rule chains
+    // GBNF - references / rule chains
     // ========================================================================
 
     static void testGbnfReferences() {
@@ -741,7 +741,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — recursion (right-recursive: fully supported)
+    // GBNF - recursion (right-recursive: fully supported)
     // ========================================================================
 
     static void testGbnfRecursion() {
@@ -790,7 +790,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — escapes in literals
+    // GBNF - escapes in literals
     // ========================================================================
 
     static void testGbnfEscapes() {
@@ -839,7 +839,7 @@ public final class GrammarSpecTest {
     }
 
     // ========================================================================
-    // GBNF — epsilon / empty
+    // GBNF - epsilon / empty
     // ========================================================================
 
     static void testGbnfEpsilon() {
@@ -1434,7 +1434,7 @@ public final class GrammarSpecTest {
 
     // ========================================================================
     // property test: anything the engine GENERATES, it ACCEPTS
-    // (catches mask/advance divergence — the failure mode of the old impl)
+    // (catches mask/advance divergence - the failure mode of the old impl)
     // ========================================================================
 
     static void testFuzzRoundtrip() {

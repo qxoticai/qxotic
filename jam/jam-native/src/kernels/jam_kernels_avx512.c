@@ -1,9 +1,9 @@
-/* AVX-512 kernels — this TU only, built with -mavx512f -mfma; bound at create when
+/* AVX-512 kernels - this TU only, built with -mavx512f -mfma; bound at create when
  * ctx->active >= JAM_ISA_AVX512. C = A @ Bᵀ, F32 (== tinyBLAS's C = Aᵀ·B: k is contiguous on both,
  * each output is a dot of two contiguous k-vectors).
  *
  * Design follows llamafile's tinyBLAS: register-tiled kernels + `mnpack` recursive tile selection so
- * the whole region is covered by register tiles down to 1×1 — no scalar edges. Tiles pre-load the RM
+ * the whole region is covered by register tiles down to 1×1 - no scalar edges. Tiles pre-load the RM
  * A-rows and RN B-rows once per k-step (optimal RM+RN loads), and a 4×4 tile holds 16 acc + 4 + 4 =
  * 24/32 zmm, spill-free. Threading is handled by the engine (it hands each thread a row range); each
  * thread mnpacks [row_begin,row_end) × [0,n). */
@@ -485,7 +485,7 @@ void jam_mm_q8_0_gemv_avx512(void* arg, int rb, int re, int tid) {
 
 /* ---- F16 / BF16 DENSE weight @ F32 -> F32 (ported from jinferjni.c run_dense_gemm). 4×4 register
  * tile, 16-wide; the weight is converted to f32 on the fly (cvtph for F16, <<16 for BF16). Output is
- * token-major C[s*ldc + r] — already jam's layout. k must be a multiple of 16 (else the generic floor). */
+ * token-major C[s*ldc + r] - already jam's layout. k must be a multiple of 16 (else the generic floor). */
 static inline __m512 jam_loadw_f16(const uint16_t* p)  { return _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i*) p)); }
 static inline __m512 jam_loadw_bf16(const uint16_t* p) { return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i*) p)), 16)); }
 

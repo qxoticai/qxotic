@@ -116,13 +116,13 @@ class TraceFunctionTest {
         Tensor sample = Tensor.of(new float[] {0, 1, 2, 3, 4, 5});
         Function<Tensor, Tensor> gelu = Tracer.traceFunction(sample, TraceFunctionTest::tensorGelu);
 
-        // First call — triggers compilation
+        // First call - triggers compilation
         Tensor r1 = gelu.apply(Tensor.of(new float[] {0, 1, 2, 3, 4, 5}));
         for (int i = 0; i < 6; i++) {
             assertEquals(TestKernels.gelu(i), TensorTestReads.readFloat(r1, i), 1e-4f);
         }
 
-        // Second call — reuses compiled kernel, different data
+        // Second call - reuses compiled kernel, different data
         float[] data2 = {-2, -1, 0.5f, 1.5f, 2.5f, 3.5f};
         Tensor r2 = gelu.apply(Tensor.of(data2));
         for (int i = 0; i < 6; i++) {
@@ -144,9 +144,9 @@ class TraceFunctionTest {
         Supplier<Tensor> mandelbrot =
                 Tracer.traceFunction(() -> TestKernels.mandelbrotTensor(width, height, iterations));
 
-        // First call — traces and compiles
+        // First call - traces and compiles
         Tensor r1 = mandelbrot.get();
-        // Second call — reuses compiled kernels
+        // Second call - reuses compiled kernels
         Tensor r2 = mandelbrot.get();
 
         // Verify correctness at several sample points
@@ -171,7 +171,7 @@ class TraceFunctionTest {
         Tensor sample = Tensor.of(new float[] {0, 0, 0, 0});
         Function<Tensor, Tensor> gelu = Tracer.traceFunction(sample, TraceFunctionTest::tensorGelu);
 
-        // Call many times with different data — all should be correct
+        // Call many times with different data - all should be correct
         for (int round = 0; round < 10; round++) {
             float base = round * 0.5f - 2.0f;
             float[] data = {base, base + 0.1f, base + 0.2f, base + 0.3f};

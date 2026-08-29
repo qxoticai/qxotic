@@ -1,11 +1,11 @@
-/* AVX512-BF16 dense kernel — this TU only, built with -mavx512bf16 (Zen 4+/Cooper Lake+); bound at
+/* AVX512-BF16 dense kernel - this TU only, built with -mavx512bf16 (Zen 4+/Cooper Lake+); bound at
  * create only when the CPU reports avx512bf16 (orthogonal to the ISA ladder, like AVX-VNNI).
  *
  * BF16 weight @ F32 activation -> F32, in two phases:
  *   phase 1 (jam_bf16_cvt_avx512bf16): convert the activation rows to BF16 ONCE into context
- *     scratch (contiguous k per row) — vcvtne2ps2bf16 packs 32 floats -> 32 bf16 per op.
+ *     scratch (contiguous k per row) - vcvtne2ps2bf16 packs 32 floats -> 32 bf16 per op.
  *   phase 2 (jam_mm_bf16_avx512bf16): 4×4 register tile over weight rows; each k-step of 32 does
- *     16 vdpbf16ps, and every vdpbf16ps is 32 bf16 MACs into f32 lanes — twice the MAC rate of the
+ *     16 vdpbf16ps, and every vdpbf16ps is 32 bf16 MACs into f32 lanes - twice the MAC rate of the
  *     FMA convert-tile it replaces, at half the activation-load bytes.
  * The activation-side bf16 rounding matches llama.cpp's BF16 path (tinyBLAS converts A the same
  * way); the weights are bf16 already, so the product picks up ~one extra ulp of bf16 noise.

@@ -23,7 +23,7 @@ hr "configure + build (Release)"
 cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$BUILD" -j
 
-hr "correctness — every supported kernel × {1,3} threads + global"
+hr "correctness - every supported kernel × {1,3} threads + global"
 # ctest runs jam_test (all capped contexts); --output-on-failure prints any [FAIL] lines
 ( cd "$BUILD" && ctest --output-on-failure )
 
@@ -31,20 +31,20 @@ hr "backends present on this machine"
 # jam_test's header lists the contexts it built (one per kernel the CPU/GPU supports)
 "$BUILD/jam_test" | sed -n '1,2p'
 
-hr "benchmark — all backends, SQUARE ${SIZE}³ (compute-bound -> GMAC/s is the metric)"
+hr "benchmark - all backends, SQUARE ${SIZE}³ (compute-bound -> GMAC/s is the metric)"
 JAM_THREADS="$THREADS" "$BUILD/jam_bench" "$SIZE" "$ITERS"
 
-hr "benchmark — all backends, GEMV 16384×1×8192 (bandwidth-bound -> GB/s approaches peak DRAM)"
+hr "benchmark - all backends, GEMV 16384×1×8192 (bandwidth-bound -> GB/s approaches peak DRAM)"
 # weight (512MB F32 / 136MB Q8) far exceeds cache, so GB/s reflects real DRAM. F32 pins at peak and is
 # ISA-independent; Q8_0 finishes faster by streaming ~4x fewer weight bytes.
 JAM_THREADS="$THREADS" "$BUILD/jam_bench" 16384 1 8192 20
 
 # Multi-thread numbers above are thermally coupled (kernels run back-to-back). For a clean per-backend
-# reading, isolate each — Metal especially (GPU, untiled first cut) is worth seeing on its own.
+# reading, isolate each - Metal especially (GPU, untiled first cut) is worth seeing on its own.
 for ISA in i8mm metal; do
     hr "isolated: $ISA  (${SIZE}x${SIZE}x${SIZE}, ${THREADS} threads)"
     JAM_ISA="$ISA" JAM_THREADS="$THREADS" "$BUILD/jam_bench" "$SIZE" "$ITERS" \
-        || echo "  ($ISA not available on this machine — skipped)"
+        || echo "  ($ISA not available on this machine - skipped)"
 done
 
 hr "done"

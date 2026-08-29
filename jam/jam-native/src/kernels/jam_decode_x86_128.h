@@ -1,5 +1,5 @@
 /* 128-bit x86 (SSE3) weight DECODER + reduce, for the jam_gemm_q128 engine. A *true* SSE3 floor: no SSSE3
- * (pmaddubsw/pabsb/psignb) and no F16C — so weights decode to two __m128i int8 halves plus a SOFTWARE-
+ * (pmaddubsw/pabsb/psignb) and no F16C - so weights decode to two __m128i int8 halves plus a SOFTWARE-
  * converted float scale, and the engine does sign-extend + madd. One decoder per quant (Q8_0, Q4_0, MXFP4). */
 #ifndef JAM_DECODE_X86_128_H
 #define JAM_DECODE_X86_128_H
@@ -27,7 +27,7 @@ static inline void jam_decode_q8_0_128(const void* blk, __m128i* wlo, __m128i* w
     *dW  = jam_half2float(w->d);
 }
 
-/* Q4_0: value = d·(nibble-8). Nibble decode is pure arithmetic (and/shift/sub) — no SSSE3 pshufb needed:
+/* Q4_0: value = d·(nibble-8). Nibble decode is pure arithmetic (and/shift/sub) - no SSSE3 pshufb needed:
  * low nibbles are elements 0..15, high nibbles 16..31. */
 static inline void jam_decode_q4_0_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
     const jam_q4_0_blk* w = (const jam_q4_0_blk*) blk;
@@ -39,7 +39,7 @@ static inline void jam_decode_q4_0_128(const void* blk, __m128i* wlo, __m128i* w
 }
 
 /* MXFP4: nibble -> int8 code (FP4 value ×2); the ×½ folds into the scale (jam_mxfp4_dhalf). The LUT lookup
- * is SSSE3 pshufb on the wider kernels — true SSE3 has none, so decode the 32 nibbles SCALARLY here (done
+ * is SSSE3 pshufb on the wider kernels - true SSE3 has none, so decode the 32 nibbles SCALARLY here (done
  * ONCE per weight block, amortized across the engine's 4-column tile), then the SSE int8 dot does the rest. */
 static inline void jam_decode_mxfp4_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
     const jam_mxfp4_blk* w = (const jam_mxfp4_blk*) blk;

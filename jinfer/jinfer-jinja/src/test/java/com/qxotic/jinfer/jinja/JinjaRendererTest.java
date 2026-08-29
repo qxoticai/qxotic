@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Behavioral tests for {@link JinjaRenderer}, the minimal Jinja2 engine used to apply GGUF {@code
- * tokenizer.chat_template} strings. No model is required — every case renders a template against an
+ * tokenizer.chat_template} strings. No model is required - every case renders a template against an
  * in-memory context and compares the exact output string.
  *
  * <p>The bulk of the suite locks in the features real chat templates depend on (for-loops over
@@ -142,7 +142,7 @@ public final class JinjaRendererTest {
         check(
                 name + " preserves turn order",
                 out.indexOf(U1) < out.indexOf(A1) && out.indexOf(A1) < out.indexOf(U2));
-        // every turn rendered EXACTLY once — guards duplicated or skipped messages (off-by-one in
+        // every turn rendered EXACTLY once - guards duplicated or skipped messages (off-by-one in
         // the message loop, last-message special-casing that double-emits, etc.)
         check(
                 name + " renders each turn exactly once",
@@ -158,7 +158,7 @@ public final class JinjaRendererTest {
         // no UNRENDERED statement/comment tags leak. (Tool-doc strings legitimately contain `{{`
         // braces, so we only flag `{%`/`{#`, which never appear as literal output text.)
         check(name + " no unrendered tags", !out.contains("{%") && !out.contains("{#"));
-        // rendering is deterministic — identical input must give identical output, guarding state
+        // rendering is deterministic - identical input must give identical output, guarding state
         // that leaks across renders (mutated namespaces, aliased list slices, .pop() side-effects)
         String again = tryRender(prog, conv(withSystem, oneTool(), true, listContent, false));
         check(name + " is deterministic across renders", out.equals(again));
@@ -170,16 +170,16 @@ public final class JinjaRendererTest {
             if (noGen != null)
                 check(name + " add_generation_prompt has effect", !noGen.equals(out));
         }
-        // (Note: we deliberately don't assert a generic "thinking flag toggles output" — models
+        // (Note: we deliberately don't assert a generic "thinking flag toggles output" - models
         // gate reasoning inconsistently: enable_thinking bool, a `thinking` bool, a
         // reasoning_effort
-        // enum, or `/think` markers in the content — so there's no uniform signal to flip.)
+        // enum, or `/think` markers in the content - so there's no uniform signal to flip.)
         // tools: a provided tool must be declared (assert only when tools change the output, i.e.
         // the template supports tools at all) ...
         String noTools = tryRender(prog, conv(withSystem, null, true, listContent, false));
         if (noTools != null && !noTools.equals(out)) {
             check(name + " declares the tool when tools are provided", out.contains(TOOL));
-            // ... and ALL tools are declared, each once — guards a broken tool loop (only
+            // ... and ALL tools are declared, each once - guards a broken tool loop (only
             // first/last)
             String two = tryRender(prog, conv(withSystem, twoTools(), true, listContent, false));
             if (two != null)
@@ -193,7 +193,7 @@ public final class JinjaRendererTest {
 
     /** Minimal / awkward inputs that commonly break loops and last-message handling. */
     static void validateEdgeCases(String name, JinjaRenderer.Prog prog, boolean listContent) {
-        // a single user message (no prior turns) is the most basic valid input — every chat
+        // a single user message (no prior turns) is the most basic valid input - every chat
         // template must handle it without dropping the message
         var single =
                 map(
@@ -611,7 +611,7 @@ public final class JinjaRendererTest {
         eq("{{ 'on' if flag else 'off' }}", map("flag", true), "on");
         eq("{{ 'on' if flag else 'off' }}", map("flag", false), "off");
         eq("{{ 'truthy' if name else 'empty' }}", map("name", ""), "empty");
-        // ternary yields the operand VALUE, not its rendered text — must work for lists/objects
+        // ternary yields the operand VALUE, not its rendered text - must work for lists/objects
         eq(
                 "{% set xs = a if flag else b %}{{ xs | join('-') }}",
                 map("flag", true, "a", list(1, 2), "b", list(9)), "1-2");
@@ -853,7 +853,7 @@ public final class JinjaRendererTest {
         eq("{{ user.address.city }}", map("user", user), "NYC"); // nested dot
         eq("{{ user['address']['city'] }}", map("user", user), "NYC"); // nested computed
         eq("{{ user.missing }}", map("user", user), ""); // absent key -> empty
-        // dict methods (parenthesized — they resolve to builtin functions)
+        // dict methods (parenthesized - they resolve to builtin functions)
         eq("{{ obj.keys() | join(',') }}", map("obj", map("a", 1, "b", 2)), "a,b");
         eq("{{ obj.values() | join(',') }}", map("obj", map("a", 1, "b", 2)), "1,2");
         eq("{{ obj.get('a') }}", map("obj", map("a", 1)), "1");
@@ -987,7 +987,7 @@ public final class JinjaRendererTest {
         eq("{{ a ~ '-' ~ b ~ '-' ~ 42 }}", map("a", "x", "b", "y"), "x-y-42");
         // adjacent string-literal concatenation (Python/Jinja2 style)
         eq("{{ 'foo' 'bar' 'baz' }}", "foobar" + "baz");
-        // str() of a list/dict is the Python repr (strings quoted, True/False/None capitalized) —
+        // str() of a list/dict is the Python repr (strings quoted, True/False/None capitalized)  -
         // models trained on `tools | string` depend on this exact shape
         eq("{{ [1, 'x', true] }}", "[1, 'x', True]");
         eq("{{ {'a': 1, 'b': 'x'} }}", "{'a': 1, 'b': 'x'}");

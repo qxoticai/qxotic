@@ -128,7 +128,7 @@ public final class JinjaRenderer {
                 return !v.isEmpty();
             }
 
-            // Python/Jinja str(dict): {'key': <repr>, ...} — what models trained on `tools |
+            // Python/Jinja str(dict): {'key': <repr>, ...} - what models trained on `tools |
             // string`
             @Override
             public String asStr() {
@@ -267,7 +267,7 @@ public final class JinjaRenderer {
     }
 
     /**
-     * Python {@code repr()} of a value as used inside a list/dict's {@code str()} — strings are
+     * Python {@code repr()} of a value as used inside a list/dict's {@code str()} - strings are
      * single-quoted, True/False/None capitalized, containers recurse. (Plain top-level {@code
      * str()} does NOT quote strings; that's {@link Val#asStr()}.)
      */
@@ -809,7 +809,7 @@ public final class JinjaRenderer {
                     continue;
                 }
 
-                // Inside {{ or {% — skip whitespace, tokenize individually
+                // Inside {{ or {% - skip whitespace, tokenize individually
                 if (Character.isWhitespace(c)) {
                     adv();
                     continue;
@@ -939,7 +939,7 @@ public final class JinjaRenderer {
                     continue;
                 }
 
-                // Stray char — treat as text
+                // Stray char - treat as text
                 toks.add(new Tok(T.TEXT, String.valueOf(c), p));
                 adv();
             }
@@ -948,7 +948,7 @@ public final class JinjaRenderer {
         }
 
         boolean matchTrim(T type, String s) {
-            // s is e.g. "{%-" or "-}}" — the FULL marker including trim dashes
+            // s is e.g. "{%-" or "-}}" - the FULL marker including trim dashes
             for (int j = 0; j < s.length(); j++) if (ch(j) != s.charAt(j)) return false;
             int save = pos();
             adv(s.length());
@@ -1073,7 +1073,7 @@ public final class JinjaRenderer {
                 }
                 adv();
             }
-            if (i == s) { // shouldn't happen — but guard against it
+            if (i == s) { // shouldn't happen - but guard against it
                 if (eof()) return new Tok(T.EOF, "", s);
                 adv(); // skip the { that triggered the stop
             }
@@ -1167,10 +1167,10 @@ public final class JinjaRenderer {
 
     /**
      * The module's public entry point: turns a Jinja chat-template source into a {@link
-     * CompiledTemplate} prompt generator — parse once, render many times. Throws on source the
-     * parser rejects — a syntax error or an unsupported feature — with a message naming the
+     * CompiledTemplate} prompt generator - parse once, render many times. Throws on source the
+     * parser rejects - a syntax error or an unsupported feature - with a message naming the
      * offending construct; a template that cannot be compiled must never silently degrade to a
-     * different prompt framing. The AST and parser behind the returned template stay internal —
+     * different prompt framing. The AST and parser behind the returned template stay internal -
      * callers only ever see a render-only template.
      */
     public static CompiledTemplate template(String source) {
@@ -1826,7 +1826,7 @@ public final class JinjaRenderer {
     static final class Frame {
         final LinkedHashMap<String, Val> vars = new LinkedHashMap<>();
         // macro definitions live on the (shared) root frame so calls can bind params by name,
-        // honoring defaults and keyword arguments — see Executor.CallNode handling
+        // honoring defaults and keyword arguments - see Executor.CallNode handling
         final Map<String, MacroNode> macros = new HashMap<>();
 
         Val get(String name) {
@@ -2032,7 +2032,7 @@ public final class JinjaRenderer {
             return switch (expr) {
                 case BlockExpr b -> evalExprBlock(b.body()); // {% set x %}…{% endset %} body
                 case LitNode l -> {
-                    // list/dict/tuple literals carry element Nodes — evaluate them here
+                    // list/dict/tuple literals carry element Nodes - evaluate them here
                     if (l.val() instanceof List<?> li) {
                         var out = new ArrayList<Val>(li.size());
                         for (Object e : li) out.add(e instanceof Node n ? eval(n) : Val.of(e));
@@ -2175,7 +2175,7 @@ public final class JinjaRenderer {
                 case ">" -> new Val.Bool(toNum(l) > toNum(r));
                 case "<=" -> new Val.Bool(toNum(l) <= toNum(r));
                 case ">=" -> new Val.Bool(toNum(l) >= toNum(r));
-                // and/or return an OPERAND (Python/Jinja semantics), not a coerced bool — this is
+                // and/or return an OPERAND (Python/Jinja semantics), not a coerced bool - this is
                 // what makes the common `x or 'default'` / `a.get('k') or fallback` idiom work.
                 case "and" -> l.truthy() ? r : l;
                 case "or" -> l.truthy() ? l : r;

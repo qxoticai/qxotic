@@ -1,4 +1,4 @@
-/* Qxotic theme — warm neutral palette matching qxotic.ai */
+/* Qxotic theme - warm neutral palette matching qxotic.ai */
 
 :root {
   /* Light mode */
@@ -28,7 +28,7 @@
   --qx-dark-link: #7daea3;
 }
 
-/* Infima overrides — light */
+/* Infima overrides - light */
 :root {
   --ifm-color-primary: var(--qx-accent);
   --ifm-color-primary-dark: var(--qx-accent-hover);
@@ -68,7 +68,7 @@
   --ifm-code-font-size: 95%;
 }
 
-/* Infima overrides — dark */
+/* Infima overrides - dark */
 [data-theme="dark"] {
   --ifm-color-primary: var(--qx-dark-accent);
   --ifm-color-primary-dark: var(--qx-dark-accent-hover);

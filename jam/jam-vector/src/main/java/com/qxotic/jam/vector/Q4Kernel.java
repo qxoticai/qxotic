@@ -17,7 +17,7 @@ import jdk.incubator.vector.VectorOperators;
  * Q4_0 blocks ({@code fp16 d; 16 nibble bytes}, value {@code d·(nibble-8)}) read from {@code w};
  * activation is F32 from {@code (a, aBase)}; output F32 to {@code (o, oBase)}. Strides are ELEMENT
  * strides; {@code wOff} is the weight ELEMENT offset (the byte offset is block-derived). Behaviour
- * is identical to jinfer's {@code Q4_0FloatTensor.vectorGemm512} — jinfer now delegates here.
+ * is identical to jinfer's {@code Q4_0FloatTensor.vectorGemm512} - jinfer now delegates here.
  */
 public final class Q4Kernel {
 

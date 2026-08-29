@@ -30,7 +30,7 @@ b2 = ax.bar(x + w/2, llama["avx512_vnni"], w, label="llama.cpp", color=LLAMA, ed
 for b in (b1, b2):
     ax.bar_label(b, padding=2, fontsize=8, color="#444")
 ax.set_ylabel("prefill  pp512  (tok/s)")
-ax.set_title("jam vs llama.cpp — AVX-512-VNNI  ·  Llama-3.2-1B  ·  16 threads (Zen 5)", fontsize=11)
+ax.set_title("jam vs llama.cpp - AVX-512-VNNI  ·  Llama-3.2-1B  ·  16 threads (Zen 5)", fontsize=11)
 ax.set_xticks(x); ax.set_xticklabels(quants)
 ax.legend(frameon=False); ax.spines[["top","right"]].set_visible(False)
 ax.set_ylim(0, 2450); ax.grid(axis="y", alpha=0.25)

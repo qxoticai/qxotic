@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * Builds Tok'n'Roll tokenizers from GGUF metadata.
  *
  * <p>When loading from Hugging Face or ModelScope, only the GGUF header and metadata key-value
- * pairs are downloaded and cached — tensors and model weights are never fetched.
+ * pairs are downloaded and cached - tensors and model weights are never fetched.
  *
  * <p>Pre-tokenizer schemes resolve in three layers, each outranking the previous: the builtins
  * ({@link #createBuilderWithBuiltins()}), programmatic registrations on the builder, and the

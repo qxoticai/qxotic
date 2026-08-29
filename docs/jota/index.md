@@ -4,12 +4,12 @@ sidebar_position: 2
 
 # jota
 
-**One tensor API, every backend.** A tensor library with pluggable CPU/GPU backends and first-class GraalVM Native Image support — write tensor code once, run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
+**One tensor API, every backend.** A tensor library with pluggable CPU/GPU backends and first-class GraalVM Native Image support. Write tensor code once, run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
 
 jota's IRs are simple and MLIR-like; no data-dependent control flow:
 
-- **TIR** — Tensor IR: high-level tensor operations, no control flow
-- **LIR** — Loop IR: explicit loops for optimization, scheduling, and kernel generation
+- **TIR** (Tensor IR): high-level tensor operations, no control flow
+- **LIR** (Loop IR): explicit loops for optimization, scheduling, and kernel generation
 
 ## Backends
 
@@ -29,9 +29,9 @@ The low-level API (memory, allocators, nested layouts) stays within reach when y
 
 Pick the smallest API you need. Each layer includes the preceding layers transitively:
 
-- `jota-core` — data types, devices, shapes, strides, layouts
-- `jota-memory` — `Memory`, `MemoryView`, allocators, access, transfers
-- `jota-tensor` — tensors, environments, runtimes, IR, kernel compilation
+- `jota-core`: data types, devices, shapes, strides, layouts
+- `jota-memory`: `Memory`, `MemoryView`, allocators, access, transfers
+- `jota-tensor`: tensors, environments, runtimes, IR, kernel compilation
 
 Memory-only applications need one dependency:
 
@@ -55,7 +55,7 @@ Tensor applications use `jota-tensor`:
 
 ## Backend dependencies
 
-Put the backend JAR on the classpath; it becomes available on supported platforms. **No `-Djava.library.path`** — native libraries are bundled and auto-extracted. Use `-Djava.library.path` only for custom overrides.
+Put the backend JAR on the classpath; it becomes available on supported platforms. **No `-Djava.library.path`**: native libraries are bundled and auto-extracted. Use `-Djava.library.path` only for custom overrides.
 
 ```xml
 <!-- Java backend (not Native Image compatible) -->

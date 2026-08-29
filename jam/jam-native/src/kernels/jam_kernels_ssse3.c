@@ -1,4 +1,4 @@
-/* SSSE3 (Core 2 2006+, still pre-AVX2) 128-bit int8 GEMM — Q8_0 / Q4_0 via the maddubs sign-trick, the
+/* SSSE3 (Core 2 2006+, still pre-AVX2) 128-bit int8 GEMM - Q8_0 / Q4_0 via the maddubs sign-trick, the
  * faster sibling of the true-SSE3 floor (jam_kernels_sse3.c). SSSE3 adds pmaddubsw/pabsb/psignb, so the
  * int8 dot drops the sign-extend (halving its op count); still no F16C (software fp16 in the decoders).
  * Built with -mssse3, dispatched when the CPU has SSSE3 but not AVX2. Reuses the SSE3 128-bit decoders. */

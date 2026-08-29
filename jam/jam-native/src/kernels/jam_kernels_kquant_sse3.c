@@ -1,4 +1,4 @@
-/* SSE3 K-quant GEMM (Q4_K/Q5_K/Q6_K @ F32 -> F32) — the pre-AVX2 x86 floor for K-quants, replacing the
+/* SSE3 K-quant GEMM (Q4_K/Q5_K/Q6_K @ F32 -> F32) - the pre-AVX2 x86 floor for K-quants, replacing the
  * generic dequant-to-float path on SSE3-without-AVX2 machines. A *true* SSE3 floor: no SSSE3 maddubs and no
  * F16C, so weights decode to int8 with and/shift/or (software fp16 scale) and the int8 dot is sign-extend
  * (unpack + arithmetic-shift) + madd_epi16, reduced with a final hsum. Mirrors the ARM kquant engine math
@@ -15,7 +15,7 @@
 #define JAM_KTN 4         /* activation columns tiled per decoded weight sub-block (matches the SSE3 4-col tile) */
 
 /* JAM_DOT16 (jam_decode_x86_128.h): K-quant nibbles are <128 so the sign bit is clear (zero-extend),
- * Q6_K weights are genuinely signed (qv-32) — both correct under sign-extend. */
+ * Q6_K weights are genuinely signed (qv-32) - both correct under sign-extend. */
 
 static inline int jam_hsum4_epi32(__m128i v) {
     __m128i s = _mm_add_epi32(v, _mm_shuffle_epi32(v, _MM_SHUFFLE(1, 0, 3, 2)));

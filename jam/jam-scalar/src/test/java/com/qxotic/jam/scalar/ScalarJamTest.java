@@ -220,7 +220,7 @@ class ScalarJamTest {
         return new Weight(JAM.NVFP4, s, v);
     }
 
-    /** {@code n} small non-negative ints (0..7) — keeps scale·quant products exact. */
+    /** {@code n} small non-negative ints (0..7) - keeps scale·quant products exact. */
     private static int[] small(int n) {
         int[] x = new int[n];
         for (int i = 0; i < n; i++) x[i] = RNG.nextInt(8);
@@ -302,7 +302,7 @@ class ScalarJamTest {
     @Test
     void declinesUnsupported() {
         MemorySegment d = A.allocate(64 * 1024, 64);
-        // every weight dtype now decodes — the only decline is a non-F32 activation or result.
+        // every weight dtype now decodes - the only decline is a non-F32 activation or result.
         assertEquals(
                 JAM.EUNSUPPORTED,
                 jam.mm(d, 0, JAM.Q8_0, 32, d, 0, JAM.F16, 32, d, 0, JAM.F32, 4, 4, 2, 32),

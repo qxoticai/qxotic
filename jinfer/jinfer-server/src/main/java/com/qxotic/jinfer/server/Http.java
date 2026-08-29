@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * HTTP transport plumbing shared by every endpoint: the request preamble (access log, CORS, OPTIONS
- * preflight), bounded body reads, JSON responses, and the uniform error envelope. Pure transport —
+ * preflight), bounded body reads, JSON responses, and the uniform error envelope. Pure transport -
  * it knows nothing about inference, so handlers read top-to-bottom as {@code preamble → parse → do
  * work → respond}.
  */
@@ -21,7 +21,7 @@ final class Http {
 
     /**
      * Per-request preamble: access log, CORS headers, and OPTIONS preflight. Returns {@code true}
-     * when the request was a preflight already answered (204) — the caller should then return.
+     * when the request was a preflight already answered (204) - the caller should then return.
      */
     static boolean preamble(HttpExchange exchange, ServerConfig.Access access) throws IOException {
         log(exchange);
@@ -130,7 +130,7 @@ final class Http {
     }
 
     /**
-     * Best-effort error send for paths where the response may already be (partly) committed — a
+     * Best-effort error send for paths where the response may already be (partly) committed - a
      * connection loss or an already-sent header is logged, never thrown.
      */
     static void sendErrorQuietly(HttpExchange exchange, int status, String message) {

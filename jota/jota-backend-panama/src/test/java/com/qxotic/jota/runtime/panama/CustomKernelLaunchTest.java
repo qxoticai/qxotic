@@ -168,7 +168,7 @@ class CustomKernelLaunchTest {
         Tensor input = Tensor.of(new float[] {1f, -2f, 3f, -4f});
         MemoryView<?> out = allocate(DataType.FP32, Shape.flat(4));
 
-        // Pass a Tensor (not MemoryView) — should be materialized automatically
+        // Pass a Tensor (not MemoryView) - should be materialized automatically
         runtime.launchKernel("negate", input, out);
 
         assertFloats(out, -1f, 2f, -3f, 4f);
@@ -265,7 +265,7 @@ class CustomKernelLaunchTest {
 
     @Test
     void launchGemvKernel() {
-        // y[M] = A[M,N] * x[N]  — row-contiguous A, contiguous x
+        // y[M] = A[M,N] * x[N]  - row-contiguous A, contiguous x
         // language=java
         String source =
                 """
@@ -374,7 +374,7 @@ class CustomKernelLaunchTest {
         Tensor b = Tensor.of(new float[] {10f, 20f, 30f});
         Tensor out = Tensor.of(new float[3]);
 
-        // All three arguments are Tensors — materialized automatically
+        // All three arguments are Tensors - materialized automatically
         runtime.launchKernel("add_tensors", a, b, out);
 
         assertFloats(out.materialize(), 11f, 22f, 33f);
@@ -417,7 +417,7 @@ class CustomKernelLaunchTest {
         runtime.registerKernel(
                 "mul_tensors", KernelProgram.source("java", source, "MulTensorsKernel"));
 
-        // Kernel tensors must be row-major contiguous — create them directly
+        // Kernel tensors must be row-major contiguous - create them directly
         Tensor ones = Tensor.of(new float[] {1f, 1f, 1f, 1f});
         Tensor fives = Tensor.of(new float[] {5f, 5f, 5f, 5f});
         Tensor out = Tensor.of(new float[4]);
@@ -493,7 +493,7 @@ class CustomKernelLaunchTest {
     @Test
     void tooFewArgsThrowsAtKernelLevel() {
         // The scale kernel expects: buffer, buffer, scalar
-        // Pass only one buffer — the kernel will fail when accessing missing args
+        // Pass only one buffer - the kernel will fail when accessing missing args
         // language=java
         // language=java
         String source =
@@ -522,7 +522,7 @@ class CustomKernelLaunchTest {
 
         MemoryView<?> buf = allocate(DataType.FP32, Shape.flat(4));
 
-        // Only one buffer, no scalar — kernel tries to read index 1 and 2
+        // Only one buffer, no scalar - kernel tries to read index 1 and 2
         assertThrows(Exception.class, () -> runtime.launchKernel("mismatch", buf));
     }
 

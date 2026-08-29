@@ -205,7 +205,7 @@ public record Batch(Input input, Outputs outputs) {
     }
 
     /**
-     * The token ids a batch list ingests, flattened in order. Token batches only — the shared
+     * The token ids a batch list ingests, flattened in order. Token batches only - the shared
      * currency between chat encoding, cache fingerprints and the test harnesses, so the server and
      * the testkit stay byte-compatible.
      */

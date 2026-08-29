@@ -307,7 +307,7 @@ final class VectorSupport {
 
     /**
      * Split {@code [0, count)} into contiguous slices and run them on Vector JAM's workers. Unlike
-     * {@link #parallelFor}, the body owns a whole slice — so a band kernel can {@link
+     * {@link #parallelFor}, the body owns a whole slice - so a band kernel can {@link
      * Scratch#acquire} one dequant buffer per worker (not per group) and reuse it across the
      * slice's rows. With {@link Scratch}'s context-owned pool this means no per-{@code mm}
      * allocation, while the buffers stay reachable only through the context (freed when it is GC'd)

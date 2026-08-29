@@ -4,21 +4,21 @@ sidebar_position: 1
 
 # GGUF
 
-**GGUF for the JVM.** Read and write [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files — the binary format [llama.cpp](https://github.com/ggml-org/llama.cpp) uses to store model weights and metadata — in pure Java. Zero dependencies, Java 11+, GraalVM native-image ready.
+**GGUF for the JVM.** Read and write [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files, the binary format [llama.cpp](https://github.com/ggml-org/llama.cpp) uses to store model weights and metadata, in pure Java. Zero dependencies, Java 11+, GraalVM native-image ready.
 
 ## What is GGUF?
 
 GGUF (GGML Universal Format) packs a large language model into one binary file:
 
-- **Metadata** — key-value pairs describing the model (name, architecture, context length, tokenizer info, ...)
-- **Tensor information** — names, shapes and data types for each weight tensor
-- **Tensor data** — the weight values themselves, usually quantized
+- **Metadata:** key-value pairs describing the model (name, architecture, context length, tokenizer info, ...)
+- **Tensor information:** names, shapes and data types for each weight tensor
+- **Tensor data:** the weight values themselves, usually quantized
 
 This library handles the format parsing and provides type-safe access to metadata and tensor information.
 
 :::info Library scope
 
-**Metadata and tensor layout only.** This library does **not** read or write tensor payload bytes (you do that yourself, at offsets it provides), perform inference, or do quantization math. That keeps it small, focused and dependency-free — for inference, see [jinfer](/jinfer).
+**Metadata and tensor layout only.** This library does **not** read or write tensor payload bytes (you do that yourself, at offsets it provides), perform inference, or do quantization math. That keeps it small, focused and dependency-free. For inference, see [jinfer](/jinfer).
 
 :::
 

@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Server-Sent-Events transport: the per-response {@link Stream} (frame encoding, flush, and the
  * checked→unchecked bridge so sinks deep in the generation loop just call {@link Stream#emit}),
- * plus a watchdog that closes a streaming client whose write has stalled — the JDK server has no
+ * plus a watchdog that closes a streaming client whose write has stalled - the JDK server has no
  * write timeout, so without it one dead client would wedge the single generation worker forever.
  */
 final class Sse {
@@ -130,7 +130,7 @@ final class Sse {
 
     /**
      * A live SSE response. Owns the byte encoding, the per-frame flush, and the checked→unchecked
-     * bridge so callers — including streaming sinks invoked deep in the generation loop — just call
+     * bridge so callers - including streaming sinks invoked deep in the generation loop - just call
      * {@link #emit}/{@link #done}.
      */
     static final class Stream implements AutoCloseable {
@@ -151,7 +151,7 @@ final class Sse {
             frame("data: " + JsonCodec.stringify(value) + "\n\n");
         }
 
-        /** A named SSE event ({@code event:} line + {@code data:} frame) — the Responses API. */
+        /** A named SSE event ({@code event:} line + {@code data:} frame) - the Responses API. */
         void emit(String event, Object value) {
             if (value instanceof Map<?, ?> map) {
                 Map<Object, Object> numbered = new LinkedHashMap<>(map);

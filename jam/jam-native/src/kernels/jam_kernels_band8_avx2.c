@@ -1,4 +1,4 @@
-/* AVX2 8-row K-quant repack bands — the jam_q4k/q5k/q6k avx512 bands ported to ymm + maddubs.
+/* AVX2 8-row K-quant repack bands - the jam_q4k/q5k/q6k avx512 bands ported to ymm + maddubs.
  * This TU is compiled with -mavx2 -mfma -mf16c only (part of the jam_avx2 target): it is the
  * K-quant prefill fast path for CPUs BELOW avx512-vnni (Haswell..Rocket Lake, Zen 2/3, and
  * Alder-Lake-class clients for whom no K-quant VNNI band exists).
@@ -6,7 +6,7 @@
  * Same bounded per-worker scratch as the VNNI bands (jam_repack, sized by ensure_kquant: the
  * 4-groups-of-8 layouts are byte-for-byte the 2-groups-of-16 ones), same two-phase launch, same
  * deferred-float scale/min math. Only the int8 dot differs: no vpdpbusd, so the base ladder is
- * maddubs(w_u8, x_s8) -> madd(1) -> add int32 — and wherever the per-maddubs int16 bound allows,
+ * maddubs(w_u8, x_s8) -> madd(1) -> add int32 - and wherever the per-maddubs int16 bound allows,
  * products ACCUMULATE IN INT16 (plain add_epi16, wrap provably unreachable) with ONE deferred
  * madd, cutting the ladder to ~2 ops/group:
  *   Q4_K, Q4_0 : peak 2*15*127 = 3810/maddubs -> all 8 groups chain (8*3810 = 30480 < 32767)
@@ -237,7 +237,7 @@ void jam_q4k_band8_avx2(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= Q5_K — Q4_K scheme, 5-bit byte-expanded (256 B/sub-block/group8) ==== */
+/* ================= Q5_K - Q4_K scheme, 5-bit byte-expanded (256 B/sub-block/group8) ==== */
 
 static void repack_q5k_group8(const uint8_t* wbase, int64_t w_stride, int sblocks,
                               uint8_t* qs, float* dw, float* mw) {
@@ -368,7 +368,7 @@ void jam_q5k_band8_avx2(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= Q6_K — 6-bit biased +32 (0..63 unsigned), per-16 scales, no min ===== */
+/* ================= Q6_K - 6-bit biased +32 (0..63 unsigned), per-16 scales, no min ===== */
 
 static void repack_q6k_group8(const uint8_t* wbase, int64_t w_stride, int sblocks, uint8_t* qs, float* dw) {
     for (int r = 0; r < 8; r++) {
@@ -495,7 +495,7 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= 32-block quants (Q8_0 / Q4_0 / MXFP4) — 8-row bands ==================
+/* ================= 32-block quants (Q8_0 / Q4_0 / MXFP4) - 8-row bands ==================
  * Same band machinery as the K-quants above; per-quant dot schemes chosen by saturation math:
  *   Q8_0 : signed weights, so maddubs needs the SIGN TRICK - u = |x| broadcast, s = sign(w, x)
  *          (int16 peak 127*127*2 = 32258, the exact margin) -> exact w*x, no bias correction.

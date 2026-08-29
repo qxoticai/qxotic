@@ -1,5 +1,5 @@
 /* AVX-512BW (no VNNI): 512-bit maddubs int8 dot for Q8_0. Bound at the AVX512 level on AVX-512 CPUs
- * that LACK VNNI (Skylake-SP/X) — ~2× the 256-bit AVX2 maddubs path. Built without -mavx512vnni so it
+ * that LACK VNNI (Skylake-SP/X) - ~2× the 256-bit AVX2 maddubs path. Built without -mavx512vnni so it
  * provably contains no VNNI instructions.
  *
  * Two wrinkles vs the 256-bit kernels:

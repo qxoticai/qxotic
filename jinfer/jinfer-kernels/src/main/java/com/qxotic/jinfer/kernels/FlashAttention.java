@@ -46,7 +46,7 @@ public final class FlashAttention {
      * loaded (and F16-decoded) once and reused across QT consecutive query rows. Kept at 4 (not 8)
      * because Graal CE intrinsifies the Vector API per method only under a bounded op count: 8
      * accumulators + per-key f16 decode overflow that budget and the whole tile compiles to BOXED
-     * vectors (~15x slower, measured) — slower than the per-position rolling fallback. 4 live
+     * vectors (~15x slower, measured) - slower than the per-position rolling fallback. 4 live
      * accumulators stay register-resident and intrinsified (same width as the rolling 4x4 tile),
      * still giving 4x key/value decode reuse over the rolling path's 1x.
      */
@@ -1140,11 +1140,11 @@ public final class FlashAttention {
      *
      * <p>{@code window <= 0} is unbounded (full causal); {@code window > 0} attends only {@code
      * [q-window+1, q]}. {@code ringMask} (= {@code ringLen-1}, a power-of-two mask, or {@code 0}
-     * for a linear cache) maps a cache position to its physical slot — this is the SWA ring: a slot
+     * for a linear cache) maps a cache position to its physical slot - this is the SWA ring: a slot
      * is reused by {@code pos + ringLen}, which is provably out of every future window, so eviction
      * is a plain overwrite with no bookkeeping. {@code sinks} (nullable) is a per-head attention
      * sink: a virtual key with value 0, so it only adds {@code exp(sink-max)} to each row's softmax
-     * denominator (folded once at the final normalize) — the "attend to nothing" escape valve that
+     * denominator (folded once at the final normalize) - the "attend to nothing" escape valve that
      * keeps SWA stable as old keys are evicted. Online softmax + register-tiled QK/PV, parallel
      * over (head, query block); {@code scale} is the QK score scale. Used by LFM2.5 (full or
      * ring-SWA, no sinks) and gpt-oss (ring-SWA/full + sinks); the plain-causal single-source
@@ -1618,7 +1618,7 @@ public final class FlashAttention {
 
     /**
      * Flash-decoding for a SINGLE query (decode): same result as {@link #rollingDecode} but the
-     * attended range is split into {@code nPartitions} slices computed in parallel — each does its
+     * attended range is split into {@code nPartitions} slices computed in parallel - each does its
      * own online softmax into a partial (O, m, l), then the partials are merged per head. Breaking
      * the long serial running-max/sum chain across cores lowers per-token latency at long context
      * (measured +3% at 4k, +10% at 16k on a 32-head model). Below {@link

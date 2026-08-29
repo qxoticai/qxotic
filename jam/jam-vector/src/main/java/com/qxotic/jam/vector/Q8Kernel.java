@@ -20,10 +20,10 @@ import jdk.incubator.vector.VectorSpecies;
  * Q8_0 register-tiled gemm, relocated from jinfer (segment-based). {@code C = W @ Aᵀ}: weights are
  * Q8_0 blocks ({@code fp16 d; 32 int8 q}, value {@code d·q}) read from {@code w}; activation is F32
  * from {@code (a, aBase)}; output F32 written by absolute address through {@link
- * VectorSupport#putFloat} (so the {@code o} segment is unused — {@code oBase} is the output's
+ * VectorSupport#putFloat} (so the {@code o} segment is unused - {@code oBase} is the output's
  * absolute byte address). The register-tile shape is chosen once from the CPU width + the JIT in
  * play ({@link VectorSupport#TILE_CODE}); override with {@code -Djam.vector.tile}. Behaviour is
- * identical to jinfer's {@code Q8_0FloatTensor.vectorGemm512F32} — jinfer now delegates here.
+ * identical to jinfer's {@code Q8_0FloatTensor.vectorGemm512F32} - jinfer now delegates here.
  */
 public final class Q8Kernel {
 

@@ -165,7 +165,7 @@ public class OpenAiEncodingBenchmark {
                         + "नमस्ते दुनिया। Bonjour le monde! Olá mundo! Καλημέρα κόσμε. "
                         + "cafe\u0301 naive fiance\u0301 coo\u0308perate. "
                         + "Emoji test: 😀😅🤣🥲🤖🚀✨🔥🌍🧠👩‍💻👨‍👩‍👧‍👦🏳️‍🌈🇯🇵🇨🇳🇮🇳🇧🇷. "
-                        + "Mixed symbols: — – • … «quotes» 『引用』 （テスト） 【测试】\n";
+                        + "Mixed symbols: - – • … «quotes» 『引用』 （テスト） 【测试】\n";
             default:
                 throw new IllegalArgumentException("Unsupported corpus: " + corpus);
         }

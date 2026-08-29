@@ -1,6 +1,6 @@
-/* jam_metal.mm — Apple GPU backend (opt-in via JAM_ISA=metal). A different executor from the CPU
+/* jam_metal.mm - Apple GPU backend (opt-in via JAM_ISA=metal). A different executor from the CPU
  * row-range kernels: jam_mm routes supported dtypes here before the pool (except small-n quant
- * decode, which stays on the CPU GEMVs — see jam.c). Quant weights are decoded on-GPU; block-quant
+ * decode, which stays on the CPU GEMVs - see jam.c). Quant weights are decoded on-GPU; block-quant
  * prefill (n >= JAM_MMA_MIN_N, canonical AND packed layouts) stages half operands and float
  * accumulators through simdgroup matrices and threadgroup tiles, while dense dtypes and remaining
  * shapes dot the exact F32 activation with a scalar tiled path (each thread decodes a weight block
@@ -8,7 +8,7 @@
  * token-major C[j*ldc+i].
  *
  * Zero-copy over unified memory: W/A/C are borrowed per call through page-rounded
- * newBufferWithBytesNoCopy views (nil deallocator — the caller owns every byte) and released after
+ * newBufferWithBytesNoCopy views (nil deallocator - the caller owns every byte) and released after
  * the synchronous wait. No uploads, no result copies, no persistent state; strides (ldw/ldb/ldc)
  * ride in mm_params, so strided views are consumed directly instead of packed. APPLE-only TU. */
 #import <Metal/Metal.h>
@@ -20,7 +20,7 @@
 #include <unistd.h>
 #include <mach/mach_time.h>
 
-#define JAM_MTN 8   /* output columns per GPU thread — the one tunable; injected into the MSL as TN */
+#define JAM_MTN 8   /* output columns per GPU thread - the one tunable; injected into the MSL as TN */
 #define JAM_MMA_MIN_N 16
 
 static const char* JAM_MSL = R"MSL(
@@ -1830,7 +1830,7 @@ static jam_status jam_metal_prepare_mm(jam_metal* m, jam_metal_resources* resour
     size_t asz=(size_t)(M-1)*wsrc+wrow;
     size_t bsz=(size_t)(N-1)*asrc+arow;
     size_t csz=((size_t)(N-1)*ldc+M)*sizeof(float);
-    /* Temporary page-views over the caller's W/A/C — the zero-copy path. Measured on M3 Pro:
+    /* Temporary page-views over the caller's W/A/C - the zero-copy path. Measured on M3 Pro:
      * ~2 us per wrap against ms-scale prefill GPU work; a persistent-buffer cache is NOT worth
      * its hidden state at these numbers (ponytail: revisit only if profiling says otherwise). */
     resources->weight.buffer=jam_host_buffer(m,a,asz,&resources->weight.offset);

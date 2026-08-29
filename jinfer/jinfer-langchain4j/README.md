@@ -1,16 +1,42 @@
-# Jinfer for LangChain4j
+<h1 align="center">jinfer for LangChain4j</h1>
 
-[![Java 25+](https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/25/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](../LICENSE)
-[![GraalVM Native Image](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
+<p align="center"><strong>AI in a jar, behind the LangChain4j API.</strong></p>
 
-A LangChain4j provider backed by the [Jinfer](../README.md) inference engine.
+<p align="center">
+  <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
+  <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache" alt="License: Apache 2.0"></a>
+  <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
+</p>
 
-**Local LLM inference inside your JVM. No server. No Python. No external processes.**
+## The mission
+
+**AI sovereignty for the JVM.**
+
+An existing LangChain4j application keeps its code. `AiServices`, `@Tool`, `TokenStream`,
+`EmbeddingStoreIngestor` and the retrieval augmentor all work unchanged, without an API key. This
+is a LangChain4j provider backed by the [jinfer](../README.md) engine, so the inference runs
+end-to-end within the JVM, with no server, Python runtime or external process, and no prompt sent
+to a third party.
+
+**Fast local LLM inference for the JVM. Just a jar.**
+
+## What it does
+
+- **Full provider.** `ChatModel`, `StreamingChatModel`, `EmbeddingModel`, `ScoringModel` and
+  speech, all implemented against weights loaded in the same process.
+- **Constrained output.** Return a record from `AiServices` and the sampler is constrained to its
+  schema, so the model cannot produce invalid JSON and there is no retry loop.
+- **Tools, memory and agents.** `AiServices` runs its usual loop against a local model.
+- **Multimodal.** Images, audio and video through standard `ImageContent`, `AudioContent` and
+  `VideoContent`, decoded locally.
+- **Retrieval.** Embeddings and ColBERT reranking in the same JVM as chat, with no vector service.
+- **Accurate reporting.** Real token counts and finish reasons. Unsupported parameters fail
+  instead of being silently ignored.
+- **Shared weights.** `fork()` gives a second pipeline over one copy of the model.
 
 ## Run the demos
 
-Install [JBang](https://www.jbang.dev/), then run these commands from a repository checkout:
+Install [JBang](https://www.jbang.dev/), then, from a repository checkout:
 
 ```bash
 cd jinfer/examples/scripts
@@ -21,16 +47,12 @@ jbang Narrate.java photo.jpg
 jbang Detect.java street.jpg "person, bicycle, traffic light"
 ```
 
-The scripts request Java 25 and download their default models on first use. They stream text,
-constrain JSON during sampling, turn an image into a spoken WAV and draw object detections onto a
-PNG. `Detect.java` uses a 12B vision model and requests a 16 GB heap.
-
-The [complete demo gallery](../examples/scripts/README.md) also covers speech, semantic search,
-reranking and prompt caching.
+They stream text, constrain JSON during sampling, turn an image into a spoken WAV and draw
+detections onto a PNG. Models download on first use. `Detect.java` uses a 12B vision model and asks
+for a 16 GB heap; the rest are small. The [full gallery](../examples/scripts/README.md) also covers
+speech, semantic search, reranking and prompt caching.
 
 ## Add the provider
-
-### Maven
 
 ```xml
 <dependencyManagement>
@@ -64,21 +86,11 @@ reranking and prompt caching.
 </dependencies>
 ```
 
-Add `jinfer-models-all` instead of `jinfer-lfm2` to include every model provider.
+Use `jinfer-models-all` instead of `jinfer-lfm2` for every model family. The `AiServices` examples
+also need `dev.langchain4j:langchain4j`. The BOMs manage versions only. Without them, pin `0.2.0`
+on each jinfer dependency and `1.19.0` on each LangChain4j one.
 
-The `AiServices` examples also require LangChain4j's high-level API:
-
-```xml
-<dependency>
-  <groupId>dev.langchain4j</groupId>
-  <artifactId>langchain4j</artifactId>
-</dependency>
-```
-
-The BOMs manage versions only. Without them, add `0.2.0` to each Jinfer dependency and `1.19.0`
-to each LangChain4j dependency.
-
-Optional runtime backends:
+Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
 ```xml
 <dependency>
@@ -93,8 +105,8 @@ Optional runtime backends:
 </dependency>
 ```
 
-Include either backend or both. When both are present, Jinfer tries the native backend first and
-uses the Java Vector backend as a fallback. Without them, Jinfer uses its built-in kernels.
+Include either or both. With both present, jinfer prefers the native backend and falls back to the
+Vector one; with neither, it uses its built-in kernels.
 
 ### JBang
 
@@ -113,16 +125,19 @@ Java 25 is required.
 
 ```java
 try (var model = JinferChatModel.builder()
-        .model("hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0")
+        .model("LiquidAI/LFM2.5-350M-GGUF:Q8_0")
         .build()) {
 
     System.out.println(model.chat("Explain virtual threads in one sentence."));
 }
 ```
 
-Use `.model("hf.co/...")` for a model reference and `.modelPath(Path.of("model.gguf"))` for a local
-file. Companions follow the same pattern with `.companion(...)` and `.companionPath(...)`. Examples
-pin `Q8_0`; a bare repository follows llama.cpp and selects `Q4_K_M`.
+Use `.model("...")` for a model reference and `.modelPath(Path.of("model.gguf"))` for a local
+file. Companions follow the same pattern with `.companion(...)` and `.companionPath(...)`.
+
+A reference is `owner/repo[:quant]`, which Hugging Face carries. Name a host to reach another
+source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`. Examples pin `Q8_0`; a reference with no
+quant follows llama.cpp and selects `Q4_K_M`.
 
 ## Parameters
 
@@ -134,10 +149,9 @@ try (var model = JinferChatModel.builder()
         .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
         .contextLength(8192)      // 0 = the model's full context
         .temperature(0.7)
-        .topP(0.95)
         .maxOutputTokens(1024)
         .thinking(false)          // reasoning scaffold off (models without one ignore it)
-        .seed(42)                 // deterministic sampling
+        .seed(42L)                // deterministic sampling
         .build()) {
 
     ChatResponse response = model.chat(ChatRequest.builder()
@@ -156,7 +170,7 @@ instead of being ignored.
 
 ## Structured output
 
-Return a POJO from `AiServices`; Jinfer constrains generation to its schema:
+Return a POJO from `AiServices`; jinfer constrains generation to its schema:
 
 ```java
 record Person(String name, int age) {}
@@ -178,13 +192,10 @@ The streaming view shares the already-loaded weights:
 ```java
 interface Assistant { TokenStream chat(String message); }
 
-Assistant assistant = AiServices.builder(Assistant.class)
-        .streamingChatModel(model.streaming())
-        .build();
+Assistant assistant = AiServices.create(Assistant.class, model.streaming());
 
 assistant.chat("Tell me a haiku about rivers.")
         .onPartialResponse(System.out::print)
-        .onCompleteResponse(done -> System.out.println())
         .onError(Throwable::printStackTrace)
         .start();
 ```
@@ -217,29 +228,22 @@ assistant.chat("What's the weather in Paris?");   // calls Weather.weather, answ
 ## Images, audio and video
 
 Multimodal models load their encoders from a companion model file, following llama.cpp's `mmproj`
-convention. Media is decoded from caller-provided base64 data or local file URIs. Jinfer does not
+convention. Media is decoded from caller-provided base64 data or local file URIs. jinfer does not
 fetch media during inference.
 
 ```java
 try (var gemma = JinferChatModel.builder()
-        .model("hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0")
-        .companion("media", "hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf")
+        .model("unsloth/gemma-4-12b-it-GGUF:Q8_0")
+        .companion("media", "unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf")
         .build()) {
 
-    ChatResponse seen = gemma.chat(ChatRequest.builder()
-            .messages(UserMessage.from(
-                    ImageContent.from(Path.of("photo.png").toUri()),
-                    TextContent.from("What is in this picture?")))
-            .build());
+    ChatResponse seen = gemma.chat(UserMessage.from(
+            ImageContent.from(Path.of("photo.png").toUri()),
+            TextContent.from("What is in this picture?")));
 
-    ChatResponse heard = gemma.chat(ChatRequest.builder()
-            .messages(UserMessage.from(
-                    AudioContent.from(
-                            Base64.getEncoder().encodeToString(
-                                    Files.readAllBytes(Path.of("recording.wav"))),
-                            "audio/wav"),
-                    TextContent.from("Transcribe this recording.")))
-            .build());
+    ChatResponse heard = gemma.chat(UserMessage.from(
+            AudioContent.from(Path.of("recording.wav").toUri()),
+            TextContent.from("Transcribe this recording.")));
 
     System.out.println(seen.aiMessage().text());
     System.out.println(heard.aiMessage().text());
@@ -271,7 +275,7 @@ Use embeddings in the same JVM as chat:
 
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
-        .model("hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
+        .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
         .contextLength(2048)          // packing upper bound; 0 = the model's maximum
         .build();
 ```
@@ -298,7 +302,7 @@ Add reranking after embedding retrieval:
 
 ```java
 ScoringModel reranker = JinferScoringModel.builder()
-        .model("hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")
+        .model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")
         .build();
 
 RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
@@ -319,10 +323,11 @@ Turn text into WAV bytes:
 
 ```java
 try (var speech = JinferSpeechModel.builder()
-        .model("hf.co/remixerdec/Inflect-Nano-v2-GGUF:Q8_0")
+        .model("remixerdec/Inflect-Nano-v2-GGUF:Q8_0")
         .build()) {
 
     var audio = speech.synthesize("Hello from local Java inference.").audio();
+
     Files.write(Path.of("hello.wav"), audio.binaryData());
 }
 ```
@@ -355,7 +360,7 @@ One instance is one serial pipeline. Fork for parallel generation over shared we
 
 ```java
 try (Arena arena = Arena.ofShared()) {
-    var path = ModelStore.standard().resolve("hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0");
+    var path = ModelStore.standard().resolve("LiquidAI/LFM2.5-350M-GGUF:Q8_0");
     var loaded = Models.load(path, arena);
     try (var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
             var b = a.fork()) {     // second pipeline, shared weights, separate context
@@ -373,3 +378,7 @@ The arena owns the weights and must outlive both pipelines.
   whenever the reply carries tool calls.
 - Shaded JARs must preserve `ServiceLoader` entries. With Maven Shade, add
   `ServicesResourceTransformer`.
+
+## License
+
+Apache 2.0

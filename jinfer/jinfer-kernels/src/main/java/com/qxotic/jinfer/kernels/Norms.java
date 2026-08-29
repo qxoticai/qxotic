@@ -166,7 +166,7 @@ public final class Norms {
     }
 
     /**
-     * {@code out = weight * scale * x} over {@code size} lanes — the apply half of {@link #rmsnorm}
+     * {@code out = weight * scale * x} over {@code size} lanes - the apply half of {@link #rmsnorm}
      * with a caller-supplied {@code scale}.
      */
     public static void scaleByWeight(

@@ -25,18 +25,18 @@ import java.util.Set;
  * The block layer's physics - the low-level tree under {@link PromptCache}: a prefix tree of
  * variable-length KV blocks, content-addressed by a CHAINED SHA-256 key over per-position
  * fingerprints (token id for text, content-hash for media). The chained digest names the whole
- * token prefix — same conversation prefix, same key, across sessions and restarts — and, being
+ * token prefix - same conversation prefix, same key, across sessions and restarts - and, being
  * cryptographic, is trusted as identity (matching recomputes the digest from the request's
  * fingerprints; no fingerprint storage, no collision handling: git/IPFS regime).
  *
  * <p>Every block is SELF-CONTAINED ({@link CheckpointCodec}): restoring a matched chain in position
- * order leaves the state live at the chain's end, so EVERY block boundary is a resume point —
+ * order leaves the state live at the chain's end, so EVERY block boundary is a resume point -
  * blocks match completely or not at all, and the longest matching chain is the resume. The cache is
- * a pure optimization — every miss degrades to recompute, never to a wrong answer.
+ * a pure optimization - every miss degrades to recompute, never to a wrong answer.
  *
  * <p>{@link #resume} matches and restores once per request; {@link CachedSession} is the write
- * handle, committing each subsequently ingested span in O(span) — one digest of the span against
- * the tip key, no re-walk — which is what makes single-token commits during decode natural. Large
+ * handle, committing each subsequently ingested span in O(span) - one digest of the span against
+ * the tip key, no re-walk - which is what makes single-token commits during decode natural. Large
  * blocks and single-token blocks are the same mechanism at different spans.
  *
  * <p>The model contributes only a {@link CheckpointCodec}; storage only a {@link CacheStore};
@@ -128,8 +128,8 @@ public final class BlockTree<S extends ContextState> {
 
     /**
      * {@code modelSeed} folds the model's identity (and implicitly the codec's blob layout) into
-     * the ROOT of the key chain, so two models — even sharing a tokenizer, where fingerprint
-     * streams collide — can never match each other's blocks. One cache instance per model is the
+     * the ROOT of the key chain, so two models - even sharing a tokenizer, where fingerprint
+     * streams collide - can never match each other's blocks. One cache instance per model is the
      * deployment shape; the seed is produced model-load-side ({@code Models.modelSeed}).
      */
     public BlockTree(
@@ -154,7 +154,7 @@ public final class BlockTree<S extends ContextState> {
 
     /**
      * Matches the longest cached complete-block prefix of {@code fingerprints[0..len)}, restores it
-     * into {@code state}, and returns the matched tip — the session's resume point; the caller
+     * into {@code state}, and returns the matched tip - the session's resume point; the caller
      * re-ingests everything past {@code tip.to}. Returns the sentinel (position 0) on a cold start.
      */
     Block resume(long[] fingerprints, int len, S state) {

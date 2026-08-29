@@ -538,8 +538,8 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
      * its own single (so a later serve of exactly this prompt - capped one short by the law -
      * restores everything but that last token; a single-token or media-final batch commits whole
      * instead, and cannot full-hit by construction); define-only mode commits one prefix block over
-     * everything but the trailing batch—or, for a single-batch prompt, everything but the trailing
-     * position. Dedups against what is already cached. Throws when the budget refused it—a define
+     * everything but the trailing batch, or, for a single-batch prompt, everything but the trailing
+     * position. Dedups against what is already cached. Throws when the budget refused it: a define
      * exists only to cache, and returning quietly would let every later serve re-prefill with no
      * diagnostic.
      */
@@ -710,7 +710,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
 
     /**
      * The retained session whose TAIL SNAPSHOT stream (the last prompt boundary) strictly prefixes
-     * the prompt, rewound to that boundary and removed from the pool—the define-only echo path.
+     * the prompt, rewound to that boundary and removed from the pool, the define-only echo path.
      * Longest snapshot wins; null = no match.
      */
     private CachedSession<S> snapshotAcquire(long[] fingerprints) {

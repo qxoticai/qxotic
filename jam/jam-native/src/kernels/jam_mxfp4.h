@@ -1,7 +1,7 @@
 /* MXFP4 (OCP microscaling FP4) shared decode bits. A block is 32 elements:
  *   { uint8_t e;  uint8_t qs[16]; }   = 17 bytes
  * `e` is an E8M0 power-of-two scale; each nibble is an FP4 (E2M1) code. qs[j] low nibble = element j,
- * high nibble = element j+16. The 16 FP4 codes decode to magnitudes {0,.5,1,1.5,2,3,4,6} (signed) —
+ * high nibble = element j+16. The 16 FP4 codes decode to magnitudes {0,.5,1,1.5,2,3,4,6} (signed)  -
  * whose ×2 are the integers {0,1,2,3,4,6,8,12}, so we decode FP4->int8 with one shuffle and fold the
  * ×0.5 into the scale (jam_mxfp4_dhalf), then run the same int8 dot as Q8_0. */
 #ifndef JAM_MXFP4_H

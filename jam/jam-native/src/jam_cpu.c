@@ -1,4 +1,4 @@
-/* jam CPU core selection — see jam_cpu.h. The OS-independent policy is at the bottom; the per-OS
+/* jam CPU core selection - see jam_cpu.h. The OS-independent policy is at the bottom; the per-OS
  * primitives (each best-effort, each with a safe default) are #ifdef'd above it. Only Linux is real
  * today; macOS/Windows fall back to "all online CPUs, unpinned" (the historical behaviour). */
 #define _GNU_SOURCE
@@ -100,7 +100,7 @@ int jam_cpu_can_pin(void) { return 1; }
 #include <pthread.h>     /* pthread_set_qos_class_self_np */
 
 /* macOS gives no hard CPU affinity; the only real control is QoS (steer to the P "performance" cluster).
- * So we don't enumerate ids — we expose the P-core COUNT as the working set and steer each worker via QoS.
+ * So we don't enumerate ids - we expose the P-core COUNT as the working set and steer each worker via QoS.
  * (The log therefore shows the P working set, not total logical; ids are nominal, QoS ignores them.) */
 static int sysctl_int(const char* name, int dflt) {
     int v = 0; size_t sz = sizeof v;
@@ -131,7 +131,7 @@ int jam_cpu_can_pin(void) { return 1; }                         /* QoS steering 
 #define JAM_EFFICIENCY_CLASS(proc) (((const BYTE*)&(proc))[1])
 
 /* One in-affinity logical CPU per physical P-core (max EfficiencyClass), via GetLogicalProcessorInformationEx.
- * Single processor group (<=64 logical) — the common case; >64-CPU machines fall back to group 0 unpinned. */
+ * Single processor group (<=64 logical) - the common case; >64-CPU machines fall back to group 0 unpinned. */
 static int os_cpus_allowed(int* out) {
     DWORD len = 0;
     GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);

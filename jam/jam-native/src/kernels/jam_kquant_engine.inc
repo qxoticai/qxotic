@@ -10,7 +10,7 @@
  * is exact; the dmin·min term is corrected in float via Σx ≈ ad·Σaq. Mirrors jam_kernels_generic.c.
  *
  * Each thread tiles JAM_KTN activation columns: a weight sub-block is decoded ONCE and dotted against all
- * KTN columns, so the (expensive) nibble/scale unpack and the weight read are amortized KTN× — same as the
+ * KTN columns, so the (expensive) nibble/scale unpack and the weight read are amortized KTN× - same as the
  * x86 SSE3/AVX engines. KTN matches the SSE3 4-column tile. */
 #define JAM_KTN 4
 

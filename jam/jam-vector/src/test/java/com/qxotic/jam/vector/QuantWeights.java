@@ -15,7 +15,7 @@ import java.util.Random;
  * checked against a double-precision reference over those same values. Lifted from {@code
  * ScalarJamTest}'s encoders and parameterized by a caller-supplied {@link Random}/{@link Arena} so
  * the cross-backend parity suite can drive every backend through the raw {@link JAM} segment
- * contract — no jinfer, no {@code FloatTensor}.
+ * contract - no jinfer, no {@code FloatTensor}.
  */
 final class QuantWeights {
 
@@ -291,7 +291,7 @@ final class QuantWeights {
 
     // ---- helpers ----
 
-    /** {@code n} small non-negative ints (0..7) — keeps scale·quant products exact. */
+    /** {@code n} small non-negative ints (0..7) - keeps scale·quant products exact. */
     private static int[] small(int n, Random rng) {
         int[] x = new int[n];
         for (int i = 0; i < n; i++) x[i] = rng.nextInt(8);

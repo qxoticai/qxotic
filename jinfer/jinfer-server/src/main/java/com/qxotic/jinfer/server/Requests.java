@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 /**
  * OpenAI request-shape adapters: maps the wire shapes of the various endpoints onto the single
  * internal form the generation pipeline consumes (a chat-message list, a prompt string, the served
- * model id). Pure mapping — no inference, no transport — so each endpoint handler stays a thin
+ * model id). Pure mapping - no inference, no transport - so each endpoint handler stays a thin
  * {@code parse → adapt → generate → respond}.
  */
 final class Requests {
