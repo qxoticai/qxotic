@@ -13,7 +13,6 @@
 // that are not multiples of the vector width, so the tail paths are exercised too.
 package com.qxotic.jinfer.bench;
 
-import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convolutions;
@@ -76,20 +75,18 @@ public final class ConvParity {
             for (int i = 0; i < biases.length; i++) biases[i] = random.nextFloat() - 0.5f;
             Views.copyFromArray(bias, 0, biases, 0, biases.length, "bias");
 
-            Parallel.runDecodeStep(
-                    () -> {
-                        Convolutions.conv1dRows(
-                                in,
-                                shape.inChannels(),
-                                out,
-                                shape.outChannels(),
-                                shape.time(),
-                                shape.kernel(),
-                                shape.dilation(),
-                                taps,
-                                bias);
-                        return null;
-                    });
+            {
+                Convolutions.conv1dRows(
+                        in,
+                        shape.inChannels(),
+                        out,
+                        shape.outChannels(),
+                        shape.time(),
+                        shape.kernel(),
+                        shape.dilation(),
+                        taps,
+                        bias);
+            }
 
             MessageDigest sha = MessageDigest.getInstance("SHA-256");
             byte[] four = new byte[4];

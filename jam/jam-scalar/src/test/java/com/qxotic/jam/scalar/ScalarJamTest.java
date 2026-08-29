@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
  */
 class ScalarJamTest {
 
-    private static final JAM jam = new ScalarJAM();
+    private static final JAM jam = new ScalarJAM(BenchPool.of(4));
     private static final Arena A = Arena.ofAuto();
     private static final Random RNG = new Random(7);
 
@@ -249,14 +249,15 @@ class ScalarJamTest {
         assertEquals(JAM.OK, st, name + " status");
         for (int j = 0; j < n; j++)
             for (int i = 0; i < m; i++) {
-                double ref = 0;
-                for (int l = 0; l < k; l++) ref += (double) w.vals()[i * k + l] * av[j * k + l];
+                double ref = 0, sumAbs = 0; // float rounding scales with sum|w a|, not |ref|
+                for (int l = 0; l < k; l++) {
+                    double term = (double) w.vals()[i * k + l] * av[j * k + l];
+                    ref += term;
+                    sumAbs += Math.abs(term);
+                }
                 float got = c.get(JAVA_FLOAT_UNALIGNED, ((long) j * m + i) * 4);
                 assertEquals(
-                        ref,
-                        got,
-                        Math.abs(ref) * 1e-4 + 1e-3,
-                        name + "[token " + j + ", row " + i + "]");
+                        ref, got, sumAbs * 1e-4 + 1e-3, name + "[token " + j + ", row " + i + "]");
             }
     }
 
@@ -297,6 +298,43 @@ class ScalarJamTest {
         check("Q6_K.gemv", q6_k(m, k), m, 1, k);
         check("MXFP4.gemv", mxfp4(m, k), m, 1, k);
         check("NVFP4.gemv", nvfp4(m, k), m, 1, k);
+    }
+
+    /**
+     * The blocked gemm's seams: several k-blocks and token blocks, groups that do not divide m, a
+     * partial 3-row tile, and (for the unblocked dtypes) a k that is not a multiple of the 4-step
+     * fold; plus gemv over several decode chunks.
+     */
+    @Test
+    void blockedShapes() {
+        int m = 25, k = 2048;
+        check("F32.blocked", f32(m, 67), m, 9, 67);
+        check("F16.blocked", f16(m, 70), m, 3, 70);
+        check("BF16.blocked", bf16(m, 66), m, 2, 66);
+        check("Q8_0.blocked", q8_0(m, k), m, 520, k);
+        check("Q4_0.blocked", q4_0(m, k), m, 37, k);
+        check("Q4_K.blocked", q4_k(m, k), m, 5, k);
+        check("Q5_K.blocked", q5_k(m, k), m, 5, k);
+        check("Q6_K.blocked", q6_k(m, k), m, 5, k);
+        check("MXFP4.blocked", mxfp4(m, k), m, 5, k);
+        check("NVFP4.blocked", nvfp4(m, k), m, 5, k);
+        check("Q8_0.gemv", q8_0(m, k), m, 1, k);
+        check("Q6_K.gemv", q6_k(m, k), m, 1, k);
+        check("F32.gemv", f32(m, 67), m, 1, 67);
+    }
+
+    /**
+     * The kept panels must survive any order of shapes: more k-blocks at a narrow batch, then a
+     * wider batch over the same blocks (the rows added by the first call were once sized for it).
+     */
+    @Test
+    void panelsRegrow() {
+        int m = 7;
+        check("Q8_0.narrow", q8_0(m, 4096), m, 257, 4096);
+        check("Q8_0.wide", q8_0(m, 4096), m, 512, 4096);
+        check("Q4_K.small", q4_k(m, 512), m, 5, 512);
+        check("Q4_K.wider", q4_k(m, 512), m, 40, 512);
+        check("Q8_0.wide-m", q8_0(3000, 1024), 3000, 3, 1024); // many bands: k-splits collapse
     }
 
     @Test

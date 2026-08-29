@@ -4,6 +4,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
 import java.util.List;
 import java.util.ServiceLoader;
+import java.util.function.IntConsumer;
 
 /**
  * jam - fast multithreaded CPU matmul ({@code R = W @ Aᵀ}) with quantized weights.
@@ -29,21 +30,55 @@ public interface JAM {
         boolean isAvailable();
 
         /**
-         * Returns a usable backend. The returned backend may be shared; a shared backend either
-         * serializes concurrent {@link JAM#mm} calls internally or surfaces {@link JAM#EBUSY} (e.g.
-         * the {@code native} provider serializes by default and surfaces EBUSY with {@code
-         * -Djam.native.serial=false}); callers must handle EBUSY either way.
+         * Returns a usable backend whose parallel work runs on {@code parallel}. The returned
+         * backend may be shared; a shared backend either serializes concurrent {@link JAM#mm} calls
+         * internally or surfaces {@link JAM#EBUSY} (e.g. the {@code native} provider serializes by
+         * default and surfaces EBUSY with {@code -Djam.native.serial=false}); callers must handle
+         * EBUSY either way.
          */
-        JAM create();
+        JAM create(Parallel parallel);
+
+        /** A backend that runs on the calling thread only. */
+        default JAM create() {
+            return create(Parallel.INLINE);
+        }
+    }
+
+    /**
+     * The host's parallel loop, the only threading a backend uses. Backends own no threads: a
+     * kernel asks for {@code count} tasks, the host runs them {@link #width()} at a time on
+     * whatever threads it has, and the call returns when all are done. The task index is unique
+     * among the tasks live at once, so it doubles as a per-worker scratch slot. A kernel calls this
+     * from the thread that called {@link JAM#mm}, never from inside one of its own tasks, and a
+     * backend with no CPU work (a GPU matmul) simply never calls it.
+     */
+    interface Parallel {
+        /** Runs {@code body.accept(i)} for every {@code i < count}; returns when all are done. */
+        void forLoop(int count, IntConsumer body);
+
+        /** How many tasks run at once at most: the compute thread budget. */
+        int width();
+
+        /** The calling thread alone. */
+        Parallel INLINE =
+                new Parallel() {
+                    @Override
+                    public void forLoop(int count, IntConsumer body) {
+                        for (int i = 0; i < count; i++) body.accept(i);
+                    }
+
+                    @Override
+                    public int width() {
+                        return 1;
+                    }
+                };
     }
 
     /**
      * Available JAM providers, highest priority first.
      *
-     * <p>Threaded providers own their workers and scheduling policy. {@code jam.threads} / {@code
-     * JAM_THREADS} supplies a common worker count; {@code jam.<id>.threads} / {@code
-     * JAM_<ID>_THREADS} overrides it for one provider. Providers without CPU workers may ignore
-     * these settings.
+     * <p>Providers own no threads: their parallel work runs on the {@link Parallel} the host hands
+     * to {@link Provider#create(Parallel)}.
      *
      * <p>A provider can be turned off from the command line: {@code -Djam.<id>.disabled=true}
      * (system property only; only {@code true} disables). The flag names a provider {@link

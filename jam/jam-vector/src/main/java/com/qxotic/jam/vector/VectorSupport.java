@@ -7,15 +7,10 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import com.oracle.svm.shared.AlwaysInline;
+import com.qxotic.jam.JAM;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.util.Locale;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.ForkJoinWorkerThread;
-import java.util.concurrent.RecursiveAction;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
@@ -144,22 +139,19 @@ final class VectorSupport {
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
 
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
-    static final int PARALLELISM = vectorThreads();
+
+    /**
+     * The host's pool, set by {@link VectorJAM}; the calling thread alone until then (the kernels'
+     * own tests). One host per process is the reality this static reflects.
+     */
+    static volatile JAM.Parallel host = JAM.Parallel.INLINE;
+
+    /** The compute thread budget: how many tasks a region runs at once. */
+    static int width() {
+        return host.width();
+    }
 
     private static final int TASKS_PER_WORKER = 4;
-    private static final ForkJoinPool WORKERS = newPool(PARALLELISM);
-
-    private static int vectorThreads() {
-        String value = jamProp("jam.vector.threads", jamProp("jam.threads", null));
-        if (value == null) return Runtime.getRuntime().availableProcessors();
-        try {
-            int threads = Integer.parseInt(value.trim());
-            if (threads > 0) return threads;
-        } catch (NumberFormatException ignored) {
-            // Report malformed and non-positive values through one stable message.
-        }
-        throw new IllegalArgumentException("JAM thread count must be a positive integer: " + value);
-    }
 
     // ---- Register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT
     // (relocated from
@@ -312,109 +304,44 @@ final class VectorSupport {
                 : seg.get(JAVA_LONG_UNALIGNED, off);
     }
 
-    /**
-     * Slot of the calling thread for per-worker state: the pool index of a Vector JAM worker, or
-     * {@link #PARALLELISM} for any other thread (the caller running a small job inline).
-     */
-    static int workerIndex() {
-        if (Thread.currentThread() instanceof ForkJoinWorkerThread t && t.getPool() == WORKERS)
-            return t.getPoolIndex();
-        return PARALLELISM;
-    }
-
-    /** Run {@code body} for every index in {@code [from, to)} on Vector JAM's workers. */
+    /** Run {@code body} for every index in {@code [from, to)} on the host's pool, in chunks. */
     static void parallelFor(int from, int to, IntConsumer body) {
-        parallelFor(from, to, body, maxChunkSize(from, to));
+        int size = to - from;
+        if (size <= 0) return;
+        int chunks = (int) Math.min(size, (long) width() * TASKS_PER_WORKER);
+        host.forLoop(
+                chunks,
+                chunk -> {
+                    int lo = from + (int) ((long) size * chunk / chunks);
+                    int hi = from + (int) ((long) size * (chunk + 1) / chunks);
+                    for (int i = lo; i < hi; i++) body.accept(i);
+                });
     }
 
     /**
      * {@link #parallelFor} with one index per task: for coarse bodies (a whole gemm panel) where
-     * the pool must balance every item, not chunks of them.
+     * the pool must balance every item, not chunks of them. The task index is unique among the
+     * tasks live at once and serves as the per-task scratch slot.
      */
     static void parallelForEach(int from, int to, IntConsumer body) {
-        parallelFor(from, to, body, 1);
-    }
-
-    /**
-     * {@code -Djam.vector.stats=true}: per-region accounting (wall time, summed task time, regions,
-     * items) printed at exit - the worker efficiency {@code busy / (wall * T)} is what the gemm's
-     * task scheduling is tuned against.
-     */
-    private static final class Stats {
-        static final boolean ON = Boolean.getBoolean("jam.vector.stats");
-        static final AtomicLong WALL = new AtomicLong(), BUSY = new AtomicLong();
-        static final AtomicLong REGIONS = new AtomicLong(), ITEMS = new AtomicLong();
-
-        static {
-            if (ON) Runtime.getRuntime().addShutdownHook(new Thread(Stats::print));
-        }
-
-        static void print() {
-            System.err.printf(
-                    "jam.vector.stats: regions=%d items=%d wall=%.3fs busy=%.3fs"
-                            + " busy/(wall*T)=%.1f%% avg region=%.0fus%n",
-                    REGIONS.get(),
-                    ITEMS.get(),
-                    WALL.get() / 1e9,
-                    BUSY.get() / 1e9,
-                    100.0 * BUSY.get() / (WALL.get() * (double) PARALLELISM),
-                    WALL.get() / 1e3 / Math.max(1, REGIONS.get()));
-        }
-    }
-
-    private static void parallelFor(int from, int to, IntConsumer body, int maxChunkSize) {
         if (from >= to) return;
-        if (!Stats.ON) {
-            parallelForImpl(from, to, body, maxChunkSize);
-            return;
-        }
-        long t0 = System.nanoTime();
-        try {
-            parallelForImpl(
-                    from,
-                    to,
-                    i -> {
-                        long start = System.nanoTime();
-                        body.accept(i);
-                        Stats.BUSY.addAndGet(System.nanoTime() - start);
-                    },
-                    maxChunkSize);
-        } finally {
-            Stats.WALL.addAndGet(System.nanoTime() - t0);
-            Stats.REGIONS.incrementAndGet();
-            Stats.ITEMS.addAndGet(to - from);
-        }
+        host.forLoop(to - from, i -> body.accept(from + i));
     }
 
-    private static void parallelForImpl(int from, int to, IntConsumer body, int maxChunkSize) {
-        if (PARALLELISM == 1 || (long) to - from <= maxChunkSize) {
-            for (int i = from; i < to; i++) body.accept(i);
-            return;
-        }
-
-        RangeTask task = new RangeTask(from, to, maxChunkSize, body);
-        if (ForkJoinTask.getPool() == WORKERS) task.invoke();
-        else WORKERS.invoke(task);
-        if (task.failure != null) throw unchecked(task.failure);
-    }
-
-    /** A contiguous {@code [lo, hi)} slice of work handed to one parallel worker. */
+    /** A contiguous {@code [lo, hi)} slice of work handed to one parallel task. */
     @FunctionalInterface
     interface ChunkConsumer {
         void accept(int lo, int hi);
     }
 
     /**
-     * Split {@code [0, count)} into contiguous slices and run them on Vector JAM's workers. Unlike
-     * {@link #parallelFor}, the body owns a whole slice - so a band kernel can {@link
-     * Scratch#acquire} one dequant buffer per worker (not per group) and reuse it across the
-     * slice's rows. With {@link Scratch}'s context-owned pool this means no per-{@code mm}
-     * allocation, while the buffers stay reachable only through the context (freed when it is GC'd)
-     * rather than the old common-pool-rooted, JVM-lifetime ThreadLocal.
+     * Split {@code [0, count)} into contiguous slices and run them on the host's pool. Unlike
+     * {@link #parallelFor}, the body owns a whole slice, so a band kernel can {@link
+     * Scratch#acquire} one dequant buffer per slice and reuse it across the slice's rows.
      */
     static void parallelChunks(int count, ChunkConsumer body) {
         if (count <= 0) return;
-        int chunks = (int) Math.min(count, (long) PARALLELISM * TASKS_PER_WORKER);
+        int chunks = (int) Math.min(count, (long) width() * TASKS_PER_WORKER);
         parallelFor(
                 0,
                 chunks,
@@ -423,77 +350,6 @@ final class VectorSupport {
                     int hi = (int) ((long) count * (chunk + 1) / chunks);
                     body.accept(lo, hi);
                 });
-    }
-
-    private static ForkJoinPool newPool(int threads) {
-        return new ForkJoinPool(
-                threads,
-                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
-                null,
-                false,
-                0,
-                threads,
-                0,
-                null,
-                60,
-                TimeUnit.SECONDS);
-    }
-
-    private static int maxChunkSize(int from, int to) {
-        long size = (long) to - from;
-        long tasks = Math.min(size, (long) PARALLELISM * TASKS_PER_WORKER);
-        return (int) ((size + tasks - 1) / tasks);
-    }
-
-    private static final class RangeTask extends RecursiveAction {
-        private final int from;
-        private final int to;
-        private final int maxChunkSize;
-        private final IntConsumer body;
-        private RangeTask next;
-        private Throwable failure;
-
-        private RangeTask(int from, int to, int maxChunkSize, IntConsumer body) {
-            this.from = from;
-            this.to = to;
-            this.maxChunkSize = maxChunkSize;
-            this.body = body;
-        }
-
-        @Override
-        protected void compute() {
-            int lo = from;
-            int hi = to;
-            RangeTask forks = null;
-            try {
-                while ((long) hi - lo > maxChunkSize) {
-                    int middle = lo + (int) (((long) hi - lo) / 2);
-                    RangeTask right = new RangeTask(middle, hi, maxChunkSize, body);
-                    right.next = forks;
-                    forks = right;
-                    right.fork();
-                    hi = middle;
-                }
-                for (int i = lo; i < hi; i++) body.accept(i);
-            } catch (Throwable thrown) {
-                failure = thrown;
-            }
-
-            while (forks != null) {
-                forks.quietlyJoin();
-                if (forks.failure != null) {
-                    if (failure == null) failure = forks.failure;
-                    else if (failure != forks.failure) failure.addSuppressed(forks.failure);
-                }
-                forks = forks.next;
-            }
-        }
-    }
-
-    private static RuntimeException unchecked(Throwable failure) {
-        if (failure instanceof RuntimeException runtime) return runtime;
-        if (failure instanceof Error error) throw error;
-        return new RuntimeException(failure);
     }
 
     /**

@@ -594,9 +594,7 @@ public final class Inflect2 {
                 samplePrior(state, stats, repeats, frames, variation, seed);
         MemoryView<MemorySegment> flowed = flow(state, prior, frames);
         // The vocoder is the bandwidth-bound part and fires thousands of small parallel regions;
-        // runDecodeStep uses the spin pool, which dispatches without a task tree.
-        MemoryView<MemorySegment> waveform =
-                Parallel.runDecodeStep(() -> decode(state, flowed, frames));
+        MemoryView<MemorySegment> waveform = decode(state, flowed, frames);
 
         // The one allocation of the pass: the waveform escapes to the caller as a plain array.
         float[] pcm = new float[waveformSamples(frames)];

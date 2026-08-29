@@ -24,7 +24,7 @@ public final class TestProvider implements JAM.Provider {
     }
 
     @Override
-    public JAM create() {
+    public JAM create(JAM.Parallel parallel) {
         throw new UnsupportedOperationException("test provider never creates a backend");
     }
 }

@@ -122,13 +122,9 @@ public final class Granite
             if (id < 0 || id >= configuration.vocabularySize)
                 throw new IllegalArgumentException(
                         "token id " + id + " outside [0," + configuration.vocabularySize + ")");
-        if (n == 1)
-            Parallel.runDecodeStep(
-                    () -> {
-                        forward(s, ids, from, n);
-                        return null;
-                    });
-        else forward(s, ids, from, n);
+        if (n == 1) {
+            forward(s, ids, from, n);
+        } else forward(s, ids, from, n);
         s.advance(batch);
     }
 
@@ -144,24 +140,22 @@ public final class Granite
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    Norms.rmsnorm(
-                            s.normed,
-                            0,
-                            s.residual,
-                            (long) row * dim,
-                            weights.finalNorm(),
-                            dim,
-                            configuration.rmsNormEps);
-                    MatMul.gemv(
-                            weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
-                    float ls = configuration.logitScale;
-                    if (ls != 1.0f) {
-                        Ops.divideInPlace(s.logits, 0, configuration.vocabularySize, ls);
-                    }
-                    return s.logits;
-                });
+        {
+            Norms.rmsnorm(
+                    s.normed,
+                    0,
+                    s.residual,
+                    (long) row * dim,
+                    weights.finalNorm(),
+                    dim,
+                    configuration.rmsNormEps);
+            MatMul.gemv(weights.wcls(), s.normed, s.logits, configuration.vocabularySize, dim);
+            float ls = configuration.logitScale;
+            if (ls != 1.0f) {
+                Ops.divideInPlace(s.logits, 0, configuration.vocabularySize, ls);
+            }
+            return s.logits;
+        }
     }
 
     // === Forward ===

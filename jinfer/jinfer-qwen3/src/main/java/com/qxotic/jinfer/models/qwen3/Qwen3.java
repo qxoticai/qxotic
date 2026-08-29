@@ -143,13 +143,9 @@ public final class Qwen3
                     throw new UnsupportedOperationException(
                             "Qwen3 does not support embedding inputs");
         }
-        if (n == 1)
-            Parallel.runDecodeStep(
-                    () -> {
-                        forward(s, ids, from, n, nPieces);
-                        return null;
-                    });
-        else forward(s, ids, from, n, nPieces);
+        if (n == 1) {
+            forward(s, ids, from, n, nPieces);
+        } else forward(s, ids, from, n, nPieces);
         s.advance(batch);
     }
 
@@ -441,19 +437,18 @@ public final class Qwen3
         requireOutput(s, output);
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    Norms.rmsnorm(
-                            s.normed,
-                            0,
-                            s.residual,
-                            (long) row * dim,
-                            weights.finalNorm(),
-                            dim,
-                            configuration.rmsNormEps);
-                    MatMul.gemv(weights.wcls(), s.normed, s.logits);
-                    return s.logits;
-                });
+        {
+            Norms.rmsnorm(
+                    s.normed,
+                    0,
+                    s.residual,
+                    (long) row * dim,
+                    weights.finalNorm(),
+                    dim,
+                    configuration.rmsNormEps);
+            MatMul.gemv(weights.wcls(), s.normed, s.logits);
+            return s.logits;
+        }
     }
 
     /**

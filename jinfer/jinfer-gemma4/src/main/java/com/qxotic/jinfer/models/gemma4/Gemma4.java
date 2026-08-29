@@ -153,13 +153,9 @@ public final class Gemma4
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (n == 1)
-                    Parallel.runDecodeStep(
-                            () -> {
-                                forward(state, ids, 0, from, n);
-                                return null;
-                            });
-                else forward(state, ids, 0, from, n);
+                if (n == 1) {
+                    forward(state, ids, 0, from, n);
+                } else forward(state, ids, 0, from, n);
             }
             case Batch.Input.Embeddings e -> {
                 state.lastTokens = null; // media rows are no seed for the MTP draft
@@ -198,24 +194,20 @@ public final class Gemma4
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    Norms.rmsnorm(
-                            state.normed,
-                            0,
-                            state.residual,
-                            (long) row * dim,
-                            weights.finalNorm,
-                            dim,
-                            configuration.rmsNormEps);
-                    MatMul.gemv(weights.classifier, state.normed, state.logits);
-                    Activations.softcap(
-                            state.logits,
-                            0,
-                            configuration.vocabularySize,
-                            configuration.logitSoftcapping);
-                    return state.logits;
-                });
+        {
+            Norms.rmsnorm(
+                    state.normed,
+                    0,
+                    state.residual,
+                    (long) row * dim,
+                    weights.finalNorm,
+                    dim,
+                    configuration.rmsNormEps);
+            MatMul.gemv(weights.classifier, state.normed, state.logits);
+            Activations.softcap(
+                    state.logits, 0, configuration.vocabularySize, configuration.logitSoftcapping);
+            return state.logits;
+        }
     }
 
     /**
@@ -228,22 +220,20 @@ public final class Gemma4
         int vocab = configuration.vocabularySize;
         int n = state.outputCount();
         int first = state.lastBatchSize() - n;
-        Parallel.runDecodeStep(
-                () -> {
-                    for (int r = 0; r < n; r++) {
-                        Norms.rmsnorm(
-                                state.normed,
-                                (long) r * dim,
-                                state.residual,
-                                (long) (first + r) * dim,
-                                weights.finalNorm,
-                                dim,
-                                configuration.rmsNormEps);
-                    }
-                    MatMul.gemm(weights.classifier, state.normed, dst, n);
-                    Activations.softcap(dst, 0, n * vocab, configuration.logitSoftcapping);
-                    return null;
-                });
+        {
+            for (int r = 0; r < n; r++) {
+                Norms.rmsnorm(
+                        state.normed,
+                        (long) r * dim,
+                        state.residual,
+                        (long) (first + r) * dim,
+                        weights.finalNorm,
+                        dim,
+                        configuration.rmsNormEps);
+            }
+            MatMul.gemm(weights.classifier, state.normed, dst, n);
+            Activations.softcap(dst, 0, n * vocab, configuration.logitSoftcapping);
+        }
         Reference.reachabilityFence(state);
     }
 

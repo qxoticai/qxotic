@@ -23,21 +23,13 @@ public final class RuntimeFlags {
     /** Default scratch width for {@code newState}: prefill batches up to this many tokens. */
     public static final int BATCH_CAPACITY = positiveInt("jinfer.batchCapacity", 512);
 
-    /** Worker count for compute-bound work such as prompt prefill. */
-    // P-cores only, same as decode (user's call 2026-08-27): all-core prefill measured +10-13%
-    // (ms-scale slices let the OS migrate E-threads onto freed P-cores), but uniform P-core
-    // behavior is simpler and cooler; revisit with -Djinfer.computeThreads or a bench -tb.
-    public static final int COMPUTE_THREADS =
-            positiveInt("jinfer.computeThreads", physicalCoreCount());
-
-    // decode runs at physical-core width on a spin-barrier pool (Parallel.runDecodeStep /
-    // SpinPool): decode is memory-bandwidth bound, so one thread per PHYSICAL core saturates DRAM
-    // while a 2nd SMT sibling only contends for the core's load/store ports.
-    // -Djinfer.decodeSpin=false forces the plain ForkJoin path.
-    public static final int DECODE_THREADS =
-            positiveInt("jinfer.decodeThreads", physicalCoreCount());
-    public static final boolean DECODE_SPIN =
-            !"false".equals(System.getProperty("jinfer.decodeSpin"));
+    /**
+     * Compute threads, prefill and decode alike: one per PHYSICAL core. Decode is memory-bandwidth
+     * bound and a second SMT sibling only contends for the core's load/store ports; all-core
+     * prefill measured +10-13% on the bench but P-core-only is simpler and cooler (user's call
+     * 2026-08-27).
+     */
+    public static final int THREADS = positiveInt("jinfer.threads", physicalCoreCount());
 
     // Keys per flashDecode partition: below this there is nothing to gain from splitting the
     // attended range, so it falls through to rollingDecode.
@@ -56,8 +48,7 @@ public final class RuntimeFlags {
      * silicon P-cores via sysctl, Linux from sysfs topology (hybrid-, big.LITTLE- and
      * SMT-state-aware). Elsewhere (Windows) a heuristic: 2-way SMT on x86, none on ARM. Capped by
      * availableProcessors so a cgroup cpuset never gets oversubscribed (sysfs shows HOST cpus).
-     * Override with -Djinfer.decodeThreads / computeThreads; read at run time so a native binary
-     * detects its host.
+     * Override with -Djinfer.threads; read at run time so a native binary detects its host.
      */
     private static int physicalCoreCount() {
         int logical = Runtime.getRuntime().availableProcessors();

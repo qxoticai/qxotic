@@ -3,7 +3,6 @@ package com.qxotic.jam.vector;
 import static com.qxotic.jam.vector.VectorSupport.F_LEN;
 import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
 import static com.qxotic.jam.vector.VectorSupport.GLOBAL;
-import static com.qxotic.jam.vector.VectorSupport.PARALLELISM;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static jdk.incubator.vector.VectorOperators.ADD;
 
@@ -184,12 +183,13 @@ final class BandGemm {
             panel = panelRows(kc, m);
             // Guided tail: the last ~2 tasks per worker are quarter panels (at least a granule).
             tailPanel = Math.max(PANEL_GRANULE, panel / 4 / PANEL_GRANULE * PANEL_GRANULE);
-            int tailRows = tailPanel == panel ? 0 : Math.min(m, 2 * PARALLELISM * tailPanel);
+            int tailRows =
+                    tailPanel == panel ? 0 : Math.min(m, 2 * VectorSupport.width() * tailPanel);
             bulkRows = m - tailRows;
             bulkPanels = ceilDiv(bulkRows, panel);
             panels = bulkPanels + ceilDiv(tailRows, tailPanel);
             // Few panels even at one granule (small m): split the tokens across tasks too.
-            int wanted = TASKS_PER_WORKER * PARALLELISM;
+            int wanted = TASKS_PER_WORKER * VectorSupport.width();
             splits = panels >= wanted ? 1 : Math.min(tiles, ceilDiv(wanted, panels));
             tilesPerSplit = ceilDiv(tiles, splits);
             packItems = tiles * kBlocks;
@@ -216,7 +216,7 @@ final class BandGemm {
      */
     static int panelRows(int kc, int m) {
         int byCache = PANEL_BYTES / (kc * Float.BYTES);
-        int byBalance = m / (TASKS_PER_WORKER * PARALLELISM);
+        int byBalance = m / (TASKS_PER_WORKER * VectorSupport.width());
         int rows = Math.min(byCache, byBalance) / PANEL_GRANULE * PANEL_GRANULE;
         return Math.max(PANEL_GRANULE, rows);
     }
@@ -263,11 +263,11 @@ final class BandGemm {
         void run() {
             VectorSupport.parallelForEach(
                     0,
-                    Math.min(plan.tasks, PARALLELISM),
+                    Math.min(plan.tasks, VectorSupport.width()),
                     worker -> {
                         for (int i; (i = next.getAndIncrement()) < plan.tasks; ) {
                             if (i < plan.packItems) pack(i);
-                            else sweep(i - plan.packItems);
+                            else sweep(i - plan.packItems, worker);
                         }
                     });
         }
@@ -292,7 +292,7 @@ final class BandGemm {
         }
 
         /** Sweep task {@code j}: panel {@code j / splits} against tile range {@code j % splits}. */
-        void sweep(int j) {
+        void sweep(int j, int slot) {
             int p = j / plan.splits, sp = j % plan.splits;
             int r0 = plan.start(p), rows = plan.rows(p);
             int tLo = sp * plan.tilesPerSplit;
@@ -300,7 +300,7 @@ final class BandGemm {
             if (tLo >= tHi) return;
             while (packed.get() < plan.packItems) Thread.onSpinWait(); // the pack items go first
             long panelFloats = (long) plan.panel * plan.kc;
-            MemorySegment raw = scratch.acquireLocal(panelFloats + (long) MR * plan.kc);
+            MemorySegment raw = scratch.acquireLocal(slot, panelFloats + (long) MR * plan.kc);
             MemorySegment sv = VectorSupport.vectorSegment(raw);
             long sb = VectorSupport.vectorBase(raw); // the interleaved bands
             long lin = sb + panelFloats * 4L; // MR linear rows: dequant staging

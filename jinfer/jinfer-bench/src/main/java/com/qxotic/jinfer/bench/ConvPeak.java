@@ -11,12 +11,11 @@
 // Build jinfer-bench, then run this main class in a fresh JVM for each
 // -Djinfer.convTile=auto|4x2|4x4 value. Pass the optional census path as the first argument.
 //
-// Runs inside Parallel.runDecodeStep, because that is where the vocoder's convolutions actually run
+// Runs on the engine pool, where the vocoder's convolutions actually run
 // (Inflect2:438) - the spin pool at physical-core width, not the common pool at logical width.
 // Measuring on the common pool would time a dispatch path the model never takes.
 package com.qxotic.jinfer.bench;
 
-import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
@@ -85,10 +84,10 @@ public final class ConvPeak {
         // build), so this echoes the request, not the built binary - label it as such or a sweep
         // reads as if every image were "auto".
         System.out.printf(
-                "convTile(requested)=%s  decodeThreads=%d  vectorBits=%d  shapes=%d"
+                "convTile(requested)=%s  threads=%d  vectorBits=%d  shapes=%d"
                         + "  %.1f GFLOP of model work%n%n",
                 System.getProperty("jinfer.convTile", "auto"),
-                RuntimeFlags.DECODE_THREADS,
+                RuntimeFlags.THREADS,
                 Segments.vectorBits(),
                 shapes.length,
                 censusTotal);
@@ -210,20 +209,19 @@ public final class ConvPeak {
             MemoryView<MemorySegment> in,
             MemoryView<MemorySegment> out,
             float[] taps) {
-        return Parallel.runDecodeStep(
-                () -> {
-                    long t0 = System.nanoTime();
-                    Convolutions.conv1dRows(
-                            in,
-                            shape.channels(),
-                            out,
-                            shape.channels(),
-                            shape.time(),
-                            shape.kernel(),
-                            shape.dilation(),
-                            taps,
-                            null);
-                    return (System.nanoTime() - t0) / 1e9;
-                });
+        {
+            long t0 = System.nanoTime();
+            Convolutions.conv1dRows(
+                    in,
+                    shape.channels(),
+                    out,
+                    shape.channels(),
+                    shape.time(),
+                    shape.kernel(),
+                    shape.dilation(),
+                    taps,
+                    null);
+            return (System.nanoTime() - t0) / 1e9;
+        }
     }
 }

@@ -1,244 +1,165 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.telemetry.PerformanceCliff;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.RecursiveAction;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.IntConsumer;
-import java.util.function.Supplier;
 
-/** Routes finite, non-blocking loops to Jinfer-owned compute and decode workers. */
+/**
+ * Jinfer's one thread pool: {@link RuntimeFlags#THREADS} participants, the calling thread being one
+ * of them. Every parallel loop in the engine and in the jam backends runs here, so the thread
+ * budget is structural - there is no second pool to spin, park or starve against.
+ *
+ * <p>A loop is a region: participants claim contiguous chunks of it from a counter (dynamic, so a
+ * slow chunk never holds the region), the caller works alongside the workers and returns when the
+ * last chunk is done. Between regions the workers spin {@link #SPIN_NANOS} - the many small regions
+ * of one decode token or one prefill matmul are microseconds apart - and park when the engine is
+ * idle. Regions are serialized: a second thread submitting (a second session) waits for the running
+ * region, which is the fair share on a machine the first session already fills. A loop submitted
+ * from inside a region runs inline on that thread; loops are independent and non-blocking, so that
+ * is always correct, only less parallel.
+ */
 public final class Parallel {
-    private static final long WORKER_KEEP_ALIVE_SECONDS = 60;
-    private static final int TASKS_PER_WORKER = 4;
-    private static final ForkJoinPool COMPUTE_POOL = newPool(RuntimeFlags.COMPUTE_THREADS);
-    private static final ForkJoinPool DECODE_POOL = newPool(RuntimeFlags.DECODE_THREADS);
-    private static final AtomicReference<Thread> ACTIVE_SPIN_SUBMITTER = new AtomicReference<>();
 
-    /**
-     * Run {@code action} once for every index in {@code [startInclusive, endExclusive)}.
-     *
-     * <p>Iterations may run concurrently and in any order. Nested calls are supported; iterations
-     * must be independent and non-blocking.
-     */
-    static final boolean STATS = Boolean.getBoolean("jinfer.parallel.stats");
+    /** Spin this long for the next region before parking. */
+    private static final long SPIN_NANOS = 100_000L;
 
-    static final java.util.concurrent.atomic.AtomicLong
-            ST_WALL = new java.util.concurrent.atomic.AtomicLong(),
-            ST_BUSY = new java.util.concurrent.atomic.AtomicLong(),
-            ST_REGIONS = new java.util.concurrent.atomic.AtomicLong(),
-            ST_NESTED = new java.util.concurrent.atomic.AtomicLong();
+    /** Chunks per participant per region: enough for the tail to balance. */
+    private static final int CHUNKS_PER_PARTICIPANT = 4;
 
-    static {
-        if (STATS)
-            Runtime.getRuntime()
-                    .addShutdownHook(
-                            new Thread(
-                                    () ->
-                                            System.err.printf(
-                                                    "jinfer.parallel.stats: regions=%d (nested %d)"
-                                                            + " wall=%.3fs busy=%.3fs"
-                                                            + " busy/(wall*T)=%.1f%% avg"
-                                                            + " region=%.0fus%n",
-                                                    ST_REGIONS.get(),
-                                                    ST_NESTED.get(),
-                                                    ST_WALL.get() / 1e9,
-                                                    ST_BUSY.get() / 1e9,
-                                                    100.0
-                                                            * ST_BUSY.get()
-                                                            / (ST_WALL.get()
-                                                                    * (double)
-                                                                            RuntimeFlags
-                                                                                    .COMPUTE_THREADS),
-                                                    ST_WALL.get()
-                                                            / 1e3
-                                                            / Math.max(1, ST_REGIONS.get()))));
+    private static final ReentrantLock LOCK = new ReentrantLock();
+
+    /** The current region; workers act on every new object they see here. */
+    private static volatile Region current = new Region(0, 0, null, null);
+
+    private static volatile Worker[] workers;
+
+    private Parallel() {}
+
+    /** The compute thread budget: how many participants a region has. */
+    public static int threads() {
+        return RuntimeFlags.THREADS;
     }
 
-    public static void forLoop(int startInclusive, int endExclusive, IntConsumer action) {
-        if (startInclusive >= endExclusive) {
-            return;
-        }
-        if (STATS
-                && ForkJoinTask.getPool() == null
-                && ACTIVE_SPIN_SUBMITTER.get() != Thread.currentThread()) {
-            IntConsumer inner = action;
-            action =
-                    i -> {
-                        long t0 = System.nanoTime();
-                        inner.accept(i);
-                        ST_BUSY.addAndGet(System.nanoTime() - t0);
-                    };
-            long t0 = System.nanoTime();
-            try {
-                forLoopImpl(startInclusive, endExclusive, action);
-            } finally {
-                ST_WALL.addAndGet(System.nanoTime() - t0);
-                ST_REGIONS.incrementAndGet();
-            }
-            return;
-        }
-        if (STATS && ForkJoinTask.getPool() != null) ST_NESTED.incrementAndGet();
-        forLoopImpl(startInclusive, endExclusive, action);
-    }
-
-    private static void forLoopImpl(int startInclusive, int endExclusive, IntConsumer action) {
-        if ((long) endExclusive - startInclusive == 1) {
-            action.accept(startInclusive);
-            return;
-        }
-        if (ACTIVE_SPIN_SUBMITTER.get() == Thread.currentThread()) {
-            DecodeSpin.POOL.forLoop(startInclusive, endExclusive, action);
-            return;
-        }
-
-        ForkJoinPool current = ForkJoinTask.getPool();
-        ForkJoinPool pool =
-                current == COMPUTE_POOL || current == DECODE_POOL ? current : COMPUTE_POOL;
-        LoopTask task =
-                new LoopTask(
-                        startInclusive,
-                        endExclusive,
-                        maxChunkSize(pool, startInclusive, endExclusive),
-                        action);
-        if (current == pool) {
-            task.invoke();
-        } else {
-            pool.invoke(task);
-        }
-        if (task.failure != null) throw unchecked(task.failure);
+    /** {@code body.accept(i)} for every {@code i < count}. */
+    public static void forLoop(int count, IntConsumer body) {
+        forLoop(0, count, body);
     }
 
     /**
-     * Run {@code action} once for every index in {@code [0, count)} under the same execution rules
-     * as {@link #forLoop(int, int, IntConsumer)}.
+     * {@code body.accept(i)} for every {@code i} in {@code [start, end)}. Iterations may run
+     * concurrently and in any order; they must be independent and non-blocking.
      */
-    public static void forLoop(int count, IntConsumer action) {
-        forLoop(0, count, action);
+    public static void forLoop(int start, int end, IntConsumer body) {
+        if (start >= end) return;
+        Thread me = Thread.currentThread();
+        Region running = current;
+        boolean nested = me instanceof Worker || (running.submitter == me && !running.done());
+        if (end - start == 1 || RuntimeFlags.THREADS == 1 || nested) {
+            for (int i = start; i < end; i++) body.accept(i);
+            return;
+        }
+        Worker[] pool = pool();
+        LOCK.lock();
+        try {
+            Region region = new Region(start, end, body, me);
+            current = region;
+            for (Worker w : pool) if (w.parked) LockSupport.unpark(w);
+            region.work();
+            while (!region.done()) Thread.onSpinWait();
+            if (region.failure != null) throw unchecked(region.failure);
+        } finally {
+            LOCK.unlock();
+        }
     }
 
-    /**
-     * Evaluate one memory-bandwidth-bound decode step. The uncontended path uses the low-latency
-     * spin pool; concurrent decodes use the bounded decode pool.
-     */
-    public static <T> T runDecodeStep(Supplier<T> step) {
-        if (RuntimeFlags.DECODE_SPIN) {
-            if (ACTIVE_SPIN_SUBMITTER.compareAndSet(null, Thread.currentThread())) {
-                try {
-                    return step.get();
-                } finally {
-                    ACTIVE_SPIN_SUBMITTER.set(null);
+    private static Worker[] pool() {
+        Worker[] p = workers;
+        if (p == null) {
+            synchronized (Parallel.class) {
+                p = workers;
+                if (p == null) {
+                    p = new Worker[RuntimeFlags.THREADS - 1];
+                    for (int i = 0; i < p.length; i++) {
+                        p[i] = new Worker(i);
+                        p[i].start();
+                    }
+                    workers = p;
                 }
             }
-            PerformanceCliff.DECODE_CONTENTION.report();
         }
-        // Capture the outcome rather than trusting FJP's channels: an external join() surfaces a
-        // REFLECTIVE COPY of the failure (ForkJoinTask.getException) - mangled message, lost
-        // identity. quietlyJoin's happens-before makes plain fields safe; the contended path may
-        // allocate, the spin path above may not.
-        Outcome<T> outcome = new Outcome<>();
-        DECODE_POOL
-                .submit(
-                        () -> {
-                            try {
-                                outcome.value = step.get();
-                            } catch (Throwable t) {
-                                outcome.failure = t;
-                            }
-                        })
-                .quietlyJoin();
-        if (outcome.failure != null) throw unchecked(outcome.failure); // the original instance
-        return outcome.value;
+        return p;
     }
 
-    /** Carrier for the contended decode path - FJP's own result channels mangle exceptions. */
-    private static final class Outcome<T> {
-        T value;
-        Throwable failure;
-    }
+    /** One loop: chunks are claimed from {@code next}; {@code finished} counts done indices. */
+    private static final class Region {
+        final int start, end, chunk;
+        final IntConsumer body;
+        final Thread submitter;
+        final AtomicInteger next;
+        final AtomicInteger finished = new AtomicInteger();
+        volatile Throwable failure;
 
-    private static ForkJoinPool newPool(int threads) {
-        // Structured kernel tasks need no compensation workers. Joins may reduce the active count,
-        // but the pool never exceeds the configured width.
-        return new ForkJoinPool(
-                threads,
-                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
-                null,
-                false,
-                0,
-                threads,
-                0,
-                null,
-                WORKER_KEEP_ALIVE_SECONDS,
-                TimeUnit.SECONDS);
-    }
-
-    private static int maxChunkSize(ForkJoinPool pool, int start, int end) {
-        long size = (long) end - start;
-        long tasks = Math.min(size, (long) pool.getParallelism() * TASKS_PER_WORKER);
-        return (int) ((size + tasks - 1) / tasks);
-    }
-
-    private static final class LoopTask extends RecursiveAction {
-        private final int start;
-        private final int end;
-        private final int maxChunkSize;
-        private final IntConsumer action;
-        private LoopTask next;
-        private Throwable failure;
-
-        private LoopTask(int start, int end, int maxChunkSize, IntConsumer action) {
+        Region(int start, int end, IntConsumer body, Thread submitter) {
             this.start = start;
             this.end = end;
-            this.maxChunkSize = maxChunkSize;
-            this.action = action;
+            this.body = body;
+            this.submitter = submitter;
+            this.next = new AtomicInteger(start);
+            this.chunk =
+                    Math.max(1, (end - start) / (RuntimeFlags.THREADS * CHUNKS_PER_PARTICIPANT));
+        }
+
+        boolean done() {
+            return finished.get() >= end - start;
+        }
+
+        void work() {
+            for (int lo; (lo = next.getAndAdd(chunk)) < end; ) {
+                int hi = Math.min(end, lo + chunk);
+                try {
+                    for (int i = lo; i < hi; i++) body.accept(i);
+                } catch (Throwable thrown) {
+                    if (failure == null) failure = thrown;
+                }
+                finished.addAndGet(hi - lo);
+            }
+        }
+    }
+
+    private static final class Worker extends Thread {
+        volatile boolean parked;
+
+        Worker(int index) {
+            super("jinfer-" + index);
+            setDaemon(true);
         }
 
         @Override
-        protected void compute() {
-            int lo = start;
-            int hi = end;
-            LoopTask forks = null;
-            try {
-                while ((long) hi - lo > maxChunkSize) {
-                    int middle = lo + (int) (((long) hi - lo) / 2);
-                    LoopTask right = new LoopTask(middle, hi, maxChunkSize, action);
-                    right.next = forks;
-                    forks = right;
-                    right.fork();
-                    hi = middle;
+        public void run() {
+            Region seen = current;
+            long idleSince = System.nanoTime();
+            while (true) {
+                Region region = current;
+                if (region != seen) {
+                    seen = region;
+                    region.work();
+                    idleSince = System.nanoTime();
+                } else if (System.nanoTime() - idleSince < SPIN_NANOS) {
+                    Thread.onSpinWait();
+                } else {
+                    parked = true;
+                    if (current == seen) LockSupport.park(this);
+                    parked = false;
+                    idleSince = System.nanoTime();
                 }
-                for (int i = lo; i < hi; i++) action.accept(i);
-            } catch (Throwable thrown) {
-                failure = thrown;
-            }
-
-            while (forks != null) {
-                forks.quietlyJoin();
-                if (forks.failure != null) {
-                    if (failure == null) failure = forks.failure;
-                    else if (failure != forks.failure) failure.addSuppressed(forks.failure);
-                }
-                forks = forks.next;
             }
         }
     }
 
     static RuntimeException unchecked(Throwable failure) {
-        if (failure instanceof RuntimeException runtime) {
-            return runtime;
-        }
-        if (failure instanceof Error error) {
-            throw error;
-        }
+        if (failure instanceof RuntimeException runtime) return runtime;
+        if (failure instanceof Error error) throw error;
         return new RuntimeException(failure);
     }
-
-    private static final class DecodeSpin {
-        private static final SpinPool POOL = new SpinPool(RuntimeFlags.DECODE_THREADS);
-    }
-
-    private Parallel() {}
 }

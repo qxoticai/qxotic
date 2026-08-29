@@ -19,7 +19,7 @@ public final class VectorJAMProvider implements JAM.Provider {
     }
 
     @Override
-    public JAM create() {
-        return new VectorJAM();
+    public JAM create(JAM.Parallel parallel) {
+        return new VectorJAM(parallel);
     }
 }

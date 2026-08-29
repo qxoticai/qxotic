@@ -1,63 +1,39 @@
 package com.qxotic.jinfer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
-final class ParallelTest {
+class ParallelTest {
 
     @Test
-    void forLoopVisitsEveryIndexExactlyOnceOnTheJinferPool() {
-        Thread caller = Thread.currentThread();
-        AtomicIntegerArray visits = new AtomicIntegerArray(257);
-        Set<ForkJoinPool> pools = ConcurrentHashMap.newKeySet();
-
+    void forLoopVisitsEveryIndexExactlyOnce() {
+        AtomicIntegerArray visits = new AtomicIntegerArray(10_000);
+        Set<Thread> threads = ConcurrentHashMap.newKeySet();
         Parallel.forLoop(
+                0,
                 visits.length(),
                 i -> {
-                    assertNotSame(caller, Thread.currentThread());
-                    pools.add(ForkJoinTask.getPool());
                     visits.incrementAndGet(i);
+                    threads.add(Thread.currentThread());
                 });
-
-        assertEquals(1, pools.size());
-        ForkJoinPool pool = pools.iterator().next();
-        assertNotSame(ForkJoinPool.commonPool(), pool);
-        assertEquals(RuntimeFlags.COMPUTE_THREADS, pool.getParallelism());
-        for (int i = 0; i < visits.length(); i++) {
-            assertEquals(1, visits.get(i), "index " + i);
-        }
+        for (int i = 0; i < visits.length(); i++) assertEquals(1, visits.get(i), "index " + i);
+        assertEquals(true, threads.size() <= Parallel.threads(), "at most the thread budget");
     }
 
     @Test
     void singleElementRangeRunsInline() {
-        Thread caller = Thread.currentThread();
-
-        Parallel.forLoop(
-                7,
-                8,
-                i -> {
-                    assertEquals(7, i);
-                    assertSame(caller, Thread.currentThread());
-                });
+        Thread[] seen = new Thread[1];
+        Parallel.forLoop(3, 4, i -> seen[0] = Thread.currentThread());
+        assertSame(Thread.currentThread(), seen[0]);
     }
 
     @Test
@@ -67,186 +43,53 @@ final class ParallelTest {
     }
 
     @Test
-    void nestedLoopsStayOnTheSamePool() {
-        Set<ForkJoinPool> pools = ConcurrentHashMap.newKeySet();
+    void nestedLoopsRunInlineAndVisitEverything() {
         AtomicIntegerArray visits = new AtomicIntegerArray(64);
-
         Parallel.forLoop(
                 0,
                 8,
-                row ->
-                        Parallel.forLoop(
-                                0,
-                                8,
-                                column -> {
-                                    pools.add(ForkJoinTask.getPool());
-                                    visits.incrementAndGet(row * 8 + column);
-                                }));
-
-        assertEquals(1, pools.size());
-        for (int i = 0; i < visits.length(); i++) {
-            assertEquals(1, visits.get(i), "cell " + i);
-        }
+                row -> Parallel.forLoop(0, 8, column -> visits.incrementAndGet(row * 8 + column)));
+        for (int i = 0; i < visits.length(); i++) assertEquals(1, visits.get(i), "cell " + i);
     }
 
     @Test
-    void saturatedNestedLoopsCompleteOnTheBoundedPool() {
-        int repetitions = 100;
-        int threads = RuntimeFlags.COMPUTE_THREADS;
-        int outerCount = threads * 4;
-        int innerCount = 256;
+    void saturatedNestedLoopsComplete() {
+        int threads = Parallel.threads();
+        int outerCount = threads * 4, innerCount = 256;
         AtomicLong visits = new AtomicLong();
-
-        for (int repetition = 0; repetition < repetitions; repetition++) {
+        for (int repetition = 0; repetition < 100; repetition++) {
             AtomicInteger entered = new AtomicInteger();
             Parallel.forLoop(
                     outerCount,
                     ignored -> {
-                        if (entered.getAndIncrement() < threads) {
+                        if (entered.getAndIncrement() < threads)
                             while (entered.get() < threads) Thread.onSpinWait();
-                        }
                         Parallel.forLoop(innerCount, inner -> visits.incrementAndGet());
                     });
         }
-
-        assertEquals((long) repetitions * outerCount * innerCount, visits.get());
+        assertEquals(100L * outerCount * innerCount, visits.get());
     }
 
     @Test
-    void decodeStepFailuresPropagateTheOriginalInstance() throws Exception {
-        assumeTrue(RuntimeFlags.DECODE_SPIN);
-        IllegalStateException marker = new IllegalStateException("marker");
-
-        // a forLoop nested in a forLoop on the spin submitter would overwrite the live region
-        // and reset its barrier under the workers: it is refused, loudly
-        IllegalStateException nested =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                Parallel.runDecodeStep(
-                                        () -> {
-                                            // from every index: the submitter runs a share of
-                                            // them itself, a worker's nested loop is legal
-                                            Parallel.forLoop(
-                                                    0, 64, i -> Parallel.forLoop(0, 64, j -> {}));
-                                            return null;
-                                        }));
-        assertTrue(nested.getMessage().contains("nested"), nested.getMessage());
-
-        // spin path: sole submitter, the step throws raw
-        try {
-            Parallel.runDecodeStep(
-                    () -> {
-                        throw marker;
-                    });
-            fail("expected the marker");
-        } catch (Throwable t) {
-            assertSame(marker, t);
-        }
-
-        // contended fallback: a second submitter is routed to the decode ForkJoinPool; an external
-        // join() would surface a reflective copy (ForkJoinTask.getException) - pin the raw one
-        CountDownLatch inSpin = new CountDownLatch(1);
-        CountDownLatch releaseSpin = new CountDownLatch(1);
-        AtomicReference<Throwable> caught = new AtomicReference<>();
-        Thread holder =
-                Thread.ofPlatform()
-                        .start(
-                                () ->
-                                        Parallel.runDecodeStep(
-                                                () -> {
-                                                    inSpin.countDown();
-                                                    try {
-                                                        releaseSpin.await();
-                                                    } catch (InterruptedException interrupted) {
-                                                        Thread.currentThread().interrupt();
-                                                        throw new AssertionError(interrupted);
-                                                    }
-                                                    return null;
-                                                }));
-        Thread contender =
-                Thread.ofPlatform()
-                        .start(
-                                () -> {
-                                    try {
-                                        assertTrue(inSpin.await(5, TimeUnit.SECONDS));
-                                        Parallel.runDecodeStep(
-                                                () -> {
-                                                    throw marker;
-                                                });
-                                    } catch (InterruptedException interrupted) {
-                                        Thread.currentThread().interrupt();
-                                        caught.set(interrupted);
-                                    } catch (Throwable thrown) {
-                                        caught.set(thrown);
-                                    } finally {
-                                        releaseSpin.countDown();
-                                    }
-                                });
-        holder.join(5_000);
-        contender.join(5_000);
-        assertSame(marker, caught.get());
-    }
-
-    @Test
-    void failureStillWaitsForRunningSiblings() throws Exception {
-        assumeTrue(RuntimeFlags.COMPUTE_THREADS > 1);
-        CountDownLatch siblingStarted = new CountDownLatch(1);
-        CountDownLatch releaseSibling = new CountDownLatch(1);
-        AtomicReference<Throwable> failure = new AtomicReference<>();
-
-        Thread caller =
-                Thread.ofPlatform()
-                        .start(
-                                () -> {
-                                    try {
-                                        Parallel.forLoop(
-                                                0,
-                                                2,
-                                                i -> {
-                                                    if (i == 0) {
-                                                        throw new IllegalStateException("failed");
-                                                    }
-                                                    siblingStarted.countDown();
-                                                    try {
-                                                        releaseSibling.await();
-                                                    } catch (InterruptedException interrupted) {
-                                                        Thread.currentThread().interrupt();
-                                                        throw new AssertionError(interrupted);
-                                                    }
-                                                });
-                                    } catch (Throwable thrown) {
-                                        failure.set(thrown);
-                                    }
-                                });
-
-        try {
-            assertTrue(siblingStarted.await(5, TimeUnit.SECONDS));
-            assertTrue(caller.isAlive(), "forLoop returned while an action was still running");
-        } finally {
-            releaseSibling.countDown();
-            caller.join(5_000);
-        }
-        assertFalse(caller.isAlive());
-        assertNotNull(failure.get());
-    }
-
-    @Test
-    void sameFailureFromSiblingTasksIsNotSelfSuppressed() {
-        assumeTrue(RuntimeFlags.COMPUTE_THREADS > 1);
-        IllegalStateException marker = new IllegalStateException("marker");
-
-        Throwable thrown =
+    void failuresPropagateTheOriginalInstanceAndWaitForSiblings() {
+        IllegalStateException boom = new IllegalStateException("boom");
+        AtomicInteger done = new AtomicInteger();
+        IllegalStateException thrown =
                 assertThrows(
                         IllegalStateException.class,
                         () ->
                                 Parallel.forLoop(
                                         0,
-                                        2,
-                                        ignored -> {
-                                            throw marker;
+                                        64,
+                                        i -> {
+                                            if (i == 7) throw boom;
+                                            done.incrementAndGet();
                                         }));
-
-        assertSame(marker, thrown);
+        assertSame(boom, thrown);
+        assertEquals(63, done.get(), "every other index still ran");
+        // the pool is usable afterwards
+        AtomicInteger again = new AtomicInteger();
+        Parallel.forLoop(0, 100, i -> again.incrementAndGet());
+        assertEquals(100, again.get());
     }
 }

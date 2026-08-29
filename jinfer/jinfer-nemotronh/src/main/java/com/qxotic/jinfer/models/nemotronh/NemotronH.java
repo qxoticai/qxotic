@@ -120,13 +120,9 @@ public final class NemotronH
             if (token < 0 || token >= configuration.vocabularySize)
                 throw new IllegalArgumentException(
                         "token id " + token + " outside [0," + configuration.vocabularySize + ")");
-        if (rows == 1)
-            Parallel.runDecodeStep(
-                    () -> {
-                        forward(state, tokens, start, rows);
-                        return null;
-                    });
-        else forward(state, tokens, start, rows);
+        if (rows == 1) {
+            forward(state, tokens, start, rows);
+        } else forward(state, tokens, start, rows);
         state.advance(batch);
     }
 
@@ -329,19 +325,18 @@ public final class NemotronH
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
         Configuration c = configuration;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    Norms.rmsnorm(
-                            state.normed,
-                            0,
-                            state.residual,
-                            (long) row * c.embeddingLength,
-                            weights.outputNorm,
-                            c.embeddingLength,
-                            c.rmsNormEps);
-                    MatMul.gemv(weights.outputWeight, state.normed, state.logits);
-                    return state.logits;
-                });
+        {
+            Norms.rmsnorm(
+                    state.normed,
+                    0,
+                    state.residual,
+                    (long) row * c.embeddingLength,
+                    weights.outputNorm,
+                    c.embeddingLength,
+                    c.rmsNormEps);
+            MatMul.gemv(weights.outputWeight, state.normed, state.logits);
+            return state.logits;
+        }
     }
 
     public enum LayerType {

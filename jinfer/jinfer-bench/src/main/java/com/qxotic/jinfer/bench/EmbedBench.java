@@ -60,8 +60,7 @@ public final class EmbedBench {
             System.exit(2);
         }
         if (requestedThreads > 0) {
-            System.setProperty("jinfer.computeThreads", Integer.toString(requestedThreads));
-            System.setProperty("jam.threads", Integer.toString(requestedThreads));
+            System.setProperty("jinfer.threads", Integer.toString(requestedThreads));
         }
 
         // Ragged lengths in [minLen, maxLen] (deterministic pseudo-random via a multiplicative
@@ -73,7 +72,7 @@ public final class EmbedBench {
             total += seqLen[j];
         }
         int ctx = total + 64; // the whole packed stream must fit in one context
-        int threads = RuntimeFlags.COMPUTE_THREADS;
+        int threads = RuntimeFlags.THREADS;
 
         String name = Path.of(modelPath).getFileName().toString().replaceAll("\\.gguf$", "");
         System.err.printf(
