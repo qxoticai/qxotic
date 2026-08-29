@@ -2194,15 +2194,12 @@ public final class Q8Kernel {
     }
 
     /**
-     * Q8_0 route: the dequant-to-scratch band gemm (decode amortized once per row over every
-     * column; measured 10752x2048x512 Zen 5 16T: register tiles 1400/2400 GF/s Graal/C2 vs band see
-     * BandGemm). {@code -Djam.vector.q8=tile} keeps the legacy register-tile kernels.
+     * The register-tile kernels below (in-loop int8 decode) are kept behind {@code
+     * -Djam.vector.q8=tile}; the default route is the dequant-to-scratch band gemm, whose decode is
+     * amortized once per row over every column (measured 1400 -> 2700 GF/s, Zen 5 16T).
      */
     private static final boolean BAND_ROUTE =
             !VectorSupport.jamProp("jam.vector.q8", "band").equals("tile");
-
-    /** Context-free scratch for the band route (pooled, GC'd with the class loader). */
-    private static final Scratch SCRATCH = new Scratch();
 
     /**
      * Dequantize {@code count} Q8_0 elements of one weight row (from element offset {@code
@@ -2237,7 +2234,8 @@ public final class Q8Kernel {
             int sequenceLength,
             int dim0,
             int dim1,
-            long thisOffset) {
+            long thisOffset,
+            Scratch scratch) {
         if (BAND_ROUTE && thisOffset % BLOCK == 0 && dim1 % BLOCK == 0) {
             BandGemm.gemm(
                     w,
@@ -2251,7 +2249,7 @@ public final class Q8Kernel {
                     dim0,
                     dim1,
                     thisOffset,
-                    SCRATCH,
+                    scratch,
                     Q8Kernel::dequantizeRow);
             return;
         }

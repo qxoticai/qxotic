@@ -2,6 +2,7 @@ package com.qxotic.jam.vector;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -63,9 +64,7 @@ public final class Scratch {
         if (slot >= slots.length) {
             synchronized (this) {
                 if (slot >= perWorker.length)
-                    perWorker =
-                            java.util.Arrays.copyOf(
-                                    perWorker, Math.max(slot + 1, 2 * perWorker.length));
+                    perWorker = Arrays.copyOf(perWorker, Math.max(slot + 1, 2 * perWorker.length));
                 slots = perWorker;
             }
         }

@@ -1,45 +1,58 @@
 package com.qxotic.jam.vector;
 
+import static com.qxotic.jam.vector.VectorSupport.F_LEN;
 import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
+import static com.qxotic.jam.vector.VectorSupport.GLOBAL;
+import static com.qxotic.jam.vector.VectorSupport.PARALLELISM;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
+import static jdk.incubator.vector.VectorOperators.ADD;
 
 import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.util.concurrent.atomic.AtomicInteger;
 import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.VectorOperators;
 
 /**
- * Shared decode-free F32 band gemm - the back half of every dequant-to-scratch kernel (Q8_0, Q4_0,
- * Q1_0, MXFP4, NVFP4 and the k-quants Q4_K/Q5_K/Q6_K). The dtype kernel supplies one thing, a
- * {@link RowDequant} that decodes a run of one weight row into F32; this class owns the blocking,
- * the packing, the threading and the register-tile sweep.
+ * The dequant-to-scratch F32 gemm behind every Vector JAM dtype (Q8_0, Q4_0, Q1_0, MXFP4, NVFP4 and
+ * the k-quants). A dtype kernel supplies one thing, a {@link RowDequant} that decodes a run of one
+ * weight row into F32; this class owns the blocking, the packing, the threading and the
+ * register-tile sweeps.
  *
- * <p>Both operands are packed into 64-byte-chunk interleaved layouts so the sweep walks two
- * pointers with constant displacements: an activation tile is {@code [k/F_LEN][NR][F_LEN]} (NR
- * token columns), a weight band is {@code [k/F_LEN][MR][F_LEN]} (MR rows). One MR x NR sweep holds
- * MR*NR F32 accumulators whose lanes run along k and reduces them once at the end.
+ * <p><b>Layouts.</b> Both operands are packed into 64-byte-chunk interleaved layouts so a sweep
+ * walks two pointers with constant displacements: an activation tile is {@code
+ * [k/F_LEN][NR][F_LEN]} (NR token columns), a weight band is {@code [k/F_LEN][MR][F_LEN]} (MR
+ * rows). One MR x NR sweep holds MR*NR accumulators whose lanes run along k and reduces each once
+ * at the end.
  *
- * <p>Blocking (measured on Zen 5, 512-bit; the numbers are single-core GF/s of a ~350 peak): the
- * sweep is FMA-bound only when the tile it re-reads is L1-resident and the bands stream from L2 -
- * both streaming from L2 gives 240, from L3 160-200. So the loop order is tile-outer, band-inner: a
- * panel of {@link #PANEL_BYTES} dequantized bands sits in L2, each activation tile is fetched once
- * per panel (L3 traffic of one packed A per panel) and swept against every band while it is hot in
- * L1. Long k is cut into {@link #KC} blocks (the tile must fit L1 next to a streaming band), each
- * block accumulating into the output.
+ * <p><b>Blocking.</b> The sweep is FMA-bound only when the tile it re-reads is L1-resident and the
+ * bands stream from L2 (measured on Zen 5: both from L2 gives 240 of ~350 GF/s per core, from L3
+ * 160-200). So a task dequantizes a <i>panel</i> of {@link #PANEL_BYTES} of bands into its own L2
+ * and sweeps every tile through it while each tile is hot in L1; long k is cut into {@link #KC}
+ * blocks (the tile must fit L1 next to a streaming band), every block accumulating into the output,
+ * which is zeroed up front so the sweeps never branch on "first block".
  *
- * <p>Tile shape: 4x4 on C2 (24 live vectors, spill-free on 32 ZMM: 323-330 GF/s) and 3x3 on a jvmci
- * JIT (Graal allocates only zmm0-15: 4x4 spills to 145). Graal additionally partially unrolls the
- * counted sweep loop 2x, which doubles the live loaded vectors and spills the accumulators inside
- * the hot loop (190 GF/s); the 3x3 sweep therefore advances its pointers by a runtime
- * (non-constant) stride, which keeps the loop un-unrolled (303 GF/s) with no JVM flag. Override
+ * <p><b>Scheduling.</b> One parallel region per gemm. Tasks are dispensed in order from an atomic
+ * counter: first the packing of the activation tiles, then full panels, then a tail of quarter
+ * panels so that a late worker ends at most a quarter of a task after the others (the recursive
+ * range split handed the small tail out FIRST to stealing workers; measured worker efficiency 82 ->
+ * 95% at 16 threads). Small m splits the tokens across tasks too, each task decoding its panel
+ * privately - no barriers, no shared decode buffers. Neighbouring panels never share an output
+ * cache line ({@link #PANEL_GRANULE}).
+ *
+ * <p><b>Tiles.</b> 4x4 on C2 (24 live vectors, spill-free on 32 ZMM) and 3x3 on a jvmci JIT (Graal
+ * allocates zmm0-15 only). Graal also partially unrolls the sweep loop 2x, which spills the
+ * accumulators; the 3x3 sweep therefore advances its pointers by an opaque runtime stride (190 ->
+ * 303 GF/s per core, no JVM flag). Both sweeps are branch-free and call-free: a FloatVector
+ * crossing a call C2 leaves out of line is boxed, and every ZMM is caller-saved. Override the shape
  * with {@code -Djam.vector.band=3x3|4x4}.
  */
 final class BandGemm {
 
     private BandGemm() {}
 
-    /** Register-tile shape name: {@code 3x3} or {@code 4x4}. */
+    /** Register-tile shape: {@code 3x3} or {@code 4x4}. */
     static final String BAND =
             VectorSupport.jamProp(
                     "jam.vector.band",
@@ -48,45 +61,55 @@ final class BandGemm {
     static final int MR = BAND.equals("3x3") ? 3 : 4;
     static final int NR = BAND.equals("3x3") ? 3 : 4;
 
-    /** Bytes of one F32 vector. */
-    static final int VB = VectorSupport.F_LEN * Float.BYTES;
+    /** The output element layout. */
+    private static final ValueLayout.OfFloat F32 = JAVA_FLOAT_UNALIGNED;
 
-    /** Chunk strides of the packed layouts: MR (band) or NR (tile) vectors per k-chunk. */
+    /** Bytes of one F32 vector, and of one k-chunk of a band / a tile. */
+    static final int VB = F_LEN * Float.BYTES;
+
     static final int BAND_CHUNK = MR * VB;
-
     static final int TILE_CHUNK = NR * VB;
 
     /**
-     * Runtime copies of the chunk strides for the 3x3 sweep: non-final statics are opaque to the
-     * JIT, so the loop's induction stride is not a compile-time constant and Graal does not
-     * partially unroll it (see class doc). Never written after class init.
+     * The chunk strides as non-final statics, opaque to the JIT: the 3x3 sweep's induction stride
+     * is then not a compile-time constant and Graal does not partially unroll the loop (see class
+     * doc). Never written after class init.
      */
-    private static int bandStepRt = BAND_CHUNK;
+    private static int bandStep = BAND_CHUNK;
 
-    private static int tileStepRt = TILE_CHUNK;
+    private static int tileStep = TILE_CHUNK;
 
     /**
      * k-block length in elements ({@code -Djam.vector.kc}, default 512): a tile of NR columns x KC
      * floats plus one streaming band must stay L1-resident - 16 KB at 4x4, which fits any 32 KB
-     * L1D. Kept a multiple of 256 so every k-quant super-block stays whole. Portable default: on
-     * Zen 5 (48 KB L1D) 1024 measured within noise of it once the tail scheduling landed.
+     * L1D. A multiple of 256 so every k-quant super-block stays whole. (Zen 5, 48 KB L1D: 1024
+     * measures within run noise of it.)
      */
     static final int KC = Math.max(256, VectorSupport.jamPropInt("jam.vector.kc", 512) / 256 * 256);
 
     /**
-     * Dequant panel cap in bytes ({@code -Djam.vector.panelKb}, default 256 KiB): the bands of one
-     * panel are what an activation tile is swept against while L1-hot, and they must stay in the L2
-     * available to the core - half of a 512 KB private L2, and 8 cores x 256 KB inside a shared
-     * cluster L2. Portable default: 512 KB measured within noise of it on Zen 5 (1 MB L2).
+     * Dequant panel cap in bytes ({@code -Djam.vector.panelKb}, default 256 KiB): a panel is what a
+     * task sweeps every tile through, so it must stay in the L2 available to its core - half of a
+     * 512 KB private L2, or 8 cores x 256 KB of a shared cluster L2. (Zen 5, 1 MB L2: 512 KB
+     * measures within run noise of it.)
      */
     static final int PANEL_BYTES = VectorSupport.jamPropInt("jam.vector.panelKb", 256) * 1024;
 
     /**
-     * Decode one weight row run ({@code count} elements from element offset {@code rowElemOffset})
-     * into F32 at byte offset {@code dstBase} of {@code dst} - the ONLY part that differs between
-     * the dequant-to-scratch dtypes. {@code dst} is pre-routed through {@link
-     * VectorSupport#vectorSegment}; {@code dstBase} is the matching routed byte base. The run
-     * always starts and ends on a quant-block boundary of the dtype.
+     * Panel row granule: a multiple of MR (whole bands) and of 16 rows (64 output bytes), so panels
+     * running on different cores never accumulate into a shared output cache line (measured: 3x3
+     * panels of 126 rows halved 16-thread throughput through false sharing).
+     */
+    static final int PANEL_GRANULE = MR * 16 / gcd(MR, 16);
+
+    /** Tasks per worker the plan aims for, before the tail is added. */
+    private static final int TASKS_PER_WORKER = 4;
+
+    /**
+     * Decode {@code count} elements of one weight row from element offset {@code rowElemOffset}
+     * into F32 at byte offset {@code dstBase} of {@code dst} - the only part that differs between
+     * dtypes. {@code dst} is routed through {@link VectorSupport#vectorSegment}; the run always
+     * starts and ends on a quant-block boundary of the dtype.
      */
     @FunctionalInterface
     interface RowDequant {
@@ -95,42 +118,9 @@ final class BandGemm {
     }
 
     /**
-     * Panel row granule: a multiple of MR (whole bands) and of 16 rows (64 output bytes), so
-     * neighbouring panels - which run on different cores and accumulate into their rows of every
-     * token column - never share an output cache line (measured: 3x3 panels of 126 rows halved
-     * 16-thread throughput through false sharing).
-     */
-    static final int PANEL_GRANULE = MR * 16 / gcd(MR, 16);
-
-    private static int gcd(int a, int b) {
-        return b == 0 ? a : gcd(b, a % b);
-    }
-
-    /** Tasks per worker the driver aims for: the pool balances the tail at task granularity. */
-    static final int TASKS_PER_WORKER = VectorSupport.jamPropInt("jam.vector.panelTasks", 4);
-
-    /**
-     * Rows per panel for a k-block of {@code kc} and {@code m} rows: a granule multiple within
-     * {@link #PANEL_BYTES}, shrunk (down to one granule) so that {@code m} yields at least {@link
-     * #TASKS_PER_WORKER} panels per worker - 16 workers on 16 one-panel tasks ran at half the speed
-     * of 64 quarter-size panels (any late thread is the whole gemm's tail).
-     */
-    static int panelRows(int kc, int m) {
-        int byCache = PANEL_BYTES / (kc * Float.BYTES);
-        int byBalance = m / (TASKS_PER_WORKER * VectorSupport.PARALLELISM);
-        int rows = Math.min(byCache, byBalance) / PANEL_GRANULE * PANEL_GRANULE;
-        return Math.max(PANEL_GRANULE, rows);
-    }
-
-    /** k-block length for a row length {@code k}: whole rows up to {@link #KC}. */
-    static int kBlock(int k) {
-        return Math.min(k, KC);
-    }
-
-    /**
-     * The dequant-to-scratch band gemm: {@code o[s*oStride + row] = sum_k w[row][k] * a[s*aStride +
-     * k]} for {@code n} token columns and {@code m} weight rows. {@code deq} decodes weight rows;
-     * it is called per row and per k-block, so the whole decode is amortized over every column.
+     * {@code o[s*oStride + row] = sum_k w[row][k] * a[s*aStride + k]} for {@code n} token columns
+     * and {@code m} weight rows; {@code a} and {@code o} are routed segments addressed from {@code
+     * aBase}/{@code oBase}, {@code w} is the raw weight segment read from element {@code wOff}.
      */
     static void gemm(
             MemorySegment w,
@@ -146,12 +136,10 @@ final class BandGemm {
             long wOff,
             Scratch scratch,
             RowDequant deq) {
-        gemm(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, scratch, deq, kBlock(k));
+        gemm(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, scratch, deq, KC);
     }
 
-    /**
-     * {@link #gemm} with an explicit k-block length (tests exercise the blocking with small kc).
-     */
+    /** {@link #gemm} with an explicit k-block cap (tests exercise the blocking with small kc). */
     static void gemm(
             MemorySegment w,
             MemorySegment a,
@@ -166,244 +154,276 @@ final class BandGemm {
             long wOff,
             Scratch scratch,
             RowDequant deq,
-            int kcRequested) {
+            int kcMax) {
         if (n <= 0 || m <= 0) return;
-        final int kc = Math.min(kcRequested, k);
-        final int tiles = (n + NR - 1) / NR;
-        final int kBlocks = (k + kc - 1) / kc;
-        final int panel = panelRows(kc, m);
-        final long panelFloats = (long) panel * kc;
-        // Guided tail: the bulk of the rows go out as full panels, the last ~2 tasks per worker as
-        // quarter panels (>= one granule), so the region's tail is a quarter of a task instead
-        // of half a task. Tasks are dispensed in order from an atomic counter (big first): the
-        // recursive range split would hand the small tail out FIRST to stealing workers.
-        final int tailPanel = Math.max(PANEL_GRANULE, panel / 4 / PANEL_GRANULE * PANEL_GRANULE);
-        final int tailRows =
-                tailPanel == panel ? 0 : Math.min(m, 2 * VectorSupport.PARALLELISM * tailPanel);
-        final int bulkRows = m - tailRows;
-        final int bulkPanels = (bulkRows + panel - 1) / panel;
-        final int tailPanels = (tailRows + tailPanel - 1) / tailPanel;
-        final int panels = bulkPanels + tailPanels;
-        // Few panels even at one granule (small m): split the tokens too. Each task dequantizes
-        // its panel privately (redundant across splits, but a granule panel is cheap) - no
-        // barriers, no shared buffers.
-        final int wanted = TASKS_PER_WORKER * VectorSupport.PARALLELISM;
-        final int splits = panels >= wanted ? 1 : Math.min(tiles, (wanted + panels - 1) / panels);
-        final int tilesPerSplit = (tiles + splits - 1) / splits;
-        final int packItems = tiles * kBlocks;
-        final int total = packItems + panels * splits;
-
-        // Packed A, k-block-major: block kb holds its `tiles` tiles back to back, so a panel's
-        // tile stream is one contiguous run of tiles*NR*kcb floats (prefetcher-friendly). The
-        // packing is the first `packItems` tasks of the SAME region as the sweeps (one fork/join
-        // round per gemm, not two); a sweep task spins until the pack count is complete.
-        MemorySegment packedA = scratch.acquire((long) tiles * NR * k);
-        MemorySegment pa = VectorSupport.vectorSegment(packedA);
-        long pab = VectorSupport.vectorBase(packedA);
-        final java.util.concurrent.atomic.AtomicInteger next =
-                new java.util.concurrent.atomic.AtomicInteger();
-        final java.util.concurrent.atomic.AtomicInteger packed =
-                new java.util.concurrent.atomic.AtomicInteger();
+        Plan plan = new Plan(n, m, k, Math.min(kcMax, k));
+        MemorySegment packedA = scratch.acquire((long) plan.tiles * NR * k);
         try {
-            VectorSupport.parallelForEach(
-                    0,
-                    Math.min(total, VectorSupport.PARALLELISM),
-                    worker -> {
-                        for (int i; (i = next.getAndIncrement()) < total; ) {
-                            if (i < packItems) {
-                                int kb = i / tiles, t = i % tiles;
-                                int kOff = kb * kc, kcb = Math.min(kc, k - kOff);
-                                packTile(
-                                        a,
-                                        aBase + (long) kOff * 4L,
-                                        aStride,
-                                        pa,
-                                        pab + ((long) kOff * tiles + (long) t * kcb) * NR * 4L,
-                                        t * NR,
-                                        n,
-                                        kcb);
-                                packed.incrementAndGet();
-                                continue;
-                            }
-                            int j = i - packItems;
-                            int p = j / splits, sp = j % splits;
-                            int r0, rows;
-                            if (p < bulkPanels) {
-                                r0 = p * panel;
-                                rows = Math.min(bulkRows - r0, panel);
-                            } else {
-                                r0 = bulkRows + (p - bulkPanels) * tailPanel;
-                                rows = Math.min(m - r0, tailPanel);
-                            }
-                            int tLo = sp * tilesPerSplit,
-                                    tHi = Math.min(tiles, tLo + tilesPerSplit);
-                            if (tLo >= tHi) continue;
-                            while (packed.get() < packItems) Thread.onSpinWait();
-                            MemorySegment raw = scratch.acquireLocal(panelFloats + (long) MR * kc);
-                            MemorySegment sv = VectorSupport.vectorSegment(raw);
-                            long sb = VectorSupport.vectorBase(raw); // interleaved bands
-                            long lin = sb + panelFloats * 4L; // MR linear rows, dequant staging
-                            zeroRows(o, oBase, oStride, tLo * NR, Math.min(n, tHi * NR), r0, rows);
-                            for (int kOff = 0; kOff < k; kOff += kc) {
-                                int kcb = Math.min(kc, k - kOff);
-                                dequantPanel(w, wOff, m, k, kOff, kcb, sv, sb, lin, r0, rows, deq);
-                                sweepTiles(
-                                        pa, pab, o, oBase, oStride, n, k, kOff, kcb, tiles, sv, sb,
-                                        r0, rows, tLo, tHi);
-                            }
-                        }
-                    });
+            new Gemm(w, wOff, a, aBase, aStride, o, oBase, oStride, deq, plan, scratch, packedA)
+                    .run();
         } finally {
             scratch.release(packedA);
         }
     }
 
-    /**
-     * Zero rows {@code [r0, r0+rows)} of token columns {@code [sLo, sHi)}: the sweeps always
-     * accumulate into the output (no first-block branch for a JIT to unswitch on). Rows are
-     * contiguous per token.
-     */
-    private static void zeroRows(
-            MemorySegment o, long oBase, int oStride, int sLo, int sHi, int r0, int rows) {
-        for (int s = sLo; s < sHi; s++)
-            o.asSlice(oBase + ((long) s * oStride + r0) * 4L, (long) rows * 4L).fill((byte) 0);
+    /** The blocking of one gemm: k-blocks, panels, token splits and the task numbering. */
+    private static final class Plan {
+        final int n, m, k, kc;
+        final int kBlocks, tiles;
+        final int panel, tailPanel, bulkRows, bulkPanels, panels;
+        final int splits, tilesPerSplit;
+        final int packItems, tasks;
+
+        Plan(int n, int m, int k, int kc) {
+            this.n = n;
+            this.m = m;
+            this.k = k;
+            this.kc = kc;
+            kBlocks = ceilDiv(k, kc);
+            tiles = ceilDiv(n, NR);
+            panel = panelRows(kc, m);
+            // Guided tail: the last ~2 tasks per worker are quarter panels (at least a granule).
+            tailPanel = Math.max(PANEL_GRANULE, panel / 4 / PANEL_GRANULE * PANEL_GRANULE);
+            int tailRows = tailPanel == panel ? 0 : Math.min(m, 2 * PARALLELISM * tailPanel);
+            bulkRows = m - tailRows;
+            bulkPanels = ceilDiv(bulkRows, panel);
+            panels = bulkPanels + ceilDiv(tailRows, tailPanel);
+            // Few panels even at one granule (small m): split the tokens across tasks too.
+            int wanted = TASKS_PER_WORKER * PARALLELISM;
+            splits = panels >= wanted ? 1 : Math.min(tiles, ceilDiv(wanted, panels));
+            tilesPerSplit = ceilDiv(tiles, splits);
+            packItems = tiles * kBlocks;
+            tasks = packItems + panels * splits;
+        }
+
+        /** First row of panel {@code p}. */
+        int start(int p) {
+            return p < bulkPanels ? p * panel : bulkRows + (p - bulkPanels) * tailPanel;
+        }
+
+        /** Rows of panel {@code p}. */
+        int rows(int p) {
+            return p < bulkPanels
+                    ? Math.min(panel, bulkRows - start(p))
+                    : Math.min(tailPanel, m - start(p));
+        }
     }
 
     /**
-     * Dequantize k-block {@code [kOff, kOff+kcb)} of rows {@code [r0, r0+rows)} into interleaved
-     * bands at {@code sb} (a trailing partial band is zero-padded), staging MR linear rows at
-     * {@code lin}.
+     * Rows per panel for a k-block of {@code kc} and {@code m} rows: a granule multiple within
+     * {@link #PANEL_BYTES}, shrunk so that {@code m} yields at least {@link #TASKS_PER_WORKER}
+     * panels per worker (never below one granule).
      */
-    private static void dequantPanel(
-            MemorySegment w,
-            long wOff,
-            int m,
-            int k,
-            int kOff,
-            int kcb,
-            MemorySegment sv,
-            long sb,
-            long lin,
-            int r0,
-            int rows,
-            RowDequant deq) {
-        final int bands = (rows + MR - 1) / MR;
-        final long bandBytes = (long) kcb * MR * 4L;
-        for (int b = 0; b < bands; b++) {
-            int row0 = r0 + b * MR;
-            for (int i = 0; i < MR; i++) {
-                long dst = lin + (long) i * kcb * 4L;
-                if (row0 + i < m)
-                    deq.dequantize(w, wOff + (long) (row0 + i) * k + kOff, kcb, sv, dst);
-                else sv.asSlice(dst, (long) kcb * 4L).fill((byte) 0);
+    static int panelRows(int kc, int m) {
+        int byCache = PANEL_BYTES / (kc * Float.BYTES);
+        int byBalance = m / (TASKS_PER_WORKER * PARALLELISM);
+        int rows = Math.min(byCache, byBalance) / PANEL_GRANULE * PANEL_GRANULE;
+        return Math.max(PANEL_GRANULE, rows);
+    }
+
+    /** One gemm call: the operands, its plan, and the task bodies. */
+    private static final class Gemm {
+        final MemorySegment w, a, o, pa;
+        final long wOff, aBase, oBase, pab;
+        final int aStride, oStride;
+        final RowDequant deq;
+        final Plan plan;
+        final Scratch scratch;
+        final AtomicInteger next = new AtomicInteger(), packed = new AtomicInteger();
+
+        Gemm(
+                MemorySegment w,
+                long wOff,
+                MemorySegment a,
+                long aBase,
+                int aStride,
+                MemorySegment o,
+                long oBase,
+                int oStride,
+                RowDequant deq,
+                Plan plan,
+                Scratch scratch,
+                MemorySegment packedA) {
+            this.w = w;
+            this.wOff = wOff;
+            this.a = a;
+            this.aBase = aBase;
+            this.aStride = aStride;
+            this.o = o;
+            this.oBase = oBase;
+            this.oStride = oStride;
+            this.deq = deq;
+            this.plan = plan;
+            this.scratch = scratch;
+            this.pa = VectorSupport.vectorSegment(packedA);
+            this.pab = VectorSupport.vectorBase(packedA);
+        }
+
+        /** One region: every worker pulls tasks from the counter until none are left. */
+        void run() {
+            VectorSupport.parallelForEach(
+                    0,
+                    Math.min(plan.tasks, PARALLELISM),
+                    worker -> {
+                        for (int i; (i = next.getAndIncrement()) < plan.tasks; ) {
+                            if (i < plan.packItems) pack(i);
+                            else sweep(i - plan.packItems);
+                        }
+                    });
+        }
+
+        /**
+         * Pack item {@code i}: tile {@code i % tiles} of k-block {@code i / tiles}. Packed A is
+         * k-block-major, so a k-block's tiles are one contiguous stream (prefetcher-friendly).
+         */
+        void pack(int i) {
+            int kb = i / plan.tiles, t = i % plan.tiles;
+            int kOff = kb * plan.kc, kcb = Math.min(plan.kc, plan.k - kOff);
+            packTile(
+                    a,
+                    aBase + (long) kOff * 4L,
+                    aStride,
+                    pa,
+                    pab + ((long) kOff * plan.tiles + (long) t * kcb) * NR * 4L,
+                    t * NR,
+                    plan.n,
+                    kcb);
+            packed.incrementAndGet();
+        }
+
+        /** Sweep task {@code j}: panel {@code j / splits} against tile range {@code j % splits}. */
+        void sweep(int j) {
+            int p = j / plan.splits, sp = j % plan.splits;
+            int r0 = plan.start(p), rows = plan.rows(p);
+            int tLo = sp * plan.tilesPerSplit;
+            int tHi = Math.min(plan.tiles, tLo + plan.tilesPerSplit);
+            if (tLo >= tHi) return;
+            while (packed.get() < plan.packItems) Thread.onSpinWait(); // the pack items go first
+            long panelFloats = (long) plan.panel * plan.kc;
+            MemorySegment raw = scratch.acquireLocal(panelFloats + (long) MR * plan.kc);
+            MemorySegment sv = VectorSupport.vectorSegment(raw);
+            long sb = VectorSupport.vectorBase(raw); // the interleaved bands
+            long lin = sb + panelFloats * 4L; // MR linear rows: dequant staging
+            zeroRows(tLo * NR, Math.min(plan.n, tHi * NR), r0, rows);
+            for (int kOff = 0; kOff < plan.k; kOff += plan.kc) {
+                int kcb = Math.min(plan.kc, plan.k - kOff);
+                dequantPanel(kOff, kcb, sv, sb, lin, r0, rows);
+                sweepTiles(kOff, kcb, sv, sb, r0, rows, tLo, tHi);
             }
-            interleave(sv, lin, sb + b * bandBytes, kcb);
         }
-    }
 
-    /**
-     * Sweep tiles {@code [tLo, tHi)} of k-block {@code kOff} against the bands of rows {@code [r0,
-     * r0+rows)} at {@code sb}: full tiles x full bands through the branch-free panel sweep, the
-     * trailing partial tile / partial band through the edge sweep.
-     */
-    private static void sweepTiles(
-            MemorySegment pa,
-            long pab,
-            MemorySegment o,
-            long oBase,
-            int oStride,
-            int n,
-            int k,
-            int kOff,
-            int kcb,
-            int tiles,
-            MemorySegment sv,
-            long sb,
-            int r0,
-            int rows,
-            int tLo,
-            int tHi) {
-        final int bands = (rows + MR - 1) / MR;
-        final int fullBands = rows / MR;
-        final int fullTiles = Math.min(tHi, n / NR);
-        final long bandBytes = (long) kcb * MR * 4L;
-        final long kbBase = pab + (long) kOff * tiles * NR * 4L; // this k-block's tiles
-        final long tileBytes = (long) kcb * NR * 4L;
-        final long oStrideBytes = (long) oStride * 4L;
-        final boolean fast = VectorSupport.GLOBAL != null && o == VectorSupport.GLOBAL;
-        if (fast && fullTiles > tLo && fullBands > 0) {
-            long out0 = oBase + ((long) tLo * NR * oStride + r0) * 4L; // absolute: o is GLOBAL
-            if (MR == 4)
-                sweepPanel44(
-                        sv,
-                        sb,
-                        bandBytes,
-                        fullBands,
-                        pa,
-                        kbBase + tLo * tileBytes,
-                        tileBytes,
-                        fullTiles - tLo,
-                        kcb,
-                        out0,
-                        oStrideBytes);
-            else
-                sweepPanel33(
-                        sv,
-                        sb,
-                        bandBytes,
-                        fullBands,
-                        pa,
-                        kbBase + tLo * tileBytes,
-                        tileBytes,
-                        fullTiles - tLo,
-                        kcb,
-                        out0,
-                        oStrideBytes);
+        /** Zero rows {@code [r0, r0+rows)} of token columns {@code [sLo, sHi)}. */
+        void zeroRows(int sLo, int sHi, int r0, int rows) {
+            for (int s = sLo; s < sHi; s++)
+                o.asSlice(oBase + ((long) s * oStride + r0) * 4L, (long) rows * 4L).fill((byte) 0);
         }
-        for (int t = tLo; t < tHi; t++) {
-            int s0 = t * NR;
-            int cols = Math.min(NR, n - s0);
-            long tap = kbBase + (long) t * tileBytes;
-            int bFrom = fast && cols == NR ? fullBands : 0;
-            for (int b = bFrom; b < bands; b++) {
+
+        /**
+         * Dequantize k-block {@code [kOff, kOff+kcb)} of rows {@code [r0, r0+rows)} into
+         * interleaved bands at {@code sb} (a trailing partial band is zero-padded), staging MR
+         * linear rows at {@code lin}.
+         */
+        void dequantPanel(
+                int kOff, int kcb, MemorySegment sv, long sb, long lin, int r0, int rows) {
+            long bandBytes = (long) kcb * MR * 4L;
+            for (int b = 0; b < ceilDiv(rows, MR); b++) {
                 int row0 = r0 + b * MR;
-                int rowsValid = Math.min(MR, r0 + rows - row0);
+                for (int i = 0; i < MR; i++) {
+                    long dst = lin + (long) i * kcb * 4L;
+                    if (row0 + i < plan.m)
+                        deq.dequantize(w, wOff + (long) (row0 + i) * plan.k + kOff, kcb, sv, dst);
+                    else sv.asSlice(dst, (long) kcb * 4L).fill((byte) 0);
+                }
+                interleave(sv, lin, sb + b * bandBytes, kcb);
+            }
+        }
+
+        /**
+         * Sweep tiles {@code [tLo, tHi)} of k-block {@code kOff} against the bands of rows {@code
+         * [r0, r0+rows)}: full tiles x full bands through the branch-free panel sweep, the trailing
+         * partial tile / partial band through the edge sweep.
+         */
+        void sweepTiles(
+                int kOff, int kcb, MemorySegment sv, long sb, int r0, int rows, int tLo, int tHi) {
+            int bands = ceilDiv(rows, MR), fullBands = rows / MR;
+            int fullTiles = Math.min(tHi, plan.n / NR);
+            long bandBytes = (long) kcb * MR * 4L, tileBytes = (long) kcb * NR * 4L;
+            long kbBase = pab + (long) kOff * plan.tiles * NR * 4L; // this k-block's tiles
+            long oStrideBytes = (long) oStride * 4L;
+            boolean fast = GLOBAL != null && o == GLOBAL; // absolute output addresses
+            if (fast && fullTiles > tLo && fullBands > 0) {
+                long out0 = oBase + ((long) tLo * NR * oStride + r0) * 4L;
+                long tile0 = kbBase + tLo * tileBytes;
+                int tiles = fullTiles - tLo;
                 if (MR == 4)
-                    sweepEdge44(
+                    sweepPanel44(
                             sv,
-                            sb + b * bandBytes,
+                            sb,
+                            bandBytes,
+                            fullBands,
                             pa,
-                            tap,
+                            tile0,
+                            tileBytes,
+                            tiles,
                             kcb,
-                            o,
-                            oBase,
-                            oStride,
-                            row0,
-                            s0,
-                            rowsValid,
-                            cols);
+                            out0,
+                            oStrideBytes);
                 else
-                    sweepEdge33(
+                    sweepPanel33(
                             sv,
-                            sb + b * bandBytes,
+                            sb,
+                            bandBytes,
+                            fullBands,
                             pa,
-                            tap,
+                            tile0,
+                            tileBytes,
+                            tiles,
                             kcb,
-                            o,
-                            oBase,
-                            oStride,
-                            row0,
-                            s0,
-                            rowsValid,
-                            cols);
+                            out0,
+                            oStrideBytes);
+            }
+            for (int t = tLo; t < tHi; t++) {
+                int s0 = t * NR, cols = Math.min(NR, plan.n - s0);
+                long tile = kbBase + (long) t * tileBytes;
+                for (int b = fast && cols == NR ? fullBands : 0; b < bands; b++) {
+                    int row0 = r0 + b * MR, rowsValid = Math.min(MR, r0 + rows - row0);
+                    if (MR == 4)
+                        sweepEdge44(
+                                sv,
+                                sb + b * bandBytes,
+                                pa,
+                                tile,
+                                kcb,
+                                o,
+                                oBase,
+                                oStride,
+                                row0,
+                                s0,
+                                rowsValid,
+                                cols);
+                    else
+                        sweepEdge33(
+                                sv,
+                                sb + b * bandBytes,
+                                pa,
+                                tile,
+                                kcb,
+                                o,
+                                oBase,
+                                oStride,
+                                row0,
+                                s0,
+                                rowsValid,
+                                cols);
+                }
             }
         }
     }
 
     /**
-     * Pack {@code kc} elements of NR activation columns starting at {@code s0} (from the routed
-     * byte address {@code aBase} of column 0's first element) into interleaved {@link #TILE_CHUNK}
-     * chunks at {@code dstBase}; columns beyond {@code n} are zero-filled (swept, never stored).
+     * Pack {@code kc} elements of NR activation columns from {@code s0} (column 0's first element
+     * at routed address {@code aBase}) into interleaved {@link #TILE_CHUNK} chunks at {@code
+     * dstBase}; columns beyond {@code n} are zero-filled (swept, never stored).
      */
     static void packTile(
             MemorySegment a,
@@ -414,13 +434,12 @@ final class BandGemm {
             int s0,
             int n,
             int kc) {
-        int fl = VectorSupport.F_LEN;
         long d = dstBase;
-        for (int kk = 0; kk < kc; kk += fl, d += TILE_CHUNK) {
+        for (int kk = 0; kk < kc; kk += F_LEN, d += TILE_CHUNK) {
             for (int c = 0; c < NR; c++) {
                 FloatVector v =
                         s0 + c < n
-                                ? av(a, aBase, (long) (s0 + c) * aStride + kk)
+                                ? load(a, aBase + ((long) (s0 + c) * aStride + kk) * 4L)
                                 : FloatVector.zero(F_SPECIES);
                 v.intoMemorySegment(pa, d + (long) c * VB, ByteOrder.LITTLE_ENDIAN);
             }
@@ -428,63 +447,52 @@ final class BandGemm {
     }
 
     /**
-     * Interleave MR linear scratch rows of {@code kc} floats (at {@code srcBase}) into {@link
-     * #BAND_CHUNK} chunks at {@code dstBase}.
+     * Interleave MR linear rows of {@code kc} floats at {@code srcBase} into {@link #BAND_CHUNK}
+     * chunks at {@code dstBase}.
      */
     static void interleave(MemorySegment sv, long srcBase, long dstBase, int kc) {
-        int fl = VectorSupport.F_LEN;
         long rowBytes = (long) kc * 4;
         long d = dstBase;
-        for (int kk = 0; kk < kc; kk += fl, d += BAND_CHUNK) {
+        for (int kk = 0; kk < kc; kk += F_LEN, d += BAND_CHUNK) {
             long kb = (long) kk * 4;
             for (int r = 0; r < MR; r++)
-                wv(sv, srcBase + r * rowBytes + kb)
+                load(sv, srcBase + r * rowBytes + kb)
                         .intoMemorySegment(sv, d + (long) r * VB, ByteOrder.LITTLE_ENDIAN);
         }
     }
 
     /**
-     * The 3x3 two-pointer sweep over {@code tiles} full tiles x {@code bands} full bands of one
-     * k-block, accumulating into the output at absolute addresses ({@code out0} = address of
-     * o[0][row0]; {@code oStrideBytes} between token columns). The whole loop nest lives here so
-     * the caller has one cold call per k-block: a jvmci JIT that inlined the per-tile sweep into
-     * the panel method produced spill-heavy code (measured 30% slower once it kicked in).
-     * Branch-free: no conditionals for a JIT to unswitch on, no calls. The pointer strides are read
-     * from opaque statics so a jvmci JIT does not partially unroll the loop (its 16-register
-     * allocator would spill the accumulators; see class doc).
+     * The 3x3 sweep of {@code tiles} full tiles x {@code bands} full bands of one k-block,
+     * accumulating into the output at absolute addresses ({@code out0} = o[s0][row0], {@code
+     * oStrideBytes} between token columns). Branch-free, call-free; the pointer strides are the
+     * opaque statics (no partial unroll on a jvmci JIT).
      */
     static void sweepPanel33(
             MemorySegment w,
-            long panelBase,
+            long panel,
             long bandBytes,
             int bands,
             MemorySegment a,
-            long tiles0,
+            long tile0,
             long tileBytes,
             int tiles,
             int kc,
             long out0,
             long oStrideBytes) {
-        final int wStep = bandStepRt, aStep = tileStepRt;
+        final int wStep = bandStep, aStep = tileStep;
         final long kBytes = (long) kc * MR * 4;
-        final MemorySegment g = VectorSupport.GLOBAL;
+        final MemorySegment g = GLOBAL;
         for (int t = 0; t < tiles; t++) {
-            final long tile = tiles0 + t * tileBytes;
+            final long tile = tile0 + t * tileBytes;
             long out = out0 + t * NR * oStrideBytes;
             for (int b = 0; b < bands; b++, out += MR * 4L) {
-                FloatVector c00 = FloatVector.zero(F_SPECIES),
-                        c01 = FloatVector.zero(F_SPECIES),
-                        c02 = FloatVector.zero(F_SPECIES);
-                FloatVector c10 = FloatVector.zero(F_SPECIES),
-                        c11 = FloatVector.zero(F_SPECIES),
-                        c12 = FloatVector.zero(F_SPECIES);
-                FloatVector c20 = FloatVector.zero(F_SPECIES),
-                        c21 = FloatVector.zero(F_SPECIES),
-                        c22 = FloatVector.zero(F_SPECIES);
-                long wp = panelBase + b * bandBytes, ap = tile;
+                FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = c00, c02 = c00;
+                FloatVector c10 = c00, c11 = c00, c12 = c00;
+                FloatVector c20 = c00, c21 = c00, c22 = c00;
+                long wp = panel + b * bandBytes, ap = tile;
                 for (long end = wp + kBytes; wp < end; wp += wStep, ap += aStep) {
-                    FloatVector v0 = wv(w, wp), v1 = wv(w, wp + VB), v2 = wv(w, wp + 2L * VB);
-                    FloatVector x0 = wv(a, ap), x1 = wv(a, ap + VB), x2 = wv(a, ap + 2L * VB);
+                    FloatVector v0 = load(w, wp), v1 = load(w, wp + VB), v2 = load(w, wp + 2L * VB);
+                    FloatVector x0 = load(a, ap), x1 = load(a, ap + VB), x2 = load(a, ap + 2L * VB);
                     c00 = v0.fma(x0, c00);
                     c01 = v0.fma(x1, c01);
                     c02 = v0.fma(x2, c02);
@@ -496,187 +504,92 @@ final class BandGemm {
                     c22 = v2.fma(x2, c22);
                 }
                 long o1 = out + oStrideBytes, o2 = o1 + oStrideBytes;
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out,
-                        g.get(JAVA_FLOAT_UNALIGNED, out) + c00.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, out + 4)
-                                + c10.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, out + 8)
-                                + c20.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1) + c01.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1 + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1 + 4) + c11.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1 + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1 + 8) + c21.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2) + c02.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2 + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2 + 4) + c12.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2 + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2 + 8) + c22.reduceLanes(VectorOperators.ADD));
+                g.set(F32, out, g.get(F32, out) + c00.reduceLanes(ADD));
+                g.set(F32, out + 4, g.get(F32, out + 4) + c10.reduceLanes(ADD));
+                g.set(F32, out + 8, g.get(F32, out + 8) + c20.reduceLanes(ADD));
+                g.set(F32, o1, g.get(F32, o1) + c01.reduceLanes(ADD));
+                g.set(F32, o1 + 4, g.get(F32, o1 + 4) + c11.reduceLanes(ADD));
+                g.set(F32, o1 + 8, g.get(F32, o1 + 8) + c21.reduceLanes(ADD));
+                g.set(F32, o2, g.get(F32, o2) + c02.reduceLanes(ADD));
+                g.set(F32, o2 + 4, g.get(F32, o2 + 4) + c12.reduceLanes(ADD));
+                g.set(F32, o2 + 8, g.get(F32, o2 + 8) + c22.reduceLanes(ADD));
             }
         }
     }
 
-    /** The 4x4 two-pointer sweep (C2: 24 live vectors, spill-free on 32 ZMM); see 3x3. */
+    /** The 4x4 sweep (C2: 24 live vectors, spill-free on 32 ZMM); see {@link #sweepPanel33}. */
     static void sweepPanel44(
             MemorySegment w,
-            long panelBase,
+            long panel,
             long bandBytes,
             int bands,
             MemorySegment a,
-            long tiles0,
+            long tile0,
             long tileBytes,
             int tiles,
             int kc,
             long out0,
             long oStrideBytes) {
         final long kBytes = (long) kc * MR * 4;
-        final MemorySegment g = VectorSupport.GLOBAL;
+        final MemorySegment g = GLOBAL;
         for (int t = 0; t < tiles; t++) {
-            final long tile = tiles0 + t * tileBytes;
+            final long tile = tile0 + t * tileBytes;
             long out = out0 + t * NR * oStrideBytes;
             for (int b = 0; b < bands; b++, out += MR * 4L) {
-                FloatVector c00 = FloatVector.zero(F_SPECIES),
-                        c01 = FloatVector.zero(F_SPECIES),
-                        c02 = FloatVector.zero(F_SPECIES),
-                        c03 = FloatVector.zero(F_SPECIES);
-                FloatVector c10 = FloatVector.zero(F_SPECIES),
-                        c11 = FloatVector.zero(F_SPECIES),
-                        c12 = FloatVector.zero(F_SPECIES),
-                        c13 = FloatVector.zero(F_SPECIES);
-                FloatVector c20 = FloatVector.zero(F_SPECIES),
-                        c21 = FloatVector.zero(F_SPECIES),
-                        c22 = FloatVector.zero(F_SPECIES),
-                        c23 = FloatVector.zero(F_SPECIES);
-                FloatVector c30 = FloatVector.zero(F_SPECIES),
-                        c31 = FloatVector.zero(F_SPECIES),
-                        c32 = FloatVector.zero(F_SPECIES),
-                        c33 = FloatVector.zero(F_SPECIES);
-                long wp = panelBase + b * bandBytes, ap = tile;
+                FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = c00, c02 = c00, c03 = c00;
+                FloatVector c10 = c00, c11 = c00, c12 = c00, c13 = c00;
+                FloatVector c20 = c00, c21 = c00, c22 = c00, c23 = c00;
+                FloatVector c30 = c00, c31 = c00, c32 = c00, c33 = c00;
+                long wp = panel + b * bandBytes, ap = tile;
                 for (long end = wp + kBytes; wp < end; wp += BAND_CHUNK, ap += TILE_CHUNK) {
-                    FloatVector x0 = wv(a, ap), x1 = wv(a, ap + VB);
-                    FloatVector x2 = wv(a, ap + 2L * VB), x3 = wv(a, ap + 3L * VB);
-                    FloatVector v = wv(w, wp);
+                    FloatVector x0 = load(a, ap), x1 = load(a, ap + VB);
+                    FloatVector x2 = load(a, ap + 2L * VB), x3 = load(a, ap + 3L * VB);
+                    FloatVector v = load(w, wp);
                     c00 = v.fma(x0, c00);
                     c01 = v.fma(x1, c01);
                     c02 = v.fma(x2, c02);
                     c03 = v.fma(x3, c03);
-                    v = wv(w, wp + VB);
+                    v = load(w, wp + VB);
                     c10 = v.fma(x0, c10);
                     c11 = v.fma(x1, c11);
                     c12 = v.fma(x2, c12);
                     c13 = v.fma(x3, c13);
-                    v = wv(w, wp + 2L * VB);
+                    v = load(w, wp + 2L * VB);
                     c20 = v.fma(x0, c20);
                     c21 = v.fma(x1, c21);
                     c22 = v.fma(x2, c22);
                     c23 = v.fma(x3, c23);
-                    v = wv(w, wp + 3L * VB);
+                    v = load(w, wp + 3L * VB);
                     c30 = v.fma(x0, c30);
                     c31 = v.fma(x1, c31);
                     c32 = v.fma(x2, c32);
                     c33 = v.fma(x3, c33);
                 }
                 long o1 = out + oStrideBytes, o2 = o1 + oStrideBytes, o3 = o2 + oStrideBytes;
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out,
-                        g.get(JAVA_FLOAT_UNALIGNED, out) + c00.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, out + 4)
-                                + c10.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, out + 8)
-                                + c20.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        out + 12,
-                        g.get(JAVA_FLOAT_UNALIGNED, out + 12)
-                                + c30.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1) + c01.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1 + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1 + 4) + c11.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1 + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1 + 8) + c21.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o1 + 12,
-                        g.get(JAVA_FLOAT_UNALIGNED, o1 + 12)
-                                + c31.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2) + c02.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2 + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2 + 4) + c12.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2 + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2 + 8) + c22.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o2 + 12,
-                        g.get(JAVA_FLOAT_UNALIGNED, o2 + 12)
-                                + c32.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o3,
-                        g.get(JAVA_FLOAT_UNALIGNED, o3) + c03.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o3 + 4,
-                        g.get(JAVA_FLOAT_UNALIGNED, o3 + 4) + c13.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o3 + 8,
-                        g.get(JAVA_FLOAT_UNALIGNED, o3 + 8) + c23.reduceLanes(VectorOperators.ADD));
-                g.set(
-                        JAVA_FLOAT_UNALIGNED,
-                        o3 + 12,
-                        g.get(JAVA_FLOAT_UNALIGNED, o3 + 12)
-                                + c33.reduceLanes(VectorOperators.ADD));
+                g.set(F32, out, g.get(F32, out) + c00.reduceLanes(ADD));
+                g.set(F32, out + 4, g.get(F32, out + 4) + c10.reduceLanes(ADD));
+                g.set(F32, out + 8, g.get(F32, out + 8) + c20.reduceLanes(ADD));
+                g.set(F32, out + 12, g.get(F32, out + 12) + c30.reduceLanes(ADD));
+                g.set(F32, o1, g.get(F32, o1) + c01.reduceLanes(ADD));
+                g.set(F32, o1 + 4, g.get(F32, o1 + 4) + c11.reduceLanes(ADD));
+                g.set(F32, o1 + 8, g.get(F32, o1 + 8) + c21.reduceLanes(ADD));
+                g.set(F32, o1 + 12, g.get(F32, o1 + 12) + c31.reduceLanes(ADD));
+                g.set(F32, o2, g.get(F32, o2) + c02.reduceLanes(ADD));
+                g.set(F32, o2 + 4, g.get(F32, o2 + 4) + c12.reduceLanes(ADD));
+                g.set(F32, o2 + 8, g.get(F32, o2 + 8) + c22.reduceLanes(ADD));
+                g.set(F32, o2 + 12, g.get(F32, o2 + 12) + c32.reduceLanes(ADD));
+                g.set(F32, o3, g.get(F32, o3) + c03.reduceLanes(ADD));
+                g.set(F32, o3 + 4, g.get(F32, o3 + 4) + c13.reduceLanes(ADD));
+                g.set(F32, o3 + 8, g.get(F32, o3 + 8) + c23.reduceLanes(ADD));
+                g.set(F32, o3 + 12, g.get(F32, o3 + 12) + c33.reduceLanes(ADD));
             }
         }
     }
 
     /**
-     * The 3x3 edge sweep: one band, any {@code rowsValid}/{@code cols}, segment-relative output.
-     * Used for a panel's trailing partial band, the trailing partial tile, and when the output is
-     * not the pinned GLOBAL segment.
+     * The 3x3 edge sweep: one band against one tile, any {@code rowsValid}/{@code cols},
+     * segment-relative output - a panel's trailing partial band, the trailing partial tile, and
+     * every band when the output is not the pinned GLOBAL segment.
      */
     static void sweepEdge33(
             MemorySegment w,
@@ -691,19 +604,13 @@ final class BandGemm {
             int s0,
             int rowsValid,
             int cols) {
-        FloatVector c00 = FloatVector.zero(F_SPECIES),
-                c01 = FloatVector.zero(F_SPECIES),
-                c02 = FloatVector.zero(F_SPECIES);
-        FloatVector c10 = FloatVector.zero(F_SPECIES),
-                c11 = FloatVector.zero(F_SPECIES),
-                c12 = FloatVector.zero(F_SPECIES);
-        FloatVector c20 = FloatVector.zero(F_SPECIES),
-                c21 = FloatVector.zero(F_SPECIES),
-                c22 = FloatVector.zero(F_SPECIES);
-        final int wStep = bandStepRt, aStep = tileStepRt;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = c00, c02 = c00;
+        FloatVector c10 = c00, c11 = c00, c12 = c00;
+        FloatVector c20 = c00, c21 = c00, c22 = c00;
+        final int wStep = bandStep, aStep = tileStep;
         for (long end = wp + (long) kc * MR * 4; wp < end; wp += wStep, ap += aStep) {
-            FloatVector v0 = wv(w, wp), v1 = wv(w, wp + VB), v2 = wv(w, wp + 2L * VB);
-            FloatVector x0 = wv(a, ap), x1 = wv(a, ap + VB), x2 = wv(a, ap + 2L * VB);
+            FloatVector v0 = load(w, wp), v1 = load(w, wp + VB), v2 = load(w, wp + 2L * VB);
+            FloatVector x0 = load(a, ap), x1 = load(a, ap + VB), x2 = load(a, ap + 2L * VB);
             c00 = v0.fma(x0, c00);
             c01 = v0.fma(x1, c01);
             c02 = v0.fma(x2, c02);
@@ -714,21 +621,19 @@ final class BandGemm {
             c21 = v2.fma(x1, c21);
             c22 = v2.fma(x2, c22);
         }
-        long o0 = (long) s0 * oStride + row0;
-        put(o, oBase, o0, c00.reduceLanes(VectorOperators.ADD));
-        if (rowsValid > 1) put(o, oBase, o0 + 1, c10.reduceLanes(VectorOperators.ADD));
-        if (rowsValid > 2) put(o, oBase, o0 + 2, c20.reduceLanes(VectorOperators.ADD));
+        long o0 = (long) s0 * oStride + row0, o1 = o0 + oStride, o2 = o1 + oStride;
+        add(o, oBase, o0, c00.reduceLanes(ADD));
+        if (rowsValid > 1) add(o, oBase, o0 + 1, c10.reduceLanes(ADD));
+        if (rowsValid > 2) add(o, oBase, o0 + 2, c20.reduceLanes(ADD));
         if (cols > 1) {
-            long o1 = o0 + oStride;
-            put(o, oBase, o1, c01.reduceLanes(VectorOperators.ADD));
-            if (rowsValid > 1) put(o, oBase, o1 + 1, c11.reduceLanes(VectorOperators.ADD));
-            if (rowsValid > 2) put(o, oBase, o1 + 2, c21.reduceLanes(VectorOperators.ADD));
-            if (cols > 2) {
-                long o2 = o1 + oStride;
-                put(o, oBase, o2, c02.reduceLanes(VectorOperators.ADD));
-                if (rowsValid > 1) put(o, oBase, o2 + 1, c12.reduceLanes(VectorOperators.ADD));
-                if (rowsValid > 2) put(o, oBase, o2 + 2, c22.reduceLanes(VectorOperators.ADD));
-            }
+            add(o, oBase, o1, c01.reduceLanes(ADD));
+            if (rowsValid > 1) add(o, oBase, o1 + 1, c11.reduceLanes(ADD));
+            if (rowsValid > 2) add(o, oBase, o1 + 2, c21.reduceLanes(ADD));
+        }
+        if (cols > 2) {
+            add(o, oBase, o2, c02.reduceLanes(ADD));
+            if (rowsValid > 1) add(o, oBase, o2 + 1, c12.reduceLanes(ADD));
+            if (rowsValid > 2) add(o, oBase, o2 + 2, c22.reduceLanes(ADD));
         }
     }
 
@@ -746,98 +651,77 @@ final class BandGemm {
             int s0,
             int rowsValid,
             int cols) {
-        FloatVector c00 = FloatVector.zero(F_SPECIES),
-                c01 = FloatVector.zero(F_SPECIES),
-                c02 = FloatVector.zero(F_SPECIES),
-                c03 = FloatVector.zero(F_SPECIES);
-        FloatVector c10 = FloatVector.zero(F_SPECIES),
-                c11 = FloatVector.zero(F_SPECIES),
-                c12 = FloatVector.zero(F_SPECIES),
-                c13 = FloatVector.zero(F_SPECIES);
-        FloatVector c20 = FloatVector.zero(F_SPECIES),
-                c21 = FloatVector.zero(F_SPECIES),
-                c22 = FloatVector.zero(F_SPECIES),
-                c23 = FloatVector.zero(F_SPECIES);
-        FloatVector c30 = FloatVector.zero(F_SPECIES),
-                c31 = FloatVector.zero(F_SPECIES),
-                c32 = FloatVector.zero(F_SPECIES),
-                c33 = FloatVector.zero(F_SPECIES);
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = c00, c02 = c00, c03 = c00;
+        FloatVector c10 = c00, c11 = c00, c12 = c00, c13 = c00;
+        FloatVector c20 = c00, c21 = c00, c22 = c00, c23 = c00;
+        FloatVector c30 = c00, c31 = c00, c32 = c00, c33 = c00;
         for (long end = wp + (long) kc * MR * 4; wp < end; wp += BAND_CHUNK, ap += TILE_CHUNK) {
-            FloatVector x0 = wv(a, ap), x1 = wv(a, ap + VB);
-            FloatVector x2 = wv(a, ap + 2L * VB), x3 = wv(a, ap + 3L * VB);
-            FloatVector v = wv(w, wp);
+            FloatVector x0 = load(a, ap), x1 = load(a, ap + VB);
+            FloatVector x2 = load(a, ap + 2L * VB), x3 = load(a, ap + 3L * VB);
+            FloatVector v = load(w, wp);
             c00 = v.fma(x0, c00);
             c01 = v.fma(x1, c01);
             c02 = v.fma(x2, c02);
             c03 = v.fma(x3, c03);
-            v = wv(w, wp + VB);
+            v = load(w, wp + VB);
             c10 = v.fma(x0, c10);
             c11 = v.fma(x1, c11);
             c12 = v.fma(x2, c12);
             c13 = v.fma(x3, c13);
-            v = wv(w, wp + 2L * VB);
+            v = load(w, wp + 2L * VB);
             c20 = v.fma(x0, c20);
             c21 = v.fma(x1, c21);
             c22 = v.fma(x2, c22);
             c23 = v.fma(x3, c23);
-            v = wv(w, wp + 3L * VB);
+            v = load(w, wp + 3L * VB);
             c30 = v.fma(x0, c30);
             c31 = v.fma(x1, c31);
             c32 = v.fma(x2, c32);
             c33 = v.fma(x3, c33);
         }
-        long o0 = (long) s0 * oStride + row0;
-        put(o, oBase, o0, c00.reduceLanes(VectorOperators.ADD));
-        if (rowsValid > 1) put(o, oBase, o0 + 1, c10.reduceLanes(VectorOperators.ADD));
-        if (rowsValid > 2) put(o, oBase, o0 + 2, c20.reduceLanes(VectorOperators.ADD));
-        if (rowsValid > 3) put(o, oBase, o0 + 3, c30.reduceLanes(VectorOperators.ADD));
+        long o0 = (long) s0 * oStride + row0, o1 = o0 + oStride;
+        long o2 = o1 + oStride, o3 = o2 + oStride;
+        add(o, oBase, o0, c00.reduceLanes(ADD));
+        if (rowsValid > 1) add(o, oBase, o0 + 1, c10.reduceLanes(ADD));
+        if (rowsValid > 2) add(o, oBase, o0 + 2, c20.reduceLanes(ADD));
+        if (rowsValid > 3) add(o, oBase, o0 + 3, c30.reduceLanes(ADD));
         if (cols > 1) {
-            long o1 = o0 + oStride;
-            put(o, oBase, o1, c01.reduceLanes(VectorOperators.ADD));
-            if (rowsValid > 1) put(o, oBase, o1 + 1, c11.reduceLanes(VectorOperators.ADD));
-            if (rowsValid > 2) put(o, oBase, o1 + 2, c21.reduceLanes(VectorOperators.ADD));
-            if (rowsValid > 3) put(o, oBase, o1 + 3, c31.reduceLanes(VectorOperators.ADD));
-            if (cols > 2) {
-                long o2 = o1 + oStride;
-                put(o, oBase, o2, c02.reduceLanes(VectorOperators.ADD));
-                if (rowsValid > 1) put(o, oBase, o2 + 1, c12.reduceLanes(VectorOperators.ADD));
-                if (rowsValid > 2) put(o, oBase, o2 + 2, c22.reduceLanes(VectorOperators.ADD));
-                if (rowsValid > 3) put(o, oBase, o2 + 3, c32.reduceLanes(VectorOperators.ADD));
-                if (cols > 3) {
-                    long o3 = o2 + oStride;
-                    put(o, oBase, o3, c03.reduceLanes(VectorOperators.ADD));
-                    if (rowsValid > 1) put(o, oBase, o3 + 1, c13.reduceLanes(VectorOperators.ADD));
-                    if (rowsValid > 2) put(o, oBase, o3 + 2, c23.reduceLanes(VectorOperators.ADD));
-                    if (rowsValid > 3) put(o, oBase, o3 + 3, c33.reduceLanes(VectorOperators.ADD));
-                }
-            }
+            add(o, oBase, o1, c01.reduceLanes(ADD));
+            if (rowsValid > 1) add(o, oBase, o1 + 1, c11.reduceLanes(ADD));
+            if (rowsValid > 2) add(o, oBase, o1 + 2, c21.reduceLanes(ADD));
+            if (rowsValid > 3) add(o, oBase, o1 + 3, c31.reduceLanes(ADD));
+        }
+        if (cols > 2) {
+            add(o, oBase, o2, c02.reduceLanes(ADD));
+            if (rowsValid > 1) add(o, oBase, o2 + 1, c12.reduceLanes(ADD));
+            if (rowsValid > 2) add(o, oBase, o2 + 2, c22.reduceLanes(ADD));
+            if (rowsValid > 3) add(o, oBase, o2 + 3, c32.reduceLanes(ADD));
+        }
+        if (cols > 3) {
+            add(o, oBase, o3, c03.reduceLanes(ADD));
+            if (rowsValid > 1) add(o, oBase, o3 + 1, c13.reduceLanes(ADD));
+            if (rowsValid > 2) add(o, oBase, o3 + 2, c23.reduceLanes(ADD));
+            if (rowsValid > 3) add(o, oBase, o3 + 3, c33.reduceLanes(ADD));
         }
     }
 
-    /** Add {@code v} into output element {@code elem} (the panel's rows were zeroed up front). */
-    private static void put(MemorySegment o, long oBase, long elem, float v) {
+    /** Add {@code v} into output element {@code elem} (the task's rows were zeroed up front). */
+    private static void add(MemorySegment o, long oBase, long elem, float v) {
         long off = oBase + elem * 4;
-        o.set(JAVA_FLOAT_UNALIGNED, off, o.get(JAVA_FLOAT_UNALIGNED, off) + v);
+        o.set(F32, off, o.get(F32, off) + v);
     }
 
-    /** Scratch/packed load at absolute byte offset (pinned route: checks fold). */
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
-    private static FloatVector wv(MemorySegment w, long byteOff) {
-        return FloatVector.fromMemorySegment(F_SPECIES, w, byteOff, ByteOrder.LITTLE_ENDIAN);
+    /** F32 vector load at an absolute byte offset of a routed segment (checks fold). */
+    @AlwaysInline("hot Vector API helper: a FloatVector must not cross a call")
+    private static FloatVector load(MemorySegment seg, long byteOff) {
+        return FloatVector.fromMemorySegment(F_SPECIES, seg, byteOff, ByteOrder.LITTLE_ENDIAN);
     }
 
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
-    private static FloatVector av(MemorySegment a, long aBase, long elem) {
-        return FloatVector.fromMemorySegment(
-                F_SPECIES, a, aBase + elem * 4, ByteOrder.LITTLE_ENDIAN);
+    private static int ceilDiv(int a, int b) {
+        return (a + b - 1) / b;
     }
 
-    /** Scalar F32 store at element index {@code elem} of the output (token-major). */
-    static void store(MemorySegment o, long oBase, long elem, float v) {
-        o.set(JAVA_FLOAT_UNALIGNED, oBase + elem * 4, v);
+    private static int gcd(int a, int b) {
+        return b == 0 ? a : gcd(b, a % b);
     }
 }

@@ -87,7 +87,7 @@ class VectorKernelTest {
 
     @Test
     void q8_0() {
-        eachShape("Q8_0", JAM.Q8_0, Q8Kernel::gemm);
+        eachShape("Q8_0", JAM.Q8_0, withScratch(Q8Kernel::gemm));
     }
 
     @Test

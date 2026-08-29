@@ -96,7 +96,7 @@ public final class VectorJAM implements JAM {
         mmLock.lock();
         try {
             switch (wt) {
-                case Q8_0 -> Q8Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L);
+                case Q8_0 -> Q8Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q4_0 -> Q4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q4_K -> Q4KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q5_K -> Q5KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
