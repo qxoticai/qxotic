@@ -4,7 +4,7 @@
 //  row that produced it (asserted via the SpeculationAudit tap) - the invariant that DEFINES
 //  speculative correctness and is immune to cross-path numerics.
 //
-//  HARD 2 (exact, shape-invariant engine): under -Djinfer.disableJam=true (set below, before any
+//  HARD 2 (exact, shape-invariant engine): under -Djam.native.disabled=true (set below, before any
 //  model class loads) the Java backends are bit-exact across chunk shapes, so MTP greedy output
 //  must be TOKEN-IDENTICAL to plain greedy. Any mismatch here is a loop bug.
 //
@@ -63,7 +63,7 @@ class Gemma4MtpIdentityTest {
         Path sidecar = TestModels.require(SIDECAR_REF);
         // shape-invariant engine BEFORE any model class initializes (the backends read it lazily,
         // but set it first to be independent of class-init order)
-        System.setProperty("jinfer.disableJam", "true");
+        System.setProperty("jam.native.disabled", "true");
 
         Gemma4 m = Gemma4.loadWithMtp(model, sidecar, Arena.ofAuto());
         assertTrue(m.speculationReady(), "sidecar attached");
