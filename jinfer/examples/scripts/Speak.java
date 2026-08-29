@@ -16,7 +16,7 @@ import java.nio.file.Path;
 public class Speak {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
+            "remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
 
     public static void main(String[] args) throws IOException {
         String text = args.length > 0 ? args[0] : "Local inference, in Java. No server, no Python.";

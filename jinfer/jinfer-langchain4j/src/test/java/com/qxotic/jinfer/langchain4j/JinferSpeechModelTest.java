@@ -36,7 +36,7 @@ final class JinferSpeechModelTest {
                 assertThrows(
                         IllegalArgumentException.class, () -> JinferSpeechModel.builder().build());
         assertEquals(
-                "a model is required: model(\"hf.co/owner/repo:Q4_K_M\"), modelPath(...) or"
+                "a model is required: model(\"owner/repo:Q4_K_M\"), modelPath(...) or"
                         + " model(SpeechSynthesisModel)",
                 e.getMessage());
     }

@@ -146,7 +146,7 @@ public class Main {
         }
         if (refs.isEmpty()) {
             System.err.println("ERROR pull needs at least one model ref, e.g.");
-            System.err.println("  jinfer pull hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M");
+            System.err.println("  jinfer pull unsloth/gemma-4-E2B-it-GGUF:Q4_K_M");
             System.err.println("  jinfer pull --force <ref>    re-download even if cached");
             System.exit(2);
             return;

@@ -42,7 +42,7 @@ Then run the application from this directory:
 
 ```bash
 export KIMI_API_KEY=sk-kimi-...
-export JINFER_JUDGE_MODEL=hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
+export JINFER_JUDGE_MODEL=LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
 mvn spring-boot:run
 ```
 

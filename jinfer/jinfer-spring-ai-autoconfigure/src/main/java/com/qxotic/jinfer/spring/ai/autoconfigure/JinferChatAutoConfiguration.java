@@ -32,7 +32,7 @@ public class JinferChatAutoConfiguration {
         if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.chat.model is required: a local GGUF path, or a model ref"
-                            + " (hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M)");
+                            + " (unsloth/gemma-4-E2B-it-GGUF:Q4_K_M)");
         }
         JinferChatModel.Builder builder =
                 JinferChatModel.builder()

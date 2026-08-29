@@ -28,14 +28,14 @@ Run the JVM with:
 
 ```java
 try (var model = JinferChatModel.builder()
-        .model("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
+        .model("LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
         .build()) {
 
     System.out.println(model.chat("What is the capital of France?"));
 }
 ```
 
-`.model(String)` accepts a model ref (`hf.co/...` or `modelscope.cn/...`); a local path is
+`.model(String)` accepts a model ref (`owner/repo:quant`, or `modelscope.cn/...` for another source); a local path is
 `.modelPath(Path)`. Ref downloads happen at `build()` into the shared cache (resumable,
 sha256-verified; warm builds make no request, `JINFER_OFFLINE=1` forbids the network).
 
@@ -156,8 +156,8 @@ Multimodal models take their encoders from a sidecar GGUF (`mmproj`). Media is d
 
 ```java
 ChatModel gemma = JinferChatModel.builder()
-        .model("hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0")
-        .companion("media", "hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf")
+        .model("unsloth/gemma-4-12b-it-GGUF:Q8_0")
+        .companion("media", "unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf")
         .build();
 
 ChatResponse seen = gemma.chat(ChatRequest.builder()
@@ -215,7 +215,7 @@ Segments are packed into context-sized ragged batches: one forward pass embeds m
 
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
-        .model("hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
+        .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
         .contextLength(2048)          // packing upper bound; 0 = the model's maximum
         .build();
 ```
@@ -246,7 +246,7 @@ Plain `embed`/`embedAll` embeds raw text; a one-time stderr note points at the k
 
 ```java
 ScoringModel reranker = JinferScoringModel.builder()
-        .model("hf.co/Qwen/Qwen3-Reranker-0.6B-GGUF:Q8_0")
+        .model("Qwen/Qwen3-Reranker-0.6B-GGUF:Q8_0")
         .build();
 
 RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
@@ -296,11 +296,11 @@ Read cache accounting from the response: `((JinferTokenUsage) response.tokenUsag
 
 ## Parallel pipelines
 
-One instance is one serial pipeline; concurrent calls queue. For parallel inference, load weights once into your arena and fork.
+One instance is one serial pipeline; concurrent calls queue. For parallel inference, load the weights once into a caller-owned arena and fork.
 
 ```java
 try (Arena arena = Arena.ofShared()) {
-    var loaded = Models.load(ModelStore.standard().resolve("hf.co/...:Q4_K_M"), arena);
+    var loaded = Models.load(ModelStore.standard().resolve("...:Q4_K_M"), arena);
     var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
     var b = a.fork();               // second pipeline, same weights
     // ... concurrent chat on a and b ...
@@ -308,7 +308,7 @@ try (Arena arena = Arena.ofShared()) {
 }                                   // the owner frees the weights at a brace
 ```
 
-Your arena must outlive every instance built on it. Freed weights throw `IllegalStateException` at the forward pass. Freeing the arena during a request is a data race and can crash the VM.
+The arena must outlive every instance built on it. Freed weights throw `IllegalStateException` at the forward pass. Freeing the arena during a request is a data race and can crash the VM.
 
 `fork()` on a model that loaded its own weights refuses. The same seam and `fork()` exist on `JinferEmbeddingModel` (`Models.loadEmbedder`) and `JinferScoringModel` (`Models.loadReranker`).
 

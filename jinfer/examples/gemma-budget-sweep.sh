@@ -5,8 +5,8 @@
 #   ./gemma-budget-sweep.sh city-streets.jpg "detect person and car, output only json"
 #
 # Use a larger model for sharper detection:
-#   MODEL_REF=hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0 \
-#   MEDIA_REF=hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf \
+#   MODEL_REF=unsloth/gemma-4-12b-it-GGUF:Q8_0 \
+#   MEDIA_REF=unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf \
 #     ./gemma-budget-sweep.sh photo.jpg
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

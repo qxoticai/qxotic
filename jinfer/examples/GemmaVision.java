@@ -18,9 +18,9 @@ import java.nio.file.Path;
 public class GemmaVision {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0";
+            "unsloth/gemma-4-E2B-it-GGUF:Q8_0";
     private static final String DEFAULT_MEDIA =
-            "hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf";
+            "unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf";
 
     public static void main(String[] args) {
         if (args.length < 2) {

@@ -6,8 +6,8 @@
  * segments (a {@code ScoringModel}, so langchain4j's {@code ReRankingContentAggregator} takes it
  * as-is).
  *
- * <p>Every builder takes the model as a MODEL REF - {@code .model("hf.co/owner/model-GGUF:Q4_K_M")}
- * - downloaded into the shared model cache when absent (resumable, checksum-verified; {@code
+ * <p>Every builder takes the model as a MODEL REF - {@code .model("owner/model-GGUF:Q4_K_M")} -
+ * downloaded into the shared model cache when absent (resumable, checksum-verified; {@code
  * JINFER_OFFLINE=1} forbids the network). {@code .modelPath(Path)} is the explicit local form - the
  * two doors never overlap, and a URL is not a model ref: download it first, then pass the path.
  *
@@ -21,7 +21,7 @@
  *
  * <pre>{@code
  * try (Arena arena = Arenas.newCrossThread()) {
- *     var loaded = Models.loadEmbedder(ModelStore.standard().resolve("hf.co/...:Q8_0"), arena);
+ *     var loaded = Models.loadEmbedder(ModelStore.standard().resolve("owner/repo:Q8_0"), arena);
  *     var a = JinferEmbeddingModel.builder().model(loaded).build();
  *     var b = a.fork();               // second pipeline, same weights, a context's price
  *     // ... parallel ingestion on a and b ...

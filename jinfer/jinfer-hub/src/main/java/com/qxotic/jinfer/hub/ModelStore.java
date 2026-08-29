@@ -163,14 +163,14 @@ public final class ModelStore {
 
     // ---- the API ----
 
-    /** Whether {@code model} is a model ref ({@code host/owner/repo[@rev][/path][:quant]}). */
+    /** Whether {@code model} is a model ref ({@code [host/]owner/repo[@rev][/path][:quant]}). */
     public static boolean isRef(String model) {
         return ModelRef.isRef(model);
     }
 
     /**
-     * The one door for a remote model. A model ref names its host, and nothing else qualifies: a
-     * local path, a URL, and a bare {@code owner/repo} each get their own remedy.
+     * The one door for a remote model. {@code owner/repo} is a ref and {@code hf.co} carries it;
+     * naming a host reaches another source. A local path and a URL each get their own remedy.
      */
     public static void requireRef(String model) {
         if (isRef(model)) {
@@ -179,8 +179,8 @@ public final class ModelStore {
         String value = model == null ? "" : model.strip();
         if (value.isEmpty()) {
             throw new IllegalArgumentException(
-                    "a model ref is required: hf.co/owner/repo[:quant] or"
-                            + " modelscope.cn/owner/repo[:quant]");
+                    "a model ref is required: owner/repo[:quant], or"
+                            + " modelscope.cn/owner/repo[:quant] for another source");
         }
         if (value.contains("://")) {
             throw new IllegalArgumentException(
@@ -189,37 +189,41 @@ public final class ModelStore {
                             + "' is a URL, not a model ref. Download it first, then pass the file"
                             + " with modelPath(...).");
         }
-        if (isLocalPathShape(value)) {
+        if (ModelRef.isPathShape(value)) {
             throw new IllegalArgumentException(
                     "'"
                             + model
                             + "' is a local path, not a model ref. Use modelPath(...) for a local"
-                            + " file, or name a host: hf.co/owner/repo[:quant].");
+                            + " file, or name a repository: owner/repo[:quant].");
         }
-        if (value.indexOf('/') > 0 && value.indexOf('/') == value.lastIndexOf('/')) {
+        if (ModelRef.namesAHost(value)) { // spelled like a host, but not one the table knows
             throw new IllegalArgumentException(
-                    "'" + model + "' is missing its host. Did you mean hf.co/" + model + "?");
+                    "'"
+                            + model
+                            + "' does not name a known host. Use hf.co/owner/repo[:quant] or"
+                            + " modelscope.cn/owner/repo[:quant], or drop the host and let hf.co"
+                            + " carry it: owner/repo[:quant].");
+        }
+        if (ModelRef.isBareRefShape(value)) { // shaped like a ref, but a file here answers to it
+            throw new IllegalArgumentException(
+                    "'"
+                            + model
+                            + "' names a file here, not a repository. Pass it with modelPath(...),"
+                            + " or name a host to force the remote: hf.co/"
+                            + value
+                            + ".");
         }
         throw new IllegalArgumentException(
                 "'"
                         + model
-                        + "' is not a model ref. A model ref names its host, for example"
-                        + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M or"
-                        + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+                        + "' is not a model ref. Use modelPath(...) for a local file, or name a"
+                        + " repository: owner/repo[:quant], for example"
+                        + " unsloth/gemma-4-E2B-it-GGUF:Q4_K_M, or"
+                        + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0 for another source");
     }
 
     private static String quantOf(ModelRef ref) {
         return ref.quant() == null ? DEFAULT_QUANT : ref.quant();
-    }
-
-    private static boolean isLocalPathShape(String value) {
-        return value.startsWith("/")
-                || value.startsWith(".")
-                || value.startsWith("~")
-                || value.indexOf('\\') >= 0
-                || (value.length() >= 2
-                        && Character.isLetter(value.charAt(0))
-                        && value.charAt(1) == ':');
     }
 
     /** A plain {@code http(s)} URL, distinct from a model ref. */
@@ -247,9 +251,9 @@ public final class ModelStore {
             throw new IllegalArgumentException(
                     "no such model file: '"
                             + pathOrRef
-                            + "'. A model ref names its host, for example"
-                            + " hf.co/unsloth/gemma-4-E2B-it-GGUF:Q4_K_M or"
-                            + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0");
+                            + "'. A model ref is owner/repo[:quant], for example"
+                            + " unsloth/gemma-4-E2B-it-GGUF:Q4_K_M, or"
+                            + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0 for another source");
         }
         return local;
     }

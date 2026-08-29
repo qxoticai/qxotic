@@ -17,7 +17,7 @@ import java.util.List;
 public class Rerank {
 
     private static final String DEFAULT_MODEL =
-            "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0";
+            "mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0";
 
     private static final List<String> DOCUMENTS = List.of(
             "Over-extraction pulls harsh compounds from the grounds and tastes bitter.",

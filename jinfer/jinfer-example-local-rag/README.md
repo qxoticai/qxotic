@@ -25,8 +25,8 @@ mvn -Pexamples -pl jinfer/jinfer-example-local-rag -am install -DskipTests
 Then run the application from this directory:
 
 ```bash
-export JINFER_CHAT_MODEL=hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
-export JINFER_EMBEDDING_MODEL=hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0
+export JINFER_CHAT_MODEL=LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
+export JINFER_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0
 mvn spring-boot:run
 ```
 

@@ -50,13 +50,13 @@ jbang GemmaVision.java cat.jpg "Describe it"
 
 # E4B
 jbang GemmaVision.java cat.jpg "Describe it" \
-  hf.co/unsloth/gemma-4-E4B-it-GGUF:Q8_0 \
-  hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
+  unsloth/gemma-4-E4B-it-GGUF:Q8_0 \
+  unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
 
 # 12B
 jbang GemmaVision.java cat.jpg "Describe it" \
-  hf.co/unsloth/gemma-4-12b-it-GGUF:Q8_0 \
-  hf.co/unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
+  unsloth/gemma-4-12b-it-GGUF:Q8_0 \
+  unsloth/gemma-4-12b-it-GGUF/mmproj-F32.gguf
 ```
 
 Set the image token budget to trade speed for visual detail. Supported values are 70, 140, 280,

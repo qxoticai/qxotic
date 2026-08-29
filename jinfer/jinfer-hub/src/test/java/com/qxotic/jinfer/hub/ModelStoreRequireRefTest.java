@@ -87,16 +87,27 @@ class ModelStoreRequireRefTest {
     }
 
     @Test
-    void rejectsBareOwnerRepoWithTheHostRemedy() {
-        String message = message(() -> ModelStore.requireRef("owner/repo:Q8_0"));
-        assertTrue(message.contains("missing its host"));
-        assertTrue(message.contains("hf.co/owner/repo:Q8_0"));
+    void everyPathShapedStringIsSentToModelPath() {
+        for (String path :
+                new String[] {
+                    "/models/x.gguf", "./models/x.gguf", "~/models/x.gguf",
+                    "C:\\models\\x.gguf", "model.gguf", "models/llama.gguf"
+                }) {
+            assertTrue(message(() -> ModelStore.requireRef(path)).contains("modelPath"), path);
+        }
     }
 
     @Test
-    void rejectsAnUnknownHost() {
+    void acceptsBareOwnerRepo() {
+        assertDoesNotThrow(() -> ModelStore.requireRef("owner/repo:Q8_0"));
+        assertDoesNotThrow(() -> ModelStore.requireRef("owner/repo"));
+        assertDoesNotThrow(() -> ModelStore.requireRef("owner/repo@main/sub/model.gguf"));
+    }
+
+    @Test
+    void rejectsAnUnknownHostWithTheKnownOnes() {
         String message = message(() -> ModelStore.requireRef("example.org/owner/repo:Q8_0"));
-        assertTrue(message.contains("not a model ref"));
+        assertTrue(message.contains("does not name a known host"));
         assertTrue(message.contains("hf.co/"));
         assertTrue(message.contains("modelscope.cn/"));
     }
