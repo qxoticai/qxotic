@@ -15,6 +15,7 @@ import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
@@ -145,7 +146,7 @@ final class VectorSupport {
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
     static final int PARALLELISM = vectorThreads();
 
-    private static final int TASKS_PER_WORKER = jamPropInt("jam.vector.tasksPerWorker", 4);
+    private static final int TASKS_PER_WORKER = 4;
     private static final ForkJoinPool WORKERS = newPool(PARALLELISM);
 
     private static int vectorThreads() {
@@ -334,60 +335,55 @@ final class VectorSupport {
         parallelFor(from, to, body, 1);
     }
 
-    /** {@code -Djam.vector.stats=true}: per-region wall/busy accounting, printed at exit. */
-    static final boolean STATS = Boolean.getBoolean("jam.vector.stats");
+    /**
+     * {@code -Djam.vector.stats=true}: per-region accounting (wall time, summed task time, regions,
+     * items) printed at exit - the worker efficiency {@code busy / (wall * T)} is what the gemm's
+     * task scheduling is tuned against.
+     */
+    private static final class Stats {
+        static final boolean ON = Boolean.getBoolean("jam.vector.stats");
+        static final AtomicLong WALL = new AtomicLong(), BUSY = new AtomicLong();
+        static final AtomicLong REGIONS = new AtomicLong(), ITEMS = new AtomicLong();
 
-    static final java.util.concurrent.atomic.AtomicLong
-            ST_WALL = new java.util.concurrent.atomic.AtomicLong(),
-            ST_BUSY = new java.util.concurrent.atomic.AtomicLong(),
-            ST_REGIONS = new java.util.concurrent.atomic.AtomicLong(),
-            ST_ITEMS = new java.util.concurrent.atomic.AtomicLong();
+        static {
+            if (ON) Runtime.getRuntime().addShutdownHook(new Thread(Stats::print));
+        }
 
-    static {
-        if (STATS)
-            Runtime.getRuntime()
-                    .addShutdownHook(
-                            new Thread(
-                                    () ->
-                                            System.err.printf(
-                                                    "jam.vector.stats: regions=%d items=%d"
-                                                            + " wall=%.3fs busy=%.3fs"
-                                                            + " busy/(wall*T)=%.1f%% avg"
-                                                            + " region=%.0fus%n",
-                                                    ST_REGIONS.get(),
-                                                    ST_ITEMS.get(),
-                                                    ST_WALL.get() / 1e9,
-                                                    ST_BUSY.get() / 1e9,
-                                                    100.0
-                                                            * ST_BUSY.get()
-                                                            / (ST_WALL.get()
-                                                                    * (double) PARALLELISM),
-                                                    ST_WALL.get()
-                                                            / 1e3
-                                                            / Math.max(1, ST_REGIONS.get()))));
+        static void print() {
+            System.err.printf(
+                    "jam.vector.stats: regions=%d items=%d wall=%.3fs busy=%.3fs"
+                            + " busy/(wall*T)=%.1f%% avg region=%.0fus%n",
+                    REGIONS.get(),
+                    ITEMS.get(),
+                    WALL.get() / 1e9,
+                    BUSY.get() / 1e9,
+                    100.0 * BUSY.get() / (WALL.get() * (double) PARALLELISM),
+                    WALL.get() / 1e3 / Math.max(1, REGIONS.get()));
+        }
     }
 
     private static void parallelFor(int from, int to, IntConsumer body, int maxChunkSize) {
         if (from >= to) return;
-        if (STATS) {
-            IntConsumer inner = body;
-            body =
-                    i -> {
-                        long t0 = System.nanoTime();
-                        inner.accept(i);
-                        ST_BUSY.addAndGet(System.nanoTime() - t0);
-                    };
-            long t0 = System.nanoTime();
-            try {
-                parallelForImpl(from, to, body, maxChunkSize);
-            } finally {
-                ST_WALL.addAndGet(System.nanoTime() - t0);
-                ST_REGIONS.incrementAndGet();
-                ST_ITEMS.addAndGet(to - from);
-            }
+        if (!Stats.ON) {
+            parallelForImpl(from, to, body, maxChunkSize);
             return;
         }
-        parallelForImpl(from, to, body, maxChunkSize);
+        long t0 = System.nanoTime();
+        try {
+            parallelForImpl(
+                    from,
+                    to,
+                    i -> {
+                        long start = System.nanoTime();
+                        body.accept(i);
+                        Stats.BUSY.addAndGet(System.nanoTime() - start);
+                    },
+                    maxChunkSize);
+        } finally {
+            Stats.WALL.addAndGet(System.nanoTime() - t0);
+            Stats.REGIONS.incrementAndGet();
+            Stats.ITEMS.addAndGet(to - from);
+        }
     }
 
     private static void parallelForImpl(int from, int to, IntConsumer body, int maxChunkSize) {
@@ -432,7 +428,7 @@ final class VectorSupport {
     private static ForkJoinPool newPool(int threads) {
         return new ForkJoinPool(
                 threads,
-                pool -> new PinnedWorker(pool),
+                ForkJoinPool.defaultForkJoinWorkerThreadFactory,
                 null,
                 false,
                 0,
@@ -441,19 +437,6 @@ final class VectorSupport {
                 null,
                 60,
                 TimeUnit.SECONDS);
-    }
-
-    /** A pool worker pinned to its own core on start (see {@link Affinity}). */
-    private static final class PinnedWorker extends ForkJoinWorkerThread {
-        PinnedWorker(ForkJoinPool pool) {
-            super(pool);
-        }
-
-        @Override
-        protected void onStart() {
-            super.onStart();
-            Affinity.pin(getPoolIndex());
-        }
     }
 
     private static int maxChunkSize(int from, int to) {
