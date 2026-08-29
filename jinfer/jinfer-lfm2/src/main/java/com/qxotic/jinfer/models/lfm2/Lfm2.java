@@ -148,13 +148,9 @@ public final class Lfm2
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
-                if (n == 1)
-                    Parallel.runDecodeStep(
-                            () -> {
-                                forward(s, ids, 0, from, n);
-                                return null;
-                            });
-                else forward(s, ids, 0, from, n);
+                if (n == 1) {
+                    forward(s, ids, 0, from, n);
+                } else forward(s, ids, 0, from, n);
             }
             case Batch.Input.Sequences seq -> {
                 if (configuration.causalAttention)
@@ -193,24 +189,20 @@ public final class Lfm2
         requireOutput(s, output);
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    Norms.rmsnorm(
-                            s.normed,
-                            0,
-                            s.residual,
-                            (long) row * dim,
-                            weights.finalNorm,
-                            dim,
-                            configuration.rmsNormEps);
-                    MatMul.gemv(weights.wcls, s.normed, s.logits);
-                    Activations.softcap(
-                            s.logits,
-                            0,
-                            configuration.vocabularySize,
-                            configuration.logitSoftcapping);
-                    return s.logits;
-                });
+        {
+            Norms.rmsnorm(
+                    s.normed,
+                    0,
+                    s.residual,
+                    (long) row * dim,
+                    weights.finalNorm,
+                    dim,
+                    configuration.rmsNormEps);
+            MatMul.gemv(weights.wcls, s.normed, s.logits);
+            Activations.softcap(
+                    s.logits, 0, configuration.vocabularySize, configuration.logitSoftcapping);
+            return s.logits;
+        }
     }
 
     // === Forward ===

@@ -109,13 +109,9 @@ public final class GptOss
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (n == 1)
-                    Parallel.runDecodeStep(
-                            () -> {
-                                forward(state, ids, 0, from, n);
-                                return null;
-                            });
-                else forward(state, ids, 0, from, n);
+                if (n == 1) {
+                    forward(state, ids, 0, from, n);
+                } else forward(state, ids, 0, from, n);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
@@ -140,20 +136,19 @@ public final class GptOss
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    tailAt(state, row);
-                    Norms.rmsnorm(
-                            state.normed,
-                            0,
-                            state.tail,
-                            0,
-                            weights.outputNorm,
-                            dim,
-                            configuration.rmsNormEps);
-                    MatMul.gemv(weights.outputWeight, state.normed, state.logits);
-                    return state.logits;
-                });
+        {
+            tailAt(state, row);
+            Norms.rmsnorm(
+                    state.normed,
+                    0,
+                    state.tail,
+                    0,
+                    weights.outputNorm,
+                    dim,
+                    configuration.rmsNormEps);
+            MatMul.gemv(weights.outputWeight, state.normed, state.logits);
+            return state.logits;
+        }
     }
 
     private void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {

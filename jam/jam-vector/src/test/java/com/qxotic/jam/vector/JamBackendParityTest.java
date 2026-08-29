@@ -37,7 +37,7 @@ class JamBackendParityTest {
                     .findFirst()
                     .orElseThrow()
                     .create();
-    private static final JAM VECTOR = new VectorJAM();
+    private static final JAM VECTOR = new VectorJAM(JAM.Parallel.INLINE);
 
     /** The native backend if libjam loads, otherwise {@code null} and native checks are skipped. */
     private static final JAM NATIVE = tryNative();

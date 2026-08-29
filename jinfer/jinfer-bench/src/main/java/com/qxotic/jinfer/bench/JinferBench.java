@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -129,24 +128,13 @@ public final class JinferBench {
         }
         if (depth < 0) throw new IllegalArgumentException("n-depth must be >= 0");
 
-        // -t forces one width onto every pool (set BEFORE RuntimeFlags initializes). Without it
-        // nothing is overridden: the run measures the engine's own defaults - P-cores on Apple
-        // Silicon, jam's native pool self-sizing to the same set, the count llama-bench uses.
-        if (threads > 0) {
-            System.setProperty("jinfer.computeThreads", Integer.toString(threads));
-            System.setProperty("jinfer.decodeThreads", Integer.toString(threads));
-            System.setProperty("jam.threads", Integer.toString(threads));
-        }
-        int prefillThreads = RuntimeFlags.COMPUTE_THREADS;
-        int decodeThreads = RuntimeFlags.DECODE_THREADS;
+        // -t sets the engine's one thread budget (BEFORE RuntimeFlags initializes); without it
+        // the run measures the engine's own default - one thread per physical core.
+        if (threads > 0) System.setProperty("jinfer.threads", Integer.toString(threads));
         System.err.printf(
-                "threads: prefill=%d decode=%d jam.native=%s jam.vector=%s (%s)%n",
-                prefillThreads,
-                decodeThreads,
-                jamThreads("native"),
-                jamThreads("vector"),
-                threads > 0 ? "requested " + threads : "engine defaults");
-        if (threads <= 0) threads = decodeThreads;
+                "threads: %d (%s)%n",
+                RuntimeFlags.THREADS, threads > 0 ? "requested" : "engine default");
+        if (threads <= 0) threads = RuntimeFlags.THREADS;
 
         List<Row> rows = new ArrayList<>();
         List<CapRow> caps = new ArrayList<>();
@@ -160,7 +148,7 @@ public final class JinferBench {
                         measure(
                                 bench,
                                 name,
-                                prefillThreads,
+                                threads,
                                 "pp" + p + suffix,
                                 p,
                                 true,
@@ -174,7 +162,7 @@ public final class JinferBench {
                         measure(
                                 bench,
                                 name,
-                                decodeThreads,
+                                threads,
                                 "tg" + n + suffix,
                                 n,
                                 false,
@@ -632,16 +620,6 @@ public final class JinferBench {
     private static String name(String path) {
         String f = Path.of(path).getFileName().toString();
         return f.endsWith(".gguf") ? f.substring(0, f.length() - 5) : f;
-    }
-
-    private static String jamThreads(String provider) {
-        String property = "jam." + provider + ".threads";
-        String value = System.getProperty(property);
-        if (value == null || value.isBlank())
-            value = System.getenv(property.toUpperCase(Locale.ROOT).replace('.', '_'));
-        if (value == null || value.isBlank()) value = System.getProperty("jam.threads");
-        if (value == null || value.isBlank()) value = System.getenv("JAM_THREADS");
-        return value == null || value.isBlank() ? "auto" : value;
     }
 
     private static void usage(PrintStream out) {

@@ -102,13 +102,9 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 for (int id : tokens.ids())
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (rows == 1)
-                    Parallel.runDecodeStep(
-                            () -> {
-                                forward(state, tokens.ids(), startPos, rows);
-                                return null;
-                            });
-                else forward(state, tokens.ids(), startPos, rows);
+                if (rows == 1) {
+                    forward(state, tokens.ids(), startPos, rows);
+                } else forward(state, tokens.ids(), startPos, rows);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
@@ -323,19 +319,18 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    Norms.rmsnorm(
-                            state.head,
-                            0,
-                            state.residual,
-                            (long) row * dim,
-                            weights.outputNorm,
-                            dim,
-                            configuration.rmsNormEps);
-                    MatMul.gemv(weights.outputWeight, state.head, state.logits);
-                    return state.logits;
-                });
+        {
+            Norms.rmsnorm(
+                    state.head,
+                    0,
+                    state.residual,
+                    (long) row * dim,
+                    weights.outputNorm,
+                    dim,
+                    configuration.rmsNormEps);
+            MatMul.gemv(weights.outputWeight, state.head, state.logits);
+            return state.logits;
+        }
     }
 
     public record Configuration(

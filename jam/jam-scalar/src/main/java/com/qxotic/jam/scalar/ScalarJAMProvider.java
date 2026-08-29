@@ -19,7 +19,7 @@ public final class ScalarJAMProvider implements JAM.Provider {
     }
 
     @Override
-    public JAM create() {
-        return new ScalarJAM();
+    public JAM create(JAM.Parallel parallel) {
+        return new ScalarJAM(parallel);
     }
 }

@@ -186,13 +186,9 @@ public final class Qwen35
                                             + configuration.embeddingLength);
                         MemoryView<MemorySegment> rowsView =
                                 Views.castToSegmentBacked(e.rows(), "embedding rows");
-                        if (rows == 1)
-                            Parallel.runDecodeStep(
-                                    () -> {
-                                        forwardMedia(state, rowsView, start, 1);
-                                        return null;
-                                    });
-                        else forwardMedia(state, rowsView, start, rows);
+                        if (rows == 1) {
+                            forwardMedia(state, rowsView, start, 1);
+                        } else forwardMedia(state, rowsView, start, rows);
                         state.advance(batch);
                         yield null;
                     }
@@ -202,13 +198,9 @@ public final class Qwen35
             if (token < 0 || token >= configuration.vocabularySize)
                 throw new IllegalArgumentException(
                         "token id " + token + " outside [0," + configuration.vocabularySize + ")");
-        if (rows == 1)
-            Parallel.runDecodeStep(
-                    () -> {
-                        forward(state, tokens, start, rows);
-                        return null;
-                    });
-        else forward(state, tokens, start, rows);
+        if (rows == 1) {
+            forward(state, tokens, start, rows);
+        } else forward(state, tokens, start, rows);
         state.advance(batch);
     }
 
@@ -324,19 +316,17 @@ public final class Qwen35
 
     /** Fills {@code candidates[1..depth]} from the exact target seed in {@code candidates[0]}. */
     void draft(State state, int depth, int[] candidates) {
-        Parallel.runDecodeStep(
-                () -> {
-                    MemoryView<MemorySegment> hidden = state.pendingHidden;
-                    int token = candidates[0];
-                    int position = state.position();
-                    for (int i = 1; i <= depth; i++) {
-                        draftOne(state, token, hidden, position + i - 1);
-                        token = Ops.argmax(state.logits, 0, configuration.vocabularySize);
-                        candidates[i] = token;
-                        hidden = state.normed;
-                    }
-                    return null;
-                });
+        {
+            MemoryView<MemorySegment> hidden = state.pendingHidden;
+            int token = candidates[0];
+            int position = state.position();
+            for (int i = 1; i <= depth; i++) {
+                draftOne(state, token, hidden, position + i - 1);
+                token = Ops.argmax(state.logits, 0, configuration.vocabularySize);
+                candidates[i] = token;
+                hidden = state.normed;
+            }
+        }
     }
 
     private void draftOne(State state, int token, MemoryView<MemorySegment> hidden, int position) {
@@ -561,52 +551,45 @@ public final class Qwen35
                     "output " + output + " outside [0," + state.outputCount() + ")");
         int dim = configuration.embeddingLength;
         int row = state.lastBatchSize() - state.outputCount() + output;
-        return Parallel.runDecodeStep(
-                () -> {
-                    if (configuration.hasMtp()) {
-                        Convert.copyF32(state.targetHidden, (long) row * dim, state.normed, 0, dim);
-                    } else {
-                        Norms.rmsnorm(
-                                state.normed,
-                                0,
-                                state.residual,
-                                (long) row * dim,
-                                weights.outputNorm,
-                                dim,
-                                configuration.rmsNormEps);
-                    }
-                    MatMul.gemv(weights.outputWeight, state.normed, state.logits);
-                    return state.logits;
-                });
+        {
+            if (configuration.hasMtp()) {
+                Convert.copyF32(state.targetHidden, (long) row * dim, state.normed, 0, dim);
+            } else {
+                Norms.rmsnorm(
+                        state.normed,
+                        0,
+                        state.residual,
+                        (long) row * dim,
+                        weights.outputNorm,
+                        dim,
+                        configuration.rmsNormEps);
+            }
+            MatMul.gemv(weights.outputWeight, state.normed, state.logits);
+            return state.logits;
+        }
     }
 
     void logitsAll(State state, MemoryView<MemorySegment> destination) {
         int dim = configuration.embeddingLength;
         int rows = state.outputCount();
         int first = state.lastBatchSize() - rows;
-        Parallel.runDecodeStep(
-                () -> {
-                    if (configuration.hasMtp()) {
-                        Convert.copyF32(
-                                state.targetHidden,
-                                (long) first * dim,
-                                state.normed,
-                                0,
-                                rows * dim);
-                    } else {
-                        for (int row = 0; row < rows; row++)
-                            Norms.rmsnorm(
-                                    state.normed,
-                                    (long) row * dim,
-                                    state.residual,
-                                    (long) (first + row) * dim,
-                                    weights.outputNorm,
-                                    dim,
-                                    configuration.rmsNormEps);
-                    }
-                    MatMul.gemm(weights.outputWeight, state.normed, destination, rows);
-                    return null;
-                });
+        {
+            if (configuration.hasMtp()) {
+                Convert.copyF32(
+                        state.targetHidden, (long) first * dim, state.normed, 0, rows * dim);
+            } else {
+                for (int row = 0; row < rows; row++)
+                    Norms.rmsnorm(
+                            state.normed,
+                            (long) row * dim,
+                            state.residual,
+                            (long) (first + row) * dim,
+                            weights.outputNorm,
+                            dim,
+                            configuration.rmsNormEps);
+            }
+            MatMul.gemm(weights.outputWeight, state.normed, destination, rows);
+        }
         Reference.reachabilityFence(state);
     }
 

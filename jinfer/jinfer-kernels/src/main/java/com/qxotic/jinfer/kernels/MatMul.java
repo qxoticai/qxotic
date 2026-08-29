@@ -25,7 +25,6 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
-import java.util.function.ObjIntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
@@ -53,8 +52,9 @@ import jdk.incubator.vector.VectorOperators;
  * -Djinfer.q4.nativeDecode=false} restores the portable Vector API path. AArch64 Q8_0 decode
  * likewise uses native JAM by default so one activation requant feeds NEON SDOT; {@code
  * -Djinfer.q8.nativeDecode=false} restores the portable Vector API path. <b>Prefill</b> ({@code n >
- * 1}, compute-bound) tries native jam, then Vector-API jam, then the floor - jam is only offered a
- * call when the dtype has a kernel AND k and the weight offset are block-aligned ({@code
+ * 1}, compute-bound) tries native jam, then Vector-API jam, then pure-Java jam-scalar (its
+ * autovectorized gemm outruns the floor's dots several times over), then the floor - jam is only
+ * offered a call when the dtype has a kernel AND k and the weight offset are block-aligned ({@code
  * Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A
  * runtime decline (EBUSY, older libjam) falls to the next rung. A backend can be switched off with
  * {@code -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam
@@ -67,33 +67,17 @@ public final class MatMul {
     // tiny matvec (e.g. the 32-row MoE router): the ForkJoin round trip costs more than the work
     static final int TINY_MATVEC_ELEMS = 1 << 18;
 
-    private static final boolean ARM_NATIVE_Q4_DECODE =
-            System.getProperty("os.arch", "").contains("aarch64")
-                    && Boolean.parseBoolean(System.getProperty("jinfer.q4.nativeDecode", "true"));
-    private static final boolean ARM_NATIVE_Q8_DECODE =
-            System.getProperty("os.arch", "").contains("aarch64")
-                    && Boolean.parseBoolean(System.getProperty("jinfer.q8.nativeDecode", "true"));
-    private static final boolean ARM_NATIVE_KQ_DECODE =
-            System.getProperty("os.arch", "").contains("aarch64")
-                    && Boolean.parseBoolean(System.getProperty("jinfer.kq.nativeDecode", "true"));
+    // Decode through native JAM's gemv: the default on AArch64 (NEON SDOT beats the byte-to-F32
+    // Vector API dots), opt-in elsewhere - in a native image the Vector API dots lose their
+    // intrinsics for fma and segment loads and run lane by lane, so there the native gemv wins on
+    // x86 too.
+    private static final boolean ARM = System.getProperty("os.arch", "").contains("aarch64");
+    private static final boolean NATIVE_Q4_DECODE = nativeDecode("jinfer.q4.nativeDecode");
+    private static final boolean NATIVE_Q8_DECODE = nativeDecode("jinfer.q8.nativeDecode");
+    private static final boolean NATIVE_KQ_DECODE = nativeDecode("jinfer.kq.nativeDecode");
 
-    static {
-        // -Djam.native.parallelFor=true: hand jinfer's pool to jam as its executor (one pool
-        // total).
-        // Reflective: jam-native is an optional runtime dependency, resolved like the NATIVE
-        // backend.
-        if (Boolean.parseBoolean(System.getProperty("jam.native.parallelFor", "false"))) {
-            try {
-                Class.forName("com.qxotic.jam.libjam.NativeJAM")
-                        .getMethod("parallelExecutor", ObjIntConsumer.class)
-                        .invoke(
-                                null,
-                                (ObjIntConsumer<IntConsumer>)
-                                        (body, n) -> Parallel.forLoop(n, body));
-            } catch (ReflectiveOperationException e) {
-                // no jam-native on the classpath: the property is inert
-            }
-        }
+    private static boolean nativeDecode(String property) {
+        return Boolean.parseBoolean(System.getProperty(property, ARM ? "true" : "false"));
     }
 
     private static final int Q8_BLOCK = 32; // Q8_0 elements per block
@@ -310,9 +294,9 @@ public final class MatMul {
         // except Dispatch's slowDot types and AArch64 Q4_0/Q8_0: their native activation-requant +
         // SDOT GEMV path is more than twice as fast as byte-to-F32 Vector API dots.
         boolean slowDot = !FAST_VECTOR_JIT && bytePackedDot(dt);
-        boolean nativeQ4Decode = ARM_NATIVE_Q4_DECODE && dt == DataType.Q4_0;
-        boolean nativeQ8Decode = ARM_NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
-        boolean nativeKqDecode = ARM_NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
+        boolean nativeQ4Decode = NATIVE_Q4_DECODE && dt == DataType.Q4_0;
+        boolean nativeQ8Decode = NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
+        boolean nativeKqDecode = NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
         boolean jamDecode =
                 n == 1
                         && (!USE_VECTOR_API
@@ -329,6 +313,12 @@ public final class MatMul {
             }
             if (VECTOR != null
                     && VECTOR.mm(
+                            ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
+                            n, k)) {
+                return;
+            }
+            if (SCALAR != null
+                    && SCALAR.mm(
                             ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
                             n, k)) {
                 return;
@@ -1825,22 +1815,39 @@ public final class MatMul {
 
     private static final System.Logger LOG = System.getLogger("jinfer.jam");
 
+    /** Jinfer's pool, as the backends see it. */
+    private static final JAM.Parallel HOST =
+            new JAM.Parallel() {
+                @Override
+                public void forLoop(int count, IntConsumer body) {
+                    Parallel.forLoop(count, body);
+                }
+
+                @Override
+                public int width() {
+                    return Parallel.threads();
+                }
+            };
+
     private static final JamMm NATIVE = load("native");
     private static final JamMm VECTOR = load("vector");
+    private static final JamMm SCALAR = load("scalar");
 
-    /** The JAM rungs that loaded ("native", "vector"), for the selection tests. */
+    /** The JAM rungs that loaded ("native", "vector", "scalar"), for the selection tests. */
     static List<String> jamRungs() {
-        List<String> rungs = new ArrayList<>(2);
+        List<String> rungs = new ArrayList<>(3);
         if (NATIVE != null) rungs.add("native");
         if (VECTOR != null) rungs.add("vector");
+        if (SCALAR != null) rungs.add("scalar");
         return rungs;
     }
 
     static {
-        // Both rungs absent: every prefill is on the Java floor for the whole run. (A present
+        // Every rung absent: every prefill is on the Java floor for the whole run. (A present
         // but broken backend already logged at load(); explicit -Djam.<id>.disabled is the
         // caller's choice and needs no reminder.)
-        if (NATIVE == null && VECTOR == null) PerformanceCliff.JAM_ABSENT.report();
+        if (NATIVE == null && VECTOR == null && SCALAR == null)
+            PerformanceCliff.JAM_ABSENT.report();
     }
 
     /**
@@ -1905,7 +1912,7 @@ public final class MatMul {
         for (JAM.Provider provider : JAM.providers()) {
             if (!provider.id().equals(id)) continue;
             try {
-                return new JamMm(provider.create());
+                return new JamMm(provider.create(HOST));
             } catch (Throwable t) {
                 LOG.log(System.Logger.Level.WARNING, "jam {0} backend unavailable ({1})", id, t);
                 return null;

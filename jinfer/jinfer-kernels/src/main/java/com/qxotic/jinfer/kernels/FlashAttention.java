@@ -1654,9 +1654,7 @@ public final class FlashAttention {
         int nParts =
                 Math.max(
                         1,
-                        Math.min(
-                                RuntimeFlags.DECODE_THREADS,
-                                range / RuntimeFlags.DECODE_BLOCK_SIZE + 1));
+                        Math.min(RuntimeFlags.THREADS, range / RuntimeFlags.DECODE_BLOCK_SIZE + 1));
         if (nParts == 1) {
             rollingDecode(
                     qRaw, outRaw, ck, cv, bk, bv, nHeads, position, attStart, headSize, kvDim,

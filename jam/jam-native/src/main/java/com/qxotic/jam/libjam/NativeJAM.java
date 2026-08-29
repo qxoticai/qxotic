@@ -15,8 +15,6 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.ref.Reference;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.IntConsumer;
-import java.util.function.ObjIntConsumer;
 
 /**
  * The native ({@code libjam}) {@link JAM} implementation - a handle to a jam context (a {@code
@@ -58,10 +56,7 @@ public final class NativeJAM implements JAM {
 
     private static final NativeJAM GLOBAL;
 
-    /**
-     * The process-wide native context configured by {@code jam.native.threads} / {@code
-     * JAM_NATIVE_THREADS}, falling back to {@code jam.threads} / {@code JAM_THREADS}.
-     */
+    /** The process-wide native context; its parallel work runs on the host's {@link #host}. */
     public static NativeJAM global() {
         return GLOBAL;
     }
@@ -201,21 +196,10 @@ public final class NativeJAM implements JAM {
         }
     }
 
-    // ── host executor (-Djam.native.parallelFor=true): jam fans its row ranges through a
-    // Java-provided pool instead of owning native workers. The engine injects its pool via
-    // parallelExecutor(...); until then (or without one) upcalls run inline on the caller. ──
+    // ── the host's pool: jam fans its row ranges through it, never through native workers. ──
 
-    private static final boolean PARALLEL_FOR =
-            Boolean.parseBoolean(NativeLoader.config("jam.native.parallelFor", "false"));
-
-    private static volatile ObjIntConsumer<IntConsumer> fanOut; // (body, n) -> run body over [0,n)
-
-    /**
-     * Inject the engine's fan-out (e.g. jinfer's Parallel::forLoop). Takes effect on the next mm.
-     */
-    public static void parallelExecutor(ObjIntConsumer<IntConsumer> fan) {
-        fanOut = fan;
-    }
+    /** Set by the provider; the calling thread alone until then. */
+    static volatile JAM.Parallel host = JAM.Parallel.INLINE;
 
     // generic task downcall: (fn, arg, begin, end, tid) -> void
     private static final MethodHandle TASK_FFM =
@@ -232,27 +216,23 @@ public final class NativeJAM implements JAM {
         }
     }
 
-    /** The jam_parallel_for upcall: split [0,n) across the injected pool, one tid per slice. */
+    /** The jam_parallel_for upcall: split [0,n) across the host's pool, one tid per slice. */
     private static void pfUpcall(long pool, int n, long fn, long arg) {
-        ObjIntConsumer<IntConsumer> fan = fanOut;
-        int t = PF_THREADS;
-        if (fan == null || n < 2 || t < 2) {
+        int t = host.width();
+        if (n < 2 || t < 2) {
             runTask(fn, arg, 0, n, 0);
             return;
         }
         int per = (n + t - 1) / t;
         int slices = (n + per - 1) / per;
-        fan.accept(s -> runTask(fn, arg, s * per, Math.min(n, s * per + per), s), slices);
+        host.forLoop(slices, s -> runTask(fn, arg, s * per, Math.min(n, s * per + per), s));
     }
 
-    private static final int PF_THREADS;
     private static final MemorySegment PF_STUB;
 
     static {
-        int t = nativeThreads();
-        PF_THREADS = t > 0 ? t : Runtime.getRuntime().availableProcessors();
-        MemorySegment stub = MemorySegment.NULL;
-        if (PARALLEL_FOR) {
+        MemorySegment stub;
+        {
             try {
                 MethodHandle h =
                         MethodHandles.lookup()
@@ -316,10 +296,7 @@ public final class NativeJAM implements JAM {
 
     static {
         NativeLoader.load(); // always: the JNI backend needs libjam loaded too
-        long ctx =
-                PARALLEL_FOR
-                        ? createPfJni(nativeThreads(), PF_STUB.address())
-                        : createJni(nativeThreads());
+        long ctx = createPfJni(Runtime.getRuntime().availableProcessors(), PF_STUB.address());
         if (ctx == 0) throw new IllegalStateException("jam: failed to create native context");
         GLOBAL = new NativeJAM(ctx);
         MM_FFM =
@@ -375,18 +352,5 @@ public final class NativeJAM implements JAM {
         } catch (Throwable t) {
             throw new AssertionError("unreachable: jam_pack_abi", t);
         }
-    }
-
-    private static int nativeThreads() {
-        String value =
-                NativeLoader.config("jam.native.threads", NativeLoader.config("jam.threads", ""));
-        if (value.isEmpty()) return 0; // internal native auto-selection; not a user-facing value
-        try {
-            int threads = Integer.parseInt(value.trim());
-            if (threads > 0) return threads;
-        } catch (NumberFormatException ignored) {
-            // Report malformed and non-positive values through one stable message.
-        }
-        throw new IllegalArgumentException("JAM thread count must be a positive integer: " + value);
     }
 }

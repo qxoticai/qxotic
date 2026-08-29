@@ -43,7 +43,8 @@ public final class VectorJAM implements JAM {
      * Callers that want a silent fallback probe {@link #isAvailable()} first (e.g. to select {@code
      * ScalarJAM} instead).
      */
-    public VectorJAM() {
+    public VectorJAM(JAM.Parallel parallel) {
+        VectorSupport.host = parallel;
         if (!isAvailable()) {
             throw new IllegalStateException(
                     "VectorJAM needs the incubator Vector API module 'jdk.incubator.vector', which"
