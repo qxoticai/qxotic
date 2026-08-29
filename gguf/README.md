@@ -1,25 +1,27 @@
 # GGUF
 
+**GGUF for the JVM.** Read and write llama.cpp's model format in pure Java. Zero dependencies,
+Java 11+, GraalVM native-image ready.
+
 [![Maven Central](https://img.shields.io/maven-central/v/com.qxotic/gguf)](https://search.maven.org/artifact/com.qxotic/gguf)
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
-**GGUF for the JVM.** Read and write llama.cpp's model format in pure Java — zero dependencies,
-Java 11+, GraalVM native-image ready.
+Every model worth running locally ships as GGUF. This library opens them: metadata, tensor
+layouts, tokenizer config and quantization types, type-safe and bounds-checked, anywhere a JVM
+runs.
 
-Every LLM worth running locally ships as GGUF. This library opens them: metadata, tensor layouts,
-tokenizer config, quantization types — type-safe, bounds-checked, embeddable anywhere a JVM runs.
+## Look inside a model without downloading it
 
-## Why this library
+The [JBang script](scripts/gguf.java) reads GGUF metadata straight off HuggingFace, or any URL, and
+never pulls the gigabytes of tensor data:
 
-- **Zero dependencies.** `java.nio` and collections only. A few classes, no transitive tree.
-- **Read and write.** Inspect any GGUF, then modify metadata or build new files with the builder API.
-- **Type-safe.** `getValue(String.class, "general.name")` — no casting gymnastics.
-- **Every GGML type.** Q4_0, Q4_K, Q6_K, Q8_0, MXFP4, F16, F32 — the whole quantization zoo.
-- **Pure Java.** HotSpot, OpenJ9, GraalVM — native-image compiles with zero configuration.
+```bash
+jbang scripts/gguf.java hf unsloth/Qwen3-0.6B-GGUF/Q8_0 --no-tensors
+```
 
-## Quick example
+## From Java
 
 ```java
 // Reading
@@ -33,16 +35,15 @@ GGUF modified = Builder.newBuilder(gguf)
 GGUF.write(modified, Path.of("output.gguf"));
 ```
 
-## Peek without downloading
+## What it does
 
-The [JBang script](scripts/gguf.java) reads GGUF metadata straight off HuggingFace (or any URL) —
-no multi-gigabyte download:
+- **Zero dependencies.** `java.nio` and collections only. A few classes, no transitive tree.
+- **Read and write.** Inspect any GGUF, then modify metadata or build new files with the builder API.
+- **Type-safe.** `getValue(String.class, "general.name")`, with no casting gymnastics.
+- **Every GGML type.** Q4_0, Q4_K, Q6_K, Q8_0, MXFP4, F16, F32 and the rest of the quantization zoo.
+- **Pure Java.** HotSpot, OpenJ9 and GraalVM. Native image compiles with zero configuration.
 
-```bash
-jbang scripts/gguf.java hf unsloth/Qwen3-0.6B-GGUF/Q8_0 --no-tensors
-```
-
-## Installation
+## Install
 
 ```xml
 <dependency>
@@ -54,16 +55,18 @@ jbang scripts/gguf.java hf unsloth/Qwen3-0.6B-GGUF/Q8_0 --no-tensors
 
 ## Deliberately out of scope
 
-- **No tensor payload I/O** — you read/write raw bytes at the offsets the library provides
-- **No quantization math** — raw bytes only
-- **No inference** — that's [jinfer](../jinfer)
+- **No tensor payload I/O.** Raw bytes are read and written at the offsets the library provides.
+- **No quantization math.** Raw bytes only.
+- **No inference.** That is [jinfer](../jinfer).
 
-Small, focused, dependency-free — by design.
+Small, focused and dependency-free, by design.
 
 ## Documentation
 
-[Complete API documentation](https://qxotic.ai/docs/gguf): reading from files, channels and URLs; type-safe
-metadata access; creating and modifying files; tensor offsets; every GGML data type.
+[qxotic.ai/docs/gguf](https://qxotic.ai/docs/gguf) covers reading from files, channels and URLs,
+type-safe metadata access, creating and modifying files, tensor offsets and every GGML data type.
+
+Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 
 ## Development
 

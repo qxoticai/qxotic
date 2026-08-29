@@ -1,5 +1,5 @@
 /* NEON-baseline simple-block kernels (Q8_0/Q4_0/MXFP4 @ F32 -> F32; built -march=armv8-a). The int8
- * block-dot uses widening multiply (vmull_s8) + pairwise-accumulate (vpadalq_s16) — the fallback for
+ * block-dot uses widening multiply (vmull_s8) + pairwise-accumulate (vpadalq_s16) - the fallback for
  * ARMv8.0/8.1 cores without the dot-product extension. The decode (per quant) lives in jam_decode_neon.h;
  * the shared engine in jam_gemm_neon.inc. DOTPROD/I8MM cores get faster dots (jam_kernels_dotprod/i8mm.c). */
 #include "jam_internal.h"

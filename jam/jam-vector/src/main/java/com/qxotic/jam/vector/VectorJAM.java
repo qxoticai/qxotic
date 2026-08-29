@@ -54,7 +54,7 @@ public final class VectorJAM implements JAM {
     }
 
     /**
-     * Whether {@code jdk.incubator.vector} is resolved in the boot module layer — i.e. whether
+     * Whether {@code jdk.incubator.vector} is resolved in the boot module layer - i.e. whether
      * {@code --add-modules jdk.incubator.vector} was in effect. Touches no Vector API type, so it
      * is safe to call even when the module is absent (unlike constructing the backend or any
      * kernel).

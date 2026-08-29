@@ -20,9 +20,9 @@ import java.util.Locale;
  *
  * <ol>
  *   <li>{@code -Djam.native.library.path=/abs/path/to/libjam.so} (or {@code
- *       JAM_NATIVE_LIBRARY_PATH}) — load that file directly;
- *   <li>a bundled resource for {@code <os>-<arch>} — extract &amp; load (the normal path);
- *   <li>fallback {@code System.loadLibrary("jam")} — for dev runs with the lib on {@code
+ *       JAM_NATIVE_LIBRARY_PATH}) - load that file directly;
+ *   <li>a bundled resource for {@code <os>-<arch>} - extract &amp; load (the normal path);
+ *   <li>fallback {@code System.loadLibrary("jam")} - for dev runs with the lib on {@code
  *       java.library.path}.
  * </ol>
  */

@@ -1,9 +1,9 @@
-/* AVX2 kernels — this TU only, built with -mavx2 -mfma -mf16c. Bound at create when
+/* AVX2 kernels - this TU only, built with -mavx2 -mfma -mf16c. Bound at create when
  * JAM_ISA_AVX2 <= ctx->active < JAM_ISA_AVX512 (consumer / older CPUs, Haswell 2013+).
  *
  * Same structure as the AVX-512 TU but 8-wide (__m256) with only 16 ymm registers, so tiles cap at
  * 4×2 (F32 mnpack; the F16/BF16 dense gemm at the bottom uses a 2×4 dot tile). Q8_0 has NO VNNI here:
- * the int8 dot uses maddubs(|qa|, sign(qb,qa)) -> int16 pairs, then madd_epi16 -> int32 — the standard
+ * the int8 dot uses maddubs(|qa|, sign(qb,qa)) -> int16 pairs, then madd_epi16 -> int32 - the standard
  * ggml AVX2 path, same deferred-float accumulation as VNNI. (The 8-feature-wide cached-repack K-quant +
  * Q8_0 rp kernels live in jam_kernels_kquant_avx2.c.) */
 #include "jam_internal.h"
@@ -12,7 +12,7 @@
 #include <immintrin.h>
 #include "jam_decode_x86_256.h"   /* per-quant 256-bit decoders + jam_hsum8_256 */
 
-/* mask for the last partial 8-lane chunk (lanes 0..r-1 set) — AVX2 has no mask registers */
+/* mask for the last partial 8-lane chunk (lanes 0..r-1 set) - AVX2 has no mask registers */
 static const int32_t JAM_MASK_TAB[16] = { -1,-1,-1,-1,-1,-1,-1,-1, 0,0,0,0,0,0,0,0 };
 static inline __m256i tailmask(int r) { return _mm256_loadu_si256((const __m256i*)(JAM_MASK_TAB + (8 - r))); }
 

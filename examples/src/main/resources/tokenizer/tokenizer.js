@@ -102,7 +102,7 @@ async function loadTokenizers() {
         for (const t of list) {
             const o = document.createElement("option");
             o.value = t.id;
-            o.textContent = `${t.name} — ${t.description}`;
+            o.textContent = `${t.name} - ${t.description}`;
             el.tokenizer.appendChild(o);
         }
     } catch (e) { status(e.message, true); }

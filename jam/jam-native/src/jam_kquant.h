@@ -1,6 +1,6 @@
 /* GGML K-quant shared bits (ported from jinferjni.c), for the AVX-512-VNNI K-quant kernels.
  *
- * K-quants are 256-element super-blocks with a hierarchy of scales — too big for the 32-block decode×dot
+ * K-quants are 256-element super-blocks with a hierarchy of scales - too big for the 32-block decode×dot
  * engine, so they get dedicated kernels using the jinferjni.c scheme: repack 16 weight rows into a VNNI
  * layout so ONE vpdpbusd accumulates 16 rows across the 16 i32 lanes, with the activation broadcast as
  * the signed operand. Activations are quantized to PLAIN s8 (the weight nibbles 0..15 / q6+32 are the

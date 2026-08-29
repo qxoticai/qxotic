@@ -1,5 +1,5 @@
 /* Portable software fp16 -> fp32 (IEEE half to float). The single source of truth for hosts/kernels
- * without F16C — the generic floor and the SSE3 decoders both use it, so the conversion can't drift. */
+ * without F16C - the generic floor and the SSE3 decoders both use it, so the conversion can't drift. */
 #ifndef JAM_FP16_H
 #define JAM_FP16_H
 

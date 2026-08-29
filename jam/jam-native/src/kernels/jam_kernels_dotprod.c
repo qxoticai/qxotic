@@ -1,5 +1,5 @@
 /* DOTPROD simple-block kernels (Q8_0/Q4_0/MXFP4 @ F32 -> F32; built -march=armv8.2-a+dotprod). The int8
- * block-dot is two vdotq_s32 (signed 8-bit dot-product, 4 elems/lane) — the int8 workhorse on modern ARM
+ * block-dot is two vdotq_s32 (signed 8-bit dot-product, 4 elems/lane) - the int8 workhorse on modern ARM
  * (all Apple M-series, Graviton2+, recent phones). Decode per quant in jam_decode_neon.h; engine shared. */
 #include "jam_internal.h"
 #include <arm_neon.h>
@@ -9,7 +9,7 @@
 #define JAM_BLKDOT(wlo,whi,blo,bhi) vdotq_s32(vdotq_s32(vdupq_n_s32(0), wlo, blo), whi, bhi)
 
 /* Decode (n==1) GEMV specializes across output rows: one activation load feeds four independent
- * weight streams — cuts activation/scale loads 4x and gives the core 4 independent SDOT chains. */
+ * weight streams - cuts activation/scale loads 4x and gives the core 4 independent SDOT chains. */
 #define JAM_BLK       jam_q8_blk
 #define JAM_DECODE    jam_decode_q8_0_neon
 #define JAM_GEMV_NAME jam_gemv_q8_0_dotprod_4x1

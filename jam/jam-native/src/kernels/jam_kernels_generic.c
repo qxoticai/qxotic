@@ -1,4 +1,4 @@
-/* Portable-C kernels — the always-available floor (no -m flags, compiles anywhere).
+/* Portable-C kernels - the always-available floor (no -m flags, compiles anywhere).
  * Per-ISA kernels live in sibling TUs (jam_kernels_avx2.c, _avx512.c, _neon.c, ...) compiled with
  * their own flags and bound at create; this scalar one is the fallback and the reference. */
 #include "jam_internal.h"
@@ -33,7 +33,7 @@ void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
 }
 
 /* ---- Q8_0 (weight) @ F32 (activation) -> F32, portable floor ----
- * Dequantize the weight block (d * qs) and float-dot the F32 activation directly — no requant, no
+ * Dequantize the weight block (d * qs) and float-dot the F32 activation directly - no requant, no
  * scratch. The inner 32-wide loop is plain C the compiler vectorizes (int8->float convert + fmadd). */
 
 typedef struct { uint16_t d; int8_t qs[32]; } jam_blk_q8_0;   /* 34 bytes (matches GGML block_q8_0) */
@@ -125,7 +125,7 @@ void jam_mm_mxfp4_f32_generic(void* arg, int rb, int re, int tid) {
     }
 }
 
-/* NVFP4 weight @ F32 activation -> F32, portable reference/floor — matches ggml dequantize_row_nvfp4.
+/* NVFP4 weight @ F32 activation -> F32, portable reference/floor - matches ggml dequantize_row_nvfp4.
  * Interleaved block {d[4] UE4M3; qs[32]}, 64 elements = 4 sub-blocks of 16. value = kvalues_mxfp4[nibble] ·
  * ue4m3(d[s]); within sub-block s, byte (s*8+j): low nibble = elem s*16+j, high = elem s*16+8+j. */
 void jam_mm_nvfp4_f32_generic(void* arg, int rb, int re, int tid) {

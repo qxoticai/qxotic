@@ -1,4 +1,4 @@
-/* ARM DOTPROD K-quant kernels (Q4_K/Q5_K/Q6_K @ F32 -> F32) — same decode as the NEON baseline, but the
+/* ARM DOTPROD K-quant kernels (Q4_K/Q5_K/Q6_K @ F32 -> F32) - same decode as the NEON baseline, but the
  * int8 dot uses the dot-product extension (vdotq_s32 / sdot): one instruction does a 16-wide int8 dot into
  * 4 i32 lanes, so 32-wide = two sdots. Built with -march=armv8.2-a+dotprod. i8mm cores reuse this (sdot is
  * available there too); an smmla 2x2 variant would be a further step but barely helps the decode-bound K-quants. */

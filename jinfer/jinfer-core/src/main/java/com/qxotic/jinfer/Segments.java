@@ -58,7 +58,7 @@ public final class Segments {
         return VECTOR_BIT_SIZE;
     }
 
-    /** Bytes per F16 element (the old package-private {@code Float16.BYTES}) — the one owner. */
+    /** Bytes per F16 element (the old package-private {@code Float16.BYTES}) - the one owner. */
     public static final int F16_BYTES = 2;
 
     public static final VectorSpecies<Float> F_SPECIES;

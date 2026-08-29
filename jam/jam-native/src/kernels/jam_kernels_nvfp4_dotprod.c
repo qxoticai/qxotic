@@ -1,4 +1,4 @@
-/* DOTPROD NVFP4 kernel: the 16-element int8 dot is a single vdotq_s32 (sdot) — the int8 workhorse on
+/* DOTPROD NVFP4 kernel: the 16-element int8 dot is a single vdotq_s32 (sdot) - the int8 workhorse on
  * modern ARM (Apple M-series, Graviton2+). Shares the body in jam_gemm_nvfp4_neon.inc. */
 #include "jam_internal.h"
 #include <arm_neon.h>

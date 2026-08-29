@@ -1,6 +1,6 @@
 /* 256-bit x86 weight DECODERS (per quant) + shared reduce, for the jam_gemm_q256 engine.
  * A decoder turns one weight block into 32 int8 weight values (__m256i) plus a float block scale; the
- * engine then does abs/sign + the per-ISA int8 dot. One decoder per quant — reused across every ISA. */
+ * engine then does abs/sign + the per-ISA int8 dot. One decoder per quant - reused across every ISA. */
 #ifndef JAM_DECODE_X86_256_H
 #define JAM_DECODE_X86_256_H
 

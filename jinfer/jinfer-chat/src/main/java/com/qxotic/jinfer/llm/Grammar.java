@@ -25,14 +25,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * Grammar-constrained decoding: compile a grammar once, mask logits per token so the model can only
  * ever emit strings of the grammar's language.
  *
- * <p>A GBNF grammar is parsed into a {@link Rule} IR, then compiled into a {@link CFG} — a
+ * <p>A GBNF grammar is parsed into a {@link Rule} IR, then compiled into a {@link CFG} - a
  * byte-level <b>pushdown</b> grammar (a context-free matcher with an explicit stack). A {@link
  * Cursor} walks it token-by-token: {@link Cursor#maskLogits} restricts the logits to the tokens the
  * grammar can accept next, and {@link Cursor#advanceWith} consumes the chosen token's bytes.
  * Because the matcher carries a stack it represents arbitrarily nested / recursive grammars (real
- * JSON, balanced parens, …) correctly — a finite DFA cannot. Masks are computed once per distinct
+ * JSON, balanced parens, …) correctly - a finite DFA cannot. Masks are computed once per distinct
  * matcher state and cached on the {@link Spec} (shared across cursors), so the per-token cost
- * amortises to a lookup — the same idea Outlines / XGrammar rely on.
+ * amortises to a lookup - the same idea Outlines / XGrammar rely on.
  *
  * <h2>The GBNF dialect (llama.cpp compatible)</h2>
  *
@@ -44,17 +44,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * works). Bodies compose:
  *
  * <ul>
- *   <li>{@code "literal"} — its UTF-8 bytes; escapes {@code \" \\ \n \r \t}, and {@code \xNN} for
+ *   <li>{@code "literal"} - its UTF-8 bytes; escapes {@code \" \\ \n \r \t}, and {@code \xNN} for
  *       the raw byte 0xNN.
- *   <li>{@code [abc]} {@code [a-z0-9]} {@code [^,\n]} — BYTE classes: members, ranges, negation,
+ *   <li>{@code [abc]} {@code [a-z0-9]} {@code [^,\n]} - BYTE classes: members, ranges, negation,
  *       the same escapes. {@code .} matches any one byte. The engine matches UTF-8 bytes, not code
  *       points (llama.cpp matches code points): a non-ASCII character inside a class is its bytes
  *       as separate members, so put non-ASCII text in literals, and read {@code [^"]*} as "any
  *       bytes but a quote", which is what free text wants.
- *   <li>{@code x | y} — alternation; {@code ( … )} — grouping.
- *   <li>{@code * + ?} and bounded {@code {m} {m,} {m,n}} — repetition of the preceding element
+ *   <li>{@code x | y} - alternation; {@code ( … )} - grouping.
+ *   <li>{@code * + ?} and bounded {@code {m} {m,} {m,n}} - repetition of the preceding element
  *       ({@code "ab"{2,4}}, {@code [0-9]{1,3}}, {@code (num ",")*}).
- *   <li>{@code name} — a reference to another rule; recursion is fine (pushdown), an undefined
+ *   <li>{@code name} - a reference to another rule; recursion is fine (pushdown), an undefined
  *       reference throws at compile.
  * </ul>
  *
@@ -74,22 +74,22 @@ import java.util.concurrent.ConcurrentHashMap;
  * }</pre>
  *
  * <p>For JSON prefer the builders: {@link #json} (full RFC 8259), {@link #fromSchema} (exactly the
- * documents a JSON Schema admits), {@link #choice} (label sets) — all pre-bound to the same caps.
+ * documents a JSON Schema admits), {@link #choice} (label sets) - all pre-bound to the same caps.
  * {@link #gbnfLiteral} escapes arbitrary text into a literal.
  *
  * <h2>Semantics and expectations</h2>
  *
  * <ul>
  *   <li><b>Byte-level:</b> classes and ranges are over BYTES, not code points. ASCII ranges work as
- *       written; a multi-byte range like {@code [а-я]} does not mean "Cyrillic letters" — spell
+ *       written; a multi-byte range like {@code [а-я]} does not mean "Cyrillic letters" - spell
  *       non-ASCII alternatives as literals ({@code "α" | "β"}).
  *   <li><b>A token is admissible iff its whole byte string is accepted</b> from the current state;
  *       special tokens report empty bytes (control, not content) and are never admissible
  *       mid-grammar.
  *   <li><b>Dead ends end cleanly:</b> when no vocabulary token is admissible the driving sampler
- *       forces a stop token; a COMPLETE grammar (nothing may follow) ends the reply — choice
+ *       forces a stop token; a COMPLETE grammar (nothing may follow) ends the reply - choice
  *       grammars deliberately terminate the turn.
- *   <li><b>Caching:</b> specs cache per (source, vocabulary) — repeated compiles are free; masks
+ *   <li><b>Caching:</b> specs cache per (source, vocabulary) - repeated compiles are free; masks
  *       cache per matcher state (capped, see {@code MASK_CACHE_CAP}).
  *   <li><b>Reasoning stays free:</b> driven through the chat engine's constrained path, the grammar
  *       binds only the output channel - think spans sample unconstrained.
@@ -98,23 +98,23 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h2>Known limitations</h2>
  *
  * <ul>
- *   <li>Left recursion is bounded best-effort ({@code CLOSURE_CAP}) — prefer right recursion
+ *   <li>Left recursion is bounded best-effort ({@code CLOSURE_CAP}) - prefer right recursion
  *       ({@code list ::= item ("," list)?}).
- *   <li>No lookahead, no lazy quantifiers, no capture — this is a generator constraint, not a regex
+ *   <li>No lookahead, no lazy quantifiers, no capture - this is a generator constraint, not a regex
  *       engine.
  *   <li>Pathologically ambiguous grammars hit the {@code MAX_STACKS} backstop.
  *   <li>Constrained output is on-language but not on-distribution-free: over-tight grammars at
- *       positions where the model wants something else degrade quality — leave the model room where
+ *       positions where the model wants something else degrade quality - leave the model room where
  *       the answer genuinely varies.
  * </ul>
  */
 public final class Grammar {
 
-    /** Cap on parallel stacks in a matcher state — a backstop against pathological grammars. */
+    /** Cap on parallel stacks in a matcher state - a backstop against pathological grammars. */
     static final int MAX_STACKS = 1 << 14;
 
     /**
-     * Cap on epsilon-closure size per step — bounds left-recursive grammars (best-effort) while
+     * Cap on epsilon-closure size per step - bounds left-recursive grammars (best-effort) while
      * staying far above any non-left-recursive closure, which is tiny.
      */
     static final int CLOSURE_CAP = 1 << 13;
@@ -215,7 +215,7 @@ public final class Grammar {
 
     /**
      * Minified JSON: the same language as {@link #json} but with no whitespace permitted anywhere
-     * (no spaces/newlines between tokens, none at top level) — forces compact, token-efficient
+     * (no spaces/newlines between tokens, none at top level) - forces compact, token-efficient
      * output.
      */
     public static Spec jsonCompact(Tokenizer t) {
@@ -444,10 +444,10 @@ public final class Grammar {
     // ---- Compiled CFG (byte-level pushdown grammar) ------------------------
     //
     // The grammar is flattened into "slots". A slot is one of:
-    //   TERM  — a 256-bit byte set + a continuation slot (the next slot after a matching byte)
+    //   TERM  - a 256-bit byte set + a continuation slot (the next slot after a matching byte)
     //   TOKEN - ONE vocabulary token id + a continuation slot, matched by IDENTITY (zero bytes)
-    //   REF   — a rule id + a return slot (where to continue once that rule completes)
-    //   END   — marks the end of a rule alternative (pop a frame)
+    //   REF   - a rule id + a return slot (where to continue once that rule completes)
+    //   END   - marks the end of a rule alternative (pop a frame)
     // A rule is a set of alternative entry slots. Groups and repetitions are desugared into
     // anonymous rules so every leaf is a TERM/TOKEN/REF/END - no nesting survives into the
     // matcher. TOKEN slots come only from programmatic terms (never GBNF text, which stays
@@ -1116,7 +1116,7 @@ public final class Grammar {
     // ---- enum / choice -----------------------------------------------------
 
     /**
-     * A grammar accepting exactly one of {@code options}, emitted as raw (unquoted) literals — e.g.
+     * A grammar accepting exactly one of {@code options}, emitted as raw (unquoted) literals - e.g.
      * {@code choice(v, "yes", "no")} forces the model to answer yes or no.
      */
     static Spec choice(Vocab v, String... options) {
@@ -1138,17 +1138,17 @@ public final class Grammar {
     // ---- JSON Schema -> grammar -------------------------------------------
 
     /**
-     * Compiles a (common subset of) JSON Schema into a JSON-constrained grammar — typed structured
+     * Compiles a (common subset of) JSON Schema into a JSON-constrained grammar - typed structured
      * output, the way OpenAI's {@code json_schema} response-format and llama.cpp both work.
      *
      * <p>Supported: {@code type} (object, array, string, number, integer, boolean, null, or an
      * array of those), {@code properties} + {@code required}, {@code items}, {@code enum}, {@code
      * const}, {@code anyOf}/{@code oneOf}, and {@code $ref} into the root document ({@code $defs},
-     * {@code definitions}, any local JSON Pointer) — how a generated schema spells a type it uses
+     * {@code definitions}, any local JSON Pointer) - how a generated schema spells a type it uses
      * twice, and the only way a RECURSIVE type can be written at all. Object properties are emitted
      * in the order of {@code required} (or, when {@code required} is absent, all declared
      * properties); other keywords ({@code patternProperties}, numeric/length bounds, …) are ignored
-     * — the result is always valid JSON satisfying the supported constraints, never a broken
+     * - the result is always valid JSON satisfying the supported constraints, never a broken
      * grammar.
      */
     static Spec fromSchema(Map<String, Object> schema, Vocab v) {

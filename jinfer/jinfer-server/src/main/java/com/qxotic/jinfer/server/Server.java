@@ -22,7 +22,7 @@ import java.util.function.Function;
 
 /**
  * The OpenAI-compatible HTTP transport over a caller-configured {@link ChatEngine}. The
- * transport/protocol layer — it registers the routes (/v1/chat/completions, /v1/completions,
+ * transport/protocol layer - it registers the routes (/v1/chat/completions, /v1/completions,
  * /v1/responses, /v1/models, /health, /props, /metrics, /tokenize, /detokenize), parses + validates
  * requests, and translates between the wire (JSON, SSE event sequences) and the inference service.
  * The plumbing it builds on lives in {@link Http} (responses/CORS/errors), {@link Sse} (streaming),
@@ -347,7 +347,7 @@ public final class Server {
                 path,
                 exchange -> {
                     if (Http.preamble(exchange, access)) return;
-                    // contexts match by longest PREFIX: /v1/models/garbage would land here — 404 it
+                    // contexts match by longest PREFIX: /v1/models/garbage would land here - 404 it
                     if (!exchange.getRequestURI().getPath().equals(path)) {
                         Http.sendError(exchange, 404, "Not found");
                         return;
@@ -386,7 +386,7 @@ public final class Server {
 
     /**
      * Shared scaffold for the generation POST endpoints: preflight/method checks, bounded body
-     * read, then parse + validation on the HANDLER thread — malformed requests get an instant 400
+     * read, then parse + validation on the HANDLER thread - malformed requests get an instant 400
      * and never occupy the generation worker, even while it is busy with a long generation. The job
      * runs on the worker via the bounded queue with uniform error handling.
      */

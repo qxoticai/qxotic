@@ -1,4 +1,4 @@
-/* jam CPU core selection — INTERNAL, best-effort. NOT public API; no stability guarantees.
+/* jam CPU core selection - INTERNAL, best-effort. NOT public API; no stability guarantees.
  *
  * Picks which logical CPUs jam's pool should run on, by three filters on the OS-allowed set:
  *     allowed CPUs -> keep the top capacity tier (P-cores) -> one per physical core (drop SMT)

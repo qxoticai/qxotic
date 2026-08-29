@@ -67,7 +67,7 @@ static jam_isa detect_best(void) {
 #if defined(__x86_64__) || defined(_M_X64)
     __builtin_cpu_init();
     #define HAS(f) __builtin_cpu_supports(f)
-    /* Gate each level on EVERY feature its kernel TU is compiled with — never bind a kernel the CPU
+    /* Gate each level on EVERY feature its kernel TU is compiled with - never bind a kernel the CPU
      * can't run. The AVX-512 TU uses bw/dq/vl (+f16c, +vnni for Q8): Knights Landing/Mill have avx512f
      * but NOT bw/dq/vl, so they must fall through to AVX2. The AVX2/AVX-VNNI TUs use fma + f16c. */
     int avx512_core = HAS("avx512f") && HAS("avx512bw") && HAS("avx512dq") && HAS("avx512vl") && HAS("f16c");
@@ -225,13 +225,13 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         if (cfg->name) snprintf(c->name, sizeof c->name, "%s", cfg->name);   /* copied (bounded) */
     }
     /* JAM_ISA is a hard CEILING on EVERY context, not just the global one: an operator can force a lower ISA
-     * (e.g. to dodge a virtualized AVX-512 that CPUID advertises but faults on). Only lowers — never raises a
+     * (e.g. to dodge a virtualized AVX-512 that CPUID advertises but faults on). Only lowers - never raises a
      * caller's cfg cap; METAL/unknown is ignored (it's a GPU backend, not a CPU rung). */
     {   jam_isa env_cap = jam_parse_isa(getenv("JAM_ISA"));
         if (env_cap != JAM_ISA_AUTO && env_cap != JAM_ISA_METAL && (cap == JAM_ISA_AUTO || env_cap < cap))
             cap = env_cap;
     }
-    /* Core selection: physical P-cores (no E-cores, no SMT), capped by any cgroup quota — see jam_cpu.c.
+    /* Core selection: physical P-cores (no E-cores, no SMT), capped by any cgroup quota - see jam_cpu.c.
      * AUTO (nthreads<=0) uses the selected count and pins to it. An explicit/env count that still FITS the
      * selection is pinned too; a larger explicit count (e.g. opting into SMT) runs unpinned. */
     c->cpu = jam_cpu_plan_make();
@@ -252,7 +252,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     }
 
     jam_isa detected = detect_best();
-    /* METAL is a GPU backend, not a CPU ISA, so it does NOT cap the CPU ladder — the CPU kernels stay
+    /* METAL is a GPU backend, not a CPU ISA, so it does NOT cap the CPU ladder - the CPU kernels stay
      * resolved (fallback for dtypes Metal declines). Any other cap clamps the ladder normally. */
     jam_isa cpu = (cap != JAM_ISA_AUTO && cap != JAM_ISA_METAL && cap < detected) ? cap : detected;
 
@@ -388,7 +388,7 @@ void jam_ctx_destroy(jam_ctx* ctx) {
 }
 
 /* Grow the activation-requant scratch: n×k int8 + n×(k/16) scales/sums (k/16 = per-16 for Q6_K; Q4_K/Q5_K
- * use the per-32 half, the per-256 scale a smaller slice — all fit). */
+ * use the per-32 half, the per-256 scale a smaller slice - all fit). */
 static int ensure_qscratch(jam_ctx* c, int n, int k) {
     size_t need_aq = (size_t) n * k;
     size_t need_d  = (size_t) n * (k / 16);
@@ -456,13 +456,13 @@ static jam_ctx* jam_global(void) {
     return g_global;
 }
 
-/* Destroy the lazy global context (no-op if never created). A later jam_mm(NULL,...) re-creates it — we
+/* Destroy the lazy global context (no-op if never created). A later jam_mm(NULL,...) re-creates it - we
  * reset the once-control so global_init can run again. Intended for shutdown / before dlclose; the caller
  * must ensure no jam_mm(NULL,...) is in flight (same single-stream contract as the global itself).
  *
  * NOT wired to an __attribute__((destructor)): jam_ctx_destroy JOINS the pool's worker threads, and joining
  * threads from a library destructor during process / JVM teardown is unsafe (it crashed the JNI test's VM on
- * exit). So this is explicit-only — a C plugin host calls it before dlclose; a JVM host from a shutdown hook
+ * exit). So this is explicit-only - a C plugin host calls it before dlclose; a JVM host from a shutdown hook
  * while threads are still healthy. The global is otherwise a reachable singleton (not a leak) for the
  * process lifetime. */
 void jam_global_destroy(void) {
@@ -587,7 +587,7 @@ static int try_vnni_band(jam_ctx* ctx, const void* w, int ldw, const void* a, in
 
 #endif  /* JAM_HAVE_AVX512 (try_vnni_band) */
 
-/* K-quant (256-element super-block) dispatch, shared by Q4_K/Q5_K/Q6_K — they differ only in the byte
+/* K-quant (256-element super-block) dispatch, shared by Q4_K/Q5_K/Q6_K - they differ only in the byte
  * size, the phase-2 band kernels, the bound int8 kernel, and the float floor. Above AVX-512-VNNI:
  * the 2-phase repack (shared quant + per-quant band). Below it, x86 with AVX2 gets the 8-row maddubs
  * band (same machinery, ymm dot ladder). Else: run_quant routes to the int8 kernel (SSE3 / ARM) or
@@ -643,7 +643,7 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
 
 #ifdef JAM_HAVE_AVXVNNI
 /* 256-bit AVX-VNNI sibling of try_vnni_band: same q4k_job + per-worker repack scratch, but fed by the pure
- * (no-AVX-512) jam_q8_0_requant_256, so the whole Q8_0/Q4_0 path is AVX-512-free — the default avx_vnni
+ * (no-AVX-512) jam_q8_0_requant_256, so the whole Q8_0/Q4_0 path is AVX-512-free - the default avx_vnni
  * prefill path on client CPUs without AVX-512. */
 static int try_vnni_band_256(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda, void* c, int ldc,
                              int m, int n, int k, int block_bytes, jam_task_fn band) {
@@ -659,7 +659,7 @@ static int try_vnni_band_256(jam_ctx* ctx, const void* w, int ldw, const void* a
 #endif
 
 /* C = W @ Aᵀ : W weights (may be quantized; selects the kernel), A activations (float), C output. */
-/* The dispatch body — runs UNDER the per-context busy lock (see jam_mm); ctx is resolved + validated. */
+/* The dispatch body - runs UNDER the per-context busy lock (see jam_mm); ctx is resolved + validated. */
 static jam_status jam_mm_run(jam_ctx* ctx,
                   const void* w, jam_dtype wt, int ldw,
                   const void* a, jam_dtype at, int lda,
@@ -669,7 +669,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #ifdef JAM_HAVE_METAL
     /* Metal routing, measured on M3 Pro (8192-row projections, GB/s and GMAC/s vs the CPU kernels):
      *  - DENSE weights: the GPU's wider DRAM path wins at every n (F16 decode 27 vs 10 GB/s).
-     *  - QUANT weights, n < 16: the CPU int8 kernels win (n==1: Q4_K 61 vs 10 GB/s — the scalar GPU
+     *  - QUANT weights, n < 16: the CPU int8 kernels win (n==1: Q4_K 61 vs 10 GB/s - the scalar GPU
      *    kernels can't amortize dequant on one column; n==8: 2-3x GMAC/s). 16 is also the MMA
      *    kernels' minimum (JAM_MMA_MIN_N), so small-n never pays the ~15 us round trip for a
      *    register-tiled kernel it can't feed.
@@ -760,7 +760,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         }
     }
 
-    /* BF16 via native vdpbf16ps (Zen4+/CPX): convert activations to bf16 once, then the dp tile —
+    /* BF16 via native vdpbf16ps (Zen4+/CPX): convert activations to bf16 once, then the dp tile  -
      * twice the MAC rate of the convert-FMA tile below. Falls through when unavailable/misaligned. */
     if (wt == JAM_BF16 && at == JAM_F32 && ct == JAM_F32 && ctx->bf16z_kernel && (k % 32 == 0)) {
         size_t need = (size_t) n * (size_t) k * sizeof(uint16_t);

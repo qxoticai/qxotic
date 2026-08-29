@@ -370,7 +370,7 @@ class JamTest {
                                     m,
                                     n,
                                     k));
-            // padded result (ldr = m+pad) — the token-major R stride (jinfer's max-dim buffers)
+            // padded result (ldr = m+pad) - the token-major R stride (jinfer's max-dim buffers)
             int ldr = m + pad;
             long cN = (long) (n - 1) * ldr * 4 + (long) m * 4;
             assertEquals(
@@ -582,12 +582,12 @@ class JamTest {
     @Test
     void concurrentCallsSerialize()
             throws Exception { // default (-Djam.native.serial=true): contended calls wait their
-        // turn through the fair lock — every call OK, none EBUSY, never corruption. The raw
+        // turn through the fair lock - every call OK, none EBUSY, never corruption. The raw
         // EBUSY behavior requires -Djam.native.serial=false at JVM launch (SERIAL is a
         // class-init constant, so it can't be flipped in this JVM).
         int m = 256,
                 n = 256,
-                k = 256; // ~0.3ms/call — window wide enough to overlap concurrent callers
+                k = 256; // ~0.3ms/call - window wide enough to overlap concurrent callers
         int threads = 4, rounds = 20;
         AtomicInteger ok = new AtomicInteger(),
                 ebusy = new AtomicInteger(),

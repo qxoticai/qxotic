@@ -21,7 +21,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * Java splitters produce different chunk boundaries than tiktoken, leading to different BPE
  * outputs.
  *
- * <p>See: r50k_base/case_075 golden test — input {@code " \\u00850"} was split as {@code ["
+ * <p>See: r50k_base/case_075 golden test - input {@code " \\u00850"} was split as {@code ["
  * \\u0085", "0"]} (2 chunks, 3 tokens) instead of tiktoken's {@code [" ", "\\u0085", "0"]} (3
  * chunks, 4 tokens).
  */
@@ -36,7 +36,7 @@ class SplitterUnicodeWhitespaceRegressionTest {
                     + "\\n"
                     + "]+|\\s+(?!\\S)|\\s+";
 
-    // NEL (U+0085) — Next Line, Unicode whitespace missed by Java's default \s
+    // NEL (U+0085) - Next Line, Unicode whitespace missed by Java's default \s
     private static final char NEL = '\u0085';
 
     // Other Unicode whitespace characters that Java's default \s misses

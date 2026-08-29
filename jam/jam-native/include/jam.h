@@ -1,29 +1,29 @@
 #ifndef JAM_H
 #define JAM_H
 
-/* jam — the fastest multithreaded CPU matmul. One job: C = W @ Aᵀ, with quantized weights.
+/* jam - the fastest multithreaded CPU matmul. One job: C = W @ Aᵀ, with quantized weights.
  *
- *   op       : ONE call, jam_mm. C = W @ Aᵀ (ggml mul_mat convention — k is the CONTIGUOUS last axis
+ *   op       : ONE call, jam_mm. C = W @ Aᵀ (ggml mul_mat convention - k is the CONTIGUOUS last axis
  *              of both operands, so each output is a dot of two contiguous k-vectors). n==1 (A a
- *              single row — decode) -> dedicated streaming gemv; else register-tiled gemm.
+ *              single row - decode) -> dedicated streaming gemv; else register-tiled gemm.
  *   dtypes   : values mirror GGML's ggml_type, so a GGUF loader passes a tensor's type straight
  *              through. W (weight) may be any format and selects the kernel; A and C are float. jam
  *              MULTIPLIES quantized weights (decode + requant happen in the kernel); it never
- *              CONVERTS formats — quantization is done in the host (Java).
- *   context  : jam_mm(NULL, ...) uses the process-global context — lazily built on first use from
+ *              CONVERTS formats - quantization is done in the host (Java).
+ *   context  : jam_mm(NULL, ...) uses the process-global context - lazily built on first use from
  *              JAM_* env vars (OpenMP-style; zero setup). Or pass an explicit context for fine
  *              control (host executor, thread count, ISA cap).
  *   threading: jam_mm is multithreaded WITHIN a call (the context's pool fans the work over its
  *              threads). A jam_ctx is a SERIAL EXECUTION STREAM: mm calls on the SAME context run one
  *              at a time and must NOT be called concurrently (they share the pool and the context's
- *              scratch). For PARALLEL matmul, create and use SEVERAL contexts — one per thread, each
+ *              scratch). For PARALLEL matmul, create and use SEVERAL contexts - one per thread, each
  *              owning its own pool + scratch. The global context is a single serial stream.
  *   dispatch : the per-CPU kernel is resolved ONCE (per context); the op is a table lookup + a few
  *              cheap branches. No per-call search/hashing/codegen.
  *   memory   : operands are caller-owned, BORROWED for the call; a context owns its pool and (for the
- *              quantized paths) a lazily-grown activation-requant scratch — both per-context, which is
+ *              quantized paths) a lazily-grown activation-requant scratch - both per-context, which is
  *              why a context is single-stream.
- *   targets  : x86 (SSE2..AVX-512/VNNI/AMX), ARM (NEON..SVE), and a portable-C floor — one fat lib,
+ *   targets  : x86 (SSE2..AVX-512/VNNI/AMX), ARM (NEON..SVE), and a portable-C floor - one fat lib,
  *              best kernel chosen at runtime; builds and runs anywhere. No dependencies.
  *
  *   == Environment ==
@@ -44,12 +44,12 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-extern "C" {            /* for C++ CALLERS only — the API is pure C11 */
+extern "C" {            /* for C++ CALLERS only - the API is pure C11 */
 #endif
 
 /* Public-symbol export. On ELF/Mach-O every non-static symbol is exported by default, so JAM_API is empty
- * there. On Windows (PE) nothing is exported once ANY symbol is __declspec(dllexport) — and jam_jni.c's
- * JNIEXPORT is exactly that — so the whole C API must be marked explicitly or the Panama binding can't find
+ * there. On Windows (PE) nothing is exported once ANY symbol is __declspec(dllexport) - and jam_jni.c's
+ * JNIEXPORT is exactly that - so the whole C API must be marked explicitly or the Panama binding can't find
  * jam_mm/jam_ctx_* in jam.dll. JAM_BUILD is defined only while compiling the library itself (see CMake);
  * a C consumer that links the DLL sees a plain declaration (the fat-jar loads it via dlopen, not link-time). */
 #if defined(_WIN32) && defined(JAM_BUILD)
@@ -58,7 +58,7 @@ extern "C" {            /* for C++ CALLERS only — the API is pure C11 */
 #  define JAM_API
 #endif
 
-/* dtype tags — numerically identical to GGML's ggml_type (drop-in for GGUF). W may be any of these;
+/* dtype tags - numerically identical to GGML's ggml_type (drop-in for GGUF). W may be any of these;
  * A and C are float (F32/F16/BF16). */
 typedef enum {
     JAM_F32   = 0,
@@ -75,7 +75,7 @@ typedef enum {
     JAM_Q6_K  = 14,
     JAM_Q8_K  = 15,
     JAM_BF16  = 30,
-    JAM_MXFP4 = 39,   /* == GGML_TYPE_MXFP4 — verify the value against the ggml.h you target */
+    JAM_MXFP4 = 39,   /* == GGML_TYPE_MXFP4 - verify the value against the ggml.h you target */
     JAM_NVFP4 = 40,   /* == GGML_TYPE_NVFP4 (llama.cpp): {d[4] UE4M3; qs[32]} interleaved, 64-elem, no global */
     JAM_Q1_0  = 41,   /* == GGML_TYPE_Q1_0 (llama.cpp): {fp16 d; 16 sign bytes}, 128-elem, bit ? +d : -d */
 } jam_dtype;
@@ -116,17 +116,17 @@ typedef enum {
     JAM_OK = 0,
     JAM_EINVAL,        /* null args, mismatched/invalid shapes or dtypes */
     JAM_EUNSUPPORTED,  /* no enabled kernel for this dtype combo on this CPU */
-    JAM_EBUSY,         /* another mm is in flight on THIS context (serial stream) — retry or fall back */
+    JAM_EBUSY,         /* another mm is in flight on THIS context (serial stream) - retry or fall back */
 } jam_status;
 
-/* ISA capability — an ORDERED level (each implies all below it on its arch). Used both to CAP the
+/* ISA capability - an ORDERED level (each implies all below it on its arch). Used both to CAP the
  * engine (jam_config.max_isa) and to REPORT what's live (jam_active_isa). Names via jam_isa_name. */
 typedef enum {
     JAM_ISA_AUTO = 0,          /* config only: pick the best available */
     JAM_ISA_GENERIC,           /* portable scalar floor */
     JAM_ISA_SSE2,
     JAM_ISA_SSE3,              /* 128-bit int8 (sign-extend + madd, software fp16); true-SSE3 floor (Prescott) */
-    JAM_ISA_SSSE3,             /* + SSSE3 maddubs (sign-trick) for Q8_0/Q4_0 — Core 2 era, still pre-AVX2 */
+    JAM_ISA_SSSE3,             /* + SSSE3 maddubs (sign-trick) for Q8_0/Q4_0 - Core 2 era, still pre-AVX2 */
     JAM_ISA_AVX2,
     JAM_ISA_AVX_VNNI,          /* 256-bit VNNI without AVX-512 (client: Alder/Raptor Lake) */
     JAM_ISA_AVX512,
@@ -137,7 +137,7 @@ typedef enum {
     JAM_ISA_DOTPROD,
     JAM_ISA_I8MM,
     JAM_ISA_SVE,
-    /* GPU backend (not a CPU ISA) — opt-in via JAM_ISA=metal / max_isa; routes matmul to the Apple GPU. */
+    /* GPU backend (not a CPU ISA) - opt-in via JAM_ISA=metal / max_isa; routes matmul to the Apple GPU. */
     JAM_ISA_METAL,
 } jam_isa;
 
@@ -163,9 +163,9 @@ JAM_API void     jam_ctx_destroy(jam_ctx* ctx);
 
 /* ---- the work ----
  * C = W @ Aᵀ   (k is the contiguous last axis of both W and A)
- *     W [m×k] dtype `wt`, row stride ldw   — WEIGHTS, may be quantized (selects the kernel)
- *     A [n×k] dtype `at`, row stride lda   — ACTIVATIONS, float
- *     C       dtype `ct`, row stride ldc   — OUTPUT, TOKEN-major (ggml/llama.cpp layout):
+ *     W [m×k] dtype `wt`, row stride ldw   - WEIGHTS, may be quantized (selects the kernel)
+ *     A [n×k] dtype `at`, row stride lda   - ACTIVATIONS, float
+ *     C       dtype `ct`, row stride ldc   - OUTPUT, TOKEN-major (ggml/llama.cpp layout):
  *                                            C[j*ldc + i] = dot(W[i,:], A[j,:]), i.e. each token j's
  *                                            m-feature vector is contiguous (feature i unit-stride), ldc >= m.
  * Strides in ELEMENTS (k is unit-stride). Pointers borrowed for the call. ctx==NULL -> global.
@@ -183,7 +183,7 @@ JAM_API const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label 
 
 /* Destroy the process-global context (the one jam_mm(NULL,...) uses) and free its pool + scratch. A no-op
  * if it was never created; a later jam_mm(NULL,...) lazily re-creates it (idempotent). Most callers never
- * need this — the global is a reachable singleton, not a leak. Call it for a clean teardown: a plugin host
+ * need this - the global is a reachable singleton, not a leak. Call it for a clean teardown: a plugin host
  * BEFORE dlclose (else each load/unload accumulates one), or a JVM host from a shutdown hook. It is NOT run
  * automatically (joining the pool threads from a library destructor is unsafe during VM teardown). NOT safe
  * to call concurrently with any jam_mm(NULL,...). */

@@ -1,4 +1,4 @@
-/* ARM NEON-baseline K-quant kernels (Q4_K/Q5_K/Q6_K @ F32 -> F32) — the int8-dot replacement for the
+/* ARM NEON-baseline K-quant kernels (Q4_K/Q5_K/Q6_K @ F32 -> F32) - the int8-dot replacement for the
  * generic float floor on aarch64 cores without dotprod. The int8 dot uses widening multiply (vmull_s8) +
  * pairwise-accumulate (vpadalq_s16); the decode + correction live in jam_kquant_engine.inc. */
 #include "jam_internal.h"

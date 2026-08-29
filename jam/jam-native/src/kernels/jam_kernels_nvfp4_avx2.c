@@ -1,4 +1,4 @@
-/* AVX2 NVFP4 kernel — GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64 elems = 4 sub-blocks of 16, no global
+/* AVX2 NVFP4 kernel - GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64 elems = 4 sub-blocks of 16, no global
  * scale). Decode = MXFP4's pshufb LUT; the sub-block nibble order (byte s*8+j: low=elem j, high=elem j+8)
  * means a 32-element span (2 sub-blocks, 16 bytes) decodes interleaved, so an unpacklo/hi_epi64 reorders it
  * to two contiguous 16-element halves. Per-16 UE4M3 scale via the shared 256-entry

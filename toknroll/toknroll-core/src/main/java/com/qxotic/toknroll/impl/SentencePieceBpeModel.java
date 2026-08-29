@@ -17,7 +17,7 @@ import java.util.Objects;
 /**
  * SentencePiece-flavored BPE model.
  *
- * <p>Strict vocabulary/merge consumption — callers must apply metaspace normalization externally.
+ * <p>Strict vocabulary/merge consumption - callers must apply metaspace normalization externally.
  *
  * <p>Dual merge strategy:
  *

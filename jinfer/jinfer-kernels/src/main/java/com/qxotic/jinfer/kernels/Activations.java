@@ -43,14 +43,14 @@ public final class Activations {
 
     private static final float GELU_C = (float) Math.sqrt(2.0 / Math.PI);
 
-    /** tanh-approximation GELU (exact {@code Math.tanh}) — the scalar-fallback oracle. */
+    /** tanh-approximation GELU (exact {@code Math.tanh}) - the scalar-fallback oracle. */
     public static float gelu(float x) {
         float inner = GELU_C * (x + 0.044715f * x * x * x);
         return 0.5f * x * (1.0f + (float) Math.tanh(inner));
     }
 
     /**
-     * Scalar twin of {@link #geluMultiply}'s vector body — same op order and {@link Ops#tanhApprox}
+     * Scalar twin of {@link #geluMultiply}'s vector body - same op order and {@link Ops#tanhApprox}
      * as the lanes, so the vector loop's scalar tail applies the identical approximation.
      */
     private static float geluApprox(float x) {
@@ -255,7 +255,7 @@ public final class Activations {
         Ops.siluMultiplyInPlace(gate, gateOff, up, upOff, n);
     }
 
-    /** The WaveNet gate {@code tanh(filter) * sigmoid(gate)} — the scalar-fallback oracle. */
+    /** The WaveNet gate {@code tanh(filter) * sigmoid(gate)} - the scalar-fallback oracle. */
     public static float tanhSigmoid(float filter, float gate) {
         return (float) Math.tanh(filter) * sigmoid(gate);
     }
@@ -340,7 +340,7 @@ public final class Activations {
                         .intoMemorySegment(r.vseg(), b, ByteOrder.LITTLE_ENDIAN);
             }
             // tail uses tanhApprox (not Math.tanh) so every lane goes through one monotonic
-            // function — soft-cap can't reorder logits across the body/tail boundary.
+            // function - soft-cap can't reorder logits across the body/tail boundary.
             for (int i = bound; i < n; i++) {
                 long b = r.vbase() + (long) (off + i) * Float.BYTES;
                 writeFloat(r.vseg(), b, cap * Ops.tanhApprox(readFloat(r.vseg(), b) * inv));

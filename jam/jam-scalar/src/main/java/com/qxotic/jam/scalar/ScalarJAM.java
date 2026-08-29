@@ -16,7 +16,7 @@ import java.util.function.IntConsumer;
 
 /**
  * Pure-Java reference {@link JAM}: a {@code dot()}-based matmul that decodes the quantized weight
- * on the fly, for any shape (prefill or decode). No native code, no Vector API — the portable floor
+ * on the fly, for any shape (prefill or decode). No native code, no Vector API - the portable floor
  * and the correctness reference every other backend is checked against. Activations and result are
  * F32.
  *
@@ -25,7 +25,7 @@ import java.util.function.IntConsumer;
  * geometry.
  *
  * <p>Decodes every jam weight dtype: {@code F32 F16 BF16 Q4_0 Q8_0 Q1_0}, the k-quants {@code
- * Q4_K/Q5_K/Q6_K}, and FP4 {@code MXFP4/NVFP4} — the dequant mirrors jam's native reference
+ * Q4_K/Q5_K/Q6_K}, and FP4 {@code MXFP4/NVFP4} - the dequant mirrors jam's native reference
  * (jam_ref.h).
  */
 public final class ScalarJAM implements JAM {
@@ -82,7 +82,7 @@ public final class ScalarJAM implements JAM {
     }
 
     /**
-     * Always true today — an exhaustiveness tripwire, not a filter: the default-less switch fails
+     * Always true today - an exhaustiveness tripwire, not a filter: the default-less switch fails
      * to compile when a {@link GGMLType} constant is added, forcing a decision here before {@link
      * #decode} can meet the new dtype at runtime.
      */

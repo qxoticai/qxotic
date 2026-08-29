@@ -15,7 +15,7 @@ import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
 
 /**
- * Elementwise FP32 kernels over views — the migration of {@code F32FloatTensor}'s {@code *InPlace}
+ * Elementwise FP32 kernels over views - the migration of {@code F32FloatTensor}'s {@code *InPlace}
  * virtuals into dtype-checked statics. Bodies are byte-for-byte the old vectorized overrides
  * (scalar fallbacks now read raw FP32, sound because {@link Raw#f32} verified the dtype at entry).
  * All operands must be dense FP32 views.
@@ -617,7 +617,7 @@ public final class Ops {
     }
 
     // njuffa minimax-rational tanh coefficients (the "cutoff" variant). One source of truth,
-    // shared by tanhVec and the hand-inlined SiLU loop above — keep them in sync.
+    // shared by tanhVec and the hand-inlined SiLU loop above - keep them in sync.
     static final float TANH_CUTOFF = 5.76110792f; // clamp |x| here (tanh ~ ±1 beyond)
     static final float TANH_N0 = -1.60153955e-4f,
             TANH_N1 = -9.34448242e-1f,
@@ -651,7 +651,7 @@ public final class Ops {
     }
 
     /**
-     * Scalar twin of {@link #tanhVec} — same clamp, constants and fma ops, so a vectorized loop's
+     * Scalar twin of {@link #tanhVec} - same clamp, constants and fma ops, so a vectorized loop's
      * scalar remainder applies the identical approximation to its tail lanes (one monotonic
      * function across the whole span) instead of diverging to {@code Math.tanh}.
      */
@@ -741,7 +741,7 @@ public final class Ops {
      * {@code F32FloatTensor.softmaxInPlace}): vector max, then the fused exp+sum leg of {@code
      * FastMath} INLINE at this use site (a helper stays boxed under the native-image Vector API
      * expansion), then divide by the sum. Scalar fallback is the generic {@code max / Math.exp /
-     * sum / divide} — NOT the approximation (faithful to the old floor).
+     * sum / divide} - NOT the approximation (faithful to the old floor).
      */
     public static void softmaxInPlace(MemoryView<MemorySegment> view, long thisOffset, int size) {
         Raw r = Raw.f32(view, "view");
@@ -790,7 +790,7 @@ public final class Ops {
 
     /**
      * The fused exp+sum leg of a softmax over an F32 span: {@code t[i] = e^(t[i]-max)} in place,
-     * returning the sum — the vector mirror of {@link FastMath#expNeg} (ported from {@code
+     * returning the sum - the vector mirror of {@link FastMath#expNeg} (ported from {@code
      * FastMath.expSumInPlace}; the exp body is fused INLINE, see {@link #softmaxInPlace}).
      */
     private static double expSumInPlace(Raw r, long offset, int n, float max) {

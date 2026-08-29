@@ -60,7 +60,7 @@ struct jam_ctx {
     _Atomic int      busy;           /* serial-stream guard: jam_mm try-acquires (1 exchange); else EBUSY */
     jam_task_fn      f32_kernel;     /* best F32 row-range kernel for `active`, resolved at create */
     jam_task_fn      q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
-                                      * by explicit feature check — AVX-VNNI is orthogonal to the ladder. */
+                                      * by explicit feature check - AVX-VNNI is orthogonal to the ladder. */
     jam_task_fn      q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
                                         * SMMLA's two-dimensional tile cannot help a one-column GEMV. */
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
@@ -80,12 +80,12 @@ struct jam_ctx {
 
     /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). Assumes a context is used
      * serially (the global ctx by jinfer's forward thread); concurrent jam_mm on ONE ctx would race
-     * this — TODO for a concurrent-safe variant. The generic path needs none of it. */
+     * this - TODO for a concurrent-safe variant. The generic path needs none of it. */
     void*  q_aq;   size_t q_aq_cap;   /* int8 [n*k] requantized activations */
     void*  q_ad;   size_t q_d_cap;   /* float [n*nb] per-block scales (q_asum shares this cap) */
     void*  q_asum;                    /* float [n*nb] per-block Σ int8 acts (K-quant min term) */
 
-    /* BF16 activation-conversion scratch (vdpbf16ps path) — same serial-stream contract as q_aq. */
+    /* BF16 activation-conversion scratch (vdpbf16ps path) - same serial-stream contract as q_aq. */
     void*  bf_x;   size_t bf_x_cap;   /* bf16 [n*k] converted activations */
     void*  f32_xp; size_t f32_xp_cap; /* f32 [npanels*32*k] transposed activation panels */
     jam_task_fn f32p_kernel, f32p_pack;  /* packed-panel F32 path (avx512); NULL -> mnpack */
@@ -110,7 +110,7 @@ typedef struct {
     int n, k;
 } jam_mm_job;
 
-/* Portable-C floor — always built, always available. Per-ISA kernels (jam_kernels_avx2.c,
+/* Portable-C floor - always built, always available. Per-ISA kernels (jam_kernels_avx2.c,
  * jam_kernels_avx512.c, jam_kernels_neon.c, ...) live in their own TUs compiled
  * with their -m flags and bound at create; this scalar one is the fallback and the reference. */
 void jam_mm_f32_generic(void* job, int row_begin, int row_end, int tid);
@@ -164,7 +164,7 @@ typedef struct {
     int n, k, nb;               /* nb = k/32 */
     int8_t*  aq;                /* [n*k]  requantized activations (VNNI) */
     float*   ad;                /* [n*nb] per-block activation scales */
-    float*   asum;              /* [n*nb] per-block Σ(int8 activations) — K-quant dmin·min term (or NULL) */
+    float*   asum;              /* [n*nb] per-block Σ(int8 activations) - K-quant dmin·min term (or NULL) */
     int      m;                 /* #output rows (features); the group-indexed rp kernels read this, NOT ldc
                                  * (the API permits ldc > m, so ldc must not be reused as the row count) */
 } jam_q8_job;
@@ -194,7 +194,7 @@ void jam_q4_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q4_0 
 void jam_mxfp4_repack_band(void* job, int t0, int t1, int tid); /* phase 2: MXFP4 16-row VNNI repack matmul */
 void jam_q5k_repack_band(void* job, int t0, int t1, int tid);  /* phase 2: Q5_K 16-row VNNI repack matmul */
 #endif
-/* 256-bit AVX-VNNI Q8_0 band (8-row groups) — the no-AVX-512 client path. Defined in the avxvnni TU;
+/* 256-bit AVX-VNNI Q8_0 band (8-row groups) - the no-AVX-512 client path. Defined in the avxvnni TU;
  * shares the jam_q4k_job + per-worker repack scratch with the AVX-512 band. */
 void jam_q8_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);
 void jam_q8_0_requant_256(void* job, int s0, int s1, int tid);   /* pure-256 phase-1 requant for the band */

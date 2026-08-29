@@ -1,5 +1,5 @@
 /* 128-bit (SSE3) quantized GEMM engine: C = W @ Aᵀ, W decoded to int8 (two __m128i halves), A int8-requantized.
- * A *true* SSE3 floor: the int8 dot is sign-extend (unpacklo/hi + arithmetic-shift) + madd_epi16 — NO SSSE3
+ * A *true* SSE3 floor: the int8 dot is sign-extend (unpacklo/hi + arithmetic-shift) + madd_epi16 - NO SSSE3
  * maddubs, so no abs/sign trick (signed int16 madd carries the signs). The block reduce is SSE3 haddps and the
  * scale·dot accumulate is mul+add (SSE has no FMA). The includer defines, before #include:
  *

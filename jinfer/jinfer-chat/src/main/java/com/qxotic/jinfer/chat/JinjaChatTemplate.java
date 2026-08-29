@@ -50,7 +50,7 @@ final class JinjaChatTemplate {
     /**
      * Renders the request maps to prompt tokens. {@code kwargs} merges extra template variables
      * ({@code chat_template_kwargs}); per-request keys win over the engine's defaults. Falls back
-     * to a best-effort ChatML framing only when the GGUF carries no template at all — a template
+     * to a best-effort ChatML framing only when the GGUF carries no template at all - a template
      * the parser rejects fails the model load instead (see {@link JinjaRenderer#template}).
      */
     IntSequence render(

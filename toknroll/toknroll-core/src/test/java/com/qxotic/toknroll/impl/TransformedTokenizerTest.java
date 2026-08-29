@@ -40,7 +40,7 @@ class TransformedTokenizerTest {
     }
 
     // ------------------------------------------------------------------
-    // decodeBytesInto — normal path (no byte fallback)
+    // decodeBytesInto - normal path (no byte fallback)
     // ------------------------------------------------------------------
 
     @Test
@@ -124,7 +124,7 @@ class TransformedTokenizerTest {
     }
 
     // ------------------------------------------------------------------
-    // decodeBytesInto — byte fallback path
+    // decodeBytesInto - byte fallback path
     // ------------------------------------------------------------------
 
     @Test

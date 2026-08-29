@@ -94,7 +94,7 @@ static inline __m512 q4k_block16(const uint8_t* qs, const float* dw, const float
     return f;
 }
 
-/* store a 16-feature result for token `col` into token-major C[col*ldc + row..row+15] — contiguous. */
+/* store a 16-feature result for token `col` into token-major C[col*ldc + row..row+15] - contiguous. */
 static inline void q4k_store16(__m512 f, float* out, int64_t ldc, int row, int col) {
     _mm512_storeu_ps(out + (int64_t) col * ldc + row, f);
 }
@@ -118,7 +118,7 @@ static float q4k_dot_scalar(const uint8_t* w, const float* x, int sblocks) {
 
 /* ---- phase 2: one weight-row tile (band of JAM_VNNI_BAND rows) ---- */
 /* Q4_K column register-tiled: each packed weight block loaded + nibble-decoded (and/srli) ONCE, then both
- * sub-blocks of the pair vpdpbusd'd against JAM_VNNI_NR activation columns — amortizes load AND decode. The
+ * sub-blocks of the pair vpdpbusd'd against JAM_VNNI_NR activation columns - amortizes load AND decode. The
  * dmin·min term stays per-column float fnmadd vs the per-16 x-sums. Two int accumulators (lo/hi) per col. */
 static inline void q4k_block16_nr(const uint8_t* qs, const float* dw, const float* mw, const int8_t* xq,
                                   const float* dx, const float* xs, int s0, int pairs, int kblocks,
@@ -189,7 +189,7 @@ void jam_q4k_band(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= Q6_K (ql[128] qh[64] scales[16] d(f16) = 210B) — shares the s8 activation quant ===
+/* ================= Q6_K (ql[128] qh[64] scales[16] d(f16) = 210B) - shares the s8 activation quant ===
  * 6-bit weights (ql nibble + qh 2 bits, biased +32 -> 0..63 unsigned operand); scales per-16 elements;
  * the -32 offset folds into d·scale·32·xsum16 (exact activation), so no per-row min array. */
 static void repack_q6k_group16(const uint8_t* wbase, int64_t w_stride, int sblocks, uint8_t* qs, float* dw) {
@@ -421,18 +421,18 @@ void jam_q8_0_repack_band(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= Q4_0 16-row VNNI repack — reuses q4k_block16/q4k_store16/jam_q4k_quant ===========
+/* ================= Q4_0 16-row VNNI repack - reuses q4k_block16/q4k_store16/jam_q4k_quant ===========
  * Q4_0 = { fp16 d; nibble qs[16] } = 18B, value = d·(nibble-8). The nibble (0..15) is the UNSIGNED
  * vpdpbusd operand (like Q4_K, unlike Q8_0); the -8 offset is the Q4_K "min" with (dw,mw)=(d,8·d),
  * corrected in float via the exact activation sums. Only the nibble unpack is Q4_0-specific.
  *
- * PERF NOTE — this kernel is at the compute ceiling; do NOT expect a "Q4_0-specialized" speedup.
+ * PERF NOTE - this kernel is at the compute ceiling; do NOT expect a "Q4_0-specialized" speedup.
  * Q4_0 and Q8_0 dot the SAME K, so they issue the SAME 8 vpdpbusd/block (m·n·k int8 MACs either way);
  * 4-bit can only ADD the nibble unpack, never remove MACs. We hide the unpack (one and + one srli/and
  * straight into vpdpbusd, -8 folded into the mw bias, no vpshufb LUT), so Q4_0 ≈ Q8_0 at the GEMM level
- * (~2.6 GMAC/s @ m4096·n512·k2048, ~3x llama.cpp's tinyBLAS) — the most you can ask of a compute-bound
+ * (~2.6 GMAC/s @ m4096·n512·k2048, ~3x llama.cpp's tinyBLAS) - the most you can ask of a compute-bound
  * prefill. At MATCHED threads the full model TIES llama.cpp: Llama-1B Q4_0 pp512 ~2234 t/s vs llama.cpp
- * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs — both
+ * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs - both
  * JAM_NATIVE_THREADS and the jinfer FJP pool. Capping either to 16 starves the GEMM + the Java non-GEMM and
  * is what makes Q4_0 *look* ~10% slow; it is the thread budget, NOT this band. */
 
@@ -485,7 +485,7 @@ static inline __m512 q4_0_block16(const uint8_t* qs, const float* dw, const floa
 #define JAM_Q40_NR JAM_VNNI_NR   /* Q4_0's own column-tile width (tunable via -DJAM_Q40_NR) */
 #endif
 /* Column register-tiled variant: load+decode each weight block ONCE, vpdpbusd it against JAM_Q40_NR
- * activation columns into NR accumulators — amortizes the weight load + nibble decode (and/srli) + the
+ * activation columns into NR accumulators - amortizes the weight load + nibble decode (and/srli) + the
  * float scale across NR columns, so vpdpbusd stops being ~1/3 of the inner loop. Stores all NR results. */
 static inline void q4_0_block16_nr(const uint8_t* qs, const float* dw, const float* mw,
                                    const int8_t* xq, const float* dx, const float* xs,
@@ -548,15 +548,15 @@ void jam_q4_0_repack_band(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= Q1_0 16-row VNNI repack — packed SIGN-BIT band (1 bit/weight in scratch) =========
+/* ================= Q1_0 16-row VNNI repack - packed SIGN-BIT band (1 bit/weight in scratch) =========
  * block_q1_0 = { fp16 d; uint8_t qs[16] } = 18B / 128 elems; value = d·(2b-1), b ∈ {0,1} (LSB-first).
- * The bit is the UNSIGNED vpdpbusd operand — expanded to 0/1 bytes IN-REGISTER via one kmov +
- * vmovdqu8{k}{z} of a hoisted all-ones vector per 16-row×4-elem group — and the s8 activation
+ * The bit is the UNSIGNED vpdpbusd operand - expanded to 0/1 bytes IN-REGISTER via one kmov +
+ * vmovdqu8{k}{z} of a hoisted all-ones vector per 16-row×4-elem group - and the s8 activation
  * broadcast is the signed one:
  *     d·Σ(2b-1)·x  =  d·( 2·dx·Σ b·x_q  −  Σx )
  * where −Σx uses the exact per-16 float activation sums: the same deferred-offset scheme as Q4_0's
  * −8 (offset 1 ⇒ a smaller correction). The repack stores 8 permuted 64-bit masks per 32-elem block
- * (bit r*4+e = row r, elem g*4+e): 64 B/block/16rows — 8× smaller than the Q8_0 band, L1-resident —
+ * (bit r*4+e = row r, elem g*4+e): 64 B/block/16rows - 8× smaller than the Q8_0 band, L1-resident  -
  * plus one d per row/block (mw is not needed: the offset scale IS d). */
 #include "jam_q1_0.h"   /* jam_blk_q1_0 layout + the shared exact scalar dot */
 
@@ -596,7 +596,7 @@ static inline __m512 q1_0_block16(const uint8_t* qs, const float* dw,
 }
 
 /* Column register-tiled: each mask expanded ONCE (kmov + masked move), vpdpbusd'd against JAM_VNNI_NR
- * activation columns — the weight side of this band is so small that the expands are the only weight
+ * activation columns - the weight side of this band is so small that the expands are the only weight
  * cost, amortized across the NR columns like the other bands' decodes. */
 static inline void q1_0_block16_nr(const uint8_t* qs, const float* dw, const int8_t* xq,
                                    const float* dx, const float* xs, int s0, int nb,
@@ -659,7 +659,7 @@ void jam_q1_0_repack_band(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= MXFP4 16-row VNNI repack (gpt-oss experts) — Q4_0 packing + Q8_0 +128/cw + vpshufb ===
+/* ================= MXFP4 16-row VNNI repack (gpt-oss experts) - Q4_0 packing + Q8_0 +128/cw + vpshufb ===
  * Block = { e8m0; nibble qs[16] } = 17B; nibble -> SIGNED int8 code (LUT). value = code · dhalf(e). The
  * codes are signed so (like Q8_0) the unsigned vpdpbusd operand is the activation (a^0x80=+128) and the
  * signed operand is the decoded code; +128 bias corrected per row via cw = 128·dhalf·Σcode. Nibbles kept
@@ -791,7 +791,7 @@ void jam_mxfp4_repack_band(void* arg, int t0, int t1, int tid) {
     }
 }
 
-/* ================= Q5_K 16-row VNNI repack — Q4_K scheme, 5-bit (byte-expanded) =====================
+/* ================= Q5_K 16-row VNNI repack - Q4_K scheme, 5-bit (byte-expanded) =====================
  * Q5_K = { d dmin scales[12] qh[32] qs[128] } = 176B. value = d·sc·q5 - dmin·mn, q5 = qs nibble | (qh
  * bit<<4) ∈ 0..31. 5+5 bits don't pack 2/byte, so the repack stores the 0..31 value as a byte (512 B/
  * sub-block); the dot/scale/min handling is exactly Q4_K (unsigned weight, dmin·min via xsum). */

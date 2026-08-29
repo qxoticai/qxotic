@@ -173,7 +173,7 @@ public final class GrammarLegacyTest {
         return !allowedSet(cur, v).isEmpty();
     }
 
-    // After a complete top-level JSON value, RFC 8259 allows only trailing whitespace/EOS — no
+    // After a complete top-level JSON value, RFC 8259 allows only trailing whitespace/EOS - no
     // further content. (Grammar.json is "ws value ws", so whitespace tokens stay valid.)
     static boolean jsonDone(Grammar.Cursor cur, Grammar.Vocab v) {
         return rejects(cur, v, ",")
@@ -1927,7 +1927,7 @@ public final class GrammarLegacyTest {
         check("left-rec 'b'", allows(c, v, "b"));
         check("left-rec 'b' at start", allows(c, v, "b"));
         advance(c, v, "b");
-        // language is b·a* — after 'b' the recursive "a" tail is reachable (best-effort left rec)
+        // language is b·a* - after 'b' the recursive "a" tail is reachable (best-effort left rec)
         check("left-rec 'b' then 'a'", allows(c, v, "a"));
     }
 
@@ -2011,7 +2011,7 @@ public final class GrammarLegacyTest {
     }
 
     // ========================================================================
-    // MULTI-BYTE TOKEN TESTS (MockV2 — realistic tokenizer simulation)
+    // MULTI-BYTE TOKEN TESTS (MockV2 - realistic tokenizer simulation)
     // ========================================================================
 
     static void testMultiByteTokens() {
@@ -2112,7 +2112,7 @@ public final class GrammarLegacyTest {
         advance(c, v, "\"");
         check("str plain ok", anyValid(c, v));
 
-        // backslash is part of string — it transitions to escape state
+        // backslash is part of string - it transitions to escape state
         c.reset();
         advance(c, v, "{");
         advance(c, v, "\"");
@@ -2304,7 +2304,7 @@ public final class GrammarLegacyTest {
         Grammar.Cursor c = s.cursor();
         check("dead-lit 'a' ok", allows(c, v, "a"));
 
-        // advance with 'b' — should go to -1, maskLogits returns false
+        // advance with 'b' - should go to -1, maskLogits returns false
         advance(c, v, "b");
         resetScratch(v.size());
         boolean maskOk = c.maskLogits(scratch(v));
@@ -2522,7 +2522,7 @@ public final class GrammarLegacyTest {
         check("cc-hex space", allows(c, v, " "));
         check("cc-hex space reject a", rejects(c, v, "a"));
 
-        // \x21 (!) — char in MockV via hex code
+        // \x21 (!) - char in MockV via hex code
         s = Grammar.of("root ::= [\\x21]", v);
         c = s.cursor();
         check("cc-hex bang", allows(c, v, "!"));
@@ -2549,7 +2549,7 @@ public final class GrammarLegacyTest {
         s = Grammar.of("root ::= \"hello\" # comment", v);
         check("comment after str compiles", s.isValid());
 
-        // "#\" inside string (hash-backslash-quote) — quote is escaped
+        // "#\" inside string (hash-backslash-quote) - quote is escaped
         Grammar.Spec s2 = null;
         try {
             s2 = Grammar.of("root ::= \"#\\\"x\"", v); // string: #"x
@@ -2631,7 +2631,7 @@ public final class GrammarLegacyTest {
         Grammar.Cursor c = s.cursor();
         check("last-token dot allows !", allows(c, v, "!"));
         advance(c, v, "!");
-        // After consuming one dot, grammar is satisfied — no more tokens valid
+        // After consuming one dot, grammar is satisfied - no more tokens valid
         check("last-token after ! done", !anyValid(c, v));
 
         // Ensure mask bit for last token doesn't overflow
@@ -2689,7 +2689,7 @@ public final class GrammarLegacyTest {
         Grammar.Spec s = Grammar.of("root ::= \"a\"", zv);
         check("zero-vocab compiles", s.isValid());
         Grammar.Cursor c = s.cursor();
-        // maskLogits with zero vocab — should not crash
+        // maskLogits with zero vocab - should not crash
         MemoryView<?> logits = scratch(zv);
         boolean r = c.maskLogits(logits);
         check("zero-vocab mask returns false", !r);
@@ -2730,20 +2730,20 @@ public final class GrammarLegacyTest {
         System.out.println("-- empty char class --");
         MockV v = new MockV();
 
-        // [^] — negated empty: matches any byte (since negated nothing == everything)
+        // [^] - negated empty: matches any byte (since negated nothing == everything)
         Grammar.Spec s = Grammar.of("root ::= [^]", v);
         check("empty-neg compiles", s.isValid());
         Grammar.Cursor c = s.cursor();
         check("empty-neg matches a", allows(c, v, "a"));
         check("empty-neg matches {", allows(c, v, "{"));
 
-        // [] should be treated as matching nothing (invalid) — but may parse
+        // [] should be treated as matching nothing (invalid) - but may parse
         Grammar.Spec s2 = Grammar.of("root ::= []", v);
         check("empty-pos compiles", s2.isValid());
         Grammar.Cursor c2 = s2.cursor();
         check("empty-pos rejects all", !anyValid(c2, v));
 
-        // [^\x00-\xFF] — negated everything: matches nothing
+        // [^\x00-\xFF] - negated everything: matches nothing
         Grammar.Spec s3 = Grammar.of("root ::= [^\\x00-\\xFF]", v);
         check("neg-all compiles", s3.isValid());
         Grammar.Cursor c3 = s3.cursor();

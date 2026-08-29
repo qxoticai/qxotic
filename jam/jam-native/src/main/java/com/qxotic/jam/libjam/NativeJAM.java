@@ -19,7 +19,7 @@ import java.util.function.IntConsumer;
 import java.util.function.ObjIntConsumer;
 
 /**
- * The native ({@code libjam}) {@link JAM} implementation — a handle to a jam context (a {@code
+ * The native ({@code libjam}) {@link JAM} implementation - a handle to a jam context (a {@code
  * jam_ctx*}; {@link #global()} is the process-wide Java context). The constructor is private and
  * the provider owns one native context for the life of the process.
  *
@@ -28,7 +28,7 @@ import java.util.function.ObjIntConsumer;
  * jam_mm} is reached via the JNI shim (default) or a Panama downcall, selected once via {@code
  * -Djam.native.binding} (or {@code JAM_NATIVE_BINDING}).
  *
- * <p><b>Concurrency:</b> a context is a single serial stream — concurrent calls on one context
+ * <p><b>Concurrency:</b> a context is a single serial stream - concurrent calls on one context
  * serialize through a fair (FIFO) lock, so each waits its turn. {@code -Djam.native.serial=false}
  * (or {@code JAM_NATIVE_SERIAL=false}) restores the raw behavior where a contended call surfaces
  * {@link JAM#EBUSY} from the native guard (callers typically fall back to another backend).
@@ -38,7 +38,7 @@ public final class NativeJAM implements JAM {
     private final long ctx; // owned jam_ctx*
 
     /**
-     * {@code -Djam.native.serial} (or {@code JAM_NATIVE_SERIAL}): default {@code true} — concurrent
+     * {@code -Djam.native.serial} (or {@code JAM_NATIVE_SERIAL}): default {@code true} - concurrent
      * mm calls on one context serialize through a fair (FIFO) lock, so contended callers wait their
      * turn; {@code false} restores the raw behavior where a contended call surfaces {@code EBUSY}
      * from the native guard and callers fall back. Declared before {@link #global()}'s
@@ -115,7 +115,7 @@ public final class NativeJAM implements JAM {
     }
 
     /**
-     * A heap (array-backed) segment has no stable native address — its {@code address()} is a heap
+     * A heap (array-backed) segment has no stable native address - its {@code address()} is a heap
      * offset, not a pointer, so the kernel would corrupt memory. Reject it before we ever call
      * native.
      */
@@ -124,7 +124,7 @@ public final class NativeJAM implements JAM {
             throw new IllegalArgumentException(
                     "jam.mm: "
                             + which
-                            + " must be a NATIVE (off-heap) MemorySegment — heap/array-backed has"
+                            + " must be a NATIVE (off-heap) MemorySegment - heap/array-backed has"
                             + " no native address");
     }
 
@@ -149,7 +149,7 @@ public final class NativeJAM implements JAM {
         throw new IndexOutOfBoundsException(
                     "jam.mm: "
                             + which
-                            + " segment too small — need "
+                            + " segment too small - need "
                             + need
                             + " B at offset "
                             + off
@@ -309,7 +309,7 @@ public final class NativeJAM implements JAM {
             "ffm".equalsIgnoreCase(NativeLoader.config("jam.native.binding", "jni"));
 
     /**
-     * Panama downcall to {@code jam_mm} — built only when the FFM backend is selected; {@code null}
+     * Panama downcall to {@code jam_mm} - built only when the FFM backend is selected; {@code null}
      * under JNI.
      */
     private static final MethodHandle MM_FFM;
@@ -335,7 +335,7 @@ public final class NativeJAM implements JAM {
                                                                         "jam: exported symbol"
                                                                                 + " 'jam_mm' not"
                                                                                 + " found")),
-                                        // jam_mm(ctx, w,wt,ldw, a,at,lda, r,rt,ldr, m,n,k) —
+                                        // jam_mm(ctx, w,wt,ldw, a,at,lda, r,rt,ldr, m,n,k)  -
                                         // pointers as raw 64-bit addresses
                                         FunctionDescriptor.of(
                                                 JAVA_INT, JAVA_LONG, // jam_ctx* ctx

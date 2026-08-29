@@ -195,7 +195,7 @@ public final class KernelArgs {
                         throw new IllegalArgumentException(
                                 "Unknown kernel arg type: "
                                         + arg.getClass().getName()
-                                        + " — use MemoryView/Tensor for buffers,"
+                                        + " - use MemoryView/Tensor for buffers,"
                                         + " boxed primitives or ScalarArg for scalars");
             }
         }

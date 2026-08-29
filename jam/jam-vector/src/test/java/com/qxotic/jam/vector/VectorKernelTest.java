@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
- * Standalone correctness for jam-vector's relocated SIMD kernels — so the jam reactor verifies its
+ * Standalone correctness for jam-vector's relocated SIMD kernels - so the jam reactor verifies its
  * own register-tiled gemm instead of relying on jinfer downstream. For each tileable dtype a
  * synthetic quantized weight (exact-representable, via the shared {@link QuantWeights} fixture) and
  * a random F32 activation are fed through both the vector kernel and the scalar reference; the two
  * must agree to within the int8-activation quantization the tiles use. Kernels are invoked exactly
- * as jinfer does — weight as a raw segment, activation + output through the GLOBAL segment at their
- * absolute addresses — which is uniform whether a kernel stores via {@code o.set} or absolute
+ * as jinfer does - weight as a raw segment, activation + output through the GLOBAL segment at their
+ * absolute addresses - which is uniform whether a kernel stores via {@code o.set} or absolute
  * {@code putFloat}.
  *
  * <p>The kernels need a 128/256/512-bit FloatVector; the suite is skipped (not failed) where that's
@@ -149,7 +149,7 @@ class VectorKernelTest {
         MemorySegment ov = A.allocate((long) n * m * 4, 64); // vector output
         MemorySegment os = A.allocate((long) n * m * 4, 64); // scalar reference output
 
-        // vector: invoked as jinfer does — weight raw, activation/output via GLOBAL at absolute
+        // vector: invoked as jinfer does - weight raw, activation/output via GLOBAL at absolute
         // addresses.
         kernel.run(
                 w.seg(),

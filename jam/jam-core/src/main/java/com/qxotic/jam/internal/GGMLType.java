@@ -6,7 +6,7 @@ import com.qxotic.jam.JAM;
  * Internal block geometry shared by JAM's built-in providers. The public dtype surface remains the
  * {@code int} tags on {@link JAM}.
  *
- * <p>Only the dtypes jam runs are listed — a one-to-one mirror of {@link JAM}'s tags (a test keeps
+ * <p>Only the dtypes jam runs are listed - a one-to-one mirror of {@link JAM}'s tags (a test keeps
  * them in sync). An unrecognized code -> {@link #byCode} returns {@code null}. Codes match
  * GGML/GGUF, but jam keeps its OWN copy here and carries <b>no dependency</b> on {@code
  * com.qxotic.gguf}.
@@ -53,7 +53,7 @@ public enum GGMLType {
     }
 
     /**
-     * Bytes the kernel touches for an operand of {@code rows} rows — {@code rowElems} data elements
+     * Bytes the kernel touches for an operand of {@code rows} rows - {@code rowElems} data elements
      * each, at ELEMENT row-stride {@code stride}: {@code (rows-1)} full strides plus the last row's
      * data. This is the element-stride → byte-span conversion {@link JAM#mm}'s bounds check needs
      * (it then compares this to {@code MemorySegment.byteSize()}).

@@ -7,7 +7,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
 /**
- * The {@code (vseg, vbase)} pair a kernel runs on — the exact idiom of the old {@code
+ * The {@code (vseg, vbase)} pair a kernel runs on - the exact idiom of the old {@code
  * SegmentFloatTensor} fields: with {@link Segments#GLOBAL_SEGMENT}, {@code vseg} is the
  * all-of-memory segment and {@code vbase} the absolute byte base (view's {@code byteOffset} folded
  * in); without it, the segment itself and its plain byte offset. Valid for BOTH vector loads

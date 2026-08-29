@@ -16,14 +16,14 @@ static int g_fail = 0, g_checks = 0;
 
 /* Per-dtype precision tracker: the pass/fail tolerance is a loose floor, so we ALSO record the actual worst
  * abs/rel error vs the nearest reference (max over every context + size). Reported at the end so a precision
- * regression — a kernel that drifts but stays under the gate — shows up as the number creeping. */
+ * regression - a kernel that drifts but stays under the gate - shows up as the number creeping. */
 static struct { const char* nm; double maxrel, maxabs; } g_prec[24];
 static int g_prec_n = 0;
 static void track_prec(const char* nm, double abserr, double ref) {
     int i; for (i = 0; i < g_prec_n; i++) if (!strcmp(g_prec[i].nm, nm)) break;
     if (i == g_prec_n) { g_prec[i].nm = nm; g_prec[i].maxrel = g_prec[i].maxabs = 0; ++g_prec_n; }
     if (abserr > g_prec[i].maxabs) g_prec[i].maxabs = abserr;
-    /* rel only for outputs of meaningful magnitude — near-zero refs (catastrophic cancellation) make rel
+    /* rel only for outputs of meaningful magnitude - near-zero refs (catastrophic cancellation) make rel
      * explode (e.g. a 3e-6 abs error on a ~0 dot) without indicating any real precision loss. */
     if (fabs(ref) > 1.0) { double rel = abserr / fabs(ref); if (rel > g_prec[i].maxrel) g_prec[i].maxrel = rel; }
 }
@@ -197,8 +197,8 @@ static void suite_q1_0(int m, int n, int k) {     /* k a multiple of 128; GGML b
     jam_ref_fill(W,(size_t)m*k,11); jam_ref_fill(A,(size_t)n*k,12);
     jam_ref_q1_0_blk* WQ = (jam_ref_q1_0_blk*) jam_ref_quant_q1_0(W,m,k);
     /* THREE references, all valid roundings of the same dot (the check is vs the NEAREST):
-     *   RE — exact float;  RR — the vec_dot int path (per-32 int8 acts through the products);
-     *   RB — the VNNI band's deferred-offset math: d·(2·dA·Σ bit·q − Σx_float) per 32-block, the
+     *   RE - exact float;  RR - the vec_dot int path (per-32 int8 acts through the products);
+     *   RB - the VNNI band's deferred-offset math: d·(2·dA·Σ bit·q − Σx_float) per 32-block, the
      *        Q4_0-style scheme where the −Σx term uses the exact float sums, not dA·Σq. */
     for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
         double se=0, sr=0, sb=0;
@@ -313,7 +313,7 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
  * The numeric suites above ALWAYS pass ldw==k and ldc==m, so they can't see a kernel that derives the
  * weight row stride from k instead of ldw, or one that overwrites the [m,ldc) output gap (the two bugs
  * that drifted in: K-quant ignored ldw while Q8_0 honored it; group kernels used ldc as the row count).
- * These are metamorphic checks — strided/padded MUST equal the tight call bit-for-bit, on the same ctx. */
+ * These are metamorphic checks - strided/padded MUST equal the tight call bit-for-bit, on the same ctx. */
 
 /* Build the contiguous weight for a dtype + report its block geometry (elems, bytes) for the strided copy. */
 static void* build_weight(int dtype, int m, int k, int* be, int* bb) {
@@ -339,7 +339,7 @@ static void* build_weight(int dtype, int m, int k, int* be, int* bb) {
     free(W); return WQ;
 }
 
-/* Copy a row-major block weight into a wider row stride (ldw = k+pad), with 0xA5 garbage in the padding —
+/* Copy a row-major block weight into a wider row stride (ldw = k+pad), with 0xA5 garbage in the padding  -
  * which the kernel MUST ignore (it only reads the first k/be blocks per row). */
 static void* stride_weight(const void* W, int m, int k, int pad, int be, int bb) {
     size_t real=(size_t)(k/be)*bb, str=(size_t)((k+pad)/be)*bb;
@@ -393,7 +393,7 @@ static void suite_layout(int dtype, const char* name, int m, int n, int k) {
 }
 
 /* Packed twin of suite_layout. Packed rows are always dense (the layout contract fixes ldw == k),
- * so the live hazards are the OUTPUT stride and statelessness — and the packed kernels are exactly
+ * so the live hazards are the OUTPUT stride and statelessness - and the packed kernels are exactly
  * the "group kernels" whose ldc-as-row-count confusion this suite exists to catch. suite_layout's
  * m=37 can never pack (m % 4), which is how the packed dtypes went uncovered here; m=36 also keeps
  * the metal MMA M-edge (tile-unaligned) in play. Skips contexts that never advertise the layout. */
@@ -433,9 +433,9 @@ static void suite_layout_packed(int dtype, const char* name, int m, int n, int k
     free(WQ); free(WP); free(B); free(Cc); free(Cs); free(Cp);
 }
 
-/* Saturation / extreme inputs for the Q8_0 int8 dot — the one place a real accumulator cliff lives. Weights
+/* Saturation / extreme inputs for the Q8_0 int8 dot - the one place a real accumulator cliff lives. Weights
  * AND activations at constant magnitude so EVERY value quantizes to ±127: this maximizes the maddubs int16
- * intermediate to 127·127·2 = 32258 (just under 32767 — the exact margin the sign-trick |a|·sign(w) buys vs
+ * intermediate to 127·127·2 = 32258 (just under 32767 - the exact margin the sign-trick |a|·sign(w) buys vs
  * the naive (a+128) path, which would overflow to 64770), and maxes the vpdpbusd int32 accumulation. mode 1
  * is a huge-dynamic-range block (one ±max, rest ~0) that drives the requant clamp. Random data never sits
  * here. Reference = the requant-B dot (== exact for these inputs); an int16 wrap shows as a huge error or NaN. */
@@ -474,7 +474,7 @@ static void suite_extreme(int m, int n, int k, int mode) {
  * all-zero (amax=0 -> the 1/dA divide cliff: an unguarded kernel yields Inf/NaN), token 1 all-equal (every
  * requant pinned to ±127), token 2 a tiny but nonzero scale, the rest a mix of large / negative / half-integer
  * values (round-to-nearest ties). The output must be FINITE everywhere, and the all-zero token must give a
- * zero output column on every kernel (Sum w*0 == 0). Metamorphic — no per-dtype reference needed. */
+ * zero output column on every kernel (Sum w*0 == 0). Metamorphic - no per-dtype reference needed. */
 static void suite_adversarial(int dtype, const char* name, int m, int n, int k) {
     int be, bb; void* WQ = build_weight(dtype, m, k, &be, &bb);
     float* B = malloc(4llu*(size_t)n*k); float* C = malloc(4llu*(size_t)m*n);
@@ -498,7 +498,7 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
         if (nan||zc){ printf("  [FAIL] %-5s adversarial %-14s nan=%d zerocol=%d\n",name,CTX[c].lbl,nan,zc); ++g_fail; }
     }
     /* Packed twin: the same degenerate activations through the packed gemv (n==1) / group prefill
-     * kernels — they share the requant fan but consume ad/asum through different code. */
+     * kernels - they share the requant fan but consume ad/asum through different code. */
     size_t pgb = jam_ref_pack_group_bytes(dtype, k);
     if (pgb && m % 4 == 0) {
         uint8_t* WP = malloc((size_t)(m/4)*pgb);
@@ -522,7 +522,7 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
 
 /* ---- API surface: context lifecycle (global + explicit), config, dispatch errors, concurrency guard ----
  * A host parallel_for that, the first time jam calls it (so we're INSIDE a jam_mm, busy=1), re-enters jam_mm
- * on the SAME context — which must return JAM_EBUSY (the serial-stream guard) — then runs the real work. */
+ * on the SAME context - which must return JAM_EBUSY (the serial-stream guard) - then runs the real work. */
 static jam_ctx* g_reentry_ctx; static int g_reentry_status;
 static void reentry_pfor(void* pool, int n, jam_task_fn fn, void* arg) {
     (void) pool;
@@ -576,7 +576,7 @@ static void suite_api(void) {
     OK("ct != F32",   jam_mm(d, W, JAM_F32,  k,  A, JAM_F32, k,  C, JAM_F16, m, m, n, k)  == JAM_EUNSUPPORTED);
     OK("Q8_0 k%32!=0", jam_mm(d, W, JAM_Q8_0, 48, A, JAM_F32, 48, C, JAM_F32, m, m, n, 48) == JAM_EUNSUPPORTED);
 
-    /* packed-tag dispatch: never a wrong result — EUNSUPPORTED wherever the layout is unreadable
+    /* packed-tag dispatch: never a wrong result - EUNSUPPORTED wherever the layout is unreadable
      * (non-advertising ctx, unknown base, non-F32 activations, shape outside the pack contract).
      * All four return before W is dereferenced, so the dummy buffer is safe. */
     OK("packed on generic ctx", jam_mm(g, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
@@ -610,7 +610,7 @@ static void suite_api(void) {
 }
 
 /* The pack policy oracle: jam_pack_size is the contract the Java packer plans slab offsets with,
- * trusting it blindly — its shape/dtype gates must hold on EVERY ISA (0, never garbage), a
+ * trusting it blindly - its shape/dtype gates must hold on EVERY ISA (0, never garbage), a
  * non-advertising (generic-capped) ctx must never offer, and when it does offer the size must be
  * exactly (m/4) * the spec group size (jam_ref_pack_group_bytes = the layout's executable spec).
  * jam_pack_abi pins the layout revision the references encode. Zero coverage before: the numeric
@@ -638,7 +638,7 @@ static void suite_pack_api(void) {
     #undef OK
 }
 
-/* API contract: invalid inputs must be rejected with JAM_EINVAL — not silently mis-computed or crashed.
+/* API contract: invalid inputs must be rejected with JAM_EINVAL - not silently mis-computed or crashed.
  * Zero coverage before; the validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldc<m) is exactly
  * the kind of guard that rots silently. Runs on the global context; the checks fire before any dispatch. */
 static void suite_contract(void) {
@@ -708,11 +708,11 @@ static void suite_leak(void) {
 }
 
 int main(void) {
-    /* one context per ISA level (capped), at 1 and 3 threads — covers every kernel the CPU supports. */
+    /* one context per ISA level (capped), at 1 and 3 threads - covers every kernel the CPU supports. */
     for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) { add_ctx(jam_isa_levels[L],1); add_ctx(jam_isa_levels[L],3); }
     CTX[NCTX].c=NULL; snprintf(CTX[NCTX].lbl,sizeof CTX[NCTX].lbl,"global"); ++NCTX;   /* the NULL/default path */
 
-    printf("jam comprehensive correctness — %d kernel contexts:\n   ", NCTX);
+    printf("jam comprehensive correctness - %d kernel contexts:\n   ", NCTX);
     for (int c=0;c<NCTX;c++) printf("%s%s", CTX[c].lbl, c==NCTX-1?"\n":" · ");
 
     int F[][3] = {{1,1,1},{2,3,4},{7,5,3},{8,8,8},{13,9,17},{64,64,64},{100,99,97},{128,256,64},{257,128,33},{512,512,512}};
@@ -819,7 +819,7 @@ int main(void) {
          * format's honest noise floor, not a kernel regression. */
         {"BF16",5e-2,2e-2},
     };
-    printf("\nprecision — worst error vs nearest reference (max over all contexts + sizes; bound = ~10x observed):\n");
+    printf("\nprecision - worst error vs nearest reference (max over all contexts + sizes; bound = ~10x observed):\n");
     for (int i=0;i<g_prec_n;i++) {
         double ab=1e9, rb=1e9;
         for (unsigned p=0;p<sizeof PREC_MAX/sizeof*PREC_MAX;p++) if (!strcmp(PREC_MAX[p].nm,g_prec[i].nm)) { ab=PREC_MAX[p].abs; rb=PREC_MAX[p].rel; }

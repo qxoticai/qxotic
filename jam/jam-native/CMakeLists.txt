@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # compile_commands.json for clangd
 
-# A kernel library built at -O0 is always a mistake, and an unset build type silently is one —
+# A kernel library built at -O0 is always a mistake, and an unset build type silently is one  -
 # the POST_BUILD staging would then ship the slow lib. Explicit -DCMAKE_BUILD_TYPE still wins.
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "build type (defaulted; Release unless overridden)" FORCE)
@@ -54,7 +54,7 @@ target_include_directories(jam PUBLIC include PRIVATE src)
 set_target_properties(jam PROPERTIES VERSION 1.0.0 SOVERSION 1)   # libjam.so.1 -> ABI guard via soname
 
 # JAM_BUILD marks this as the library's own compilation so jam.h stamps the public API with
-# __declspec(dllexport) on Windows (PE hides everything else once jam_jni.c's JNIEXPORT appears — that
+# __declspec(dllexport) on Windows (PE hides everything else once jam_jni.c's JNIEXPORT appears - that
 # would drop jam_mm/jam_ctx_* from jam.dll and break the Panama binding). No effect on ELF/Mach-O.
 target_compile_definitions(jam PRIVATE JAM_BUILD=1)
 
@@ -79,9 +79,9 @@ function(jam_isa_tu name def dispatch flags)
 endfunction()
 
 # Per-ISA kernel TUs: each compiled with its OWN flags and bound at create. The dispatcher (src/jam.c)
-# stays at BASELINE flags — never -mavx512 — so it can't emit AVX-512 before the CPU check.
+# stays at BASELINE flags - never -mavx512 - so it can't emit AVX-512 before the CPU check.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
-    # SSE3 (Prescott 2004+, true SSE3 — no SSSE3 maddubs, no F16C): 128-bit int8 Q8_0/Q4_0/MXFP4 + K-quants
+    # SSE3 (Prescott 2004+, true SSE3 - no SSSE3 maddubs, no F16C): 128-bit int8 Q8_0/Q4_0/MXFP4 + K-quants
     # via sign-extend+madd with a software fp16 scale. The pre-AVX2 x86 floor, replacing dequant-to-float.
     jam_isa_tu(jam_sse3 JAM_HAVE_SSE3 ON "-msse3"
         src/kernels/jam_kernels_sse3.c src/kernels/jam_kernels_kquant_sse3.c)
@@ -91,16 +91,16 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     jam_isa_tu(jam_ssse3 JAM_HAVE_SSSE3 ON "-mssse3"
         src/kernels/jam_kernels_ssse3.c)
 
-    # AVX2 (Haswell 2013+): F32 mnpack + dense F16/BF16 + every quant via maddubs (no VNNI) — 32-block
+    # AVX2 (Haswell 2013+): F32 mnpack + dense F16/BF16 + every quant via maddubs (no VNNI) - 32-block
     # quants, the 8-row K-quant repack bands, NVFP4, Q1_0. Covers consumer/older CPUs.
     jam_isa_tu(jam_avx2 JAM_HAVE_AVX2 ON "-mavx2 -mfma -mf16c"
         src/kernels/jam_kernels_avx2.c src/kernels/jam_kernels_band8_avx2.c
         src/kernels/jam_kernels_nvfp4_avx2.c src/kernels/jam_kernels_q1_0_avx2.c)
 
-    # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512 — the Q8_0/Q4_0 8-row repack bands
+    # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512 - the Q8_0/Q4_0 8-row repack bands
     # and the pure-256 requant (F32 reuses AVX2; K-quants use the avx2 8-row bands). The flag needs
     # GCC 11+/Clang 12+ (Ubuntu LTS MinGW cross-GCC is older): probe like avx512bf16 below, and an old
-    # compiler just skips the TU — dispatch falls back to AVX2 on those builds.
+    # compiler just skips the TU - dispatch falls back to AVX2 on those builds.
     check_c_compiler_flag(-mavxvnni JAM_CC_AVXVNNI)
     if (JAM_CC_AVXVNNI)
         jam_isa_tu(jam_avxvnni JAM_HAVE_AVXVNNI ON "-mavxvnni -mavx2 -mfma -mf16c"
@@ -160,7 +160,7 @@ if (JAM_JNI)
 endif()
 
 # Apple GPU backend (hand-tuned MSL GEMM for prefill, zero-copy over unified memory). Distinct from
-# jota-metal, which GENERATES/fuses kernels — jam-metal is the single absolute-fastest matmul. Wraps
+# jota-metal, which GENERATES/fuses kernels - jam-metal is the single absolute-fastest matmul. Wraps
 # host pointers via newBufferWithBytesNoCopy (needs 16 KB page-aligned buffers), big-GEMM-gated.
 if (APPLE AND JAM_METAL)
     # Metal GPU backend (default-on for Apple Silicon AUTO; JAM_ISA=<cpu rung> opts out). MSL compiled at runtime; no .metallib step.

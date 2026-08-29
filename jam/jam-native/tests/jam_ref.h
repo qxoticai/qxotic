@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include "jam.h"
 
-/* ISA ladder benched/tested, in order — shared by jam_bench.c and jam_test.c so adding a tier is one edit.
+/* ISA ladder benched/tested, in order - shared by jam_bench.c and jam_test.c so adding a tier is one edit.
  * Levels the hardware lacks are auto-skipped (jam_active_isa != the requested cap). */
 __attribute__((unused)) static const jam_isa jam_isa_levels[] = {
     JAM_ISA_GENERIC, JAM_ISA_SSE3, JAM_ISA_SSSE3, JAM_ISA_AVX2, JAM_ISA_AVX_VNNI, JAM_ISA_AVX512, JAM_ISA_AVX512_VNNI,
@@ -124,7 +124,7 @@ static inline void* jam_ref_quant_q1_0(const float* X, int rows, int k) {
     return o;
 }
 
-/* ---- NVFP4 (NVIDIA FP4) — GGUF block_nvfp4 { uint8_t d[4] (UE4M3 per-16); uint8_t qs[32] } = 36 bytes,
+/* ---- NVFP4 (NVIDIA FP4) - GGUF block_nvfp4 { uint8_t d[4] (UE4M3 per-16); uint8_t qs[32] } = 36 bytes,
  * 64 elements. value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale. Mirrors ggml's quant/dequant. */
 typedef struct { uint8_t d[4]; uint8_t qs[32]; } jam_ref_nvfp4_blk;
 static inline float jam_ref_ue4m3_to_float(uint8_t x) {   /* matches ggml_ue4m3_to_fp32 (bit 7 ignored) */

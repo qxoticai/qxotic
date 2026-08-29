@@ -16,7 +16,7 @@ import jdk.incubator.vector.VectorOperators;
  * Q4_K gemm, relocated from jinfer (segment-based). Q4_K super-block: 256 elements / 144 bytes
  * ({@code fp16 d, dmin; 12 packed scale/min bytes; 128 nibble bytes}); value {@code d·sc·nibble −
  * dmin·m}. Dequantizes a {@link BandGemm#MR}-row band into an F32 scratch, then {@link BandGemm}
- * sweeps the columns — so the 6-bit super-block scale unpack is amortized once per row, not per
+ * sweeps the columns - so the 6-bit super-block scale unpack is amortized once per row, not per
  * column tile.
  */
 public final class Q4KKernel {

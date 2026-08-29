@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # json
 
-**JSON for the JVM, minus the baggage.** A strict, minimal RFC 8259 parser and printer — ~10 KB, zero dependencies, zero reflection, GraalVM native-image ready.
+**JSON for the JVM, minus the baggage.** A strict, minimal RFC 8259 parser and printer. ~10 KB, zero dependencies, zero reflection, GraalVM native-image ready.
 
 JSON maps straight onto standard Java types: `Map` for objects, `List` for arrays, `String`, `Long`/`BigInteger`, `BigDecimal`, `Boolean`, and `Json.NULL`. No custom node objects, no annotations, no setup.
 

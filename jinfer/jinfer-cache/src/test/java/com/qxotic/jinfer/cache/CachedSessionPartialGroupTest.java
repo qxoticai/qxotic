@@ -11,7 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Regression: a cache hit ends on a BLOCK boundary, which need not be a GROUP boundary — the
+ * Regression: a cache hit ends on a BLOCK boundary, which need not be a GROUP boundary - the
  * committed generation-prompt block is a byte-exact prefix of the echoed assistant turn, so a
  * follow-up request resumes MID-group. {@link CachedSession#ingestGroups} must ingest only the
  * un-restored tail of that group; re-ingesting the whole group duplicated its restored head in the
@@ -30,7 +30,7 @@ public final class CachedSessionPartialGroupTest {
                         1 << 20,
                         ContentKey.sha256(new byte[] {1}));
 
-        // Request 1: [start 10,11] [user 20,21,22] [genPrompt 30,31] — three turn-aligned groups.
+        // Request 1: [start 10,11] [user 20,21,22] [genPrompt 30,31] - three turn-aligned groups.
         List<List<Batch>> first =
                 List.of(
                         List.of(Batch.prefill(new int[] {10, 11})),
@@ -41,7 +41,7 @@ public final class CachedSessionPartialGroupTest {
         assertEquals(7, s1.position(), "request 1 ingested 7 positions");
 
         // Request 2 echoes the conversation: the assistant turn STARTS with the genPrompt tokens
-        // (30,31) then continues (40,41) — its group is [30,31,40,41]. The cached genPrompt block
+        // (30,31) then continues (40,41) - its group is [30,31,40,41]. The cached genPrompt block
         // fingerprint-matches the group's head, so resume stops MID-group at position 7.
         List<List<Batch>> second =
                 List.of(

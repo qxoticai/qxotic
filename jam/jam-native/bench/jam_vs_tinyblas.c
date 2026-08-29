@@ -1,4 +1,4 @@
-/* jam vs tinyBLAS (llamafile_sgemm) — quantized CPU matmul, side by side.
+/* jam vs tinyBLAS (llamafile_sgemm) - quantized CPU matmul, side by side.
  *
  * Same op on both sides: C[m×n] = W[m×k] @ A[n×k]ᵀ, quantized weights, F32 output, token-major
  * (C[j*m + i]). The comparison is made as fair as possible:
@@ -9,17 +9,17 @@
  *     jam_mm; tinyBLAS needs it pre-quantized, so we time ggml's quantize_row_q8_0 alongside the
  *     llamafile_sgemm call. (Activations change every token, so neither side can cache this.)
  *   - SAME thread count. jam owns an internal pool of `nth`; tinyBLAS is single-threaded-per-call
- *     (ith/nth), so we drive it across a persistent pool of `nth` workers that park between calls —
+ *     (ith/nth), so we drive it across a persistent pool of `nth` workers that park between calls  -
  *     neither engine pays a per-call thread-spawn cost.
  *   - SAME cold cache. A >LLC scrub between timed iters evicts W/A/C so each call streams from DRAM,
  *     the realistic per-token regime (and the one where the byte savings of quantization show up).
  *
  * Two metrics, as in jam_bench:
- *   GMAC/s = m·n·k / t   — the apples-to-apples compute rate (exact; both do the same MACs).
- *   GB/s   = bytes / t   — nominal DRAM traffic (weights+act+out, original block sizes). Treat as
+ *   GMAC/s = m·n·k / t   - the apples-to-apples compute rate (exact; both do the same MACs).
+ *   GB/s   = bytes / t   - nominal DRAM traffic (weights+act+out, original block sizes). Treat as
  *                          indicative: jam streams its repacked weight, which may differ in size.
  *
- * Also prints max|Δ| between the two outputs — a free byte-compatibility / correctness cross-check.
+ * Also prints max|Δ| between the two outputs - a free byte-compatibility / correctness cross-check.
  *
  * tinyBLAS requires n ≥ 2 (n==1 gemv falls back to generic ggml in real llama.cpp), so this harness
  * focuses on the prefill regime. Set JAM_NATIVE_THREADS to your PHYSICAL core count for the best numbers.
@@ -65,9 +65,9 @@ static void scrub_caches(void) {
 }
 
 /* ---- persistent tinyBLAS worker pool (match jam's pool: no per-call thread spawn). Workers park on a
- *      barrier between calls — idle, so no contention with jam when it runs.
+ *      barrier between calls - idle, so no contention with jam when it runs.
  *      llamafile_sgemm's OWN multithreading (ith/nth) goes through ggml's threadpool (chunk-stealing +
- *      barriers), which we don't have standalone — passing threadpool=NULL gives a broken partition. So we
+ *      barriers), which we don't have standalone - passing threadpool=NULL gives a broken partition. So we
  *      run it SINGLE-THREADED (nth=1) per worker over a disjoint slice of output rows [m0,m1) (full n),
  *      writing into the shared C with ldc=m. Disjoint rows => no coordination, and n stays >= 2. ---- */
 static struct { const void* W; const void* B; void* C; int m, n, k, Atype, wblk, nth, stop; } g_tb;

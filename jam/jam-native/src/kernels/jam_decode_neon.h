@@ -1,6 +1,6 @@
 /* NEON weight decoders for the jam_gemm_neon simple-block engine: each turns one 32-element weight block
  * into two signed int8x16 halves + a float block scale (ARM has a native signed int8 dot, so no abs/sign
- * trick). One decoder per quant, shared by every ARM ISA — the dot is the ISA knob. */
+ * trick). One decoder per quant, shared by every ARM ISA - the dot is the ISA knob. */
 #ifndef JAM_DECODE_NEON_H
 #define JAM_DECODE_NEON_H
 

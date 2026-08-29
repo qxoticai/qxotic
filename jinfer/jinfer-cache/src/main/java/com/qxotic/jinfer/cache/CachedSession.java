@@ -295,7 +295,7 @@ public final class CachedSession<S extends ContextState> {
     private static final long GOLDEN = 0x9E3779B97F4A7C15L;
 
     /**
-     * SHA-256 of the raw row bits, as 4 longs — the media block's content identity. The rows are
+     * SHA-256 of the raw row bits, as 4 longs - the media block's content identity. The rows are
      * FP32 dense row-major ({@link Batch.Input.Embeddings} enforces it), so the raw backing bytes
      * ARE the content stream; hashed straight off the segment in 1 MiB chunks. All jinfer media
      * rows are Panama-backed (even heap arrays materialize native) - anything else fails loudly

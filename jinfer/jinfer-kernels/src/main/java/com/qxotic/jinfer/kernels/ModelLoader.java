@@ -58,7 +58,7 @@ public final class ModelLoader {
 
     /**
      * Like {@link #loadTensors(FileChannel, GGUF, Arena)} but tensor data is at {@code baseOffset
-     * +} the GGUF tensor data offset — used for self-archives where the GGUF blob is embedded at a
+     * +} the GGUF tensor data offset - used for self-archives where the GGUF blob is embedded at a
      * non-zero position in the file.
      */
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
@@ -141,7 +141,7 @@ public final class ModelLoader {
         return view;
     }
 
-    /** View by name if present — any dtype (it rides on the view; kernels check at entry). */
+    /** View by name if present - any dtype (it rides on the view; kernels check at entry). */
     public static Optional<MemoryView<MemorySegment>> find(
             Map<String, MemoryView<MemorySegment>> views, String name) {
         return Optional.ofNullable(views.get(name));

@@ -325,7 +325,7 @@ public final class Gemma4Vision implements MediaProjector<Media.Image> {
         return projected;
     }
 
-    /** {@code row[offset..offset+n) = (row - bias) .* scale} — bias/scale are [n] FP32 rows. */
+    /** {@code row[offset..offset+n) = (row - bias) .* scale} - bias/scale are [n] FP32 rows. */
     static void standardizeInPlace(
             MemoryView<MemorySegment> row,
             long offset,

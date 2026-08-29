@@ -88,7 +88,7 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (default) picks the best — on Apple Silicon that includes the Metal backend (prefill on the GPU, one-column decode stays on the CPU SDOT kernels). Name a CPU rung (`JAM_ISA=i8mm`) to stay CPU-only. SVE, AMX, and SME are not implemented.
+`JAM_ISA=auto` (default) picks the best. On Apple Silicon that includes the Metal backend (prefill on the GPU, one-column decode stays on the CPU SDOT kernels). Name a CPU rung (`JAM_ISA=i8mm`) to stay CPU-only. SVE, AMX, and SME are not implemented.
 
 ## Performance
 

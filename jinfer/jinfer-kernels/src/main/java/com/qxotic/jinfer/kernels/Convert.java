@@ -179,7 +179,7 @@ public final class Convert {
 
     /**
      * Q8_0 → F32 over an element span (the embedding gather-dequant, old Q8_0 {@code copyTo} via
-     * {@code copyRow}): one scale read per 32-element block, {@code byte * scale} per element —
+     * {@code copyRow}): one scale read per 32-element block, {@code byte * scale} per element -
      * bit-identical to the old per-element {@code getFloat}.
      */
     public static void dequantQ8_0(
@@ -288,7 +288,7 @@ public final class Convert {
     /**
      * The static heir of the old virtual {@code copyTo} for the ->F32 direction: one dtype switch
      * per span, routed to the arms above (Q8_0 dequant / F16 vector / F32 raw copy). The dispatch
-     * table lives here, next to the arms it selects — a model never re-encodes it, and a cycle-2
+     * table lives here, next to the arms it selects - a model never re-encodes it, and a cycle-2
      * dtype adds one case in one file.
      */
     public static void copyToF32(

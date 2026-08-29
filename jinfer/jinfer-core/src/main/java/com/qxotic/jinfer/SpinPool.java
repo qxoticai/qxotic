@@ -108,7 +108,7 @@ final class SpinPool {
         rangeEnd = end;
         arrived.set(0);
         generation++; // volatile release: publishes the region + signals workers
-        if (parked.get() != 0) { // some worker parked (idle gap) — wake them; ~0 during a token
+        if (parked.get() != 0) { // some worker parked (idle gap) - wake them; ~0 during a token
             for (Thread w : workers) LockSupport.unpark(w);
         }
         try {
@@ -122,7 +122,7 @@ final class SpinPool {
         Throwable f = failure;
         action = null;
         failure = null;
-        if (f != null) { // a participant threw — propagate like ForkJoinPool would
+        if (f != null) { // a participant threw - propagate like ForkJoinPool would
             throw Parallel.unchecked(f);
         }
     }

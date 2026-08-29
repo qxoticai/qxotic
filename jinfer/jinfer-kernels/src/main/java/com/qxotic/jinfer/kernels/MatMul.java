@@ -37,8 +37,8 @@ import jdk.incubator.vector.VectorOperators;
  *
  * <p>Contract: activations {@code a} and result {@code c} are dense FP32; weights {@code w} are
  * dense, dtype dispatched ({@code FP32}, {@code FP16}, {@code BF16} element-strided; every jota
- * block dtype — {@code Q8_0}, {@code MXFP4}, {@code Q4_0}, {@code Q4_1}, {@code Q5_1}, {@code
- * Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code TQ1_0}, {@code TQ2_0} —
+ * block dtype - {@code Q8_0}, {@code MXFP4}, {@code Q4_0}, {@code Q4_1}, {@code Q5_1}, {@code
+ * Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code TQ1_0}, {@code TQ2_0} -
  * via block geometry). Offsets/strides are in ELEMENTS (weights: quant elements, block-aligned) and
  * must be block-aligned.
  *
@@ -53,7 +53,7 @@ import jdk.incubator.vector.VectorOperators;
  * -Djinfer.q4.nativeDecode=false} restores the portable Vector API path. AArch64 Q8_0 decode
  * likewise uses native JAM by default so one activation requant feeds NEON SDOT; {@code
  * -Djinfer.q8.nativeDecode=false} restores the portable Vector API path. <b>Prefill</b> ({@code n >
- * 1}, compute-bound) tries native jam, then Vector-API jam, then the floor — jam is only offered a
+ * 1}, compute-bound) tries native jam, then Vector-API jam, then the floor - jam is only offered a
  * call when the dtype has a kernel AND k and the weight offset are block-aligned ({@code
  * Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A
  * runtime decline (EBUSY, older libjam) falls to the next rung. A backend can be switched off with
@@ -635,7 +635,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // F32·F32 dot — F32FloatTensor.vectorDot, byte-for-byte.
+    // F32·F32 dot - F32FloatTensor.vectorDot, byte-for-byte.
     // ------------------------------------------------------------------
 
     private static float dotF32(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -660,7 +660,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q8_0·F32 dot — the Phase-0-verified port of Q8_0FloatTensor's vectorDot512F32 /
+    // Q8_0·F32 dot - the Phase-0-verified port of Q8_0FloatTensor's vectorDot512F32 /
     // vectorDot / q8BlockFma (Tensors.java), byte-addressed (block-aligned always).
     // ------------------------------------------------------------------
 
@@ -1106,7 +1106,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // F16·F32 dot — F16FloatTensor.vectorDotF32 (software half->single widening, the Graal-safe
+    // F16·F32 dot - F16FloatTensor.vectorDotF32 (software half->single widening, the Graal-safe
     // form), byte-addressed.
     // ------------------------------------------------------------------
 
@@ -1135,7 +1135,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q4_0·F32 dot — Q4_0FloatTensor.vectorDot (scale + nibbles - 8).
+    // Q4_0·F32 dot - Q4_0FloatTensor.vectorDot (scale + nibbles - 8).
     // ------------------------------------------------------------------
 
     private static float dotQ4_0(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -1201,7 +1201,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q4_1·F32 dot — Q4_1FloatTensor.vectorDot (delta * quant + min).
+    // Q4_1·F32 dot - Q4_1FloatTensor.vectorDot (delta * quant + min).
     // ------------------------------------------------------------------
 
     private static float dotQ4_1(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -1274,7 +1274,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q5_1·F32 dot — Q5_1FloatTensor.vectorDot (decode one block to a scratch, then F32 fma).
+    // Q5_1·F32 dot - Q5_1FloatTensor.vectorDot (decode one block to a scratch, then F32 fma).
     // ------------------------------------------------------------------
 
     private static float dotQ5_1(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -1315,7 +1315,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q4_K·F32 dot — Q4_KFloatTensor.vectorDot (packed scales/mins, 4 groups of 64).
+    // Q4_K·F32 dot - Q4_KFloatTensor.vectorDot (packed scales/mins, 4 groups of 64).
     // ------------------------------------------------------------------
 
     private static float dotQ4K(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -1419,7 +1419,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q5_K·F32 dot — Q5_KFloatTensor.vectorDot (Q4_K + the 5th bit plane).
+    // Q5_K·F32 dot - Q5_KFloatTensor.vectorDot (Q4_K + the 5th bit plane).
     // ------------------------------------------------------------------
 
     private static float dotQ5K(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -1526,7 +1526,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q6_K·F32 dot — Q6_KFloatTensor.vectorDot (4 independent accumulators, one per q-stream).
+    // Q6_K·F32 dot - Q6_KFloatTensor.vectorDot (4 independent accumulators, one per q-stream).
     // ------------------------------------------------------------------
 
     private static float dotQ6K(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
@@ -1688,7 +1688,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // NVFP4·F32 dot — NVFP4FloatTensor.dot: decode the row into a thread-local scratch, then a
+    // NVFP4·F32 dot - NVFP4FloatTensor.dot: decode the row into a thread-local scratch, then a
     // vectorized F32 dot (jam carries the vectorized weight when loaded; this is the floor).
     // ------------------------------------------------------------------
 
@@ -1725,7 +1725,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q1_0·F32 dot — Q1_0FloatTensor.vectorDot: 128 sign bits applied branchlessly (the AVX2
+    // Q1_0·F32 dot - Q1_0FloatTensor.vectorDot: 128 sign bits applied branchlessly (the AVX2
     // xor-negate analogue); sums accumulate unscaled and fold in the block scale once via fma.
     // ------------------------------------------------------------------
 
@@ -1818,7 +1818,7 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // JAM backends — the port of JamMatMul + Dispatch's provider loading. Raw(vseg, vbase) IS
+    // JAM backends - the port of JamMatMul + Dispatch's provider loading. Raw(vseg, vbase) IS
     // jam's (segment, byte operand offset) contract, so the handoff is zero-copy; element
     // offsets/strides convert exactly as the old adapter (weights block-aware, F32 operands ×4).
     // ------------------------------------------------------------------

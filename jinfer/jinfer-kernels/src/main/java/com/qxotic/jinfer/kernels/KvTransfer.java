@@ -9,7 +9,7 @@ import java.lang.foreign.MemorySegment;
  * Direction-flagged bulk copies between resume-state storage and a cache blob. State-side access is
  * a raw {@code MemorySegment.copy} at the view's native encoding (FP16 KV = 2 bytes/element).
  * Codecs with a branching layout walk (windowed/recurrent layers) drive save AND restore through
- * one walk built on these, so the blob layout is single-sourced — layout drift between the two
+ * one walk built on these, so the blob layout is single-sourced - layout drift between the two
  * mirrored directions is the structural risk in a codec.
  */
 public final class KvTransfer {
@@ -96,7 +96,7 @@ public final class KvTransfer {
     }
 
     /**
-     * Heap {@code float[]} ↔ blob bytes (raw byte copy, native order) — for recurrent state
+     * Heap {@code float[]} ↔ blob bytes (raw byte copy, native order) - for recurrent state
      * matrices that live as plain arrays; returns the bytes moved.
      */
     public static long transfer(float[] a, MemorySegment blob, long byteOff, boolean out) {

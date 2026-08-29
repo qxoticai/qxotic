@@ -198,7 +198,7 @@ public final class Granite
     /**
      * Standard RoPE GQA attention with Granite's custom attention scale: Q/K/V projections, per-row
      * interleaved RoPE, K/V committed to the cache, causal flash attention (or single-token
-     * decode), output projection back to {@code state.normed}. (No attention-temperature tuning —
+     * decode), output projection back to {@code state.normed}. (No attention-temperature tuning -
      * that's mistral3.)
      */
     private void attention(State state, int layer, int startPos, int seqLen) {
