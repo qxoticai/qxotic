@@ -141,7 +141,10 @@ public final class JinferBench {
         int decodeThreads = RuntimeFlags.DECODE_THREADS;
         System.err.printf(
                 "threads: prefill=%d decode=%d jam.native=%s jam.vector=%s (%s)%n",
-                prefillThreads, decodeThreads, jamThreads("native"), jamThreads("vector"),
+                prefillThreads,
+                decodeThreads,
+                jamThreads("native"),
+                jamThreads("vector"),
                 threads > 0 ? "requested " + threads : "engine defaults");
         if (threads <= 0) threads = decodeThreads;
 
