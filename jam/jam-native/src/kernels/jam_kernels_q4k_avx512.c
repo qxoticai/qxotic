@@ -432,9 +432,9 @@ void jam_q8_0_repack_band(void* arg, int t0, int t1, int tid) {
  * straight into vpdpbusd, -8 folded into the mw bias, no vpshufb LUT), so Q4_0 ≈ Q8_0 at the GEMM level
  * (~2.6 GMAC/s @ m4096·n512·k2048, ~3x llama.cpp's tinyBLAS) - the most you can ask of a compute-bound
  * prefill. At MATCHED threads the full model TIES llama.cpp: Llama-1B Q4_0 pp512 ~2234 t/s vs llama.cpp
- * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs - both
- * JAM_NATIVE_THREADS and the jinfer FJP pool. Capping either to 16 starves the GEMM + the Java non-GEMM and
- * is what makes Q4_0 *look* ~10% slow; it is the thread budget, NOT this band. */
+ * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs in its
+ * thread budget (jinfer.threads, the one pool jam runs on). Capping it to 16 starves the GEMM + the
+ * Java non-GEMM and is what makes Q4_0 *look* ~10% slow; it is the thread budget, NOT this band. */
 
 /* PACKED repack: keep 2 nibbles/byte (256 B/block/16rows, HALF of Q8_0) so the band stays L1-resident
  * and weight reads halve. Each byte holds two element-planes: low = element i*8+e, high = i*8+4+e, so one
@@ -1166,7 +1166,10 @@ void jam_mm_q6k_avx512vnni(void* arg, int rb, int re, int tid) {
     const int sblocks = k / JAM_QKK;
     const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q6K_BYTES;
     const __m512i m4z = _mm512_set1_epi8(0x0F), c32 = _mm512_set1_epi8(32), zero = _mm512_setzero_si512();
-    const __m256i two = _mm256_set1_epi8(3);
+    const __m512i m30 = _mm512_set1_epi8(0x30);
+    /* per-16-bit-lane shift counts: low 256 bits one count, high 256 bits the other */
+    const __m512i shl42 = _mm512_inserti64x4(_mm512_set1_epi16(4), _mm256_set1_epi16(2), 1);
+    const __m512i shr02 = _mm512_inserti64x4(_mm512_set1_epi16(0), _mm256_set1_epi16(2), 1);
     const __m512i adidx = _mm512_loadu_si512((const void*) q6k_ad_idx);
     #define Q6K_PRO() \
         __m512i bias[4]; \
@@ -1178,15 +1181,13 @@ void jam_mm_q6k_avx512vnni(void* arg, int rb, int re, int tid) {
                 _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) ((WR) + 192))))); \
         for (int h = 0; h < 2; ++h) { \
             __m512i L = _mm512_loadu_si512((const void*) ((WR) + h * 64)); \
-            __m256i H = _mm256_loadu_si256((const __m256i*) ((WR) + 128 + h * 32)); \
-            __m256i h0 = _mm256_slli_epi16(_mm256_and_si256(H, two), 4); \
-            __m256i h1 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(H, 2), two), 4); \
-            __m256i h2 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(H, 4), two), 4); \
-            __m256i h3 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(H, 6), two), 4); \
-            __m512i w01 = _mm512_or_si512(_mm512_and_si512(L, m4z), \
-                                          _mm512_inserti64x4(_mm512_castsi256_si512(h0), h1, 1)); \
-            __m512i w23 = _mm512_or_si512(_mm512_and_si512(_mm512_srli_epi16(L, 4), m4z), \
-                                          _mm512_inserti64x4(_mm512_castsi256_si512(h2), h3, 1)); \
+            /* the 2-bit planes: HH = [qh | qh]; sub-blocks (0,1) want bits 0-1 / 2-3 of each */ \
+            /* byte at bits 4-5, (2,3) want bits 4-5 / 6-7 there - one variable shift per pair */ \
+            __m512i HH = _mm512_broadcast_i64x4(_mm256_loadu_si256((const __m256i*) ((WR) + 128 + h * 32))); \
+            __m512i p01 = _mm512_and_si512(_mm512_sllv_epi16(HH, shl42), m30); \
+            __m512i p23 = _mm512_and_si512(_mm512_srlv_epi16(HH, shr02), m30); \
+            __m512i w01 = _mm512_or_si512(_mm512_and_si512(L, m4z), p01); \
+            __m512i w23 = _mm512_or_si512(_mm512_and_si512(_mm512_srli_epi16(L, 4), m4z), p23); \
             __m512i d01 = _mm512_dpbusd_epi32(bias[2 * h], w01, acts[2 * h]); \
             __m512i d23 = _mm512_dpbusd_epi32(bias[2 * h + 1], w23, acts[2 * h + 1]); \
             (FR) = _mm512_fmadd_ps(_mm512_cvtepi32_ps(d01), \
