@@ -6,6 +6,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 final class EspeakPhonemizer implements Phonemizer {
@@ -13,9 +15,16 @@ final class EspeakPhonemizer implements Phonemizer {
     private static final long TIMEOUT_SECONDS = 5;
 
     private final String binary;
+    private final long timeoutSeconds;
 
     EspeakPhonemizer(String binary) { // package-private: tests point it at a stand-in script
+        this(binary, TIMEOUT_SECONDS);
+    }
+
+    EspeakPhonemizer(String binary, long timeoutSeconds) {
+        if (timeoutSeconds <= 0) throw new IllegalArgumentException("timeout must be positive");
         this.binary = binary;
+        this.timeoutSeconds = timeoutSeconds;
     }
 
     static EspeakPhonemizer tryCreate() {
@@ -115,34 +124,41 @@ final class EspeakPhonemizer implements Phonemizer {
                 new ProcessBuilder(binary, "--ipa", "-q", "-v", "en-us", "--stdin")
                         .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
-        try (var stdin = espeak.getOutputStream()) {
-            // The newline is NOT cosmetic. espeak reads stdin a line at a time and phonemizes the
-            // last word of an unterminated line as a word fragment: "world" comes back "wˈɜːl",
-            // "five" as "fˈɪv", "hello" as "hˈɛl", "em" as "ˈiː". 46 of 56 common words measured
-            // wrong that way - every run's final word, on every espeak call.
-            stdin.write((words + "\n").getBytes(StandardCharsets.UTF_8));
-        }
-        String ipa;
-        try (var reader =
-                new BufferedReader(
-                        new InputStreamReader(espeak.getInputStream(), StandardCharsets.UTF_8))) {
-            // a run can span several output lines (espeak breaks at clause boundaries): keep the
-            // separator, or the last phoneme of one line fuses with the first of the next
-            ipa = String.join(" ", reader.lines().toList());
-        }
+        // Drain stdout immediately: waiting first can fill the pipe and deadlock, while reading it
+        // synchronously would make the timeout below ineffective.
+        var output = new FutureTask<>(() -> readOutput(espeak));
+        Thread.ofVirtual().start(output);
         try {
-            if (!espeak.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                espeak.destroyForcibly();
-                throw new IOException(binary + " timed out on: " + words);
+            try (var stdin = espeak.getOutputStream()) {
+                // The newline is NOT cosmetic. espeak reads stdin a line at a time and phonemizes
+                // the last word of an unterminated line as a word fragment: "world" comes back
+                // "wˈɜːl", "five" as "fˈɪv", "hello" as "hˈɛl", "em" as "ˈiː". 46 of 56 common
+                // words measured wrong that way - every run's final word, on every espeak call.
+                stdin.write((words + "\n").getBytes(StandardCharsets.UTF_8));
             }
+            if (!espeak.waitFor(timeoutSeconds, TimeUnit.SECONDS))
+                throw new IOException(binary + " timed out on: " + words);
+            String ipa = output.get();
+            if (espeak.exitValue() != 0)
+                throw new IOException(binary + " exited " + espeak.exitValue() + " on: " + words);
+            return ipa.replace("_", "").replaceAll("\\s+", " ").trim();
         } catch (InterruptedException e) {
-            espeak.destroyForcibly();
             Thread.currentThread().interrupt();
             throw new IOException(binary + " interrupted", e);
+        } catch (ExecutionException e) {
+            throw new IOException(binary + " output could not be read", e.getCause());
+        } finally {
+            if (espeak.isAlive()) espeak.destroyForcibly();
         }
-        if (espeak.exitValue() != 0) {
-            throw new IOException(binary + " exited " + espeak.exitValue() + " on: " + words);
+    }
+
+    private static String readOutput(Process process) throws IOException {
+        try (var reader =
+                new BufferedReader(
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            // A run can span several lines. Keep the separator, or adjacent phonemes would fuse at
+            // espeak's line boundary.
+            return String.join(" ", reader.lines().toList());
         }
-        return ipa.replace("_", "").replaceAll("\\s+", " ").trim();
     }
 }

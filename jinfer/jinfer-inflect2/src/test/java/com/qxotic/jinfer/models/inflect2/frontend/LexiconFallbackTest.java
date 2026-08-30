@@ -3,9 +3,12 @@ package com.qxotic.jinfer.models.inflect2.frontend;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.models.inflect2.Symbols;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -143,5 +146,15 @@ class LexiconFallbackTest {
                 Symbols.blankIntersperse(
                         concat(quote, space, Symbols.toRaw("həloʊ"), space, quote)),
                 p.phonemize("\"hello\""));
+    }
+
+    @Test
+    void aTruncatedLexiconIsReportedAsAnIoError() throws IOException {
+        var path = Files.createTempFile("truncated-lexicon", ".bin");
+        Files.write(path, new byte[] {'I', 'V', 'L', '2'});
+
+        IOException error = assertThrows(IOException.class, () -> Phonemizer.lexicon(path));
+
+        assertTrue(error.getMessage().contains("malformed"), error.getMessage());
     }
 }

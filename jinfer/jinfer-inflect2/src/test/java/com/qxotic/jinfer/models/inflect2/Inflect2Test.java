@@ -232,7 +232,12 @@ class Inflect2Test {
                         assertThrows(
                                 IllegalArgumentException.class,
                                 () -> synthesize(model, HELLO, 1f, -1f, 1),
-                                "negative variation"));
+                                "negative variation"),
+                () ->
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> synthesize(model, HELLO, 1f, 1.01f, 1),
+                                "variation above one"));
     }
 
     @Test

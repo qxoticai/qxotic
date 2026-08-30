@@ -78,6 +78,33 @@ public final class Inflect2 {
             int[] upsampleRates,
             int[] upsampleKernelSizes) {
 
+        public Configuration {
+            resblockKernelSizes = resblockKernelSizes.clone();
+            resblockDilationSizes = resblockDilationSizes.clone();
+            upsampleRates = upsampleRates.clone();
+            upsampleKernelSizes = upsampleKernelSizes.clone();
+        }
+
+        @Override
+        public int[] resblockKernelSizes() {
+            return resblockKernelSizes.clone();
+        }
+
+        @Override
+        public int[] resblockDilationSizes() {
+            return resblockDilationSizes.clone();
+        }
+
+        @Override
+        public int[] upsampleRates() {
+            return upsampleRates.clone();
+        }
+
+        @Override
+        public int[] upsampleKernelSizes() {
+            return upsampleKernelSizes.clone();
+        }
+
         /** The phoneme symbol table this model consumes - its token space. */
         public int vocabularySize() {
             return symbolCount;
@@ -240,29 +267,67 @@ public final class Inflect2 {
             String ffn = "enc_p.encoder.ffn_layers." + i + ".";
             MemoryView<MemorySegment> relativeKeys =
                     ModelLoader.require(tensors, attention + "emb_rel_k");
+            MemoryView<MemorySegment> relativeValues =
+                    ModelLoader.require(tensors, attention + "emb_rel_v");
+            int relativePositions = Math.toIntExact(relativeKeys.shape().size(0));
+            int headChannels = hidden / config.nHeads();
+            require(
+                    relativePositions > 0
+                            && (relativePositions & 1) == 1
+                            && relativeKeys.logicalSize() == (long) relativePositions * headChannels
+                            && relativeValues.logicalSize() == relativeKeys.logicalSize(),
+                    attention + "relative embeddings have the wrong shape");
             encoder[i] =
                     new EncoderLayer(
-                            conv(tensors, allocator, attention + "conv_q", POINTWISE, hidden),
-                            conv(tensors, allocator, attention + "conv_k", POINTWISE, hidden),
-                            conv(tensors, allocator, attention + "conv_v", POINTWISE, hidden),
-                            conv(tensors, allocator, attention + "conv_o", POINTWISE, hidden),
-                            dequantToF32(allocator, relativeKeys, attention + "emb_rel_k"),
-                            dequantToF32(
+                            conv(
+                                    tensors,
                                     allocator,
-                                    ModelLoader.require(tensors, attention + "emb_rel_v"),
-                                    attention + "emb_rel_v"),
+                                    attention + "conv_q",
+                                    POINTWISE,
+                                    hidden,
+                                    hidden),
+                            conv(
+                                    tensors,
+                                    allocator,
+                                    attention + "conv_k",
+                                    POINTWISE,
+                                    hidden,
+                                    hidden),
+                            conv(
+                                    tensors,
+                                    allocator,
+                                    attention + "conv_v",
+                                    POINTWISE,
+                                    hidden,
+                                    hidden),
+                            conv(
+                                    tensors,
+                                    allocator,
+                                    attention + "conv_o",
+                                    POINTWISE,
+                                    hidden,
+                                    hidden),
+                            dequantToF32(allocator, relativeKeys, attention + "emb_rel_k"),
+                            dequantToF32(allocator, relativeValues, attention + "emb_rel_v"),
                             // [2*window+1, headChannels]: keys this far either side get an
                             // embedding (the view's dims are the GGUF's, reversed)
-                            ((int) relativeKeys.shape().size(0) - 1) / 2,
-                            norm(tensors, allocator, "enc_p.encoder.norm_layers_1." + i),
-                            conv(tensors, allocator, ffn + "conv_1", config.kernelSize(), hidden),
+                            (relativePositions - 1) / 2,
+                            norm(tensors, allocator, "enc_p.encoder.norm_layers_1." + i, hidden),
+                            conv(
+                                    tensors,
+                                    allocator,
+                                    ffn + "conv_1",
+                                    config.kernelSize(),
+                                    hidden,
+                                    config.filterChannels()),
                             conv(
                                     tensors,
                                     allocator,
                                     ffn + "conv_2",
                                     config.kernelSize(),
-                                    config.filterChannels()),
-                            norm(tensors, allocator, "enc_p.encoder.norm_layers_2." + i));
+                                    config.filterChannels(),
+                                    hidden),
+                            norm(tensors, allocator, "enc_p.encoder.norm_layers_2." + i, hidden));
         }
 
         // The file interleaves the couplings with the flips applied between them, hence the 2*i.
@@ -276,6 +341,7 @@ public final class Inflect2 {
             int wide = pre.outChannels();
             int layers = 0;
             while (tensors.containsKey(root + "enc.in_layers." + layers + ".weight")) layers++;
+            require(layers > 0, root + "has no WaveNet layers");
             Conv[] gates = new Conv[layers], residualSkip = new Conv[layers];
             for (int layer = 0; layer < layers; layer++) {
                 gates[layer] =
@@ -284,28 +350,37 @@ public final class Inflect2 {
                                 allocator,
                                 root + "enc.in_layers." + layer,
                                 WAVENET_KERNEL,
-                                wide);
+                                wide,
+                                2 * wide);
                 residualSkip[layer] =
                         conv(
                                 tensors,
                                 allocator,
                                 root + "enc.res_skip_layers." + layer,
                                 POINTWISE,
-                                wide);
+                                wide,
+                                layer == layers - 1 ? wide : 2 * wide);
             }
             flow[i] =
                     new Coupling(
                             pre,
                             gates,
                             residualSkip,
-                            conv(tensors, allocator, root + "post", POINTWISE, wide));
+                            conv(tensors, allocator, root + "post", POINTWISE, wide, latent / 2));
         }
 
         int[] rates = config.upsampleRates(), dilations = config.resblockDilationSizes();
         int[] upsampleKernels = config.upsampleKernelSizes();
         int[] blockKernels = config.resblockKernelSizes();
         int blocks = blockKernels.length, perBlock = dilations.length / blocks;
-        Conv pre = conv(tensors, allocator, "dec.conv_pre", VOCODER_KERNEL, latent);
+        Conv pre =
+                conv(
+                        tensors,
+                        allocator,
+                        "dec.conv_pre",
+                        VOCODER_KERNEL,
+                        latent,
+                        config.upsampleInitialChannel());
         Conv[] upsample = new Conv[rates.length];
         ResBlock[][] resblocks = new ResBlock[rates.length][blocks];
         int channels = pre.outChannels();
@@ -316,7 +391,8 @@ public final class Inflect2 {
                             allocator,
                             "dec.ups." + stage,
                             upsampleKernels[stage],
-                            channels);
+                            channels,
+                            channels / 2);
             channels = upsample[stage].outChannels();
             for (int block = 0; block < blocks; block++) {
                 String root = "dec.resblocks." + (stage * blocks + block) + ".";
@@ -328,6 +404,7 @@ public final class Inflect2 {
                                     allocator,
                                     root + "convs1." + d,
                                     blockKernels[block],
+                                    channels,
                                     channels);
                     project[d] =
                             conv(
@@ -335,6 +412,7 @@ public final class Inflect2 {
                                     allocator,
                                     root + "convs2." + d,
                                     blockKernels[block],
+                                    channels,
                                     channels);
                 }
                 resblocks[stage][block] =
@@ -346,38 +424,42 @@ public final class Inflect2 {
             }
         }
 
+        require(
+                embedding.shape().rank() == 2
+                        && embedding.shape().size(0) == config.symbolCount()
+                        && embedding.logicalSize() % config.symbolCount() == 0
+                        && embedding.logicalSize() / config.symbolCount() >= hidden,
+                "enc_p.emb.weight has the wrong shape");
         MemoryView<MemorySegment> embeddingTable =
                 dequantToF32(allocator, embedding, "enc_p.emb.weight");
+        Conv durationFirst = conv(tensors, allocator, "dp.conv_1", DURATION_KERNEL, hidden);
+        int durationWidth = durationFirst.outChannels();
         return new Weights(
                 embeddingTable,
                 // Row stride, not the hidden width: a quantized row is padded up to a block, and
                 // the F32 copy keeps that padding (the dequantization is a flat copy).
                 Math.toIntExact(embeddingTable.logicalSize() / config.symbolCount()),
                 encoder,
-                conv(tensors, allocator, "enc_p.proj", POINTWISE, hidden),
+                conv(tensors, allocator, "enc_p.proj", POINTWISE, hidden, 2 * latent),
                 new Durations(
-                        conv(tensors, allocator, "dp.conv_1", DURATION_KERNEL, hidden),
-                        norm(tensors, allocator, "dp.norm_1"),
+                        durationFirst,
+                        norm(tensors, allocator, "dp.norm_1", durationWidth),
                         conv(
                                 tensors,
                                 allocator,
                                 "dp.conv_2",
                                 DURATION_KERNEL,
-                                outChannels(ModelLoader.require(tensors, "dp.conv_1.weight"))),
-                        norm(tensors, allocator, "dp.norm_2"),
-                        conv(
-                                tensors,
-                                allocator,
-                                "dp.proj",
-                                POINTWISE,
-                                outChannels(ModelLoader.require(tensors, "dp.conv_2.weight")))),
+                                durationWidth,
+                                durationWidth),
+                        norm(tensors, allocator, "dp.norm_2", durationWidth),
+                        conv(tensors, allocator, "dp.proj", POINTWISE, durationWidth, 1)),
                 flow,
                 new Decoder(
                         pre,
                         upsample,
                         rates,
                         resblocks,
-                        conv(tensors, allocator, "dec.conv_post", VOCODER_KERNEL, channels)));
+                        conv(tensors, allocator, "dec.conv_post", VOCODER_KERNEL, channels, 1)));
     }
 
     /**
@@ -398,6 +480,20 @@ public final class Inflect2 {
         return conv(tensors, allocator, weight, name, kernel, inChannels, outChannels(weight));
     }
 
+    private static Conv conv(
+            Map<String, MemoryView<MemorySegment>> tensors,
+            MemoryArena<MemorySegment> allocator,
+            String name,
+            int kernel,
+            int inChannels,
+            int expectedOutChannels) {
+        Conv layer = conv(tensors, allocator, name, kernel, inChannels);
+        require(
+                layer.outChannels() == expectedOutChannels,
+                name + " outputs " + layer.outChannels() + ", expected " + expectedOutChannels);
+        return layer;
+    }
+
     /**
      * An upsampling transposed convolution. Dense files shape it {@code [kernel, outChannels,
      * inChannels]} - output channels in the middle, the opposite of a forward convolution - while
@@ -410,16 +506,15 @@ public final class Inflect2 {
             MemoryArena<MemorySegment> allocator,
             String name,
             int kernel,
-            int inChannels) {
+            int inChannels,
+            int expectedOutChannels) {
         MemoryView<MemorySegment> weight = ModelLoader.require(tensors, name + ".weight");
-        return conv(
-                tensors,
-                allocator,
-                weight,
-                name,
-                kernel,
-                inChannels,
-                Math.toIntExact(weight.shape().size(weight.shape().rank() - 2)));
+        require(weight.shape().rank() >= 2, name + ".weight has the wrong rank");
+        int actualOutChannels = Math.toIntExact(weight.shape().size(weight.shape().rank() - 2));
+        require(
+                actualOutChannels == expectedOutChannels,
+                name + " outputs " + actualOutChannels + ", expected " + expectedOutChannels);
+        return conv(tensors, allocator, weight, name, kernel, inChannels, actualOutChannels);
     }
 
     private static Conv conv(
@@ -430,6 +525,14 @@ public final class Inflect2 {
             int kernel,
             int inChannels,
             int outChannels) {
+        require(kernel > 0 && inChannels > 0 && outChannels > 0, name + " has invalid dimensions");
+        long taps = Math.multiplyExact((long) kernel, inChannels);
+        require(taps <= Integer.MAX_VALUE, name + " is too wide");
+        require(
+                weight.logicalSize() % outChannels == 0,
+                name + ".weight cannot be split into output rows");
+        long rowStride = weight.logicalSize() / outChannels;
+        require(rowStride >= taps && rowStride <= Integer.MAX_VALUE, name + ".weight is too short");
         // The weight keeps FP32 and Q8_0 as stored and dequantizes anything else to F32: a
         // forward then only ever meets the two dtypes the kernels route natively.
         DataType dtype = weight.dataType();
@@ -437,7 +540,7 @@ public final class Inflect2 {
                 dtype == DataType.FP32 || dtype == DataType.Q8_0
                         ? weight
                         : dequantToF32(allocator, weight, name + ".weight"),
-                bias(tensors, allocator, name + ".bias"),
+                bias(tensors, allocator, name + ".bias", outChannels),
                 kernel,
                 inChannels,
                 outChannels,
@@ -448,9 +551,14 @@ public final class Inflect2 {
     private static MemoryView<MemorySegment> bias(
             Map<String, MemoryView<MemorySegment>> tensors,
             MemoryArena<MemorySegment> allocator,
-            String name) {
+            String name,
+            int channels) {
         return ModelLoader.find(tensors, name)
-                .map(view -> dequantToF32(allocator, view, name))
+                .map(
+                        view -> {
+                            require(view.logicalSize() == channels, name + " has the wrong length");
+                            return dequantToF32(allocator, view, name);
+                        })
                 .orElse(null);
     }
 
@@ -465,13 +573,17 @@ public final class Inflect2 {
     private static Norm norm(
             Map<String, MemoryView<MemorySegment>> tensors,
             MemoryArena<MemorySegment> allocator,
-            String name) {
+            String name,
+            int channels) {
         MemoryView<MemorySegment> gamma = ModelLoader.require(tensors, name + ".gamma");
+        MemoryView<MemorySegment> beta = ModelLoader.require(tensors, name + ".beta");
+        require(
+                gamma.logicalSize() == channels && beta.logicalSize() == channels,
+                name + " has the wrong width");
         return new Norm(
                 dequantToF32(allocator, gamma, name + ".gamma"),
-                dequantToF32(
-                        allocator, ModelLoader.require(tensors, name + ".beta"), name + ".beta"),
-                Math.toIntExact(gamma.logicalSize()));
+                dequantToF32(allocator, beta, name + ".beta"),
+                channels);
     }
 
     /**
@@ -489,21 +601,90 @@ public final class Inflect2 {
         return copy;
     }
 
-    private static Configuration readConfig(GGUF gguf) {
+    static Configuration readConfig(GGUF gguf) {
+        require(
+                "inflect-v2".equals(gguf.getString("general.architecture")),
+                "unsupported architecture '" + gguf.getString("general.architecture") + "'");
+        int symbols = gguf.getValue(int.class, "inflect.v2.symbol_count");
+        int latent = gguf.getValue(int.class, "inflect.v2.inter_channels");
+        int hidden = gguf.getValue(int.class, "inflect.v2.hidden_channels");
+        int filter = gguf.getValue(int.class, "inflect.v2.filter_channels");
+        int heads = gguf.getValue(int.class, "inflect.v2.n_heads");
+        int layers = gguf.getValue(int.class, "inflect.v2.n_layers");
+        int kernel = gguf.getValue(int.class, "inflect.v2.kernel_size");
+        int sampleRate = gguf.getValue(int.class, "inflect.v2.sample_rate");
+        int initialChannels = gguf.getValue(int.class, "inflect.v2.upsample_initial_channel");
+        int[] blockKernels = gguf.getValue(int[].class, "inflect.v2.resblock_kernel_sizes");
+        int[] dilations = gguf.getValue(int[].class, "inflect.v2.resblock_dilation_sizes");
+        int[] rates = gguf.getValue(int[].class, "inflect.v2.upsample_rates");
+        int[] upsampleKernels = gguf.getValue(int[].class, "inflect.v2.upsample_kernel_sizes");
+
+        require(symbols == Symbols.count(), "symbol table size does not match the model");
+        require(
+                latent > 0
+                        && (latent & 1) == 0
+                        && hidden > 0
+                        && filter > 0
+                        && heads > 0
+                        && hidden % heads == 0
+                        && layers > 0
+                        && kernel > 0
+                        && (kernel & 1) == 1
+                        && sampleRate > 0
+                        && initialChannels > 0,
+                "invalid core dimensions");
+        require(
+                blockKernels.length > 0
+                        && dilations.length > 0
+                        && dilations.length % blockKernels.length == 0,
+                "invalid resblock layout");
+        for (int value : blockKernels)
+            require(value > 0 && (value & 1) == 1, "invalid resblock kernel");
+        for (int value : dilations) require(value > 0, "invalid resblock dilation");
+        require(
+                rates.length > 0 && rates.length == upsampleKernels.length,
+                "invalid upsample layout");
+        int channels = initialChannels;
+        long maxSamples = MAX_FRAMES;
+        for (int i = 0; i < rates.length; i++) {
+            int rate = rates[i], upsampleKernel = upsampleKernels[i];
+            require(
+                    rate > 0
+                            && upsampleKernel >= rate
+                            && (upsampleKernel - rate) % 2 == 0
+                            && (channels & 1) == 0,
+                    "invalid upsample stage " + i);
+            channels /= 2;
+            require(
+                    maxSamples <= Integer.MAX_VALUE / rate,
+                    "upsample layout exceeds the waveform limit");
+            maxSamples *= rate;
+        }
+        require(
+                gguf.getValueOrDefault(boolean.class, "inflect.v2.add_blank", true),
+                "the frontend requires blank-interspersed symbols");
+        require(
+                "leaky_relu".equals(gguf.getStringOrDefault("inflect.v2.activation", "leaky_relu")),
+                "unsupported decoder activation");
+
         return new Configuration(
-                gguf.getValue(int.class, "inflect.v2.symbol_count"),
-                gguf.getValue(int.class, "inflect.v2.inter_channels"),
-                gguf.getValue(int.class, "inflect.v2.hidden_channels"),
-                gguf.getValue(int.class, "inflect.v2.filter_channels"),
-                gguf.getValue(int.class, "inflect.v2.n_heads"),
-                gguf.getValue(int.class, "inflect.v2.n_layers"),
-                gguf.getValue(int.class, "inflect.v2.kernel_size"),
-                gguf.getValue(int.class, "inflect.v2.sample_rate"),
-                gguf.getValue(int.class, "inflect.v2.upsample_initial_channel"),
-                gguf.getValue(int[].class, "inflect.v2.resblock_kernel_sizes"),
-                gguf.getValue(int[].class, "inflect.v2.resblock_dilation_sizes"),
-                gguf.getValue(int[].class, "inflect.v2.upsample_rates"),
-                gguf.getValue(int[].class, "inflect.v2.upsample_kernel_sizes"));
+                symbols,
+                latent,
+                hidden,
+                filter,
+                heads,
+                layers,
+                kernel,
+                sampleRate,
+                initialChannels,
+                blockKernels,
+                dilations,
+                rates,
+                upsampleKernels);
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) throw new IllegalArgumentException("Inflect2: " + message);
     }
 
     // ── model ─────────────────────────────────────────────────────────────
@@ -578,8 +759,9 @@ public final class Inflect2 {
         if (!(lengthScale > 0) || !Float.isFinite(lengthScale))
             throw new IllegalArgumentException(
                     "lengthScale must be finite and > 0: " + lengthScale);
-        if (!(variation >= 0) || !Float.isFinite(variation))
-            throw new IllegalArgumentException("variation must be finite and >= 0: " + variation);
+        if (!(variation >= 0 && variation <= 1) || !Float.isFinite(variation))
+            throw new IllegalArgumentException(
+                    "variation must be finite and in [0, 1]: " + variation);
 
         state.rewind();
         int tokenCount = tokens.length;
@@ -728,7 +910,10 @@ public final class Inflect2 {
         long total = 0;
         for (int token = 0; token < tokenCount; token++) {
             double frames = Math.ceil(Math.exp(logFrames[token]) * lengthScale);
-            repeats[token] = (int) Math.max(0, Math.min(frames, MAX_FRAMES));
+            if (!Double.isFinite(frames) || frames > MAX_FRAMES)
+                throw new IllegalArgumentException(
+                        "token " + token + " needs " + frames + " frames");
+            repeats[token] = (int) Math.max(0, frames);
             total += repeats[token];
         }
         if (total > MAX_FRAMES)
