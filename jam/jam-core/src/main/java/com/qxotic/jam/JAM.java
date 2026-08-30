@@ -74,6 +74,15 @@ public interface JAM {
             forLoop(count, (i, slot) -> body.accept(i));
         }
 
+        /**
+         * {@link #forLoop(int, Body)} for coarse items - a gemm panel, a slice of a fan-out - where
+         * the host must balance every item, not bands of them. A host with a band-claiming loop
+         * overrides this; the default is the plain loop.
+         */
+        default void forEach(int count, Body body) {
+            forLoop(count, body);
+        }
+
         /** How many tasks run at once at most: the compute thread budget, fixed for a lifetime. */
         int width();
 

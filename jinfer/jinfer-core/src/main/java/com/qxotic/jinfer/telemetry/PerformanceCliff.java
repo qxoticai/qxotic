@@ -40,6 +40,13 @@ public enum PerformanceCliff {
                     + " could otherwise skip; --enable-native-access=ALL-UNNAMED lifts that small"
                     + " but uniform tax"),
 
+    /** A parallel loop was submitted from inside a region of the same pool and ran inline. */
+    NESTED_REGION(
+            Level.WARNING,
+            "a parallel loop ran inline because it was submitted from inside another region of the"
+                    + " same pool: that loop got one thread; restructure the caller so the loops"
+                    + " are siblings, not nested"),
+
     /** No jam backend on the classpath: prefill runs on the pure-Java path. */
     JAM_ABSENT(
             Level.WARNING,

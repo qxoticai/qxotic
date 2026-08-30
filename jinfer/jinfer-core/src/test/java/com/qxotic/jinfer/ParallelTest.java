@@ -701,7 +701,9 @@ class ParallelTest {
             int regions = 50_000;
             for (int i = 0; i < regions; i++) pool.loop(0, 16, j -> {});
             long perRegion = (System.nanoTime() - t0) / regions;
-            assertTrue(perRegion < 200_000, "per region " + perRegion + " ns");
+            assertTrue(
+                    perRegion < 20_000,
+                    "per region " + perRegion + " ns (measured ~1 us at width 4)");
         }
     }
 
@@ -939,18 +941,41 @@ class ParallelTest {
             for (int r = 0; r < 300_000; r++) pool.loop(0, 2, i -> visits.incrementAndGet());
             long perRegion = (System.nanoTime() - t0) / 300_000;
             assertEquals(600_000, visits.get());
-            assertTrue(perRegion < 200_000, "per region " + perRegion + " ns");
+            assertTrue(
+                    perRegion < 20_000,
+                    "per region " + perRegion + " ns (measured ~1 us at width 4)");
         }
     }
 
     @Test
-    void bodiesSeeTheSameSlotForTheWholeChunk() {
+    void forEachClaimsOneIndexAtATimeAndStillVisitsEveryIndexOnce() {
         try (Parallel pool = Parallel.of(4)) {
-            int n = 4 * 4 * 25; // chunk = 25
+            int n = 256;
+            AtomicIntegerArray visits = new AtomicIntegerArray(n);
+            Set<Integer> slots = ConcurrentHashMap.newKeySet();
+            pool.each(
+                    n,
+                    (i, slot) -> {
+                        visits.incrementAndGet(i);
+                        slots.add(slot);
+                        spin(50_000); // 256 x 50 us: with one index per claim every slot is busy
+                    });
+            for (int i = 0; i < n; i++) assertEquals(1, visits.get(i));
+            assertEquals(4, slots.size(), "every participant claimed items");
+            AtomicInteger visited = new AtomicInteger();
+            Parallel.forEach(10, (i, slot) -> visited.incrementAndGet());
+            assertEquals(10, visited.get());
+        }
+    }
+
+    @Test
+    void loopClaimsContiguousHalfBands() {
+        try (Parallel pool = Parallel.of(4)) {
+            int n = 4096; // chunk = n / (4 * 2) = 512
             int[] slotOf = new int[n];
             pool.loop(0, n, (i, slot) -> slotOf[i] = slot);
-            for (int c = 0; c < n; c += 25)
-                for (int i = c + 1; i < c + 25; i++)
+            for (int c = 0; c < n; c += 512)
+                for (int i = c + 1; i < c + 512; i++)
                     assertEquals(slotOf[c], slotOf[i], "chunk " + c + " index " + i);
         }
     }

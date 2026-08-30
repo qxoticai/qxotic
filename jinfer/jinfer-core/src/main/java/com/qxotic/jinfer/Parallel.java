@@ -1,5 +1,6 @@
 package com.qxotic.jinfer;
 
+import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Objects;
@@ -37,8 +38,15 @@ public final class Parallel implements AutoCloseable {
     /** Spin this long for the next region before parking. */
     private static final long SPIN_NANOS = 100_000L;
 
-    /** Chunks per participant per region: enough for the tail to balance. */
-    private static final int CHUNKS_PER_PARTICIPANT = 4;
+    /**
+     * {@link #loop} claims chunks of {@code size / (width * CHUNKS_PER_PARTICIPANT)}: two per
+     * participant, so each streams a long contiguous half-band and the second claims absorb a late
+     * starter. Measured on a 2.6B Q4_K_M decode (16 threads, a memory-bound gemv over 2048 rows):
+     * chunks of 1/64 of the region cost 3% against halves, one whole band per participant was
+     * straggler-fragile, and guided (shrinking) claims sat in between with more variance. Coarse
+     * items that must balance one by one (a gemm panel, a slice of a fan-out) use {@link #forEach}.
+     */
+    private static final int CHUNKS_PER_PARTICIPANT = 2;
 
     private static final class Shared {
         static final Parallel POOL = new Parallel(RuntimeFlags.THREADS, "jinfer");
@@ -60,7 +68,7 @@ public final class Parallel implements AutoCloseable {
         if (width < 1) throw new IllegalArgumentException("width < 1: " + width);
         this.width = width;
         this.name = name;
-        this.current = new Region(0, 0, null, null, null);
+        this.current = new Region(0, 0, null, null, null, false);
     }
 
     /** A pool of {@code width} participants; its workers start on the first region. */
@@ -104,6 +112,11 @@ public final class Parallel implements AutoCloseable {
         shared().loop(start, end, body);
     }
 
+    /** {@link #shared()}'s {@link #each(int, Body)}. */
+    public static void forEach(int count, Body body) {
+        shared().each(count, body);
+    }
+
     /** How many participants a region has, the caller included. */
     public int width() {
         return width;
@@ -135,7 +148,7 @@ public final class Parallel implements AutoCloseable {
      */
     public void loop(int start, int end, IntConsumer body) {
         Objects.requireNonNull(body, "body");
-        loop(start, end, body, null);
+        loop(start, end, body, null, false);
     }
 
     /** {@code body.run(i, slot)} for every {@code i < count}. */
@@ -146,11 +159,20 @@ public final class Parallel implements AutoCloseable {
     /** As {@link #loop(int, int, IntConsumer)}, with the participant's slot. */
     public void loop(int start, int end, Body body) {
         Objects.requireNonNull(body, "body");
-        loop(start, end, null, body);
+        loop(start, end, null, body, false);
+    }
+
+    /**
+     * {@link #loop(int, Body)} claiming one index at a time: for coarse items (a gemm panel, a
+     * slice of a native fan-out) where the pool must balance every item, not bands of them.
+     */
+    public void each(int count, Body body) {
+        Objects.requireNonNull(body, "body");
+        loop(0, count, null, body, true);
     }
 
     /** One of {@code simple} and {@code body} is set; the region calls it without a wrapper. */
-    private void loop(int start, int end, IntConsumer simple, Body body) {
+    private void loop(int start, int end, IntConsumer simple, Body body, boolean each) {
         if (start >= end) return;
         Thread me = Thread.currentThread();
         Region running = current;
@@ -158,6 +180,7 @@ public final class Parallel implements AutoCloseable {
                 (me instanceof Worker w && w.pool == this)
                         || (running.submitter == me && !running.done());
         if (end - start == 1 || width == 1 || nested) {
+            if (nested && end - start > 1 && width > 1) PerformanceCliff.NESTED_REGION.report();
             int slot = me instanceof Worker w && w.pool == this ? w.slot : 0;
             if (simple != null) for (long i = start; i < end; i++) simple.accept((int) i);
             else for (long i = start; i < end; i++) body.run((int) i, slot);
@@ -166,7 +189,7 @@ public final class Parallel implements AutoCloseable {
         Worker[] pool = pool();
         lock.lock();
         try {
-            Region region = new Region(start, end, simple, body, me); // the loop's one allocation
+            Region region = new Region(start, end, simple, body, me, each); // one allocation
             current = region;
             for (Worker w : pool) if (w.parked) LockSupport.unpark(w);
             region.work(0);
@@ -237,7 +260,8 @@ public final class Parallel implements AutoCloseable {
         }
 
         final int start;
-        final long size, chunk; // offsets from start: int arithmetic would wrap near MAX_VALUE
+        final long size; // offsets from start: int arithmetic would wrap near MAX_VALUE
+        final long chunk; // indices per claim
         final Thread submitter;
         volatile IntConsumer simple; // one of the two is the loop body
         volatile Body body;
@@ -245,13 +269,13 @@ public final class Parallel implements AutoCloseable {
         volatile long finished;
         volatile Throwable failure;
 
-        Region(int start, int end, IntConsumer simple, Body body, Thread submitter) {
+        Region(int start, int end, IntConsumer simple, Body body, Thread submitter, boolean each) {
             this.start = start;
             this.size = Math.max(0, (long) end - start);
             this.simple = simple;
             this.body = body;
             this.submitter = submitter;
-            this.chunk = Math.max(1, size / ((long) width * CHUNKS_PER_PARTICIPANT));
+            this.chunk = each ? 1 : Math.max(1, size / ((long) width * CHUNKS_PER_PARTICIPANT));
         }
 
         boolean done() {

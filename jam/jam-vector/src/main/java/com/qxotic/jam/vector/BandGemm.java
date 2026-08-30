@@ -255,8 +255,8 @@ final class BandGemm {
         /** Two regions: the activation tiles are packed, then the panels sweep them. */
         void run() {
             JAM.Parallel parallel = scratch.parallel();
-            parallel.forLoop(plan.packItems, this::pack);
-            parallel.forLoop(plan.tasks - plan.packItems, this::sweep);
+            parallel.forEach(plan.packItems, (i, slot) -> pack(i));
+            parallel.forEach(plan.tasks - plan.packItems, this::sweep);
         }
 
         /**
