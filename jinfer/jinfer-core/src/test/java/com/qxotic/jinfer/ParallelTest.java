@@ -948,12 +948,12 @@ class ParallelTest {
     }
 
     @Test
-    void forEachClaimsOneIndexAtATimeAndStillVisitsEveryIndexOnce() {
+    void runClaimsOneJobAtATimeAndStillVisitsEveryJobOnce() {
         try (Parallel pool = Parallel.of(4)) {
             int n = 256;
             AtomicIntegerArray visits = new AtomicIntegerArray(n);
             Set<Integer> slots = ConcurrentHashMap.newKeySet();
-            pool.each(
+            pool.run(
                     n,
                     (i, slot) -> {
                         visits.incrementAndGet(i);
@@ -963,7 +963,7 @@ class ParallelTest {
             for (int i = 0; i < n; i++) assertEquals(1, visits.get(i));
             assertEquals(4, slots.size(), "every participant claimed items");
             AtomicInteger visited = new AtomicInteger();
-            Parallel.forEach(10, (i, slot) -> visited.incrementAndGet());
+            Parallel.shared().run(10, (i, slot) -> visited.incrementAndGet());
             assertEquals(10, visited.get());
         }
     }
@@ -971,12 +971,12 @@ class ParallelTest {
     @Test
     void loopClaimsContiguousHalfBands() {
         try (Parallel pool = Parallel.of(4)) {
-            int n = 4096; // chunk = n / (4 * 2) = 512
+            int n = 4096; // 2 x 4 jobs of 512 contiguous indices
             int[] slotOf = new int[n];
             pool.loop(0, n, (i, slot) -> slotOf[i] = slot);
             for (int c = 0; c < n; c += 512)
                 for (int i = c + 1; i < c + 512; i++)
-                    assertEquals(slotOf[c], slotOf[i], "chunk " + c + " index " + i);
+                    assertEquals(slotOf[c], slotOf[i], "job at " + c + " index " + i);
         }
     }
 
@@ -1082,8 +1082,8 @@ class ParallelTest {
     @Test
     void aNullBodyIsRejectedUpFront() {
         try (Parallel pool = Parallel.of(2)) {
-            assertThrows(NullPointerException.class, () -> pool.loop(0, 0, (Parallel.Body) null));
-            assertThrows(NullPointerException.class, () -> pool.loop(5, (Parallel.Body) null));
+            assertThrows(NullPointerException.class, () -> pool.loop(0, 0, (Parallel.Job) null));
+            assertThrows(NullPointerException.class, () -> pool.loop(5, (Parallel.Job) null));
             assertThrows(NullPointerException.class, () -> pool.loop(0, 10, (IntConsumer) null));
             assertThrows(NullPointerException.class, () -> pool.loop(0, 0, (IntConsumer) null));
             assertThrows(NullPointerException.class, () -> pool.loop(0, (IntConsumer) null));
@@ -1328,7 +1328,7 @@ class ParallelTest {
                     || !sun.isThreadAllocatedMemorySupported()) return;
             int[] sink = new int[64];
             IntConsumer simple = i -> sink[i & 63] = i;
-            Parallel.Body body = (i, slot) -> sink[i & 63] = slot;
+            Parallel.Job body = (i, slot) -> sink[i & 63] = slot;
             for (int r = 0; r < 20_000; r++) {
                 pool.loop(0, 64, simple);
                 pool.loop(0, 64, body);

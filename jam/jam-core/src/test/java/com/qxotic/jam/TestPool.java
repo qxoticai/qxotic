@@ -30,7 +30,7 @@ public final class TestPool implements JAM.Parallel {
     }
 
     @Override
-    public synchronized void forLoop(int count, Body body) {
+    public synchronized void run(int count, Job body) {
         if (count <= 0) return;
         Region region = new Region(count, body);
         current = region;
@@ -45,11 +45,11 @@ public final class TestPool implements JAM.Parallel {
 
     private static final class Region {
         final int count;
-        final Body body;
+        final Job body;
         final AtomicInteger next = new AtomicInteger(), finished = new AtomicInteger();
         volatile Throwable failure;
 
-        Region(int count, Body body) {
+        Region(int count, Job body) {
             this.count = count;
             this.body = body;
         }

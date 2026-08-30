@@ -433,7 +433,7 @@ public final class MatMul {
         // fail here, not wrap negative and compute nothing
         int cells = Math.multiplyExact(n, m);
         float[] tmp = inPlace ? new float[cells] : null;
-        Parallel.Body cell =
+        Parallel.Job cell =
                 (idx, slot) -> {
                     int s = idx / m, row = idx - s * m;
                     float v =
@@ -1778,13 +1778,13 @@ public final class MatMul {
     private static final JAM.Parallel HOST =
             new JAM.Parallel() {
                 @Override
-                public void forLoop(int count, Body body) {
-                    Parallel.forLoop(count, body::run);
+                public void run(int jobs, Job body) {
+                    Parallel.shared().run(jobs, body::run);
                 }
 
                 @Override
-                public void forEach(int count, Body body) {
-                    Parallel.forEach(count, body::run);
+                public void forLoop(int count, Job body) {
+                    Parallel.forLoop(count, body::run); // the pool's own bands, not the default's
                 }
 
                 @Override
