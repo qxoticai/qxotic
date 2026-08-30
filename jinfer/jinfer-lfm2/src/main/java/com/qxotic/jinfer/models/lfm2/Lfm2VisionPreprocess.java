@@ -7,71 +7,95 @@ import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /** LiquidAI's aligned resize and optional 512px tile plan. */
 final class Lfm2VisionPreprocess {
-    static final int MIN_IMAGE_TOKENS = 64;
-    static final int MAX_IMAGE_TOKENS = 256;
-    static final int TILE_SIZE = 512;
-    static final int MAX_TILES = 10;
-    static final float MAX_PIXELS_TOLERANCE = 2f;
+    private static final int MIN_IMAGE_TOKENS = 64;
+    private static final int MAX_IMAGE_TOKENS = 256;
+    private static final int TILE_SIZE = 512;
+    private static final int MAX_TILES = 10;
+    private static final float MAX_PIXELS_TOLERANCE = 2f;
 
     private Lfm2VisionPreprocess() {}
 
-    record Part(Media.Image image, int row, int column, boolean thumbnail) {}
+    record Options(
+            int minPixels,
+            int maxPixels,
+            int tileSize,
+            int minTiles,
+            int maxTiles,
+            float maxPixelsTolerance) {
+        Options {
+            if (minPixels <= 0
+                    || maxPixels < minPixels
+                    || tileSize <= 0
+                    || minTiles <= 0
+                    || maxTiles < minTiles
+                    || !(maxPixelsTolerance >= 1f)
+                    || !Float.isFinite(maxPixelsTolerance))
+                throw new IllegalArgumentException("invalid LFM2 vision preprocessing options");
+        }
+    }
 
-    record Plan(List<Part> parts, int rows, int columns) {
+    static Options defaults(int patchSize, int merge) {
+        int factor = Math.multiplyExact(patchSize, merge);
+        int factorArea = Math.multiplyExact(factor, factor);
+        return new Options(
+                Math.multiplyExact(MIN_IMAGE_TOKENS, factorArea),
+                Math.multiplyExact(MAX_IMAGE_TOKENS, factorArea),
+                TILE_SIZE,
+                1,
+                MAX_TILES,
+                MAX_PIXELS_TOLERANCE);
+    }
+
+    record Part(Media.Image image, int row, int column) {
+        boolean thumbnail() {
+            return row == 0;
+        }
+    }
+
+    record Geometry(int overviewWidth, int overviewHeight, int rows, int columns) {
+        boolean tiled() {
+            return rows > 0;
+        }
+    }
+
+    record Plan(List<Part> parts) {
         Plan {
             parts = List.copyOf(parts);
         }
 
         boolean tiled() {
-            return rows > 0 && columns > 0;
+            return parts.size() > 1;
         }
     }
 
     static Plan plan(Media.Image image, int patchSize, int merge) {
-        int factor = Math.multiplyExact(patchSize, merge);
-        int factorArea = Math.multiplyExact(factor, factor);
-        int[] overviewSize =
-                smartResize(
-                        image.width(),
-                        image.height(),
-                        factor,
-                        Math.multiplyExact(MIN_IMAGE_TOKENS, factorArea),
-                        Math.multiplyExact(MAX_IMAGE_TOKENS, factorArea));
+        return plan(image, patchSize, merge, defaults(patchSize, merge));
+    }
+
+    static Plan plan(Media.Image image, int patchSize, int merge, Options options) {
+        Geometry geometry = geometry(image, patchSize, merge, options);
         Part overview =
                 new Part(
                         resizeRegion(
                                 image,
-                                overviewSize[0],
-                                overviewSize[1],
+                                geometry.overviewWidth(),
+                                geometry.overviewHeight(),
                                 0,
                                 0,
-                                overviewSize[0],
-                                overviewSize[1]),
+                                geometry.overviewWidth(),
+                                geometry.overviewHeight()),
                         0,
-                        0,
-                        true);
-        // the reference processor's _is_image_too_large: the factor-rounded AREA against
-        // max_image_tokens * factor^2 * tolerance (an area rule, not a per-side box: an 800x800
-        // photo tiles, a 1100x200 banner does not)
-        long roundedWidth =
-                Math.max(factor, Math.round((float) image.width() / factor) * (long) factor);
-        long roundedHeight =
-                Math.max(factor, Math.round((float) image.height() / factor) * (long) factor);
-        if (roundedWidth * roundedHeight
-                <= (long) MAX_IMAGE_TOKENS * factorArea * MAX_PIXELS_TOLERANCE) {
-            return new Plan(List.of(overview), 0, 0);
-        }
+                        0);
+        if (!geometry.tiled()) return new Plan(List.of(overview));
 
-        int[] grid = closestGrid(image.width(), image.height());
-        int columns = grid[0], rows = grid[1];
-        int refinedWidth = Math.multiplyExact(TILE_SIZE, columns);
-        int refinedHeight = Math.multiplyExact(TILE_SIZE, rows);
-        List<Part> parts = new ArrayList<>(rows * columns + 1);
+        int columns = geometry.columns(), rows = geometry.rows();
+        int refinedWidth = Math.multiplyExact(options.tileSize(), columns);
+        int refinedHeight = Math.multiplyExact(options.tileSize(), rows);
+        List<Part> parts = new ArrayList<>(Math.addExact(Math.multiplyExact(rows, columns), 1));
         for (int row = 0; row < rows; row++)
             for (int column = 0; column < columns; column++)
                 parts.add(
@@ -80,15 +104,60 @@ final class Lfm2VisionPreprocess {
                                         image,
                                         refinedWidth,
                                         refinedHeight,
-                                        column * TILE_SIZE,
-                                        row * TILE_SIZE,
-                                        TILE_SIZE,
-                                        TILE_SIZE),
+                                        column * options.tileSize(),
+                                        row * options.tileSize(),
+                                        options.tileSize(),
+                                        options.tileSize()),
                                 row + 1,
-                                column + 1,
-                                false));
+                                column + 1));
         parts.add(overview);
-        return new Plan(parts, rows, columns);
+        return new Plan(parts);
+    }
+
+    static int positions(Media.Image image, int patchSize, int merge, Options options) {
+        int factor = Math.multiplyExact(patchSize, merge);
+        Geometry geometry = geometry(image, patchSize, merge, options);
+        int overview =
+                Math.multiplyExact(
+                        geometry.overviewWidth() / factor, geometry.overviewHeight() / factor);
+        if (!geometry.tiled()) return overview;
+        int tileSide = options.tileSize() / factor;
+        int tiles = Math.multiplyExact(geometry.rows(), geometry.columns());
+        return Math.addExact(
+                overview, Math.multiplyExact(tiles, Math.multiplyExact(tileSide, tileSide)));
+    }
+
+    private static Geometry geometry(Media.Image image, int patchSize, int merge, Options options) {
+        int factor = Math.multiplyExact(patchSize, merge);
+        if (options.tileSize() % factor != 0)
+            throw new IllegalArgumentException("tile size must be divisible by patchSize * merge");
+        int[] overviewSize =
+                smartResize(
+                        image.width(),
+                        image.height(),
+                        factor,
+                        options.minPixels(),
+                        options.maxPixels());
+        // the reference processor's _is_image_too_large: the factor-rounded AREA against
+        // max_image_tokens * factor^2 * tolerance (an area rule, not a per-side box: an 800x800
+        // photo tiles, a 1100x200 banner does not)
+        long roundedWidth =
+                Math.max(patchSize, Math.round((float) image.width() / factor) * (long) factor);
+        long roundedHeight =
+                Math.max(patchSize, Math.round((float) image.height() / factor) * (long) factor);
+        if (roundedWidth * roundedHeight
+                <= options.maxPixels() * (double) options.maxPixelsTolerance()) {
+            return new Geometry(overviewSize[0], overviewSize[1], 0, 0);
+        }
+
+        int[] grid =
+                closestGrid(
+                        image.width(),
+                        image.height(),
+                        options.tileSize(),
+                        options.minTiles(),
+                        options.maxTiles());
+        return new Geometry(overviewSize[0], overviewSize[1], grid[1], grid[0]);
     }
 
     static int positions(Part part, int patchSize, int merge) {
@@ -114,34 +183,23 @@ final class Lfm2VisionPreprocess {
         return new int[] {targetWidth, targetHeight};
     }
 
-    static int[] closestGrid(int width, int height) {
+    static int[] closestGrid(int width, int height, int tileSize, int minTiles, int maxTiles) {
         float aspect = (float) width / height;
         float bestDifference = Float.MAX_VALUE;
         int bestWidth = 1, bestHeight = 1;
         long area = (long) width * height;
-        List<int[]> candidates = new ArrayList<>();
-        for (int limit = 1; limit <= MAX_TILES; limit++) {
-            for (int widthAtLimit = 1; widthAtLimit < limit; widthAtLimit++)
-                if (widthAtLimit * limit <= MAX_TILES)
-                    candidates.add(new int[] {widthAtLimit, limit});
-            for (int heightAtLimit = 1; heightAtLimit <= limit; heightAtLimit++)
-                if (limit * heightAtLimit <= MAX_TILES)
-                    candidates.add(new int[] {limit, heightAtLimit});
-        }
-        candidates.sort(Comparator.comparingInt(value -> value[0] * value[1]));
-        for (int[] candidate : candidates) {
-            float difference = Math.abs(aspect - (float) candidate[0] / candidate[1]);
-            if (difference < bestDifference
-                    || (difference == bestDifference
-                            && area
-                                    > (long) TILE_SIZE
-                                            * TILE_SIZE
-                                            * candidate[0]
-                                            * candidate[1]
-                                            / 2)) {
-                bestDifference = difference;
-                bestWidth = candidate[0];
-                bestHeight = candidate[1];
+        for (int tiles = minTiles; tiles <= maxTiles; tiles++) {
+            for (int candidateWidth = 1; candidateWidth <= tiles; candidateWidth++) {
+                if (tiles % candidateWidth != 0) continue;
+                int candidateHeight = tiles / candidateWidth;
+                float difference = Math.abs(aspect - (float) candidateWidth / candidateHeight);
+                if (difference < bestDifference
+                        || (difference == bestDifference
+                                && area > (long) tileSize * tileSize * tiles / 2)) {
+                    bestDifference = difference;
+                    bestWidth = candidateWidth;
+                    bestHeight = candidateHeight;
+                }
             }
         }
         return new int[] {bestWidth, bestHeight};
@@ -192,7 +250,11 @@ final class Lfm2VisionPreprocess {
     }
 
     static MemoryView<MemorySegment> patches(
-            Media.Image image, int patchSize, MemoryArena<MemorySegment> scratch) {
+            Media.Image image,
+            int patchSize,
+            float[] mean,
+            float[] std,
+            MemoryArena<MemorySegment> scratch) {
         int width = image.width(), height = image.height();
         if (patchSize <= 0 || width % patchSize != 0 || height % patchSize != 0)
             throw new IllegalArgumentException("image dimensions must be divisible by patchSize");
@@ -210,15 +272,15 @@ final class Lfm2VisionPreprocess {
                         for (int y = 0; y < patchSize; y++)
                             for (int x = 0; x < patchSize; x++)
                                 data[at++] =
-                                        pixels[
+                                        (pixels[
                                                                 ((patchY * patchSize + y) * width
                                                                                         + patchX
                                                                                                 * patchSize
                                                                                         + x)
                                                                                 * 3
                                                                         + c]
-                                                        * 2f
-                                                - 1f;
+                                                        - mean[c])
+                                                / std[c];
                 });
         MemoryView<MemorySegment> result = Views.allocateF32(scratch, count, patchVector);
         Views.copyFromArray(result, 0, data, 0, data.length, "vision patches");

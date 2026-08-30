@@ -3,16 +3,10 @@ package com.qxotic.jinfer.models.lfm2;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.ContextModel;
 import com.qxotic.jinfer.Reranker;
-import com.qxotic.jinfer.Views;
-import com.qxotic.jota.DataType;
-import com.qxotic.jota.memory.Memories;
-import com.qxotic.jota.memory.Memory;
-import com.qxotic.jota.memory.MemoryAllocators;
-import com.qxotic.jota.memory.MemoryDomains;
-import com.qxotic.jota.memory.MemoryOperations;
+import com.qxotic.jinfer.kernels.Convert;
+import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -38,12 +32,9 @@ import java.util.function.DoubleConsumer;
  * 32-row query tops out at 32), not [0,1] probabilities - ranking and relative thresholds work,
  * "0.5 means yes" does not.
  *
- * <p>Buffers: {@link Lfm2#colbertRow} hands out a REUSED per-state view, so query rows (retained
- * across all documents) are copied out the jota way - the row's {@code float[]} wrapped by {@code
- * Memories.of}, filled by a {@code MemoryOperations.copy} bridge. Document rows are consumed
- * immediately, so they are never copied: each is projected ONCE and dotted against every query row
- * straight from the reused buffer (the loop inversion that lets the old recipe's per-document
- * {@code float[][]} allocation go away).
+ * <p>Buffers: {@link Lfm2#colbertRow} hands out one reused per-state view. Query rows are retained
+ * in native scratch; document rows are projected once and dotted against it immediately. No
+ * per-token heap arrays sit on the scoring path.
  */
 public final class Lfm2Colbert implements Reranker<Lfm2.State> {
 
@@ -147,14 +138,18 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
         // documents), so each document then scores the moment its rows are read - sink order is
         // input order by construction
         int[] querySeq = querySequence(query);
-        float[][] queryRows = new float[querySeq.length][];
+        int outDim = model.configuration().embeddingLengthOut();
+        MemoryView<MemorySegment> queryRows = state.embedScratch(model.configuration()).colbertRows;
+        double[] best = new double[QUERY_LENGTH];
         int total =
                 model.forEachSequence(
                         state,
                         new int[][] {querySeq},
                         (index, rowStart) -> {
-                            for (int r = 0; r < queryRows.length; r++) {
-                                queryRows[r] = copyRow(state, rowStart + r);
+                            for (int r = 0; r < querySeq.length; r++) {
+                                MemoryView<MemorySegment> row =
+                                        model.colbertRow(state, rowStart + r);
+                                Convert.copyF32(row, 0, queryRows, (long) r * outDim, outDim);
                             }
                         });
         int[][] docs = new int[documents.size()][];
@@ -164,51 +159,27 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
                         state,
                         docs,
                         (index, rowStart) ->
-                                sink.accept(maxSim(queryRows, state, rowStart, docs[index])));
-    }
-
-    private static final MemoryOperations<MemorySegment> NATIVE_OPS =
-            MemoryDomains.of(MemoryAllocators.ofArena(Arena.global())).memoryOperations();
-
-    /**
-     * One projected+normalized row, copied OUT of the reused per-state buffer. The destination
-     * {@code float[]} is wrapped as a heap segment ({@code MemorySegment.ofArray} → {@code
-     * Memories.of}), so the native domain's own {@code copy} bridges native→heap - the jota idiom,
-     * without touching {@code Environment} (its global init requires a native backend runtime that
-     * this model does not otherwise need).
-     */
-    private float[] copyRow(Lfm2.State state, int row) {
-        MemoryView<?> view = model.colbertRow(state, row);
-        Views.requireDense(view, DataType.FP32, "colbertRow");
-        int outDim = model.configuration().embeddingLengthOut();
-        float[] dst = new float[outDim];
-        MemoryView<MemorySegment> src = Views.castToSegmentBacked(view, "colbertRow");
-        Memory<MemorySegment> dstMem = Memories.of(MemorySegment.ofArray(dst));
-        // the offset is the VIEW's byteOffset within its Memory - NOT Raw.vbase (that one is an
-        // absolute address into Segments' reinterpreted global segment, for raw kernel reads)
-        NATIVE_OPS.copy(src.memory(), src.byteOffset(), dstMem, 0, (long) outDim * Float.BYTES);
-        return dst;
+                                sink.accept(maxSim(queryRows, state, rowStart, docs[index], best)));
     }
 
     /**
      * {@code Σ_q max_d (q·d)} over L2-normalized rows; skiplisted DOCUMENT tokens drop out. Each
-     * document row is projected ONCE ({@link Lfm2#colbertRow}) and dotted against every query row;
-     * the row is copied out of the reused buffer via {@link #copyRow} (checked copy - kernels never
-     * see heap-array operands), and the dot itself is a plain auto-vectorizing array loop.
+     * document row is projected once ({@link Lfm2#colbertRow}) and dotted against every query row
+     * directly in native memory.
      */
-    private double maxSim(float[][] queryRows, Lfm2.State state, int rowStart, int[] docIds) {
+    private double maxSim(
+            MemoryView<MemorySegment> queryRows,
+            Lfm2.State state,
+            int rowStart,
+            int[] docIds,
+            double[] best) {
         int outDim = model.configuration().embeddingLengthOut();
-        double[] best = new double[queryRows.length];
         Arrays.fill(best, Double.NEGATIVE_INFINITY);
         for (int d = 0; d < docIds.length; d++) {
             if (skiplist.contains(docIds[d])) continue;
-            float[] docRow = copyRow(state, rowStart + d);
-            for (int q = 0; q < queryRows.length; q++) {
-                float[] qr = queryRows[q];
-                double dot = 0;
-                for (int i = 0; i < outDim; i++) {
-                    dot += qr[i] * docRow[i];
-                }
+            MemoryView<MemorySegment> docRow = model.colbertRow(state, rowStart + d);
+            for (int q = 0; q < QUERY_LENGTH; q++) {
+                float dot = Ops.dot(queryRows, (long) q * outDim, docRow, 0, outDim);
                 if (dot > best[q]) best[q] = dot;
             }
         }
@@ -217,15 +188,18 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
         return score;
     }
 
-    /** {@code [BOS] [Q]-marker query}, padded to {@link #QUERY_LENGTH} (never truncated). */
+    /** {@code [BOS] [Q]-marker query}, padded or truncated to {@link #QUERY_LENGTH}. */
     private int[] querySequence(String query) {
-        int[] ids = tokenizer.encode(query).toArray();
-        int n = Math.max(2 + ids.length, QUERY_LENGTH);
-        int[] seq = new int[n];
+        return querySequence(tokenizer.encode(query).toArray(), bos, queryMarker, pad);
+    }
+
+    static int[] querySequence(int[] ids, int bos, int marker, int pad) {
+        int[] seq = new int[QUERY_LENGTH];
         seq[0] = bos;
-        seq[1] = queryMarker;
-        System.arraycopy(ids, 0, seq, 2, ids.length);
-        Arrays.fill(seq, 2 + ids.length, n, pad);
+        seq[1] = marker;
+        int count = Math.min(ids.length, QUERY_LENGTH - 2);
+        System.arraycopy(ids, 0, seq, 2, count);
+        Arrays.fill(seq, 2 + count, seq.length, pad);
         return seq;
     }
 

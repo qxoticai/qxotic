@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -22,12 +23,12 @@ public final class Lfm2Provider implements ModelProvider {
 
     @Override
     public boolean supports(String architecture) {
-        return architecture.startsWith("lfm");
+        return architectures().contains(architecture);
     }
 
     @Override
     public Set<String> architectures() {
-        return Set.of("lfm2", "lfm2moe"); // representative: supports() matches lfm*
+        return Set.of("lfm2", "lfm2moe");
     }
 
     @Override
@@ -44,8 +45,6 @@ public final class Lfm2Provider implements ModelProvider {
             Tokenizer tokenizer)
             throws IOException {
         Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
-        Path media = companions.get("media");
-        if (media != null) model = model.withMedia(media, arena);
         // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name
         if (!model.configuration().causalAttention()) {
             throw new IllegalArgumentException(
@@ -53,6 +52,8 @@ public final class Lfm2Provider implements ModelProvider {
                             + " generative one - it belongs to an embedder/reranker load path,"
                             + " not Models.load");
         }
+        Path media = companions.get("media");
+        if (media != null) model = model.withMedia(media, arena);
         Tokenizer tok = model.tokenizer();
         String source = gguf.getStringOrDefault("tokenizer.chat_template", "");
         return new LoadedModel<>(
@@ -63,7 +64,25 @@ public final class Lfm2Provider implements ModelProvider {
                         tok, -1, "<|im_end|>", "<eos>", "<|endoftext|>", "<end_of_turn>"),
                 Models.modelSeed(fileChannel),
                 Optional.of(Lfm2ChatTemplate.fromGguf(model, gguf)),
-                LoadedModel.SamplingDefaults.NONE);
+                samplingDefaults(gguf, model.configuration(), model.vision() != null));
+    }
+
+    /** LiquidAI's published generation settings; GGUF general.sampling.* overrides these. */
+    static LoadedModel.SamplingDefaults samplingDefaults(
+            GGUF gguf, Lfm2.Configuration config, boolean vision) {
+        String name = gguf.getStringOrDefault("general.name", "").toUpperCase(Locale.ROOT);
+        boolean lfm25 =
+                name.contains("LFM2.5")
+                        || config.contextLength() > 32_768
+                        || config.vocabularySize() > 65_536;
+        if (vision) {
+            if (config.vocabularySize() > 65_536)
+                return new LoadedModel.SamplingDefaults(0.2f, null, 50, null);
+            return new LoadedModel.SamplingDefaults(0.1f, null, null, 0.15f);
+        }
+        if (!lfm25) return new LoadedModel.SamplingDefaults(0.3f, null, null, 0.15f);
+        if (config.isMoE()) return new LoadedModel.SamplingDefaults(0.2f, null, 80, null);
+        return new LoadedModel.SamplingDefaults(0.1f, null, 50, null);
     }
 
     /**

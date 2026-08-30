@@ -96,6 +96,9 @@ final class Lfm2ToolCodecTest {
                         .arguments()
                         .get("options"));
         assertTrue(Lfm2ToolCodec.parse("[not a( valid ]call").isEmpty());
+        assertTrue(Lfm2ToolCodec.parse("f('positional')").isEmpty());
+        assertTrue(Lfm2ToolCodec.parse("f(value=1, value=2)").isEmpty());
+        assertTrue(Lfm2ToolCodec.parse("{\"name\":\"f\",\"arguments\":\"not-json\"}").isEmpty());
     }
 
     @Test

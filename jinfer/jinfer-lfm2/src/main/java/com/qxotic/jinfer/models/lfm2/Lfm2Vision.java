@@ -1,5 +1,7 @@
 package com.qxotic.jinfer.models.lfm2;
 
+import static com.qxotic.jinfer.kernels.ModelLoader.require;
+
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
@@ -24,6 +26,7 @@ import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -40,6 +43,8 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
             modelDim,
             positionSide;
     private final float normEps;
+    private final Lfm2VisionPreprocess.Options preprocessing;
+    private final float[] imageMean, imageStd;
     private final MemoryView<MemorySegment> patchWeight, patchBias;
     private final float[] positionEmbedding;
     private final MemoryView<MemorySegment> postNormWeight, postNormBias;
@@ -75,6 +80,9 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
             int modelDim,
             int positionSide,
             float normEps,
+            Lfm2VisionPreprocess.Options preprocessing,
+            float[] imageMean,
+            float[] imageStd,
             MemoryView<MemorySegment> patchWeight,
             MemoryView<MemorySegment> patchBias,
             float[] positionEmbedding,
@@ -94,6 +102,9 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                 || modelDim <= 0
                 || positionSide <= 0)
             throw new IllegalArgumentException("vision dimensions must be positive");
+        if (!(normEps > 0f) || !Float.isFinite(normEps))
+            throw new IllegalArgumentException(
+                    "vision LayerNorm epsilon must be finite and positive");
         if (visionDim % headCount != 0)
             throw new IllegalArgumentException(
                     "head_count " + headCount + " does not divide embedding_length " + visionDim);
@@ -107,6 +118,13 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         this.modelDim = modelDim;
         this.positionSide = positionSide;
         this.normEps = normEps;
+        this.preprocessing = Objects.requireNonNull(preprocessing, "preprocessing");
+        this.imageMean = requireNormalization(imageMean, "imageMean", false);
+        this.imageStd = requireNormalization(imageStd, "imageStd", true);
+        if (preprocessing.tileSize() % Math.multiplyExact(patchSize, merge) != 0)
+            throw new IllegalArgumentException(
+                    "vision tile size must be divisible by patchSize * merge");
+        int mergeArea = Math.multiplyExact(merge, merge);
         this.patchWeight =
                 requirePatchWeight(
                         patchWeight,
@@ -127,14 +145,14 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                         : requireF32(
                                 projectorNormWeight,
                                 "mm.input_norm.weight",
-                                Shape.flat(Math.multiplyExact(visionDim, merge * merge)));
+                                Shape.flat(Math.multiplyExact(visionDim, mergeArea)));
         this.projectorNormBias =
                 projectorNormBias == null
                         ? null
                         : requireF32(
                                 projectorNormBias,
                                 "mm.input_norm.bias",
-                                Shape.flat(Math.multiplyExact(visionDim, merge * merge)));
+                                Shape.flat(Math.multiplyExact(visionDim, mergeArea)));
         if ((this.projectorNormWeight == null) != (this.projectorNormBias == null))
             throw new IllegalArgumentException("projector LayerNorm requires both weight and bias");
         this.projectorUp =
@@ -142,7 +160,7 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                         projectorUp,
                         "mm.1",
                         projectorDim,
-                        Math.multiplyExact(visionDim, merge * merge));
+                        Math.multiplyExact(visionDim, mergeArea));
         this.projectorDown = requireLinear(projectorDown, "mm.2", modelDim, projectorDim);
         this.layers = Objects.requireNonNull(layers, "layers").clone();
         for (int i = 0; i < this.layers.length; i++) validateLayer(this.layers[i], i);
@@ -150,14 +168,13 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
 
     @Override
     public int positions(Media.Image image) {
-        int count = 0;
-        for (Lfm2VisionPreprocess.Part part : plan(image).parts())
-            count = Math.addExact(count, positions(part));
-        return count;
+        return Lfm2VisionPreprocess.positions(
+                Objects.requireNonNull(image, "image"), patchSize, merge, preprocessing);
     }
 
     Lfm2VisionPreprocess.Plan plan(Media.Image image) {
-        return Lfm2VisionPreprocess.plan(Objects.requireNonNull(image, "image"), patchSize, merge);
+        return Lfm2VisionPreprocess.plan(
+                Objects.requireNonNull(image, "image"), patchSize, merge, preprocessing);
     }
 
     int positions(Lfm2VisionPreprocess.Part part) {
@@ -172,14 +189,22 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                 + merge
                 + " pos="
                 + positionSide
-                + " tokens="
-                + Lfm2VisionPreprocess.MIN_IMAGE_TOKENS
+                + " pixels="
+                + preprocessing.minPixels()
                 + ".."
-                + Lfm2VisionPreprocess.MAX_IMAGE_TOKENS
+                + preprocessing.maxPixels()
                 + " tile="
-                + Lfm2VisionPreprocess.TILE_SIZE
+                + preprocessing.tileSize()
+                + " minTiles="
+                + preprocessing.minTiles()
                 + " maxTiles="
-                + Lfm2VisionPreprocess.MAX_TILES;
+                + preprocessing.maxTiles()
+                + " tolerance="
+                + preprocessing.maxPixelsTolerance()
+                + " mean="
+                + Arrays.toString(imageMean)
+                + " std="
+                + Arrays.toString(imageStd);
     }
 
     @Override
@@ -195,15 +220,11 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
         int rows = positions(part);
-        if (rows > maxChunkSize)
-            throw new IllegalArgumentException(
-                    "vision block has "
-                            + rows
-                            + " projected rows, exceeding maxChunkSize "
-                            + maxChunkSize);
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
-            sink.accept(encode(part.image(), scratch));
+            MemoryView<MemorySegment> encoded = encode(part.image(), scratch);
+            for (int first = 0; first < rows; first += maxChunkSize)
+                sink.accept(encoded.slice(0, first, Math.min(rows, first + maxChunkSize)));
         } finally {
             Arenas.close(scratch);
         }
@@ -214,7 +235,8 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         int patchesX = image.width() / patchSize, patchesY = image.height() / patchSize;
         int count = Math.multiplyExact(patchesX, patchesY);
         int patchVector = Math.multiplyExact(3, Math.multiplyExact(patchSize, patchSize));
-        MemoryView<MemorySegment> patches = Lfm2VisionPreprocess.patches(image, patchSize, scratch);
+        MemoryView<MemorySegment> patches =
+                Lfm2VisionPreprocess.patches(image, patchSize, imageMean, imageStd, scratch);
         MemoryView<MemorySegment> current = Views.allocateF32(scratch, count, visionDim);
         MatMul.gemm(
                 patchWeight,
@@ -295,7 +317,8 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                 interpolatePositions(
                         positionEmbedding, positionSide, visionDim, targetWidth, targetHeight);
         MemoryView<MemorySegment> positions =
-                Views.allocateF32(scratch, targetWidth * targetHeight, visionDim);
+                Views.allocateF32(
+                        scratch, Math.multiplyExact(targetWidth, targetHeight), visionDim);
         Views.copyFromArray(positions, 0, interpolated, 0, interpolated.length, "positions");
         Ops.addInPlace(current, 0, positions, 0, interpolated.length);
     }
@@ -304,14 +327,17 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
             float[] source, int sourceSide, int channels, int targetWidth, int targetHeight) {
         if (sourceSide <= 0 || channels <= 0 || targetWidth <= 0 || targetHeight <= 0)
             throw new IllegalArgumentException("invalid position geometry");
-        if (source.length != sourceSide * sourceSide * channels)
+        if (source.length != (long) sourceSide * sourceSide * channels)
             throw new IllegalArgumentException("invalid position table size");
         if (targetWidth == sourceSide && targetHeight == sourceSide) return source.clone();
         float scaleX = (float) targetWidth / sourceSide;
         float scaleY = (float) targetHeight / sourceSide;
         float supportX = Math.max(1f, 1f / scaleX), inverseX = 1f / supportX;
         float supportY = Math.max(1f, 1f / scaleY), inverseY = 1f / supportY;
-        float[] output = new float[targetWidth * targetHeight * channels];
+        float[] output =
+                new float
+                        [Math.multiplyExact(
+                                Math.multiplyExact(targetWidth, targetHeight), channels)];
         Parallel.forLoop(
                 targetHeight,
                 y -> {
@@ -370,10 +396,9 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         if (patchesX % merge != 0 || patchesY % merge != 0)
             throw new IllegalArgumentException("patch grid must be divisible by merge");
         int outputX = patchesX / merge, outputY = patchesY / merge;
-        int mergedDim = Math.multiplyExact(visionDim, merge * merge);
-        MemoryView<MemorySegment> merged = Views.allocateF32(scratch, outputX * outputY, mergedDim);
-        float[] input = Views.toFloatArray(source, "vision rows");
-        float[] output = new float[Math.multiplyExact(outputX * outputY, mergedDim)];
+        int mergedDim = Math.multiplyExact(visionDim, Math.multiplyExact(merge, merge));
+        MemoryView<MemorySegment> merged =
+                Views.allocateF32(scratch, Math.multiplyExact(outputX, outputY), mergedDim);
         Parallel.forLoop(
                 outputY,
                 outputRow -> {
@@ -388,18 +413,17 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                                                 * visionDim;
                                 int featureBase =
                                         outputBase + (innerRow * merge + innerColumn) * visionDim;
-                                System.arraycopy(input, inputBase, output, featureBase, visionDim);
+                                Convert.copyF32(source, inputBase, merged, featureBase, visionDim);
                             }
                     }
                 });
-        Views.copyFromArray(merged, 0, output, 0, output.length, "merged patches");
         return merged;
     }
 
     private MemoryView<MemorySegment> project(
             MemoryView<MemorySegment> merged, MemoryArena<MemorySegment> scratch) {
         int rows = Math.toIntExact(merged.shape().flatAt(0));
-        int mergedDim = Math.multiplyExact(visionDim, merge * merge);
+        int mergedDim = Math.multiplyExact(visionDim, Math.multiplyExact(merge, merge));
         if (projectorNormWeight != null)
             Norms.layerNorm(
                     merged, merged, projectorNormWeight, projectorNormBias, mergedDim, rows, 1e-5f);
@@ -491,6 +515,26 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                 || merge <= 1
                 || modelDim <= 0)
             throw new IllegalArgumentException(label.getFileName() + ": invalid vision metadata");
+        Lfm2VisionPreprocess.Options defaults = Lfm2VisionPreprocess.defaults(patchSize, merge);
+        Lfm2VisionPreprocess.Options preprocessing =
+                new Lfm2VisionPreprocess.Options(
+                        gguf.getValueOrDefault(
+                                int.class, "clip.vision.image_min_pixels", defaults.minPixels()),
+                        gguf.getValueOrDefault(
+                                int.class, "clip.vision.image_max_pixels", defaults.maxPixels()),
+                        gguf.getValueOrDefault(
+                                int.class, "clip.vision.preproc_image_size", defaults.tileSize()),
+                        gguf.getValueOrDefault(
+                                int.class, "clip.vision.preproc_min_tiles", defaults.minTiles()),
+                        gguf.getValueOrDefault(
+                                int.class, "clip.vision.preproc_max_tiles", defaults.maxTiles()),
+                        defaults.maxPixelsTolerance());
+        float[] imageMean =
+                gguf.getValueOrDefault(
+                        float[].class, "clip.vision.image_mean", new float[] {0.5f, 0.5f, 0.5f});
+        float[] imageStd =
+                gguf.getValueOrDefault(
+                        float[].class, "clip.vision.image_std", new float[] {0.5f, 0.5f, 0.5f});
 
         MemoryView<MemorySegment> position = require(tensors, "v.position_embd.weight");
         requireF32(position, "v.position_embd.weight", position.shape());
@@ -526,7 +570,7 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                             loadLinear(tensors, prefix + "ffn_up", ffnDim, visionDim),
                             loadLinear(tensors, prefix + "ffn_down", visionDim, ffnDim));
         }
-        int projectorInput = Math.multiplyExact(visionDim, merge * merge);
+        int projectorInput = Math.multiplyExact(visionDim, Math.multiplyExact(merge, merge));
         MemoryView<MemorySegment> projectorUpWeight = require(tensors, "mm.1.weight");
         Shape projectorUpShape =
                 projectorUpWeight.dataType().logicalShape(projectorUpWeight.shape());
@@ -550,6 +594,9 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                 modelDim,
                 positionSide,
                 normEps,
+                preprocessing,
+                imageMean,
+                imageStd,
                 require(tensors, "v.patch_embd.weight"),
                 require(tensors, "v.patch_embd.bias"),
                 Views.toFloatArray(position, "v.position_embd.weight"),
@@ -562,18 +609,25 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
                 layers);
     }
 
+    private static float[] requireNormalization(float[] values, String name, boolean positive) {
+        Objects.requireNonNull(values, name);
+        if (values.length != 3)
+            throw new IllegalArgumentException(name + " must contain three channels");
+        float[] copy = values.clone();
+        for (float value : copy)
+            if (!Float.isFinite(value) || (positive && !(value > 0f)))
+                throw new IllegalArgumentException(name + " contains an invalid value");
+        return copy;
+    }
+
     private static Linear loadLinear(
             Map<String, MemoryView<MemorySegment>> tensors,
             String name,
             int outputDim,
             int inputDim) {
-        return requireLinear(
-                new Linear(
-                        require(tensors, name + ".weight"),
-                        require(tensors, name + ".bias"),
-                        outputDim,
-                        inputDim),
-                name,
+        return new Linear(
+                require(tensors, name + ".weight"),
+                require(tensors, name + ".bias"),
                 outputDim,
                 inputDim);
     }
@@ -585,13 +639,6 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         requireWeight(linear.weight(), name + ".weight", Shape.flat(outputDim, inputDim));
         requireF32(linear.bias(), name + ".bias", Shape.flat(outputDim));
         return linear;
-    }
-
-    private static MemoryView<MemorySegment> require(
-            Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        MemoryView<MemorySegment> value = tensors.get(name);
-        if (value == null) throw new IllegalStateException("mmproj tensor missing: " + name);
-        return value;
     }
 
     private static MemoryView<MemorySegment> requireWeight(
