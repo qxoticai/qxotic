@@ -88,7 +88,7 @@ class Lfm2VisionModelTest {
                         .project(
                                 image,
                                 64,
-                                rows -> model.ingest(state, Batch.embeddings(rows, 64, true)));
+                                rows -> model.ingest(state, Batch.embeddings(rows, 64, false)));
                 assertEquals(prefix.length + 64, state.position());
                 MemoryView<MemorySegment> logits =
                         Views.castToSegmentBacked(model.logits(state), "logits");

@@ -16,6 +16,7 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,19 @@ class Lfm2ColbertTest {
 
     private static Path model() {
         return TestModels.require("hf.co/LiquidAI/LFM2.5-ColBERT-350M-GGUF:Q8_0");
+    }
+
+    @Test
+    void longQueriesAreTruncatedToTheModelsFixedThirtyTwoTokens() {
+        int[] ids = new int[64];
+        Arrays.setAll(ids, i -> i + 10);
+
+        int[] sequence = Lfm2Colbert.querySequence(ids, 1, 2, 3);
+
+        assertEquals(32, sequence.length);
+        assertEquals(1, sequence[0]);
+        assertEquals(2, sequence[1]);
+        assertEquals(ids[29], sequence[31]);
     }
 
     @Test

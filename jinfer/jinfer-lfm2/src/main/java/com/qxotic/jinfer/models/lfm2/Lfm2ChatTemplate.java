@@ -267,15 +267,17 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                     Lfm2VisionPreprocess.Plan plan = vision.plan(image);
                     encoded.id(require("<|image_start|>"));
                     for (Lfm2VisionPreprocess.Part part : plan.parts()) {
-                        String marker =
-                                part.thumbnail()
-                                        ? "<|img_thumbnail|>"
-                                        : "<|img_row_"
-                                                + part.row()
-                                                + "_col_"
-                                                + part.column()
-                                                + "|>";
-                        encoded.id(require(marker));
+                        if (plan.tiled()) {
+                            String marker =
+                                    part.thumbnail()
+                                            ? "<|img_thumbnail|>"
+                                            : "<|img_row_"
+                                                    + part.row()
+                                                    + "_col_"
+                                                    + part.column()
+                                                    + "|>";
+                            encoded.id(require(marker));
+                        }
                         vision.embed(
                                 part,
                                 batchCapacity,
@@ -311,7 +313,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private void writeVisible(PromptWriter out, String visible) {
         int open = visible.indexOf(THINK_OPEN);
         int close = open < 0 ? -1 : visible.indexOf(THINK_CLOSE, open);
-        if (open < 0 || close < 0 || thinkOpen < 0) {
+        if (open < 0 || close < 0 || thinkOpen < 0 || thinkClose < 0) {
             out.text(visible);
             return;
         }

@@ -443,6 +443,36 @@ final class Lfm2ChatTemplateTest {
                             replayRows.add(value.count());
                     });
             assertEquals(embeddingRows, replayRows);
+
+            IntSequence.Builder untiledTokens = IntSequence.newBuilder();
+            Content.Media untiledMedia =
+                    new Content.Media(
+                            new Media.Image(new float[32 * 32 * 3], 32, 32, 3),
+                            new ContentKey("image:untiled"));
+            template.encode(
+                    new Conversation(List.of(new Message(Role.USER, List.of(untiledMedia)))),
+                    256,
+                    mediaCache,
+                    batch -> {
+                        if (batch.input() instanceof Batch.Input.Tokens value)
+                            untiledTokens.addAll(IntSequence.of(value.ids()));
+                    });
+            int[] untiled = untiledTokens.build().toArray();
+            assertTrue(
+                    Arrays.stream(untiled)
+                            .anyMatch(
+                                    id -> id == SpecialTokens.require(current, "<|image_start|>")));
+            assertTrue(
+                    Arrays.stream(untiled)
+                            .anyMatch(id -> id == SpecialTokens.require(current, "<|image_end|>")));
+            assertFalse(
+                    Arrays.stream(untiled)
+                            .anyMatch(
+                                    id ->
+                                            id
+                                                    == SpecialTokens.require(
+                                                            current, "<|img_thumbnail|>")),
+                    "the official processor labels thumbnails only when tiling is active");
         }
     }
 
@@ -475,6 +505,9 @@ final class Lfm2ChatTemplateTest {
                 1,
                 16,
                 1e-6f,
+                Lfm2VisionPreprocess.defaults(16, 2),
+                new float[] {0.5f, 0.5f, 0.5f},
+                new float[] {0.5f, 0.5f, 0.5f},
                 Views.allocateF32(arena, 1, patchVector),
                 Views.allocateF32(arena, 1),
                 new float[16 * 16],

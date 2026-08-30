@@ -29,6 +29,7 @@ import com.qxotic.jinfer.kernels.Trace;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
@@ -103,7 +104,9 @@ public final class Lfm2
 
     @Override
     public Optional<CheckpointCodec<State>> checkpointCodec() {
-        return Optional.of(new Lfm2CheckpointCodec(configuration));
+        return configuration.causalAttention
+                ? Optional.of(new Lfm2CheckpointCodec(configuration))
+                : Optional.empty();
     }
 
     @Override
@@ -147,10 +150,13 @@ public final class Lfm2
         }
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
+                if (!configuration.causalAttention)
+                    throw new UnsupportedOperationException(
+                            "retrieval checkpoints require packed sequences for bidirectional"
+                                    + " attention");
                 int[] ids = t.ids();
-                if (n == 1) {
-                    forward(s, ids, 0, from, n);
-                } else forward(s, ids, 0, from, n);
+                requireTokens(ids);
+                forward(s, ids, 0, from, n);
             }
             case Batch.Input.Sequences seq -> {
                 if (configuration.causalAttention)
@@ -158,6 +164,8 @@ public final class Lfm2
                             "this LFM2.5 checkpoint is generative: batched embedding needs the"
                                     + " embedding checkpoint (LFM2.5-Embedding, attention.causal ="
                                     + " false)");
+                requireComplete(seq);
+                requireTokens(seq.tokens().ids());
                 forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), n);
             }
             case Batch.Input.Embeddings e -> {
@@ -252,6 +260,14 @@ public final class Lfm2
                 state.residual,
                 0,
                 configuration.embeddingLength);
+    }
+
+    private void requireTokens(int[] tokens) {
+        for (int token : tokens) {
+            if (token < 0 || token >= configuration.vocabularySize)
+                throw new IllegalArgumentException(
+                        "token id " + token + " outside [0," + configuration.vocabularySize + ")");
+        }
     }
 
     /** One block: short-conv mixer OR attention, then the FFN, in place on the residual. */
@@ -558,17 +574,10 @@ public final class Lfm2
         for (int l = 0; l < configuration.numberOfLayers; l++) {
             if (state.keyCache[l] == null) continue; // recurrent layer
             int kvDim = configuration.kvDim(l);
-            for (int s = 0; s < seqLen; s++) {
-                long kvPos = startPos + s;
-                Convert.f32ToF16(
-                        state.batchK[l], (long) s * kvDim, state.keyCache[l], kvPos * kvDim, kvDim);
-                Convert.f32ToF16(
-                        state.batchV[l],
-                        (long) s * kvDim,
-                        state.valueCache[l],
-                        kvPos * kvDim,
-                        kvDim);
-            }
+            int elements = Math.multiplyExact(seqLen, kvDim);
+            long cacheOffset = (long) startPos * kvDim;
+            Convert.f32ToF16(state.batchK[l], 0, state.keyCache[l], cacheOffset, elements);
+            Convert.f32ToF16(state.batchV[l], 0, state.valueCache[l], cacheOffset, elements);
         }
     }
 
@@ -588,8 +597,6 @@ public final class Lfm2
             segRow0[g] = at;
             for (int p = 0; p < seqLen[g]; p++) posOf[at++] = p;
         }
-        if (at != n)
-            throw new IllegalArgumentException("seqLen sums to " + at + ", batch has " + n);
         RoPE.fill(
                 state.ropeCos, state.ropeSin, posOf, n, configuration.headSize / 2, weights.rope());
         embedTokens(state, tokens, 0, n);
@@ -721,7 +728,7 @@ public final class Lfm2
      * applies before MaxSim. The returned view is a reused per-state buffer, so the caller copies
      * it before projecting another row.
      */
-    MemoryView<?> colbertRow(State s, int row) {
+    MemoryView<MemorySegment> colbertRow(State s, int row) {
         int dim = configuration.embeddingLength;
         int outDim = configuration.embeddingLengthOut;
         EmbedScratch es = s.embedScratch(configuration);
@@ -851,6 +858,21 @@ public final class Lfm2
             int poolingType,
             int embeddingLengthOut)
             implements ContextConfiguration {
+
+        public Configuration {
+            feedForwardLength = feedForwardLength.clone();
+            numberOfKeyValueHeadsPerLayer = numberOfKeyValueHeadsPerLayer.clone();
+        }
+
+        @Override
+        public int[] feedForwardLength() {
+            return feedForwardLength.clone();
+        }
+
+        @Override
+        public int[] numberOfKeyValueHeadsPerLayer() {
+            return numberOfKeyValueHeadsPerLayer.clone();
+        }
 
         /** The widest attention kvDim, for scratch that must fit any layer. */
         public int maxKvDim() {
@@ -1045,13 +1067,16 @@ public final class Lfm2
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > config.contextLength()) {
+            if (contextCapacity <= 0 || contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + config.contextLength());
+                                + " outside [1,"
+                                + config.contextLength()
+                                + "]");
             }
+            if (batchCapacity <= 0)
+                throw new IllegalArgumentException("batchCapacity " + batchCapacity);
             int c = batchCapacity;
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();
@@ -1078,11 +1103,14 @@ public final class Lfm2
             int hist = Math.max(config.shortConvLCache - 1, 0);
             for (int l = 0; l < n; l++) {
                 if (config.isRecurrentLayer(l)) {
-                    shortConvState[l] = Views.allocateF32(memoryArena(), hist * dim);
+                    if (config.causalAttention)
+                        shortConvState[l] = Views.allocateF32(memoryArena(), hist * dim);
                 } else {
                     int kvDim = config.kvDim(l);
-                    keyCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
-                    valueCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
+                    if (config.causalAttention) {
+                        keyCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
+                        valueCache[l] = Views.allocateF16(memoryArena(), contextCapacity, kvDim);
+                    }
                     batchK[l] = Views.allocateF32(memoryArena(), c, kvDim);
                     batchV[l] = Views.allocateF32(memoryArena(), c, kvDim);
                 }
@@ -1122,7 +1150,7 @@ public final class Lfm2
      * with the state): per-sequence Q/K/V/out gathers plus the pooled-output row.
      */
     static final class EmbedScratch {
-        final MemoryView<MemorySegment> segQ, segK, segV, segOut, embOut, colbertOut;
+        final MemoryView<MemorySegment> segQ, segK, segV, segOut, embOut, colbertOut, colbertRows;
 
         /** Position per row, and first row per segment (refilled per forwardSegmented). */
         final int[] posOf, segRow0;
@@ -1135,8 +1163,13 @@ public final class Lfm2
             this.segK = Views.allocateF32(memory, batchCapacity, kvDim);
             this.segV = Views.allocateF32(memory, batchCapacity, kvDim);
             this.embOut = Views.allocateF32(memory, 1, config.embeddingLength());
-            this.colbertOut =
-                    Views.allocateF32(memory, 1, Math.max(1, config.embeddingLengthOut()));
+            if (config.embeddingLengthOut() > 0) {
+                this.colbertOut = Views.allocateF32(memory, 1, config.embeddingLengthOut());
+                this.colbertRows =
+                        Views.allocateF32(memory, batchCapacity, config.embeddingLengthOut());
+            } else {
+                this.colbertOut = this.colbertRows = null;
+            }
             this.posOf = new int[batchCapacity];
             this.segRow0 = new int[batchCapacity]; // a segment per row is the densest packing
         }
@@ -1193,14 +1226,33 @@ public final class Lfm2
         if (tokenizer == null) {
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         }
+        Configuration config = readConfiguration(gguf, tokenizer.vocabulary().size());
+
+        Map<String, MemoryView<MemorySegment>> tensors =
+                ModelLoader.loadTensors(fileChannel, gguf, arena);
+        return new Lfm2(config, tokenizer, loadWeights(tensors, config));
+    }
+
+    static Configuration readConfiguration(GGUF gguf, int vocabularySize) {
         String arch = gguf.getString("general.architecture");
+        require(
+                arch.equals("lfm2") || arch.equals("lfm2moe"),
+                "unsupported architecture '" + arch + "'");
 
         int contextLength = gguf.getValue(int.class, arch + ".context_length");
-
         int embeddingLength = gguf.getValue(int.class, arch + ".embedding_length");
         int numberOfHeads = gguf.getValue(int.class, arch + ".attention.head_count");
         int numberOfLayers = gguf.getValue(int.class, arch + ".block_count");
+        require(
+                contextLength > 0
+                        && embeddingLength > 0
+                        && numberOfHeads > 0
+                        && numberOfLayers > 0
+                        && vocabularySize > 0
+                        && embeddingLength % numberOfHeads == 0,
+                "invalid core dimensions");
         int headSize = embeddingLength / numberOfHeads;
+        require((headSize & 1) == 0, "attention head size must be even");
         float rmsNormEps =
                 gguf.getValueOrDefault(
                         float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-5f);
@@ -1229,17 +1281,28 @@ public final class Lfm2
         Object ffnRaw = gguf.getValue(Object.class, arch + ".feed_forward_length");
         if (ffnRaw instanceof int[] arr) {
             feedForwardLength = arr;
-        } else {
+        } else if (ffnRaw instanceof Number value) {
             feedForwardLength = new int[numberOfLayers];
-            Arrays.fill(feedForwardLength, (int) ffnRaw);
-        }
+            Arrays.fill(feedForwardLength, value.intValue());
+        } else throw new IllegalArgumentException("LFM2: invalid feed_forward_length metadata");
+        require(feedForwardLength.length == numberOfLayers, "invalid feed-forward layout");
+        for (int width : feedForwardLength)
+            require(width > 0, "feed-forward widths must be positive");
 
         // Per-layer kv-head count: 0 marks a recurrent (short-conv) layer (no attn_k tensor);
         // attention layers derive it from the K-projection's row count (GGUF shape[1]).
         int[] kvHeads = new int[numberOfLayers];
         for (int i = 0; i < numberOfLayers; i++) {
             var kWeight = gguf.getTensor("blk." + i + ".attn_k.weight");
-            kvHeads[i] = kWeight != null ? Math.toIntExact(kWeight.shape()[1]) / headSize : 0;
+            if (kWeight == null) continue;
+            long[] shape = kWeight.shape();
+            require(
+                    shape.length >= 2 && shape[1] > 0 && shape[1] % headSize == 0,
+                    "invalid K projection at layer " + i);
+            kvHeads[i] = Math.toIntExact(shape[1] / headSize);
+            require(
+                    numberOfHeads % kvHeads[i] == 0,
+                    "KV heads do not divide query heads at layer " + i);
         }
 
         Configuration config =
@@ -1249,7 +1312,7 @@ public final class Lfm2
                         numberOfLayers,
                         numberOfHeads,
                         kvHeads,
-                        tokenizer.vocabulary().size(),
+                        vocabularySize,
                         contextLength,
                         rmsNormEps,
                         ropeTheta,
@@ -1264,80 +1327,135 @@ public final class Lfm2
                         causalAttention,
                         poolingType,
                         embeddingLengthOut);
-
-        Map<String, MemoryView<MemorySegment>> tensors =
-                ModelLoader.loadTensors(fileChannel, gguf, arena);
-        return new Lfm2(config, tokenizer, loadWeights(tensors, config));
+        require(
+                rmsNormEps > 0f
+                        && Float.isFinite(rmsNormEps)
+                        && ropeTheta > 0f
+                        && Float.isFinite(ropeTheta)
+                        && logitSoftcapping >= 0f
+                        && Float.isFinite(logitSoftcapping),
+                "invalid normalization, RoPE, or softcapping metadata");
+        require(shortConvLCache > 0, "short-convolution cache must be positive");
+        require(embeddingLengthOut >= 0 && poolingType >= 0, "invalid retrieval metadata");
+        if (expertCount == 0) {
+            require(
+                    arch.equals("lfm2") && expertUsedCount == 0 && expertFeedForwardLength == 0,
+                    "inconsistent dense/MoE metadata");
+        } else {
+            require(
+                    arch.equals("lfm2moe")
+                            && expertUsedCount > 0
+                            && expertUsedCount <= expertCount
+                            && expertFeedForwardLength > 0
+                            && leadingDenseBlockCount >= 0
+                            && leadingDenseBlockCount <= numberOfLayers
+                            && (expertGatingFunc == 1 || expertGatingFunc == 2),
+                    "invalid MoE metadata");
+        }
+        require(
+                gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
+                        == vocabularySize,
+                "tokenizer vocabulary does not match the model");
+        try {
+            Math.multiplyExact(numberOfHeads, headSize);
+            Math.multiplyExact(SHORTCONV_PARTS, embeddingLength);
+            Math.multiplyExact(expertCount, expertFeedForwardLength);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("LFM2: model dimensions overflow", overflow);
+        }
+        return config;
     }
 
     static Weights loadWeights(
             Map<String, MemoryView<MemorySegment>> tensors, Configuration config) {
         int n = config.numberOfLayers;
         RoPE.Schedule rope = RoPE.plain(config.headSize, config.ropeTheta);
+        int dim = config.embeddingLength;
 
         MemoryView<MemorySegment> tokenEmbeddings =
-                ModelLoader.require(tensors, "token_embd.weight");
+                weight(tensors, "token_embd.weight", config.vocabularySize, dim);
         MemoryView<MemorySegment> wcls =
                 ModelLoader.find(tensors, "output.weight").orElse(tokenEmbeddings);
+        requireWeight(wcls, "output.weight", config.vocabularySize, dim);
         // LFM2.5 names the final norm token_embd_norm (no separate output_norm); embeddings are
         // tied.
         MemoryView<MemorySegment> finalNorm =
-                ModelLoader.requireF32(
+                f32(
                         tensors,
                         tensors.containsKey("output_norm.weight")
                                 ? "output_norm.weight"
-                                : "token_embd_norm.weight");
+                                : "token_embd_norm.weight",
+                        dim);
 
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
-            MemoryView<MemorySegment> attnNorm =
-                    ModelLoader.requireF32(tensors, p + "attn_norm.weight");
+            MemoryView<MemorySegment> attnNorm = f32(tensors, p + "attn_norm.weight", dim);
             MemoryView<MemorySegment> postAttnNorm =
-                    ModelLoader.findF32(tensors, p + "post_attention_norm.weight").orElse(null);
-            MemoryView<MemorySegment> ffnNorm =
-                    ModelLoader.requireF32(tensors, p + "ffn_norm.weight");
+                    optionalF32(tensors, p + "post_attention_norm.weight", dim);
+            MemoryView<MemorySegment> ffnNorm = f32(tensors, p + "ffn_norm.weight", dim);
             MemoryView<MemorySegment> postFfnNorm =
-                    ModelLoader.findF32(tensors, p + "post_ffw_norm.weight").orElse(null);
+                    optionalF32(tensors, p + "post_ffw_norm.weight", dim);
 
             AttentionWeights attention = null;
             ShortConvWeights shortConv = null;
             if (config.isRecurrentLayer(i)) {
                 shortConv =
                         new ShortConvWeights(
-                                ModelLoader.requireF32(tensors, p + "shortconv.conv.weight"),
-                                ModelLoader.require(tensors, p + "shortconv.in_proj.weight"),
-                                ModelLoader.require(tensors, p + "shortconv.out_proj.weight"));
+                                f32(
+                                        tensors,
+                                        p + "shortconv.conv.weight",
+                                        dim,
+                                        config.shortConvLCache),
+                                weight(
+                                        tensors,
+                                        p + "shortconv.in_proj.weight",
+                                        SHORTCONV_PARTS * dim,
+                                        dim),
+                                weight(tensors, p + "shortconv.out_proj.weight", dim, dim));
             } else {
+                int queryDim = config.queryDim(), kvDim = config.kvDim(i);
+                MemoryView<MemorySegment> value =
+                        ModelLoader.find(tensors, p + "attn_v.weight").orElse(null);
+                if (value != null) requireWeight(value, p + "attn_v.weight", kvDim, dim);
                 attention =
                         new AttentionWeights(
-                                ModelLoader.require(tensors, p + "attn_q.weight"),
-                                ModelLoader.require(tensors, p + "attn_k.weight"),
-                                ModelLoader.find(tensors, p + "attn_v.weight").orElse(null),
-                                ModelLoader.require(tensors, p + "attn_output.weight"),
-                                ModelLoader.requireF32(tensors, p + "attn_q_norm.weight"),
-                                ModelLoader.requireF32(tensors, p + "attn_k_norm.weight"));
+                                weight(tensors, p + "attn_q.weight", queryDim, dim),
+                                weight(tensors, p + "attn_k.weight", kvDim, dim),
+                                value,
+                                weight(tensors, p + "attn_output.weight", dim, queryDim),
+                                f32(tensors, p + "attn_q_norm.weight", config.headSize),
+                                f32(tensors, p + "attn_k_norm.weight", config.headSize));
             }
 
             DenseFfnWeights dense = null;
             MoeFfnWeights moe = null;
             if (config.isMoELayer(i)) {
+                int experts = config.expertCount, expertFf = config.expertFeedForwardLength;
                 moe =
                         new MoeFfnWeights(
-                                ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
-                                Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "ffn_gate_exps.weight")),
-                                Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "ffn_up_exps.weight")),
-                                Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "ffn_down_exps.weight")),
-                                ModelLoader.findF32(tensors, p + "exp_probs_b.bias").orElse(null));
+                                weight(tensors, p + "ffn_gate_inp.weight", experts, dim),
+                                experts(
+                                        tensors,
+                                        p + "ffn_gate_exps.weight",
+                                        experts,
+                                        expertFf,
+                                        dim),
+                                experts(tensors, p + "ffn_up_exps.weight", experts, expertFf, dim),
+                                experts(
+                                        tensors,
+                                        p + "ffn_down_exps.weight",
+                                        experts,
+                                        dim,
+                                        expertFf),
+                                optionalF32(tensors, p + "exp_probs_b.bias", experts));
             } else {
+                int hidden = config.feedForwardLength[i];
                 dense =
                         new DenseFfnWeights(
-                                ModelLoader.require(tensors, p + "ffn_gate.weight"),
-                                ModelLoader.require(tensors, p + "ffn_up.weight"),
-                                ModelLoader.require(tensors, p + "ffn_down.weight"));
+                                weight(tensors, p + "ffn_gate.weight", hidden, dim),
+                                weight(tensors, p + "ffn_up.weight", hidden, dim),
+                                weight(tensors, p + "ffn_down.weight", dim, hidden));
             }
             layers[i] =
                     new LayerWeights(
@@ -1350,7 +1468,56 @@ public final class Lfm2
                             dense,
                             moe);
         }
-        MemoryView<MemorySegment> dense2 = ModelLoader.find(tensors, "dense_2.weight").orElse(null);
+        MemoryView<MemorySegment> dense2 = null;
+        if (config.embeddingLengthOut > 0)
+            dense2 = weight(tensors, "dense_2.weight", config.embeddingLengthOut, dim);
         return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls, dense2);
+    }
+
+    private static MemoryView<MemorySegment> weight(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int rows, int columns) {
+        MemoryView<MemorySegment> value = ModelLoader.require(tensors, name);
+        requireWeight(value, name, rows, columns);
+        return value;
+    }
+
+    private static void requireWeight(
+            MemoryView<MemorySegment> value, String name, int rows, int columns) {
+        Shape actual = value.dataType().logicalShape(value.shape());
+        Shape expected = Shape.flat(rows, columns);
+        require(actual.equals(expected), name + " expected " + expected + " but was " + actual);
+    }
+
+    private static MemoryView<MemorySegment> f32(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, long... shape) {
+        MemoryView<MemorySegment> value = ModelLoader.requireF32(tensors, name);
+        Shape expected = Shape.flat(shape);
+        require(
+                value.shape().equals(expected),
+                name + " expected " + expected + " but was " + value.shape());
+        return value;
+    }
+
+    private static MemoryView<MemorySegment> optionalF32(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, long... shape) {
+        if (!tensors.containsKey(name)) return null;
+        return f32(tensors, name, shape);
+    }
+
+    private static MemoryView<MemorySegment>[] experts(
+            Map<String, MemoryView<MemorySegment>> tensors,
+            String name,
+            int count,
+            int rows,
+            int columns) {
+        MemoryView<MemorySegment>[] values =
+                Views.sliceLeadingAxis(ModelLoader.require(tensors, name));
+        require(values.length == count, name + " has the wrong expert count");
+        for (MemoryView<MemorySegment> value : values) requireWeight(value, name, rows, columns);
+        return values;
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) throw new IllegalArgumentException("LFM2: " + message);
     }
 }

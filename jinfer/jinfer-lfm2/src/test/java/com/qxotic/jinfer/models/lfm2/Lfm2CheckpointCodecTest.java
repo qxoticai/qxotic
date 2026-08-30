@@ -1,8 +1,12 @@
 package com.qxotic.jinfer.models.lfm2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -61,6 +65,47 @@ final class Lfm2CheckpointCodecTest {
         }
     }
 
+    @Test
+    void retrievalStatesDoNotAllocateOrExposeCausalHistory() {
+        Lfm2.Configuration config = config(false);
+        Lfm2 model = new Lfm2(config, null, new Lfm2.Weights(null, null, null, null, null, null));
+        assertTrue(model.checkpointCodec().isEmpty());
+
+        try (Arena arena = Arena.ofConfined()) {
+            Lfm2.State state = new Lfm2.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
+            assertNull(state.shortConvState[0]);
+            assertNull(state.keyCache[1]);
+            assertNull(state.valueCache[1]);
+            assertNotNull(state.batchK[1]);
+            assertNotNull(state.batchV[1]);
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> model.ingest(state, Batch.prefill(new int[] {1})));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            model.ingest(
+                                    state,
+                                    new Batch(
+                                            new Batch.Input.Sequences(
+                                                    new Batch.Input.Tokens(new int[] {1}),
+                                                    new int[] {0, 1}),
+                                            Batch.Outputs.ALL)));
+        }
+    }
+
+    @Test
+    void invalidTokenIdsAreRejectedBeforeEmbeddingLookup() {
+        Lfm2 model = new Lfm2(config(), null, new Lfm2.Weights(null, null, null, null, null, null));
+        try (Arena arena = Arena.ofConfined()) {
+            Lfm2.State state =
+                    new Lfm2.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> model.ingest(state, Batch.prefill(new int[] {16})));
+        }
+    }
+
     private static MemorySegment patterned(Arena arena, long bytes, int seed) {
         MemorySegment segment = arena.allocate(bytes, 64);
         for (long i = 0; i < bytes; i++) {
@@ -70,6 +115,10 @@ final class Lfm2CheckpointCodecTest {
     }
 
     private static Lfm2.Configuration config() {
+        return config(true);
+    }
+
+    private static Lfm2.Configuration config(boolean causal) {
         return new Lfm2.Configuration(
                 4,
                 new int[] {8, 8, 8},
@@ -88,7 +137,7 @@ final class Lfm2CheckpointCodecTest {
                 0,
                 3,
                 1,
-                true,
+                causal,
                 0,
                 0);
     }

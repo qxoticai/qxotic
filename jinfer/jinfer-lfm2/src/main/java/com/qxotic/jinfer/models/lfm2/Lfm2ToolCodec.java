@@ -200,9 +200,10 @@ final class Lfm2ToolCodec {
                 try {
                     arguments = json(text);
                 } catch (RuntimeException ignored) {
-                    arguments = Map.of("value", text);
+                    continue;
                 }
             }
+            if (arguments != null && !(arguments instanceof Map<?, ?>)) continue;
             @SuppressWarnings("unchecked")
             Map<String, Object> map =
                     arguments instanceof Map<?, ?> object ? (Map<String, Object>) object : Map.of();
@@ -260,15 +261,14 @@ final class Lfm2ToolCodec {
             }
             while (true) {
                 whitespace();
-                int mark = at;
                 String key = identifier();
                 whitespace();
                 if (peek() == '=') {
                     at++;
+                    if (arguments.containsKey(key)) throw error("unique argument name");
                     arguments.put(key, literal());
                 } else {
-                    at = mark;
-                    literal();
+                    throw error("keyword argument");
                 }
                 whitespace();
                 char next = next();
