@@ -3,11 +3,14 @@ package com.qxotic.jam.vector;
 import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
 import static com.qxotic.jam.vector.VectorSupport.readFloat16;
 
+import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Q5_K gemm, relocated from jinfer (segment-based). Q5_K super-block: 256 elements / 176 bytes
@@ -56,59 +59,139 @@ public final class Q5KKernel {
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / BLOCK;
         long firstBlock = rowElemOffset / BLOCK;
+        final MemorySegment ws = VectorSupport.vectorSegment(w);
+        final long wb = VectorSupport.vectorBase(w);
         for (int blk = 0; blk < kblocks; blk++) {
             long b = (firstBlock + blk) * TYPE;
             float d = readFloat16(w, b);
             float dmin = readFloat16(w, b + 2);
-            long packedSc = Q4KKernel.packedScales(w, b + 4);
-            long packedMn = Q4KKernel.packedMins(w, b + 4);
-            var qh0 =
+            long sc = Q4KKernel.packedScales(w, b + 4);
+            long mn = Q4KKernel.packedMins(w, b + 4);
+            long qh = wb + b + 16, qs = wb + b + 48;
+            long o = dstBase + (long) blk * BLOCK * 4;
+            // Sub-block 2g is the low nibbles of bytes [32g, 32g+32) with bit 2g of qh, 2g+1 the
+            // high nibbles with bit 2g+1. Every shift count is a literal at its call site, the
+            // vectors are loaded fresh per call: no loop-carried vector, nothing for the JIT to
+            // lose on a phi (the rotating-qh form of this loop compiled to the boxed fallback on
+            // some runs, halving prefill).
+            group(ws, qs, 0, qh, 0, d * (int) (sc & 0xFF), dmin * (int) (mn & 0xFF), dst, o);
+            group(
+                    ws,
+                    qs,
+                    4,
+                    qh,
+                    1,
+                    d * (int) ((sc >>> 8) & 0xFF),
+                    dmin * (int) ((mn >>> 8) & 0xFF),
+                    dst,
+                    o + 32 * 4L);
+            group(
+                    ws,
+                    qs + 32,
+                    0,
+                    qh,
+                    2,
+                    d * (int) ((sc >>> 16) & 0xFF),
+                    dmin * (int) ((mn >>> 16) & 0xFF),
+                    dst,
+                    o + 64 * 4L);
+            group(
+                    ws,
+                    qs + 32,
+                    4,
+                    qh,
+                    3,
+                    d * (int) ((sc >>> 24) & 0xFF),
+                    dmin * (int) ((mn >>> 24) & 0xFF),
+                    dst,
+                    o + 96 * 4L);
+            group(
+                    ws,
+                    qs + 64,
+                    0,
+                    qh,
+                    4,
+                    d * (int) ((sc >>> 32) & 0xFF),
+                    dmin * (int) ((mn >>> 32) & 0xFF),
+                    dst,
+                    o + 128 * 4L);
+            group(
+                    ws,
+                    qs + 64,
+                    4,
+                    qh,
+                    5,
+                    d * (int) ((sc >>> 40) & 0xFF),
+                    dmin * (int) ((mn >>> 40) & 0xFF),
+                    dst,
+                    o + 160 * 4L);
+            group(
+                    ws,
+                    qs + 96,
+                    0,
+                    qh,
+                    6,
+                    d * (int) ((sc >>> 48) & 0xFF),
+                    dmin * (int) ((mn >>> 48) & 0xFF),
+                    dst,
+                    o + 192 * 4L);
+            group(
+                    ws,
+                    qs + 96,
+                    4,
+                    qh,
+                    7,
+                    d * (int) ((sc >>> 56) & 0xFF),
+                    dmin * (int) ((mn >>> 56) & 0xFF),
+                    dst,
+                    o + 224 * 4L);
+        }
+    }
+
+    private static final VectorSpecies<Integer> I_SPECIES =
+            VectorSpecies.of(int.class, F_SPECIES.vectorShape());
+
+    /**
+     * 32 elements: nibble {@code qsShift} (0 = low, 4 = high) of the 32 bytes at {@code qs}, plus
+     * bit {@code qhShift} of the 32 bytes at {@code qh} as bit 4, times {@code scale} minus {@code
+     * min}. The shift counts are constants at every call site.
+     */
+    @AlwaysInline("the shift counts are literals at the call sites; the image must see them")
+    private static void group(
+            MemorySegment ws,
+            long qs,
+            int qsShift,
+            long qh,
+            int qhShift,
+            float scale,
+            float min,
+            MemorySegment dst,
+            long o) {
+        FloatVector vs = FloatVector.broadcast(F_SPECIES, scale);
+        FloatVector vm = FloatVector.broadcast(F_SPECIES, -min);
+        for (int c = 0; c < 2; c++) {
+            var qsB =
                     ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, b + 16, ByteOrder.LITTLE_ENDIAN);
-            var qh1 =
+                            ByteVector.SPECIES_128, ws, qs + c * 16, ByteOrder.LITTLE_ENDIAN);
+            var qhB =
                     ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, b + 32, ByteOrder.LITTLE_ENDIAN);
-            long blockBase = dstBase + (long) blk * BLOCK * 4;
-            // High bits: the qh vectors rotate right by 2 per group with CONSTANT shift counts
-            // (a variable byte-shift count is not intrinsified by C2).
-            for (int g = 0;
-                    g < 4;
-                    g++, qh0 = qh0.lanewise(VectorOperators.LSHR, 2),
-                            qh1 = qh1.lanewise(VectorOperators.LSHR, 2)) {
-                var vd0 =
-                        FloatVector.broadcast(
-                                F_SPECIES, d * (int) ((packedSc >>> (16 * g)) & 0xFF));
-                var vm0 =
-                        FloatVector.broadcast(
-                                F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g)) & 0xFF)));
-                var vd1 =
-                        FloatVector.broadcast(
-                                F_SPECIES, d * (int) ((packedSc >>> (16 * g + 8)) & 0xFF));
-                var vm1 =
-                        FloatVector.broadcast(
-                                F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF)));
-                for (int c = 0; c < 2; c++) {
-                    var wb =
-                            ByteVector.fromMemorySegment(
-                                    ByteVector.SPECIES_128,
-                                    w,
-                                    b + 48 + (long) g * 32 + c * 16,
-                                    ByteOrder.LITTLE_ENDIAN);
-                    var qhb = (c == 0) ? qh0 : qh1;
-                    var loB =
-                            wb.and((byte) 0xF)
-                                    .or(qhb.and((byte) 1).lanewise(VectorOperators.LSHL, 4));
-                    var hiB =
-                            wb.lanewise(VectorOperators.LSHR, 4)
-                                    .or(
-                                            qhb.lanewise(VectorOperators.LSHR, 1)
-                                                    .and((byte) 1)
-                                                    .lanewise(VectorOperators.LSHL, 4));
-                    VectorSupport.storeAffine(
-                            loB, vd0, vm0, dst, blockBase + (g * 64 + c * 16) * 4L);
-                    VectorSupport.storeAffine(
-                            hiB, vd1, vm1, dst, blockBase + (g * 64 + 32 + c * 16) * 4L);
-                }
+                            ByteVector.SPECIES_128, ws, qh + c * 16, ByteOrder.LITTLE_ENDIAN);
+            for (int p = 0; p < VectorSupport.DECODE_PARTS; p++) {
+                IntVector lo =
+                        ((IntVector) qsB.castShape(I_SPECIES, p))
+                                .lanewise(VectorOperators.LSHR, qsShift)
+                                .and(0xF);
+                IntVector hi =
+                        ((IntVector) qhB.castShape(I_SPECIES, p))
+                                .lanewise(VectorOperators.LSHR, qhShift)
+                                .and(1);
+                IntVector q = lo.or(hi.lanewise(VectorOperators.LSHL, 4));
+                ((FloatVector) q.castShape(F_SPECIES, 0))
+                        .fma(vs, vm)
+                        .intoMemorySegment(
+                                dst,
+                                o + ((long) c * 16 + (long) p * VectorSupport.F_LEN) * 4,
+                                ByteOrder.LITTLE_ENDIAN);
             }
         }
     }
