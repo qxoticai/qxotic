@@ -30,8 +30,7 @@ final class JinjaChatTemplate {
     private final Specials specials; // compiled once per model
     private final List<String> specialNames; // longest-first, for the content scrub
     private final boolean declaresThinking; // the template has a thinking mode to open
-    private final boolean
-            foldsCalls; // the template never reads tool_calls but documents <tool_call>
+    private final boolean foldsCalls; // documents <tool_call> but never reads tool_calls
 
     JinjaChatTemplate(Tokenizer tokenizer, String source) {
         this.tokenizer = tokenizer;
@@ -193,7 +192,8 @@ final class JinjaChatTemplate {
             if (raw instanceof Map<?, ?> m && m.get("tool_calls") instanceof List<?> calls) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> msg = new LinkedHashMap<>((Map<String, Object>) m);
-                var content = new StringBuilder(String.valueOf(msg.getOrDefault("content", "")));
+                var content =
+                        new StringBuilder(msg.get("content") instanceof String text ? text : "");
                 for (Object c : calls) {
                     if (!(c instanceof Map<?, ?> cm)
                             || !(cm.get("function") instanceof Map<?, ?> fn)) continue;
