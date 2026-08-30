@@ -26,7 +26,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/** Token-exact native codec for the Llama 3.2 plain-conversation template. */
+/**
+ * Token-exact native codec for the Llama 3.2 plain-conversation template; tool conversations are
+ * rendered by the GGUF's Jinja, but their bare-JSON replies are parsed and, when forced,
+ * constrained here.
+ */
 public final class Llama32ChatTemplate implements ChatTemplate {
     public static final String DEFAULT_DATE = "26 Jul 2024";
 
@@ -109,8 +113,9 @@ public final class Llama32ChatTemplate implements ChatTemplate {
             bodies.add(
                     ReplyLanguage.seq(
                             ReplyLanguage.bytes(
-                                    "{\"name\": " + ToolCallSyntax.jinjaJson(tool.name()) + ", "),
-                            ReplyLanguage.bytes("\"parameters\": "),
+                                    "{\"name\": "
+                                            + ToolCallSyntax.jinjaJson(tool.name())
+                                            + ", \"parameters\": "),
                             ReplyLanguage.gbnf(Grammar.schemaGbnf(tool.parameters())),
                             ReplyLanguage.bytes("}")));
         }
