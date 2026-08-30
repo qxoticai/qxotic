@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 final class EspeakPhonemizer implements Phonemizer {
 
@@ -82,7 +83,7 @@ final class EspeakPhonemizer implements Phonemizer {
     /** One espeak call for a whole punctuation-free run; espeak separates the words itself. */
     private void flush(StringBuilder run, StringBuilder out) throws IOException {
         if (run.isEmpty()) return;
-        out.append(phonemizeRun(run.toString().trim())).append(' ');
+        out.append(ipaRun(run.toString().trim())).append(' ');
         run.setLength(0);
     }
 
@@ -113,10 +114,6 @@ final class EspeakPhonemizer implements Phonemizer {
 
     /** IPA for one punctuation-free run; the lexicon's fallback channel. */
     String ipaRun(String words) throws IOException {
-        return phonemizeRun(words);
-    }
-
-    private String phonemizeRun(String words) throws IOException {
         // the text goes in on stdin, never as an argument: a run that starts with '-' ("-five
         // degrees") would be parsed as an option. stderr is not IPA: it is dropped, and a failed
         // run is an error here instead of a diagnostic spoken letter by letter.
@@ -138,13 +135,15 @@ final class EspeakPhonemizer implements Phonemizer {
             }
             if (!espeak.waitFor(timeoutSeconds, TimeUnit.SECONDS))
                 throw new IOException(binary + " timed out on: " + words);
-            String ipa = output.get();
+            String ipa = output.get(timeoutSeconds, TimeUnit.SECONDS);
             if (espeak.exitValue() != 0)
                 throw new IOException(binary + " exited " + espeak.exitValue() + " on: " + words);
             return ipa.replace("_", "").replaceAll("\\s+", " ").trim();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException(binary + " interrupted", e);
+        } catch (TimeoutException e) {
+            throw new IOException(binary + " timed out on: " + words, e);
         } catch (ExecutionException e) {
             throw new IOException(binary + " output could not be read", e.getCause());
         } finally {

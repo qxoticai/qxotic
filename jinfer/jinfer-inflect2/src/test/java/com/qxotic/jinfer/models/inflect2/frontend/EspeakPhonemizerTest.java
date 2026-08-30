@@ -13,6 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Pins the punctuation-run split, not the phonemes: espeak's IPA is version-dependent, so the
@@ -48,42 +49,37 @@ class EspeakPhonemizerTest {
         assertTrue(tokens.length > 4, "both words phonemized: " + tokens.length);
     }
 
-    @Test
-    void stderrIsNeverSpokenAndAFailedRunIsAnError() throws IOException {
+    /** A shell script standing in for espeak; skips the test when there is no shell. */
+    private static EspeakPhonemizer stub(Path dir, String name, String body, int timeoutSeconds)
+            throws IOException {
         Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "needs a shell");
-        Path dir = Files.createTempDirectory("espeak-stub");
-        Path chatty = dir.resolve("chatty.sh"), broken = dir.resolve("broken.sh");
-        Files.writeString(
-                chatty,
-                "#!/bin/sh\n"
-                        + "cat >/dev/null\n"
-                        + "echo 'warning: no voice data' >&2\n"
-                        + "echo 'h\u0259l\u02c8o\u028a'\n");
-        Files.writeString(broken, "#!/bin/sh\ncat >/dev/null\necho 'error: option' >&2\nexit 2\n");
-        chatty.toFile().setExecutable(true);
-        broken.toFile().setExecutable(true);
-        int[] tokens = new EspeakPhonemizer(chatty.toString()).phonemize("hello");
+        Path script = dir.resolve(name);
+        Files.writeString(script, "#!/bin/sh\ncat >/dev/null\n" + body);
+        script.toFile().setExecutable(true);
+        return new EspeakPhonemizer(script.toString(), timeoutSeconds);
+    }
+
+    @Test
+    void stderrIsNeverSpokenAndAFailedRunIsAnError(@TempDir Path dir) throws IOException {
+        EspeakPhonemizer chatty =
+                stub(
+                        dir,
+                        "chatty.sh",
+                        "echo 'warning: no voice data' >&2\necho 'h\u0259l\u02c8o\u028a'\n",
+                        5);
+        EspeakPhonemizer broken = stub(dir, "broken.sh", "echo 'error: option' >&2\nexit 2\n", 5);
+        int[] tokens = chatty.phonemize("hello");
         // the IPA line alone is ~11 tokens; with the warning spoken too it would be over 50
         assertTrue(tokens.length > 0 && tokens.length < 20, "only the IPA line: " + tokens.length);
-        IOException e =
-                Assertions.assertThrows(
-                        IOException.class,
-                        () -> new EspeakPhonemizer(broken.toString()).phonemize("hello"));
+        IOException e = Assertions.assertThrows(IOException.class, () -> broken.phonemize("hello"));
         assertTrue(e.getMessage().contains("exited 2"), e.getMessage());
     }
 
     @Test
-    void aHungProcessIsStoppedByTheTimeout() throws IOException {
-        Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "needs a shell");
-        Path dir = Files.createTempDirectory("espeak-stub");
-        Path hung = dir.resolve("hung.sh");
-        Files.writeString(hung, "#!/bin/sh\ncat >/dev/null\nexec sleep 30\n");
-        hung.toFile().setExecutable(true);
+    void aHungProcessIsStoppedByTheTimeout(@TempDir Path dir) throws IOException {
+        EspeakPhonemizer hung = stub(dir, "hung.sh", "exec sleep 30\n", 1);
 
-        IOException e =
-                Assertions.assertThrows(
-                        IOException.class,
-                        () -> new EspeakPhonemizer(hung.toString(), 1).phonemize("hello"));
+        IOException e = Assertions.assertThrows(IOException.class, () -> hung.phonemize("hello"));
 
         assertTrue(e.getMessage().contains("timed out"), e.getMessage());
     }
@@ -116,12 +112,11 @@ class EspeakPhonemizerTest {
     }
 
     @Test
-    void espeakReceivesATerminatedLine() throws IOException {
+    void espeakReceivesATerminatedLine(@TempDir Path dir) throws IOException {
         // espeak reads stdin a line at a time. An unterminated final line is a word FRAGMENT to
         // it, and it answers with a fragment: "world" came back "wˈɜːl", "five" as "fˈɪv",
         // "hello" as "hˈɛl", "em" as "ˈiː" - 46 of 56 common words measured wrong, once per run.
         Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "needs a shell");
-        Path dir = Files.createTempDirectory("espeak-stub");
         Path seen = dir.resolve("seen.txt"), stub = dir.resolve("stub.sh");
         Files.writeString(stub, "#!/bin/sh\ncat > '" + seen + "'\necho 'həlˈoʊ'\n");
         stub.toFile().setExecutable(true);

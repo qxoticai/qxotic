@@ -243,11 +243,12 @@ final class LexiconPhonemizer implements Phonemizer {
             long entriesAt = buffer.getLong();
             if (entriesAt < 0 || entriesAt > data.length)
                 throw new IOException("invalid lexicon entry offset " + entriesAt);
+            // shared + fresh + symbols: the smallest entry is three bytes
             if (count > (data.length - entriesAt) / 3)
                 throw new IOException("lexicon entry count exceeds the file size");
 
             Map<String, int[]> lexicon = HashMap.newHashMap(count);
-            buffer.position(Math.toIntExact(entriesAt));
+            buffer.position((int) entriesAt);
             byte[] word = new byte[MAX_WORD];
             int length = 0;
             for (int entry = 0; entry < count; entry++) {

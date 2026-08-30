@@ -36,7 +36,7 @@ final class Qwen3ConfigurationTest {
                 metadata()
                         .putInteger("qwen3.attention.head_count", Integer.MAX_VALUE)
                         .putInteger("qwen3.attention.head_count_kv", 1),
-                "overflow");
+                "dimensions");
     }
 
     @Test

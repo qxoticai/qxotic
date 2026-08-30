@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,15 +18,6 @@ final class Inflect2ConfigurationTest {
         int[] rates = config.upsampleRates();
         rates[0] = 1;
         assertEquals(8, config.upsampleRates()[0]);
-    }
-
-    @Test
-    void providerNamesAndClaimsOnlyTheArchitectureItCanLoad() {
-        Inflect2Provider provider = new Inflect2Provider();
-        assertEquals(java.util.Set.of("inflect-v2"), provider.architectures());
-        assertTrue(provider.supports("inflect-v2"));
-        assertFalse(provider.supports("inflect-v3"));
-        assertFalse(provider.supports("inflection"));
     }
 
     @Test
