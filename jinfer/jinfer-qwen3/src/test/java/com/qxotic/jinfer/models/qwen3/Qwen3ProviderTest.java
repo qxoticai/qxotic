@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.qwen3;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +16,14 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** A retrieval-only Qwen3 checkpoint must fail a generative load with actionable advice. */
 class Qwen3ProviderTest {
+
+    @Test
+    void claimsOnlyTheRetrievalArchitecture() {
+        Qwen3Provider provider = new Qwen3Provider();
+        assertTrue(provider.supports("qwen3"));
+        assertFalse(provider.supports("qwen35"));
+        assertFalse(provider.supports("qwen3moe"));
+    }
 
     @Test
     void generativeLoadPointsToBothRetrievalEntryPoints(@TempDir Path directory)

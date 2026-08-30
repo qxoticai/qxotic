@@ -33,6 +33,7 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.kernels.Trace;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
@@ -143,10 +144,16 @@ public final class Qwen3
                     throw new UnsupportedOperationException(
                             "Qwen3 does not support embedding inputs");
         }
-        if (n == 1) {
-            forward(s, ids, from, n, nPieces);
-        } else forward(s, ids, from, n, nPieces);
+        requireTokens(ids);
+        forward(s, ids, from, n, nPieces);
         s.advance(batch);
+    }
+
+    private void requireTokens(int[] tokens) {
+        for (int token : tokens)
+            if (token < 0 || token >= configuration.vocabularySize)
+                throw new IllegalArgumentException(
+                        "token " + token + " outside [0," + configuration.vocabularySize + ")");
     }
 
     /**
@@ -157,6 +164,10 @@ public final class Qwen3
      */
     private static int cutPieces(int[] fullSeqLen, int cs, int n, State s) {
         int nPieces = 0, gStart = 0, j = 0;
+        for (int i = 0; i < fullSeqLen.length; i++)
+            if (fullSeqLen[i] <= 0)
+                throw new IllegalArgumentException(
+                        "sequence " + i + " has invalid length " + fullSeqLen[i]);
         while (j < fullSeqLen.length && gStart + fullSeqLen[j] <= cs) {
             gStart += fullSeqLen[j];
             j++;
@@ -415,13 +426,10 @@ public final class Qwen3
      */
     private void commitKv(State state, int l, int startPos, int seqLen) {
         int kvDim = configuration.kvDim;
-        for (int s = 0; s < seqLen; s++) {
-            long kvPos = startPos + s;
-            Convert.f32ToF16(
-                    state.batchK, (long) s * kvDim, state.keyCache[l], kvPos * kvDim, kvDim);
-            Convert.f32ToF16(
-                    state.batchV, (long) s * kvDim, state.valueCache[l], kvPos * kvDim, kvDim);
-        }
+        int elements = Math.multiplyExact(seqLen, kvDim);
+        long cacheOffset = (long) startPos * kvDim;
+        Convert.f32ToF16(state.batchK, 0, state.keyCache[l], cacheOffset, elements);
+        Convert.f32ToF16(state.batchV, 0, state.valueCache[l], cacheOffset, elements);
     }
 
     // --- heads ---
@@ -437,18 +445,16 @@ public final class Qwen3
         requireOutput(s, output);
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        {
-            Norms.rmsnorm(
-                    s.normed,
-                    0,
-                    s.residual,
-                    (long) row * dim,
-                    weights.finalNorm(),
-                    dim,
-                    configuration.rmsNormEps);
-            MatMul.gemv(weights.wcls(), s.normed, s.logits);
-            return s.logits;
-        }
+        Norms.rmsnorm(
+                s.normed,
+                0,
+                s.residual,
+                (long) row * dim,
+                weights.finalNorm(),
+                dim,
+                configuration.rmsNormEps);
+        MatMul.gemv(weights.wcls(), s.normed, s.logits);
+        return s.logits;
     }
 
     /**
@@ -694,36 +700,67 @@ public final class Qwen3
             throws IOException {
         if (tokenizer == null)
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
-        Configuration config = loadConfiguration(gguf, tokenizer);
+        Configuration config = readConfiguration(gguf, tokenizer.vocabulary().size());
         Map<String, MemoryView<MemorySegment>> tensors =
                 ModelLoader.loadTensors(fileChannel, gguf, arena);
         return new Qwen3(config, tokenizer, loadWeights(tensors, config));
     }
 
-    private static Configuration loadConfiguration(GGUF gguf, Tokenizer tokenizer) {
-        String arch = "qwen3";
+    static Configuration readConfiguration(GGUF gguf, int vocabularySize) {
+        String arch = gguf.getString("general.architecture");
+        if (!arch.equals("qwen3"))
+            throw new IllegalArgumentException("Qwen3: unsupported architecture '" + arch + "'");
         int dim = gguf.getValueOrDefault(int.class, arch + ".embedding_length", 0);
         int nLayers = gguf.getValueOrDefault(int.class, arch + ".block_count", 0);
         int nHeads = gguf.getValueOrDefault(int.class, arch + ".attention.head_count", 0);
         int nKvHeads = gguf.getValueOrDefault(int.class, arch + ".attention.head_count_kv", nHeads);
         int contextLength = gguf.getValueOrDefault(int.class, arch + ".context_length", 0);
         int hiddenDim = gguf.getValueOrDefault(int.class, arch + ".feed_forward_length", 0);
+        if (dim <= 0
+                || nLayers <= 0
+                || nHeads <= 0
+                || nKvHeads <= 0
+                || nHeads % nKvHeads != 0
+                || contextLength <= 0
+                || hiddenDim <= 0
+                || vocabularySize <= 0)
+            throw new IllegalArgumentException("Qwen3: invalid core dimensions");
         float rmsNormEps =
                 gguf.getValueOrDefault(
                         float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-6f);
         float ropeTheta = gguf.getValueOrDefault(float.class, arch + ".rope.freq_base", 10000f);
         int headSize =
                 gguf.getValueOrDefault(int.class, arch + ".attention.key_length", dim / nHeads);
+        int valueHeadSize =
+                gguf.getValueOrDefault(int.class, arch + ".attention.value_length", headSize);
         int ropeDim = gguf.getValueOrDefault(int.class, arch + ".rope.dimension_count", headSize);
-        int queryDim = nHeads * headSize;
-        int kvDim = nKvHeads * headSize;
+        if (headSize <= 0
+                || valueHeadSize != headSize
+                || ropeDim <= 0
+                || (ropeDim & 1) != 0
+                || ropeDim > headSize
+                || !(rmsNormEps > 0f)
+                || !Float.isFinite(rmsNormEps)
+                || !(ropeTheta > 0f)
+                || !Float.isFinite(ropeTheta))
+            throw new IllegalArgumentException("Qwen3: invalid attention metadata");
+        int queryDim, kvDim;
+        try {
+            queryDim = Math.multiplyExact(nHeads, headSize);
+            kvDim = Math.multiplyExact(nKvHeads, headSize);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("Qwen3: model dimensions overflow", overflow);
+        }
         int kvMul = nHeads / nKvHeads;
+        if (gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
+                != vocabularySize)
+            throw new IllegalArgumentException("Qwen3: tokenizer vocabulary does not match model");
         return new Configuration(
                 dim,
                 nLayers,
                 nHeads,
                 nKvHeads,
-                tokenizer.vocabulary().size(),
+                vocabularySize,
                 contextLength,
                 hiddenDim,
                 rmsNormEps,
@@ -737,7 +774,8 @@ public final class Qwen3
 
     static Weights loadWeights(
             Map<String, MemoryView<MemorySegment>> tensors, Configuration config) {
-        int n = config.numberOfLayers;
+        int n = config.numberOfLayers, dim = config.embeddingLength;
+        int queryDim = config.queryDim, kvDim = config.kvDim, hiddenDim = config.hiddenDim;
         // rope_freqs.weight, when a converter ships it, overrides the computed schedule (the old
         // fromMeta's tensor arm; the metadata-array fallback never fired for Qwen3 and is dropped)
         RoPE.Schedule rope =
@@ -749,28 +787,55 @@ public final class Qwen3
                         .orElseGet(() -> RoPE.plain(config.headSize, config.ropeTheta));
 
         MemoryView<MemorySegment> tokenEmbeddings =
-                ModelLoader.require(tensors, "token_embd.weight");
+                weight(tensors, "token_embd.weight", config.vocabularySize, dim);
         MemoryView<MemorySegment> wcls =
                 ModelLoader.find(tensors, "output.weight").orElse(tokenEmbeddings);
-        MemoryView<MemorySegment> finalNorm = ModelLoader.requireF32(tensors, "output_norm.weight");
+        requireWeight(wcls, "output.weight", config.vocabularySize, dim);
+        MemoryView<MemorySegment> finalNorm = f32(tensors, "output_norm.weight", dim);
 
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
             layers[i] =
                     new LayerWeights(
-                            ModelLoader.requireF32(tensors, p + "attn_norm.weight"),
-                            ModelLoader.require(tensors, p + "attn_q.weight"),
-                            ModelLoader.require(tensors, p + "attn_k.weight"),
-                            ModelLoader.require(tensors, p + "attn_v.weight"),
-                            ModelLoader.require(tensors, p + "attn_output.weight"),
-                            ModelLoader.requireF32(tensors, p + "attn_q_norm.weight"),
-                            ModelLoader.requireF32(tensors, p + "attn_k_norm.weight"),
-                            ModelLoader.requireF32(tensors, p + "ffn_norm.weight"),
-                            ModelLoader.require(tensors, p + "ffn_gate.weight"),
-                            ModelLoader.require(tensors, p + "ffn_down.weight"),
-                            ModelLoader.require(tensors, p + "ffn_up.weight"));
+                            f32(tensors, p + "attn_norm.weight", dim),
+                            weight(tensors, p + "attn_q.weight", queryDim, dim),
+                            weight(tensors, p + "attn_k.weight", kvDim, dim),
+                            weight(tensors, p + "attn_v.weight", kvDim, dim),
+                            weight(tensors, p + "attn_output.weight", dim, queryDim),
+                            f32(tensors, p + "attn_q_norm.weight", config.headSize),
+                            f32(tensors, p + "attn_k_norm.weight", config.headSize),
+                            f32(tensors, p + "ffn_norm.weight", dim),
+                            weight(tensors, p + "ffn_gate.weight", hiddenDim, dim),
+                            weight(tensors, p + "ffn_down.weight", dim, hiddenDim),
+                            weight(tensors, p + "ffn_up.weight", hiddenDim, dim));
         }
         return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls);
+    }
+
+    private static MemoryView<MemorySegment> weight(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int rows, int columns) {
+        MemoryView<MemorySegment> value = ModelLoader.require(tensors, name);
+        requireWeight(value, name, rows, columns);
+        return value;
+    }
+
+    private static void requireWeight(
+            MemoryView<MemorySegment> value, String name, int rows, int columns) {
+        Shape actual = value.dataType().logicalShape(value.shape());
+        Shape expected = Shape.flat(rows, columns);
+        if (!actual.equals(expected))
+            throw new IllegalArgumentException(
+                    "Qwen3: " + name + " expected " + expected + " but was " + actual);
+    }
+
+    private static MemoryView<MemorySegment> f32(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, long... shape) {
+        MemoryView<MemorySegment> value = ModelLoader.requireF32(tensors, name);
+        Shape expected = Shape.flat(shape);
+        if (!value.shape().equals(expected))
+            throw new IllegalArgumentException(
+                    "Qwen3: " + name + " expected " + expected + " but was " + value.shape());
+        return value;
     }
 }
