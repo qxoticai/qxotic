@@ -60,6 +60,20 @@ class JsonEnvelopeReplyLanguageTest {
     }
 
     @Test
+    void granite42AdmitsItsForcedWire() throws Exception {
+        Tokenizer tokenizer =
+                tokenizer("hf.co/ibm-granite/granite-4.2-3b-GGUF/granite-4.2-3b-Q8_0.gguf");
+        ReplyLanguage.Selection selection =
+                new GraniteChatTemplate(tokenizer).forcedCall(List.of(WEATHER)).orElseThrow();
+        ReplyLanguage.Walk walk = selection.walk();
+        feed(walk, selection.forcedPrefix());
+        assertAdmitted(walk, tokenizer, ">\n<parameter=city>\nParis\n</parameter>\n</function>\n");
+        walk.feed(SpecialTokens.require(tokenizer, "</tool_call>"));
+        assertTrue(walk.accepted());
+        assertCall(walk);
+    }
+
+    @Test
     void mistralAdmitsItsForcedWire() throws Exception {
         Tokenizer tokenizer = tokenizer("hf.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF:Q8_0");
         MistralChatTemplate template = new MistralChatTemplate(tokenizer);

@@ -28,6 +28,7 @@ hf.co unsloth Llama-3.2-1B-Instruct-GGUF Llama-3.2-1B-Instruct-Q8_0.gguf
 hf.co unsloth Ministral-3-3B-Instruct-2512-GGUF Ministral-3-3B-Instruct-2512-Q8_0.gguf
 hf.co openbmb MiniCPM5-1B-GGUF MiniCPM5-1B-Q8_0.gguf
 hf.co ibm-granite granite-4.1-3b-GGUF granite-4.1-3b-Q8_0.gguf
+hf.co ibm-granite granite-4.2-3b-GGUF granite-4.2-3b-Q8_0.gguf
 hf.co ggml-org SmolLM3-3B-GGUF SmolLM3-Q4_K_M.gguf
 hf.co bartowski nvidia_Nemotron-Cascade-2-30B-A3B-GGUF nvidia_Nemotron-Cascade-2-30B-A3B-Q8_0.gguf
 hf.co prism-ml Bonsai-27B-gguf Bonsai-27B-Q1_0.gguf
