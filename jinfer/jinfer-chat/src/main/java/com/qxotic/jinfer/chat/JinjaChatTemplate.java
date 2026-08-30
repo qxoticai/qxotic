@@ -89,6 +89,9 @@ final class JinjaChatTemplate {
         vars.put("bos_token", specialString(SpecialTokens.bos(tokenizer)));
         vars.put("eos_token", specialString(SpecialTokens.eos(tokenizer)));
         vars.put("tools", tools);
+        // SmolLM3's template reads its function tools from xml_tools and never from tools; the
+        // same maps under both names, so an offered tool reaches every template
+        vars.put("xml_tools", tools);
         vars.put("enable_thinking", enableThinking);
         String rendered = tpl.render(vars);
         // Prompt-opened thinking for whole-render families: a /think scaffold that does NOT open
