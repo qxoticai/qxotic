@@ -1783,6 +1783,11 @@ public final class MatMul {
                 }
 
                 @Override
+                public void forEach(int count, Body body) {
+                    Parallel.forEach(count, body::run);
+                }
+
+                @Override
                 public int width() {
                     return Parallel.threads();
                 }
