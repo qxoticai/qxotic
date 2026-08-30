@@ -114,6 +114,12 @@ public final class PromptWriter {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(projector, "projector");
         flushTokens();
+        int expected = projector.positions(source);
+        Batch.Positions positions = projector.decoderPositions(source);
+        if (positions != null && positions.count() != expected)
+            throw new IllegalArgumentException(
+                    "projector positions " + positions.count() + " != planned rows " + expected);
+        int[] projected = {0};
         projector.project(
                 source,
                 batchCapacity,
@@ -125,8 +131,22 @@ public final class PromptWriter {
                                         + count
                                         + " rows for maxChunkSize "
                                         + batchCapacity);
-                    sink.accept(Batch.embeddings(rows, count, bidirectional, contentKey));
+                    int next = Math.addExact(projected[0], count);
+                    if (next > expected)
+                        throw new IllegalArgumentException(
+                                "projector emitted more than its " + expected + " planned rows");
+                    Batch.Positions chunkPositions =
+                            positions == null
+                                    ? null
+                                    : positions.slice(projected[0], count, next == expected);
+                    sink.accept(
+                            Batch.embeddings(
+                                    rows, count, bidirectional, contentKey, chunkPositions));
+                    projected[0] = next;
                 });
+        if (projected[0] != expected)
+            throw new IllegalArgumentException(
+                    "projector emitted " + projected[0] + " rows, expected " + expected);
         return this;
     }
 

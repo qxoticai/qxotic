@@ -86,40 +86,40 @@ final class Qwen35MtpLoadTest {
         assertTrue(model.speculationReady());
     }
 
-    private static Map<String, MemoryView<MemorySegment>> tensors(
+    static Map<String, MemoryView<MemorySegment>> tensors(
             Qwen35.Configuration config, Arena arena) {
         MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
-        // One placeholder view shared by every tensor whose shape is never inspected during load;
-        // the expert stacks are the only tensors that must carry a real 3D shape.
-        MemoryView<MemorySegment> view = Views.allocateF32(memory, 2L * config.embeddingLength());
+        int dim = config.embeddingLength();
         Map<String, MemoryView<MemorySegment>> tensors = new HashMap<>();
-        tensors.put("token_embd.weight", view);
-        tensors.put("output_norm.weight", view);
-        tensors.put("output.weight", view);
+        tensors.put("token_embd.weight", f32(memory, config.vocabularySize(), dim));
+        tensors.put("output_norm.weight", f32(memory, dim));
+        tensors.put("output.weight", f32(memory, config.vocabularySize(), dim));
         for (int layer = 0; layer < config.storedLayers(); layer++) {
             String p = "blk." + layer + ".";
-            tensors.put(p + "attn_norm.weight", view);
-            tensors.put(p + "post_attention_norm.weight", view);
+            tensors.put(p + "attn_norm.weight", f32(memory, dim));
+            tensors.put(p + "post_attention_norm.weight", f32(memory, dim));
             if (config.isFullAttention()[layer]) {
-                tensors.put(p + "attn_q.weight", view);
-                tensors.put(p + "attn_k.weight", view);
-                tensors.put(p + "attn_v.weight", view);
-                tensors.put(p + "attn_output.weight", view);
-                tensors.put(p + "attn_q_norm.weight", view);
-                tensors.put(p + "attn_k_norm.weight", view);
+                tensors.put(p + "attn_q.weight", f32(memory, 2L * config.queryDim(), dim));
+                tensors.put(p + "attn_k.weight", f32(memory, config.kvDim(), dim));
+                tensors.put(p + "attn_v.weight", f32(memory, config.kvDim(), dim));
+                tensors.put(p + "attn_output.weight", f32(memory, dim, config.queryDim()));
+                tensors.put(p + "attn_q_norm.weight", f32(memory, config.headSize()));
+                tensors.put(p + "attn_k_norm.weight", f32(memory, config.headSize()));
             } else {
-                tensors.put(p + "attn_qkv.weight", view);
-                tensors.put(p + "attn_gate.weight", view);
-                tensors.put(p + "ssm_alpha.weight", view);
-                tensors.put(p + "ssm_beta.weight", view);
-                tensors.put(p + "ssm_out.weight", view);
-                tensors.put(p + "ssm_conv1d.weight", view);
-                tensors.put(p + "ssm_a", view);
-                tensors.put(p + "ssm_dt.bias", view);
-                tensors.put(p + "ssm_norm.weight", view);
+                tensors.put(p + "attn_qkv.weight", f32(memory, config.convChannels(), dim));
+                tensors.put(p + "attn_gate.weight", f32(memory, config.ssmInnerSize(), dim));
+                tensors.put(p + "ssm_alpha.weight", f32(memory, config.ssmTimeStepRank(), dim));
+                tensors.put(p + "ssm_beta.weight", f32(memory, config.ssmTimeStepRank(), dim));
+                tensors.put(p + "ssm_out.weight", f32(memory, dim, config.ssmInnerSize()));
+                tensors.put(
+                        p + "ssm_conv1d.weight",
+                        f32(memory, config.convChannels(), config.ssmConvKernel()));
+                tensors.put(p + "ssm_a", f32(memory, config.ssmTimeStepRank()));
+                tensors.put(p + "ssm_dt.bias", f32(memory, config.ssmTimeStepRank()));
+                tensors.put(p + "ssm_norm.weight", f32(memory, config.headVDim()));
             }
             if (config.isMoE()) {
-                tensors.put(p + "ffn_gate_inp.weight", view);
+                tensors.put(p + "ffn_gate_inp.weight", f32(memory, config.expertCount(), dim));
                 tensors.put(
                         p + "ffn_gate_exps.weight",
                         expertStack(
@@ -141,23 +141,33 @@ final class Qwen35MtpLoadTest {
                                 config.expertCount(),
                                 config.embeddingLength(),
                                 config.expertFeedForwardLength()));
-                tensors.put(p + "ffn_gate_inp_shexp.weight", view);
-                tensors.put(p + "ffn_gate_shexp.weight", view);
-                tensors.put(p + "ffn_up_shexp.weight", view);
-                tensors.put(p + "ffn_down_shexp.weight", view);
+                tensors.put(p + "ffn_gate_inp_shexp.weight", f32(memory, dim));
+                tensors.put(
+                        p + "ffn_gate_shexp.weight",
+                        f32(memory, config.expertSharedFeedForwardLength(), dim));
+                tensors.put(
+                        p + "ffn_up_shexp.weight",
+                        f32(memory, config.expertSharedFeedForwardLength(), dim));
+                tensors.put(
+                        p + "ffn_down_shexp.weight",
+                        f32(memory, dim, config.expertSharedFeedForwardLength()));
             } else {
-                tensors.put(p + "ffn_gate.weight", view);
-                tensors.put(p + "ffn_up.weight", view);
-                tensors.put(p + "ffn_down.weight", view);
+                tensors.put(p + "ffn_gate.weight", f32(memory, config.hiddenDim(), dim));
+                tensors.put(p + "ffn_up.weight", f32(memory, config.hiddenDim(), dim));
+                tensors.put(p + "ffn_down.weight", f32(memory, dim, config.hiddenDim()));
             }
         }
         if (config.hasMtp()) {
             String nextn = "blk." + config.mtpLayer() + ".nextn.";
-            tensors.put(nextn + "enorm.weight", view);
-            tensors.put(nextn + "hnorm.weight", view);
-            tensors.put(nextn + "eh_proj.weight", view);
+            tensors.put(nextn + "enorm.weight", f32(memory, dim));
+            tensors.put(nextn + "hnorm.weight", f32(memory, dim));
+            tensors.put(nextn + "eh_proj.weight", f32(memory, dim, 2L * dim));
         }
         return tensors;
+    }
+
+    private static MemoryView<MemorySegment> f32(MemoryArena<MemorySegment> memory, long... shape) {
+        return Views.allocateF32(memory, shape);
     }
 
     private static MemoryView<MemorySegment> expertStack(
@@ -179,6 +189,7 @@ final class Qwen35MtpLoadTest {
                 mtp.rmsNormEps(),
                 mtp.ropeTheta(),
                 mtp.ropeDimensionCount(),
+                mtp.ropeDimensionSections(),
                 mtp.hiddenDim(),
                 new boolean[] {true, false},
                 mtp.ssmInnerSize(),
@@ -205,6 +216,7 @@ final class Qwen35MtpLoadTest {
                 1e-5f,
                 10_000f,
                 2,
+                new int[] {1, 0, 0},
                 moe ? 0 : 8,
                 new boolean[] {true, false, true},
                 4,

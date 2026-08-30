@@ -115,6 +115,16 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
     public ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
         Objects.requireNonNull(conversation, "conversation");
         List<Message> msgs = conversation.messages();
+        if (msgs.isEmpty())
+            throw new UnsupportedConversation("Qwen3.5 requires at least one message");
+        for (int i = 0; i < msgs.size(); i++) {
+            Message message = msgs.get(i);
+            if (message.role().equals(Role.SYSTEM) && i != 0)
+                throw new UnsupportedConversation("Qwen3.5 permits a system message only first");
+            if (message.role().equals(Role.SYSTEM)
+                    && message.content().stream().anyMatch(Content.Media.class::isInstance))
+                throw new UnsupportedConversation("Qwen3.5 system messages cannot contain media");
+        }
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
         if (conversation.tools().isEmpty() && plainShape(msgs)) {
             for (Message m : msgs) {
@@ -234,6 +244,8 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
             lastQuery = i;
             break;
         }
+        if (lastQuery < 0)
+            throw new UnsupportedConversation("Qwen3.5 tool flow requires a user query");
 
         for (int i = 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);

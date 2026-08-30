@@ -54,7 +54,16 @@ final class Qwen35MtpMediaRowsTest {
 
                 state.reset();
                 model.ingest(state, Batch.prefill(Arrays.copyOf(prompt, split)));
-                model.ingest(state, Batch.embeddings(rows, tail.length));
+                int[] coordinates = new int[3 * tail.length];
+                for (int i = 0; i < tail.length; i++) Arrays.fill(coordinates, 3 * i, 3 * i + 3, i);
+                model.ingest(
+                        state,
+                        Batch.embeddings(
+                                rows,
+                                tail.length,
+                                false,
+                                null,
+                                new Batch.Positions(3, coordinates, tail.length)));
                 assertEquals(prompt.length, state.position());
                 int[] viaRows = new int[4];
                 viaRows[0] =

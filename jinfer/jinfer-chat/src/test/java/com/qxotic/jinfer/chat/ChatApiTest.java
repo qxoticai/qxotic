@@ -101,6 +101,11 @@ final class ChatApiTest {
                         }
 
                         @Override
+                        public Batch.Positions decoderPositions(Media.Image source) {
+                            return new Batch.Positions(3, new int[] {0, 0, 0, 0, 0, 1}, 1);
+                        }
+
+                        @Override
                         public void project(
                                 Media.Image source, int max, Consumer<MemoryView<?>> sink) {
                             sink.accept(Views.allocateF32(MemoryAllocators.ofArena(arena), 2, 4));
@@ -115,6 +120,8 @@ final class ChatApiTest {
                 assertInstanceOf(Batch.Input.Embeddings.class, batches.get(1).input());
         assertEquals(key, media.contentKey());
         assertTrue(media.bidirectional());
+        assertEquals(1, media.positions().advance());
+        assertEquals(1, media.positions().value(1, 2));
     }
 
     @Test

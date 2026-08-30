@@ -68,12 +68,26 @@ class MediaBoundaryTest {
             MemoryView<?> rows =
                     Views.allocateF32(MemoryAllocators.ofArena(arena), 12).view(Shape.flat(3, 4));
             ContentKey key = new ContentKey("media:test");
-            Batch.Input.Embeddings embeddings = new Batch.Input.Embeddings(rows, 3, true, key);
+            Batch.Positions positions =
+                    new Batch.Positions(3, new int[] {0, 0, 0, 0, 1, 2, 0, 3, 4}, 5);
+            Batch.Input.Embeddings embeddings =
+                    new Batch.Input.Embeddings(rows, 3, true, key, positions);
             assertEquals(key, embeddings.contentKey());
+            assertEquals(2, embeddings.positions().value(1, 2));
+
+            Batch.Positions tail = positions.slice(1, 2, true);
+            assertEquals(4, tail.advance());
+            assertEquals(0, tail.value(0, 1));
+            assertEquals(3, tail.value(1, 2));
 
             assertThrows(
                     IllegalArgumentException.class,
                     () -> new Batch.Input.Embeddings(rows, 2, true));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () ->
+                            new Batch.Input.Embeddings(
+                                    rows, 3, true, key, new Batch.Positions(3, new int[6], 2)));
             MemoryView<?> i32 =
                     MemoryView.of(rows.memory(), DataType.I32, Layout.rowMajor(Shape.flat(3, 4)));
             assertThrows(

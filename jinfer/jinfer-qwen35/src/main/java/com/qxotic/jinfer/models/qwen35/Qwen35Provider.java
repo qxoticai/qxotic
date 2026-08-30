@@ -16,6 +16,8 @@ import java.util.Set;
 
 /** {@link ModelProvider} service: the Qwen 3.5 port's arch-dispatch entry. */
 public final class Qwen35Provider implements ModelProvider {
+    static final LoadedModel.SamplingDefaults SAMPLING_DEFAULTS =
+            new LoadedModel.SamplingDefaults(1.0f, 0.95f, 20, null);
 
     @Override
     public boolean supports(String architecture) {
@@ -54,6 +56,6 @@ public final class Qwen35Provider implements ModelProvider {
                 // the GGUF template frames; the attached codec keeps the family's reply grammar
                 // (call parsing, constrained decoding, forced calls) on the whole-render path
                 Optional.of(new Qwen35ChatTemplate(model)),
-                LoadedModel.SamplingDefaults.NONE);
+                SAMPLING_DEFAULTS);
     }
 }

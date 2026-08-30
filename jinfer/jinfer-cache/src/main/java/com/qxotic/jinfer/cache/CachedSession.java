@@ -5,6 +5,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CheckpointCodec;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextModel;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jota.memory.MemoryView;
@@ -31,11 +32,11 @@ import java.util.function.BooleanSupplier;
  * fresh state; the caller re-ingests everything past {@link #position()}.
  *
  * <p>Media just works: an {@link Batch.Input.Embeddings} batch contributes per-position
- * fingerprints derived from its stable content key, or from a SHA-256 of its raw row bits when no
- * key is supplied. The digest is spread across positions ({@code digest[i & 3] + GOLDEN * i}) so
- * the full 256-bit identity enters the chained block key. {@link Batch#prepare} keeps each
- * embeddings batch isolated, so a bidirectional image block (one attention group) commits as
- * exactly one cache block.
+ * fingerprints derived from its stable content key plus decoder coordinates, or from a SHA-256 of
+ * its raw row bits plus coordinates when no key is supplied. The digest is spread across positions
+ * ({@code digest[i & 3] + GOLDEN * i}) so the full 256-bit identity enters the chained block key.
+ * {@link Batch#prepare} keeps each embeddings batch isolated, so a bidirectional image block (one
+ * attention group) commits as exactly one cache block.
  *
  * <p>{@code start} opens a brand-new conversation (ingest incrementally); {@code resume(model,
  * cache, state, prompt)} serves a prompt against the cache (longest cached prefix restored, the
@@ -175,11 +176,7 @@ public final class CachedSession<S extends ContextState> {
                     // Stable source identity when supplied; encoded rows otherwise (exact, but
                     // early JIT passes can drift - see Batch.embeddings' contentKey doc).
                     var key = e.contentKey();
-                    long[] digest =
-                            key == null
-                                    ? rowsDigest(e)
-                                    : Sha256.longs(
-                                            Sha256.sha256().digest(key.value().getBytes(UTF_8)));
+                    long[] digest = key == null ? rowsDigest(e) : contentDigest(e, key);
                     for (int i = 0; i < e.count(); i++) fp[at++] = digest[i & 3] + GOLDEN * i;
                 }
                 default ->
@@ -316,7 +313,33 @@ public final class CachedSession<S extends ContextState> {
             sha.update(base.asSlice(start + off, n).asByteBuffer());
             off += n;
         }
+        updatePositions(sha, e.positions());
         return Sha256.digestLongs(sha);
+    }
+
+    private static long[] contentDigest(Batch.Input.Embeddings e, ContentKey key) {
+        MessageDigest sha = Sha256.sha256();
+        sha.update(key.value().getBytes(UTF_8));
+        updatePositions(sha, e.positions());
+        return Sha256.digestLongs(sha);
+    }
+
+    private static void updatePositions(MessageDigest sha, Batch.Positions positions) {
+        updateInt(sha, positions == null ? 0 : 1);
+        if (positions != null) {
+            updateInt(sha, positions.dimensions());
+            updateInt(sha, positions.advance());
+            for (int row = 0; row < positions.count(); row++)
+                for (int dimension = 0; dimension < positions.dimensions(); dimension++)
+                    updateInt(sha, positions.value(row, dimension));
+        }
+    }
+
+    private static void updateInt(MessageDigest digest, int value) {
+        digest.update((byte) (value >>> 24));
+        digest.update((byte) (value >>> 16));
+        digest.update((byte) (value >>> 8));
+        digest.update((byte) value);
     }
 
     /** Ingests one decode step and commits it as a single-token block. */
