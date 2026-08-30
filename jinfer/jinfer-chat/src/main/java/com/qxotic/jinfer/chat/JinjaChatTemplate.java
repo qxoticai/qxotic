@@ -29,12 +29,14 @@ final class JinjaChatTemplate {
     private final CompiledTemplate template; // null: GGUF carries none (a parse failure throws)
     private final Specials specials; // compiled once per model
     private final List<String> specialNames; // longest-first, for the content scrub
+    private final boolean declaresThinking; // the template has a thinking mode to open
 
     JinjaChatTemplate(Tokenizer tokenizer, String source) {
         this.tokenizer = tokenizer;
         // A template that fails to parse throws here, at load, naming the offending construct -
         // better a loud failure than a model silently chatting in foreign (ChatML) framing.
         this.template = source.isEmpty() ? null : JinjaRenderer.template(source);
+        this.declaresThinking = source.contains("enable_thinking");
         this.specials = SpecialTokens.encoder(tokenizer);
         // Think markers are exempt from the scrub: templates legitimately PROCESS them as text in
         // echoed history (content.split("</think>")), and a content-minted think id toggles
@@ -94,7 +96,10 @@ final class JinjaChatTemplate {
         // degenerate checkpoint instead closes the turn on its FIRST token (SmolLM3 Q4_K_M,
         // greedy: one <|im_end|>, an empty reply). Open it for them; the engine arms the thinking
         // cap and seeds the parser from exactly this tail. Skip when the render already left a
-        // span open (Qwen3-style scaffolds end with "<think>\n").
+        // span open (Qwen3-style scaffolds end with "<think>\n"), and never for a template that
+        // has no thinking mode at all: Granite 4.1 carries a <think> token but no enable_thinking
+        // scaffold, and seeded with the opener it deliberates for hundreds of tokens where
+        // llama.cpp (which seeds nothing) answers or calls the tool at once.
         if (addGenerationPrompt && SpecialTokens.find(tokenizer, Thinking.OPEN).isPresent()) {
             // the scaffold's open is the render's TAIL: a think marker inside request text (the
             // scrub exempts them) sits before its turn's end and must not pass for the scaffold
@@ -102,7 +107,7 @@ final class JinjaChatTemplate {
             boolean tailOpen =
                     lastOpen > rendered.lastIndexOf(Thinking.CLOSE)
                             && rendered.substring(lastOpen + Thinking.OPEN.length()).isBlank();
-            if (enableThinking && !tailOpen) rendered += Thinking.OPEN;
+            if (enableThinking && !tailOpen && declaresThinking) rendered += Thinking.OPEN;
             // the mirror image: a scaffold that always opens the span (LFM2.5-2.6B, a pure
             // reasoning model) is closed at once when thinking is off - the model's own shape
             // for a turn without reasoning, and the only one the marker ban leaves reachable

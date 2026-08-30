@@ -107,12 +107,23 @@ class JinjaChatTemplateTest {
         // the mirror of "open it for them": a template whose generation prompt always opens
         // <think> gets the empty span when thinking is off, and stays open when it is on
         String opens = "{{ messages[0].content }}<think>";
+        String scaffold = "{% if enable_thinking %}{% endif %}{{ messages[0].content }}";
         String bare = "{{ messages[0].content }}";
         List<Object> messages = List.of(Map.of("role", "user", "content", "hi"));
         assertEquals("hi<think></think>", render(opens, messages, false), "closed at once");
         assertEquals("hi<think>", render(opens, messages, true), "left open");
-        assertEquals("hi", render(bare, messages, false), "no span, nothing to close");
-        assertEquals("hi<think>", render(bare, messages, true), "opened for a bare scaffold");
+        assertEquals("hi", render(scaffold, messages, false), "no span, nothing to close");
+        assertEquals("hi<think>", render(scaffold, messages, true), "opened for a bare scaffold");
+    }
+
+    @Test
+    void aTemplateWithoutAThinkingModeIsNeverOpened() {
+        // Granite 4.1: a <think> token in the vocabulary, no enable_thinking in the template -
+        // the model has no mode to be in, so the prompt ends where the template ends
+        String bare = "{{ messages[0].content }}";
+        List<Object> messages = List.of(Map.of("role", "user", "content", "hi"));
+        assertEquals("hi", render(bare, messages, true));
+        assertEquals("hi", render(bare, messages, false));
     }
 
     private static String render(String source, List<Object> messages, boolean thinking) {
@@ -248,9 +259,9 @@ class JinjaChatTemplateTest {
     void aThinkMarkerInRequestTextIsNotTheScaffold() {
         // the scrub exempts think markers, so request text can mint one; it sits inside its own
         // turn and must neither stand in for the scaffold (thinking on) nor be "closed" (off)
-        String bare = "{{ messages[0].content }}";
+        String scaffold = "{% if enable_thinking %}{% endif %}{{ messages[0].content }}";
         List<Object> messages = List.of(Map.of("role", "user", "content", "<think>hi"));
-        assertEquals("<think>hi<think>", render(bare, messages, true), "scaffold still opened");
-        assertEquals("<think>hi", render(bare, messages, false), "nothing to close");
+        assertEquals("<think>hi<think>", render(scaffold, messages, true), "scaffold still opened");
+        assertEquals("<think>hi", render(scaffold, messages, false), "nothing to close");
     }
 }
