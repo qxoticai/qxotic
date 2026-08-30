@@ -713,7 +713,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 gguf.getValueOrDefault(
                         float.class,
                         arch + ".logit_scale",
-                        isMiniCpm ? embeddingLength / 256.0f : 1.0f);
+                        isMiniCpm ? embeddingLength / 256.0f : 1.0f); // dim_model_base = 256
 
         float attnTempScale =
                 gguf.getValueOrDefault(float.class, arch + ".attention.temperature_scale", 0f);
@@ -787,12 +787,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         require(
                 gguf.getValueOrDefault(int.class, arch + ".expert_count", 0) == 0,
                 "MoE checkpoints are not supported");
-        try {
-            Math.multiplyExact(numberOfHeads, headSize);
-            Math.multiplyExact(numberOfKeyValueHeads, headSize);
-        } catch (ArithmeticException overflow) {
-            throw new IllegalArgumentException("Llama: attention dimensions overflow", overflow);
-        }
+        require(
+                (long) numberOfHeads * headSize <= Integer.MAX_VALUE
+                        && (long) numberOfKeyValueHeads * headSize <= Integer.MAX_VALUE,
+                "attention dimensions overflow");
         return config;
     }
 
@@ -842,16 +840,29 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                     ropeDim, config.ropeTheta, factor, origCtx, betaFast, betaSlow, 1f, attnFactor);
         }
         require(
-                scalingType.isEmpty() || scalingType.equals("none") || scalingType.equals("llama3"),
+                scalingType.isEmpty()
+                        || scalingType.equals("none")
+                        || scalingType.equals("linear")
+                        || scalingType.equals("llama3"),
                 "unsupported rope.scaling.type '" + scalingType + "'");
         require(
                 !scalingType.equals("llama3") || factors.isPresent(),
                 "llama3 RoPE requires rope_freqs.weight");
-        if (factors.isEmpty()) return RoPE.plain(ropeDim, config.ropeTheta);
-        float[] values = factors.orElseThrow();
+
+        float factor = gguf.getValueOrDefault(float.class, arch + ".rope.scaling.factor", 0f);
+        factor = scalingType.equals("none") || factor == 0f ? 1f : factor;
+        require(factor > 0f && Float.isFinite(factor), "invalid RoPE scaling factor");
+
+        if (factors.isEmpty() && factor == 1f) return RoPE.plain(ropeDim, config.ropeTheta);
+        float[] values = factors.orElseGet(() -> new float[ropeDim / 2]);
         require(values.length == ropeDim / 2, "rope_freqs.weight has the wrong length");
-        for (float value : values)
-            require(value > 0f && Float.isFinite(value), "rope_freqs.weight contains invalid data");
+        for (int i = 0; i < values.length; i++) {
+            if (factors.isEmpty()) values[i] = factor;
+            else values[i] *= factor;
+            require(
+                    values[i] > 0f && Float.isFinite(values[i]),
+                    "rope_freqs.weight contains invalid data");
+        }
         return RoPE.withFreqFactors(ropeDim, config.ropeTheta, values);
     }
 
@@ -869,11 +880,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
-            if (!tensors.containsKey(p + "attn_q.weight")
-                    && tensors.containsKey(p + "attn_qkv.weight")) {
-                throw new IllegalArgumentException(
-                        "Llama: fused QKV checkpoints are not supported");
-            }
+            require(
+                    !tensors.containsKey(p + "attn_qkv.weight"),
+                    "fused QKV checkpoints are not supported");
             layers[i] =
                     new LayerWeights(
                             ModelLoader.requireF32(tensors, p + "attn_norm.weight"),

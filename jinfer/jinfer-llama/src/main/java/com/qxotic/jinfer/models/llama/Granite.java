@@ -544,6 +544,7 @@ public final class Granite
                 effectiveScale(gguf.getValueOrDefault(float.class, arch + ".residual_scale", 0f));
         float logitScale = gguf.getValue(float.class, arch + ".logit_scale");
         float attentionScale = gguf.getValueOrDefault(float.class, arch + ".attention.scale", 0f);
+        // llama.cpp's Granite build reads rope_finetuned as the NoPE switch
         boolean useRope =
                 gguf.getValueOrDefault(boolean.class, arch + ".rope.scaling.finetuned", true);
 
@@ -606,12 +607,10 @@ public final class Granite
         require(
                 !gguf.containsKey(arch + ".deepstack_mapping"),
                 "deepstack multimodal checkpoints are not supported");
-        try {
-            Math.multiplyExact(numberOfHeads, headSize);
-            Math.multiplyExact(numberOfKeyValueHeads, headSize);
-        } catch (ArithmeticException overflow) {
-            throw new IllegalArgumentException("Granite: attention dimensions overflow", overflow);
-        }
+        require(
+                (long) numberOfHeads * headSize <= Integer.MAX_VALUE
+                        && (long) numberOfKeyValueHeads * headSize <= Integer.MAX_VALUE,
+                "attention dimensions overflow");
         return config;
     }
 
@@ -669,11 +668,9 @@ public final class Granite
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
-            if (!tensors.containsKey(p + "attn_q.weight")
-                    && tensors.containsKey(p + "attn_qkv.weight")) {
-                throw new IllegalArgumentException(
-                        "Granite: fused QKV checkpoints are not supported");
-            }
+            require(
+                    !tensors.containsKey(p + "attn_qkv.weight"),
+                    "fused QKV checkpoints are not supported");
             layers[i] =
                     new LayerWeights(
                             ModelLoader.requireF32(tensors, p + "attn_norm.weight"),

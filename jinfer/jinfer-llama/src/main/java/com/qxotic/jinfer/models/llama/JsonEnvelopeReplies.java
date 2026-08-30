@@ -30,7 +30,10 @@ final class JsonEnvelopeReplies {
                     call(
                             ToolCallSyntax::parseBlock,
                             mark("<tool_call>"),
-                            bytes("\n{\"name\": \"" + tool.name() + "\", \"arguments\": "),
+                            bytes(
+                                    "\n{\"name\": "
+                                            + ToolCallSyntax.jinjaJson(tool.name())
+                                            + ", \"arguments\": "),
                             gbnf(Grammar.schemaGbnf(tool.parameters())),
                             bytes("}\n"),
                             mark("</tool_call>")));

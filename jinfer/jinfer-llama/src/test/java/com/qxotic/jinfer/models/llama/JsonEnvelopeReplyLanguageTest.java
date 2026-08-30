@@ -108,6 +108,7 @@ class JsonEnvelopeReplyLanguageTest {
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
 
+        // the model's own merge of the same wire, which tokenizer.encode does not reproduce
         Message generatedTokenization =
                 ReplyParser.parse(
                         template.parser(tokenizer),
