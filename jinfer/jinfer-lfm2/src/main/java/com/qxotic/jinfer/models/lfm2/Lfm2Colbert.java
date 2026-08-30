@@ -137,7 +137,7 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
         // the query embeds in its own pass (a <=32-token forward, negligible next to the
         // documents), so each document then scores the moment its rows are read - sink order is
         // input order by construction
-        int[] querySeq = querySequence(query);
+        int[] querySeq = querySequence(tokenizer.encode(query).toArray(), bos, queryMarker, pad);
         int outDim = model.configuration().embeddingLengthOut();
         MemoryView<MemorySegment> queryRows = state.embedScratch(model.configuration()).colbertRows;
         double[] best = new double[QUERY_LENGTH];
@@ -189,10 +189,6 @@ public final class Lfm2Colbert implements Reranker<Lfm2.State> {
     }
 
     /** {@code [BOS] [Q]-marker query}, padded or truncated to {@link #QUERY_LENGTH}. */
-    private int[] querySequence(String query) {
-        return querySequence(tokenizer.encode(query).toArray(), bos, queryMarker, pad);
-    }
-
     static int[] querySequence(int[] ids, int bos, int marker, int pad) {
         int[] seq = new int[QUERY_LENGTH];
         seq[0] = bos;

@@ -474,10 +474,6 @@ public final class Lfm2Vision implements MediaProjector<Media.Image> {
         }
     }
 
-    public static Lfm2Vision loadModel(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors) {
-        return loadModel(Path.of("mmproj.gguf"), gguf, tensors);
-    }
-
     public static Lfm2Vision loadModel(
             Path label, GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors) {
         Objects.requireNonNull(label, "label");
