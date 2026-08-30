@@ -117,6 +117,19 @@ class JinjaChatTemplateTest {
     }
 
     @Test
+    void offeredToolsReachATemplateThatReadsXmlTools() {
+        // SmolLM3 renders its tools from xml_tools, not tools
+        String smol = "{% for t in xml_tools %}{{ t.function.name }}{% endfor %}";
+        List<Object> messages = List.of(Map.of("role", "user", "content", "hi"));
+        List<Object> tools = List.of(Map.of("type", "function", "function", Map.of("name", "ok")));
+        assertEquals(
+                "ok",
+                CHAR_TOKENIZER.decode(
+                        new JinjaChatTemplate(CHAR_TOKENIZER, smol)
+                                .render(messages, tools, true, false, null)));
+    }
+
+    @Test
     void aTemplateWithoutAThinkingModeIsNeverOpened() {
         // Granite 4.1: a <think> token in the vocabulary, no enable_thinking in the template -
         // the model has no mode to be in, so the prompt ends where the template ends
