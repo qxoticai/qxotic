@@ -5,6 +5,7 @@ import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.readFloat16;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.oracle.svm.core.NeverInline;
 import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeFlags;
@@ -83,7 +84,7 @@ public final class FlashAttention {
     }
 
     /**
-     * Per-thread scratch: the Br×Bc score tile, per-row running max/sum, and per-block K/V offsets.
+     * Per-slot scratch: the Br×Bc score tile, per-row running max/sum, and per-block K/V offsets.
      */
     static final class Buffers {
         final float[] s = new float[Br * Bc];
@@ -110,10 +111,19 @@ public final class FlashAttention {
         }
     }
 
-    private static final ThreadLocal<Buffers> BUFFERS = ThreadLocal.withInitial(Buffers::new);
+    /**
+     * One {@link Buffers} per slot of the shared pool, made on first use. Indexed by the region's
+     * slot, not by thread: bounded by the thread budget, and never rooted in a worker thread.
+     * ponytail: process-wide, sized to the largest head seen; a per-state scratch would need the
+     * prefill API to carry it through 15 model call sites - add if a process cycles models with
+     * different head sizes.
+     */
+    private static final Buffers[] BUFFERS = new Buffers[Parallel.threads()];
 
-    static Buffers buffers() {
-        return BUFFERS.get();
+    static Buffers buffers(int slot) {
+        Buffers b = BUFFERS[slot];
+        if (b == null) BUFFERS[slot] = b = new Buffers(); // one writer per slot at a time
+        return b;
     }
 
     /**
@@ -123,6 +133,7 @@ public final class FlashAttention {
      * SAME vector converter (exact on every half), so results are bit-identical to the direct F16
      * tiles.
      */
+    @NeverInline("a memory-in, memory-out decode: its own Vector API expansion unit in the image")
     static void decodeF16Run(Src src, int[] kvOff, int count, int headSize, Raw dst) {
         if (!Segments.USE_VECTOR_API) {
             for (int j = 0; j < count; j++) {
@@ -364,9 +375,7 @@ public final class FlashAttention {
         }
     }
 
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
+    @NeverInline("a memory-in, memory-out tile: its own Vector API expansion unit in the image")
     private static void pvTileF16(
             Raw out,
             Raw value,
@@ -429,9 +438,7 @@ public final class FlashAttention {
         }
     }
 
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
+    @NeverInline("a memory-in, memory-out tile: its own Vector API expansion unit in the image")
     private static void pvTileF32(
             Raw out,
             Raw value,
@@ -511,9 +518,7 @@ public final class FlashAttention {
      * before QK anyway. Accumulation order matches the generic path exactly - scores are
      * bit-identical.
      */
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
+    @NeverInline("a memory-in, memory-out tile: its own Vector API expansion unit in the image")
     private static void qkTile64F32(
             Raw q,
             int qb0,
@@ -615,9 +620,7 @@ public final class FlashAttention {
         }
     }
 
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
+    @NeverInline("a memory-in, memory-out tile: its own Vector API expansion unit in the image")
     private static void qkTileWideF32(
             Raw q,
             int qb0,
@@ -668,9 +671,7 @@ public final class FlashAttention {
         }
     }
 
-    @AlwaysInline(
-            "hot Vector API helper: escaping FloatVector boxes per call (see"
-                    + " hotspot_compile_commands)")
+    @NeverInline("a memory-in, memory-out tile: its own Vector API expansion unit in the image")
     static void qkTile(
             Raw q,
             int qBase,
@@ -977,10 +978,10 @@ public final class FlashAttention {
         Parallel.forLoop(
                 0,
                 nHeads * nQBlocks,
-                idx -> {
+                (idx, slot) -> {
                     int h = idx / nQBlocks;
                     int qStart = (idx % nQBlocks) * Br;
-                    Buffers buf = buffers();
+                    Buffers buf = buffers(slot);
                     float[] S = buf.s;
                     float[] M = buf.m;
                     double[] L = buf.l;
@@ -1303,10 +1304,10 @@ public final class FlashAttention {
         Parallel.forLoop(
                 0,
                 nHeads * nQBlocks,
-                idx -> {
+                (idx, slot) -> {
                     int h = idx / nQBlocks;
                     int qStart = (idx % nQBlocks) * Br;
-                    Buffers buffers = buffers();
+                    Buffers buffers = buffers(slot);
                     float[] S = buffers.s;
                     float[] M = buffers.m;
                     double[] L = buffers.l;
