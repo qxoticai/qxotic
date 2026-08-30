@@ -261,4 +261,6 @@ Added: the `slot` argument (one interface method, one int per region), `Slots<T>
   Fix: the scan fans out over channel bands (every channel owns its column of the state), one region per call, inline for a single position.
   Q8_0 2.6B 16T: native pp512 964 -> 1215, pp2048 928 -> 1174, vector pp512 423 -> 480, Q4_K_M native pp512 1056 -> 1319; decode unchanged (27.3 / 45.3); census now 15.9 cores busy.
   The worker spin budget also moved from 100 us to 1 ms: with 100 us the workers parked in the serial gaps and paid the wake-up on every region (pp512 964 at 100 us, 1025 at 1 ms, 1033 at 5 ms, measured before the scan fix); decode is unaffected either way (12 us gaps).
+  The scan also has a Vector API path (`dConv == 3`, behind `USE_VECTOR_API`): channel vector outer, positions inner, the two state rows in registers; products formed and added in the scalar order so both paths agree bit for bit.
+  Kernel alone, 2048 channels: 1T seqLen 512 2509 -> 1092 us, 16T 455 -> 86 us; end to end +1% (16T pp512 1215 -> 1233), the scan being ~1.7% of prefill wall once parallel.
   Still serial per batch: `Ops.addInPlace` in the residual adds and `Convert.f32ToF16` in `commitKv` (a few percent of the remaining gap).

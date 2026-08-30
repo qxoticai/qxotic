@@ -171,9 +171,10 @@ class ConvolutionsTest {
     /**
      * The banded scan (one band per participant) equals a plain per-position scan, state included.
      */
-    @Test
-    void shortConvScanBandsMatchTheSequentialScan() {
-        int seqLen = 7, dim = 200, dConv = 3, parts = 3, hist = dConv - 1;
+    @ParameterizedTest
+    @CsvSource({"7, 3", "7, 4", "5, 2", "1, 3", "2, 3"})
+    void shortConvScanBandsMatchTheSequentialScan(int seqLen, int dConv) {
+        int dim = 200, parts = 3, hist = dConv - 1;
         Random random = new Random(11);
         float[] kernel = new float[dim * dConv],
                 state0 = new float[hist * dim],
