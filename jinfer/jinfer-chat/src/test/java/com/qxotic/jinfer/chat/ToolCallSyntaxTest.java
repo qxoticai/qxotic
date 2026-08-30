@@ -43,6 +43,22 @@ final class ToolCallSyntaxTest {
     }
 
     @Test
+    void functionEnvelopeVariantsAreAccepted() {
+        List<Content.ToolCall> flat =
+                ToolCallSyntax.parseBlock(
+                        "{\"type\":\"function\",\"function\":\"f\",\"parameters\":{\"x\":1}}");
+        assertEquals("f", flat.getFirst().name());
+        assertEquals(Map.of("x", 1L), flat.getFirst().arguments());
+
+        List<Content.ToolCall> nested =
+                ToolCallSyntax.parseBlock(
+                        "{\"type\":\"function\",\"function\":{\"name\":\"g\","
+                                + "\"arguments\":{\"y\":2}}}");
+        assertEquals("g", nested.getFirst().name());
+        assertEquals(Map.of("y", 2L), nested.getFirst().arguments());
+    }
+
+    @Test
     void trailingCommasAreSalvaged() {
         // the langchain4j argument_comma case, one layer down: strict parse would drop this call
         List<Content.ToolCall> calls =
