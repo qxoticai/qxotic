@@ -1,6 +1,6 @@
 // Llama's RoPE GQA transformer and metadata-compatible variants:
 //   - Llama 3.x: "llama3" RoPE frequency scaling (rope_freqs.weight).
-//   - MiniCPM:   embedding_scale / residual_scale / logit_scale (default 1.0 -> plain Llama).
+//   - MiniCPM:   embedding_scale / residual_scale / logit_scale, including legacy defaults.
 //   - Mistral-3: YaRN RoPE scaling + Llama-4-style attention temperature tuning.
 //   - SmolLM3:   NoPE - RoPE is skipped on every 4th layer (noRopeLayerStep); otherwise plain
 //     Llama.
@@ -125,9 +125,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             if (id < 0 || id >= configuration.vocabularySize)
                 throw new IllegalArgumentException(
                         "token id " + id + " outside [0," + configuration.vocabularySize + ")");
-        if (n == 1) {
-            forward(s, ids, from, n);
-        } else forward(s, ids, from, n);
+        forward(s, ids, from, n);
         s.advance(batch);
     }
 
@@ -141,6 +139,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     private MemoryView<?> projectLogits(State s, int output) {
         if (output < 0 || output >= s.outputCount())
             throw new IllegalArgumentException("output " + output + " outside retained outputs");
+        Views.checkAlive(weights.finalNorm(), "finalNorm");
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
         {
@@ -223,6 +222,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         Norms.rmsnormRows(state.normed, state.residual, lw.attnNorm(), seqLen, dim, eps);
         MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
         MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
+        addBias(state.batchK, lw.bk(), seqLen, kvDim);
+        addBias(state.batchV, lw.bv(), seqLen, kvDim);
         if (config.useRope(l)) {
             Parallel.forLoop(
                     seqLen,
@@ -268,6 +269,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 state.tailScratch, 0, state.residual, (long) i * dim, lw.attnNorm(), dim, eps);
         // Q for this row (query is free scratch outside a forward)
         MatMul.gemm(lw.wq(), state.tailScratch, state.query, 1);
+        addBias(state.query, lw.bq(), 1, queryDim);
         if (config.useRope(L)) {
             // the lazy tail runs outside any ingest, so it fills row 0 for its own position
             // rather than trusting whatever range the last fill covered
@@ -306,6 +308,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 null,
                 state.decodeScratch);
         MatMul.gemm(lw.wo(), state.attnOut, state.tailScratch, 1);
+        addBias(state.tailScratch, lw.bo(), 1, dim);
         // th = residual[i] + residScale*O (born, no seed copy)
         Ops.addScaledInto(
                 state.th, state.residual, (long) i * dim, state.tailScratch, dim, residScale);
@@ -335,6 +338,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         MatMul.gemm(lw.wq(), state.normed, state.query, seqLen);
         MatMul.gemm(lw.wk(), state.normed, state.batchK, seqLen);
         MatMul.gemm(lw.wv(), state.normed, state.batchV, seqLen);
+        addBias(state.query, lw.bq(), seqLen, queryDim);
+        addBias(state.batchK, lw.bk(), seqLen, kvDim);
+        addBias(state.batchV, lw.bv(), seqLen, kvDim);
         boolean useRope = config.useRope(layer); // SmolLM3 NoPE: some layers skip RoPE entirely
         Parallel.forLoop(
                 seqLen,
@@ -410,6 +416,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         }
         commitKv(state, layer, startPos, seqLen);
         MatMul.gemm(lw.wo(), state.attnOut, state.normed, seqLen);
+        addBias(state.normed, lw.bo(), seqLen, dim);
     }
 
     /** Dense SwiGLU FFN over the pre-normed rows in {@code state.normed}, written back in place. */
@@ -418,9 +425,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         LayerWeights lw = weights.layers()[l];
         MatMul.gemm(lw.w1(), state.normed, state.hidden, seqLen);
         MatMul.gemm(lw.w3(), state.normed, state.hidden2, seqLen);
+        addBias(state.hidden, lw.b1(), seqLen, hiddenDim);
+        addBias(state.hidden2, lw.b3(), seqLen, hiddenDim);
         Activations.siluMultiply(
                 state.hidden, 0, state.hidden2, 0, Math.multiplyExact(seqLen, hiddenDim));
         MatMul.gemm(lw.w2(), state.hidden, state.normed, seqLen);
+        addBias(state.normed, lw.b2(), seqLen, dim);
     }
 
     /** The one-row FFN of the lazy tail, over {@code io} in place (gate into hidden/hidden2). */
@@ -429,8 +439,19 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         LayerWeights lw = weights.layers()[l];
         MatMul.gemm(lw.w1(), io, state.hidden, 1);
         MatMul.gemm(lw.w3(), io, state.hidden2, 1);
+        addBias(state.hidden, lw.b1(), 1, hiddenDim);
+        addBias(state.hidden2, lw.b3(), 1, hiddenDim);
         Activations.siluMultiply(state.hidden, 0, state.hidden2, 0, hiddenDim);
         MatMul.gemm(lw.w2(), state.hidden, io, 1);
+        addBias(io, lw.b2(), 1, dim);
+    }
+
+    private static void addBias(
+            MemoryView<MemorySegment> output,
+            MemoryView<MemorySegment> bias,
+            int rows,
+            int columns) {
+        if (bias != null) Ops.addRowBiasInPlace(output, 0, bias, 0, rows, columns);
     }
 
     // === Configuration ===
@@ -499,13 +520,20 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
     public record LayerWeights(
             MemoryView<MemorySegment> attnNorm,
             MemoryView<MemorySegment> wq,
+            MemoryView<MemorySegment> bq,
             MemoryView<MemorySegment> wk,
+            MemoryView<MemorySegment> bk,
             MemoryView<MemorySegment> wv,
+            MemoryView<MemorySegment> bv,
             MemoryView<MemorySegment> wo,
+            MemoryView<MemorySegment> bo,
             MemoryView<MemorySegment> ffnNorm,
             MemoryView<MemorySegment> w1,
+            MemoryView<MemorySegment> b1,
             MemoryView<MemorySegment> w2,
-            MemoryView<MemorySegment> w3) {}
+            MemoryView<MemorySegment> b2,
+            MemoryView<MemorySegment> w3,
+            MemoryView<MemorySegment> b3) {}
 
     public record Weights(
             MemoryView<MemorySegment> tokenEmbeddings,
@@ -630,16 +658,40 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         }
         String arch = gguf.getString("general.architecture");
+        Configuration config = readConfiguration(gguf, arch, tokenizer.vocabulary().size());
+
+        Map<String, MemoryView<MemorySegment>> tensors =
+                ModelLoader.loadTensors(fileChannel, gguf, arena);
+        RoPE.Schedule rope = buildRope(gguf, arch, config, tensors);
+        return new Llama(config, tokenizer, loadWeights(tensors, config, rope));
+    }
+
+    static Configuration readConfiguration(GGUF gguf, String arch, int vocabularySize) {
+        require(
+                arch.equals("llama")
+                        || arch.equals("minicpm")
+                        || arch.equals("mistral3")
+                        || arch.equals("smollm3"),
+                "unsupported architecture '" + arch + "'");
 
         int contextLength = gguf.getValue(int.class, arch + ".context_length");
         int embeddingLength = gguf.getValue(int.class, arch + ".embedding_length");
         int numberOfLayers = gguf.getValue(int.class, arch + ".block_count");
         int numberOfHeads = gguf.getValue(int.class, arch + ".attention.head_count");
+        require(
+                contextLength > 0
+                        && embeddingLength > 0
+                        && numberOfLayers > 0
+                        && numberOfHeads > 0
+                        && vocabularySize > 0,
+                "invalid core dimensions");
         int numberOfKeyValueHeads =
                 gguf.getValueOrDefault(int.class, arch + ".attention.head_count_kv", numberOfHeads);
+        String keyLengthKey = arch + ".attention.key_length";
         int headSize =
-                gguf.getValueOrDefault(
-                        int.class, arch + ".attention.key_length", embeddingLength / numberOfHeads);
+                gguf.getValueOrDefault(int.class, keyLengthKey, embeddingLength / numberOfHeads);
+        int valueHeadSize =
+                gguf.getValueOrDefault(int.class, arch + ".attention.value_length", headSize);
         int hiddenDim = gguf.getValue(int.class, arch + ".feed_forward_length");
         float rmsNormEps =
                 gguf.getValueOrDefault(
@@ -681,7 +733,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         numberOfHeads,
                         numberOfKeyValueHeads,
                         headSize,
-                        tokenizer.vocabulary().size(),
+                        vocabularySize,
                         contextLength,
                         rmsNormEps,
                         ropeTheta,
@@ -694,11 +746,54 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                         attnTempFloorScale,
                         attentionScale,
                         noRopeLayerStep);
-
-        Map<String, MemoryView<MemorySegment>> tensors =
-                ModelLoader.loadTensors(fileChannel, gguf, arena);
-        RoPE.Schedule rope = buildRope(gguf, arch, config, tensors);
-        return new Llama(config, tokenizer, loadWeights(tensors, config, rope));
+        require(
+                numberOfKeyValueHeads > 0
+                        && numberOfHeads % numberOfKeyValueHeads == 0
+                        && (gguf.containsKey(keyLengthKey) || embeddingLength % numberOfHeads == 0)
+                        && headSize > 0
+                        && valueHeadSize == headSize
+                        && hiddenDim > 0,
+                "invalid or unsupported attention/FFN dimensions");
+        require(
+                ropeDimensionCount > 0
+                        && (ropeDimensionCount & 1) == 0
+                        && ropeDimensionCount <= headSize,
+                "invalid RoPE dimensions");
+        require(
+                rmsNormEps > 0f
+                        && Float.isFinite(rmsNormEps)
+                        && ropeTheta > 0f
+                        && Float.isFinite(ropeTheta),
+                "invalid normalization or RoPE metadata");
+        require(
+                embeddingScale > 0f
+                        && Float.isFinite(embeddingScale)
+                        && residualScale > 0f
+                        && Float.isFinite(residualScale)
+                        && logitScale > 0f
+                        && Float.isFinite(logitScale),
+                "invalid model scaling metadata");
+        require(
+                attnTempScale >= 0f
+                        && Float.isFinite(attnTempScale)
+                        && (attnTempScale == 0f || attnTempFloorScale > 0)
+                        && (attentionScale == 0f
+                                || attentionScale > 0f && Float.isFinite(attentionScale)),
+                "invalid attention scaling metadata");
+        require(
+                gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
+                        == vocabularySize,
+                "tokenizer vocabulary does not match the model");
+        require(
+                gguf.getValueOrDefault(int.class, arch + ".expert_count", 0) == 0,
+                "MoE checkpoints are not supported");
+        try {
+            Math.multiplyExact(numberOfHeads, headSize);
+            Math.multiplyExact(numberOfKeyValueHeads, headSize);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("Llama: attention dimensions overflow", overflow);
+        }
+        return config;
     }
 
     /**
@@ -711,15 +806,11 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             String arch,
             Configuration config,
             Map<String, MemoryView<MemorySegment>> tensors) {
-        int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
+        int ropeDim = config.ropeDimensionCount;
         String scalingType = gguf.getValueOrDefault(String.class, arch + ".rope.scaling.type", "");
-        if (scalingType.equals("longrope")) {
-            // MiniCPM3/4 write rope_factors_long/short.weight, chosen by context length; plain
-            // RoPE here would drift from the reference at every position, silently
-            throw new IllegalArgumentException(
-                    arch + ": rope.scaling.type longrope is not supported yet");
-        }
+        Optional<float[]> factors = ModelLoader.ropeFreqFactors(tensors);
         if (scalingType.equals("yarn")) {
+            require(factors.isEmpty(), "rope_freqs.weight cannot be combined with YaRN");
             float factor = gguf.getValue(float.class, arch + ".rope.scaling.factor");
             int origCtx = gguf.getValue(int.class, arch + ".rope.scaling.original_context_length");
             float betaFast =
@@ -729,6 +820,16 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             float logMul =
                     gguf.getValueOrDefault(
                             float.class, arch + ".rope.scaling.yarn_log_multiplier", 0f);
+            require(
+                    factor > 0f
+                            && Float.isFinite(factor)
+                            && origCtx > 0
+                            && betaFast > 0f
+                            && Float.isFinite(betaFast)
+                            && betaSlow > 0f
+                            && Float.isFinite(betaSlow)
+                            && Float.isFinite(logMul),
+                    "invalid YaRN metadata");
             // llama.cpp net amplitude: get_mscale(f,1)/get_mscale(f,logMul), with
             // get_mscale(f,m) = f<=1 ? 1 : 1+0.1·m·ln f  (logMul=0 → denominator 1). RoPE.yarn
             // multiplies attnFactor by ggml's internal (1+0.1 ln f), so divide that back out.
@@ -736,12 +837,22 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             float mscale1 = factor <= 1f ? 1f : 1f + 0.1f * lnF;
             float mscaleAll = factor <= 1f ? 1f : 1f + 0.1f * logMul * lnF;
             float attnFactor = mscale1 / mscaleAll / (1f + 0.1f * lnF);
+            require(attnFactor > 0f && Float.isFinite(attnFactor), "invalid YaRN amplitude");
             return RoPE.yarn(
                     ropeDim, config.ropeTheta, factor, origCtx, betaFast, betaSlow, 1f, attnFactor);
         }
-        return ModelLoader.ropeFreqFactors(tensors)
-                .map(freqs -> RoPE.withFreqFactors(ropeDim, config.ropeTheta, freqs))
-                .orElseGet(() -> RoPE.plain(ropeDim, config.ropeTheta));
+        require(
+                scalingType.isEmpty() || scalingType.equals("none") || scalingType.equals("llama3"),
+                "unsupported rope.scaling.type '" + scalingType + "'");
+        require(
+                !scalingType.equals("llama3") || factors.isPresent(),
+                "llama3 RoPE requires rope_freqs.weight");
+        if (factors.isEmpty()) return RoPE.plain(ropeDim, config.ropeTheta);
+        float[] values = factors.orElseThrow();
+        require(values.length == ropeDim / 2, "rope_freqs.weight has the wrong length");
+        for (float value : values)
+            require(value > 0f && Float.isFinite(value), "rope_freqs.weight contains invalid data");
+        return RoPE.withFreqFactors(ropeDim, config.ropeTheta, values);
     }
 
     static Weights loadWeights(
@@ -758,18 +869,41 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         LayerWeights[] layers = new LayerWeights[n];
         for (int i = 0; i < n; i++) {
             String p = "blk." + i + ".";
+            if (!tensors.containsKey(p + "attn_q.weight")
+                    && tensors.containsKey(p + "attn_qkv.weight")) {
+                throw new IllegalArgumentException(
+                        "Llama: fused QKV checkpoints are not supported");
+            }
             layers[i] =
                     new LayerWeights(
                             ModelLoader.requireF32(tensors, p + "attn_norm.weight"),
                             ModelLoader.require(tensors, p + "attn_q.weight"),
+                            optionalBias(tensors, p + "attn_q.bias", config.queryDim()),
                             ModelLoader.require(tensors, p + "attn_k.weight"),
+                            optionalBias(tensors, p + "attn_k.bias", config.kvDim()),
                             ModelLoader.require(tensors, p + "attn_v.weight"),
+                            optionalBias(tensors, p + "attn_v.bias", config.kvDim()),
                             ModelLoader.require(tensors, p + "attn_output.weight"),
+                            optionalBias(tensors, p + "attn_output.bias", config.embeddingLength),
                             ModelLoader.requireF32(tensors, p + "ffn_norm.weight"),
                             ModelLoader.require(tensors, p + "ffn_gate.weight"),
+                            optionalBias(tensors, p + "ffn_gate.bias", config.hiddenDim),
                             ModelLoader.require(tensors, p + "ffn_down.weight"),
-                            ModelLoader.require(tensors, p + "ffn_up.weight"));
+                            optionalBias(tensors, p + "ffn_down.bias", config.embeddingLength),
+                            ModelLoader.require(tensors, p + "ffn_up.weight"),
+                            optionalBias(tensors, p + "ffn_up.bias", config.hiddenDim));
         }
         return new Weights(tokenEmbeddings, layers, finalNorm, rope, wcls);
+    }
+
+    private static MemoryView<MemorySegment> optionalBias(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int width) {
+        MemoryView<MemorySegment> bias = ModelLoader.findF32(tensors, name).orElse(null);
+        if (bias != null) require(bias.shape().size() == width, name + " has the wrong length");
+        return bias;
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) throw new IllegalArgumentException("Llama: " + message);
     }
 }

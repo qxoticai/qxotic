@@ -9,12 +9,12 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
-final class GraniteCheckpointCodecTest {
+final class LlamaCheckpointCodecTest {
 
     @Test
     void restoresAChainByteExactly() {
-        GraniteCheckpointCodec codec = new GraniteCheckpointCodec(config());
-        assertEquals(0, codec.byteSize(0), "rows alone resume, no residue");
+        LlamaCheckpointCodec codec = new LlamaCheckpointCodec(config());
+        assertEquals(0, codec.byteSize(0));
         assertEquals(32, codec.byteSize(2));
         assertEquals(64, codec.byteSize(4));
 
@@ -23,34 +23,32 @@ final class GraniteCheckpointCodecTest {
             MemorySegment second = patterned(arena, codec.byteSize(2), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(4), 64);
-            Granite.State state =
-                    new Granite.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
+            Llama.State state =
+                    new Llama.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
 
             codec.restore(state, 0, 2, first);
             codec.restore(state, 2, 4, second);
             state.resumeAt(4);
             codec.capture(state, 0, 4, actual);
 
-            // each checkpoint chunk is L0 K,V then L1 K,V (8B each at kvDim 2); the full-span
-            // save writes L0 K[0,4), L0 V[0,4), L1 K[0,4), L1 V[0,4)
-            MemorySegment.copy(first, 0, expected, 0, 8); // L0 K[0,2)
-            MemorySegment.copy(second, 0, expected, 8, 8); // L0 K[2,4)
-            MemorySegment.copy(first, 8, expected, 16, 8); // L0 V[0,2)
-            MemorySegment.copy(second, 8, expected, 24, 8); // L0 V[2,4)
-            MemorySegment.copy(first, 16, expected, 32, 8); // L1 K[0,2)
-            MemorySegment.copy(second, 16, expected, 40, 8); // L1 K[2,4)
-            MemorySegment.copy(first, 24, expected, 48, 8); // L1 V[0,2)
-            MemorySegment.copy(second, 24, expected, 56, 8); // L1 V[2,4)
+            MemorySegment.copy(first, 0, expected, 0, 8);
+            MemorySegment.copy(second, 0, expected, 8, 8);
+            MemorySegment.copy(first, 8, expected, 16, 8);
+            MemorySegment.copy(second, 8, expected, 24, 8);
+            MemorySegment.copy(first, 16, expected, 32, 8);
+            MemorySegment.copy(second, 16, expected, 40, 8);
+            MemorySegment.copy(first, 24, expected, 48, 8);
+            MemorySegment.copy(second, 24, expected, 56, 8);
             assertEquals(-1, expected.mismatch(actual));
         }
     }
 
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
-        GraniteCheckpointCodec codec = new GraniteCheckpointCodec(config());
+        LlamaCheckpointCodec codec = new LlamaCheckpointCodec(config());
         try (Arena arena = Arena.ofConfined()) {
-            Granite.State state =
-                    new Granite.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
+            Llama.State state =
+                    new Llama.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));
@@ -67,23 +65,8 @@ final class GraniteCheckpointCodecTest {
         return blob;
     }
 
-    private static Granite.Configuration config() {
-        return new Granite.Configuration(
-                4, // embeddingLength
-                2, // numberOfLayers
-                2, // numberOfHeads
-                1, // numberOfKeyValueHeads
-                2, // headSize
-                8, // vocabularySize
-                16, // contextLength
-                1e-5f, // rmsNormEps
-                10_000f, // ropeTheta
-                2, // ropeDimensionCount
-                8, // hiddenDim
-                1f, // embeddingScale
-                1f, // residualScale
-                1f, // logitScale
-                0f, // attentionScaleValue
-                true); // useRope
+    private static Llama.Configuration config() {
+        return new Llama.Configuration(
+                4, 2, 2, 1, 2, 8, 16, 1e-5f, 10_000f, 2, 8, 1f, 1f, 1f, 0f, 0, 0f, 0);
     }
 }

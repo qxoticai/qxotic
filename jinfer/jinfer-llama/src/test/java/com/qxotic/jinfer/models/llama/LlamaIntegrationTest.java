@@ -1,0 +1,156 @@
+package com.qxotic.jinfer.models.llama;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Models;
+import java.lang.foreign.Arena;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+final class LlamaIntegrationTest {
+
+    private static final String MODEL_PROPERTY = "jinfer.llama.model";
+    private static final String LLAMA_LOGITS_PROPERTY = "jinfer.llama.llamaLogits";
+    private static final String PROMPT = "The quick brown fox jumps over the lazy dog.";
+
+    @Test
+    @Tag("integration")
+    void everyIncrementalAndBatchedRowMatchesLlamaCpp() throws Exception {
+        Path modelPath = requiredFile(MODEL_PROPERTY);
+        float[] expected = readFloats(requiredFile(LLAMA_LOGITS_PROPERTY));
+        try (Arena arena = Arena.ofShared()) {
+            Llama model = Llama.loadModel(modelPath, arena);
+            int[] tokens = withBos(model.tokenizer().encodeToArray(PROMPT));
+            int vocabulary = model.configuration().vocabularySize();
+            assertEquals(tokens.length * vocabulary, expected.length);
+
+            try (Llama.State state = model.newState(64, 1)) {
+                for (int row = 0; row < tokens.length; row++) {
+                    model.ingest(state, Batch.step(tokens[row]));
+                    assertParity(expected, row, vocabulary, logits(model, state, 0));
+                }
+            }
+            try (Llama.State state = model.newState(64, tokens.length)) {
+                model.ingest(state, Batch.score(tokens));
+                for (int row = 0; row < tokens.length; row++) {
+                    float[] first = logits(model, state, row);
+                    assertParity(expected, row, vocabulary, first);
+                    assertArrayEquals(first, logits(model, state, row), "lazy tail must repeat");
+                }
+            }
+        }
+    }
+
+    @Test
+    @Tag("integration")
+    void nativeLlamaPromptMatchesTheGgufJinjaTemplate() throws Exception {
+        try (Arena weights = Arenas.newCrossThread();
+                ChatEngine engine =
+                        new ChatEngine(
+                                Models.load(requiredFile(MODEL_PROPERTY), weights),
+                                "llama-template-parity",
+                                PromptCache.Options.DEFAULTS)) {
+            for (List<Message> messages :
+                    List.of(
+                            List.of(Message.user("Hello")),
+                            List.of(Message.system("Be terse."), Message.user(" Hello \n")),
+                            List.of(
+                                    Message.user("One"),
+                                    Message.assistant("Two"),
+                                    Message.user("Three")))) {
+                Conversation conversation = new Conversation(messages, List.of(), false, "");
+                int[] nativeIds = Batch.tokenIds(engine.encode(conversation, null).prompt());
+                int[] jinjaIds =
+                        Batch.tokenIds(
+                                engine.encode(conversation, Map.of("parity_check", true)).prompt());
+                assertArrayEquals(jinjaIds, nativeIds);
+            }
+        }
+    }
+
+    private static int[] withBos(int[] tokens) {
+        int bos = Integer.getInteger("jinfer.llama.bos", -1);
+        if (bos < 0) return tokens;
+        int[] result = Arrays.copyOf(tokens, tokens.length + 1);
+        System.arraycopy(result, 0, result, 1, tokens.length);
+        result[0] = bos;
+        return result;
+    }
+
+    private static void assertParity(float[] matrix, int row, int columns, float[] actual) {
+        float[] expected = Arrays.copyOfRange(matrix, row * columns, (row + 1) * columns);
+        assertEquals(argmax(expected), argmax(actual), "row " + row + " argmax");
+        assertTrue(rmse(expected, actual) < .2, "row " + row + " RMSE");
+        assertTrue(maxAbsDifference(expected, actual) < 1f, "row " + row + " max difference");
+        assertTrue(cosine(expected, actual) > .995, "row " + row + " cosine");
+    }
+
+    private static Path requiredFile(String property) {
+        String configured = System.getProperty(property, "");
+        assumeTrue(!configured.isBlank(), "set -D" + property + "=/path/to/file");
+        Path path = Path.of(configured);
+        assumeTrue(Files.isRegularFile(path), path + " is not a file");
+        return path;
+    }
+
+    private static float[] readFloats(Path path) throws Exception {
+        byte[] bytes = Files.readAllBytes(path);
+        assertEquals(0, bytes.length % Float.BYTES, "reference logits must be raw FP32");
+        float[] values = new float[bytes.length / Float.BYTES];
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(values);
+        return values;
+    }
+
+    private static float[] logits(Llama model, Llama.State state, int output) {
+        return Views.toFloatArray(
+                Views.castToSegmentBacked(model.logits(state, output), "logits"), "logits");
+    }
+
+    private static int argmax(float[] values) {
+        int best = 0;
+        for (int i = 1; i < values.length; i++) if (values[i] > values[best]) best = i;
+        return best;
+    }
+
+    private static float maxAbsDifference(float[] left, float[] right) {
+        float max = 0f;
+        for (int i = 0; i < left.length; i++) max = Math.max(max, Math.abs(left[i] - right[i]));
+        return max;
+    }
+
+    private static double rmse(float[] left, float[] right) {
+        double square = 0;
+        for (int i = 0; i < left.length; i++) {
+            double difference = left[i] - right[i];
+            square += difference * difference;
+        }
+        return Math.sqrt(square / left.length);
+    }
+
+    private static double cosine(float[] left, float[] right) {
+        double dot = 0, aa = 0, bb = 0;
+        for (int i = 0; i < left.length; i++) {
+            dot += (double) left[i] * right[i];
+            aa += (double) left[i] * left[i];
+            bb += (double) right[i] * right[i];
+        }
+        return dot / Math.sqrt(aa * bb);
+    }
+}
