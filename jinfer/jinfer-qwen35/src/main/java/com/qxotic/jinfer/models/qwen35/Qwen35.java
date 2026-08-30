@@ -217,7 +217,7 @@ public final class Qwen35
                     rows,
                     weights.ropeHalf,
                     weights.rope);
-        else fillMediaRope(state, positions, rows);
+        else fillMediaRope(state, positions, startPos, rows);
         Convert.copyF32(rowsView, 0, state.residual, 0, (long) rows * c.embeddingLength);
         if (c.hasMtp()) mtpInputs(state, state.residual, rows);
         for (int layer = 0; layer < c.numberOfLayers; layer++)
@@ -256,7 +256,7 @@ public final class Qwen35
         if (c.hasMtp()) synchronizeMtp(state, startPos, rows);
     }
 
-    private void fillMediaRope(State state, Batch.Positions positions, int rows) {
+    private void fillMediaRope(State state, Batch.Positions positions, int startPos, int rows) {
         Configuration c = configuration;
         if (positions.dimensions() != 3)
             throw new IllegalArgumentException(
@@ -264,7 +264,7 @@ public final class Qwen35
         int lanes = weights.ropeHalf;
         int[] section = c.ropeDimensionSections;
         float[][] angles = state.mediaRopeAngles;
-        int base = Math.addExact(state.position(), state.ropeDelta);
+        int base = Math.addExact(startPos, state.ropeDelta);
         for (int row = 0; row < rows; row++) {
             for (int d = 0; d < 3; d++)
                 weights.rope.angles(Math.addExact(base, positions.value(row, d)), angles[d]);

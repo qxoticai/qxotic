@@ -54,12 +54,15 @@ class Qwen35VisionComponentsTest {
                 () -> Qwen35VisionPreprocess.smartResize(640, 480, 32, 4096, 8));
     }
 
+    /** mean = std = 0.5: the [0,1] pixel space centered to [-1,1]. */
+    private static final float[] HALF = {0.5f, 0.5f, 0.5f};
+
     @Test
     void normalizeIsChannelFirstAndCentersPixelSpace() {
         // One RGB pixel (1x1) upsampled to 2x2: every output pixel is that same pixel, but the
         // layout is CHW and values are shifted from [0,1] to [-1,1].
         Media.Image image = new Media.Image(new float[] {0.25f, 0.5f, 0.75f}, 1, 1, 3);
-        float[] out = Qwen35VisionPreprocess.normalize(image, 2, 2);
+        float[] out = Qwen35VisionPreprocess.normalize(image, 2, 2, HALF, HALF);
 
         assertEquals(12, out.length); // 3 channels * 2 * 2
         float[] expected = {
@@ -81,7 +84,7 @@ class Qwen35VisionComponentsTest {
         // 1x2 image -> 4x4 target. Scale-to-fit gives 2x4 content centered horizontally, so the
         // left and right columns are black pad (-1 after normalization).
         Media.Image image = new Media.Image(new float[] {0.25f, 0.5f, 0.75f, 1f, 0f, 0f}, 2, 1, 3);
-        float[] out = Qwen35VisionPreprocess.normalize(image, 4, 4);
+        float[] out = Qwen35VisionPreprocess.normalize(image, 4, 4, HALF, HALF);
         int plane = 16;
         for (int y = 0; y < 4; y++) {
             for (int c = 0; c < 3; c++) {
@@ -96,9 +99,8 @@ class Qwen35VisionComponentsTest {
     }
 
     @Test
-    void positionsCountPostMergeRows() {
-        Media.Image image = new Media.Image(new float[640 * 480 * 3], 480, 640, 3);
-        assertEquals(300, Qwen35VisionPreprocess.positions(image, 16, 2));
+    void mergedGridCountsPostMergeRows() {
+        assertArrayEquals(new int[] {15, 20}, Qwen35VisionPreprocess.mergedGrid(480, 640, 16, 2));
     }
 
     @Test

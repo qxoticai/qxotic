@@ -29,17 +29,11 @@ final class Qwen35VisionPreprocess {
         return budget;
     }
 
-    /** Number of merged (post-spatial-merge) rows an image produces. */
-    static int positions(Media.Image image, int patchSize, int merge) {
-        int[] size =
-                smartResize(
-                        image.width(),
-                        image.height(),
-                        Math.multiplyExact(patchSize, merge),
-                        MIN_IMAGE_TOKENS,
-                        MAX_IMAGE_TOKENS);
-        int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
-        return Math.multiplyExact(patchesX, patchesY) / Math.multiplyExact(merge, merge);
+    /** The {width, height} of the resized image in merged (post-spatial-merge) patches. */
+    static int[] mergedGrid(int width, int height, int patchSize, int merge) {
+        int cell = Math.multiplyExact(patchSize, merge);
+        int[] size = smartResize(width, height, cell, MIN_IMAGE_TOKENS, MAX_IMAGE_TOKENS);
+        return new int[] {size[0] / cell, size[1] / cell};
     }
 
     /**
@@ -67,22 +61,13 @@ final class Qwen35VisionPreprocess {
     }
 
     /**
-     * Align-corners bilinear resize to {@code targetWidth x targetHeight}, normalized to [-1,1]
-     * (mean = std = 0.5) in CHW plane order.
+     * Align-corners bilinear resize to {@code targetWidth x targetHeight}, normalized per channel
+     * to {@code (v - mean) / std} in CHW plane order.
      *
      * <p>llama.cpp's qwen3vl preprocessor uses PAD_CEIL (scale-to-fit, center, fill the remainder
-     * black), not scale-to-fill. The black pad is applied in [0,1] value space before the {@code
-     * 2*v-1} normalization.
+     * black), not scale-to-fill. The black pad is applied in [0,1] value space before the
+     * normalization.
      */
-    static float[] normalize(Media.Image image, int targetWidth, int targetHeight) {
-        return normalize(
-                image,
-                targetWidth,
-                targetHeight,
-                new float[] {0.5f, 0.5f, 0.5f},
-                new float[] {0.5f, 0.5f, 0.5f});
-    }
-
     static float[] normalize(
             Media.Image image, int targetWidth, int targetHeight, float[] mean, float[] std) {
         int plane = Math.multiplyExact(targetHeight, targetWidth);

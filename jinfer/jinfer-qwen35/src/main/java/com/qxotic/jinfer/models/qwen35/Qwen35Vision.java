@@ -164,23 +164,20 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
 
     @Override
     public int positions(Media.Image image) {
-        return Qwen35VisionPreprocess.positions(
-                Objects.requireNonNull(image, "image"), patchSize, merge);
+        int[] grid = mergedGrid(image);
+        return Math.multiplyExact(grid[0], grid[1]);
+    }
+
+    /** The image's {width, height} in merged patches; the decoder sees one row per cell. */
+    private int[] mergedGrid(Media.Image image) {
+        Objects.requireNonNull(image, "image");
+        return Qwen35VisionPreprocess.mergedGrid(image.width(), image.height(), patchSize, merge);
     }
 
     @Override
     public Batch.Positions decoderPositions(Media.Image image) {
-        Objects.requireNonNull(image, "image");
-        int[] size =
-                Qwen35VisionPreprocess.smartResize(
-                        image.width(),
-                        image.height(),
-                        Math.multiplyExact(patchSize, merge),
-                        Qwen35VisionPreprocess.MIN_IMAGE_TOKENS,
-                        Qwen35VisionPreprocess.MAX_IMAGE_TOKENS);
-        int mergedPatch = Math.multiplyExact(patchSize, merge);
-        int width = size[0] / mergedPatch;
-        int height = size[1] / mergedPatch;
+        int[] grid = mergedGrid(image);
+        int width = grid[0], height = grid[1];
         int[] positions = new int[Math.multiplyExact(3, Math.multiplyExact(width, height))];
         for (int row = 0; row < width * height; row++) {
             positions[row * 3 + 1] = row / width;

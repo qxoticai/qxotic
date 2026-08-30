@@ -56,11 +56,7 @@ public final class MediaEncodingCache {
                                 Shape.flat(count, dimension));
                 return new Batch(
                         new Batch.Input.Embeddings(
-                                view,
-                                count,
-                                bidirectional,
-                                contentKey,
-                                positions == null ? null : positions.copy()),
+                                view, count, bidirectional, contentKey, positions),
                         outputs);
             }
 
@@ -168,7 +164,7 @@ public final class MediaEncodingCache {
                         Math.toIntExact(rows.shape().flatAt(1)),
                         embeddings.bidirectional(),
                         embeddings.contentKey(),
-                        embeddings.positions() == null ? null : embeddings.positions().copy(),
+                        embeddings.positions(),
                         batch.outputs());
             }
             case Batch.Input.Sequences ignored ->
