@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
 class KimiDeltaAttentionTest {
@@ -35,11 +33,11 @@ class KimiDeltaAttentionTest {
                         -3f * softplus(1.5f),
                         -3f * softplus(2.5f)
                     },
-                    floats(gate),
+                    Views.toFloatArray(gate, "gate"),
                     1e-6f);
             assertArrayEquals(
                     new float[] {Activations.sigmoid(-1f), Activations.sigmoid(2f)},
-                    floats(beta),
+                    Views.toFloatArray(beta, "beta"),
                     1e-6f);
         }
     }
@@ -79,8 +77,8 @@ class KimiDeltaAttentionTest {
                     rows,
                     heads,
                     dim);
-            assertArrayEquals(expected, floats(out), tolerance);
-            assertArrayEquals(expectedState, floats(state), tolerance);
+            assertArrayEquals(expected, Views.toFloatArray(out, "out"), tolerance);
+            assertArrayEquals(expectedState, Views.toFloatArray(state, "state"), tolerance);
         }
     }
 
@@ -127,12 +125,5 @@ class KimiDeltaAttentionTest {
 
     private static float softplus(float x) {
         return (float) Math.log1p(Math.exp(x));
-    }
-
-    private static float[] floats(com.qxotic.jota.memory.MemoryView<MemorySegment> view) {
-        return view.memory()
-                .base()
-                .asSlice(view.byteOffset(), view.logicalSize() * Float.BYTES)
-                .toArray(ValueLayout.JAVA_FLOAT);
     }
 }

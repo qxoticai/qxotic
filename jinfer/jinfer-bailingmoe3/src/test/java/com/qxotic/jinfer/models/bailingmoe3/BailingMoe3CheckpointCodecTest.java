@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.bailingmoe3;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -20,10 +21,8 @@ final class BailingMoe3CheckpointCodecTest {
     void parsesScalarAndPerLayerClampsAndRejectsUnknownRopeScaling() {
         var scalar = Builder.newBuilder().putFloat("clamp", 3f).build();
         var array = Builder.newBuilder().putArrayOfFloat("clamp", new float[] {1f, 2f, 3f}).build();
-        org.junit.jupiter.api.Assertions.assertArrayEquals(
-                new float[] {3f, 3f, 3f}, BailingMoe3.layerFloats(scalar, "clamp", 3));
-        org.junit.jupiter.api.Assertions.assertArrayEquals(
-                new float[] {1f, 2f, 3f}, BailingMoe3.layerFloats(array, "clamp", 3));
+        assertArrayEquals(new float[] {3f, 3f, 3f}, BailingMoe3.layerFloats(scalar, "clamp", 3));
+        assertArrayEquals(new float[] {1f, 2f, 3f}, BailingMoe3.layerFloats(array, "clamp", 3));
 
         var unsupported =
                 Builder.newBuilder().putString("bailingmoe3.rope.scaling.type", "longrope").build();

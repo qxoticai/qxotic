@@ -39,6 +39,7 @@ import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 
@@ -407,9 +408,7 @@ public final class BailingMoe3
         MatMul.gemm(w.router, s.normed, s.moeRouter, rows);
         Ops.mapInPlace(s.moeRouter, 0, rows * c.expertCount, Activations::sigmoid);
         Convert.copyF32(s.moeRouter, 0, s.moeSelection, 0, (long) rows * c.expertCount);
-        for (int row = 0; row < rows; row++)
-            Ops.addInPlace(
-                    s.moeSelection, (long) row * c.expertCount, w.selectionBias, 0, c.expertCount);
+        Ops.addRowBiasInPlace(s.moeSelection, 0, w.selectionBias, 0, rows, c.expertCount);
         Moe.selectTopKGrouped(
                 s.moeSelection,
                 s.moeRouter,
@@ -952,11 +951,6 @@ public final class BailingMoe3
                         && c.expertWeightsScale > 0f
                         && Float.isFinite(c.expertWeightsScale),
                 "invalid MoE dimensions");
-        require(c.isAttention.length == c.storedLayers(), "invalid attention layer map");
-        require(
-                c.expertSwiGluClamp.length == c.storedLayers()
-                        && c.sharedSwiGluClamp.length == c.storedLayers(),
-                "invalid SwiGLU clamp metadata");
     }
 
     static float[] layerFloats(GGUF gguf, String key, int layers) {
@@ -968,7 +962,7 @@ public final class BailingMoe3
             return stored;
         }
         float value = gguf.getValue(float.class, key);
-        java.util.Arrays.fill(values, value);
+        Arrays.fill(values, value);
         return values;
     }
 

@@ -16,34 +16,6 @@ public final class KimiDeltaAttention {
     private KimiDeltaAttention() {}
 
     /**
-     * {@code gate = lowerBound*sigmoid((projection + dtBias)*a); beta = sigmoid(betaProjection)}.
-     */
-    public static void gates(
-            MemoryView<MemorySegment> projection,
-            MemoryView<MemorySegment> betaProjection,
-            MemoryView<MemorySegment> dtBias,
-            MemoryView<MemorySegment> a,
-            MemoryView<MemorySegment> gate,
-            MemoryView<MemorySegment> beta,
-            int rows,
-            int heads,
-            int headDim,
-            float lowerBound) {
-        gates(
-                projection,
-                betaProjection,
-                dtBias,
-                a,
-                gate,
-                beta,
-                rows,
-                heads,
-                headDim,
-                true,
-                lowerBound);
-    }
-
-    /**
      * Prepares safe ({@code lowerBound*sigmoid(x*a)}) or legacy ({@code a*softplus(x)}) KDA decay
      * gates, plus the sigmoid beta gate.
      */

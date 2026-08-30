@@ -223,15 +223,11 @@ public final class BailingMoe3ChatTemplate implements ChatTemplate {
     }
 
     private static String stripLeadingNewlines(String text) {
-        int at = 0;
-        while (at < text.length() && text.charAt(at) == '\n') at++;
-        return text.substring(at);
+        return text.replaceFirst("^\n+", "");
     }
 
     private static String stripTrailingNewlines(String text) {
-        int at = text.length();
-        while (at > 0 && text.charAt(at - 1) == '\n') at--;
-        return text.substring(0, at);
+        return text.replaceFirst("\n+$", "");
     }
 
     private static String text(Message message) {
