@@ -11,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Server-Sent-Events transport: the per-response {@link Stream} (frame encoding, flush, and the
@@ -92,19 +91,16 @@ final class Sse {
     /**
      * A reaper closes any stream whose in-flight write has blocked past ITS OWN server's write
      * timeout; the blocked write then fails with IOException, aborting that generation cleanly. One
-     * reaper serves the process, but the threshold rides on each stream - two servers with
-     * different timeouts would otherwise both get whichever started first.
+     * per server, owned and stopped by its {@code Running}; the threshold rides on each stream, so
+     * two servers with different timeouts each reap their own streams correctly.
      */
-    private static final AtomicBoolean REAPER_STARTED = new AtomicBoolean();
-
-    static void startReaper() {
-        if (!REAPER_STARTED.compareAndSet(false, true)) return;
-        Thread.ofPlatform()
+    static Thread startReaper() {
+        return Thread.ofPlatform()
                 .name("sse-write-reaper")
                 .daemon(true)
                 .start(
                         () -> {
-                            while (true) {
+                            while (!Thread.currentThread().isInterrupted()) {
                                 try {
                                     Thread.sleep(1_000);
                                 } catch (InterruptedException e) {

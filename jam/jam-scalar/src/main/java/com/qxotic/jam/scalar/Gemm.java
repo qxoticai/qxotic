@@ -5,9 +5,6 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import com.qxotic.jam.JAM.Parallel;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicIntegerArray;
 
 /**
  * The prefill kernel ({@code n >= }{@link #MIN_N}): {@code C[t][i] = sum_l W[i][l] A[t][l]} with
@@ -75,32 +72,23 @@ final class Gemm {
             int tokens = Math.min(nb, n - t0), lanes = Tile.lanes(tokens), base = t0;
             Rows[] aT = new Rows[kBlocks];
             for (int kb = 0; kb < kBlocks; kb++) aT[kb] = scratch.panel(kb, kcPad, lanes);
-            AtomicIntegerArray packed = new AtomicIntegerArray(kBlocks);
-            AtomicInteger next = new AtomicInteger();
-            AtomicBoolean failed = new AtomicBoolean();
+            // two regions: the token block's k-blocks are packed, then the row groups sweep them
             parallel.forLoop(
-                    Math.min(kBlocks + groups, workers),
-                    worker -> {
-                        Scratch.Slot s = scratch.slot(worker);
-                        for (int item; (item = next.getAndIncrement()) < kBlocks + groups; ) {
-                            if (item < kBlocks) {
-                                int l0 = item * kc, len = Math.min(kc, k - l0);
-                                long src = aOff + ((long) base * lda + l0) * 4;
-                                try {
-                                    pack(a, src, lda, tokens, lanes, len, kcPad, aT[item], s);
-                                } catch (Throwable t) {
-                                    failed.set(true); // groups waiting on this block give up
-                                    throw t;
-                                }
-                                packed.set(item, 1);
-                                continue;
-                            }
-                            int row0 = (item - kBlocks) * g, rows = Math.min(g, m - row0);
-                            Rows c = group(w, row0, rows, k, kc, aT, packed, failed, lanes, s);
-                            long dst = rOff + ((long) base * ldr + row0) * 4;
-                            for (int i = 0; i < rows; i++)
-                                store(c.row(i), tokens, r, dst + i * 4L, ldr);
-                        }
+                    kBlocks,
+                    (kb, slot) -> {
+                        int l0 = kb * kc, len = Math.min(kc, k - l0);
+                        long src = aOff + ((long) base * lda + l0) * 4;
+                        pack(a, src, lda, tokens, lanes, len, kcPad, aT[kb], scratch.slot(slot));
+                    });
+            parallel.forLoop(
+                    groups,
+                    (gi, slot) -> {
+                        Scratch.Slot s = scratch.slot(slot);
+                        int row0 = gi * g, rows = Math.min(g, m - row0);
+                        Rows c = group(w, row0, rows, k, kc, aT, lanes, s);
+                        long dst = rOff + ((long) base * ldr + row0) * 4;
+                        for (int i = 0; i < rows; i++)
+                            store(c.row(i), tokens, r, dst + i * 4L, ldr);
                     });
         }
     }
@@ -130,24 +118,11 @@ final class Gemm {
 
     /** One work item: rows {@code row0 .. row0+rows} over all of k, into the slot's c rows. */
     private static Rows group(
-            Weight w,
-            int row0,
-            int rows,
-            int k,
-            int kc,
-            Rows[] aT,
-            AtomicIntegerArray packed,
-            AtomicBoolean failed,
-            int lanes,
-            Scratch.Slot s) {
+            Weight w, int row0, int rows, int k, int kc, Rows[] aT, int lanes, Scratch.Slot s) {
         Rows c = s.c.fit(G_MAX, NB);
         c.zero(0, rows, lanes);
         for (int kb = 0, l0 = 0; l0 < k; kb++, l0 += kc) {
             int len = Math.min(kc, k - l0), lenPad = Tile.padK(len);
-            while (packed.get(kb) == 0) {
-                if (failed.get()) return c;
-                Thread.onSpinWait();
-            }
             float[][] q = aT[kb].rows();
             for (int i = 0; i < rows; i += Tile.TR) {
                 for (int j = 0; j < Tile.TR; j++) {

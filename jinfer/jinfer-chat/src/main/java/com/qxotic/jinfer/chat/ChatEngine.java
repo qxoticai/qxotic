@@ -77,8 +77,11 @@ public final class ChatEngine implements AutoCloseable {
     private final JinjaChatTemplate jinja;
     private final ReentrantLock lock = new ReentrantLock(true);
     // Preparing a request (encode, sampler) reads the weights and the caches but never the
-    // generation state, so it runs beside a generation; what it must exclude is close()'s
-    // teardown of those weights. Prepares share the read side, teardown takes the write side.
+    // generation state, so it runs beside a generation: a text prepare then costs a caller
+    // nothing while a reply generates, which is what lets a stream be enqueued without waiting
+    // (a media projection is a Parallel region and queues on the pool behind the generation
+    // anyway). What a prepare must exclude is close()'s teardown of those weights: prepares
+    // share the read side, teardown takes the write side.
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     // THE cache: retained sessions + block tree + optional catalog, one front door (all access
     // under the generation lock - the facade is single-threaded by design, like the tree)

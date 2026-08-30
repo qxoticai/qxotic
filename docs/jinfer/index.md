@@ -48,7 +48,7 @@ java --add-modules jdk.incubator.vector \
 
 Endpoints: `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`, `/v1/detokenize`, `/health`, Prometheus `/metrics`. Chat supports streaming, tools, structured output, reasoning, stop strings, deterministic seeds, and multimodal content when the model has a projector.
 
-Loopback is the default. Non-loopback binding requires `--api-key`. Queue, body, thread, generation, and stalled-write limits have explicit CLI flags. Run `--help` for the full contract.
+Loopback is the default. Non-loopback binding requires `--api-key`. Queue, body, admission, generation, and stalled-write limits have explicit CLI flags. Run `--help` for the full contract.
 
 ## Models and capabilities
 
@@ -162,6 +162,7 @@ Framework users need only `retainSessions(n)`, `promptCache(path)`, and `withCac
 
 - Vector API kernels run on x86 and ARM. JAM is selected automatically when present.
 - Prompt ingestion is batched. Generation uses one serial state per pipeline; fork another pipeline for parallel inference.
+- Threads: `-Djinfer.threads` (default: physical cores) sizes the one pool every kernel and jam backend runs on; there is no other thread knob.
 - JFR events cover load, queue/prefill/decode/TTFT, cache state, media projection, and MTP. The packaged `jinfer.jfc` enables aggregate events and leaves per-token decode off.
 - The server exports request outcomes, phase timings, token counters, and cache/media gauges at `/metrics`.
 

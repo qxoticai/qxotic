@@ -86,4 +86,85 @@ class MatMulTest {
             assertTrue(e.getMessage().contains("alias"), e.getMessage());
         }
     }
+
+    /** A matmul from inside a region would order the backend lock after the pool's: refused. */
+    @Test
+    void refusesACallFromInsideARegion() {
+        try (Arena arena = Arena.ofShared()) {
+            var weights = Oracles.q8(arena, 4, 64, 7);
+            var input = Oracles.f32(arena, 64, 8);
+            var output = Oracles.f32(arena, 4, 9);
+            com.qxotic.jinfer.Parallel.forLoop(
+                    8,
+                    i ->
+                            assertThrows(
+                                    IllegalStateException.class,
+                                    () ->
+                                            MatMul.mm(
+                                                    Oracles.q8View(weights, 4L * 64),
+                                                    0,
+                                                    64,
+                                                    Oracles.f32View(input, 64),
+                                                    0,
+                                                    64,
+                                                    Oracles.f32View(output, 4),
+                                                    0,
+                                                    4,
+                                                    4,
+                                                    1,
+                                                    64)));
+        }
+    }
+
+    /**
+     * The one-region floor: in place (the result aliases the activation) equals out of place, on
+     * both the inline tiny path and the parallel path, for a matvec and a gemm.
+     */
+    @Test
+    void inPlaceMatchesOutOfPlaceOnBothPaths() {
+        try (Arena arena = Arena.ofShared()) {
+            int[][] shapes = {
+                {64, 64, 1}, {600, 600, 1}, {64, 64, 3}, {600, 600, 3}
+            }; // m=k: aliasable
+            for (int[] shape : shapes) {
+                int m = shape[0], k = shape[1], n = shape[2];
+                var weights = Oracles.q8(arena, m, k, 11);
+                var input = Oracles.f32(arena, n * k, 12);
+                var out = Oracles.f32(arena, n * m, 13);
+                MatMul.mm(
+                        Oracles.q8View(weights, (long) m * k),
+                        0,
+                        k,
+                        Oracles.f32View(input, n * k),
+                        0,
+                        k,
+                        Oracles.f32View(out, n * m),
+                        0,
+                        m,
+                        m,
+                        n,
+                        k);
+                var alias = Oracles.f32(arena, n * k, 12); // same values, result written over them
+                MatMul.mm(
+                        Oracles.q8View(weights, (long) m * k),
+                        0,
+                        k,
+                        Oracles.f32View(alias, n * k),
+                        0,
+                        k,
+                        Oracles.f32View(alias, n * k),
+                        0,
+                        m,
+                        m,
+                        n,
+                        k);
+                for (int i = 0; i < n * m; i++)
+                    assertEquals(
+                            out.getAtIndex(ValueLayout.JAVA_FLOAT, i),
+                            alias.getAtIndex(ValueLayout.JAVA_FLOAT, i),
+                            0f,
+                            "m=" + m + " n=" + n + " i=" + i);
+            }
+        }
+    }
 }

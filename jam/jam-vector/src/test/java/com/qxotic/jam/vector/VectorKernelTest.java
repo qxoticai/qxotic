@@ -4,6 +4,7 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jam.JAM;
+import com.qxotic.jam.TestPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Random;
@@ -80,7 +81,7 @@ class VectorKernelTest {
      * context would).
      */
     private static Gemm withScratch(BandGemm g) {
-        Scratch s = new Scratch();
+        Scratch s = new Scratch(TestPool.of(4));
         return (w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff) ->
                 g.run(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
     }
@@ -142,7 +143,7 @@ class VectorKernelTest {
     @Test
     void bandBlocking() {
         Assumptions.assumeTrue(VectorSupport.F_SPECIES.vectorBitSize() >= 128);
-        Scratch s = new Scratch();
+        Scratch s = new Scratch(TestPool.of(4));
         int m = 61, k = 768; // 3 k-blocks of 256; m not a multiple of MR
         record Deq(String name, int tag, com.qxotic.jam.vector.BandGemm.RowDequant deq) {}
         Deq[] deqs = {
@@ -218,5 +219,96 @@ class VectorKernelTest {
                 assertEquals(
                         sv, vv, sumAbs * 1e-2 + 1e-3, name + "[token " + j + ", row " + i + "]");
             }
+    }
+
+    /**
+     * A task that throws ends the gemm with that exception; the next gemm on the scratch is fine.
+     */
+    @Test
+    void aThrowingDequantSurfacesAndDoesNotWedgeThePool() {
+        Scratch s = new Scratch(TestPool.of(4));
+        int m = 512, n = 64, k = 512;
+        try (java.lang.foreign.Arena ar = java.lang.foreign.Arena.ofShared()) {
+            java.lang.foreign.MemorySegment w = ar.allocate((long) m * k * 34 / 32, 64);
+            java.lang.foreign.MemorySegment a = ar.allocate((long) n * k * 4, 64);
+            java.lang.foreign.MemorySegment o = ar.allocate((long) n * m * 4, 64);
+            RuntimeException boom = new IllegalStateException("row 100");
+            com.qxotic.jam.vector.BandGemm.RowDequant throwing =
+                    (seg, row, count, dst, base) -> {
+                        if (row / k == 100) throw boom;
+                        Q8Kernel.dequantizeRow(seg, row, count, dst, base);
+                    };
+            IllegalStateException thrown =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            IllegalStateException.class,
+                            () ->
+                                    com.qxotic.jam.vector.BandGemm.gemm(
+                                            w,
+                                            VectorSupport.vectorSegment(a),
+                                            VectorSupport.vectorBase(a),
+                                            VectorSupport.vectorSegment(o),
+                                            VectorSupport.vectorBase(o),
+                                            k,
+                                            m,
+                                            n,
+                                            m,
+                                            k,
+                                            0L,
+                                            s,
+                                            throwing));
+            org.junit.jupiter.api.Assertions.assertSame(boom, thrown);
+            com.qxotic.jam.vector.BandGemm.gemm(
+                    w,
+                    VectorSupport.vectorSegment(a),
+                    VectorSupport.vectorBase(a),
+                    VectorSupport.vectorSegment(o),
+                    VectorSupport.vectorBase(o),
+                    k,
+                    m,
+                    n,
+                    m,
+                    k,
+                    0L,
+                    s,
+                    Q8Kernel::dequantizeRow);
+        }
+    }
+
+    /** The band plan depends on the width, the result must not: bit-identical at 1, 3 and 8. */
+    @Test
+    void resultsAreIdenticalAtEveryWidth() {
+        int m = 1000, n = 96, k = 1024;
+        try (java.lang.foreign.Arena ar = java.lang.foreign.Arena.ofShared()) {
+            java.lang.foreign.MemorySegment w = ar.allocate((long) m * k * 34 / 32, 64);
+            java.lang.foreign.MemorySegment a = ar.allocate((long) n * k * 4, 64);
+            java.util.Random rng = new java.util.Random(11);
+            for (long b = 0; b < w.byteSize(); b++)
+                w.set(java.lang.foreign.ValueLayout.JAVA_BYTE, b, (byte) rng.nextInt(256));
+            for (int i = 0; i < n * k; i++)
+                a.set(java.lang.foreign.ValueLayout.JAVA_FLOAT, i * 4L, rng.nextFloat() - 0.5f);
+            float[] reference = null;
+            for (int width : new int[] {1, 3, 8}) {
+                java.lang.foreign.MemorySegment o = ar.allocate((long) n * m * 4, 64);
+                com.qxotic.jam.vector.BandGemm.gemm(
+                        w,
+                        VectorSupport.vectorSegment(a),
+                        VectorSupport.vectorBase(a),
+                        VectorSupport.vectorSegment(o),
+                        VectorSupport.vectorBase(o),
+                        k,
+                        m,
+                        n,
+                        m,
+                        k,
+                        0L,
+                        new Scratch(TestPool.of(width)),
+                        Q8Kernel::dequantizeRow);
+                float[] out = o.toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+                if (reference == null) reference = out;
+                else
+                    org.junit.jupiter.api.Assertions.assertArrayEquals(
+                            reference, out, "width " + width);
+            }
+        }
     }
 }

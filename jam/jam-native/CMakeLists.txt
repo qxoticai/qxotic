@@ -47,7 +47,6 @@ endif()
 add_library(jam SHARED
     src/jam.c
     src/jam_pool.c
-    src/jam_cpu.c
     src/kernels/jam_kernels_generic.c
 )
 target_include_directories(jam PUBLIC include PRIVATE src)
@@ -228,5 +227,5 @@ if (JAM_TESTS)
     # run exercises all kernels. The env-capped run additionally validates JAM_ISA parsing on the global ctx.
     add_test(NAME correctness         COMMAND jam_test)
     add_test(NAME correctness_env_cap COMMAND jam_test)
-    set_tests_properties(correctness_env_cap PROPERTIES ENVIRONMENT "JAM_ISA=avx2;JAM_THREADS=2")
+    set_tests_properties(correctness_env_cap PROPERTIES ENVIRONMENT "JAM_ISA=avx2")
 endif()

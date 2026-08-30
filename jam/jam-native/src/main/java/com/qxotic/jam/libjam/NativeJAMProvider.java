@@ -25,7 +25,6 @@ public final class NativeJAMProvider implements JAM.Provider {
 
     @Override
     public JAM create(JAM.Parallel parallel) {
-        NativeJAM.host = parallel;
-        return NativeJAM.global();
+        return NativeJAM.create(parallel);
     }
 }

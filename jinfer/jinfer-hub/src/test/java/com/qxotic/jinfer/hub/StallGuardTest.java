@@ -78,8 +78,20 @@ class StallGuardTest {
             // dead and we are back to waiting for the kernel
             assertTrue(seconds < 30, "gave up after " + seconds + "s - the stall guard is dead");
             assertTrue(Files.exists(dir.resolve("stall.bin.part")), "the partial must survive");
+            // the guard is a helper thread with a job, not a resident: it leaves once nothing is
+            // watched, and the next transfer starts a fresh one
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (helperAlive("jinfer-stall-guard") && System.nanoTime() < deadline)
+                Thread.onSpinWait();
+            assertTrue(!helperAlive("jinfer-stall-guard"), "the stall guard outlived its work");
         } finally {
             System.clearProperty("jinfer.downloadStallSeconds");
         }
+    }
+
+    private static boolean helperAlive(String name) {
+        for (Thread t : Thread.getAllStackTraces().keySet())
+            if (t.getName().equals(name) && t.isAlive()) return true;
+        return false;
     }
 }

@@ -99,15 +99,15 @@ These are one machine / one model. Run `jam_bench` and llama.cpp's `pp512` to me
 ## Configuration
 
 ```sh
-JAM_THREADS=16 JAM_ISA=avx2          ./app   # all providers: 16 threads, capped at AVX2
-JAM_VECTOR_THREADS=8                 ./app   # override one provider
+JAM_ISA=avx2                         ./app   # cap every provider at AVX2
 JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
 JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
 
-The equivalent JVM settings are `-Djam.threads=N` and `-Djam.<provider>.threads=N`. A
-provider-specific setting takes precedence over the global one. Each provider owns its workers
-and scheduling policy; the number is a per-provider limit, not a shared process-wide budget.
+Threads are not a jam setting.
+A provider is created with the host's `JAM.Parallel` (`Provider.create(parallel)`) and runs every task on it, its width being the thread budget; in jinfer that is `-Djinfer.threads`.
+A backend may run its own threads instead, under one rule: while `mm` runs it uses at most `width()` cores and the host's workers are idle, and when `mm` returns its own workers are idle.
+The native library creates no thread inside a JVM; a C host without an executor of its own gets a small pool sized by `jam_config.nthreads` (0 = every online CPU).
 
 For per-pool control, create a context explicitly:
 

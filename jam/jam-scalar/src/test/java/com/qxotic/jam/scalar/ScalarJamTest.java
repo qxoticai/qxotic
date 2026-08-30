@@ -6,6 +6,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jam.JAM;
+import com.qxotic.jam.TestPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.Random;
@@ -20,7 +21,7 @@ import org.junit.jupiter.api.Test;
  */
 class ScalarJamTest {
 
-    private static final JAM jam = new ScalarJAM(BenchPool.of(4));
+    private static final JAM jam = new ScalarJAM(TestPool.of(4));
     private static final Arena A = Arena.ofAuto();
     private static final Random RNG = new Random(7);
 
@@ -240,6 +241,10 @@ class ScalarJamTest {
     // values ----
 
     private static void check(String name, Weight w, int m, int n, int k) {
+        check(jam, name, w, m, n, k);
+    }
+
+    private static void check(JAM jam, String name, Weight w, int m, int n, int k) {
         float[] av = gaussians(n * k);
         MemorySegment a = A.allocate(av.length * 4L, 64);
         for (int i = 0; i < av.length; i++) a.set(JAVA_FLOAT_UNALIGNED, i * 4L, av[i]);
@@ -335,6 +340,22 @@ class ScalarJamTest {
         check("Q4_K.small", q4_k(m, 512), m, 5, 512);
         check("Q4_K.wider", q4_k(m, 512), m, 40, 512);
         check("Q8_0.wide-m", q8_0(3000, 1024), 3000, 3, 1024); // many bands: k-splits collapse
+    }
+
+    /**
+     * Every engine (gemv, the row-axis gemm for narrow batches, the token-axis gemm) on pools of
+     * width 1, 3 and 8: the slot-indexed scratch and the two-region schedules hold at any width.
+     */
+    @Test
+    void everyEngineAtEveryWidth() {
+        int m = 1100, k = 1024;
+        Weight w = q8_0(m, k);
+        for (int width : new int[] {1, 3, 8}) {
+            JAM pooled = new ScalarJAM(TestPool.of(width));
+            check(pooled, "gemv@" + width, w, m, 1, k);
+            check(pooled, "rowgemm@" + width, w, m, 64, k);
+            check(pooled, "gemm@" + width, w, m, 300, k);
+        }
     }
 
     @Test

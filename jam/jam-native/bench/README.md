@@ -59,6 +59,6 @@ jam vs tinyBLAS   m=2048 n=2048 k=2048   threads=16   jam isa=avx512_vnni
 - The `k` argument to `llamafile_sgemm` is in **blocks** (`k/32`), not elements, and the CPU backend
   must be initialized (`ggml_cpu_init()`) before the first call. Both are handled; noted here because
   neither is obvious and either one silently corrupts results.
-- Set `JAM_NATIVE_THREADS` to your **physical** core count for the best numbers (it sizes both pools).
+- Set `JAM_NATIVE_THREADS` to your **physical** core count for the best numbers (the harness passes it as the context's thread count).
 - This is a cross-project harness (it links the sibling llama.cpp), so it is **not** wired into
   jam's CMake build: just `./build.sh`.

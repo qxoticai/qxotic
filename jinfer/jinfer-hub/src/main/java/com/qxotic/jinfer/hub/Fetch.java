@@ -169,9 +169,11 @@ final class Fetch {
                     return;
                 }
                 synchronized (Board.class) {
-                    if (!rows.isEmpty()) {
-                        paint(false);
+                    if (rows.isEmpty()) { // nothing to turn: leave, the next transfer restarts one
+                        ticker = null;
+                        return;
                     }
+                    paint(false);
                 }
             }
         }
@@ -278,14 +280,14 @@ final class Fetch {
 
         Stall(InputStream stream) {
             this.stream = stream;
-            synchronized (Stall.class) {
+            synchronized (Stall.class) { // registered before the scanner can see an empty set
+                WATCHED.add(this);
                 if (scanner == null) {
                     scanner = new Thread(Stall::scan, "jinfer-stall-guard");
                     scanner.setDaemon(true);
                     scanner.start();
                 }
             }
-            WATCHED.add(this);
         }
 
         void advance(int n) {
@@ -303,6 +305,13 @@ final class Fetch {
                     Thread.sleep(Math.max(500, limitNanos / 4_000_000L));
                 } catch (InterruptedException e) {
                     return;
+                }
+                synchronized (Stall.class) {
+                    if (WATCHED
+                            .isEmpty()) { // nothing to watch: leave, the next stream restarts one
+                        scanner = null;
+                        return;
+                    }
                 }
                 long now = System.nanoTime();
                 for (Stall stall : WATCHED) {

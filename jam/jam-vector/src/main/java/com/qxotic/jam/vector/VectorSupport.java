@@ -11,7 +11,6 @@ import com.qxotic.jam.JAM;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.util.Locale;
-import java.util.function.IntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
@@ -69,6 +68,7 @@ final class VectorSupport {
      * Affine decode of a 16-quant byte chunk into scratch bytes at {@code offBytes}: value =
      * q*scale + neg, any vector width.
      */
+    @AlwaysInline("hot Vector API helper: a FloatVector must not cross a call in the image")
     static void storeAffine(
             ByteVector q, FloatVector scale, FloatVector neg, MemorySegment dst, long offBytes) {
         for (int p = 0; p < DECODE_PARTS; p++)
@@ -82,6 +82,7 @@ final class VectorSupport {
      * Scaled decode of a 16-quant byte chunk into scratch bytes at {@code offBytes}: value =
      * q*scale, any vector width.
      */
+    @AlwaysInline("hot Vector API helper: a FloatVector must not cross a call in the image")
     static void storeScaled(ByteVector q, FloatVector scale, MemorySegment dst, long offBytes) {
         for (int p = 0; p < DECODE_PARTS; p++)
             ((FloatVector) q.castShape(F_SPECIES, p))
@@ -139,19 +140,6 @@ final class VectorSupport {
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
 
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
-
-    /**
-     * The host's pool, set by {@link VectorJAM}; the calling thread alone until then (the kernels'
-     * own tests). One host per process is the reality this static reflects.
-     */
-    static volatile JAM.Parallel host = JAM.Parallel.INLINE;
-
-    /** The compute thread budget: how many tasks a region runs at once. */
-    static int width() {
-        return host.width();
-    }
-
-    private static final int TASKS_PER_WORKER = 4;
 
     // ---- Register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT
     // (relocated from
@@ -304,30 +292,6 @@ final class VectorSupport {
                 : seg.get(JAVA_LONG_UNALIGNED, off);
     }
 
-    /** Run {@code body} for every index in {@code [from, to)} on the host's pool, in chunks. */
-    static void parallelFor(int from, int to, IntConsumer body) {
-        int size = to - from;
-        if (size <= 0) return;
-        int chunks = (int) Math.min(size, (long) width() * TASKS_PER_WORKER);
-        host.forLoop(
-                chunks,
-                chunk -> {
-                    int lo = from + (int) ((long) size * chunk / chunks);
-                    int hi = from + (int) ((long) size * (chunk + 1) / chunks);
-                    for (int i = lo; i < hi; i++) body.accept(i);
-                });
-    }
-
-    /**
-     * {@link #parallelFor} with one index per task: for coarse bodies (a whole gemm panel) where
-     * the pool must balance every item, not chunks of them. The task index is unique among the
-     * tasks live at once and serves as the per-task scratch slot.
-     */
-    static void parallelForEach(int from, int to, IntConsumer body) {
-        if (from >= to) return;
-        host.forLoop(to - from, i -> body.accept(from + i));
-    }
-
     /** A contiguous {@code [lo, hi)} slice of work handed to one parallel task. */
     @FunctionalInterface
     interface ChunkConsumer {
@@ -335,15 +299,14 @@ final class VectorSupport {
     }
 
     /**
-     * Split {@code [0, count)} into contiguous slices and run them on the host's pool. Unlike
-     * {@link #parallelFor}, the body owns a whole slice, so a band kernel can {@link
-     * Scratch#acquire} one dequant buffer per slice and reuse it across the slice's rows.
+     * Split {@code [0, count)} into at most {@code 4 x width} contiguous slices and run them on
+     * {@code parallel}: for register-tile bodies that are cheap per item, so the pool balances
+     * slices rather than items.
      */
-    static void parallelChunks(int count, ChunkConsumer body) {
+    static void parallelChunks(JAM.Parallel parallel, int count, ChunkConsumer body) {
         if (count <= 0) return;
-        int chunks = (int) Math.min(count, (long) width() * TASKS_PER_WORKER);
-        parallelFor(
-                0,
+        int chunks = (int) Math.min(count, 4L * parallel.width());
+        parallel.forLoop(
                 chunks,
                 chunk -> {
                     int lo = (int) ((long) count * chunk / chunks);

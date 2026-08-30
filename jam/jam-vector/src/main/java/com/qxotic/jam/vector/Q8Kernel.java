@@ -2208,16 +2208,19 @@ public final class Q8Kernel {
      */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int count, MemorySegment dst, long dstBase) {
-        long blkOff = rowElemOffset / BLOCK * TYPE;
+        // weights read through the absolute-address route like every other dequant: a vector load
+        // straight off the mapped segment miscompiles in the native image (GP fault)
+        final MemorySegment ws = VectorSupport.vectorSegment(w);
+        long blkOff = VectorSupport.vectorBase(w) + rowElemOffset / BLOCK * TYPE;
         long d = dstBase;
         for (int j = 0; j < count; j += BLOCK, blkOff += TYPE, d += (long) BLOCK * 4) {
-            var vd = FloatVector.broadcast(F_SPECIES, readFloat16(w, blkOff));
+            var vd = FloatVector.broadcast(F_SPECIES, readFloat16(ws, blkOff));
             var lo =
                     ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
+                            ByteVector.SPECIES_128, ws, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
             var hi =
                     ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, blkOff + 18, ByteOrder.LITTLE_ENDIAN);
+                            ByteVector.SPECIES_128, ws, blkOff + 18, ByteOrder.LITTLE_ENDIAN);
             VectorSupport.storeScaled(lo, vd, dst, d);
             VectorSupport.storeScaled(hi, vd, dst, d + 64);
         }
@@ -2263,6 +2266,7 @@ public final class Q8Kernel {
         }
         final long outAddr = oBase;
         VectorSupport.parallelChunks(
+                scratch.parallel(),
                 tileCount,
                 (tileStart, tileEnd) -> {
                     for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {

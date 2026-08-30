@@ -23,8 +23,9 @@ import java.nio.file.Path;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Thread-safe and shared, like every other {@code TextToSpeechModel}: concurrent requests run in
- * PARALLEL, each on a state of its own.
+ * Thread-safe and shared, like every other {@code TextToSpeechModel}: concurrent requests are
+ * admitted in PARALLEL, each on a state of its own; their compute interleaves on the one shared
+ * pool, so two requests take about twice as long each, not half.
  *
  * <p>A jinfer speech state is ONE SERIAL PIPELINE and cannot be shared - so this does not share
  * one. Minting per call costs a measured +3.5% against reusing one (~1 ms on a short utterance),

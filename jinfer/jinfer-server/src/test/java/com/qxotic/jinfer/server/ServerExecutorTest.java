@@ -28,6 +28,6 @@ class ServerExecutorTest {
         assertEquals(503, busy.getResponseCode());
         assertEquals("7", busy.getResponseHeaders().getFirst("Retry-After"));
         assertEquals(1, served.get(), "a refused request never reaches the handler");
-        assertTrue(Server.requestExecutor(1).getClass().getSimpleName().contains("ThreadPool"));
+        assertTrue(Server.requestExecutor().getClass().getSimpleName().contains("ThreadPool"));
     }
 }

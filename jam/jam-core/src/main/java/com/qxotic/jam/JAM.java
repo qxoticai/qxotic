@@ -45,26 +45,44 @@ public interface JAM {
     }
 
     /**
-     * The host's parallel loop, the only threading a backend uses. Backends own no threads: a
+     * The host's parallel loop, offered to every backend. The backends here own no threads: a
      * kernel asks for {@code count} tasks, the host runs them {@link #width()} at a time on
-     * whatever threads it has, and the call returns when all are done. The task index is unique
-     * among the tasks live at once, so it doubles as a per-worker scratch slot. A kernel calls this
-     * from the thread that called {@link JAM#mm}, never from inside one of its own tasks, and a
-     * backend with no CPU work (a GPU matmul) simply never calls it.
+     * whatever threads it has, and the call returns when all are done; the {@code slot} handed to a
+     * {@link Body} indexes per-participant scratch. A kernel calls this from the thread that called
+     * {@link JAM#mm}, never from inside one of its own tasks, and a backend with no CPU work (a GPU
+     * matmul) simply never calls it. A backend may run its own threads instead, under one rule:
+     * while {@code mm} runs it uses at most {@code width()} cores and the host's workers are
+     * quiescent, and when {@code mm} returns its own workers are quiescent - two pools spinning on
+     * one machine measured worse in every configuration tried.
      */
     interface Parallel {
-        /** Runs {@code body.accept(i)} for every {@code i < count}; returns when all are done. */
-        void forLoop(int count, IntConsumer body);
+        /** A task body that also receives the slot of the participant running it. */
+        @FunctionalInterface
+        interface Body {
+            void run(int index, int slot);
+        }
 
-        /** How many tasks run at once at most: the compute thread budget. */
+        /**
+         * Runs {@code body.run(i, slot)} for every {@code i < count}; returns when all are done.
+         * {@code slot} is in {@code [0, width())}, the calling thread is slot 0, and no two tasks
+         * running at once share a slot - a slot indexes per-participant scratch.
+         */
+        void forLoop(int count, Body body);
+
+        /** Runs {@code body.accept(i)} for every {@code i < count}; returns when all are done. */
+        default void forLoop(int count, IntConsumer body) {
+            forLoop(count, (i, slot) -> body.accept(i));
+        }
+
+        /** How many tasks run at once at most: the compute thread budget, fixed for a lifetime. */
         int width();
 
         /** The calling thread alone. */
         Parallel INLINE =
                 new Parallel() {
                     @Override
-                    public void forLoop(int count, IntConsumer body) {
-                        for (int i = 0; i < count; i++) body.accept(i);
+                    public void forLoop(int count, Body body) {
+                        for (int i = 0; i < count; i++) body.run(i, 0);
                     }
 
                     @Override

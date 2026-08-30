@@ -5,8 +5,6 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import com.qxotic.jam.JAM.Parallel;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The small-batch prefill kernel ({@code 2 <= n < }{@link Gemm#MIN_N}): the {@link Tile} with the
@@ -80,45 +78,28 @@ final class RowGemm {
         float[] partial = scratch.partials;
         int nSplits = splits;
 
-        // one region: the band x split items, then the reduce items (claimed only once every
-        // band item has been, so they wait for in-flight bands at most)
-        AtomicInteger next = new AtomicInteger(), done = new AtomicInteger();
-        AtomicBoolean failed = new AtomicBoolean();
+        // two regions: the band x split items into their partials, then one reduce per token
         parallel.forLoop(
-                Math.min(items + n, parallel.width()),
-                worker -> {
-                    Scratch.Slot s = scratch.slot(worker);
-                    for (int item; (item = next.getAndIncrement()) < items + n; ) {
-                        if (item < items) {
-                            int band = item / nSplits, split = item - band * nSplits;
-                            int l0 = split * perSplit * KC, l1 = Math.min(k, l0 + perSplit * KC);
-                            try {
-                                band(
-                                        w,
-                                        band * MR,
-                                        Math.min(MR, m - band * MR),
-                                        l0,
-                                        l1,
-                                        a,
-                                        n,
-                                        partial,
-                                        split * n,
-                                        m,
-                                        s);
-                            } catch (Throwable t) {
-                                failed.set(true); // the reduce items waiting on us give up
-                                throw t;
-                            }
-                            done.incrementAndGet();
-                            continue;
-                        }
-                        while (done.get() < items) {
-                            if (failed.get()) return;
-                            Thread.onSpinWait();
-                        }
-                        reduce(partial, nSplits, n, m, item - items, r, rOff, ldr, s);
-                    }
+                items,
+                (item, slot) -> {
+                    int band = item / nSplits, split = item - band * nSplits;
+                    int l0 = split * perSplit * KC, l1 = Math.min(k, l0 + perSplit * KC);
+                    band(
+                            w,
+                            band * MR,
+                            Math.min(MR, m - band * MR),
+                            l0,
+                            l1,
+                            a,
+                            n,
+                            partial,
+                            split * n,
+                            m,
+                            scratch.slot(slot));
                 });
+        parallel.forLoop(
+                n,
+                (t, slot) -> reduce(partial, nSplits, n, m, t, r, rOff, ldr, scratch.slot(slot)));
     }
 
     /**

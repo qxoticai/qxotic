@@ -6,31 +6,28 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+/* A context driven by the host: pf is a C function pointer (a Java FFM upcall stub) with the
+ * jam_parallel_for signature, pool is the opaque handle jam passes back to it (the Java side keys
+ * its instance by it), threads is how many distinct tid values the host will pass. The ctx owns no
+ * threads. JAM_ISA seeds max_isa as for the C global context, so JAM_ISA=metal opts into the GPU. */
 JNIEXPORT jlong JNICALL
-Java_com_qxotic_jam_libjam_NativeJAM_createJni(JNIEnv* env, jclass cls, jint threads)
+Java_com_qxotic_jam_libjam_NativeJAM_createPfJni(JNIEnv* env, jclass cls, jint threads, jlong pf, jlong pool)
 {
     (void) env; (void) cls;
     jam_config cfg = {0};
     cfg.nthreads = threads;
     cfg.name = "java";
-    /* Same env contract as the C global context: JAM_ISA seeds max_isa, so JAM_ISA=metal opts this
-     * context into the GPU backend (the ceiling rule in jam_ctx_create still applies on top). */
     cfg.max_isa = jam_parse_isa(getenv("JAM_ISA"));
+    cfg.parallel_for = (jam_parallel_for)(intptr_t) pf;
+    cfg.pool = (void*)(intptr_t) pool;
     return (jlong)(intptr_t) jam_ctx_create(&cfg);
 }
 
-/* As createJni, but with a host executor: pf is a C function pointer (a Java FFM upcall stub) with
- * the jam_parallel_for signature. The ctx owns no pool; every fan-out runs through the host. */
-JNIEXPORT jlong JNICALL
-Java_com_qxotic_jam_libjam_NativeJAM_createPfJni(JNIEnv* env, jclass cls, jint threads, jlong pf)
+JNIEXPORT void JNICALL
+Java_com_qxotic_jam_libjam_NativeJAM_destroyJni(JNIEnv* env, jclass cls, jlong ctx)
 {
     (void) env; (void) cls;
-    jam_config cfg = {0};
-    cfg.nthreads = threads;
-    cfg.name = "java-pf";
-    cfg.max_isa = jam_parse_isa(getenv("JAM_ISA"));
-    cfg.parallel_for = (jam_parallel_for)(intptr_t) pf;
-    return (jlong)(intptr_t) jam_ctx_create(&cfg);
+    jam_ctx_destroy((jam_ctx*)(intptr_t) ctx);
 }
 
 /* int NativeJAM.mmJni(long ctx, long w,int wt,int ldw, long a,int at,int lda, long c,int ct,int ldc, int m,int n,int k)
