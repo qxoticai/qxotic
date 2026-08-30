@@ -409,15 +409,11 @@ class JamBackendParityTest {
 
     // ---- 2d. Large-m native DETERMINISM (the multi-threaded race)
     // ----------------------------------
-    // The model's real gemms have thousands of output rows, so jam fans them across many worker
-    // threads  -
-    // far more parallel work units than the m≤104 shapes above ever create. A race on shared worker
-    // state
-    // surfaces only at that scale, and is non-deterministic (thread-count dependent:
-    // JAM_NATIVE_THREADS=1 is
+    // The model's real gemms have thousands of output rows, so jam fans them across many slots -
+    // far more parallel work units than the m<=104 shapes above ever create. A race on shared
+    // per-slot state surfaces only at that scale, and is non-deterministic (a width-1 pool is
     // clean). Two runs on IDENTICAL inputs must be bit-identical; a difference is the race.
-    // (Regression for
-    // the jam-native threaded-gemm non-determinism observed in A4B Q8_0 prefill.)
+    // (Regression for the jam-native threaded-gemm non-determinism observed in A4B Q8_0 prefill.)
 
     /** (m, k): model-scale row counts (many bands) × a few block-aligned k. */
     private static final int[][] BIG_SHAPES = {{2048, 2560}, {4096, 2048}, {2560, 1024}};
