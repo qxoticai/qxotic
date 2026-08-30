@@ -24,7 +24,6 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.IntConsumer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
@@ -64,7 +63,7 @@ public final class MatMul {
 
     private MatMul() {}
 
-    // tiny matvec (e.g. the 32-row MoE router): the ForkJoin round trip costs more than the work
+    // tiny matmul (e.g. the 32-row MoE router): a region costs more than the work
     static final int TINY_MATVEC_ELEMS = 1 << 18;
 
     // Decode through native JAM's gemv: the default on AArch64 (NEON SDOT beats the byte-to-F32
@@ -259,6 +258,10 @@ public final class MatMul {
             int m,
             int n,
             int k) {
+        // a backend locks itself around its fan-out; a call from inside a region of the same pool
+        // would order the backend lock after the pool's and can deadlock against a second caller
+        if (Parallel.inRegion())
+            throw new IllegalStateException("MatMul.mm called from inside a Parallel region");
         Raw av = Raw.f32(a, "a");
         Raw cv = Raw.f32(c, "c");
         boolean inPlace = sameRegion(av, aOff, cv, cOff);
@@ -294,7 +297,7 @@ public final class MatMul {
         // except Dispatch's slowDot types and AArch64 Q4_0/Q8_0: their native activation-requant +
         // SDOT GEMV path is more than twice as fast as byte-to-F32 Vector API dots.
         boolean slowDot = !FAST_VECTOR_JIT && bytePackedDot(dt);
-        boolean nativeQ4Decode = NATIVE_Q4_DECODE && dt == DataType.Q4_0;
+        boolean nativeQ4Decode = NATIVE_Q4_DECODE && dt == DataType.Q4_0 && NATIVE != null;
         boolean nativeQ8Decode = NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
         boolean nativeKqDecode = NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
         boolean jamDecode =
@@ -402,7 +405,12 @@ public final class MatMul {
         }
     }
 
-    /** The {@code ScalarMatMul} structure, verbatim: tiny serial / in-place temp / parallel. */
+    /**
+     * The floor: one region over the {@code n x m} output cells (rows of {@code W} vary fastest, so
+     * a chunk shares its activation row), inline when the whole matvec is tiny. An in-place call
+     * (the result aliases an operand) stages into a temporary and writes back after the region; the
+     * dots take their per-slot scratch from the region's slot.
+     */
     private static void run(
             MemorySegment ws,
             long wByte,
@@ -420,98 +428,42 @@ public final class MatMul {
             boolean inPlace) {
         MemorySegment as = av.vseg(), cs = cv.vseg();
         long aBase = av.vbase() + aOff * 4L, cBase = cv.vbase() + cOff * 4L;
-        if (n == 1) {
-            if (!inPlace && (long) m * k <= TINY_MATVEC_ELEMS) {
-                for (int i = 0; i < m; i++) {
-                    writeFloat(
-                            cs,
-                            cBase + (long) i * 4,
-                            dot(ws, wByte + (long) i * wRowBytes, as, aBase, k, weightType));
-                }
-            } else if (inPlace) {
-                // in-place must avoid read-after-write races under parallel execution
-                float[] tmp = new float[m];
-                Parallel.forLoop(
-                        0,
-                        m,
-                        i ->
-                                tmp[i] =
-                                        dot(
-                                                ws,
-                                                wByte + (long) i * wRowBytes,
-                                                as,
-                                                aBase,
-                                                k,
-                                                weightType));
-                for (int i = 0; i < m; i++) {
-                    writeFloat(cs, cBase + (long) i * 4, tmp[i]);
-                }
-            } else {
-                Parallel.forLoop(
-                        0,
-                        m,
-                        i ->
-                                writeFloat(
-                                        cs,
-                                        cBase + (long) i * 4,
-                                        dot(
-                                                ws,
-                                                wByte + (long) i * wRowBytes,
-                                                as,
-                                                aBase,
-                                                k,
-                                                weightType)));
-            }
-            return;
-        }
-        // gemm: C[s][row] = dot(W row, A row s)
         long aRowBytes = (long) aStride * 4, cRowBytes = (long) cStride * 4;
         // the cell count indexes the parallel loop: past 2^31 (8k rows x a 262k vocab) it must
         // fail here, not wrap negative and compute nothing
         int cells = Math.multiplyExact(n, m);
-        if (inPlace) {
-            float[] tmp = new float[cells];
-            Parallel.forLoop(
-                    0,
-                    cells,
-                    idx -> {
-                        int s = idx / m, row = idx - s * m;
-                        tmp[idx] =
-                                dot(
-                                        ws,
-                                        wByte + (long) row * wRowBytes,
-                                        as,
-                                        aBase + (long) s * aRowBytes,
-                                        k,
-                                        weightType);
-                    });
-            for (int s = 0; s < n; s++) {
-                for (int row = 0; row < m; row++) {
+        float[] tmp = inPlace ? new float[cells] : null;
+        Parallel.Body cell =
+                (idx, slot) -> {
+                    int s = idx / m, row = idx - s * m;
+                    float v =
+                            dot(
+                                    ws,
+                                    wByte + (long) row * wRowBytes,
+                                    as,
+                                    aBase + (long) s * aRowBytes,
+                                    k,
+                                    weightType,
+                                    slot);
+                    if (tmp != null) tmp[idx] = v;
+                    else writeFloat(cs, cBase + (long) s * cRowBytes + (long) row * 4, v);
+                };
+        if ((long) cells * k <= TINY_MATVEC_ELEMS) for (int i = 0; i < cells; i++) cell.run(i, 0);
+        else Parallel.forLoop(cells, cell);
+        if (tmp != null)
+            for (int s = 0; s < n; s++)
+                for (int row = 0; row < m; row++)
                     writeFloat(cs, cBase + (long) s * cRowBytes + (long) row * 4, tmp[s * m + row]);
-                }
-            }
-        } else {
-            Parallel.forLoop(
-                    0,
-                    cells,
-                    idx -> {
-                        int s = idx / m, row = idx - s * m;
-                        writeFloat(
-                                cs,
-                                cBase + (long) s * cRowBytes + (long) row * 4,
-                                dot(
-                                        ws,
-                                        wByte + (long) row * wRowBytes,
-                                        as,
-                                        aBase + (long) s * aRowBytes,
-                                        k,
-                                        weightType));
-                    });
-        }
     }
 
     private static float dot(
-            MemorySegment w, long wByte, MemorySegment x, long xByte, int k, DataType weightType) {
+            MemorySegment w,
+            long wByte,
+            MemorySegment x,
+            long xByte,
+            int k,
+            DataType weightType,
+            int slot) {
         if (weightType == DataType.FP32)
             return USE_VECTOR_API
                     ? dotF32(w, wByte, x, xByte, k)
@@ -529,10 +481,10 @@ public final class MatMul {
         if (weightType == DataType.Q4_K) return dotQ4K(w, wByte, x, xByte, k);
         if (weightType == DataType.Q5_K) return dotQ5K(w, wByte, x, xByte, k);
         if (weightType == DataType.Q6_K) return dotQ6K(w, wByte, x, xByte, k);
-        if (weightType == DataType.NVFP4) return dotNvfp4(w, wByte, x, xByte, k);
+        if (weightType == DataType.NVFP4) return dotNvfp4(w, wByte, x, xByte, k, slot);
         if (weightType == DataType.Q1_0) return dotQ1_0(w, wByte, x, xByte, k);
-        if (weightType == DataType.TQ1_0) return dotTernary(w, wByte, x, xByte, k, true);
-        if (weightType == DataType.TQ2_0) return dotTernary(w, wByte, x, xByte, k, false);
+        if (weightType == DataType.TQ1_0) return dotTernary(w, wByte, x, xByte, k, true, slot);
+        if (weightType == DataType.TQ2_0) return dotTernary(w, wByte, x, xByte, k, false, slot);
         throw new UnsupportedOperationException("dot weight dtype " + weightType);
     }
 
@@ -1682,15 +1634,14 @@ public final class MatMul {
     // vectorized F32 dot (jam carries the vectorized weight when loaded; this is the floor).
     // ------------------------------------------------------------------
 
-    private static final ThreadLocal<float[]> NVFP4_SCRATCH = new ThreadLocal<>();
+    /** One decoded-row buffer per slot of the shared pool (the region's slot, never a thread). */
+    private static final float[][] NVFP4_SCRATCH = new float[Parallel.threads()][];
 
-    private static float dotNvfp4(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
+    private static float dotNvfp4(
+            MemorySegment w, long wByte, MemorySegment x, long xByte, int k, int slot) {
         if (USE_VECTOR_API && k % NVFP4_BLOCK == 0) {
-            float[] deq = NVFP4_SCRATCH.get();
-            if (deq == null || deq.length < k) {
-                deq = new float[k];
-                NVFP4_SCRATCH.set(deq);
-            }
+            float[] deq = NVFP4_SCRATCH[slot];
+            if (deq == null || deq.length < k) NVFP4_SCRATCH[slot] = deq = new float[k];
             for (int blk = 0; blk < k / NVFP4_BLOCK; blk++) {
                 long bo = wByte + (long) blk * NVFP4_BYTES;
                 int base = blk * NVFP4_BLOCK;
@@ -1774,14 +1725,19 @@ public final class MatMul {
         return result;
     }
 
-    private static final ThreadLocal<float[]> TQ_SCRATCH =
-            ThreadLocal.withInitial(() -> new float[TQ_BLOCK]);
+    private static final float[][] TQ_SCRATCH = new float[Parallel.threads()][TQ_BLOCK];
 
     private static float dotTernary(
-            MemorySegment w, long wByte, MemorySegment x, long xByte, int k, boolean tq1) {
+            MemorySegment w,
+            long wByte,
+            MemorySegment x,
+            long xByte,
+            int k,
+            boolean tq1,
+            int slot) {
         DataType dt = tq1 ? DataType.TQ1_0 : DataType.TQ2_0;
         if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, dt);
-        float[] deq = TQ_SCRATCH.get();
+        float[] deq = TQ_SCRATCH[slot];
         FloatVector acc = FloatVector.zero(F_SPECIES);
         int blockEnd = k / TQ_BLOCK * TQ_BLOCK;
         int i = 0;
@@ -1815,12 +1771,15 @@ public final class MatMul {
 
     private static final System.Logger LOG = System.getLogger("jinfer.jam");
 
-    /** Jinfer's pool, as the backends see it. */
+    /**
+     * Jinfer's pool, as the backends see it. Declared before the three rungs below: class
+     * initialization runs in textual order and {@link #load} hands it to {@code Provider.create}.
+     */
     private static final JAM.Parallel HOST =
             new JAM.Parallel() {
                 @Override
-                public void forLoop(int count, IntConsumer body) {
-                    Parallel.forLoop(count, body);
+                public void forLoop(int count, Body body) {
+                    Parallel.forLoop(count, body::run);
                 }
 
                 @Override

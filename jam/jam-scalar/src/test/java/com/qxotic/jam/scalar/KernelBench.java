@@ -3,6 +3,7 @@ package com.qxotic.jam.scalar;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
 import com.qxotic.jam.JAM;
+import com.qxotic.jam.TestPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -36,7 +37,7 @@ public final class KernelBench {
         for (long i = 0; i < (long) n * k; i++) a.set(JAVA_FLOAT_UNALIGNED, i * 4, rng.nextFloat());
         JAM jam =
                 new ScalarJAM(
-                        BenchPool.of(
+                        TestPool.of(
                                 Integer.getInteger(
                                         "jam.threads",
                                         Runtime.getRuntime().availableProcessors())));

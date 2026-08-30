@@ -55,13 +55,15 @@ public final class Server {
     public static final class Running implements AutoCloseable {
         private final HttpServer http;
         private final Worker worker;
+        private final Thread reaper; // this server's stalled-write reaper, stopped with it
         private final int stopDelaySeconds;
         private final CountDownLatch stopped = new CountDownLatch(1);
         private volatile boolean closed;
 
-        private Running(HttpServer http, Worker worker, int stopDelaySeconds) {
+        private Running(HttpServer http, Worker worker, Thread reaper, int stopDelaySeconds) {
             this.http = http;
             this.worker = worker;
+            this.reaper = reaper;
             this.stopDelaySeconds = stopDelaySeconds;
         }
 
@@ -85,6 +87,7 @@ public final class Server {
             // connections, so the "shutting down" answer went to a closed socket.
             worker.close();
             http.stop(stopDelaySeconds);
+            reaper.interrupt();
             // the fixed handler pool is non-daemon and stop() does not touch it - without this an
             // embedder's JVM never exits
             if (http.getExecutor() instanceof ExecutorService pool) {
@@ -284,22 +287,23 @@ public final class Server {
                     Http.sendError(exchange, 404, "Not found");
                 });
         worker.start();
-        Sse.startReaper();
-        server.setExecutor(requestExecutor(config.limits().threads()));
+        Thread reaper = Sse.startReaper();
+        server.setExecutor(requestExecutor());
         server.start();
         // no shutdown hook here: one per start() is a hook the embedder cannot unregister, and it
         // pins the engine for the life of the JVM. The CLI, which never closes the handle,
         // registers its own; every other caller closes the handle it was given.
         long stopDelay = Math.ceilDiv(config.limits().shutdownTimeout().toNanos(), 1_000_000_000L);
-        return new Running(server, worker, (int) Math.min(Integer.MAX_VALUE, stopDelay));
+        return new Running(server, worker, reaper, (int) Math.min(Integer.MAX_VALUE, stopDelay));
     }
 
     /**
      * Every exchange gets a thread at once; {@link #gated} bounds how many are admitted into a
-     * handler. A bounded pool rejected the excess inside the JDK server, which closed the
-     * connection with no status at all; the gate answers 503 + Retry-After instead.
+     * handler ({@code 2 x Limits.threads}). A bounded pool rejected the excess inside the JDK
+     * server, which closed the connection with no status at all; the gate answers 503 + Retry-After
+     * instead.
      */
-    static ExecutorService requestExecutor(int threads) {
+    static ExecutorService requestExecutor() {
         return Executors.newCachedThreadPool();
     }
 

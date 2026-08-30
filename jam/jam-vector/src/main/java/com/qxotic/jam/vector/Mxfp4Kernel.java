@@ -60,12 +60,14 @@ public final class Mxfp4Kernel {
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
         int kblocks = dim1 / QK;
         long firstBlock = rowElemOffset / QK;
+        final MemorySegment ws = VectorSupport.vectorSegment(w); // see Q8Kernel.dequantizeRow
+        final long wb = VectorSupport.vectorBase(w);
         for (int blk = 0; blk < kblocks; blk++) {
-            long blockOffset = (firstBlock + blk) * BYTES;
-            float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(w, blockOffset)));
+            long blockOffset = wb + (firstBlock + blk) * BYTES;
+            float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(ws, blockOffset)));
             ByteVector packed =
                     ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, blockOffset + 1, ByteOrder.LITTLE_ENDIAN);
+                            ByteVector.SPECIES_128, ws, blockOffset + 1, ByteOrder.LITTLE_ENDIAN);
             long base = dstBase + (long) blk * QK * 4;
             FloatVector vd = FloatVector.broadcast(F_SPECIES, d);
             VectorSupport.storeScaled(

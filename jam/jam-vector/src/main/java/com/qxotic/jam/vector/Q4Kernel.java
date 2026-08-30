@@ -71,6 +71,7 @@ public final class Q4Kernel {
         int tileCount = rowTileCount * seqTileCount;
         if (tileCount == 0) return;
         VectorSupport.parallelChunks(
+                scratch.parallel(),
                 tileCount,
                 (tileStart, tileEnd) -> {
                     for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
@@ -228,13 +229,16 @@ public final class Q4Kernel {
      */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
-        long blkOff = rowElemOffset / BLOCK * TYPE;
+        // weights through the absolute-address route (see Q8Kernel.dequantizeRow: a vector load
+        // straight off the mapped segment miscompiles in the native image)
+        final MemorySegment ws = VectorSupport.vectorSegment(w);
+        long blkOff = VectorSupport.vectorBase(w) + rowElemOffset / BLOCK * TYPE;
         long d = dstBase;
         for (int j = 0; j < dim1; j += BLOCK, blkOff += TYPE, d += (long) BLOCK * 4) {
-            var vd = FloatVector.broadcast(F_SPECIES, readFloat16(w, blkOff));
+            var vd = FloatVector.broadcast(F_SPECIES, readFloat16(ws, blkOff));
             var bytes =
                     ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
+                            ByteVector.SPECIES_128, ws, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
             var lo =
                     ((FloatVector) bytes.and((byte) 0xF).sub((byte) 8).castShape(F_SPECIES, 0))
                             .mul(vd);

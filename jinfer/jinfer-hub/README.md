@@ -114,7 +114,7 @@ the repository directory as `repo@revision`.
 |----------|--------|
 | `JINFER_MODELS` | Moves the cache root (property: `-Djinfer.models`) |
 | `JINFER_OFFLINE=1` | Forbids network access; anything uncached fails fast (property: `-Djinfer.offline`) |
-| `JINFER_DOWNLOAD_THREADS` | Sets parallel range connections per file, 4 to 8 by CPU count (property: `-Djinfer.downloadThreads`) |
+| `JINFER_DOWNLOAD_THREADS` | Sets parallel range connections per file, 4 to 8 by CPU count (property: `-Djinfer.downloadThreads`); a multi-file pull resolves up to 4 files at once, so up to 4x this many connections |
 | `JINFER_SKIP_DISK_CHECK=1` | Skips the free-space check (some network mounts report no free space) |
 | `HF_TOKEN` | Authenticates access to gated Hugging Face repositories |
 | `HF_ENDPOINT` | Points Hugging Face at a mirror |

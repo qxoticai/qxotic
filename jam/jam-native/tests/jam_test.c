@@ -524,6 +524,12 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
  * A host parallel_for that, the first time jam calls it (so we're INSIDE a jam_mm, busy=1), re-enters jam_mm
  * on the SAME context - which must return JAM_EBUSY (the serial-stream guard) - then runs the real work. */
 static jam_ctx* g_reentry_ctx; static int g_reentry_status;
+/* A host executor that lies: every slice carries tid 5 on a 2-thread context. */
+static void badtid_pfor(void* pool, int n, jam_task_fn fn, void* arg) {
+    (void) pool;
+    for (int i = 0; i < n; i++) fn(arg, i, i+1, 5);
+}
+
 static void reentry_pfor(void* pool, int n, jam_task_fn fn, void* arg) {
     (void) pool;
     if (g_reentry_status == 99) {
@@ -596,6 +602,15 @@ static void suite_api(void) {
     OK("outer mm ok",        outer == JAM_OK);
     OK("re-entrant -> EBUSY", g_reentry_status == JAM_EBUSY);
 
+
+    /* the tid guard: a host slice whose tid is at or above nthreads has no per-tid scratch, so the
+     * call is refused with EINVAL instead of indexing past the repack table. */
+    memset(&cfg,0,sizeof cfg); cfg.parallel_for = badtid_pfor; cfg.nthreads = 2; cfg.name = "badtid";
+    cfg.max_isa = JAM_ISA_GENERIC;
+    jam_ctx* bt = jam_ctx_create(&cfg);
+    OK("bad-tid ctx non-null", bt != NULL);
+    OK("tid >= nthreads -> EINVAL", jam_mm(bt, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
+    jam_ctx_destroy(bt);
 
     /* jam_global_destroy: frees the global; a later jam_mm(NULL) lazily re-creates it; idempotent */
     OK("global mm pre-destroy",   jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);

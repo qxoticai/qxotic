@@ -420,4 +420,34 @@ class ServerIntegrationTest {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
     }
+
+    /** The stalled-write reaper is per server and dies with it: no resident thread after close. */
+    @Test
+    void eachServerOwnsItsReaper() throws Exception {
+        Path path = TestModels.require(MODEL);
+        try (ChatEngine engine =
+                new ChatEngine(
+                        path, Map.of(), PromptCache.Options.DEFAULTS.withContextCapacity(64))) {
+            Server.Running first = Server.start(engine, ServerConfig.local(0));
+            Server.Running second = Server.start(engine, ServerConfig.local(0));
+            assertEquals(2, reapers(), "one reaper per running server");
+            first.close();
+            waitUntilReapers(1);
+            second.close();
+            waitUntilReapers(0);
+        }
+    }
+
+    private static int reapers() {
+        int n = 0;
+        for (Thread t : Thread.getAllStackTraces().keySet())
+            if (t.getName().equals("sse-write-reaper") && t.isAlive()) n++;
+        return n;
+    }
+
+    private static void waitUntilReapers(int expected) throws InterruptedException {
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (reapers() != expected && System.nanoTime() < deadline) Thread.sleep(20);
+        assertEquals(expected, reapers(), "reapers alive after close");
+    }
 }

@@ -3,6 +3,7 @@ package com.qxotic.jam.vector;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
 import com.qxotic.jam.JAM;
+import com.qxotic.jam.TestPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -23,6 +24,11 @@ import java.util.Random;
  */
 final class KernelBench {
 
+    /** {@code -Djam.threads=N} (default: every logical CPU). */
+    private static final JAM.Parallel POOL =
+            TestPool.of(
+                    Integer.getInteger("jam.threads", Runtime.getRuntime().availableProcessors()));
+
     @FunctionalInterface
     interface Gemm {
         void run(
@@ -40,7 +46,7 @@ final class KernelBench {
     }
 
     private static Gemm withScratch(VectorKernelTestBand g) {
-        Scratch s = new Scratch();
+        Scratch s = new Scratch(POOL);
         return (w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff) ->
                 g.run(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
     }
@@ -93,7 +99,7 @@ final class KernelBench {
                 BandGemm.BAND,
                 VectorSupport.WIDE_TILE,
                 VectorSupport.GRAAL_JIT,
-                VectorSupport.width(),
+                POOL.width(),
                 System.getProperty("java.vm.name"));
 
         record Case(String name, int tag, Gemm g) {}

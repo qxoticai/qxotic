@@ -20,23 +20,15 @@ __attribute__((constructor)) static void jam_ue4m3_lut_init(void) {
     for (int i = 0; i < 256; ++i) jam_ue4m3_lut[i] = jam_ue4m3_to_float((uint8_t) i);
 }
 
-/* Essential, always-on: one line so the user can SEE the auto-selected cores/ISA/pinning without JAM_DEBUG. */
-static void cpu_report(const jam_ctx* c) {
-    const jam_cpu_plan* p = &c->cpu;
-    /* n_toptier counts top-tier LOGICAL cpus; n_primary is one per physical top-tier core. The
-     * SMT factor is therefore toptier/primary - dividing by p->n (which includes the appended
-     * siblings) made it print 1x on every SMT machine. */
-    int ecore = p->n_logical - p->n_toptier;
-    int pcore = p->n_primary > 0 ? p->n_primary : p->n;
-    int smt   = pcore > 0 ? p->n_toptier / pcore : 1;
-    if (smt < 1) smt = 1;
-    char cg[24];
-    if (p->quota > 0) snprintf(cg, sizeof cg, "%d cores", p->quota); else snprintf(cg, sizeof cg, "none");
-    fprintf(stderr, "[jam] cpu: %d threads (%d P-core%s x %d SMT, %d E-core%s, of %d logical)  isa=%s  cgroup=%s  pinned=%s\n",
-            c->nthreads, pcore, pcore == 1 ? "" : "s", smt, ecore, ecore == 1 ? "" : "s",
-            p->n_logical,
-            jam_isa_name(c->active), cg, p->pinned ? "yes" : "no");
-}
+/* The default participant count for a context that names none: every online CPU. A host that knows
+ * better (physical cores, a cgroup quota) passes its own count; jam has no opinion of its own. */
+#ifdef _WIN32
+#include <windows.h>
+static int online_cpus(void) { SYSTEM_INFO si; GetSystemInfo(&si); return si.dwNumberOfProcessors > 0 ? (int) si.dwNumberOfProcessors : 1; }
+#else
+#include <unistd.h>
+static int online_cpus(void) { long n = sysconf(_SC_NPROCESSORS_ONLN); return n > 0 ? (int) n : 1; }
+#endif
 
 /* ---- ISA detection + names ---- */
 
@@ -193,8 +185,7 @@ static void debug_report(const jam_ctx* c, jam_isa cap) {
     if (c->name[0]) snprintf(tag, sizeof tag, "\"%s\" ", c->name);
     char pool[32];
     if (c->parallel_for) snprintf(pool, sizeof pool, "host");
-    else if (jam_pool_is_spin(c->ipool)) snprintf(pool, sizeof pool, "spin(%d)", jam_pool_spin_budget(c->ipool));
-    else snprintf(pool, sizeof pool, "condvar");
+    else snprintf(pool, sizeof pool, "own");
     fprintf(stderr, "[jam] %scap=%s  active=%s  threads=%d  pool=%s  metal=%s\n",
             tag, jam_isa_name(cap), jam_isa_name(c->active), c->nthreads, pool,
             c->metal ? "yes" : "no");
@@ -205,9 +196,6 @@ static void debug_report(const jam_ctx* c, jam_isa cap) {
         fprintf(stderr, "[jam]          decode: %s\n", q8_kernel_name(c->q8_decode_kernel));
     fprintf(stderr, "[jam]   MXFP4 kernel: %s\n",
             c->mxfp4_kernel ? "simd (FP4 decode + int8 dot, requant A)" : "generic (float)");
-    fprintf(stderr, "[jam]   cpu set [%d]:", c->cpu.n);   /* the actual logical CPUs the pool runs on */
-    for (int i = 0; i < c->cpu.n; i++) fprintf(stderr, " %d", c->cpu.cpu[i]);
-    fprintf(stderr, "\n");
 }
 
 /* ---- context lifecycle ---- */
@@ -231,23 +219,11 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         if (env_cap != JAM_ISA_AUTO && env_cap != JAM_ISA_METAL && (cap == JAM_ISA_AUTO || env_cap < cap))
             cap = env_cap;
     }
-    /* Core selection: physical P-cores (no E-cores, no SMT), capped by any cgroup quota - see jam_cpu.c.
-     * AUTO (nthreads<=0) uses the selected count and pins to it. An explicit/env count that still FITS the
-     * selection is pinned too; a larger explicit count (e.g. opting into SMT) runs unpinned. */
-    c->cpu = jam_cpu_plan_make();
-    const int* pin = NULL;
-    /* AUTO = one thread per physical PERFORMANCE core (cpu.n_primary), matching llama.cpp's
-     * common_cpu_get_num_math(): E-cores harm lockstep threading and an SMT sibling shares one
-     * core's load/store ports. The siblings are still in cpu.cpu after the primaries, so an
-     * explicit thread count above n_primary widens onto them and still pins sanely. */
-    if (c->nthreads <= 0) { c->nthreads = c->cpu.n_primary; pin = c->cpu.cpu; }
-    else if (c->nthreads <= c->cpu.n)              pin = c->cpu.cpu;
-    c->nthreads_bw = c->cpu.n_primary < c->nthreads ? c->cpu.n_primary : c->nthreads;
-    c->cpu.pinned = (pin != NULL) && jam_cpu_can_pin();
-
-    /* If the caller did not supply an executor, own an internal pool. */
+    /* nthreads is the participant count: with a host executor, how many distinct tid values the host
+     * may pass (the per-tid scratch is sized by it); without one, the size of the pool jam owns. */
+    if (c->nthreads <= 0) c->nthreads = online_cpus();
     if (!c->parallel_for) {
-        c->ipool = jam_pool_create(c->nthreads, pin, c->nthreads_bw);
+        c->ipool = jam_pool_create(c->nthreads);
         if (!c->ipool) { free(c); return NULL; }
     }
 
@@ -371,7 +347,6 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         if (c->metal) c->active = JAM_ISA_METAL;
     }
 #endif
-    cpu_report(c);                            /* essential config, always logged */
     if (jam_debug()) debug_report(c, cap);
     return c;
 }
@@ -445,10 +420,7 @@ static pthread_once_t  g_once = PTHREAD_ONCE_INIT;
 
 static void global_init(void) {
     jam_config cfg;
-    memset(&cfg, 0, sizeof cfg);
-    const char* nt = getenv("JAM_NATIVE_THREADS");
-    if (!nt || !*nt) nt = getenv("JAM_THREADS");
-    cfg.nthreads = nt ? atoi(nt) : 0;            /* 0 = online cpus */
+    memset(&cfg, 0, sizeof cfg);                 /* nthreads 0 = every online cpu */
     cfg.max_isa  = jam_parse_isa(getenv("JAM_ISA")); /* AUTO if unset/unknown */
     cfg.name     = "global";
     g_global = jam_ctx_create(&cfg);
@@ -484,18 +456,20 @@ const char* jam_ctx_name(const jam_ctx* ctx) {
     return ctx ? ctx->name : "";
 }
 
-/* run `fn` over [0,n) via the bound executor (host parallel_for, the internal pool, or serially). */
-static void jam_run(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
-    if (c->parallel_for) c->parallel_for(c->pool, n, fn, arg);
-    else if (c->ipool)   jam_pool_parallel_for(c->ipool, n, fn, arg);
-    else                 fn(arg, 0, n, 0);
+/* A host task with a tid the context has no scratch for is refused, not run: the kernels index
+ * per-tid buffers unchecked, so this guard is the one place the host's contract is enforced. */
+typedef struct { jam_ctx* c; jam_task_fn fn; void* arg; } jam_guarded;
+
+static void guarded_task(void* p, int begin, int end, int tid) {
+    jam_guarded* g = (jam_guarded*) p;
+    if ((unsigned) tid >= (unsigned) g->c->nthreads) { atomic_store(&g->c->bad_tid, 1); return; }
+    g->fn(g->arg, begin, end, tid);
 }
 
-/* As jam_run for BANDWIDTH-BOUND phases (decode gemv): fan only one thread per physical core -
- * SMT siblings fight over the same load ports and LLC and measure ~15% SLOWER on n==1. */
-static void jam_run_bw(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
-    if (c->parallel_for) c->parallel_for(c->pool, n, fn, arg);   /* host executor: host's policy */
-    else if (c->ipool)   jam_pool_parallel_for_capped(c->ipool, n, fn, arg, c->nthreads_bw);
+/* run `fn` over [0,n) via the bound executor (host parallel_for, the internal pool, or serially). */
+static void jam_run(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
+    if (c->parallel_for) { jam_guarded g = { c, fn, arg }; c->parallel_for(c->pool, n, guarded_task, &g); }
+    else if (c->ipool)   jam_pool_parallel_for(c->ipool, n, fn, arg);
     else                 fn(arg, 0, n, 0);
 }
 
@@ -538,26 +512,13 @@ size_t jam_pack_size(jam_ctx* ctx, jam_dtype dt, int m, int k) {
 
 /* Shared quantized dispatch: every quant-weight @ F32 path is "requant activations -> int8, then the
  * SIMD matmul" (or the float floor if no SIMD kernel). Only the decode (inside `simd`) differs. */
-/* Stack requant bound for the single-thread-ctx gemv path below (aq k bytes + ad/asum k/32 floats). */
-#define JAM_GEMV_STACK_K 8192
-
 static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd, jam_task_fn floor_) {
     if (simd) {
-        /* A 1-thread or host-executor ctx may serve CONCURRENT jam_mm calls (row-sliced decode, or
-         * host workers each running nested gemvs inline). The ctx requant scratch would race across
-         * those callers, so the one-column requant lives on each caller's stack instead. */
-        int8_t stack_aq[JAM_GEMV_STACK_K] __attribute__((aligned(16)));
-        float  stack_ad[JAM_GEMV_STACK_K / 32], stack_asum[JAM_GEMV_STACK_K / 32];
-        if (q->n == 1 && (ctx->nthreads == 1 || ctx->parallel_for) && q->k <= JAM_GEMV_STACK_K) {
-            q->aq = stack_aq; q->ad = stack_ad; q->asum = stack_asum;
-        } else {
-            if (!ensure_qscratch(ctx, q->n, q->k)) return JAM_EINVAL;
-            q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
-        }
+        if (!ensure_qscratch(ctx, q->n, q->k)) return JAM_EINVAL;   /* the busy guard makes it ours */
+        q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
         if (q->n == 1) jam_q8_0_requant(q, 0, 1, 0);          /* gemv (n==1): requant the lone column inline */
         else           jam_run(ctx, q->n, jam_q8_0_requant, q);  /* phase 1: activations A -> int8 (shared) */
-        if (q->n == 1) jam_run_bw(ctx, m, simd, q);   /* gemv is DRAM-bound: one thread per core */
-        else           jam_run(ctx, m, simd, q);   /* phase 2: decode-W + int8 dot, fanned over m weight rows */
+        jam_run(ctx, m, simd, q);                  /* phase 2: decode-W + int8 dot, fanned over m weight rows */
     } else {
         jam_run(ctx, m, floor_, q);                /* portable float floor */
     }
@@ -740,7 +701,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32) {
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
         jam_task_fn fastd = (ctx->dense_f32_kernel && (k % 8 == 0)) ? ctx->dense_f32_kernel : ctx->f32_kernel;
-        if (n == 1) jam_run_bw(ctx, m, fastd, &job);   /* gemv: DRAM-bound */
+        if (n == 1) jam_run(ctx, m, fastd, &job);   /* gemv: DRAM-bound */
         else        jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
         return JAM_OK;
     }
@@ -784,7 +745,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
         jam_task_fn fast = (wt == JAM_F16) ? ctx->dense_f16_kernel : ctx->dense_bf16_kernel;
         jam_task_fn slow = (wt == JAM_F16) ? jam_mm_f16_f32_generic : jam_mm_bf16_f32_generic;
-        if (n == 1) jam_run_bw(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
+        if (n == 1) jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
         else        jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
         return JAM_OK;
     }
@@ -913,7 +874,9 @@ jam_status jam_mm(jam_ctx* ctx,
      * Uncontended (the normal single-thread-per-context case) this is a single atomic exchange. */
     if (atomic_exchange_explicit(&ctx->busy, 1, memory_order_acquire))
         return JAM_EBUSY;
+    atomic_store(&ctx->bad_tid, 0);
     jam_status st = jam_mm_run(ctx, w, wt, ldw, a, at, lda, c, ct, ldc, m, n, k);
+    if (atomic_load(&ctx->bad_tid)) st = JAM_EINVAL;   /* a host tid beyond nthreads: no scratch for it */
     atomic_store_explicit(&ctx->busy, 0, memory_order_release);
     return st;
 }

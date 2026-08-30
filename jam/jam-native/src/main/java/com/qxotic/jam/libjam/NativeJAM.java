@@ -14,12 +14,15 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.ref.Reference;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The native ({@code libjam}) {@link JAM} implementation - a handle to a jam context (a {@code
- * jam_ctx*}; {@link #global()} is the process-wide Java context). The constructor is private and
- * the provider owns one native context for the life of the process.
+ * jam_ctx*}) driven by one host {@link JAM.Parallel}: {@link #create} sizes the context's per-tid
+ * scratch by the pool's width and every fan-out comes back through {@link #pfUpcall} onto that
+ * pool, the task's slot being its {@code tid}. libjam creates no thread inside a JVM.
  *
  * <p>{@link #mm} rejects heap segments, bounds-checks each native {@link MemorySegment} against
  * what the kernel touches, and keeps them reachable across the native call. One native {@code
@@ -31,16 +34,19 @@ import java.util.concurrent.locks.ReentrantLock;
  * (or {@code JAM_NATIVE_SERIAL=false}) restores the raw behavior where a contended call surfaces
  * {@link JAM#EBUSY} from the native guard (callers typically fall back to another backend).
  */
-public final class NativeJAM implements JAM {
+public final class NativeJAM implements JAM, AutoCloseable {
 
-    private final long ctx; // owned jam_ctx*
+    private volatile long ctx; // owned jam_ctx*; 0 once closed
+    private final JAM.Parallel parallel; // the host pool every fan-out of this context runs on
+
+    /** Instances by the opaque {@code pool} handle jam passes back to the upcall (their index). */
+    private static final List<NativeJAM> INSTANCES = new CopyOnWriteArrayList<>();
 
     /**
      * {@code -Djam.native.serial} (or {@code JAM_NATIVE_SERIAL}): default {@code true} - concurrent
      * mm calls on one context serialize through a fair (FIFO) lock, so contended callers wait their
      * turn; {@code false} restores the raw behavior where a contended call surfaces {@code EBUSY}
-     * from the native guard and callers fall back. Declared before {@link #global()}'s
-     * instantiation: the instance field {@link #mmLock} reads it during class init.
+     * from the native guard and callers fall back.
      */
     private static final boolean SERIAL =
             Boolean.parseBoolean(NativeLoader.config("jam.native.serial", "true"));
@@ -50,15 +56,48 @@ public final class NativeJAM implements JAM {
     // gets its own lock + ctx for free.
     private final ReentrantLock mmLock = SERIAL ? new ReentrantLock(true) : null;
 
-    private NativeJAM(long ctx) {
+    private NativeJAM(long ctx, JAM.Parallel parallel) {
         this.ctx = ctx;
+        this.parallel = parallel;
     }
 
-    private static final NativeJAM GLOBAL;
+    /**
+     * A context whose fan-outs run on {@code parallel}, with per-tid scratch for its width. It
+     * holds a native context until {@link #close()}.
+     */
+    public static synchronized NativeJAM create(JAM.Parallel parallel) {
+        int id = INSTANCES.indexOf(null); // a closed instance's handle is reused
+        if (id < 0) id = INSTANCES.size();
+        long ctx = createPfJni(parallel.width(), PF_STUB.address(), id);
+        if (ctx == 0) throw new IllegalStateException("jam: failed to create native context");
+        NativeJAM jam = new NativeJAM(ctx, parallel);
+        if (id == INSTANCES.size()) INSTANCES.add(jam);
+        else INSTANCES.set(id, jam);
+        return jam;
+    }
 
-    /** The process-wide native context; its parallel work runs on the host's {@link #host}. */
-    public static NativeJAM global() {
-        return GLOBAL;
+    /** Frees the native context; later calls throw. Idempotent. */
+    @Override
+    public void close() {
+        long handle;
+        synchronized (NativeJAM.class) {
+            handle = ctx;
+            if (handle == 0) return;
+            ctx = 0;
+            INSTANCES.set(INSTANCES.indexOf(this), null);
+        }
+        if (SERIAL) mmLock.lock(); // after any mm in flight
+        try {
+            destroyJni(handle);
+        } finally {
+            if (SERIAL) mmLock.unlock();
+        }
+    }
+
+    private long ctx() {
+        long c = ctx;
+        if (c == 0) throw new IllegalStateException("jam: context is closed");
+        return c;
     }
 
     @Override
@@ -98,9 +137,19 @@ public final class NativeJAM implements JAM {
         long wa = w.address() + wOff, aa = a.address() + aOff, ra = r.address() + rOff;
         if (SERIAL) mmLock.lock();
         try {
-            return FFM
-                    ? mmFfm(ctx, wa, wt, ldw, aa, at, lda, ra, rt, ldr, m, n, k)
-                    : mmJni(ctx, wa, wt, ldw, aa, at, lda, ra, rt, ldr, m, n, k);
+            long ctx = ctx();
+            int status =
+                    FFM
+                            ? mmFfm(ctx, wa, wt, ldw, aa, at, lda, ra, rt, ldr, m, n, k)
+                            : mmJni(ctx, wa, wt, ldw, aa, at, lda, ra, rt, ldr, m, n, k);
+            Throwable failed = UPCALL_FAILURE.get();
+            if (failed != null) { // a task threw inside a fan-out: the result is garbage
+                UPCALL_FAILURE.remove();
+                if (failed instanceof RuntimeException e) throw e;
+                if (failed instanceof Error e) throw e;
+                throw new RuntimeException(failed);
+            }
+            return status;
         } finally {
             if (SERIAL) mmLock.unlock();
             Reference.reachabilityFence(w);
@@ -171,13 +220,14 @@ public final class NativeJAM implements JAM {
             int n,
             int k);
 
-    /** Create the process-wide Java context through jam's existing context API. */
-    private static native long createJni(int threads);
-
     /**
-     * As createJni with a host executor: pf is an upcall stub with the jam_parallel_for signature.
+     * A host-driven context: {@code pf} is an upcall stub with the jam_parallel_for signature,
+     * {@code pool} the opaque handle jam passes back to it, {@code threads} how many tid values the
+     * host will pass.
      */
-    private static native long createPfJni(int threads, long pf);
+    private static native long createPfJni(int threads, long pf, long pool);
+
+    private static native void destroyJni(long ctx);
 
     /**
      * {@code jam_pack_size} through Panama (a load-time call, so no JNI twin). Guarded by the pack
@@ -189,6 +239,7 @@ public final class NativeJAM implements JAM {
     @Override
     public long packSize(int dtype, int m, int k) {
         if (PACK_ABI_NATIVE != PACK_ABI) return 0;
+        long ctx = ctx();
         try {
             return (long) PACK_SIZE_FFM.invokeExact(ctx, dtype, m, k);
         } catch (Throwable t) {
@@ -198,8 +249,8 @@ public final class NativeJAM implements JAM {
 
     // ── the host's pool: jam fans its row ranges through it, never through native workers. ──
 
-    /** Set by the provider; the calling thread alone until then. */
-    static volatile JAM.Parallel host = JAM.Parallel.INLINE;
+    /** A throwable from a task inside the current {@link #mm}; the upcall cannot throw. */
+    private static final ThreadLocal<Throwable> UPCALL_FAILURE = new ThreadLocal<>();
 
     // generic task downcall: (fn, arg, begin, end, tid) -> void
     private static final MethodHandle TASK_FFM =
@@ -216,16 +267,27 @@ public final class NativeJAM implements JAM {
         }
     }
 
-    /** The jam_parallel_for upcall: split [0,n) across the host's pool, one tid per slice. */
+    /**
+     * The jam_parallel_for upcall: [0,n) in at most {@code 4 x width} contiguous slices on the
+     * instance's pool, each task's slot as its tid. An exception cannot cross an upcall stub (it
+     * would end the VM), so it is parked for {@link #mm} to rethrow once jam returns.
+     */
     private static void pfUpcall(long pool, int n, long fn, long arg) {
-        int t = host.width();
-        if (n < 2 || t < 2) {
-            runTask(fn, arg, 0, n, 0);
-            return;
+        try {
+            JAM.Parallel host = INSTANCES.get((int) pool).parallel;
+            int t = host.width();
+            if (n < 2 || t < 2) {
+                runTask(fn, arg, 0, n, 0);
+                return;
+            }
+            int slices = Math.min(n, 4 * t);
+            int per = (n + slices - 1) / slices;
+            host.forLoop(
+                    (n + per - 1) / per,
+                    (s, slot) -> runTask(fn, arg, s * per, Math.min(n, s * per + per), slot));
+        } catch (Throwable t) {
+            if (UPCALL_FAILURE.get() == null) UPCALL_FAILURE.set(t);
         }
-        int per = (n + t - 1) / t;
-        int slices = (n + per - 1) / per;
-        host.forLoop(slices, s -> runTask(fn, arg, s * per, Math.min(n, s * per + per), s));
     }
 
     private static final MemorySegment PF_STUB;
@@ -296,9 +358,6 @@ public final class NativeJAM implements JAM {
 
     static {
         NativeLoader.load(); // always: the JNI backend needs libjam loaded too
-        long ctx = createPfJni(Runtime.getRuntime().availableProcessors(), PF_STUB.address());
-        if (ctx == 0) throw new IllegalStateException("jam: failed to create native context");
-        GLOBAL = new NativeJAM(ctx);
         MM_FFM =
                 !FFM
                         ? null

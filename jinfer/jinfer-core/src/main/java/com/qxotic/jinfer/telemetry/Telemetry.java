@@ -187,8 +187,7 @@ public final class Telemetry {
                     RuntimeEvent event = new RuntimeEvent();
                     if (!event.isEnabled()) return;
                     event.vectorBits = Segments.vectorBits();
-                    event.computeThreads = RuntimeFlags.THREADS;
-                    event.decodeThreads = RuntimeFlags.THREADS;
+                    event.threads = RuntimeFlags.THREADS;
                     event.commit();
                 });
         FlightRecorder.addPeriodicEvent(

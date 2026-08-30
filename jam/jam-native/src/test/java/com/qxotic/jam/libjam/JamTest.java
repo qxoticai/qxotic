@@ -21,14 +21,14 @@ import org.junit.jupiter.api.function.Executable;
 
 /**
  * Tests the jam Java API end to end: the native library loads (via NativeLoader), and {@code
- * NativeJAM.global().mm} computes R = W @ Aᵀ correctly for F32/F16/Q8_0 weights, bounds-checks its
- * native MemorySegments, and reports the right status for bad/unsupported calls. Operands are
- * off-heap. The suite runs once per binding (jni + ffm) via two surefire passes; the ffm one sets
- * -Djam.native.binding=ffm (see pom.xml).
+ * NativeJAM.create(INLINE).mm} computes R = W @ Aᵀ correctly for F32/F16/Q8_0 weights,
+ * bounds-checks its native MemorySegments, and reports the right status for bad/unsupported calls.
+ * Operands are off-heap. The suite runs once per binding (jni + ffm) via two surefire passes; the
+ * ffm one sets -Djam.native.binding=ffm (see pom.xml).
  */
 class JamTest {
 
-    private static final JAM jam = NativeJAM.global();
+    private static final JAM jam = NativeJAM.create(JAM.Parallel.INLINE);
 
     /** F32 matmul through the API; returns C [m×n] token-major (out[j*m + i]). */
     private static float[] mmF32(Arena ar, float[] W, float[] A, int m, int n, int k) {

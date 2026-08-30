@@ -170,7 +170,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Djinfer.kernels.expectJam=vector</argLine>
+              <argLine>--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Djinfer.kernels.expectJam=vector,scalar</argLine>
               <classpathDependencyExcludes>
                 <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
               </classpathDependencyExcludes>

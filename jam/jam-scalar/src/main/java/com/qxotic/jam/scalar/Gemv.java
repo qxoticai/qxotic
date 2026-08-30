@@ -5,7 +5,6 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import com.qxotic.jam.JAM.Parallel;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The decode kernel ({@code n == 1}): one dot product per weight row, rows claimed in small runs by
@@ -41,18 +40,16 @@ final class Gemv {
             int len = Math.min(CHUNK, k - c * CHUNK);
             MemorySegment.copy(a, JAVA_FLOAT_UNALIGNED, aOff + c * CHUNK * 4L, x[c], 0, len);
         }
-        AtomicInteger next = new AtomicInteger();
         parallel.forLoop(
-                Math.min(Tile.ceilDiv(m, ROWS), parallel.width()),
-                worker -> {
-                    Scratch.Slot s = scratch.slot(worker);
+                Tile.ceilDiv(m, ROWS),
+                (strip, slot) -> {
+                    Scratch.Slot s = scratch.slot(slot);
                     float[] tmp = s.row(CHUNK), acc = s.acc(CHUNK);
-                    for (int from; (from = next.getAndAdd(ROWS)) < m; )
-                        for (int i = from, to = Math.min(m, from + ROWS); i < to; i++)
-                            r.set(
-                                    JAVA_FLOAT_UNALIGNED,
-                                    rOff + i * 4L,
-                                    dot(w, i, s.decode, x, k, tmp, acc));
+                    for (int i = strip * ROWS, to = Math.min(m, i + ROWS); i < to; i++)
+                        r.set(
+                                JAVA_FLOAT_UNALIGNED,
+                                rOff + i * 4L,
+                                dot(w, i, s.decode, x, k, tmp, acc));
                 });
     }
 

@@ -34,11 +34,7 @@ public final class RuntimeEvent extends Event {
     @Label("Vector Bits")
     public int vectorBits;
 
-    /** Jinfer's compute pool. JAM providers own their worker pools. */
-    @Label("Compute Threads")
-    public int computeThreads;
-
-    /** Jinfer's decode pool. JAM providers own their worker pools. */
-    @Label("Decode Threads")
-    public int decodeThreads;
+    /** The one pool every kernel and jam backend runs on ({@code -Djinfer.threads}). */
+    @Label("Threads")
+    public int threads;
 }

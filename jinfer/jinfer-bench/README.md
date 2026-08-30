@@ -56,7 +56,7 @@ java $BENCH_FLAGS -cp "$CP" com.qxotic.jinfer.bench.JinferBench \
 | `-r, --repetitions <N>` | timed reps, default 5 |
 | `-w, --warmup <N>` | minimum warmup passes; then adaptive until throughput settles within 3% (max 30) |
 | `--no-warmup` | skip warmup entirely (native code only) |
-| `-t, --threads <N>` | force the worker count for both tests (sets `jinfer.computeThreads`, `jinfer.decodeThreads`, `jam.threads`); default: no override, the engine's own defaults apply (P-cores only on Apple Silicon, same as llama-bench) |
+| `-t, --threads <N>` | force the thread budget for both tests (sets `jinfer.threads`, the one pool every kernel and jam backend runs on); default: no override, the engine's own defaults apply (P-cores only on Apple Silicon, same as llama-bench) |
 | `--ctx <N>` | override context for both tests (default: `p` for pp, `n` for tg, as llama-bench) |
 | `--with media=<mmproj.gguf>` | attach a companion (repeatable; CLI convention) |
 | `--media <path>` | also measure projected-media cold/warm latency (needs a vision projector) |
@@ -107,9 +107,7 @@ Reports both `tok/s` (total packed tokens) and `seq/s`. The llama.cpp side (`lla
 
 Small loops over engine-level kernels, without loading a model:
 
-- **`SpinProbe [iters]`**: cost of a `SpinPool` dispatch and barrier with an empty region. This is
-  the dispatch latency paid by each parallel decode region. It runs on the decode pool, so it
-  uses the real spin path. `java $BENCH_FLAGS -cp "$CP" com.qxotic.jinfer.bench.SpinProbe`.
+- **`SpinProbe [iters]`**: cost of one `Parallel` region with an empty body - the dispatch and barrier latency every parallel region of a decode token pays, on the one pool the engine and the jam backends share.
 - **`ConvPeak [census.log]`**: `Convolutions.conv1dRows` throughput across the register-tile
   shapes. With a shape census from `-Djinfer.convProfile=true` on a real synthesis it measures
   exactly the shapes that model ran, weighted by FLOPs; without one it falls back to a generic

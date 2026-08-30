@@ -627,7 +627,9 @@ public record Options(
                 "  --api-key <token>             require a bearer token; mandatory off loopback");
         out.println(
                 "  --cors-origin <origin>        allowed browser origin; repeatable, default *");
-        out.println("  --threads <int>               HTTP handler threads, default 16");
+        out.println(
+                "  --threads <int>               concurrent requests admitted (2x this many"
+                        + " in flight, the rest get 503), default 16");
         out.println("  --queue-capacity <int>        waiting generations, default 4");
         out.println("  --max-body-mb <int>           request body limit, default 32");
         out.println("  --write-timeout <seconds>     stalled SSE write limit, default 30");

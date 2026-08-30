@@ -7,10 +7,10 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 import static jdk.incubator.vector.VectorOperators.ADD;
 
 import com.oracle.svm.shared.AlwaysInline;
+import com.qxotic.jam.JAM;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
-import java.util.concurrent.atomic.AtomicInteger;
 import jdk.incubator.vector.FloatVector;
 
 /**
@@ -101,7 +101,7 @@ final class BandGemm {
      */
     static final int PANEL_GRANULE = MR * 16 / gcd(MR, 16);
 
-    /** Tasks per worker the plan aims for, before the tail is added. */
+    /** Tasks per slot the plan aims for, before the tail is added. */
     private static final int TASKS_PER_WORKER = 4;
 
     /**
@@ -155,14 +155,9 @@ final class BandGemm {
             RowDequant deq,
             int kcMax) {
         if (n <= 0 || m <= 0) return;
-        Plan plan = new Plan(n, m, k, Math.min(kcMax, k));
-        MemorySegment packedA = scratch.acquire((long) plan.tiles * NR * k);
-        try {
-            new Gemm(w, wOff, a, aBase, aStride, o, oBase, oStride, deq, plan, scratch, packedA)
-                    .run();
-        } finally {
-            scratch.release(packedA);
-        }
+        Plan plan = new Plan(n, m, k, Math.min(kcMax, k), scratch.width());
+        MemorySegment packedA = scratch.packed((long) plan.tiles * NR * k);
+        new Gemm(w, wOff, a, aBase, aStride, o, oBase, oStride, deq, plan, scratch, packedA).run();
     }
 
     /** The blocking of one gemm: k-blocks, panels, token splits and the task numbering. */
@@ -173,23 +168,22 @@ final class BandGemm {
         final int splits, tilesPerSplit;
         final int packItems, tasks;
 
-        Plan(int n, int m, int k, int kc) {
+        Plan(int n, int m, int k, int kc, int width) {
             this.n = n;
             this.m = m;
             this.k = k;
             this.kc = kc;
             kBlocks = ceilDiv(k, kc);
             tiles = ceilDiv(n, NR);
-            panel = panelRows(kc, m);
+            panel = panelRows(kc, m, width);
             // Guided tail: the last ~2 tasks per worker are quarter panels (at least a granule).
             tailPanel = Math.max(PANEL_GRANULE, panel / 4 / PANEL_GRANULE * PANEL_GRANULE);
-            int tailRows =
-                    tailPanel == panel ? 0 : Math.min(m, 2 * VectorSupport.width() * tailPanel);
+            int tailRows = tailPanel == panel ? 0 : Math.min(m, 2 * width * tailPanel);
             bulkRows = m - tailRows;
             bulkPanels = ceilDiv(bulkRows, panel);
             panels = bulkPanels + ceilDiv(tailRows, tailPanel);
             // Few panels even at one granule (small m): split the tokens across tasks too.
-            int wanted = TASKS_PER_WORKER * VectorSupport.width();
+            int wanted = TASKS_PER_WORKER * width;
             splits = panels >= wanted ? 1 : Math.min(tiles, ceilDiv(wanted, panels));
             tilesPerSplit = ceilDiv(tiles, splits);
             packItems = tiles * kBlocks;
@@ -214,9 +208,9 @@ final class BandGemm {
      * {@link #PANEL_BYTES}, shrunk so that {@code m} yields at least {@link #TASKS_PER_WORKER}
      * panels per worker (never below one granule).
      */
-    static int panelRows(int kc, int m) {
+    static int panelRows(int kc, int m, int width) {
         int byCache = PANEL_BYTES / (kc * Float.BYTES);
-        int byBalance = m / (TASKS_PER_WORKER * VectorSupport.width());
+        int byBalance = m / (TASKS_PER_WORKER * width);
         int rows = Math.min(byCache, byBalance) / PANEL_GRANULE * PANEL_GRANULE;
         return Math.max(PANEL_GRANULE, rows);
     }
@@ -229,7 +223,6 @@ final class BandGemm {
         final RowDequant deq;
         final Plan plan;
         final Scratch scratch;
-        final AtomicInteger next = new AtomicInteger(), packed = new AtomicInteger();
 
         Gemm(
                 MemorySegment w,
@@ -259,17 +252,11 @@ final class BandGemm {
             this.pab = VectorSupport.vectorBase(packedA);
         }
 
-        /** One region: every worker pulls tasks from the counter until none are left. */
+        /** Two regions: the activation tiles are packed, then the panels sweep them. */
         void run() {
-            VectorSupport.parallelForEach(
-                    0,
-                    Math.min(plan.tasks, VectorSupport.width()),
-                    worker -> {
-                        for (int i; (i = next.getAndIncrement()) < plan.tasks; ) {
-                            if (i < plan.packItems) pack(i);
-                            else sweep(i - plan.packItems, worker);
-                        }
-                    });
+            JAM.Parallel parallel = scratch.parallel();
+            parallel.forLoop(plan.packItems, this::pack);
+            parallel.forLoop(plan.tasks - plan.packItems, this::sweep);
         }
 
         /**
@@ -288,7 +275,6 @@ final class BandGemm {
                     t * NR,
                     plan.n,
                     kcb);
-            packed.incrementAndGet();
         }
 
         /** Sweep task {@code j}: panel {@code j / splits} against tile range {@code j % splits}. */
@@ -298,9 +284,8 @@ final class BandGemm {
             int tLo = sp * plan.tilesPerSplit;
             int tHi = Math.min(plan.tiles, tLo + plan.tilesPerSplit);
             if (tLo >= tHi) return;
-            while (packed.get() < plan.packItems) Thread.onSpinWait(); // the pack items go first
             long panelFloats = (long) plan.panel * plan.kc;
-            MemorySegment raw = scratch.acquireLocal(slot, panelFloats + (long) MR * plan.kc);
+            MemorySegment raw = scratch.local(slot, panelFloats + (long) MR * plan.kc);
             MemorySegment sv = VectorSupport.vectorSegment(raw);
             long sb = VectorSupport.vectorBase(raw); // the interleaved bands
             long lin = sb + panelFloats * 4L; // MR linear rows: dequant staging

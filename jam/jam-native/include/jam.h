@@ -13,26 +13,25 @@
  *   context  : jam_mm(NULL, ...) uses the process-global context - lazily built on first use from
  *              JAM_* env vars (OpenMP-style; zero setup). Or pass an explicit context for fine
  *              control (host executor, thread count, ISA cap).
- *   threading: jam_mm is multithreaded WITHIN a call (the context's pool fans the work over its
- *              threads). A jam_ctx is a SERIAL EXECUTION STREAM: mm calls on the SAME context run one
- *              at a time and must NOT be called concurrently (they share the pool and the context's
- *              scratch). For PARALLEL matmul, create and use SEVERAL contexts - one per thread, each
- *              owning its own pool + scratch. The global context is a single serial stream.
+ *   threading: jam_mm is multithreaded WITHIN a call: the context fans the work through the host's
+ *              parallel_for when one was supplied, else through a small pool of its own. A jam_ctx
+ *              is a SERIAL EXECUTION STREAM: mm calls on the SAME context run one at a time (a
+ *              concurrent call gets JAM_EBUSY); they share the context's scratch. For PARALLEL
+ *              matmul, create SEVERAL contexts. The global context is a single serial stream.
  *   dispatch : the per-CPU kernel is resolved ONCE (per context); the op is a table lookup + a few
  *              cheap branches. No per-call search/hashing/codegen.
- *   memory   : operands are caller-owned, BORROWED for the call; a context owns its pool and (for the
- *              quantized paths) a lazily-grown activation-requant scratch - both per-context, which is
- *              why a context is single-stream.
+ *   memory   : operands are caller-owned, BORROWED for the call; a context owns (for the quantized
+ *              paths) a lazily-grown activation-requant scratch plus one repack buffer per tid, which
+ *              is why a context is single-stream.
  *   targets  : x86 (SSE2..AVX-512/VNNI/AMX), ARM (NEON..SVE), and a portable-C floor - one fat lib,
  *              best kernel chosen at runtime; builds and runs anywhere. No dependencies.
  *
  *   == Environment ==
- *     JAM_THREADS          global pool size (unset = auto)
- *     JAM_NATIVE_THREADS   native-provider override
  *     JAM_ISA           HARD CEILING on the kernel ISA for EVERY context, global or explicit
  *                       (a capability name below; unset = best available)
- *     JAM_POOL/JAM_SPIN internal-pool wait mode for any context (spin vs condvar) + spin budget
  *     JAM_DEBUG         one-line dispatch/kernel diagnostics to stderr
+ *   Thread counts are not environment-driven: a context's config names them, and the global
+ *   context uses every online CPU.
  *
  *   == Capability names (the user-facing strings for JAM_ISA and jam_isa_name) ==
  *     "auto" "generic" "sse2" "sse3" "ssse3" "avx2" "avx_vnni" "avx512" "avx512_vnni" "amx"  (x86)
@@ -143,16 +142,18 @@ typedef enum {
 
 JAM_API const char* jam_isa_name(jam_isa isa);   /* user-facing name, e.g. "avx512_vnni"; static, do not free */
 
-/* ---- threading: drive the caller's executor (e.g. the JVM SpinPool), or let jam own a pool ----
- * jam calls parallel_for(pool, n, fn, arg): run fn over [0,n) split across workers, block till done. */
+/* ---- threading: drive the caller's executor, or let jam own a small pool ----
+ * jam calls parallel_for(pool, n, fn, arg): run fn over [0,n) in slices, block till done. Every
+ * slice's tid must be below the config's nthreads and unique among the slices running at once: the
+ * kernels index per-tid scratch by it. A tid at or above nthreads fails the call with JAM_EINVAL. */
 typedef void (*jam_task_fn)(void* arg, int begin, int end, int tid);
 typedef void (*jam_parallel_for)(void* pool, int n, jam_task_fn fn, void* arg);
 
 /* ---- context (optional; ctx==NULL uses the global env-configured one) ---- */
 typedef struct {
-    jam_parallel_for parallel_for;   /* NULL -> the context owns an internal pool */
+    jam_parallel_for parallel_for;   /* NULL -> the context owns a small pool of its own */
     void*            pool;            /* opaque, passed back to parallel_for */
-    int32_t          nthreads;        /* internal-pool size; 0 = auto (physical cores) */
+    int32_t          nthreads;        /* participants: tid values the host may pass, or the own pool's size; 0 = online cpus */
     jam_isa          max_isa;         /* JAM_ISA_AUTO = best; else cap here (disables higher levels) */
     const char*      name;            /* optional label for JAM_DEBUG logs (copied; NULL = unnamed) */
 } jam_config;

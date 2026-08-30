@@ -44,14 +44,13 @@ public final class VectorJAM implements JAM {
      * ScalarJAM} instead).
      */
     public VectorJAM(JAM.Parallel parallel) {
-        VectorSupport.host = parallel;
         if (!isAvailable()) {
             throw new IllegalStateException(
                     "VectorJAM needs the incubator Vector API module 'jdk.incubator.vector', which"
                         + " is not on the module path. Enable it on the java launch (and on javac"
                         + " when compiling): --add-modules jdk.incubator.vector");
         }
-        this.scratch = new Scratch();
+        this.scratch = new Scratch(parallel);
     }
 
     /**

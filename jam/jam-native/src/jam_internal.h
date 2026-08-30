@@ -2,7 +2,6 @@
 #define JAM_INTERNAL_H
 
 #include "jam.h"
-#include "jam_cpu.h"  /* jam_cpu_plan (core selection, stored on the ctx for the log) */
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* int8_t / int32_t */
 #include <stdlib.h>
@@ -23,14 +22,9 @@ static inline void  jam_aligned_free(void* p) { free(p); }
 
 /* ---- internal thread pool (used when no host parallel_for is supplied, e.g. the global ctx) ---- */
 typedef struct jam_pool jam_pool;
-jam_pool* jam_pool_create(int nthreads, const int* cpu, int nprimary); /* nthreads participants incl. the submitter;
-                                                          * cpu[] (len nthreads, or NULL) pins worker k to
-                                                          * cpu[k+1] best-effort (cpu[0] = unpinned submitter) */
+jam_pool* jam_pool_create(int nthreads);   /* nthreads participants including the submitter */
 void      jam_pool_destroy(jam_pool* pool);
 void      jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg);  /* blocks till done */
-void      jam_pool_parallel_for_capped(jam_pool* pool, int n, jam_task_fn fn, void* arg, int cap);
-int       jam_pool_is_spin(const jam_pool* pool);        /* 1 unless JAM_POOL=condvar (spin-then-park is the default barrier) */
-int       jam_pool_spin_budget(const jam_pool* pool);    /* pauses before a spinning worker parks */
 
 /* Per-worker K-quant weight-repack scratch (VNNI layout). One per pool worker, indexed by jam tid. */
 typedef struct { uint8_t* qs; float* dw; float* mw; int cap_blocks; } jam_repack;
@@ -52,9 +46,8 @@ struct jam_ctx {
     jam_parallel_for parallel_for;   /* host executor; if set, takes precedence over ipool */
     void*            pool;           /* opaque handle for parallel_for */
     jam_pool*        ipool;          /* jam-owned pool (NULL if a host executor was supplied) */
-    int              nthreads;
-    int              nthreads_bw;    /* fan cap for bandwidth-bound phases (one per physical core) */
-    jam_cpu_plan     cpu;            /* the core-selection plan used to size + pin the pool (for the log) */
+    int              nthreads;       /* participants; with a host executor, the number of tid values it may pass */
+    _Atomic int      bad_tid;        /* a host task arrived with tid >= nthreads: the call fails with EINVAL */
     jam_isa          active;         /* the bound ISA level (reported by jam_active_isa) */
     char             name[48];       /* optional label for JAM_DEBUG ("" if unnamed) */
     _Atomic int      busy;           /* serial-stream guard: jam_mm try-acquires (1 exchange); else EBUSY */
