@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.kernels;
 
+import static com.qxotic.jinfer.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
@@ -18,6 +19,7 @@ public final class Convolutions {
     private Convolutions() {}
 
     private static final VectorSpecies<Float> SPECIES = Segments.F_SPECIES;
+    private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
 
     /**
      * Time samples per unit of work. Only parallel granularity now that a unit writes its output
@@ -876,6 +878,41 @@ public final class Convolutions {
             int parts,
             int c0,
             int c1) {
+        if (USE_VECTOR_API && dConv == 3 && seqLen > 1) {
+            // one channel vector at a time, positions inner: the two state rows live in registers
+            // across the scan and reach memory once; the scalar products are formed and added in
+            // the scalar loop's order, so the two paths agree bit for bit
+            int lanes = SPECIES.length();
+            float[] taps = new float[3 * lanes];
+            for (; c0 + lanes <= c1; c0 += lanes) {
+                for (int i = 0; i < lanes; i++)
+                    for (int t = 0; t < 3; t++)
+                        taps[t * lanes + i] = readFloat(ks, kb + 4L * ((c0 + i) * 3L + t));
+                FloatVector k0 = FloatVector.fromArray(SPECIES, taps, 0);
+                FloatVector k1 = FloatVector.fromArray(SPECIES, taps, lanes);
+                FloatVector k2 = FloatVector.fromArray(SPECIES, taps, 2 * lanes);
+                FloatVector s0 = FloatVector.fromMemorySegment(SPECIES, cs, cb + 4L * c0, LE);
+                FloatVector s1 =
+                        FloatVector.fromMemorySegment(SPECIES, cs, cb + 4L * (dim + c0), LE);
+                for (int s = 0; s < seqLen; s++) {
+                    long row = tb + 4L * ((long) s * parts * dim + c0);
+                    FloatVector bx =
+                            FloatVector.fromMemorySegment(SPECIES, ts, row, LE)
+                                    .mul(
+                                            FloatVector.fromMemorySegment(
+                                                    SPECIES, ts, row + 8L * dim, LE));
+                    bx.intoMemorySegment(ts, row, LE);
+                    FloatVector sum = s0.mul(k0).add(s1.mul(k1)).add(bx.mul(k2));
+                    FloatVector.fromMemorySegment(SPECIES, ts, row + 4L * dim, LE)
+                            .mul(sum)
+                            .intoMemorySegment(os, ob + 4L * ((long) s * dim + c0), LE);
+                    s0 = s1;
+                    s1 = bx;
+                }
+                s0.intoMemorySegment(cs, cb + 4L * c0, LE);
+                s1.intoMemorySegment(cs, cb + 4L * (dim + c0), LE);
+            }
+        }
         int hist = dConv - 1;
         for (int s = 0; s < seqLen; s++) {
             int tmpOff = s * parts * dim, outOff = s * dim;
