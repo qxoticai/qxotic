@@ -520,7 +520,8 @@ abstract class AbstractToolIT {
         history.add(first.aiMessage());
         history.add(ToolExecutionResultMessage.from(weather.id(), weather.name(), "18C, sunny"));
         ChatResponse answer1 = converse(history, results, WEATHER, TIME);
-        assertTrue(answer(answer1).contains("18"), answer(answer1));
+        String text1 = answer(answer1);
+        assertTrue(text1.contains("18"), text1);
         history.add(answer1.aiMessage());
 
         // round trip 2 on the SAME history: the call turns above re-encode as history. The wire
