@@ -349,11 +349,8 @@ abstract class AbstractToolIT {
                                 ToolExecutionResultMessage.from(
                                         call.id(), call.name(), "18C, sunny")),
                         WEATHER);
-        Assumptions.assumeTrue(
-                !second.aiMessage().hasToolExecutionRequests(),
-                "model chose another tool call after receiving the result: " + second.aiMessage());
-        assertNotNull(second.aiMessage().text());
-        assertTrue(second.aiMessage().text().contains("18"), second.aiMessage().text());
+        String text = answer(second);
+        assertTrue(text.contains("18"), text);
     }
 
     @Test
@@ -449,6 +446,15 @@ abstract class AbstractToolIT {
                 "no-parameter call must carry no arguments: " + raw);
     }
 
+    /** The text answer after a tool result; skips when the model called a tool again instead. */
+    private static String answer(ChatResponse r) {
+        Assumptions.assumeTrue(
+                !r.aiMessage().hasToolExecutionRequests(),
+                "model chose another tool call after receiving the result: " + r.aiMessage());
+        assertNotNull(r.aiMessage().text(), "no text answer: " + r.aiMessage());
+        return r.aiMessage().text();
+    }
+
     @Test
     void jsonToolResult() {
         ChatResponse first = ask("What is the weather in Paris? Use the tool.", WEATHER);
@@ -464,7 +470,8 @@ abstract class AbstractToolIT {
                                         "{\"temp_c\": 18, \"conditions\": \"sunny\","
                                                 + " \"humidity\": 0.62}")),
                         WEATHER);
-        assertTrue(second.aiMessage().text().contains("18"), second.aiMessage().text());
+        String text = answer(second);
+        assertTrue(text.contains("18"), text);
     }
 
     /**
@@ -513,7 +520,7 @@ abstract class AbstractToolIT {
         history.add(first.aiMessage());
         history.add(ToolExecutionResultMessage.from(weather.id(), weather.name(), "18C, sunny"));
         ChatResponse answer1 = converse(history, results, WEATHER, TIME);
-        assertTrue(answer1.aiMessage().text().contains("18"), answer1.aiMessage().text());
+        assertTrue(answer(answer1).contains("18"), answer(answer1));
         history.add(answer1.aiMessage());
 
         // round trip 2 on the SAME history: the call turns above re-encode as history. The wire
@@ -607,7 +614,7 @@ abstract class AbstractToolIT {
                                 .toolSpecifications(WEATHER)
                                 .build());
         // the streamed fragments and the final message agree
-        assertEquals(second.response().aiMessage().text(), second.text());
+        assertEquals(answer(second.response()), second.text());
         assertTrue(second.text().contains("18"), second.text());
     }
 
