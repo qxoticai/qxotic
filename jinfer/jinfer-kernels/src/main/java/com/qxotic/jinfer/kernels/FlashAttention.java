@@ -45,11 +45,12 @@ public final class FlashAttention {
     /**
      * Query-row tile width for the register-tiled QK^T / PV kernels: each key/value vector is
      * loaded (and F16-decoded) once and reused across QT consecutive query rows. Kept at 4 (not 8)
-     * because Graal CE intrinsifies the Vector API per method only under a bounded op count: 8
+     * because native-image expands the Vector API per method only under a bounded op count: 8
      * accumulators + per-key f16 decode overflow that budget and the whole tile compiles to BOXED
-     * vectors (~15x slower, measured) - slower than the per-position rolling fallback. 4 live
-     * accumulators stay register-resident and intrinsified (same width as the rolling 4x4 tile),
-     * still giving 4x key/value decode reuse over the rolling path's 1x.
+     * vectors (~15x slower, measured) - slower than the per-position rolling fallback. The tiles
+     * are therefore @NeverInline: each is its own expansion unit, and the caller's size no longer
+     * counts against them. 4 live accumulators stay register-resident and intrinsified (same width
+     * as the rolling 4x4 tile), still giving 4x key/value decode reuse over the rolling path's 1x.
      */
     static final int QT = 4;
 
@@ -175,9 +176,10 @@ public final class FlashAttention {
 
     // ---- the fused softmax pass: vectorized exp over a score row ----------------------------
     // The polynomial, its constants, its scalar mirror and its ACCURACY CONTRACT live in FastMath
-    // (gated by ExpAccuracyTest); the vector body is fused inline below because a helper - even
-    // @AlwaysInline - stays boxed under the native-image Vector API expansion (measured 9ns vs
-    // 0.19ns per element).
+    // (gated by ExpAccuracyTest); the vector body is fused inline below: a helper returning a
+    // vector, or inlined into a caller that is over the native-image expansion budget, stays boxed
+    // (measured 9ns vs 0.19ns per element). A memory-in, memory-out @NeverInline helper would be
+    // the other correct shape.
 
     /** Max over {@code S[base, base+n)} - the block row max feeding the online rescale. */
     static float rowMax(float[] S, int base, int n) {
@@ -212,9 +214,9 @@ public final class FlashAttention {
             int len = sp.length();
             int bound = sp.loopBound(n);
             if (bound > 0) {
-                // the exp body is fused INLINE: as a helper (even @AlwaysInline) the native-image
-                // Vector API expansion phase leaves it boxed and the pass runs at scalar speed -
-                // measured 9ns/element vs 0.19ns fused (the same budget trap as pvTile's split)
+                // the exp body is fused INLINE (see the note above the row helpers): an inlined
+                // helper joins its caller's expansion budget, and over budget nothing expands -
+                // measured 9ns/element vs 0.19ns fused
                 FloatVector mv = FloatVector.broadcast(sp, max);
                 FloatVector acc = FloatVector.zero(sp);
                 FloatVector vLog2e = FloatVector.broadcast(sp, FastMath.EXP_LOG2E);
@@ -513,10 +515,9 @@ public final class FlashAttention {
      * dimension loop runs only FOUR iterations per key, so compare/branch/addressing bookkeeping
      * rivals its 16 FMAs (perf: the two hottest instructions in the prefill lambda were a cmp and a
      * mov, not FMAs). Here the query vectors are hoisted across the key loop and the key body is
-     * branch-free. F32 keys only: the F16 conversion chain would blow the AOT Vector API expansion
-     * budget (the pvTileF16 lesson), and the split prefill decodes its F16 cache to F32 scratch
-     * before QK anyway. Accumulation order matches the generic path exactly - scores are
-     * bit-identical.
+     * branch-free. F32 keys only: the prefill decodes its F16 cache to F32 scratch before QK
+     * (decodeF16Run, its own expansion unit), so this tile never carries the conversion chain.
+     * Accumulation order matches the generic path exactly - scores are bit-identical.
      */
     @NeverInline("a memory-in, memory-out tile: its own Vector API expansion unit in the image")
     private static void qkTile64F32(

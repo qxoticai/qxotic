@@ -64,7 +64,7 @@ public final class RuntimeFlags {
      * Apple silicon P-core count via {@code sysctlbyname("hw.perflevel0.physicalcpu")}, or 0 when
      * not applicable. Decode barriers are latency-bound: one E-core straggler stalls every barrier,
      * and a gemma MoE token crosses ~1200 of them - measured 19.5 -> 27.1 t/s on an M3 Pro just by
-     * excluding the E-cores. jam pins its own pool the same way; this aligns the Java pool with it.
+     * excluding the E-cores. The jam backends run on this pool, so this count is theirs too.
      */
     private static int applePerformanceCores() {
         if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")

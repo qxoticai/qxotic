@@ -14,8 +14,8 @@ import java.util.Random;
 /**
  * Throughput of {@link ScalarJAM#mm} on one shape: {@code KernelBench <dtype> <m> <n> <k>
  * [seconds]}. Warms up for that long, then reports the median and best rep of another such window;
- * {@code -Djam.threads=1} isolates a core. Not a test - a tool for tuning the sweeps (run it under
- * both -XX:-UseJVMCICompiler and Graal).
+ * {@code -Djam.bench.threads=1} isolates a core. Not a test - a tool for tuning the sweeps (run it
+ * under both -XX:-UseJVMCICompiler and Graal).
  */
 public final class KernelBench {
 
@@ -39,7 +39,7 @@ public final class KernelBench {
                 new ScalarJAM(
                         TestPool.of(
                                 Integer.getInteger(
-                                        "jam.threads",
+                                        "jam.bench.threads",
                                         Runtime.getRuntime().availableProcessors())));
         double macs = (double) m * n * k;
         long warm = System.nanoTime();
@@ -60,7 +60,7 @@ public final class KernelBench {
                 k,
                 jam instanceof ScalarJAM
                         ? Integer.getInteger(
-                                "jam.threads", Runtime.getRuntime().availableProcessors())
+                                "jam.bench.threads", Runtime.getRuntime().availableProcessors())
                         : 1,
                 reps.get(reps.size() / 2),
                 reps.get(reps.size() - 1),

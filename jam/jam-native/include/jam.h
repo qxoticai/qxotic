@@ -153,7 +153,9 @@ typedef void (*jam_parallel_for)(void* pool, int n, jam_task_fn fn, void* arg);
 typedef struct {
     jam_parallel_for parallel_for;   /* NULL -> the context owns a small pool of its own */
     void*            pool;            /* opaque, passed back to parallel_for */
-    int32_t          nthreads;        /* participants: tid values the host may pass, or the own pool's size; 0 = online cpus */
+    int32_t          nthreads;        /* participants: the tid values the host may pass, or the own pool's
+                                      * size. 0 = every online cpu: fine for a test, wrong on an SMT or
+                                      * hybrid machine - a real host decides its count (physical cores) */
     jam_isa          max_isa;         /* JAM_ISA_AUTO = best; else cap here (disables higher levels) */
     const char*      name;            /* optional label for JAM_DEBUG logs (copied; NULL = unnamed) */
 } jam_config;

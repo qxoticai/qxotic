@@ -52,8 +52,8 @@ public final class NativeJAM implements JAM, AutoCloseable {
             Boolean.parseBoolean(NativeLoader.config("jam.native.serial", "true"));
 
     // Non-null only when SERIAL: concurrent mm calls then serialize FIFO instead of bouncing off
-    // the native serial-stream guard (EBUSY). Per-instance, so a future NativeJAM.create(...)
-    // gets its own lock + ctx for free.
+    // the native serial-stream guard (EBUSY). Per-instance: every NativeJAM.create(...) has its
+    // own lock and its own context.
     private final ReentrantLock mmLock = SERIAL ? new ReentrantLock(true) : null;
 
     private NativeJAM(long ctx, JAM.Parallel parallel) {

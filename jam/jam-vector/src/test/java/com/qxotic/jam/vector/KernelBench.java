@@ -24,10 +24,11 @@ import java.util.Random;
  */
 final class KernelBench {
 
-    /** {@code -Djam.threads=N} (default: every logical CPU). */
+    /** {@code -Djam.bench.threads=N} (default: every logical CPU). */
     private static final JAM.Parallel POOL =
             TestPool.of(
-                    Integer.getInteger("jam.threads", Runtime.getRuntime().availableProcessors()));
+                    Integer.getInteger(
+                            "jam.bench.threads", Runtime.getRuntime().availableProcessors()));
 
     @FunctionalInterface
     interface Gemm {

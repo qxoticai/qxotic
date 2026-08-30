@@ -46,13 +46,6 @@ public enum PerformanceCliff {
             "no jam backend was found on the classpath, so prefill runs on the pure-Java path;"
                     + " com.qxotic:jam-native (or jam-vector) enables the fast kernels"),
 
-    /** A second concurrent decode lost the spin pool and runs at roughly half bandwidth. */
-    DECODE_CONTENTION(
-            Level.WARNING,
-            "a second decode is sharing this process and runs at roughly half decode bandwidth -"
-                    + " expected when serving parallel sessions; nothing to fix unless"
-                    + " single-stream latency matters more"),
-
     /** A jam backend declined a shape it was offered (EINVAL/EBUSY; smells like a bug). */
     JAM_DECLINE(
             Level.WARNING,
