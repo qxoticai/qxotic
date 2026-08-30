@@ -1,8 +1,8 @@
 // LFM2.5 (Liquid Foundation Model 2.5) against the MemoryView boundary. Each layer is EITHER GQA
 // attention (kv-heads > 0) OR a gated short-convolution mixer (kv-heads == 0); the FFN is EITHER
 // dense SwiGLU OR top-k MoE. Weights/state/KV are MemoryView<MemorySegment>; GEMM/GEMV use the
-// shared MatMul entry points. An optional
-// LFM2-VL sidecar projects images directly into the same residual stream.
+// shared MatMul entry points. An optional LFM2-VL sidecar projects images directly into the same
+// residual stream.
 package com.qxotic.jinfer.models.lfm2;
 
 import com.qxotic.format.gguf.GGUF;
@@ -156,7 +156,7 @@ public final class Lfm2
                                     + " attention");
                 int[] ids = t.ids();
                 requireTokens(ids);
-                forward(s, ids, 0, from, n);
+                forward(s, ids, from, n);
             }
             case Batch.Input.Sequences seq -> {
                 if (configuration.causalAttention)
@@ -197,25 +197,23 @@ public final class Lfm2
         requireOutput(s, output);
         int dim = configuration.embeddingLength;
         int row = s.lastBatchSize() - s.outputCount() + output;
-        {
-            Norms.rmsnorm(
-                    s.normed,
-                    0,
-                    s.residual,
-                    (long) row * dim,
-                    weights.finalNorm,
-                    dim,
-                    configuration.rmsNormEps);
-            MatMul.gemv(weights.wcls, s.normed, s.logits);
-            Activations.softcap(
-                    s.logits, 0, configuration.vocabularySize, configuration.logitSoftcapping);
-            return s.logits;
-        }
+        Norms.rmsnorm(
+                s.normed,
+                0,
+                s.residual,
+                (long) row * dim,
+                weights.finalNorm,
+                dim,
+                configuration.rmsNormEps);
+        MatMul.gemv(weights.wcls, s.normed, s.logits);
+        Activations.softcap(
+                s.logits, 0, configuration.vocabularySize, configuration.logitSoftcapping);
+        return s.logits;
     }
 
     // === Forward ===
 
-    private void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    private void forward(State state, int[] tokens, int startPos, int seqLen) {
         // ONCE for the batch: an angle never depends on the layer
         RoPE.fill(
                 state.ropeCos,
@@ -224,7 +222,7 @@ public final class Lfm2
                 seqLen,
                 configuration.headSize / 2,
                 weights.rope());
-        embedTokens(state, tokens, tokenOffset, seqLen);
+        embedTokens(state, tokens, seqLen);
         for (int l = 0; l < configuration.numberOfLayers; l++)
             layer(state, l, startPos, seqLen, false);
         commitKv(state, startPos, seqLen);
@@ -250,12 +248,12 @@ public final class Lfm2
     }
 
     /** Token-embedding lookup into the residual stream (no scaling, unlike Gemma4). */
-    private void embedTokens(State state, int[] tokens, int tokenOffset, int seqLen) {
+    private void embedTokens(State state, int[] tokens, int seqLen) {
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings"); // fail-fast on freed weights
         Convert.gatherToF32(
                 weights.tokenEmbeddings,
                 tokens,
-                tokenOffset,
+                0,
                 seqLen,
                 state.residual,
                 0,
@@ -599,7 +597,7 @@ public final class Lfm2
         }
         RoPE.fill(
                 state.ropeCos, state.ropeSin, posOf, n, configuration.headSize / 2, weights.rope());
-        embedTokens(state, tokens, 0, n);
+        embedTokens(state, tokens, n);
         for (int l = 0; l < configuration.numberOfLayers; l++) {
             if (configuration.isRecurrentLayer(l))
                 shortConvMixerCentered(state, l, n, segRow0, seqLen);
@@ -1067,16 +1065,12 @@ public final class Lfm2
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity <= 0 || contextCapacity > config.contextLength()) {
+            if (contextCapacity > config.contextLength())
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " outside [1,"
-                                + config.contextLength()
-                                + "]");
-            }
-            if (batchCapacity <= 0)
-                throw new IllegalArgumentException("batchCapacity " + batchCapacity);
+                                + " exceeds model contextLength "
+                                + config.contextLength());
             int c = batchCapacity;
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();
@@ -1356,13 +1350,6 @@ public final class Lfm2
                 gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
                         == vocabularySize,
                 "tokenizer vocabulary does not match the model");
-        try {
-            Math.multiplyExact(numberOfHeads, headSize);
-            Math.multiplyExact(SHORTCONV_PARTS, embeddingLength);
-            Math.multiplyExact(expertCount, expertFeedForwardLength);
-        } catch (ArithmeticException overflow) {
-            throw new IllegalArgumentException("LFM2: model dimensions overflow", overflow);
-        }
         return config;
     }
 
