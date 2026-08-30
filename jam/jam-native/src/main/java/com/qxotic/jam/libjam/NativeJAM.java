@@ -282,7 +282,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
             }
             int slices = Math.min(n, 4 * t);
             int per = (n + slices - 1) / slices;
-            host.forEach(
+            host.run(
                     (n + per - 1) / per,
                     (s, slot) -> runTask(fn, arg, s * per, Math.min(n, s * per + per), slot));
         } catch (Throwable t) {

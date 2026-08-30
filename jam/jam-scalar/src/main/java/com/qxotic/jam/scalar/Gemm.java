@@ -73,14 +73,14 @@ final class Gemm {
             Rows[] aT = new Rows[kBlocks];
             for (int kb = 0; kb < kBlocks; kb++) aT[kb] = scratch.panel(kb, kcPad, lanes);
             // two regions: the token block's k-blocks are packed, then the row groups sweep them
-            parallel.forEach(
+            parallel.run(
                     kBlocks,
                     (kb, slot) -> {
                         int l0 = kb * kc, len = Math.min(kc, k - l0);
                         long src = aOff + ((long) base * lda + l0) * 4;
                         pack(a, src, lda, tokens, lanes, len, kcPad, aT[kb], scratch.slot(slot));
                     });
-            parallel.forEach(
+            parallel.run(
                     groups,
                     (gi, slot) -> {
                         Scratch.Slot s = scratch.slot(slot);

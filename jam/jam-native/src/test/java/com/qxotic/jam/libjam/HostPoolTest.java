@@ -47,7 +47,7 @@ class HostPoolTest {
         }
 
         @Override
-        public void forLoop(int count, Body body) {
+        public void run(int count, Job body) {
             int groups = Math.min(count, width);
             List<Future<?>> futures = new ArrayList<>();
             for (int g = 1; g < groups; g++) {
@@ -139,7 +139,7 @@ class HostPoolTest {
         JAM.Parallel lying =
                 new JAM.Parallel() {
                     @Override
-                    public void forLoop(int count, Body body) {
+                    public void run(int count, Job body) {
                         for (int i = 0; i < count; i++) body.run(i, 7); // width says 2
                     }
 
@@ -164,7 +164,7 @@ class HostPoolTest {
         JAM.Parallel throwing =
                 new JAM.Parallel() {
                     @Override
-                    public void forLoop(int count, Body body) {
+                    public void run(int count, Job body) {
                         body.run(0, 0);
                         throw boom;
                     }
@@ -211,7 +211,7 @@ class HostPoolTest {
         JAM.Parallel recording =
                 new JAM.Parallel() {
                     @Override
-                    public void forLoop(int count, Body body) {
+                    public void run(int count, Job body) {
                         for (int i = 0; i < count; i++) {
                             tasks.add(new int[] {count, i});
                             body.run(i, i % 4);

@@ -976,162 +976,179 @@ public final class FlashAttention {
         boolean vec = Segments.USE_VECTOR_API; // qkTile/pvTile handle both F32 and F16 caches
         int nQBlocks = (seqLen + Br - 1) / Br;
 
-        Parallel.forLoop(
-                0,
-                nHeads * nQBlocks,
-                (idx, slot) -> {
-                    int h = idx / nQBlocks;
-                    int qStart = (idx % nQBlocks) * Br;
-                    Buffers buf = buffers(slot);
-                    float[] S = buf.s;
-                    float[] M = buf.m;
-                    double[] L = buf.l;
-                    int[] kvOff = buf.kvOff;
-                    int hHead = h * headSize;
-                    int kvHeadOffset = (h / kvMul) * headSize;
+        Parallel.shared()
+                .run( // one (head, query block) tile per job: big and uneven, balanced one by one
+                        nHeads * nQBlocks,
+                        (idx, slot) -> {
+                            int h = idx / nQBlocks;
+                            int qStart = (idx % nQBlocks) * Br;
+                            Buffers buf = buffers(slot);
+                            float[] S = buf.s;
+                            float[] M = buf.m;
+                            double[] L = buf.l;
+                            int[] kvOff = buf.kvOff;
+                            int hHead = h * headSize;
+                            int kvHeadOffset = (h / kvMul) * headSize;
 
-                    int qEnd = Math.min(seqLen, qStart + Br);
-                    int BrRows = qEnd - qStart;
-                    for (int i = 0; i < BrRows; i++) {
-                        M[i] = Float.NEGATIVE_INFINITY;
-                        L[i] = 0.0;
-                        fillF32(outRaw, (long) (qStart + i) * queryDim + hHead, headSize, 0f);
-                    }
-
-                    int blockMaxQ = startPos + qEnd - 1;
-                    for (int kvStart = 0; kvStart <= blockMaxQ; kvStart += Bc) {
-                        int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
-                        int BcRows = kvEnd - kvStart;
-                        if (BcRows <= 0) continue;
-                        for (int j = 0; j < BcRows; j++) {
-                            kvOff[j] = (kvStart + j) * kvDim + kvHeadOffset;
-                        }
-                        // an F16 cache decodes to F32 scratch ONCE per block, exactly like the
-                        // split prefill: 16x fewer conversions than the direct-F16 tiles (once
-                        // per block instead of once per QT-group), and the F32 tiles unlock the
-                        // unrolled qkTile64/Wide specializations. Bit-identical either way - the
-                        // decoder is the same converter the direct tiles use.
-                        Src blockK = ck;
-                        Src blockV = cv;
-                        if (ck.f16()) {
-                            Raw kd = buf.kDec(Bc * headSize);
-                            Raw vd = buf.vDec(Bc * headSize);
-                            decodeF16Run(ck, kvOff, BcRows, headSize, kd);
-                            decodeF16Run(cv, kvOff, BcRows, headSize, vd);
-                            for (int j = 0; j < BcRows; j++) kvOff[j] = j * headSize;
-                            blockK = new Src(kd, false);
-                            blockV = new Src(vd, false);
-                        }
-
-                        for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                            int qr = Math.min(QT, BrRows - i0);
-                            int qBase = (qStart + i0) * queryDim + hHead;
-                            if (vec && qr == QT) {
-                                qkTile(
-                                        qRaw,
-                                        qBase,
-                                        queryDim,
-                                        blockK,
-                                        kvOff,
-                                        0,
-                                        BcRows,
+                            int qEnd = Math.min(seqLen, qStart + Br);
+                            int BrRows = qEnd - qStart;
+                            for (int i = 0; i < BrRows; i++) {
+                                M[i] = Float.NEGATIVE_INFINITY;
+                                L[i] = 0.0;
+                                fillF32(
+                                        outRaw,
+                                        (long) (qStart + i) * queryDim + hHead,
                                         headSize,
-                                        scale,
-                                        S,
-                                        i0 * BcRows,
-                                        BcRows);
-                            } else {
-                                for (int t = 0; t < qr; t++) {
-                                    int qOffset = (qStart + i0 + t) * queryDim + hHead;
-                                    if (vec && !blockK.f16()) {
-                                        // tile-order math: chunk shape must not leak into scores
-                                        qkRowF32(
+                                        0f);
+                            }
+
+                            int blockMaxQ = startPos + qEnd - 1;
+                            for (int kvStart = 0; kvStart <= blockMaxQ; kvStart += Bc) {
+                                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
+                                int BcRows = kvEnd - kvStart;
+                                if (BcRows <= 0) continue;
+                                for (int j = 0; j < BcRows; j++) {
+                                    kvOff[j] = (kvStart + j) * kvDim + kvHeadOffset;
+                                }
+                                // an F16 cache decodes to F32 scratch ONCE per block, exactly like
+                                // the
+                                // split prefill: 16x fewer conversions than the direct-F16 tiles
+                                // (once
+                                // per block instead of once per QT-group), and the F32 tiles unlock
+                                // the
+                                // unrolled qkTile64/Wide specializations. Bit-identical either way
+                                // - the
+                                // decoder is the same converter the direct tiles use.
+                                Src blockK = ck;
+                                Src blockV = cv;
+                                if (ck.f16()) {
+                                    Raw kd = buf.kDec(Bc * headSize);
+                                    Raw vd = buf.vDec(Bc * headSize);
+                                    decodeF16Run(ck, kvOff, BcRows, headSize, kd);
+                                    decodeF16Run(cv, kvOff, BcRows, headSize, vd);
+                                    for (int j = 0; j < BcRows; j++) kvOff[j] = j * headSize;
+                                    blockK = new Src(kd, false);
+                                    blockV = new Src(vd, false);
+                                }
+
+                                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                                    int qr = Math.min(QT, BrRows - i0);
+                                    int qBase = (qStart + i0) * queryDim + hHead;
+                                    if (vec && qr == QT) {
+                                        qkTile(
                                                 qRaw,
-                                                qOffset,
-                                                blockK.raw(),
+                                                qBase,
+                                                queryDim,
+                                                blockK,
                                                 kvOff,
                                                 0,
                                                 BcRows,
                                                 headSize,
                                                 scale,
                                                 S,
-                                                (i0 + t) * BcRows);
+                                                i0 * BcRows,
+                                                BcRows);
+                                    } else {
+                                        for (int t = 0; t < qr; t++) {
+                                            int qOffset = (qStart + i0 + t) * queryDim + hHead;
+                                            if (vec && !blockK.f16()) {
+                                                // tile-order math: chunk shape must not leak into
+                                                // scores
+                                                qkRowF32(
+                                                        qRaw,
+                                                        qOffset,
+                                                        blockK.raw(),
+                                                        kvOff,
+                                                        0,
+                                                        BcRows,
+                                                        headSize,
+                                                        scale,
+                                                        S,
+                                                        (i0 + t) * BcRows);
+                                                continue;
+                                            }
+                                            for (int j = 0; j < BcRows; j++) {
+                                                S[(i0 + t) * BcRows + j] =
+                                                        dotQK(
+                                                                        qRaw, qOffset, blockK,
+                                                                        kvOff[j], headSize)
+                                                                * scale;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                for (int i = 0; i < BrRows; i++) {
+                                    int globalQ = qStart + i + startPos;
+                                    int rowBase = i * BcRows;
+                                    // causal masking is a SUFFIX of the row (columns past globalQ):
+                                    // zeroing it directly replaces the -inf pass, and every live
+                                    // score
+                                    // stays finite - which is what lets the exp pass vectorize
+                                    int live = Math.min(BcRows, globalQ - kvStart + 1);
+                                    if (live <= 0) {
+                                        Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
                                         continue;
                                     }
-                                    for (int j = 0; j < BcRows; j++) {
-                                        S[(i0 + t) * BcRows + j] =
-                                                dotQK(qRaw, qOffset, blockK, kvOff[j], headSize)
-                                                        * scale;
+                                    Arrays.fill(S, rowBase + live, rowBase + BcRows, 0f);
+                                    float blockMax = rowMax(S, rowBase, live);
+                                    float rowM = M[i];
+                                    double rowL = L[i];
+                                    float newMax = Math.max(rowM, blockMax);
+                                    if (newMax > rowM) {
+                                        float rst = FastMath.expNeg(rowM - newMax);
+                                        normalize(
+                                                outRaw,
+                                                (qStart + i) * queryDim + hHead,
+                                                headSize,
+                                                rst);
+                                        rowL *= rst;
+                                        rowM = newMax;
+                                    }
+                                    M[i] = rowM;
+                                    L[i] = rowL + expRowInPlace(S, rowBase, live, rowM);
+                                }
+
+                                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                                    int qr = Math.min(QT, BrRows - i0);
+                                    int oBase = (qStart + i0) * queryDim + hHead;
+                                    if (vec && qr == QT) {
+                                        pvTile(
+                                                outRaw,
+                                                oBase,
+                                                queryDim,
+                                                blockV,
+                                                kvOff,
+                                                0,
+                                                BcRows,
+                                                headSize,
+                                                S,
+                                                i0 * BcRows,
+                                                BcRows);
+                                    } else {
+                                        for (int t = 0; t < qr; t++) {
+                                            int oOffset = (qStart + i0 + t) * queryDim + hHead;
+                                            int rowBase = (i0 + t) * BcRows;
+                                            for (int j = 0; j < BcRows; j++) {
+                                                float p = S[rowBase + j];
+                                                if (p != 0f)
+                                                    accumulate(
+                                                            outRaw, oOffset, blockV, kvOff[j],
+                                                            headSize, p);
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        for (int i = 0; i < BrRows; i++) {
-                            int globalQ = qStart + i + startPos;
-                            int rowBase = i * BcRows;
-                            // causal masking is a SUFFIX of the row (columns past globalQ):
-                            // zeroing it directly replaces the -inf pass, and every live score
-                            // stays finite - which is what lets the exp pass vectorize
-                            int live = Math.min(BcRows, globalQ - kvStart + 1);
-                            if (live <= 0) {
-                                Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
-                                continue;
-                            }
-                            Arrays.fill(S, rowBase + live, rowBase + BcRows, 0f);
-                            float blockMax = rowMax(S, rowBase, live);
-                            float rowM = M[i];
-                            double rowL = L[i];
-                            float newMax = Math.max(rowM, blockMax);
-                            if (newMax > rowM) {
-                                float rst = FastMath.expNeg(rowM - newMax);
-                                normalize(outRaw, (qStart + i) * queryDim + hHead, headSize, rst);
-                                rowL *= rst;
-                                rowM = newMax;
-                            }
-                            M[i] = rowM;
-                            L[i] = rowL + expRowInPlace(S, rowBase, live, rowM);
-                        }
-
-                        for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                            int qr = Math.min(QT, BrRows - i0);
-                            int oBase = (qStart + i0) * queryDim + hHead;
-                            if (vec && qr == QT) {
-                                pvTile(
+                            for (int i = 0; i < BrRows; i++) {
+                                normalize(
                                         outRaw,
-                                        oBase,
-                                        queryDim,
-                                        blockV,
-                                        kvOff,
-                                        0,
-                                        BcRows,
+                                        (qStart + i) * queryDim + hHead,
                                         headSize,
-                                        S,
-                                        i0 * BcRows,
-                                        BcRows);
-                            } else {
-                                for (int t = 0; t < qr; t++) {
-                                    int oOffset = (qStart + i0 + t) * queryDim + hHead;
-                                    int rowBase = (i0 + t) * BcRows;
-                                    for (int j = 0; j < BcRows; j++) {
-                                        float p = S[rowBase + j];
-                                        if (p != 0f)
-                                            accumulate(
-                                                    outRaw, oOffset, blockV, kvOff[j], headSize, p);
-                                    }
-                                }
+                                        (float) (1.0 / L[i]));
                             }
-                        }
-                    }
-
-                    for (int i = 0; i < BrRows; i++) {
-                        normalize(
-                                outRaw,
-                                (qStart + i) * queryDim + hHead,
-                                headSize,
-                                (float) (1.0 / L[i]));
-                    }
-                });
+                        });
     }
 
     /**
@@ -1302,221 +1319,253 @@ public final class FlashAttention {
         int attStart = window > 0 ? Math.max(0, startPos - window + 1) : 0;
         int nQBlocks = (seqLen + Br - 1) / Br;
 
-        Parallel.forLoop(
-                0,
-                nHeads * nQBlocks,
-                (idx, slot) -> {
-                    int h = idx / nQBlocks;
-                    int qStart = (idx % nQBlocks) * Br;
-                    Buffers buffers = buffers(slot);
-                    float[] S = buffers.s;
-                    float[] M = buffers.m;
-                    double[] L = buffers.l;
-                    int[] kvOff = buffers.kvOff;
-                    int hHead = h * headSize;
-                    int kvHeadOffset = (h / kvMul) * headSize;
+        Parallel.shared()
+                .run( // one (head, query block) tile per job: big and uneven, balanced one by one
+                        nHeads * nQBlocks,
+                        (idx, slot) -> {
+                            int h = idx / nQBlocks;
+                            int qStart = (idx % nQBlocks) * Br;
+                            Buffers buffers = buffers(slot);
+                            float[] S = buffers.s;
+                            float[] M = buffers.m;
+                            double[] L = buffers.l;
+                            int[] kvOff = buffers.kvOff;
+                            int hHead = h * headSize;
+                            int kvHeadOffset = (h / kvMul) * headSize;
 
-                    int qEnd = Math.min(seqLen, qStart + Br);
-                    int BrRows = qEnd - qStart;
-                    for (int i = 0; i < BrRows; i++) {
-                        M[i] = Float.NEGATIVE_INFINITY;
-                        L[i] = 0.0;
-                        fillF32(outRaw, (long) (qStart + i) * queryStride + hHead, headSize, 0f);
-                    }
+                            int qEnd = Math.min(seqLen, qStart + Br);
+                            int BrRows = qEnd - qStart;
+                            for (int i = 0; i < BrRows; i++) {
+                                M[i] = Float.NEGATIVE_INFINITY;
+                                L[i] = 0.0;
+                                fillF32(
+                                        outRaw,
+                                        (long) (qStart + i) * queryStride + hHead,
+                                        headSize,
+                                        0f);
+                            }
 
-                    int blockMaxQ =
-                            bidir
-                                    ? startPos + seqLen - 1
-                                    : startPos + qEnd - 1; // bidir: every query sees all keys
-                    for (int kvStart = attStart; kvStart <= blockMaxQ; kvStart += Bc) {
-                        int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
-                        int BcRows = kvEnd - kvStart;
-                        if (BcRows <= 0) continue;
+                            int blockMaxQ =
+                                    bidir
+                                            ? startPos + seqLen - 1
+                                            : startPos + qEnd
+                                                    - 1; // bidir: every query sees all keys
+                            for (int kvStart = attStart; kvStart <= blockMaxQ; kvStart += Bc) {
+                                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
+                                int BcRows = kvEnd - kvStart;
+                                if (BcRows <= 0) continue;
 
-                        // cache keys (stride kvDim, ring-addressed) come first, then this chunk's
-                        // batch keys (stride batchKvStride)
-                        int cacheCount = Math.max(0, Math.min(BcRows, startPos - kvStart));
-                        for (int j = 0; j < BcRows; j++) {
-                            int kvPos = kvStart + j;
-                            kvOff[j] =
-                                    kvPos < startPos
-                                            ? (ringMask != 0 ? (kvPos & ringMask) : kvPos) * kvDim
-                                                    + kvHeadOffset
-                                            : (kvPos - startPos) * batchKvStride + kvHeadOffset;
-                        }
-                        Src cacheK = ck;
-                        Src cacheV = cv;
-                        if (cacheCount > 0 && ck.f16()) {
-                            Raw kd = buffers.kDec(Bc * headSize);
-                            Raw vd = buffers.vDec(Bc * headSize);
-                            decodeF16Run(ck, kvOff, cacheCount, headSize, kd);
-                            decodeF16Run(cv, kvOff, cacheCount, headSize, vd);
-                            for (int j = 0; j < cacheCount; j++) kvOff[j] = j * headSize;
-                            cacheK = new Src(kd, false);
-                            cacheV = new Src(vd, false);
-                        }
-
-                        for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                            int qr = Math.min(QT, BrRows - i0);
-                            int qBase = (qStart + i0) * queryStride + hHead;
-                            if (vec && qr == QT) {
-                                if (cacheCount > 0)
-                                    qkTile(
-                                            qRaw,
-                                            qBase,
-                                            queryStride,
-                                            cacheK,
-                                            kvOff,
-                                            0,
-                                            cacheCount,
-                                            headSize,
-                                            scale,
-                                            S,
-                                            i0 * BcRows,
-                                            BcRows);
-                                if (cacheCount < BcRows)
-                                    qkTile(
-                                            qRaw,
-                                            qBase,
-                                            queryStride,
-                                            bk,
-                                            kvOff,
-                                            cacheCount,
-                                            BcRows - cacheCount,
-                                            headSize,
-                                            scale,
-                                            S,
-                                            i0 * BcRows,
-                                            BcRows);
-                            } else {
-                                for (int t = 0; t < qr; t++) {
-                                    int qOffset = (qStart + i0 + t) * queryStride + hHead;
-                                    // deliberately NOT qkRowF32: this path's models (lfm2,
-                                    // gptoss, llama chunked) hold their behavior gates against
-                                    // the historical dot fallback - swapping it flipped LFM2.5's
-                                    // borderline multi-turn tool loop. The causal path DOES use
-                                    // qkRowF32 (its byte gate demands tile-consistent rows);
-                                    // aligning this one belongs to the chunk-shape golden item.
-                                    for (int j = 0; j < BcRows; j++) {
-                                        S[(i0 + t) * BcRows + j] =
-                                                dotQK(
-                                                                qRaw,
-                                                                qOffset,
-                                                                j < cacheCount ? cacheK : bk,
-                                                                kvOff[j],
-                                                                headSize)
-                                                        * scale;
-                                    }
+                                // cache keys (stride kvDim, ring-addressed) come first, then this
+                                // chunk's
+                                // batch keys (stride batchKvStride)
+                                int cacheCount = Math.max(0, Math.min(BcRows, startPos - kvStart));
+                                for (int j = 0; j < BcRows; j++) {
+                                    int kvPos = kvStart + j;
+                                    kvOff[j] =
+                                            kvPos < startPos
+                                                    ? (ringMask != 0 ? (kvPos & ringMask) : kvPos)
+                                                                    * kvDim
+                                                            + kvHeadOffset
+                                                    : (kvPos - startPos) * batchKvStride
+                                                            + kvHeadOffset;
                                 }
-                            }
-                        }
+                                Src cacheK = ck;
+                                Src cacheV = cv;
+                                if (cacheCount > 0 && ck.f16()) {
+                                    Raw kd = buffers.kDec(Bc * headSize);
+                                    Raw vd = buffers.vDec(Bc * headSize);
+                                    decodeF16Run(ck, kvOff, cacheCount, headSize, kd);
+                                    decodeF16Run(cv, kvOff, cacheCount, headSize, vd);
+                                    for (int j = 0; j < cacheCount; j++) kvOff[j] = j * headSize;
+                                    cacheK = new Src(kd, false);
+                                    cacheV = new Src(vd, false);
+                                }
 
-                        for (int i = 0; i < BrRows; i++) {
-                            int globalQ = qStart + i + startPos;
-                            int qAttStart = window > 0 ? Math.max(0, globalQ - window + 1) : 0;
-                            int rowBase = i * BcRows;
-                            // masking is a PREFIX (window) plus a SUFFIX (causal) of the row:
-                            // zeroing them directly keeps every live score finite, which is what
-                            // lets the exp pass vectorize (see expRowInPlace)
-                            int lo = Math.min(BcRows, Math.max(0, qAttStart - kvStart));
-                            int hi = bidir ? BcRows : Math.min(BcRows, globalQ - kvStart + 1);
-                            if (hi <= lo) {
-                                Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
-                                continue;
-                            }
-                            Arrays.fill(S, rowBase, rowBase + lo, 0f);
-                            Arrays.fill(S, rowBase + hi, rowBase + BcRows, 0f);
-                            float blockMax = rowMax(S, rowBase + lo, hi - lo);
-                            float rowM = M[i];
-                            double rowL = L[i];
-                            float newMax = Math.max(rowM, blockMax);
-                            if (newMax > rowM) {
-                                float rst = FastMath.expNeg(rowM - newMax);
-                                normalize(
-                                        outRaw, (qStart + i) * queryStride + hHead, headSize, rst);
-                                rowL *= rst;
-                                rowM = newMax;
-                            }
-                            M[i] = rowM;
-                            L[i] = rowL + expRowInPlace(S, rowBase + lo, hi - lo, rowM);
-                        }
-
-                        for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                            int qr = Math.min(QT, BrRows - i0);
-                            int oBase = (qStart + i0) * queryStride + hHead;
-                            if (vec && qr == QT) {
-                                if (cacheCount > 0)
-                                    pvTile(
-                                            outRaw,
-                                            oBase,
-                                            queryStride,
-                                            cacheV,
-                                            kvOff,
-                                            0,
-                                            cacheCount,
-                                            headSize,
-                                            S,
-                                            i0 * BcRows,
-                                            BcRows);
-                                if (cacheCount < BcRows)
-                                    pvTile(
-                                            outRaw,
-                                            oBase,
-                                            queryStride,
-                                            bv,
-                                            kvOff,
-                                            cacheCount,
-                                            BcRows - cacheCount,
-                                            headSize,
-                                            S,
-                                            i0 * BcRows,
-                                            BcRows);
-                            } else {
-                                for (int t = 0; t < qr; t++) {
-                                    int oOffset = (qStart + i0 + t) * queryStride + hHead;
-                                    int rowBase = (i0 + t) * BcRows;
-                                    for (int j = 0; j < BcRows; j++) {
-                                        float p = S[rowBase + j];
-                                        if (p != 0f)
-                                            accumulate(
-                                                    outRaw,
-                                                    oOffset,
-                                                    j < cacheCount ? cacheV : bv,
-                                                    kvOff[j],
+                                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                                    int qr = Math.min(QT, BrRows - i0);
+                                    int qBase = (qStart + i0) * queryStride + hHead;
+                                    if (vec && qr == QT) {
+                                        if (cacheCount > 0)
+                                            qkTile(
+                                                    qRaw,
+                                                    qBase,
+                                                    queryStride,
+                                                    cacheK,
+                                                    kvOff,
+                                                    0,
+                                                    cacheCount,
                                                     headSize,
-                                                    p);
+                                                    scale,
+                                                    S,
+                                                    i0 * BcRows,
+                                                    BcRows);
+                                        if (cacheCount < BcRows)
+                                            qkTile(
+                                                    qRaw,
+                                                    qBase,
+                                                    queryStride,
+                                                    bk,
+                                                    kvOff,
+                                                    cacheCount,
+                                                    BcRows - cacheCount,
+                                                    headSize,
+                                                    scale,
+                                                    S,
+                                                    i0 * BcRows,
+                                                    BcRows);
+                                    } else {
+                                        for (int t = 0; t < qr; t++) {
+                                            int qOffset = (qStart + i0 + t) * queryStride + hHead;
+                                            // deliberately NOT qkRowF32: this path's models (lfm2,
+                                            // gptoss, llama chunked) hold their behavior gates
+                                            // against
+                                            // the historical dot fallback - swapping it flipped
+                                            // LFM2.5's
+                                            // borderline multi-turn tool loop. The causal path DOES
+                                            // use
+                                            // qkRowF32 (its byte gate demands tile-consistent
+                                            // rows);
+                                            // aligning this one belongs to the chunk-shape golden
+                                            // item.
+                                            for (int j = 0; j < BcRows; j++) {
+                                                S[(i0 + t) * BcRows + j] =
+                                                        dotQK(
+                                                                        qRaw,
+                                                                        qOffset,
+                                                                        j < cacheCount
+                                                                                ? cacheK
+                                                                                : bk,
+                                                                        kvOff[j],
+                                                                        headSize)
+                                                                * scale;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                for (int i = 0; i < BrRows; i++) {
+                                    int globalQ = qStart + i + startPos;
+                                    int qAttStart =
+                                            window > 0 ? Math.max(0, globalQ - window + 1) : 0;
+                                    int rowBase = i * BcRows;
+                                    // masking is a PREFIX (window) plus a SUFFIX (causal) of the
+                                    // row:
+                                    // zeroing them directly keeps every live score finite, which is
+                                    // what
+                                    // lets the exp pass vectorize (see expRowInPlace)
+                                    int lo = Math.min(BcRows, Math.max(0, qAttStart - kvStart));
+                                    int hi =
+                                            bidir
+                                                    ? BcRows
+                                                    : Math.min(BcRows, globalQ - kvStart + 1);
+                                    if (hi <= lo) {
+                                        Arrays.fill(S, rowBase, rowBase + BcRows, 0f);
+                                        continue;
+                                    }
+                                    Arrays.fill(S, rowBase, rowBase + lo, 0f);
+                                    Arrays.fill(S, rowBase + hi, rowBase + BcRows, 0f);
+                                    float blockMax = rowMax(S, rowBase + lo, hi - lo);
+                                    float rowM = M[i];
+                                    double rowL = L[i];
+                                    float newMax = Math.max(rowM, blockMax);
+                                    if (newMax > rowM) {
+                                        float rst = FastMath.expNeg(rowM - newMax);
+                                        normalize(
+                                                outRaw,
+                                                (qStart + i) * queryStride + hHead,
+                                                headSize,
+                                                rst);
+                                        rowL *= rst;
+                                        rowM = newMax;
+                                    }
+                                    M[i] = rowM;
+                                    L[i] = rowL + expRowInPlace(S, rowBase + lo, hi - lo, rowM);
+                                }
+
+                                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                                    int qr = Math.min(QT, BrRows - i0);
+                                    int oBase = (qStart + i0) * queryStride + hHead;
+                                    if (vec && qr == QT) {
+                                        if (cacheCount > 0)
+                                            pvTile(
+                                                    outRaw,
+                                                    oBase,
+                                                    queryStride,
+                                                    cacheV,
+                                                    kvOff,
+                                                    0,
+                                                    cacheCount,
+                                                    headSize,
+                                                    S,
+                                                    i0 * BcRows,
+                                                    BcRows);
+                                        if (cacheCount < BcRows)
+                                            pvTile(
+                                                    outRaw,
+                                                    oBase,
+                                                    queryStride,
+                                                    bv,
+                                                    kvOff,
+                                                    cacheCount,
+                                                    BcRows - cacheCount,
+                                                    headSize,
+                                                    S,
+                                                    i0 * BcRows,
+                                                    BcRows);
+                                    } else {
+                                        for (int t = 0; t < qr; t++) {
+                                            int oOffset = (qStart + i0 + t) * queryStride + hHead;
+                                            int rowBase = (i0 + t) * BcRows;
+                                            for (int j = 0; j < BcRows; j++) {
+                                                float p = S[rowBase + j];
+                                                if (p != 0f)
+                                                    accumulate(
+                                                            outRaw,
+                                                            oOffset,
+                                                            j < cacheCount ? cacheV : bv,
+                                                            kvOff[j],
+                                                            headSize,
+                                                            p);
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
 
-                    if (sinksRaw == null) {
-                        for (int i = 0; i < BrRows; i++) {
-                            normalize(
-                                    outRaw,
-                                    (qStart + i) * queryStride + hHead,
-                                    headSize,
-                                    (float) (1.0 / L[i]));
-                        }
-                    } else {
-                        // Fold the per-head sink: a virtual key (score=sink, value=0) adds
-                        // exp(sink-newM) to the
-                        // denominator only; out_i, currently scaled to running max M[i], rescales
-                        // by exp(M[i]-newM).
-                        float sink = readFloat(sinksRaw.vseg(), sinksRaw.vbase() + h * Float.BYTES);
-                        for (int i = 0; i < BrRows; i++) {
-                            float newM = Math.max(M[i], sink);
-                            float factor =
-                                    M[i] == Float.NEGATIVE_INFINITY
-                                            ? 0f
-                                            : (float) Math.exp(M[i] - newM);
-                            double Lf = L[i] * factor + Math.exp(sink - newM);
-                            float inv = Lf == 0.0 ? 0f : (float) (factor / Lf);
-                            normalize(outRaw, (qStart + i) * queryStride + hHead, headSize, inv);
-                        }
-                    }
-                });
+                            if (sinksRaw == null) {
+                                for (int i = 0; i < BrRows; i++) {
+                                    normalize(
+                                            outRaw,
+                                            (qStart + i) * queryStride + hHead,
+                                            headSize,
+                                            (float) (1.0 / L[i]));
+                                }
+                            } else {
+                                // Fold the per-head sink: a virtual key (score=sink, value=0) adds
+                                // exp(sink-newM) to the
+                                // denominator only; out_i, currently scaled to running max M[i],
+                                // rescales
+                                // by exp(M[i]-newM).
+                                float sink =
+                                        readFloat(
+                                                sinksRaw.vseg(),
+                                                sinksRaw.vbase() + h * Float.BYTES);
+                                for (int i = 0; i < BrRows; i++) {
+                                    float newM = Math.max(M[i], sink);
+                                    float factor =
+                                            M[i] == Float.NEGATIVE_INFINITY
+                                                    ? 0f
+                                                    : (float) Math.exp(M[i] - newM);
+                                    double Lf = L[i] * factor + Math.exp(sink - newM);
+                                    float inv = Lf == 0.0 ? 0f : (float) (factor / Lf);
+                                    normalize(
+                                            outRaw,
+                                            (qStart + i) * queryStride + hHead,
+                                            headSize,
+                                            inv);
+                                }
+                            }
+                        });
     }
 
     /**
@@ -1672,40 +1721,44 @@ public final class FlashAttention {
 
         // Each (partition, head) does an independent online softmax over its key slice into a
         // partial.
-        Parallel.forLoop(
-                0,
-                totalPartials,
-                task -> {
-                    int p = task / nHeads, h = task - p * nHeads;
-                    int tStart = attStart + p * blockSize;
-                    int tEnd = (p + 1 == nParts) ? position + 1 : attStart + (p + 1) * blockSize;
-                    int kvHeadOffset = (h / kvMul) * headSize;
-                    int qOff = h * headSize;
-                    int oOff = task * headSize;
-                    fillF32(pO, oOff, headSize, 0f);
-                    float m = Float.NEGATIVE_INFINITY;
-                    double l = 0.0;
-                    for (int t = tStart; t < tEnd; t++) {
-                        boolean cur = bk != null && t >= position;
-                        int off =
-                                cur
-                                        ? kvHeadOffset
-                                        : ((ringMask != 0 ? (t & ringMask) : t) * kvDim
-                                                + kvHeadOffset);
-                        float score = dotQK(qRaw, qOff, cur ? bk : ck, off, headSize) * scale;
-                        if (score > m) {
-                            float rescale = (float) Math.exp(m - score);
-                            normalize(pO, oOff, headSize, rescale);
-                            l *= rescale;
-                            m = score;
-                        }
-                        float prob = (float) Math.exp(score - m);
-                        accumulate(pO, oOff, cur ? bv : cv, off, headSize, prob);
-                        l += prob;
-                    }
-                    pM[task] = m;
-                    pL[task] = l;
-                });
+        Parallel.shared()
+                .run( // one (partition, head) per job
+                        totalPartials,
+                        (task, slot) -> {
+                            int p = task / nHeads, h = task - p * nHeads;
+                            int tStart = attStart + p * blockSize;
+                            int tEnd =
+                                    (p + 1 == nParts)
+                                            ? position + 1
+                                            : attStart + (p + 1) * blockSize;
+                            int kvHeadOffset = (h / kvMul) * headSize;
+                            int qOff = h * headSize;
+                            int oOff = task * headSize;
+                            fillF32(pO, oOff, headSize, 0f);
+                            float m = Float.NEGATIVE_INFINITY;
+                            double l = 0.0;
+                            for (int t = tStart; t < tEnd; t++) {
+                                boolean cur = bk != null && t >= position;
+                                int off =
+                                        cur
+                                                ? kvHeadOffset
+                                                : ((ringMask != 0 ? (t & ringMask) : t) * kvDim
+                                                        + kvHeadOffset);
+                                float score =
+                                        dotQK(qRaw, qOff, cur ? bk : ck, off, headSize) * scale;
+                                if (score > m) {
+                                    float rescale = (float) Math.exp(m - score);
+                                    normalize(pO, oOff, headSize, rescale);
+                                    l *= rescale;
+                                    m = score;
+                                }
+                                float prob = (float) Math.exp(score - m);
+                                accumulate(pO, oOff, cur ? bv : cv, off, headSize, prob);
+                                l += prob;
+                            }
+                            pM[task] = m;
+                            pL[task] = l;
+                        });
 
         // Merge the partitions' partials per head (two-pass online softmax), folding an optional
         // sink.

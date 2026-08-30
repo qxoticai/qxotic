@@ -16,15 +16,20 @@ import java.util.function.IntConsumer;
  * its workers are daemon threads that live until {@link #close()}, so an own pool is closed like
  * any resource.
  *
- * <p>A loop is a region: participants claim contiguous chunks of it from a counter (dynamic, so a
- * slow chunk never holds the region), the caller works alongside the workers and returns when the
- * last chunk is done. A {@link Body} also learns its participant's {@code slot} in {@code [0,
- * width)}: the caller is slot 0, and within one loop no two iterations running at once share a
- * slot, so a slot indexes per-participant scratch owned by the loop's caller. A body that throws
- * ends the loop early: what has not started is skipped, and the first failure is rethrown to the
- * caller once every participant has stopped; that is the only way to end a loop early - an
- * interrupt is preserved for the caller to see afterwards, not acted on. Between regions the
- * workers spin {@link #SPIN_NANOS} - the many small regions of one decode token or one prefill
+ * <p>The pool's one primitive is {@link #run}: {@code jobs} jobs, claimed one at a time from a
+ * counter, the caller working alongside the workers and returning when the last is done. A job is
+ * whatever the caller wants balanced - a gemm panel, a slice of a native fan-out, a head. For many
+ * cheap uniform iterations, {@link #loop} (and the static {@link #forLoop}) is sugar that presents
+ * the range as {@code 2 x width} contiguous bands, one job each: a participant then streams one
+ * long band (a memory-bound gemv measured 3% faster than 64 pieces, 6% faster than 256) and the
+ * second claims absorb a late starter (one band per participant measured straggler-fragile).
+ * Nothing else in the pool decides granularity. A {@link Body} also learns its participant's {@code
+ * slot} in {@code [0, width)}: the caller is slot 0, and within one loop no two iterations running
+ * at once share a slot, so a slot indexes per-participant scratch owned by the loop's caller. A
+ * body that throws ends the loop early: what has not started is skipped, and the first failure is
+ * rethrown to the caller once every participant has stopped; that is the only way to end a loop
+ * early - an interrupt is preserved for the caller to see afterwards, not acted on. Between regions
+ * the workers spin {@link #SPIN_NANOS} - the many small regions of one decode token or one prefill
  * matmul are microseconds apart - and park when the pool is idle. Regions of one pool are
  * serialized: a second thread submitting waits for the running region, which is the fair share on a
  * machine the first submitter already fills. A loop submitted from inside a region of the same pool
@@ -38,15 +43,8 @@ public final class Parallel implements AutoCloseable {
     /** Spin this long for the next region before parking. */
     private static final long SPIN_NANOS = 100_000L;
 
-    /**
-     * {@link #loop} claims chunks of {@code size / (width * CHUNKS_PER_PARTICIPANT)}: two per
-     * participant, so each streams a long contiguous half-band and the second claims absorb a late
-     * starter. Measured on a 2.6B Q4_K_M decode (16 threads, a memory-bound gemv over 2048 rows):
-     * chunks of 1/64 of the region cost 3% against halves, one whole band per participant was
-     * straggler-fragile, and guided (shrinking) claims sat in between with more variance. Coarse
-     * items that must balance one by one (a gemm panel, a slice of a fan-out) use {@link #forEach}.
-     */
-    private static final int CHUNKS_PER_PARTICIPANT = 2;
+    /** Bands per participant for {@link #loop}: the one scheduling constant, see the class note. */
+    private static final int BANDS_PER_PARTICIPANT = 2;
 
     private static final class Shared {
         static final Parallel POOL = new Parallel(RuntimeFlags.THREADS, "jinfer");
@@ -68,7 +66,7 @@ public final class Parallel implements AutoCloseable {
         if (width < 1) throw new IllegalArgumentException("width < 1: " + width);
         this.width = width;
         this.name = name;
-        this.current = new Region(0, 0, null, null, null, false);
+        this.current = new Region(0, 0, 0, null, null, null);
     }
 
     /** A pool of {@code width} participants; its workers start on the first region. */
@@ -76,9 +74,11 @@ public final class Parallel implements AutoCloseable {
         return new Parallel(width, "jinfer-p" + IDS.incrementAndGet());
     }
 
-    /** A loop body that also receives the slot of the participant running it. */
+    /**
+     * A job (or, under {@link #loop}, one iteration) and the slot of the participant running it.
+     */
     @FunctionalInterface
-    public interface Body {
+    public interface Job {
         void run(int index, int slot);
     }
 
@@ -102,19 +102,14 @@ public final class Parallel implements AutoCloseable {
         shared().loop(start, end, body);
     }
 
-    /** {@link #shared()}'s {@link #loop(int, Body)}. */
-    public static void forLoop(int count, Body body) {
+    /** {@link #shared()}'s {@link #loop(int, Job)}. */
+    public static void forLoop(int count, Job body) {
         shared().loop(count, body);
     }
 
-    /** {@link #shared()}'s {@link #loop(int, int, Body)}. */
-    public static void forLoop(int start, int end, Body body) {
+    /** {@link #shared()}'s {@link #loop(int, int, Job)}. */
+    public static void forLoop(int start, int end, Job body) {
         shared().loop(start, end, body);
-    }
-
-    /** {@link #shared()}'s {@link #each(int, Body)}. */
-    public static void forEach(int count, Body body) {
-        shared().each(count, body);
     }
 
     /** How many participants a region has, the caller included. */
@@ -137,42 +132,49 @@ public final class Parallel implements AutoCloseable {
         return running.submitter == me && !running.done();
     }
 
-    /** {@code body.accept(i)} for every {@code i < count}. */
+    /**
+     * The primitive: {@code body.run(j, slot)} for every job {@code j < jobs}, each claimed by one
+     * participant; returns when all are done. Jobs may run concurrently and in any order; they must
+     * be independent and non-blocking.
+     */
+    public void run(int jobs, Job body) {
+        Objects.requireNonNull(body, "body");
+        region(0, jobs, null, body, true);
+    }
+
+    /** Sugar over {@link #run}: {@code body.accept(i)} for every {@code i < count}, in bands. */
     public void loop(int count, IntConsumer body) {
         loop(0, count, body);
     }
 
     /**
-     * {@code body.accept(i)} for every {@code i} in {@code [start, end)}. Iterations may run
-     * concurrently and in any order; they must be independent and non-blocking.
+     * Sugar over {@link #run}: {@code body.accept(i)} for every {@code i} in {@code [start, end)},
+     * in bands.
      */
     public void loop(int start, int end, IntConsumer body) {
         Objects.requireNonNull(body, "body");
-        loop(start, end, body, null, false);
+        region(start, end, body, null, false);
     }
 
-    /** {@code body.run(i, slot)} for every {@code i < count}. */
-    public void loop(int count, Body body) {
+    /** Sugar over {@link #run}: {@code body.run(i, slot)} for every {@code i < count}, in bands. */
+    public void loop(int count, Job body) {
         loop(0, count, body);
     }
 
-    /** As {@link #loop(int, int, IntConsumer)}, with the participant's slot. */
-    public void loop(int start, int end, Body body) {
+    /**
+     * Sugar over {@link #run}: {@code body.run(i, slot)} for every {@code i} in {@code [start,
+     * end)}, in bands.
+     */
+    public void loop(int start, int end, Job body) {
         Objects.requireNonNull(body, "body");
-        loop(start, end, null, body, false);
+        region(start, end, null, body, false);
     }
 
     /**
-     * {@link #loop(int, Body)} claiming one index at a time: for coarse items (a gemm panel, a
-     * slice of a native fan-out) where the pool must balance every item, not bands of them.
+     * One of {@code simple} and {@code body} is set; the region calls it without a wrapper. With
+     * {@code jobsAreIndices} every index is its own job, else the range is cut into bands.
      */
-    public void each(int count, Body body) {
-        Objects.requireNonNull(body, "body");
-        loop(0, count, null, body, true);
-    }
-
-    /** One of {@code simple} and {@code body} is set; the region calls it without a wrapper. */
-    private void loop(int start, int end, IntConsumer simple, Body body, boolean each) {
+    private void region(int start, int end, IntConsumer simple, Job body, boolean jobsAreIndices) {
         if (start >= end) return;
         Thread me = Thread.currentThread();
         Region running = current;
@@ -189,7 +191,13 @@ public final class Parallel implements AutoCloseable {
         Worker[] pool = pool();
         lock.lock();
         try {
-            Region region = new Region(start, end, simple, body, me, each); // one allocation
+            long size = (long) end - start;
+            int jobs =
+                    (int)
+                            Math.min(
+                                    size,
+                                    jobsAreIndices ? size : (long) width * BANDS_PER_PARTICIPANT);
+            Region region = new Region(start, size, jobs, simple, body, me); // one allocation
             current = region;
             for (Worker w : pool) if (w.parked) LockSupport.unpark(w);
             region.work(0);
@@ -244,7 +252,7 @@ public final class Parallel implements AutoCloseable {
         return p;
     }
 
-    /** One loop: chunks are claimed from {@code next}; {@code finished} counts done indices. */
+    /** One loop: jobs are claimed from {@code next}; {@code finished} counts done jobs. */
     private final class Region {
         private static final VarHandle NEXT, FINISHED, FAILURE;
 
@@ -261,32 +269,32 @@ public final class Parallel implements AutoCloseable {
 
         final int start;
         final long size; // offsets from start: int arithmetic would wrap near MAX_VALUE
-        final long chunk; // indices per claim
+        final int jobs; // job j covers [size * j / jobs, size * (j + 1) / jobs)
         final Thread submitter;
         volatile IntConsumer simple; // one of the two is the loop body
-        volatile Body body;
+        volatile Job body;
         volatile long next;
         volatile long finished;
         volatile Throwable failure;
 
-        Region(int start, int end, IntConsumer simple, Body body, Thread submitter, boolean each) {
+        Region(int start, long size, int jobs, IntConsumer simple, Job body, Thread submitter) {
             this.start = start;
-            this.size = Math.max(0, (long) end - start);
+            this.size = size;
+            this.jobs = jobs;
             this.simple = simple;
             this.body = body;
             this.submitter = submitter;
-            this.chunk = each ? 1 : Math.max(1, size / ((long) width * CHUNKS_PER_PARTICIPANT));
         }
 
         boolean done() {
-            return finished >= size;
+            return finished >= jobs;
         }
 
         void work(int slot) {
             IntConsumer simple = this.simple;
-            Body body = this.body;
-            for (long lo; (lo = (long) NEXT.getAndAdd(this, chunk)) < size; ) {
-                long hi = Math.min(size, lo + chunk);
+            Job body = this.body;
+            for (long j; (j = (long) NEXT.getAndAdd(this, 1L)) < jobs; ) {
+                long lo = size * j / jobs, hi = size * (j + 1) / jobs;
                 try {
                     for (long off = lo; off < hi && failure == null; off++) {
                         try {
@@ -298,7 +306,7 @@ public final class Parallel implements AutoCloseable {
                         }
                     }
                 } finally {
-                    FINISHED.getAndAdd(this, hi - lo); // whatever escaped above, the region can end
+                    FINISHED.getAndAdd(this, 1L); // whatever escaped above, the region can end
                 }
             }
         }

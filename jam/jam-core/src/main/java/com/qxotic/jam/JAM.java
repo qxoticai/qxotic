@@ -56,42 +56,55 @@ public interface JAM {
      * one machine measured worse in every configuration tried.
      */
     interface Parallel {
-        /** A task body that also receives the slot of the participant running it. */
+        /**
+         * A job (or, under {@link #forLoop}, one iteration) and the slot of the participant running
+         * it.
+         */
         @FunctionalInterface
-        interface Body {
+        interface Job {
             void run(int index, int slot);
         }
 
         /**
-         * Runs {@code body.run(i, slot)} for every {@code i < count}; returns when all are done.
-         * {@code slot} is in {@code [0, width())}, the calling thread is slot 0, and no two tasks
-         * running at once share a slot - a slot indexes per-participant scratch.
+         * The primitive: runs {@code body.run(j, slot)} for every job {@code j < jobs}, each
+         * claimed by one participant; returns when all are done. {@code slot} is in {@code [0,
+         * width())}, the calling thread is slot 0, and no two jobs running at once share a slot - a
+         * slot indexes per-participant scratch. A job is whatever the backend wants balanced: a
+         * panel, a slice of a fan-out, a row group.
          */
-        void forLoop(int count, Body body);
+        void run(int jobs, Job body);
 
-        /** Runs {@code body.accept(i)} for every {@code i < count}; returns when all are done. */
+        /** How many jobs run at once at most: the compute thread budget, fixed for a lifetime. */
+        int width();
+
+        /**
+         * Sugar over {@link #run} for many cheap uniform iterations: the range is presented as
+         * {@code 2 x width()} contiguous bands, one job each, so a participant streams one long
+         * band. {@code body.run(i, slot)} for every {@code i < count}.
+         */
+        default void forLoop(int count, Job body) {
+            int jobs = (int) Math.min(count, 2L * width());
+            if (jobs <= 0) return;
+            run(
+                    jobs,
+                    (job, slot) -> {
+                        int lo = (int) ((long) count * job / jobs),
+                                hi = (int) ((long) count * (job + 1) / jobs);
+                        for (int i = lo; i < hi; i++) body.run(i, slot);
+                    });
+        }
+
+        /** {@link #forLoop(int, Job)} without the slot. */
         default void forLoop(int count, IntConsumer body) {
             forLoop(count, (i, slot) -> body.accept(i));
         }
-
-        /**
-         * {@link #forLoop(int, Body)} for coarse items - a gemm panel, a slice of a fan-out - where
-         * the host must balance every item, not bands of them. A host with a band-claiming loop
-         * overrides this; the default is the plain loop.
-         */
-        default void forEach(int count, Body body) {
-            forLoop(count, body);
-        }
-
-        /** How many tasks run at once at most: the compute thread budget, fixed for a lifetime. */
-        int width();
 
         /** The calling thread alone. */
         Parallel INLINE =
                 new Parallel() {
                     @Override
-                    public void forLoop(int count, Body body) {
-                        for (int i = 0; i < count; i++) body.run(i, 0);
+                    public void run(int jobs, Job body) {
+                        for (int j = 0; j < jobs; j++) body.run(j, 0);
                     }
 
                     @Override

@@ -306,7 +306,7 @@ final class VectorSupport {
     static void parallelChunks(JAM.Parallel parallel, int count, ChunkConsumer body) {
         if (count <= 0) return;
         int chunks = (int) Math.min(count, 4L * parallel.width());
-        parallel.forEach(
+        parallel.run(
                 chunks,
                 (chunk, slot) -> {
                     int lo = (int) ((long) count * chunk / chunks);

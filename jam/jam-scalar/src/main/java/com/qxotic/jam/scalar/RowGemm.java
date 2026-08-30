@@ -79,7 +79,7 @@ final class RowGemm {
         int nSplits = splits;
 
         // two regions: the band x split items into their partials, then one reduce per token
-        parallel.forEach(
+        parallel.run(
                 items,
                 (item, slot) -> {
                     int band = item / nSplits, split = item - band * nSplits;
