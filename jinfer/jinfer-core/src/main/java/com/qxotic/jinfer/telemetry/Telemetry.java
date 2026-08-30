@@ -98,7 +98,7 @@ public final class Telemetry {
             return model;
         }
 
-        private void emit() {
+        void emitPrompt() {
             PromptCacheEvent event = new PromptCacheEvent();
             if (!event.isEnabled()) return;
             CacheSample now = source.get();
@@ -127,7 +127,7 @@ public final class Telemetry {
             event.commit();
         }
 
-        private void emitMedia() {
+        void emitMedia() {
             MediaCacheEvent event = new MediaCacheEvent();
             if (!event.isEnabled()) return;
             MediaCacheSample now = mediaSource.get();
@@ -197,7 +197,7 @@ public final class Telemetry {
                     GAUGES.removeIf(reference -> reference.get() == null);
                     for (WeakReference<CacheGauge> reference : GAUGES) {
                         CacheGauge gauge = reference.get();
-                        if (gauge != null) gauge.emit();
+                        if (gauge != null) gauge.emitPrompt();
                     }
                 });
         FlightRecorder.addPeriodicEvent(
