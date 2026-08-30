@@ -2,6 +2,7 @@ package com.qxotic.jinfer.models.qwen3;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Reranker;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
@@ -59,10 +60,10 @@ public final class Qwen3Reranker implements Reranker<Qwen3.State> {
     public Qwen3Reranker(Qwen3 model) {
         this.model = model;
         Tokenizer tokenizer = model.tokenizer();
-        this.imStart = tokenizer.vocabulary().id("<|im_start|>");
-        this.imEnd = tokenizer.vocabulary().id("<|im_end|>");
-        this.thinkOpen = tokenizer.vocabulary().id("<think>");
-        this.thinkClose = tokenizer.vocabulary().id("</think>");
+        this.imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
+        this.imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
+        this.thinkOpen = SpecialTokens.require(tokenizer, "<think>");
+        this.thinkClose = SpecialTokens.require(tokenizer, "</think>");
         // the whole scoring convention rests on these being single tokens - fail at load
         this.yes = singleToken(tokenizer, "yes");
         this.no = singleToken(tokenizer, "no");

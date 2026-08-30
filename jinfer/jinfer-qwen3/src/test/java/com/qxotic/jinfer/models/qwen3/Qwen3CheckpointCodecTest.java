@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.qwen3;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -54,6 +55,23 @@ final class Qwen3CheckpointCodecTest {
                     IllegalArgumentException.class,
                     () -> codec.restore(state, 0, 2, block.asSlice(1)));
             assertThrows(IllegalStateException.class, () -> codec.capture(state, 0, 2, block));
+        }
+    }
+
+    @Test
+    void rejectsInvalidBatchInputsBeforeRunningKernels() {
+        Qwen3.Configuration config = config();
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            Qwen3 model = new Qwen3(config, null, new Qwen3.Weights(null, null, null, null, null));
+            Qwen3.State state = new Qwen3.State(config, 8, 4, memory, false);
+            assertThrows(IllegalArgumentException.class, () -> model.ingest(state, Batch.step(8)));
+            Batch malformed =
+                    new Batch(
+                            new Batch.Input.Sequences(
+                                    new Batch.Input.Tokens(new int[] {0}), new int[] {1, 0}),
+                            Batch.Outputs.ALL);
+            assertThrows(IllegalArgumentException.class, () -> model.ingest(state, malformed));
         }
     }
 
