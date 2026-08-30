@@ -837,10 +837,49 @@ public final class Convolutions {
                 ts = tmpRaw.vseg(),
                 os = outRaw.vseg();
         long kb = kernelRaw.vbase(), cb = convRaw.vbase(), tb = tmpRaw.vbase(), ob = outRaw.vbase();
+        // Every channel owns its column of the state, so bands of channels scan independently; a
+        // single position stays inline (a region costs more than the scan).
+        Parallel parallel = Parallel.shared();
+        int bands = seqLen == 1 ? 1 : Math.min(dim, 2 * parallel.width());
+        parallel.run(
+                bands,
+                (band, slot) ->
+                        scanChannels(
+                                ks,
+                                cs,
+                                ts,
+                                os,
+                                kb,
+                                cb,
+                                tb,
+                                ob,
+                                seqLen,
+                                dim,
+                                dConv,
+                                parts,
+                                (int) ((long) dim * band / bands),
+                                (int) ((long) dim * (band + 1) / bands)));
+    }
+
+    private static void scanChannels(
+            MemorySegment ks,
+            MemorySegment cs,
+            MemorySegment ts,
+            MemorySegment os,
+            long kb,
+            long cb,
+            long tb,
+            long ob,
+            int seqLen,
+            int dim,
+            int dConv,
+            int parts,
+            int c0,
+            int c1) {
         int hist = dConv - 1;
         for (int s = 0; s < seqLen; s++) {
             int tmpOff = s * parts * dim, outOff = s * dim;
-            for (int c = 0; c < dim; c++) {
+            for (int c = c0; c < c1; c++) {
                 float b = readFloat(ts, tb + 4L * (tmpOff + c));
                 float cg = readFloat(ts, tb + 4L * (tmpOff + dim + c));
                 float xv = readFloat(ts, tb + 4L * (tmpOff + 2 * dim + c));

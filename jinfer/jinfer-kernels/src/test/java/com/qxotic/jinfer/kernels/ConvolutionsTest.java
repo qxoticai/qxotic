@@ -167,4 +167,47 @@ class ConvolutionsTest {
                 }
         }
     }
+
+    /**
+     * The banded scan (one band per participant) equals a plain per-position scan, state included.
+     */
+    @Test
+    void shortConvScanBandsMatchTheSequentialScan() {
+        int seqLen = 7, dim = 200, dConv = 3, parts = 3, hist = dConv - 1;
+        Random random = new Random(11);
+        float[] kernel = new float[dim * dConv],
+                state0 = new float[hist * dim],
+                packed0 = new float[seqLen * parts * dim];
+        for (int i = 0; i < kernel.length; i++) kernel[i] = random.nextFloat() - 0.5f;
+        for (int i = 0; i < state0.length; i++) state0[i] = random.nextFloat() - 0.5f;
+        for (int i = 0; i < packed0.length; i++) packed0[i] = random.nextFloat() - 0.5f;
+        // reference: the scan written out per position
+        float[] state = state0.clone(),
+                packed = packed0.clone(),
+                expected = new float[seqLen * dim];
+        for (int s = 0; s < seqLen; s++)
+            for (int c = 0; c < dim; c++) {
+                int off = s * parts * dim;
+                float bx = packed[off + c] * packed[off + 2 * dim + c];
+                float sum = 0f;
+                for (int k = 0; k < hist; k++) sum += state[k * dim + c] * kernel[c * dConv + k];
+                sum += bx * kernel[c * dConv + hist];
+                expected[s * dim + c] = packed[off + dim + c] * sum;
+                for (int k = 0; k + 1 < hist; k++) state[k * dim + c] = state[(k + 1) * dim + c];
+                state[(hist - 1) * dim + c] = bx;
+            }
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            MemoryView<MemorySegment> k = Views.allocateF32(memory, dim, dConv);
+            MemoryView<MemorySegment> st = Views.allocateF32(memory, hist, dim);
+            MemoryView<MemorySegment> p = Views.allocateF32(memory, seqLen, parts * dim);
+            MemoryView<MemorySegment> out = Views.allocateF32(memory, seqLen, dim);
+            Views.copyFromArray(k, 0, kernel, 0, kernel.length, "kernel");
+            Views.copyFromArray(st, 0, state0, 0, state0.length, "state");
+            Views.copyFromArray(p, 0, packed0, 0, packed0.length, "packed");
+            Convolutions.shortConvScan(k, st, p, out, seqLen, dim, dConv, parts);
+            assertArrayEquals(expected, Views.toFloatArray(out, "out"));
+            assertArrayEquals(state, Views.toFloatArray(st, "state"));
+        }
+    }
 }
