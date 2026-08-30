@@ -139,27 +139,25 @@ public final class Moe {
             }
             int rowBase = row * topK;
             for (int k = 0; k < topK; k++) {
+                // like selectTopK: a NaN row (or an exhausted group set) never beats -inf, so the
+                // fallback keeps the picks distinct instead of crashing
                 int best = -1;
                 float value = Float.NEGATIVE_INFINITY;
                 for (int expert = 0; expert < experts; expert++) {
                     if (!groupMask[expert / perGroup]) continue;
-                    boolean taken = false;
-                    for (int prior = 0; prior < k; prior++)
-                        if (rowTopE[rowBase + prior] == expert) {
-                            taken = true;
-                            break;
-                        }
-                    if (taken) continue;
                     float candidate =
                             readFloat(sel.vseg(), sel.vbase() + (base + expert) * Float.BYTES);
-                    if (best < 0 || candidate > value) {
+                    if (candidate > value) {
                         value = candidate;
                         best = expert;
                     }
                 }
-                if (best < 0)
-                    throw new IllegalStateException("not enough experts in selected groups");
+                if (best < 0) best = firstUnpicked(rowTopE, rowBase, k, experts);
                 rowTopE[rowBase + k] = best;
+                writeFloat(
+                        sel.vseg(),
+                        sel.vbase() + (base + best) * Float.BYTES,
+                        Float.NEGATIVE_INFINITY);
                 rowTopP[rowBase + k] = readFloat(w.vseg(), w.vbase() + (base + best) * Float.BYTES);
                 counts[best]++;
             }
