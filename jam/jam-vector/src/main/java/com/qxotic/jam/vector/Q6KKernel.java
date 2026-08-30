@@ -4,6 +4,7 @@ import static com.qxotic.jam.vector.VectorSupport.F_SPECIES;
 import static com.qxotic.jam.vector.VectorSupport.readByte;
 import static com.qxotic.jam.vector.VectorSupport.readFloat16;
 
+import com.oracle.svm.shared.AlwaysInline;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
@@ -91,6 +92,7 @@ public final class Q6KKernel {
      * The shift counts are constants at every call site. Width-generic: the 16-byte chunk is {@link
      * VectorSupport#DECODE_PARTS} int vectors (1 at 512-bit, 2 at 256, 4 at 128).
      */
+    @AlwaysInline("the shift counts are literals at the call sites; the image must see them")
     private static void group(
             MemorySegment ws,
             long ql,
