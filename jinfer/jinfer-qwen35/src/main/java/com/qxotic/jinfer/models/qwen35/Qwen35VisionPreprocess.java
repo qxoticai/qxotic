@@ -39,7 +39,7 @@ final class Qwen35VisionPreprocess {
                         MIN_IMAGE_TOKENS,
                         MAX_IMAGE_TOKENS);
         int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
-        return Math.multiplyExact(patchesX, patchesY) / (merge * merge);
+        return Math.multiplyExact(patchesX, patchesY) / Math.multiplyExact(merge, merge);
     }
 
     /**
@@ -75,6 +75,16 @@ final class Qwen35VisionPreprocess {
      * 2*v-1} normalization.
      */
     static float[] normalize(Media.Image image, int targetWidth, int targetHeight) {
+        return normalize(
+                image,
+                targetWidth,
+                targetHeight,
+                new float[] {0.5f, 0.5f, 0.5f},
+                new float[] {0.5f, 0.5f, 0.5f});
+    }
+
+    static float[] normalize(
+            Media.Image image, int targetWidth, int targetHeight, float[] mean, float[] std) {
         int plane = Math.multiplyExact(targetHeight, targetWidth);
         float[] out = new float[Math.multiplyExact(3, plane)];
         int height = image.height(), width = image.width(), channels = image.channels();
@@ -112,7 +122,7 @@ final class Qwen35VisionPreprocess {
                                         + d0 * (1 - wx) * wy
                                         + d1 * wx * wy;
                     }
-                    out[c * plane + y * targetWidth + x] = 2f * v - 1f;
+                    out[c * plane + y * targetWidth + x] = (v - mean[c]) / std[c];
                 }
             }
         }

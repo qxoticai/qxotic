@@ -4,6 +4,7 @@ import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.kernels.KvTransfer;
 import com.qxotic.jota.DataType;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 /**
  * Qwen3.5 resume-state codec: the full-attention layers store per-position K/V rows (full context,
@@ -44,13 +45,16 @@ final class Qwen35CheckpointCodec extends CheckpointCodec<Qwen35.State> {
         bytesPerPosition = rowBytes;
         residueBytes =
                 Math.addExact(
-                        Math.multiplyExact(
-                                linearLayers,
+                        Math.addExact(
                                 Math.multiplyExact(
-                                        (long) recurrentFloats + convFloats, Float.BYTES)),
-                        config.hasMtp()
-                                ? Math.multiplyExact((long) config.embeddingLength(), Float.BYTES)
-                                : 0);
+                                        linearLayers,
+                                        Math.multiplyExact(
+                                                (long) recurrentFloats + convFloats, Float.BYTES)),
+                                config.hasMtp()
+                                        ? Math.multiplyExact(
+                                                (long) config.embeddingLength(), Float.BYTES)
+                                        : 0),
+                        Integer.BYTES);
     }
 
     @Override
@@ -100,13 +104,16 @@ final class Qwen35CheckpointCodec extends CheckpointCodec<Qwen35.State> {
                             capture);
         }
         if (config.hasMtp())
-            KvTransfer.transfer(
-                    state.pendingHidden,
-                    DataType.FP32,
-                    0,
-                    blob,
-                    offset,
-                    config.embeddingLength(),
-                    capture);
+            offset +=
+                    KvTransfer.transfer(
+                            state.pendingHidden,
+                            DataType.FP32,
+                            0,
+                            blob,
+                            offset,
+                            config.embeddingLength(),
+                            capture);
+        if (capture) blob.set(ValueLayout.JAVA_INT_UNALIGNED, offset, state.ropeDelta);
+        else state.ropeDelta = blob.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
     }
 }

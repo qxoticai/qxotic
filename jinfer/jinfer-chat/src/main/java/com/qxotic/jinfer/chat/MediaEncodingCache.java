@@ -44,6 +44,7 @@ public final class MediaEncodingCache {
                 int dimension,
                 boolean bidirectional,
                 ContentKey contentKey,
+                Batch.Positions positions,
                 Batch.Outputs outputs)
                 implements CachedBatch {
             @Override
@@ -54,13 +55,26 @@ public final class MediaEncodingCache {
                                 DataType.FP32,
                                 Shape.flat(count, dimension));
                 return new Batch(
-                        new Batch.Input.Embeddings(view, count, bidirectional, contentKey),
+                        new Batch.Input.Embeddings(
+                                view,
+                                count,
+                                bidirectional,
+                                contentKey,
+                                positions == null ? null : positions.copy()),
                         outputs);
             }
 
             @Override
             public long bytes() {
-                return (long) rows.length * Float.BYTES;
+                long positionBytes =
+                        positions == null
+                                ? 0
+                                : Math.addExact(
+                                        2L * Integer.BYTES,
+                                        (long) positions.count()
+                                                * positions.dimensions()
+                                                * Integer.BYTES);
+                return Math.addExact((long) rows.length * Float.BYTES, positionBytes);
             }
         }
     }
@@ -154,6 +168,7 @@ public final class MediaEncodingCache {
                         Math.toIntExact(rows.shape().flatAt(1)),
                         embeddings.bidirectional(),
                         embeddings.contentKey(),
+                        embeddings.positions() == null ? null : embeddings.positions().copy(),
                         batch.outputs());
             }
             case Batch.Input.Sequences ignored ->

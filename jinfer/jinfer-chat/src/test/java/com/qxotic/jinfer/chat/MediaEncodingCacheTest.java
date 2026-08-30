@@ -47,7 +47,13 @@ final class MediaEncodingCacheTest {
                             Views.copyFromArray(
                                     rows, 0, new float[] {marker, marker + 1}, 0, 2, "test rows");
                             sink.accept(Batch.prefill(new int[] {7}));
-                            sink.accept(Batch.embeddings(rows, 1, true, key));
+                            sink.accept(
+                                    Batch.embeddings(
+                                            rows,
+                                            1,
+                                            true,
+                                            key,
+                                            new Batch.Positions(3, new int[] {0, 2, 3}, 4)));
                         }
                     },
                     batch -> {
@@ -57,6 +63,8 @@ final class MediaEncodingCacheTest {
                             for (float value : Views.toFloatArray(rows, "test rows")) {
                                 output.add(value);
                             }
+                            output.add((float) embeddings.positions().value(0, 1));
+                            output.add((float) embeddings.positions().advance());
                         }
                     });
             outputs.add(output);

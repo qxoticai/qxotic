@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.media.Media;
@@ -67,6 +68,12 @@ class Qwen35VisionComponentsTest {
             0.5f, 0.5f, 0.5f, 0.5f // B plane
         };
         assertArrayEquals(expected, out, 0f);
+
+        assertArrayEquals(
+                new float[] {1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3},
+                Qwen35VisionPreprocess.normalize(
+                        image, 2, 2, new float[] {0, 0, 0}, new float[] {0.25f, 0.5f, 0.25f}),
+                0f);
     }
 
     @Test
@@ -119,22 +126,31 @@ class Qwen35VisionComponentsTest {
             // rows).
             assertEquals(9, tower.positions(image));
             assertTrue(tower.planId().contains("qwen3vl"));
+            Batch.Positions positions = tower.decoderPositions(image);
+            assertEquals(9, positions.count());
+            assertEquals(3, positions.dimensions());
+            assertEquals(3, positions.advance());
+            assertEquals(0, positions.value(0, 0));
+            assertEquals(1, positions.value(4, 1));
+            assertEquals(1, positions.value(4, 2));
 
-            int[] rows = {0};
+            int[] rows = {0}, chunks = {0};
             tower.project(
                     image,
-                    9,
+                    4,
                     chunk -> {
                         MemoryView<MemorySegment> view = Views.castToSegmentBacked(chunk, "chunk");
                         assertTrue(view.memory().base().scope().isAlive());
-                        assertEquals(9, view.shape().flatAt(0));
+                        assertTrue(view.shape().flatAt(0) <= 4);
                         assertEquals(modelDim, view.shape().flatAt(1));
                         float[] values = Views.toFloatArray(view, "chunk");
                         for (float v : values) assertEquals(0f, v, 0f);
                         rows[0] += Math.toIntExact(view.shape().flatAt(0));
+                        chunks[0]++;
                         borrowed.add(view);
                     });
             assertEquals(9, rows[0]);
+            assertEquals(3, chunks[0]);
 
             // The shared contract on top of the specifics above: positions == rows, FP32
             // [rows, modelDim] chunks, arena expiry, determinism, maxChunkSize gates.
@@ -234,6 +250,8 @@ class Qwen35VisionComponentsTest {
                             merge,
                             1,
                             1e-6f,
+                            new float[] {0.5f, 0.5f, 0.5f},
+                            new float[] {0.5f, 0.5f, 0.5f},
                             random(memory, rnd, visionDim, patchVector),
                             random(memory, rnd, visionDim, patchVector),
                             random(memory, rnd, visionDim),
@@ -330,6 +348,8 @@ class Qwen35VisionComponentsTest {
                 merge,
                 positionSide,
                 1e-6f,
+                new float[] {0.5f, 0.5f, 0.5f},
+                new float[] {0.5f, 0.5f, 0.5f},
                 patch0,
                 patch1,
                 zeros(memory, visionDim),

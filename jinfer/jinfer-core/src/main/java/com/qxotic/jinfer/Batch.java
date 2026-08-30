@@ -9,8 +9,8 @@ import java.util.Objects;
 
 /**
  * One forward call's worth of work: what to feed ({@link Input}) and which final hidden states to
- * retain ({@link Outputs}). Position-agnostic: a batch is always ingested at the state's cursor
- * ({@link ContextState#position()}), which then advances by {@link #count()}.
+ * retain ({@link Outputs}). A batch is ingested at the state's cursor ({@link
+ * ContextState#position()}); projected rows may additionally carry model-specific coordinates.
  */
 public record Batch(Input input, Outputs outputs) {
 
@@ -27,6 +27,57 @@ public record Batch(Input input, Outputs outputs) {
         ALL
     }
 
+    /**
+     * Optional coordinates relative to the batch's context cursor. {@code advance} is the model
+     * position reached after all rows; it may differ from {@link #count()} when media positions are
+     * spatially compressed.
+     */
+    public static final class Positions {
+        private final int dimensions;
+        private final int[] values;
+        private final int advance;
+
+        public Positions(int dimensions, int[] values, int advance) {
+            if (dimensions <= 0 || values == null || values.length % dimensions != 0)
+                throw new IllegalArgumentException("invalid position coordinates");
+            this.dimensions = dimensions;
+            this.values = values;
+            this.advance = advance;
+        }
+
+        public int dimensions() {
+            return dimensions;
+        }
+
+        public int count() {
+            return values.length / dimensions;
+        }
+
+        public int value(int row, int dimension) {
+            if (row < 0 || row >= count() || dimension < 0 || dimension >= dimensions)
+                throw new IndexOutOfBoundsException();
+            return values[row * dimensions + dimension];
+        }
+
+        public int advance() {
+            return advance;
+        }
+
+        /** Rebased coordinates and frontier advance for one contiguous projector chunk. */
+        public Positions slice(int from, int count, boolean last) {
+            if (from < 0 || count <= 0 || from + count > count())
+                throw new IllegalArgumentException("invalid position slice");
+            int[] slice =
+                    Arrays.copyOfRange(values, from * dimensions, (from + count) * dimensions);
+            for (int i = 0; i < slice.length; i++) slice[i] -= from;
+            return new Positions(dimensions, slice, last ? advance - from : count);
+        }
+
+        public Positions copy() {
+            return new Positions(dimensions, values.clone(), advance);
+        }
+    }
+
     /** Token ids, encoder-projected rows, or packed ragged multi-sequence text. */
     public sealed interface Input {
         record Tokens(int[] ids) implements Input {
@@ -38,11 +89,17 @@ public record Batch(Input input, Outputs outputs) {
         /**
          * Dense FP32 {@code [count, modelDim]} encoder output. A bidirectional block is one atomic
          * attention group. A null content key fingerprints row bits; a non-null key identifies the
-         * source content and preprocessing options instead. The rows and their backing memory are
-         * borrowed and must remain alive and unchanged through ingestion.
+         * source content and preprocessing options instead. Optional positions describe
+         * model-specific coordinates without changing the number of committed context rows. The
+         * rows and their backing memory are borrowed and must remain alive and unchanged through
+         * ingestion.
          */
         record Embeddings(
-                MemoryView<?> rows, int count, boolean bidirectional, ContentKey contentKey)
+                MemoryView<?> rows,
+                int count,
+                boolean bidirectional,
+                ContentKey contentKey,
+                Positions positions)
                 implements Input {
             public Embeddings {
                 Objects.requireNonNull(rows, "rows");
@@ -56,10 +113,18 @@ public record Batch(Input input, Outputs outputs) {
                             "embedding count " + count + " does not match shape " + rows.shape());
                 if (!rows.isRowMajorContiguous())
                     throw new IllegalArgumentException("embedding rows must be dense row-major");
+                if (positions != null && positions.count() != count)
+                    throw new IllegalArgumentException(
+                            "position count " + positions.count() + " does not match " + count);
             }
 
             public Embeddings(MemoryView<?> rows, int count, boolean bidirectional) {
-                this(rows, count, bidirectional, null);
+                this(rows, count, bidirectional, null, null);
+            }
+
+            public Embeddings(
+                    MemoryView<?> rows, int count, boolean bidirectional, ContentKey contentKey) {
+                this(rows, count, bidirectional, contentKey, null);
             }
         }
 
@@ -105,8 +170,19 @@ public record Batch(Input input, Outputs outputs) {
     /** As {@link #embeddings(MemoryView, int, boolean)} with a source-content cache key. */
     public static Batch embeddings(
             MemoryView<?> rows, int count, boolean bidirectional, ContentKey contentKey) {
+        return embeddings(rows, count, bidirectional, contentKey, null);
+    }
+
+    /** As above with explicit model-position coordinates for the projected rows. */
+    public static Batch embeddings(
+            MemoryView<?> rows,
+            int count,
+            boolean bidirectional,
+            ContentKey contentKey,
+            Positions positions) {
         return new Batch(
-                new Input.Embeddings(rows, count, bidirectional, contentKey), Outputs.LAST);
+                new Input.Embeddings(rows, count, bidirectional, contentKey, positions),
+                Outputs.LAST);
     }
 
     /**

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
@@ -43,6 +44,7 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
             merge,
             positionSide;
     private final float normEps;
+    private final float[] imageMean, imageStd;
     private final MemoryView<MemorySegment> patch0, patch1, patchBias;
     private final MemoryView<MemorySegment> positionEmbedding;
     private final MemoryView<MemorySegment> postLnW, postLnB;
@@ -79,6 +81,8 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
             int merge,
             int positionSide,
             float normEps,
+            float[] imageMean,
+            float[] imageStd,
             MemoryView<MemorySegment> patch0,
             MemoryView<MemorySegment> patch1,
             MemoryView<MemorySegment> patchBias,
@@ -94,7 +98,9 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                 || headCount <= 0
                 || ffnDim <= 0
                 || merge <= 1
-                || positionSide <= 0)
+                || positionSide <= 0
+                || !(normEps > 0f)
+                || !Float.isFinite(normEps))
             throw new IllegalArgumentException("vision dimensions must be positive");
         // the merger scratch and tokenX/tokenY assume 2x2 blocks (Qwen3-VL's only geometry)
         if (merge != 2) throw new IllegalArgumentException("unsupported spatial merge " + merge);
@@ -116,6 +122,15 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         this.merge = merge;
         this.positionSide = positionSide;
         this.normEps = normEps;
+        if (imageMean.length != 3 || imageStd.length != 3)
+            throw new IllegalArgumentException("vision image mean/std must have three channels");
+        for (int i = 0; i < 3; i++)
+            if (!Float.isFinite(imageMean[i])
+                    || !(imageStd[i] > 0f)
+                    || !Float.isFinite(imageStd[i]))
+                throw new IllegalArgumentException("invalid vision image mean/std");
+        this.imageMean = imageMean.clone();
+        this.imageStd = imageStd.clone();
         // The patch embedding runs as im2col + gemm, so the kernels follow MatMul's weight
         // contract (FP32/FP16/BF16) like every other gemm weight in the tower. The file stores
         // each kernel 4D [out, channel, ky, kx]; the contiguous flat view is the [out, in]
@@ -154,6 +169,27 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
     }
 
     @Override
+    public Batch.Positions decoderPositions(Media.Image image) {
+        Objects.requireNonNull(image, "image");
+        int[] size =
+                Qwen35VisionPreprocess.smartResize(
+                        image.width(),
+                        image.height(),
+                        Math.multiplyExact(patchSize, merge),
+                        Qwen35VisionPreprocess.MIN_IMAGE_TOKENS,
+                        Qwen35VisionPreprocess.MAX_IMAGE_TOKENS);
+        int mergedPatch = Math.multiplyExact(patchSize, merge);
+        int width = size[0] / mergedPatch;
+        int height = size[1] / mergedPatch;
+        int[] positions = new int[Math.multiplyExact(3, Math.multiplyExact(width, height))];
+        for (int row = 0; row < width * height; row++) {
+            positions[row * 3 + 1] = row / width;
+            positions[row * 3 + 2] = row % width;
+        }
+        return new Batch.Positions(3, positions, Math.max(width, height));
+    }
+
+    @Override
     public String planId() {
         return "qwen3vl patch="
                 + patchSize
@@ -161,6 +197,19 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                 + merge
                 + " pos="
                 + positionSide
+                + " decoder-mrope=3d"
+                + " norm="
+                + imageMean[0]
+                + ","
+                + imageMean[1]
+                + ","
+                + imageMean[2]
+                + "/"
+                + imageStd[0]
+                + ","
+                + imageStd[1]
+                + ","
+                + imageStd[2]
                 + " tokens="
                 + Qwen35VisionPreprocess.MIN_IMAGE_TOKENS
                 + ".."
@@ -181,13 +230,12 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                         Qwen35VisionPreprocess.MIN_IMAGE_TOKENS,
                         Qwen35VisionPreprocess.MAX_IMAGE_TOKENS);
         int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
-        int merged = Math.multiplyExact(patchesX, patchesY) / (merge * merge);
-        if (merged > maxChunkSize)
-            throw new IllegalArgumentException(
-                    "vision block has " + merged + " rows, exceeding maxChunkSize " + maxChunkSize);
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
-            sink.accept(encode(image, scratch, size, patchesX, patchesY));
+            MemoryView<MemorySegment> rows = encode(image, scratch, size, patchesX, patchesY);
+            int count = Math.toIntExact(rows.shape().flatAt(0));
+            for (int from = 0; from < count; from += maxChunkSize)
+                sink.accept(rows.slice(0, from, Math.min(count, from + maxChunkSize)));
         } finally {
             Arenas.close(scratch);
         }
@@ -201,8 +249,9 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
             int patchesX,
             int patchesY) {
         int nPos = Math.multiplyExact(patchesX, patchesY);
-        int merged = nPos / (merge * merge);
-        float[] pixels = Qwen35VisionPreprocess.normalize(image, size[0], size[1]);
+        int merged = nPos / Math.multiplyExact(merge, merge);
+        float[] pixels =
+                Qwen35VisionPreprocess.normalize(image, size[0], size[1], imageMean, imageStd);
         int plane = Math.multiplyExact(size[0], size[1]);
 
         // the patch embedding is im2col + TWO gemms (one per kernel), with the im2col
@@ -523,6 +572,12 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
         float eps =
                 gguf.getValueOrDefault(
                         float.class, "clip.vision.attention.layer_norm_epsilon", 1e-6f);
+        float[] imageMean =
+                gguf.getValueOrDefault(
+                        float[].class, "clip.vision.image_mean", new float[] {0.5f, 0.5f, 0.5f});
+        float[] imageStd =
+                gguf.getValueOrDefault(
+                        float[].class, "clip.vision.image_std", new float[] {0.5f, 0.5f, 0.5f});
         if (patchSize <= 0
                 || visionDim <= 0
                 || modelDim <= 0
@@ -597,6 +652,8 @@ public final class Qwen35Vision implements MediaProjector<Media.Image> {
                 merge,
                 positionSide,
                 eps,
+                imageMean,
+                imageStd,
                 require(tensors, "v.patch_embd.weight"),
                 require(tensors, "v.patch_embd.weight.1"),
                 require(tensors, "v.patch_embd.bias"),

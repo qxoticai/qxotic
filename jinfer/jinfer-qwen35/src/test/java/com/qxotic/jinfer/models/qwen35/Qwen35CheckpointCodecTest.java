@@ -17,9 +17,9 @@ final class Qwen35CheckpointCodecTest {
         Qwen35.Configuration config = config();
         Qwen35CheckpointCodec codec = new Qwen35CheckpointCodec(config);
         assertTrue(codec.byteSize(0) > 0, "recurrent state is fixed checkpoint overhead");
-        assertEquals(96, codec.byteSize(0), "one linear layer: S matrix + conv history");
-        assertEquals(112, codec.byteSize(2));
-        assertEquals(136, codec.byteSize(5));
+        assertEquals(100, codec.byteSize(0), "linear state plus the multimodal RoPE offset");
+        assertEquals(116, codec.byteSize(2));
+        assertEquals(140, codec.byteSize(5));
 
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
@@ -42,6 +42,7 @@ final class Qwen35CheckpointCodecTest {
             MemorySegment.copy(second, 12, expected, 28, 12); // V[2,5)
             MemorySegment.copy(second, 24, expected, 40, 32); // S at the endpoint
             MemorySegment.copy(second, 56, expected, 72, 64); // conv at the endpoint
+            MemorySegment.copy(second, 120, expected, 136, 4); // RoPE offset at the endpoint
             assertEquals(-1, expected.mismatch(actual));
 
             state.reset();
@@ -49,7 +50,7 @@ final class Qwen35CheckpointCodecTest {
             codec.capture(state, 0, 0, reset);
             assertEquals(
                     -1,
-                    MemorySegment.ofArray(new byte[96]).mismatch(reset),
+                    MemorySegment.ofArray(new byte[100]).mismatch(reset),
                     "reset zeroes exactly the recurrent residue");
         }
     }
@@ -74,8 +75,8 @@ final class Qwen35CheckpointCodecTest {
     void includesTheMtpKvRowsAndPendingHidden() {
         Qwen35.Configuration config = config(true);
         Qwen35CheckpointCodec codec = new Qwen35CheckpointCodec(config);
-        assertEquals(112, codec.byteSize(0), "recurrent residue plus pending hidden");
-        assertEquals(144, codec.byteSize(2), "two full-attention layers");
+        assertEquals(116, codec.byteSize(0), "recurrent residue, pending hidden and RoPE offset");
+        assertEquals(148, codec.byteSize(2), "two full-attention layers");
 
         try (Arena arena = Arena.ofConfined()) {
             Qwen35.State state =
@@ -95,7 +96,7 @@ final class Qwen35CheckpointCodecTest {
             codec.capture(state, 0, 0, reset);
             assertEquals(
                     -1,
-                    MemorySegment.ofArray(new byte[112]).mismatch(reset),
+                    MemorySegment.ofArray(new byte[116]).mismatch(reset),
                     "reset clears recurrent state and the MTP carry");
         }
     }
@@ -123,6 +124,7 @@ final class Qwen35CheckpointCodecTest {
                 1e-5f, // rmsNormEps
                 10_000f, // ropeTheta
                 2, // ropeDimensionCount
+                new int[] {1, 0, 0}, // ropeDimensionSections
                 8, // hiddenDim
                 mtp
                         ? new boolean[] {true, false, true}
