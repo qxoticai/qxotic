@@ -25,6 +25,7 @@
     <module>jinfer-lfm2</module>
     <module>jinfer-qwen3</module>
     <module>jinfer-qwen35</module>
+    <module>jinfer-bailingmoe3</module>
     <module>jinfer-gemma4</module>
     <module>jinfer-gptoss</module>
     <module>jinfer-maple</module>
@@ -135,6 +136,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-qwen35</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-bailingmoe3</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

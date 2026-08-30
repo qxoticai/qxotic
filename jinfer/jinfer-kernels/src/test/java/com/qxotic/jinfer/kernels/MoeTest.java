@@ -11,6 +11,72 @@ import org.junit.jupiter.api.Test;
 class MoeTest {
 
     @Test
+    void groupedRoutingUsesBiasedScoresButUnbiasedWeights() {
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            var selection =
+                    Views.fromFloatArray(
+                            memory, new float[] {.9f, .8f, .7f, .6f, .5f, .4f, .99f, .01f});
+            var weights =
+                    Views.fromFloatArray(
+                            memory, new float[] {.1f, .2f, .3f, .4f, .5f, .6f, .7f, .8f});
+            int[] experts = new int[3], counts = new int[8];
+            float[] probabilities = new float[3];
+
+            Moe.selectTopKGrouped(
+                    selection,
+                    weights,
+                    1,
+                    8,
+                    3,
+                    4,
+                    2,
+                    experts,
+                    probabilities,
+                    counts,
+                    new float[4],
+                    new boolean[4]);
+
+            assertArrayEquals(new int[] {0, 1, 2}, experts);
+            assertArrayEquals(new float[] {.1f, .2f, .3f}, probabilities);
+            assertArrayEquals(new int[] {1, 1, 1, 0, 0, 0, 0, 0}, counts);
+        }
+    }
+
+    @Test
+    void groupedRoutingKeepsBadRowsDistinctInsteadOfCrashing() {
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            var values =
+                    Views.fromFloatArray(
+                            memory,
+                            new float[] {
+                                Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN,
+                                Float.NaN, Float.NaN
+                            });
+            int[] experts = new int[3], counts = new int[8];
+            float[] probabilities = new float[3];
+
+            Moe.selectTopKGrouped(
+                    values,
+                    values,
+                    1,
+                    8,
+                    3,
+                    4,
+                    2,
+                    experts,
+                    probabilities,
+                    counts,
+                    new float[4],
+                    new boolean[4]);
+
+            assertArrayEquals(new int[] {0, 1, 2}, experts);
+            assertArrayEquals(new int[] {1, 1, 1, 0, 0, 0, 0, 0}, counts);
+        }
+    }
+
+    @Test
     void aNaNRouterRowStillRoutesToDistinctExperts() {
         // row 0 is healthy, row 1 is all NaN: the NaN must travel in the combine weight, not
         // collapse the row onto expert 0 topK times (which overflows the per-expert gather and

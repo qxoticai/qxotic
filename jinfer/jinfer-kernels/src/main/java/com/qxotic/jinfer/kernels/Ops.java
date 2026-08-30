@@ -218,6 +218,33 @@ public final class Ops {
         }
     }
 
+    /** Elementwise {@code target *= factors} over dense FP32 spans. */
+    public static void multiplyInPlace(
+            MemoryView<MemorySegment> target,
+            long targetOffset,
+            MemoryView<MemorySegment> factors,
+            long factorsOffset,
+            int size) {
+        Raw t = Raw.f32(target, "target");
+        Raw f = Raw.f32(factors, "factors");
+        int upperBound = USE_VECTOR_API ? F_SPECIES.loopBound(size) : 0;
+        int i = 0;
+        for (; i < upperBound; i += F_SPECIES.length()) {
+            long tb = t.vbase() + (targetOffset + i) * Float.BYTES;
+            long fb = f.vbase() + (factorsOffset + i) * Float.BYTES;
+            FloatVector.fromMemorySegment(F_SPECIES, t.vseg(), tb, ByteOrder.LITTLE_ENDIAN)
+                    .mul(
+                            FloatVector.fromMemorySegment(
+                                    F_SPECIES, f.vseg(), fb, ByteOrder.LITTLE_ENDIAN))
+                    .intoMemorySegment(t.vseg(), tb, ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; i < size; i++) {
+            long tb = t.vbase() + (targetOffset + i) * Float.BYTES;
+            long fb = f.vbase() + (factorsOffset + i) * Float.BYTES;
+            writeFloat(t.vseg(), tb, readFloat(t.vseg(), tb) * readFloat(f.vseg(), fb));
+        }
+    }
+
     /**
      * Channel-major → channel-last flatten: {@code dst[t][f*channels + c] = src[c][t][f]}, the
      * conv2d output flatten (a [channels][rows][width] plane stack becomes [rows] rows of

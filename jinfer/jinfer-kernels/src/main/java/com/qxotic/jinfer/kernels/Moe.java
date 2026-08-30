@@ -85,6 +85,88 @@ public final class Moe {
     }
 
     /**
+     * Group-limited top-k used by DeepSeek-style routers: rank groups by the sum of their best two
+     * selection scores, then choose experts only from the winning groups. Combine weights come from
+     * {@code weights}, so a selection-only expert bias remains selection-only.
+     */
+    public static void selectTopKGrouped(
+            MemoryView<MemorySegment> selection,
+            MemoryView<MemorySegment> weights,
+            int rows,
+            int experts,
+            int topK,
+            int groups,
+            int groupsUsed,
+            int[] rowTopE,
+            float[] rowTopP,
+            int[] counts,
+            float[] groupScores,
+            boolean[] groupMask) {
+        if (groups <= 0 || experts % groups != 0 || groupsUsed <= 0 || groupsUsed > groups)
+            throw new IllegalArgumentException("invalid grouped routing dimensions");
+        if (groupScores.length < groups || groupMask.length < groups)
+            throw new IllegalArgumentException("group routing scratch is too small");
+        Raw sel = Raw.f32(selection, "selection");
+        Raw w = Raw.f32(weights, "weights");
+        int perGroup = experts / groups;
+        Arrays.fill(counts, 0);
+        for (int row = 0; row < rows; row++) {
+            long base = (long) row * experts;
+            Arrays.fill(groupMask, 0, groups, false);
+            for (int group = 0; group < groups; group++) {
+                float first = Float.NEGATIVE_INFINITY, second = Float.NEGATIVE_INFINITY;
+                int from = group * perGroup;
+                for (int i = 0; i < perGroup; i++) {
+                    float value =
+                            readFloat(sel.vseg(), sel.vbase() + (base + from + i) * Float.BYTES);
+                    if (value > first) {
+                        second = first;
+                        first = value;
+                    } else if (value > second) second = value;
+                }
+                groupScores[group] = first + second;
+            }
+            for (int k = 0; k < groupsUsed; k++) {
+                int best = -1;
+                float value = Float.NEGATIVE_INFINITY;
+                for (int group = 0; group < groups; group++) {
+                    if (!groupMask[group] && (best < 0 || groupScores[group] > value)) {
+                        value = groupScores[group];
+                        best = group;
+                    }
+                }
+                groupMask[best] = true;
+            }
+            int rowBase = row * topK;
+            for (int k = 0; k < topK; k++) {
+                int best = -1;
+                float value = Float.NEGATIVE_INFINITY;
+                for (int expert = 0; expert < experts; expert++) {
+                    if (!groupMask[expert / perGroup]) continue;
+                    boolean taken = false;
+                    for (int prior = 0; prior < k; prior++)
+                        if (rowTopE[rowBase + prior] == expert) {
+                            taken = true;
+                            break;
+                        }
+                    if (taken) continue;
+                    float candidate =
+                            readFloat(sel.vseg(), sel.vbase() + (base + expert) * Float.BYTES);
+                    if (best < 0 || candidate > value) {
+                        value = candidate;
+                        best = expert;
+                    }
+                }
+                if (best < 0)
+                    throw new IllegalStateException("not enough experts in selected groups");
+                rowTopE[rowBase + k] = best;
+                rowTopP[rowBase + k] = readFloat(w.vseg(), w.vbase() + (base + best) * Float.BYTES);
+                counts[best]++;
+            }
+        }
+    }
+
+    /**
      * Two-source variant: the argmax runs over {@code selection} (consumed, masked in place) but
      * the recorded combine weight is read from {@code weights}. This is llama.cpp's {@code
      * exp_probs_b} semantics (build_moe_ffn): the bias steers WHICH experts are picked, not HOW
