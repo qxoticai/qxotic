@@ -137,6 +137,7 @@ public final class Qwen3
                 nPieces = 1;
             }
             case Batch.Input.Sequences seq -> {
+                requireComplete(seq);
                 ids = seq.tokens().ids();
                 nPieces = cutPieces(seq.seqLen(), from, n, s);
             }
@@ -147,6 +148,21 @@ public final class Qwen3
         requireTokens(ids);
         forward(s, ids, from, n, nPieces);
         s.advance(batch);
+    }
+
+    private static void requireComplete(Batch.Input.Sequences sequences) {
+        long total = 0;
+        int[] lengths = sequences.seqLen();
+        for (int i = 0; i < lengths.length; i++) {
+            if (lengths[i] <= 0)
+                throw new IllegalArgumentException(
+                        "sequence " + i + " has invalid length " + lengths[i]);
+            total += lengths[i];
+        }
+        int tokens = sequences.tokens().ids().length;
+        if (total != tokens)
+            throw new IllegalArgumentException(
+                    "packed token count " + tokens + " != sequence lengths " + total);
     }
 
     private void requireTokens(int[] tokens) {
@@ -164,10 +180,6 @@ public final class Qwen3
      */
     private static int cutPieces(int[] fullSeqLen, int cs, int n, State s) {
         int nPieces = 0, gStart = 0, j = 0;
-        for (int i = 0; i < fullSeqLen.length; i++)
-            if (fullSeqLen[i] <= 0)
-                throw new IllegalArgumentException(
-                        "sequence " + i + " has invalid length " + fullSeqLen[i]);
         while (j < fullSeqLen.length && gStart + fullSeqLen[j] <= cs) {
             gStart += fullSeqLen[j];
             j++;
@@ -708,23 +720,23 @@ public final class Qwen3
 
     static Configuration readConfiguration(GGUF gguf, int vocabularySize) {
         String arch = gguf.getString("general.architecture");
-        if (!arch.equals("qwen3"))
-            throw new IllegalArgumentException("Qwen3: unsupported architecture '" + arch + "'");
-        int dim = gguf.getValueOrDefault(int.class, arch + ".embedding_length", 0);
-        int nLayers = gguf.getValueOrDefault(int.class, arch + ".block_count", 0);
-        int nHeads = gguf.getValueOrDefault(int.class, arch + ".attention.head_count", 0);
+        require(arch.equals("qwen3"), "unsupported architecture '" + arch + "'");
+        int dim = gguf.getValue(int.class, arch + ".embedding_length");
+        int nLayers = gguf.getValue(int.class, arch + ".block_count");
+        int nHeads = gguf.getValue(int.class, arch + ".attention.head_count");
         int nKvHeads = gguf.getValueOrDefault(int.class, arch + ".attention.head_count_kv", nHeads);
-        int contextLength = gguf.getValueOrDefault(int.class, arch + ".context_length", 0);
-        int hiddenDim = gguf.getValueOrDefault(int.class, arch + ".feed_forward_length", 0);
-        if (dim <= 0
-                || nLayers <= 0
-                || nHeads <= 0
-                || nKvHeads <= 0
-                || nHeads % nKvHeads != 0
-                || contextLength <= 0
-                || hiddenDim <= 0
-                || vocabularySize <= 0)
-            throw new IllegalArgumentException("Qwen3: invalid core dimensions");
+        int contextLength = gguf.getValue(int.class, arch + ".context_length");
+        int hiddenDim = gguf.getValue(int.class, arch + ".feed_forward_length");
+        require(
+                dim > 0
+                        && nLayers > 0
+                        && nHeads > 0
+                        && nKvHeads > 0
+                        && nHeads % nKvHeads == 0
+                        && contextLength > 0
+                        && hiddenDim > 0
+                        && vocabularySize > 0,
+                "invalid core dimensions");
         float rmsNormEps =
                 gguf.getValueOrDefault(
                         float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-6f);
@@ -734,27 +746,24 @@ public final class Qwen3
         int valueHeadSize =
                 gguf.getValueOrDefault(int.class, arch + ".attention.value_length", headSize);
         int ropeDim = gguf.getValueOrDefault(int.class, arch + ".rope.dimension_count", headSize);
-        if (headSize <= 0
-                || valueHeadSize != headSize
-                || ropeDim <= 0
-                || (ropeDim & 1) != 0
-                || ropeDim > headSize
-                || !(rmsNormEps > 0f)
-                || !Float.isFinite(rmsNormEps)
-                || !(ropeTheta > 0f)
-                || !Float.isFinite(ropeTheta))
-            throw new IllegalArgumentException("Qwen3: invalid attention metadata");
-        int queryDim, kvDim;
-        try {
-            queryDim = Math.multiplyExact(nHeads, headSize);
-            kvDim = Math.multiplyExact(nKvHeads, headSize);
-        } catch (ArithmeticException overflow) {
-            throw new IllegalArgumentException("Qwen3: model dimensions overflow", overflow);
-        }
+        require(
+                headSize > 0
+                        && valueHeadSize == headSize
+                        && ropeDim > 0
+                        && (ropeDim & 1) == 0
+                        && ropeDim <= headSize
+                        && rmsNormEps > 0f
+                        && Float.isFinite(rmsNormEps)
+                        && ropeTheta > 0f
+                        && Float.isFinite(ropeTheta),
+                "invalid attention metadata");
+        require((long) nHeads * headSize <= Integer.MAX_VALUE, "invalid core dimensions");
+        int queryDim = nHeads * headSize, kvDim = nKvHeads * headSize;
         int kvMul = nHeads / nKvHeads;
-        if (gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
-                != vocabularySize)
-            throw new IllegalArgumentException("Qwen3: tokenizer vocabulary does not match model");
+        require(
+                gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
+                        == vocabularySize,
+                "tokenizer vocabulary does not match model");
         return new Configuration(
                 dim,
                 nLayers,
@@ -833,9 +842,13 @@ public final class Qwen3
             Map<String, MemoryView<MemorySegment>> tensors, String name, long... shape) {
         MemoryView<MemorySegment> value = ModelLoader.requireF32(tensors, name);
         Shape expected = Shape.flat(shape);
-        if (!value.shape().equals(expected))
-            throw new IllegalArgumentException(
-                    "Qwen3: " + name + " expected " + expected + " but was " + value.shape());
+        require(
+                value.shape().equals(expected),
+                name + " expected " + expected + " but was " + value.shape());
         return value;
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) throw new IllegalArgumentException("Qwen3: " + message);
     }
 }
