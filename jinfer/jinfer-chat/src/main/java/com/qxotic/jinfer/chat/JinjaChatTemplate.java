@@ -30,6 +30,8 @@ final class JinjaChatTemplate {
     private final Specials specials; // compiled once per model
     private final List<String> specialNames; // longest-first, for the content scrub
     private final boolean declaresThinking; // the template has a thinking mode to open
+    private final boolean
+            foldsCalls; // the template never reads tool_calls but documents <tool_call>
 
     JinjaChatTemplate(Tokenizer tokenizer, String source) {
         this.tokenizer = tokenizer;
@@ -37,6 +39,7 @@ final class JinjaChatTemplate {
         // better a loud failure than a model silently chatting in foreign (ChatML) framing.
         this.template = source.isEmpty() ? null : JinjaRenderer.template(source);
         this.declaresThinking = source.contains("enable_thinking");
+        this.foldsCalls = !source.contains("tool_calls") && source.contains("<tool_call>");
         this.specials = SpecialTokens.encoder(tokenizer);
         // Think markers are exempt from the scrub: templates legitimately PROCESS them as text in
         // echoed history (content.split("</think>")), and a content-minted think id toggles
@@ -78,7 +81,7 @@ final class JinjaChatTemplate {
         // engine's whatever the request calls its keys.
         vars.put("preserve_thinking", false);
         if (kwargs != null) vars.putAll(scrubbed(kwargs));
-        vars.put("messages", preprocessToolCalls(messages));
+        vars.put("messages", foldCalls(preprocessToolCalls(messages)));
         vars.put("add_generation_prompt", addGenerationPrompt);
         // A template that opens with {{ bos_token }} - Llama 3's does - printed the literal string
         // "None" when this bound null, putting four characters of garbage at the very front of
@@ -177,6 +180,39 @@ final class JinjaChatTemplate {
      * normalization: every {@code tool_calls[*].function.arguments} string is parsed into a {@code
      * Map<String,Object>} (non-strings and null are left alone).
      */
+    /**
+     * A template that documents the {@code <tool_call>} envelope but never reads {@code tool_calls}
+     * (SmolLM3) renders an assistant call turn as content only, so a structured call vanishes from
+     * the history and the model, seeing a result it never asked for, calls again. The model was
+     * trained on its own output, the envelope as content: fold each call back into it.
+     */
+    private List<Object> foldCalls(List<Object> messages) {
+        if (!foldsCalls) return messages;
+        var out = new ArrayList<Object>(messages.size());
+        for (Object raw : messages) {
+            if (raw instanceof Map<?, ?> m && m.get("tool_calls") instanceof List<?> calls) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> msg = new LinkedHashMap<>((Map<String, Object>) m);
+                var content = new StringBuilder(String.valueOf(msg.getOrDefault("content", "")));
+                for (Object c : calls) {
+                    if (!(c instanceof Map<?, ?> cm)
+                            || !(cm.get("function") instanceof Map<?, ?> fn)) continue;
+                    var envelope = new LinkedHashMap<String, Object>();
+                    envelope.put("name", fn.get("name"));
+                    envelope.put("arguments", fn.get("arguments"));
+                    if (!content.isEmpty()) content.append('\n');
+                    content.append("<tool_call>\n")
+                            .append(JsonCodec.stringify(envelope))
+                            .append("\n</tool_call>");
+                }
+                msg.put("content", content.toString());
+                msg.remove("tool_calls");
+                out.add(msg);
+            } else out.add(raw);
+        }
+        return out;
+    }
+
     static List<Object> preprocessToolCalls(List<Object> messages) {
         var out = new ArrayList<Object>(messages.size());
         for (Object raw : messages) {

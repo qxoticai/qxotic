@@ -130,6 +130,43 @@ class JinjaChatTemplateTest {
     }
 
     @Test
+    void aStructuredCallIsFoldedIntoContentForATemplateThatNeverReadsToolCalls() {
+        // SmolLM3: the template documents <tool_call> but renders assistant turns as content only
+        Tokenizer wide = new CharTokenizer(List.of(), "<tol_ca>\n{\"nmeok:,rgus}hi/1");
+        String smol = "{# <tool_call> #}{% for m in messages %}{{ m.content }}{% endfor %}";
+        String reads =
+                "{% for m in messages %}{{ m.content }}{{ m.tool_calls | length }}{% endfor %}";
+        List<Object> messages =
+                List.of(
+                        Map.of(
+                                "role",
+                                "assistant",
+                                "content",
+                                "",
+                                "tool_calls",
+                                List.of(
+                                        Map.of(
+                                                "function",
+                                                Map.of(
+                                                        "name",
+                                                        "ok",
+                                                        "arguments",
+                                                        "{\"n\":\"hi\"}")))));
+        String folded =
+                wide.decode(
+                        new JinjaChatTemplate(wide, smol)
+                                .render(messages, null, false, false, null));
+        assertEquals(
+                "<tool_call>\n{\"name\":\"ok\",\"arguments\":{\"n\":\"hi\"}}\n</tool_call>",
+                folded);
+        String kept =
+                wide.decode(
+                        new JinjaChatTemplate(wide, reads)
+                                .render(messages, null, false, false, null));
+        assertEquals("1", kept, "a template that reads tool_calls keeps them structured");
+    }
+
+    @Test
     void aTemplateWithoutAThinkingModeIsNeverOpened() {
         // Granite 4.1: a <think> token in the vocabulary, no enable_thinking in the template -
         // the model has no mode to be in, so the prompt ends where the template ends
