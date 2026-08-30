@@ -73,6 +73,22 @@ class EspeakPhonemizerTest {
     }
 
     @Test
+    void aHungProcessIsStoppedByTheTimeout() throws IOException {
+        Assumptions.assumeTrue(Files.isExecutable(Path.of("/bin/sh")), "needs a shell");
+        Path dir = Files.createTempDirectory("espeak-stub");
+        Path hung = dir.resolve("hung.sh");
+        Files.writeString(hung, "#!/bin/sh\ncat >/dev/null\nexec sleep 30\n");
+        hung.toFile().setExecutable(true);
+
+        IOException e =
+                Assertions.assertThrows(
+                        IOException.class,
+                        () -> new EspeakPhonemizer(hung.toString(), 1).phonemize("hello"));
+
+        assertTrue(e.getMessage().contains("timed out"), e.getMessage());
+    }
+
+    @Test
     void everyMarkSurvivesOnceInSourceOrder() throws IOException {
         int[] tokens = espeak().phonemize("Yes, of course; that is right. Is it?");
         assertEquals(

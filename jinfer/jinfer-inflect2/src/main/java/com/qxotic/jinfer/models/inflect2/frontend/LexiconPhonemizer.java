@@ -5,6 +5,7 @@ package com.qxotic.jinfer.models.inflect2.frontend;
 
 import com.qxotic.jinfer.models.inflect2.Symbols;
 import java.io.IOException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -227,35 +228,50 @@ final class LexiconPhonemizer implements Phonemizer {
      * then the word's symbol ids. Sorted order is what makes the prefix reuse work.
      */
     private static Map<String, int[]> readTrie(byte[] data) throws IOException {
-        ByteBuffer buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
-        byte[] magic = new byte[MAGIC.length()];
-        buffer.get(magic);
-        if (!MAGIC.equals(new String(magic, StandardCharsets.US_ASCII)))
-            throw new IOException("not a lexicon: bad magic");
-        int version = buffer.getShort();
-        if (version != VERSION) throw new IOException("unsupported lexicon version " + version);
-        buffer.position(buffer.position() + HEADER_PAD);
-        int count = buffer.getInt();
-        buffer.position(buffer.position() + 8);
-        int entriesAt = (int) buffer.getLong();
+        try {
+            ByteBuffer buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+            byte[] magic = new byte[MAGIC.length()];
+            buffer.get(magic);
+            if (!MAGIC.equals(new String(magic, StandardCharsets.US_ASCII)))
+                throw new IOException("not a lexicon: bad magic");
+            int version = buffer.getShort();
+            if (version != VERSION) throw new IOException("unsupported lexicon version " + version);
+            buffer.position(buffer.position() + HEADER_PAD);
+            int count = buffer.getInt();
+            if (count < 0) throw new IOException("negative lexicon entry count");
+            buffer.position(buffer.position() + 8);
+            long entriesAt = buffer.getLong();
+            if (entriesAt < 0 || entriesAt > data.length)
+                throw new IOException("invalid lexicon entry offset " + entriesAt);
+            if (count > (data.length - entriesAt) / 3)
+                throw new IOException("lexicon entry count exceeds the file size");
 
-        Map<String, int[]> lexicon = HashMap.newHashMap(count);
-        buffer.position(entriesAt);
-        byte[] word = new byte[MAX_WORD];
-        int length = 0;
-        for (int entry = 0; entry < count && buffer.hasRemaining(); entry++) {
-            int shared = Byte.toUnsignedInt(buffer.get());
-            int fresh = Byte.toUnsignedInt(buffer.get());
-            if (shared > length) throw new IOException("lexicon entry " + entry + " out of order");
-            length = shared + fresh;
-            if (length > word.length) word = Arrays.copyOf(word, length * 2);
-            buffer.get(word, shared, fresh);
-            int symbols = Byte.toUnsignedInt(buffer.get());
-            if (symbols == 0) continue;
-            int[] ids = new int[symbols];
-            for (int i = 0; i < symbols; i++) ids[i] = Byte.toUnsignedInt(buffer.get());
-            lexicon.put(new String(word, 0, length, StandardCharsets.US_ASCII), ids);
+            Map<String, int[]> lexicon = HashMap.newHashMap(count);
+            buffer.position(Math.toIntExact(entriesAt));
+            byte[] word = new byte[MAX_WORD];
+            int length = 0;
+            for (int entry = 0; entry < count; entry++) {
+                int shared = Byte.toUnsignedInt(buffer.get());
+                int fresh = Byte.toUnsignedInt(buffer.get());
+                if (shared > length)
+                    throw new IOException("lexicon entry " + entry + " out of order");
+                length = shared + fresh;
+                if (length > word.length) word = Arrays.copyOf(word, length * 2);
+                buffer.get(word, shared, fresh);
+                int symbols = Byte.toUnsignedInt(buffer.get());
+                if (symbols == 0) continue;
+                int[] ids = new int[symbols];
+                for (int i = 0; i < symbols; i++) {
+                    ids[i] = Byte.toUnsignedInt(buffer.get());
+                    if (ids[i] >= Symbols.count())
+                        throw new IOException(
+                                "lexicon entry " + entry + " has invalid symbol " + ids[i]);
+                }
+                lexicon.put(new String(word, 0, length, StandardCharsets.US_ASCII), ids);
+            }
+            return lexicon;
+        } catch (BufferUnderflowException | IllegalArgumentException e) {
+            throw new IOException("truncated or malformed lexicon", e);
         }
-        return lexicon;
     }
 }

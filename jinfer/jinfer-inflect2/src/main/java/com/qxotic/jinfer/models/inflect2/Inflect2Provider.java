@@ -25,12 +25,12 @@ public final class Inflect2Provider implements ModelProvider {
 
     @Override
     public boolean supports(String architecture) {
-        return architecture.startsWith("inflect");
+        return architectures().contains(architecture);
     }
 
     @Override
     public Set<String> architectures() {
-        return Set.of("inflect2"); // representative: supports() matches inflect*
+        return Set.of("inflect-v2");
     }
 
     /** The pronunciation lexicon: what turns text into phonemes without an external process. */
