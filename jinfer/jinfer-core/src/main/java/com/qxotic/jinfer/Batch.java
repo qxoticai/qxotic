@@ -10,7 +10,9 @@ import java.util.Objects;
 /**
  * One forward call's worth of work: what to feed ({@link Input}) and which final hidden states to
  * retain ({@link Outputs}). A batch is ingested at the state's cursor ({@link
- * ContextState#position()}); projected rows may additionally carry model-specific coordinates.
+ * ContextState#position()}); projected rows may additionally carry {@link Positions}, model
+ * coordinates relative to that cursor whose {@link Positions#advance()} may differ from the row
+ * count when media positions are spatially compressed.
  */
 public record Batch(Input input, Outputs outputs) {
 
@@ -28,9 +30,9 @@ public record Batch(Input input, Outputs outputs) {
     }
 
     /**
-     * Optional coordinates relative to the batch's context cursor. {@code advance} is the model
-     * position reached after all rows; it may differ from {@link #count()} when media positions are
-     * spatially compressed.
+     * Optional coordinates relative to the batch's context cursor; immutable, so a batch, a cache
+     * entry and a checkpoint can share one instance. {@code advance} is the model position reached
+     * after all rows.
      */
     public static final class Positions {
         private final int dimensions;
@@ -41,7 +43,7 @@ public record Batch(Input input, Outputs outputs) {
             if (dimensions <= 0 || values == null || values.length % dimensions != 0)
                 throw new IllegalArgumentException("invalid position coordinates");
             this.dimensions = dimensions;
-            this.values = values;
+            this.values = values.clone();
             this.advance = advance;
         }
 
@@ -63,7 +65,10 @@ public record Batch(Input input, Outputs outputs) {
             return advance;
         }
 
-        /** Rebased coordinates and frontier advance for one contiguous projector chunk. */
+        /**
+         * Rebased coordinates for one contiguous projector chunk; a non-final chunk advances by
+         * exactly {@code count}, the last one by whatever remains of {@link #advance()}.
+         */
         public Positions slice(int from, int count, boolean last) {
             if (from < 0 || count <= 0 || from + count > count())
                 throw new IllegalArgumentException("invalid position slice");
@@ -71,10 +76,6 @@ public record Batch(Input input, Outputs outputs) {
                     Arrays.copyOfRange(values, from * dimensions, (from + count) * dimensions);
             for (int i = 0; i < slice.length; i++) slice[i] -= from;
             return new Positions(dimensions, slice, last ? advance - from : count);
-        }
-
-        public Positions copy() {
-            return new Positions(dimensions, values.clone(), advance);
         }
     }
 
@@ -120,11 +121,6 @@ public record Batch(Input input, Outputs outputs) {
 
             public Embeddings(MemoryView<?> rows, int count, boolean bidirectional) {
                 this(rows, count, bidirectional, null, null);
-            }
-
-            public Embeddings(
-                    MemoryView<?> rows, int count, boolean bidirectional, ContentKey contentKey) {
-                this(rows, count, bidirectional, contentKey, null);
             }
         }
 

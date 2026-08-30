@@ -818,12 +818,7 @@ public final class ChatEngine implements AutoCloseable {
                 owned.memory().base(),
                 owned.byteOffset(),
                 rows.shape().size() * rows.dataType().byteSize());
-        return Batch.embeddings(
-                owned,
-                e.count(),
-                e.bidirectional(),
-                e.contentKey(),
-                e.positions() == null ? null : e.positions().copy());
+        return Batch.embeddings(owned, e.count(), e.bidirectional(), e.contentKey(), e.positions());
     }
 
     /**
