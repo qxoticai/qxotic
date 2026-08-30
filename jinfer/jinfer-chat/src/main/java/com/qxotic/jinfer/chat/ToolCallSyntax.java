@@ -7,14 +7,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Parses the payload inside a claimed tool-call span into structured {@link Content.ToolCall}s. Two
- * grammars, because the families emit two: a JSON object/array of {@code {name, arguments}}
- * (Granite, SmolLM3) and the XML function form {@code <function=NAME><parameter=K>...} shared by
- * Qwen 3.5 and Nemotron. (The pythonic call list is LFM2's own; see its codec.)
+ * Parses the payload inside a claimed tool-call span into structured {@link Content.ToolCall}s:
+ * JSON envelopes, Qwen/Nemotron's XML function form, and Ling/Bailing's tagged argument form. (The
+ * pythonic call list is LFM2's own; see its codec.)
  *
  * <p>Only the payload text is parsed here; the span boundaries are the reply language's job and are
  * decided on token ids, so this never has to guard against content faking a marker. A payload that
- * parses as neither grammar yields an empty list - the walk drops the call without ending the
+ * matches no supported grammar yields an empty list - the walk drops the call without ending the
  * reply.
  */
 public final class ToolCallSyntax {
@@ -117,6 +116,43 @@ public final class ToolCallSyntax {
             p = body.indexOf("<parameter=", close);
         }
         return List.of(new Content.ToolCall("", name, arguments));
+    }
+
+    /**
+     * Parse Ling/Bailing's tagged form: {@code NAME<arg_key>K</arg_key><arg_value>V</arg_value>}.
+     * Inter-tag whitespace is ignored; values keep their JSON type when the model rendered one.
+     */
+    public static List<Content.ToolCall> parseTaggedXml(String block) {
+        String text = block.strip();
+        int firstArg = text.indexOf("<arg_key>");
+        int line = text.indexOf('\n');
+        int nameEnd = firstArg < 0 ? text.length() : firstArg;
+        if (line >= 0) nameEnd = Math.min(nameEnd, line);
+        String name = text.substring(0, nameEnd).strip();
+        if (name.isEmpty()) return List.of();
+
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        for (int at = skipWhitespace(text, nameEnd); at < text.length(); ) {
+            if (!text.startsWith("<arg_key>", at)) return List.of();
+            int keyStart = at + "<arg_key>".length();
+            int keyEnd = text.indexOf("</arg_key>", keyStart);
+            if (keyEnd < 0) return List.of();
+            String key = text.substring(keyStart, keyEnd).strip();
+            if (key.isEmpty()) return List.of();
+            at = skipWhitespace(text, keyEnd + "</arg_key>".length());
+            if (!text.startsWith("<arg_value>", at)) return List.of();
+            int valueStart = at + "<arg_value>".length();
+            int valueEnd = text.indexOf("</arg_value>", valueStart);
+            if (valueEnd < 0) return List.of();
+            arguments.put(key, typedValue(text.substring(valueStart, valueEnd).strip()));
+            at = skipWhitespace(text, valueEnd + "</arg_value>".length());
+        }
+        return List.of(new Content.ToolCall("", name, arguments));
+    }
+
+    private static int skipWhitespace(String text, int at) {
+        while (at < text.length() && Character.isWhitespace(text.charAt(at))) at++;
+        return at;
     }
 
     /** {@code text[start, end)} minus one leading and one trailing newline, each if present. */

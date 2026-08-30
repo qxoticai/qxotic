@@ -177,4 +177,31 @@ final class ToolCallSyntaxTest {
         assertEquals(List.of(), ToolCallSyntax.parseFunctionXml("no function here"));
         assertEquals(List.of(), ToolCallSyntax.parseFunctionXml("<function=>x</function>"));
     }
+
+    @Test
+    void bailingTaggedFormParsesTypedArgumentsAndWhitespace() {
+        List<Content.ToolCall> calls =
+                ToolCallSyntax.parseTaggedXml(
+                        "get_weather\n"
+                                + "<arg_key>city</arg_key>\n<arg_value>Paris</arg_value>\n"
+                                + "<arg_key>days</arg_key><arg_value>3</arg_value>\n");
+        assertEquals(1, calls.size());
+        assertEquals("get_weather", calls.get(0).name());
+        assertEquals(Map.of("city", "Paris", "days", 3L), calls.get(0).arguments());
+        assertEquals(
+                List.of(new Content.ToolCall("", "ping", Map.of())),
+                ToolCallSyntax.parseTaggedXml(" ping\n "));
+        assertEquals(List.of(), ToolCallSyntax.parseTaggedXml(" \n "));
+
+        String span = "get_weather\n<arg_key>city</arg_key>\n<arg_value>Paris</arg_value>\n";
+        for (int cut = 0; cut <= span.length(); cut++) {
+            String prefix = span.substring(0, cut);
+            assertDoesNotThrow(() -> ToolCallSyntax.parseTaggedXml(prefix), prefix);
+        }
+        assertEquals(
+                List.of(),
+                ToolCallSyntax.parseTaggedXml(
+                        "get_weather<arg_key>city</arg_key><arg_key>days</arg_key>"
+                                + "<arg_value>3</arg_value>"));
+    }
 }

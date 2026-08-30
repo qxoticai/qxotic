@@ -101,6 +101,15 @@ final class GGUFTokenizerDefaults {
                     + "|\\s+(?!\\S)"
                     + "|\\s+";
 
+    private static final String BAILING_PATTERN =
+            "'(?:[sSdDmMtT]|[lL][lL]|[vV][eE]|[rR][eE])"
+                    + "|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+"
+                    + "|\\p{N}"
+                    + "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*"
+                    + "|\\s*[\\r\\n]"
+                    + "|\\s+(?!\\S)"
+                    + "|\\s+";
+
     // minicpm5 main pass (after the 1-3 digit stage): qwen2 with unbounded digit runs.
     private static final String MINICPM5_MAIN =
             "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
@@ -161,6 +170,7 @@ final class GGUFTokenizerDefaults {
                 "grok-2",
                 "deepseek-r1-qwen");
         registerPreTokenizers(builder, QWEN35_PATTERN, "qwen35");
+        registerPreTokenizers(builder, BAILING_PATTERN, "bailingmoe", "bailingmoe2");
         registerPreTokenizers(builder, LFM2_PATTERN, "lfm2");
         registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken");
         registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "kanana2", "minimax-m2");

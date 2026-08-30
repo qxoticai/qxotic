@@ -55,6 +55,7 @@ public final class Models {
                     "com.qxotic.jinfer.models.maple.MapleProvider",
                     "com.qxotic.jinfer.models.qwen3.Qwen3Provider",
                     "com.qxotic.jinfer.models.qwen35.Qwen35Provider",
+                    "com.qxotic.jinfer.models.bailingmoe3.BailingMoe3Provider",
                     "com.qxotic.jinfer.models.nemotronh.NemotronHProvider",
                     "com.qxotic.jinfer.models.gptoss.GptOssProvider",
                     "com.qxotic.jinfer.models.inflect2.Inflect2Provider");
@@ -288,6 +289,7 @@ public final class Models {
     // reads this; it exists so "unsupported architecture" can name the jar to add.
     private static final Map<String, String> PORT_ARTIFACTS =
             Map.ofEntries(
+                    Map.entry("bailingmoe3", "com.qxotic:jinfer-bailingmoe3"),
                     Map.entry("gemma4", "com.qxotic:jinfer-gemma4"),
                     Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
                     Map.entry("lfm", "com.qxotic:jinfer-lfm2"),
