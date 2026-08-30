@@ -7,7 +7,9 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanguage;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -85,6 +87,54 @@ class JsonEnvelopeReplyLanguageTest {
         assertAdmitted(walk, tokenizer, "{\"city\": \"Paris\"}");
         assertTrue(walk.accepted());
         assertCall(walk);
+    }
+
+    @Test
+    void llama32AdmitsAndParsesItsBareJsonWire() throws Exception {
+        Tokenizer tokenizer =
+                tokenizer(
+                        "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/"
+                                + "Llama-3.2-1B-Instruct-Q8_0.gguf");
+        Llama32ChatTemplate template = new Llama32ChatTemplate(tokenizer);
+        String wire = "{\"name\": \"get_weather\", \"parameters\": {\"city\": \"Paris\"}}";
+
+        ReplyLanguage.Walk walk = template.forcedCall(List.of(WEATHER)).orElseThrow().walk();
+        assertAdmitted(walk, tokenizer, wire);
+        assertTrue(walk.accepted());
+        assertCall(walk);
+
+        Message parsed = ReplyParser.parse(template.parser(tokenizer), tokenizer.encode(wire));
+        Content.ToolCall call = (Content.ToolCall) parsed.content().getFirst();
+        assertEquals("get_weather", call.name());
+        assertEquals(Map.of("city", "Paris"), call.arguments());
+
+        Message generatedTokenization =
+                ReplyParser.parse(
+                        template.parser(tokenizer),
+                        IntSequence.of(
+                                        new int[] {
+                                            5018, 609, 794, 330, 456, 70464, 498, 330, 14105, 794,
+                                                    5324,
+                                            9103, 794, 330, 53954, 16417, 498, 330, 3928, 794, 330,
+                                                    66,
+                                            41347, 32075
+                                        })
+                                .concat(
+                                        IntSequence.of(
+                                                SpecialTokens.require(tokenizer, "<|eot_id|>"))));
+        assertTrue(generatedTokenization.content().getFirst() instanceof Content.ToolCall);
+
+        Message variant =
+                ReplyParser.parse(
+                        template.parser(tokenizer),
+                        tokenizer.encode(
+                                "{\"type\": \"function\", \"function\": \"get_weather\", "
+                                        + "\"parameters\": {\"city\": \"Paris\"}}"));
+        assertEquals("get_weather", ((Content.ToolCall) variant.content().getFirst()).name());
+
+        Message ordinary =
+                ReplyParser.parse(template.parser(tokenizer), tokenizer.encode("No tool needed."));
+        assertEquals("No tool needed.", ordinary.text());
     }
 
     @Test

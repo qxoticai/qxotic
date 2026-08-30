@@ -277,8 +277,17 @@ public final class ToolCallSyntax {
         for (Object value : list) {
             if (!(value instanceof Map<?, ?> m)) continue;
             Object name = m.get("name");
-            if (!(name instanceof String n) || n.isEmpty()) continue;
             Object args = m.containsKey("arguments") ? m.get("arguments") : m.get("parameters");
+            if (!(name instanceof String) && "function".equals(m.get("type"))) {
+                Object function = m.get("function");
+                if (function instanceof String) {
+                    name = function;
+                } else if (function instanceof Map<?, ?> fn) {
+                    name = fn.get("name");
+                    args = fn.containsKey("arguments") ? fn.get("arguments") : fn.get("parameters");
+                }
+            }
+            if (!(name instanceof String n) || n.isEmpty()) continue;
             calls.add(new Content.ToolCall("", n, asArguments(args)));
         }
         return calls;
