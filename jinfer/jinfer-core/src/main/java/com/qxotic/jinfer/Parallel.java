@@ -43,9 +43,11 @@ public final class Parallel implements AutoCloseable {
     /**
      * Spin this long for the next region before parking. A prefill's regions are separated by the
      * model's serial glue; at 100 us the workers parked in those gaps and paid the wake-up on every
-     * region (16T pp512: 964 t/s at 100 us, 1025 at 1 ms, 1033 at 5 ms).
+     * region (16T pp512: 964 t/s at 100 us, 1025 at 1 ms, 1033 at 5 ms). {@code -Djinfer.spinNanos}
+     * overrides for machines where spinning through the gaps costs more than the wake-ups - a
+     * fan-limited laptop turns the spin into heat the long MoE prefill pays for.
      */
-    private static final long SPIN_NANOS = 1_000_000L;
+    private static final long SPIN_NANOS = Long.getLong("jinfer.spinNanos", 1_000_000L);
 
     /** Bands per participant for {@link #loop}: the one scheduling constant, see the class note. */
     private static final int BANDS_PER_PARTICIPANT = 2;
