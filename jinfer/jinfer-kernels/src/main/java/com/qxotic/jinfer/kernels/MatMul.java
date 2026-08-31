@@ -15,6 +15,7 @@ import static com.qxotic.jinfer.Segments.writeFloat;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.qxotic.jota.BFloat16;
@@ -47,17 +48,18 @@ import jdk.incubator.vector.VectorOperators;
  * bandwidth-bound) is the Java floor (the dense dots beat jam's gemv there), except the C2 {@code
  * slowDot} k-quant exception ({@code Q4_K}/{@code Q5_K}/{@code Q6_K} on a JIT that doesn't
  * intrinsify the Vector API - those decode through jam) and the no-Vector-API case (every decode
- * jams). On AArch64 ordinary Q4_0 decode uses native JAM by default; {@code
- * -Djinfer.q4.nativeDecode=false} restores the portable Vector API path. AArch64 Q8_0 decode
- * likewise uses native JAM by default so one activation requant feeds NEON SDOT; {@code
- * -Djinfer.q8.nativeDecode=false} restores the portable Vector API path. <b>Prefill</b> ({@code n >
- * 1}, compute-bound) tries native jam, then Vector-API jam, then pure-Java jam-scalar (its
- * autovectorized gemm outruns the floor's dots several times over), then the floor - jam is only
- * offered a call when the dtype has a kernel AND k and the weight offset are block-aligned ({@code
- * Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A
- * runtime decline (EBUSY, older libjam) falls to the next rung. A backend can be switched off with
- * {@code -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam
- * backend enabled or on the classpath the path is bit-identical to the floor.
+ * jams). Quantized decode ({@code Q4_0}/{@code Q8_0}/{@code Q4_K}/{@code Q5_K}/{@code Q6_K}) uses
+ * native JAM's int8 gemv on AArch64 always (one activation requant feeds NEON SDOT), and on x86
+ * when the pool is narrow enough that decode is compute-bound rather than DRAM-bound (see {@code
+ * nativeDecode}); {@code -Djinfer.q4.nativeDecode}/{@code jinfer.q8.nativeDecode}/{@code
+ * jinfer.kq.nativeDecode} force either way. <b>Prefill</b> ({@code n > 1}, compute-bound) tries
+ * native jam, then Vector-API jam, then pure-Java jam-scalar (its autovectorized gemm outruns the
+ * floor's dots several times over), then the floor - jam is only offered a call when the dtype has
+ * a kernel AND k and the weight offset are block-aligned ({@code Dispatch.f32io} collapses to
+ * {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A runtime decline (EBUSY, older
+ * libjam) falls to the next rung. A backend can be switched off with {@code
+ * -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam backend
+ * enabled or on the classpath the path is bit-identical to the floor.
  */
 public final class MatMul {
 
@@ -66,17 +68,22 @@ public final class MatMul {
     // tiny matmul (e.g. the 32-row MoE router): a region costs more than the work
     static final int TINY_MATVEC_ELEMS = 1 << 18;
 
-    // Decode through native JAM's gemv: the default on AArch64 (NEON SDOT beats the byte-to-F32
-    // Vector API dots), opt-in elsewhere - in a native image the Vector API dots lose their
-    // intrinsics for fma and segment loads and run lane by lane, so there the native gemv wins on
-    // x86 too.
+    // Decode through native JAM's gemv: always the default on AArch64 (NEON SDOT beats the
+    // byte-to-F32 Vector API dots), and on x86 when the pool is narrow. At few threads decode is
+    // compute-bound and jam's int8 VNNI gemvs win big (Zen 5, 4T tg128: Q4_K 19.8 -> 35.0, Q5_K
+    // 14.0 -> 30.5, Q6_K 17.6 -> 26.2, Q4_0 33.4 -> 37.5, Q8_0 17.3 -> 21.6 t/s); at many threads
+    // decode hits the DRAM wall and the requant + two-phase fan is pure overhead (16T: native 4-12%
+    // BEHIND the floor). Measured crossovers on Zen 5: the 32-block quants flip between 4T and 8T,
+    // the K-quants between 8T and 16T (Q5_K still +21% at 8T). An explicit property wins both ways.
     private static final boolean ARM = System.getProperty("os.arch", "").contains("aarch64");
-    private static final boolean NATIVE_Q4_DECODE = nativeDecode("jinfer.q4.nativeDecode");
-    private static final boolean NATIVE_Q8_DECODE = nativeDecode("jinfer.q8.nativeDecode");
-    private static final boolean NATIVE_KQ_DECODE = nativeDecode("jinfer.kq.nativeDecode");
+    private static final boolean NATIVE_Q4_DECODE = nativeDecode("jinfer.q4.nativeDecode", 4);
+    private static final boolean NATIVE_Q8_DECODE = nativeDecode("jinfer.q8.nativeDecode", 4);
+    private static final boolean NATIVE_KQ_DECODE = nativeDecode("jinfer.kq.nativeDecode", 8);
 
-    private static boolean nativeDecode(String property) {
-        return Boolean.parseBoolean(System.getProperty(property, ARM ? "true" : "false"));
+    private static boolean nativeDecode(String property, int narrowPool) {
+        String set = System.getProperty(property);
+        if (set != null) return Boolean.parseBoolean(set);
+        return ARM || RuntimeFlags.THREADS <= narrowPool;
     }
 
     private static final int Q8_BLOCK = 32; // Q8_0 elements per block
