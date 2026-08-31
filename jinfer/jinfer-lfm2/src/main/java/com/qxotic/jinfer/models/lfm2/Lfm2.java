@@ -190,7 +190,9 @@ public final class Lfm2
 
     @Override
     public MemoryView<?> logits(State s, int output) {
-        return s.exclusively(() -> projectLogits(s, output));
+        MemoryView<?> result = s.exclusively(() -> projectLogits(s, output));
+        Reference.reachabilityFence(this);
+        return result;
     }
 
     private MemoryView<?> projectLogits(State s, int output) {
