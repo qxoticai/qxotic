@@ -109,9 +109,7 @@ public final class GptOss
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (n == 1) {
-                    forward(state, ids, 0, from, n);
-                } else forward(state, ids, 0, from, n);
+                forward(state, ids, 0, from, n);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
