@@ -10,6 +10,7 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.BufferedInputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.ByteBuffer;
@@ -510,18 +511,27 @@ public final class Models {
             ByteBuffer len = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, size);
             d.update(len);
             ByteBuffer buf = ByteBuffer.allocate((int) Math.min(1 << 20, size));
-            ch.read(buf, 0);
+            readFully(ch, buf, 0);
             buf.flip();
             d.update(buf);
             if (size > (1 << 20)) {
                 buf.clear();
-                ch.read(buf, size - buf.capacity());
+                readFully(ch, buf, size - buf.capacity());
                 buf.flip();
                 d.update(buf);
             }
             return new ContentKey("sha256:" + HexFormat.of().formatHex(d.digest()));
         } catch (IOException e) {
             throw new IllegalStateException("modelSeed(channel)", e);
+        }
+    }
+
+    private static void readFully(FileChannel ch, ByteBuffer buf, long pos) throws IOException {
+        while (buf.hasRemaining()) {
+            int read = ch.read(buf, pos);
+            if (read < 0) throw new EOFException("file ends at byte " + pos);
+            if (read == 0) throw new IOException("read made no progress at byte " + pos);
+            pos += read;
         }
     }
 
