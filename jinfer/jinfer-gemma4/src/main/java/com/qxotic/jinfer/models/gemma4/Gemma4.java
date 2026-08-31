@@ -185,7 +185,9 @@ public final class Gemma4
 
     @Override
     public MemoryView<?> logits(State state, int output) {
-        return state.exclusively(() -> projectLogits(state, output));
+        MemoryView<?> result = state.exclusively(() -> projectLogits(state, output));
+        Reference.reachabilityFence(this);
+        return result;
     }
 
     private MemoryView<?> projectLogits(State state, int output) {
