@@ -44,6 +44,7 @@ class JamPackTest {
     private static long groupBytes(DataType dt, int k) {
         long nb = k / 32, sb = k / 256;
         if (dt == DataType.Q4_0) return nb * 80;
+        if (dt == DataType.MXFP4) return nb * 68;
         if (dt == DataType.Q4_K) return nb * 72 + sb * 32;
         if (dt == DataType.Q5_K) return nb * 136 + sb * 32;
         if (dt == DataType.Q6_K) return nb * 136 + sb * 16;
@@ -57,6 +58,11 @@ class JamPackTest {
     @Test
     void q4_0PackedBitExact() {
         packedBitExact(DataType.Q4_0);
+    }
+
+    @Test
+    void mxfp4PackedBitExact() {
+        packedBitExact(DataType.MXFP4);
     }
 
     @Test
@@ -228,7 +234,9 @@ class JamPackTest {
             long bo = b * bs;
             short d = Float.floatToFloat16((rng.nextFloat() + 0.5f) * 0.01f);
             short dmin = Float.floatToFloat16((rng.nextFloat() + 0.5f) * 0.005f);
-            if (dt == DataType.Q6_K) {
+            if (dt == DataType.MXFP4) {
+                s.set(JAVA_BYTE, bo, (byte) (120 + rng.nextInt(8)));
+            } else if (dt == DataType.Q6_K) {
                 s.set(JAVA_SHORT_UNALIGNED, bo + 208, d);
             } else {
                 s.set(JAVA_SHORT_UNALIGNED, bo, d);
@@ -271,6 +279,13 @@ class JamPackTest {
             int q = j < 16 ? u8(s, bo + 2 + j) & 0xF : u8(s, bo + 2 + j - 16) >> 4;
             return f16(s, bo) * (q - 8);
         }
+        if (dt == DataType.MXFP4) {
+            long bo = rowBase + (e / 32) * 17L;
+            int j = e % 32;
+            int q = j < 16 ? u8(s, bo + 1 + j) & 0xF : u8(s, bo + 1 + j - 16) >> 4;
+            return Math.scalb(new float[] {0, .5f, 1, 1.5f, 2, 3, 4, 6}[q & 7], u8(s, bo) - 127)
+                    * (q < 8 ? 1 : -1);
+        }
         long bo = rowBase + (e / 256) * dt.byteSize();
         int ee = e % 256;
         if (dt == DataType.Q6_K) {
@@ -308,6 +323,15 @@ class JamPackTest {
             long line = go + 64L * b + 16L * r;
             int q = j < 16 ? u8(s, line + j) & 0xF : u8(s, line + j - 16) >> 4;
             return f32(s, go + 64 * nb + 16L * b + 4L * r) * (q - 8);
+        }
+        if (dt == DataType.MXFP4) {
+            long block = go + 68L * b;
+            long qb = block + 4 + (j & 15) / 4 * 16L + r * 4L + (j & 3);
+            int q = j < 16 ? u8(s, qb) & 0xF : u8(s, qb) >> 4;
+            return Math.scalb(
+                            new float[] {0, .5f, 1, 1.5f, 2, 3, 4, 6}[q & 7],
+                            u8(s, block + r) - 127)
+                    * (q < 8 ? 1 : -1);
         }
         if (dt == DataType.Q4_K) {
             long line = go + 64L * b + 16L * r, smo = go + 64 * nb, ddo = go + 72 * nb;

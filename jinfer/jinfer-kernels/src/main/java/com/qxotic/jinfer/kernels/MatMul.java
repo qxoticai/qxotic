@@ -48,18 +48,19 @@ import jdk.incubator.vector.VectorOperators;
  * bandwidth-bound) is the Java floor (the dense dots beat jam's gemv there), except the C2 {@code
  * slowDot} k-quant exception ({@code Q4_K}/{@code Q5_K}/{@code Q6_K} on a JIT that doesn't
  * intrinsify the Vector API - those decode through jam) and the no-Vector-API case (every decode
- * jams). Quantized decode ({@code Q4_0}/{@code Q8_0}/{@code Q4_K}/{@code Q5_K}/{@code Q6_K}) uses
- * native JAM's int8 gemv on AArch64 always (one activation requant feeds NEON SDOT), and on x86
- * when the pool is narrow enough that decode is compute-bound rather than DRAM-bound (see {@code
- * nativeDecode}); {@code -Djinfer.q4.nativeDecode}/{@code jinfer.q8.nativeDecode}/{@code
- * jinfer.kq.nativeDecode} force either way. <b>Prefill</b> ({@code n > 1}, compute-bound) tries
- * native jam, then Vector-API jam, then pure-Java jam-scalar (its autovectorized gemm outruns the
- * floor's dots several times over), then the floor - jam is only offered a call when the dtype has
- * a kernel AND k and the weight offset are block-aligned ({@code Dispatch.f32io} collapses to
- * {@code !inPlace}: {@code a}/{@code c} are FP32 by construction). A runtime decline (EBUSY, older
- * libjam) falls to the next rung. A backend can be switched off with {@code
- * -Djam.<id>.disabled=true} ({@code native}, {@code vector}, {@code scalar}). With no jam backend
- * enabled or on the classpath the path is bit-identical to the floor.
+ * jams). Quantized decode ({@code Q4_0}/{@code Q8_0}/{@code MXFP4}/{@code Q4_K}/{@code Q5_K}/{@code
+ * Q6_K}) uses native JAM's int8 gemv on AArch64 always (one activation requant feeds NEON SDOT),
+ * and the integer quants on x86 when the pool is narrow enough that decode is compute-bound rather
+ * than DRAM-bound (see {@code nativeDecode}); {@code -Djinfer.q4.nativeDecode}/{@code
+ * jinfer.q8.nativeDecode}/{@code jinfer.mxfp4.nativeDecode}/{@code jinfer.kq.nativeDecode} force
+ * either way. <b>Prefill</b> ({@code n > 1}, compute-bound) tries native jam, then Vector-API jam,
+ * then pure-Java jam-scalar (its autovectorized gemm outruns the floor's dots several times over),
+ * then the floor - jam is only offered a call when the dtype has a kernel AND k and the weight
+ * offset are block-aligned ({@code Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code
+ * c} are FP32 by construction). A runtime decline (EBUSY, older libjam) falls to the next rung. A
+ * backend can be switched off with {@code -Djam.<id>.disabled=true} ({@code native}, {@code
+ * vector}, {@code scalar}). With no jam backend enabled or on the classpath the path is
+ * bit-identical to the floor.
  */
 public final class MatMul {
 
@@ -78,6 +79,9 @@ public final class MatMul {
     private static final boolean ARM = System.getProperty("os.arch", "").contains("aarch64");
     private static final boolean NATIVE_Q4_DECODE = nativeDecode("jinfer.q4.nativeDecode", 4);
     private static final boolean NATIVE_Q8_DECODE = nativeDecode("jinfer.q8.nativeDecode", 4);
+    private static final boolean NATIVE_MXFP4_DECODE =
+            Boolean.parseBoolean(
+                    System.getProperty("jinfer.mxfp4.nativeDecode", Boolean.toString(ARM)));
     private static final boolean NATIVE_KQ_DECODE = nativeDecode("jinfer.kq.nativeDecode", 8);
 
     private static boolean nativeDecode(String property, int narrowPool) {
@@ -306,6 +310,7 @@ public final class MatMul {
         boolean slowDot = !FAST_VECTOR_JIT && bytePackedDot(dt);
         boolean nativeQ4Decode = NATIVE_Q4_DECODE && dt == DataType.Q4_0 && NATIVE != null;
         boolean nativeQ8Decode = NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
+        boolean nativeMxfp4Decode = NATIVE_MXFP4_DECODE && dt == DataType.MXFP4 && NATIVE != null;
         boolean nativeKqDecode = NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
         boolean jamDecode =
                 n == 1
@@ -313,6 +318,7 @@ public final class MatMul {
                                 || slowDot
                                 || nativeQ4Decode
                                 || nativeQ8Decode
+                                || nativeMxfp4Decode
                                 || nativeKqDecode);
         if ((n > 1 || jamDecode) && !inPlace && jamApplies(dt, k, wOff)) {
             if (NATIVE != null
@@ -1919,13 +1925,13 @@ public final class MatMul {
 
     /**
      * dtypes whose vector dot C2 executes largely un-intrinsified (the k-quants' byte shift/or/sub
-     * unpack chains; measured Q4_K_M decode collapse). Measured non-members (Dispatch.bytePackedDot
-     * verbatim): Q4_0's single-nibble unpack is fine on C2 (llama-1B tg 114 vs Graal's 118), and
-     * MXFP4 loses ~20% on C2 but jam routing loses more (gpt-oss-20b tg 22.8 Java dot vs 18.0 jam -
-     * MoE decode issues ~24k tiny expert gemvs per pass and each jam call pays the FFM boundary).
-     * NVFP4 is structurally exempt: its dot dequantizes with scalar code then runs a dense F32
-     * vector dot, so there is no byte-vector unpack for C2 to fall back on (kernel probe: 1.8x
-     * hot-cache gap, from the scalar decode loop's codegen).
+     * unpack chains; measured Q4_K_M decode collapse). Measured non-members: Q4_0's single-nibble
+     * unpack is fine on C2 (llama-1B tg 114 vs Graal's 118). MXFP4 remains a non-member because x86
+     * native-call overhead can outweigh its faster kernel; AArch64 routes it explicitly through
+     * native JAM above, where activation requantization + packed NEON SDOT measured 6.76 -> 37.05
+     * t/s on gpt-oss-20b. NVFP4 is structurally exempt: its dot dequantizes with scalar code then
+     * runs a dense F32 vector dot, so there is no byte-vector unpack for C2 to fall back on (kernel
+     * probe: 1.8x hot-cache gap, from the scalar decode loop's codegen).
      */
     private static boolean bytePackedDot(DataType dt) {
         return dt == DataType.Q4_K || dt == DataType.Q5_K || dt == DataType.Q6_K;

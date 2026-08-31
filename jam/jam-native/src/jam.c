@@ -308,7 +308,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
          * decode work for the 4-row activation reuse (4x1 GEMV) to pay off. */
         c->q8_decode_kernel = jam_mm_q8_0_dotprod;
         c->q4_0_kernel = jam_mm_q4_0_dotprod; c->q4_0_decode_kernel = jam_gemv_q4_0_dotprod_4x1;
-        c->mxfp4_kernel = jam_mm_mxfp4_dotprod;
+        c->mxfp4_kernel = jam_mm_mxfp4_dotprod; c->mxfp4_decode_kernel = jam_gemv_mxfp4_dotprod_4x1;
         c->kq[JAM_KQ_Q4K] = jam_mm_q4k_dotprod; c->kq[JAM_KQ_Q5K] = jam_mm_q5k_dotprod; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_dotprod;
         c->kq_decode[JAM_KQ_Q4K] = jam_gemv_q4k_dotprod_4x1;
         c->kq_decode[JAM_KQ_Q5K] = jam_gemv_q5k_dotprod_4x1;
@@ -327,6 +327,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
      * i8mm-capable CPU retains the measured SDOT choices for one-column decode. */
     if (!c->q8_decode_kernel) c->q8_decode_kernel = c->q8_kernel;
     if (!c->q4_0_decode_kernel) c->q4_0_decode_kernel = c->q4_0_kernel;
+    if (!c->mxfp4_decode_kernel) c->mxfp4_decode_kernel = c->mxfp4_kernel;
     for (int kqi = 0; kqi < JAM_KQ_N; kqi++)
         if (!c->kq_decode[kqi]) c->kq_decode[kqi] = c->kq[kqi];
 
@@ -482,6 +483,7 @@ size_t jam_pack_group_bytes(jam_dtype dt, int k) {
     size_t nb = (size_t) k / 32, sb = (size_t) k / 256;
     switch (dt) {
         case JAM_Q4_0: return nb * 80;
+        case JAM_MXFP4: return nb * 68;
         case JAM_Q4_K: return nb * 72 + sb * 32;
         case JAM_Q5_K: return nb * 136 + sb * 32;
         case JAM_Q6_K: return nb * 136 + sb * 16;
@@ -492,11 +494,12 @@ size_t jam_pack_group_bytes(jam_dtype dt, int k) {
 size_t jam_pack_size(jam_ctx* ctx, jam_dtype dt, int m, int k) {
     if (!ctx) ctx = jam_global();
     if (!ctx || m <= 0 || k <= 0 || m % 4) return 0;
-    if (dt == JAM_Q4_0 ? (k % 32 != 0) : (k % 256 != 0)) return 0;
+    if ((dt == JAM_Q4_0 || dt == JAM_MXFP4) ? (k % 32 != 0) : (k % 256 != 0)) return 0;
 #ifdef JAM_HAVE_DOTPROD
     /* The packed kernels ride the 4-row dotprod GEMVs: offer the layout only where those bound. */
     switch (dt) {
         case JAM_Q4_0: if (ctx->q4_0_decode_kernel != jam_gemv_q4_0_dotprod_4x1) return 0; break;
+        case JAM_MXFP4: if (ctx->mxfp4_decode_kernel != jam_gemv_mxfp4_dotprod_4x1) return 0; break;
         case JAM_Q4_K: if (ctx->kq_decode[JAM_KQ_Q4K] != jam_gemv_q4k_dotprod_4x1) return 0; break;
         case JAM_Q5_K: if (ctx->kq_decode[JAM_KQ_Q5K] != jam_gemv_q5k_dotprod_4x1) return 0; break;
         case JAM_Q6_K: if (ctx->kq_decode[JAM_KQ_Q6K] != jam_gemv_q6k_dotprod_4x1) return 0; break;
@@ -661,6 +664,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
              * SLOWER on M3 Pro at every n (183 vs 131 t/s LFM pp512) - the pair-combine shuffles
              * cost more than the doubled MAC width buys. */
             case JAM_Q4_0: gemv = jam_gemv_q4_0_packed_4x1; mmk = jam_mm_q4_0_packed_dotprod; break;
+            case JAM_MXFP4: gemv = jam_gemv_mxfp4_packed_4x1; mmk = jam_mm_mxfp4_packed_dotprod; break;
             case JAM_Q4_K: gemv = jam_gemv_q4k_packed_4x1;  mmk = jam_mm_q4k_packed_dotprod;  break;
             case JAM_Q5_K: gemv = jam_gemv_q5k_packed_4x1;  mmk = jam_mm_q5k_packed_dotprod;  break;
             case JAM_Q6_K: gemv = jam_gemv_q6k_packed_4x1;  mmk = jam_mm_q6k_packed_dotprod;  break;
@@ -810,7 +814,8 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             if (try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 17,   /* MXFP4 block = 17 B */
                                a, lda, c, ldc, m, n, k, jam_mxfp4_band8_avx2)) return JAM_OK;
 #endif
-            return run_quant(ctx, &q, m, ctx->mxfp4_kernel, jam_mm_mxfp4_f32_generic);
+            jam_task_fn mxfp4_kernel = n == 1 ? ctx->mxfp4_decode_kernel : ctx->mxfp4_kernel;
+            return run_quant(ctx, &q, m, mxfp4_kernel, jam_mm_mxfp4_f32_generic);
         }
         if (wt == JAM_Q4_0) {
 #ifdef JAM_HAVE_AVX512

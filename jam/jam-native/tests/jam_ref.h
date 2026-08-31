@@ -289,6 +289,7 @@ static inline size_t jam_ref_pack_group_bytes(int dt, int k) {
     size_t nb = (size_t) k / 32, sb = (size_t) k / 256;
     switch (dt) {
         case JAM_Q4_0: return nb * 80;
+        case JAM_MXFP4: return nb * 68;
         case JAM_Q4_K: return nb * 72 + sb * 32;
         case JAM_Q5_K: return nb * 136 + sb * 32;
         case JAM_Q6_K: return nb * 136 + sb * 16;
@@ -311,7 +312,16 @@ static inline void jam_ref_pack(int dt, uint8_t* dst, const uint8_t* src, int m,
     for (int g = 0; g < m / 4; g++, dst += GB)
         for (int r = 0; r < 4; r++) {
             const int row = g * 4 + r;
-            if (dt == JAM_Q4_0) {
+            if (dt == JAM_MXFP4) {
+                const uint8_t* w = src + (size_t) row * nb * 17;
+                for (int b = 0; b < nb; b++) {
+                    uint8_t* d = dst + (size_t) b * 68;
+                    d[r] = w[(size_t) b * 17];
+                    for (int c = 0; c < 4; c++)
+                        memcpy(d + 4 + (size_t) c * 16 + (size_t) r * 4,
+                               w + (size_t) b * 17 + 1 + c * 4, 4);
+                }
+            } else if (dt == JAM_Q4_0) {
                 const uint8_t* w = src + (size_t) row * nb * 18;
                 float* S = (float*) (dst + (size_t) nb * 64);
                 for (int b = 0; b < nb; b++) {

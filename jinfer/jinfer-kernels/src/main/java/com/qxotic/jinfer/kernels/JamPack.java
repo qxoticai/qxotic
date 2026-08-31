@@ -84,6 +84,7 @@ final class JamPack {
             // capability, not policy: the layouts packGroup below can produce. Whether a tensor
             // SHOULD pack is jam's call alone (nativePackSize == 0 keeps it canonical).
             if (dt != DataType.Q4_0
+                    && dt != DataType.MXFP4
                     && dt != DataType.Q4_K
                     && dt != DataType.Q5_K
                     && dt != DataType.Q6_K) continue;
@@ -156,7 +157,19 @@ final class JamPack {
         final long go = dstBase + (long) g * gb;
         for (int r = 0; r < 4; r++) {
             final long w = srcBase + ((long) g * 4 + r) * srcRowBytes;
-            if (dt == DataType.Q4_0) {
+            if (dt == DataType.MXFP4) {
+                for (int b = 0; b < nb; b++) {
+                    long d = go + (long) b * 68;
+                    dst.set(JAVA_BYTE, d + r, src.get(JAVA_BYTE, w + (long) b * 17));
+                    for (int c = 0; c < 4; c++)
+                        MemorySegment.copy(
+                                src,
+                                w + (long) b * 17 + 1 + c * 4L,
+                                dst,
+                                d + 4 + c * 16L + r * 4L,
+                                4);
+                }
+            } else if (dt == DataType.Q4_0) {
                 long so = go + (long) nb * 64;
                 for (int b = 0; b < nb; b++) {
                     MemorySegment.copy(

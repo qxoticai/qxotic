@@ -57,6 +57,7 @@ struct jam_ctx {
     jam_task_fn      q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
                                         * SMMLA's two-dimensional tile cannot help a one-column GEMV. */
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
+    jam_task_fn      mxfp4_decode_kernel; /* MXFP4 n==1 override; direct-layout 4x1 SDOT on ARM. */
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
     jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> generic (float). Int8 pipeline. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
@@ -264,7 +265,9 @@ void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vd
 void jam_mm_q4_0_dotprod(void* job, int rb, int re, int tid);
 void jam_gemv_q8_0_dotprod_4x1(void* job, int rb, int re, int tid);        /* 4 rows share the activation */
 void jam_gemv_q4_0_dotprod_4x1(void* job, int rb, int re, int tid);
+void jam_gemv_mxfp4_dotprod_4x1(void* job, int rb, int re, int tid);
 void jam_gemv_q4_0_packed_4x1(void* job, int rb, int re, int tid);          /* packed layout (jam.h JAM_PACK_ABI) */
+void jam_gemv_mxfp4_packed_4x1(void* job, int rb, int re, int tid);
 void jam_gemv_q4k_dotprod_4x1(void* job, int rb, int re, int tid);         /* K-quant 4-row decode GEMVs */
 void jam_gemv_q5k_dotprod_4x1(void* job, int rb, int re, int tid);
 void jam_gemv_q6k_dotprod_4x1(void* job, int rb, int re, int tid);
@@ -272,6 +275,7 @@ void jam_gemv_q6k_packed_4x1(void* job, int rb, int re, int tid);           /* p
 void jam_gemv_q4k_packed_4x1(void* job, int rb, int re, int tid);           /*   int8-expanded / re-nibbled decode */
 void jam_gemv_q5k_packed_4x1(void* job, int rb, int re, int tid);
 void jam_mm_q4_0_packed_dotprod(void* job, int gb, int ge, int tid);       /* packed prefill (n>1): 4-row GROUP */
+void jam_mm_mxfp4_packed_dotprod(void* job, int gb, int ge, int tid);
 void jam_mm_q4k_packed_dotprod(void* job, int gb, int ge, int tid);        /*   ranges, KTN=4 column tile */
 void jam_mm_q5k_packed_dotprod(void* job, int gb, int ge, int tid);
 void jam_mm_q6k_packed_dotprod(void* job, int gb, int ge, int tid);

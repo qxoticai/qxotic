@@ -99,6 +99,8 @@ typedef enum {
  *   Q4_0  GB = 80*nb           [nb x 64B nibble lines: 4 rows x 16B, elem e in the low nibble of
  *                               byte e, elem e+16 in the high nibble (Q4_0 order)]
  *                              [nb x 16B f32 scale[4], lane = row]
+ *   MXFP4 GB = 68*nb           [nb x 4B E8M0 scale[4] | 64B nibbles: 4-byte chunks interleaved
+ *                               across 4 rows, enabling lane-wise SDOT]
  *   Q4_K  GB = 72*nb + 32*sb   [nb x 64B re-nibbled lines, Q4_0 order]
  *                              [nb x 8B u8 sc[4] | mn[4] (6-bit values, decoded)]
  *                              [sb x 32B f32 d[4] | dmin[4]]
