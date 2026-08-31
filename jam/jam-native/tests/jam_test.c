@@ -150,6 +150,12 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
     }
     const double* refs[] = { RE, RR };
     check_all_ctxs(WQ, JAM_MXFP4, "MXFP4", A, C, m, n, k, refs, 2, 1e-2, 1e-3);
+    if (m % 4 == 0) {
+        uint8_t* WP = malloc((size_t) (m / 4) * jam_ref_pack_group_bytes(JAM_MXFP4, k));
+        jam_ref_pack(JAM_MXFP4, WP, (const uint8_t*) WQ, m, k);
+        check_all_ctxs(WP, JAM_MXFP4 | JAM_PACKED, "MXFP4p", A, C, m, n, k, refs, 2, 1e-2, 1e-3);
+        free(WP);
+    }
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
@@ -636,13 +642,13 @@ static void suite_pack_api(void) {
     OK("pack_abi == JAM_PACK_ABI", jam_pack_abi() == JAM_PACK_ABI);
     jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC;
     jam_ctx* g = jam_ctx_create(&cfg);
-    static const jam_dtype PD[] = { JAM_Q4_0, JAM_Q4_K, JAM_Q5_K, JAM_Q6_K };
+    static const jam_dtype PD[] = { JAM_Q4_0, JAM_MXFP4, JAM_Q4_K, JAM_Q5_K, JAM_Q6_K };
     for (unsigned i = 0; i < sizeof PD / sizeof *PD; i++) {
         jam_dtype dt = PD[i];
-        int k = dt == JAM_Q4_0 ? 64 : 512;
+        int k = dt == JAM_Q4_0 || dt == JAM_MXFP4 ? 64 : 512;
         OK("m%4 != 0 -> 0",     jam_pack_size(NULL, dt, 6, k) == 0);
         OK("m <= 0 -> 0",       jam_pack_size(NULL, dt, 0, k) == 0);
-        OK("k%block != 0 -> 0", jam_pack_size(NULL, dt, 8, dt == JAM_Q4_0 ? 48 : 128) == 0);
+        OK("k%block != 0 -> 0", jam_pack_size(NULL, dt, 8, dt == JAM_Q4_0 || dt == JAM_MXFP4 ? 48 : 128) == 0);
         OK("generic never offers", jam_pack_size(g, dt, 8, k) == 0);
         size_t sz = jam_pack_size(NULL, dt, 8, k);   /* 0 on ISAs without the packed kernels */
         OK("offer == m/4 * spec GB", sz == 0 || sz == 2 * jam_ref_pack_group_bytes(dt, k));
@@ -732,7 +738,8 @@ int main(void) {
 
     int F[][3] = {{1,1,1},{2,3,4},{7,5,3},{8,8,8},{13,9,17},{64,64,64},{100,99,97},{128,256,64},{257,128,33},{512,512,512}};
     int Q[][3] = {{1,1,32},{4,4,64},{7,5,32},{5,7,96},{13,9,160},{64,64,256},{100,99,128},{257,33,96},{129,127,512},{512,512,512},
-                  {16,7,64},{20,3,96},{104,7,256},{40,5,128},{104,7,1024},{104,7,512},{50,6,1024}};   /* multi-group (m>8) at n<8: the small-n int8 path */
+                  {16,7,64},{20,1,96},{20,3,96},{104,7,256},{40,5,128},{104,7,1024},{104,7,512},{50,6,1024}};
+                  /* multi-group (m>8) at n<8: small-n int8, plus n==1 packed MXFP4 decode */
     for (unsigned s=0;s<sizeof F/sizeof*F;++s) suite_f32(F[s][0],F[s][1],F[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_q8(Q[s][0],Q[s][1],Q[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_mxfp4(Q[s][0],Q[s][1],Q[s][2]);   /* same shapes */

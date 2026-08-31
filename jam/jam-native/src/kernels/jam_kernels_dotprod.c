@@ -8,6 +8,22 @@
 /* vdotq_s32(acc,a,b): acc[l] += Σ_{4} a[4l+..]·b[4l+..]. Two of them cover the 32-elem block -> int32x4. */
 #define JAM_BLKDOT(wlo,whi,blo,bhi) vdotq_s32(vdotq_s32(vdupq_n_s32(0), wlo, blo), whi, bhi)
 
+static inline int32x4_t jam_mxfp4_rows4(const uint8_t* p, int8x16_t lut, uint8x16_t m4,
+                                        int8x16_t a0, int8x16_t a1) {
+    int32x4_t s = vdupq_n_s32(0);
+#define JAM_MXFP4_CHUNK(off, lane) do {                                                    \
+    const uint8x16_t w = vld1q_u8(p + (off));                                              \
+    s = vdotq_laneq_s32(s, vqtbl1q_s8(lut, vandq_u8(w, m4)), a0, (lane));                  \
+    s = vdotq_laneq_s32(s, vqtbl1q_s8(lut, vshrq_n_u8(w, 4)), a1, (lane));                 \
+} while (0)
+    JAM_MXFP4_CHUNK(0, 0);
+    JAM_MXFP4_CHUNK(16, 1);
+    JAM_MXFP4_CHUNK(32, 2);
+    JAM_MXFP4_CHUNK(48, 3);
+#undef JAM_MXFP4_CHUNK
+    return s;
+}
+
 /* Decode (n==1) GEMV specializes across output rows: one activation load feeds four independent
  * weight streams - cuts activation/scale loads 4x and gives the core 4 independent SDOT chains. */
 #define JAM_BLK       jam_q8_blk
@@ -21,6 +37,14 @@
 #define JAM_BLK       jam_q4_0_blk
 #define JAM_DECODE    jam_decode_q4_0_neon
 #define JAM_GEMV_NAME jam_gemv_q4_0_dotprod_4x1
+#include "jam_gemv4_dotprod.inc"
+#undef JAM_BLK
+#undef JAM_DECODE
+#undef JAM_GEMV_NAME
+
+#define JAM_BLK       jam_mxfp4_blk
+#define JAM_DECODE    jam_decode_mxfp4_neon
+#define JAM_GEMV_NAME jam_gemv_mxfp4_dotprod_4x1
 #include "jam_gemv4_dotprod.inc"
 #undef JAM_BLK
 #undef JAM_DECODE
@@ -132,6 +156,44 @@ void jam_gemv_q4_0_packed_4x1(void* arg, int rb, int re, int tid) {
                 }
                 C[g * 4 + r] = vaddvq_f32(f);
             }
+        }
+        i = g * 4 + r1;
+    }
+}
+
+void jam_gemv_mxfp4_packed_4x1(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const int nb = J->nb;
+    const size_t GB = (size_t) nb * 68;
+    const uint8_t* P = (const uint8_t*) J->a;
+    float* C = (float*) J->c;
+    const int8_t* q = J->aq;
+    const float* d = J->ad;
+    static const int8_t codes[16] = { JAM_MXFP4_CODES };
+    const int8x16_t lut = vld1q_s8(codes);
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+
+    int i = rb;
+    while (i < re) {
+        const int g = i / 4, r0 = i - g * 4;
+        const int r1 = re - g * 4 < 4 ? re - g * 4 : 4;
+        const uint8_t* pg = P + (size_t) g * GB;
+        float32x4_t f = vdupq_n_f32(0);
+        for (int b = 0; b < nb; ++b) {
+            const uint8_t* p = pg + (size_t) b * 68;
+            const int8_t* a = q + (size_t) b * 32;
+            const int8x16_t a0 = vld1q_s8(a), a1 = vld1q_s8(a + 16);
+            const int32x4_t si = jam_mxfp4_rows4(p + 4, lut, m4, a0, a1);
+            const float32x4_t sw = { jam_mxfp4_dhalf(p[0]), jam_mxfp4_dhalf(p[1]),
+                                     jam_mxfp4_dhalf(p[2]), jam_mxfp4_dhalf(p[3]) };
+            f = vfmaq_f32(f, vcvtq_f32_s32(si), vmulq_n_f32(sw, d[b]));
+        }
+        if (r0 == 0 && r1 == 4) {
+            vst1q_f32(C + i, f);
+        } else {
+            float lanes[4]; vst1q_f32(lanes, f);
+            for (int r = r0; r < r1; ++r) C[g * 4 + r] = lanes[r];
         }
         i = g * 4 + r1;
     }

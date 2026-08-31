@@ -4,6 +4,7 @@
  * available there too); an smmla 2x2 variant would be a further step but barely helps the decode-bound K-quants. */
 #include "jam_internal.h"
 #include "jam_kquant.h"
+#include "jam_mxfp4.h"
 #include <arm_neon.h>
 
 /* 32-wide signed int8 dot via two sdots (Σ activations is precomputed in requant). */
@@ -36,6 +37,20 @@ static inline int jam_kdot16_dotprod(int8x16_t w, const int8_t* a) {
 /* [r0 r1 r2 r3] row sums from four per-row sdot partials. */
 static inline int32x4_t jam_krow4(int32x4_t p0, int32x4_t p1, int32x4_t p2, int32x4_t p3) {
     return vpaddq_s32(vpaddq_s32(p0, p1), vpaddq_s32(p2, p3));
+}
+
+static inline int32x4_t jam_mxfp4_rows4_packed(const int8x16_t lo[4], const int8x16_t hi[4],
+                                               int8x16_t a0, int8x16_t a1) {
+    int32x4_t s = vdupq_n_s32(0);
+    s = vdotq_laneq_s32(s, lo[0], a0, 0);
+    s = vdotq_laneq_s32(s, hi[0], a1, 0);
+    s = vdotq_laneq_s32(s, lo[1], a0, 1);
+    s = vdotq_laneq_s32(s, hi[1], a1, 1);
+    s = vdotq_laneq_s32(s, lo[2], a0, 2);
+    s = vdotq_laneq_s32(s, hi[2], a1, 2);
+    s = vdotq_laneq_s32(s, lo[3], a0, 3);
+    s = vdotq_laneq_s32(s, hi[3], a1, 3);
+    return s;
 }
 
 void jam_gemv_q6k_dotprod_4x1(void* arg, int rb, int re, int tid) {
@@ -456,6 +471,46 @@ void jam_mm_q4_0_packed_dotprod(void* arg, int gb, int ge, int tid) {
                         pr[r] = vdotq_s32(vdotq_s32(vdupq_n_s32(0), lo[r], a0), hi[r], a1);
                     facc[c] = vfmaq_f32(facc[c], vcvtq_f32_s32(jam_krow4(pr[0], pr[1], pr[2], pr[3])),
                                         vmulq_n_f32(s4, J->ad[(size_t) j * nb + b]));
+                }
+            }
+            for (int c = 0; c < jn; ++c) vst1q_f32(C + (size_t) (j0 + c) * ldc + i, facc[c]);
+        }
+    }
+}
+
+void jam_mm_mxfp4_packed_dotprod(void* arg, int gb, int ge, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const int nb = J->nb, n = J->n, k = J->k, ldc = J->ldc;
+    const size_t GB = (size_t) nb * 68;
+    const uint8_t* base = (const uint8_t*) J->a;
+    float* C = (float*) J->c;
+    static const int8_t codes[16] = { JAM_MXFP4_CODES };
+    const int8x16_t lut = vld1q_s8(codes);
+    const uint8x16_t m4 = vdupq_n_u8(0x0F);
+    for (int g = gb; g < ge; ++g) {
+        const uint8_t* pg = base + (size_t) g * GB;
+        const int i = g * 4;
+        for (int j0 = 0; j0 < n; j0 += 4) {
+            const int jn = n - j0 < 4 ? n - j0 : 4;
+            float32x4_t facc[4] = { vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0) };
+            for (int b = 0; b < nb; ++b) {
+                const uint8_t* p = pg + (size_t) b * 68;
+                int8x16_t lo[4], hi[4];
+                for (int r = 0; r < 4; ++r) {
+                    const uint8x16_t w = vld1q_u8(p + 4 + r * 16);
+                    lo[r] = vqtbl1q_s8(lut, vandq_u8(w, m4));
+                    hi[r] = vqtbl1q_s8(lut, vshrq_n_u8(w, 4));
+                }
+                const float32x4_t sw = { jam_mxfp4_dhalf(p[0]), jam_mxfp4_dhalf(p[1]),
+                                         jam_mxfp4_dhalf(p[2]), jam_mxfp4_dhalf(p[3]) };
+                for (int c = 0; c < jn; ++c) {
+                    const int j = j0 + c;
+                    const int8_t* a = J->aq + (size_t) j * k + (size_t) b * 32;
+                    const int8x16_t a0 = vld1q_s8(a), a1 = vld1q_s8(a + 16);
+                    const int32x4_t pr = jam_mxfp4_rows4_packed(lo, hi, a0, a1);
+                    facc[c] = vfmaq_f32(facc[c], vcvtq_f32_s32(pr),
+                                        vmulq_n_f32(sw, J->ad[(size_t) j * nb + b]));
                 }
             }
             for (int c = 0; c < jn; ++c) vst1q_f32(C + (size_t) (j0 + c) * ldc + i, facc[c]);
