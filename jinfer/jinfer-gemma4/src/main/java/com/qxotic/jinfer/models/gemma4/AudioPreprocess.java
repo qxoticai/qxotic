@@ -108,18 +108,23 @@ public final class AudioPreprocess {
 
     private MelChunk chunk(float[] pcm, int from, int length) {
         int frames = framesFor(length);
+        if (frames == 0) return new MelChunk(new float[0], 0);
         int paddedNeeded = (frames - 1) * HOP + N_FFT;
         int totalPad = Math.max(paddedNeeded - length, WINDOW / 2);
         float[] padded = new float[totalPad + length];
         System.arraycopy(pcm, from, padded, WINDOW / 2, length);
         float[] output = new float[frames * nMel];
+        int threads = Parallel.threads();
+        float[][] fftInputs = new float[threads][N_FFT * 2];
+        float[][] fftOutputs = new float[threads][N_FFT * 8];
+        float[][] magnitudes = new float[threads][N_BINS];
         Parallel.forLoop(
                 0,
                 frames,
-                t -> {
-                    float[] fftInput = new float[N_FFT * 2];
-                    float[] fftOutput = new float[N_FFT * 8];
-                    float[] magnitude = new float[N_BINS];
+                (t, slot) -> {
+                    float[] fftInput = fftInputs[slot];
+                    float[] fftOutput = fftOutputs[slot];
+                    float[] magnitude = magnitudes[slot];
                     int offset = t * HOP;
                     for (int k = 0; k < WINDOW; k++) fftInput[k] = hann[k] * padded[offset + k];
                     fftReal(fftInput, 0, N_FFT, fftOutput, 0);
