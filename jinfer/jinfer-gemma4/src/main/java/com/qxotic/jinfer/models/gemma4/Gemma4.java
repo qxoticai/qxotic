@@ -1128,10 +1128,12 @@ public final class Gemma4
                                     ModelLoader.requireF32(tensors, p + "ffn_gate_inp.scale"),
                                     Views.sliceLeadingAxis(
                                             ModelLoader.require(
-                                                    tensors, p + "ffn_gate_up_exps.weight")),
+                                                    tensors, p + "ffn_gate_up_exps.weight"),
+                                            c.expertCount),
                                     Views.sliceLeadingAxis(
                                             ModelLoader.require(
-                                                    tensors, p + "ffn_down_exps.weight")),
+                                                    tensors, p + "ffn_down_exps.weight"),
+                                            c.expertCount),
                                     ModelLoader.requireF32(tensors, p + "ffn_down_exps.scale"),
                                     ModelLoader.requireF32(tensors, p + "post_ffw_norm_1.weight"),
                                     ModelLoader.requireF32(tensors, p + "pre_ffw_norm_2.weight"),
