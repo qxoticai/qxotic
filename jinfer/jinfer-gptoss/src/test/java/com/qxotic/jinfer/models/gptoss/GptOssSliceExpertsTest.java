@@ -34,7 +34,7 @@ final class GptOssSliceExpertsTest {
 
             MemoryView<MemorySegment> stacked =
                     Views.wrap(seg, DataType.FP32, Shape.flat(experts, rows, cols));
-            MemoryView<MemorySegment>[] slices = GptOss.sliceExperts(stacked, experts);
+            MemoryView<MemorySegment>[] slices = Views.sliceLeadingAxis(stacked, experts);
 
             assertEquals(experts, slices.length);
             for (int e = 0; e < experts; e++) {
@@ -57,10 +57,11 @@ final class GptOssSliceExpertsTest {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment seg = arena.allocate(4L * 3 * 4 * 8, 64);
             MemoryView<MemorySegment> stacked = Views.wrap(seg, DataType.FP32, Shape.flat(3, 4, 8));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> GptOss.sliceExperts(stacked, 2),
-                    "expert axis 3 != expertCount 2");
+            IllegalArgumentException error =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> Views.sliceLeadingAxis(stacked, 2));
+            assertEquals("stacked: leading axis 3 != expected groups 2", error.getMessage());
         }
     }
 
@@ -71,7 +72,7 @@ final class GptOssSliceExpertsTest {
             MemoryView<MemorySegment> flat = Views.wrap(seg, DataType.FP32, Shape.flat(4, 8));
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> GptOss.sliceExperts(flat, 2),
+                    () -> Views.sliceLeadingAxis(flat, 2),
                     "a 2D stacked weight must not pass the 3D gate");
         }
     }

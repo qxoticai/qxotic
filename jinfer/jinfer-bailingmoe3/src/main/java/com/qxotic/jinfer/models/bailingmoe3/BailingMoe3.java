@@ -1051,9 +1051,11 @@ public final class BailingMoe3
                                 ModelLoader.require(tensors, p + "attn_kv_a_mqa.weight"),
                                 ModelLoader.requireF32(tensors, p + "attn_kv_a_norm.weight"),
                                 Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "attn_k_b.weight")),
+                                        ModelLoader.require(tensors, p + "attn_k_b.weight"),
+                                        c.numberOfHeads),
                                 Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "attn_v_b.weight")),
+                                        ModelLoader.require(tensors, p + "attn_v_b.weight"),
+                                        c.numberOfHeads),
                                 ModelLoader.require(tensors, p + "attn_gate.weight"),
                                 ModelLoader.require(tensors, p + "attn_output.weight"));
             } else {
@@ -1085,11 +1087,14 @@ public final class BailingMoe3
                                 ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
                                 ModelLoader.requireF32(tensors, p + "exp_probs_b.bias"),
                                 Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "ffn_gate_exps.weight")),
+                                        ModelLoader.require(tensors, p + "ffn_gate_exps.weight"),
+                                        c.expertCount),
                                 Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "ffn_up_exps.weight")),
+                                        ModelLoader.require(tensors, p + "ffn_up_exps.weight"),
+                                        c.expertCount),
                                 Views.sliceLeadingAxis(
-                                        ModelLoader.require(tensors, p + "ffn_down_exps.weight")),
+                                        ModelLoader.require(tensors, p + "ffn_down_exps.weight"),
+                                        c.expertCount),
                                 ModelLoader.require(tensors, p + "ffn_gate_shexp.weight"),
                                 ModelLoader.require(tensors, p + "ffn_up_shexp.weight"),
                                 ModelLoader.require(tensors, p + "ffn_down_shexp.weight"));

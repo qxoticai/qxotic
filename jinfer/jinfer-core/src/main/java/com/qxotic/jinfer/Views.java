@@ -281,4 +281,17 @@ public final class Views {
         }
         return slices;
     }
+
+    /** Split the leading axis and require the configured number of groups. */
+    public static MemoryView<MemorySegment>[] sliceLeadingAxis(
+            MemoryView<MemorySegment> stacked, int expectedGroups) {
+        MemoryView<MemorySegment>[] slices = sliceLeadingAxis(stacked);
+        if (slices.length != expectedGroups)
+            throw new IllegalArgumentException(
+                    "stacked: leading axis "
+                            + slices.length
+                            + " != expected groups "
+                            + expectedGroups);
+        return slices;
+    }
 }
