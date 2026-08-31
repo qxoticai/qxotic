@@ -102,9 +102,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 for (int id : tokens.ids())
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (rows == 1) {
-                    forward(state, tokens.ids(), startPos, rows);
-                } else forward(state, tokens.ids(), startPos, rows);
+                forward(state, tokens.ids(), startPos, rows);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
