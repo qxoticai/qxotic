@@ -540,24 +540,25 @@ public final class BailingMoe3
             int depth,
             GenerationListener listener,
             SpeculationAudit audit) {
-        int capacity = state.contextCapacity();
-        int budget =
-                constraints.maxTokens() == Constraints.UNLIMITED
-                        ? capacity - state.position()
-                        : Math.min(constraints.maxTokens(), capacity - state.position());
         long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
         return state.exclusively(
-                () ->
-                        BailingMoe3Speculative.generate(
-                                this,
-                                state,
-                                budget,
-                                timeoutNanos,
-                                constraints.stopTokens(),
-                                depth,
-                                sampler,
-                                listener,
-                                audit));
+                () -> {
+                    int remaining = state.contextCapacity() - state.position();
+                    int budget =
+                            constraints.maxTokens() == Constraints.UNLIMITED
+                                    ? remaining
+                                    : Math.min(constraints.maxTokens(), remaining);
+                    return BailingMoe3Speculative.generate(
+                            this,
+                            state,
+                            budget,
+                            timeoutNanos,
+                            constraints.stopTokens(),
+                            depth,
+                            sampler,
+                            listener,
+                            audit);
+                });
     }
 
     public record Configuration(
