@@ -263,7 +263,7 @@ public final class ReplyLanguage {
         }
 
         /** The family's memoized AUTO walk. */
-        public Walk parser() {
+        public synchronized Walk parser() {
             if (auto == null) auto = Selection.of(language(free()), tokenizer);
             return auto.walk();
         }

@@ -45,7 +45,7 @@ public final class GptOssChatTemplate implements ChatTemplate {
     private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
 
     @Override
-    public ReplyParser parser(Tokenizer tokenizer) {
+    public synchronized ReplyParser parser(Tokenizer tokenizer) {
         if (autoReply == null) {
             autoReply =
                     ReplyLanguage.Selection.of(harmonyLanguage(ReplyLanguage.free()), tokenizer);
