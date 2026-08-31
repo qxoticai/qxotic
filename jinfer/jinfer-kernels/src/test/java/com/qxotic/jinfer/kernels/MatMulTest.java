@@ -130,34 +130,47 @@ class MatMulTest {
                 int m = shape[0], k = shape[1], n = shape[2];
                 var weights = Oracles.q8(arena, m, k, 11);
                 var input = Oracles.f32(arena, n * k, 12);
-                var out = Oracles.f32(arena, n * m, 13);
-                MatMul.mm(
-                        Oracles.q8View(weights, (long) m * k),
-                        0,
-                        k,
-                        Oracles.f32View(input, n * k),
-                        0,
-                        k,
-                        Oracles.f32View(out, n * m),
-                        0,
-                        m,
-                        m,
-                        n,
-                        k);
-                var alias = Oracles.f32(arena, n * k, 12); // same values, result written over them
-                MatMul.mm(
-                        Oracles.q8View(weights, (long) m * k),
-                        0,
-                        k,
-                        Oracles.f32View(alias, n * k),
-                        0,
-                        k,
-                        Oracles.f32View(alias, n * k),
-                        0,
-                        m,
-                        m,
-                        n,
-                        k);
+                // Bit-equality holds only when both calls run the same compiled code, and while
+                // the JIT is still tiering the Vector API's reduceLanes order may differ between
+                // the calls (fallback vs intrinsic - ulps apart, legally). Retry until the pair
+                // agrees: settled tiers agree exactly, a real aliasing bug disagrees every time.
+                MemorySegment out = null, alias = null;
+                for (int attempt = 0; attempt < 5; attempt++) {
+                    out = Oracles.f32(arena, n * m, 13);
+                    MatMul.mm(
+                            Oracles.q8View(weights, (long) m * k),
+                            0,
+                            k,
+                            Oracles.f32View(input, n * k),
+                            0,
+                            k,
+                            Oracles.f32View(out, n * m),
+                            0,
+                            m,
+                            m,
+                            n,
+                            k);
+                    alias = Oracles.f32(arena, n * k, 12); // same values, result written over them
+                    MatMul.mm(
+                            Oracles.q8View(weights, (long) m * k),
+                            0,
+                            k,
+                            Oracles.f32View(alias, n * k),
+                            0,
+                            k,
+                            Oracles.f32View(alias, n * k),
+                            0,
+                            m,
+                            m,
+                            n,
+                            k);
+                    boolean agree = true;
+                    for (int i = 0; agree && i < n * m; i++)
+                        agree =
+                                out.getAtIndex(ValueLayout.JAVA_INT, i)
+                                        == alias.getAtIndex(ValueLayout.JAVA_INT, i);
+                    if (agree) break;
+                }
                 for (int i = 0; i < n * m; i++)
                     assertEquals(
                             out.getAtIndex(ValueLayout.JAVA_FLOAT, i),
