@@ -205,6 +205,29 @@ final class OptionsTest {
     }
 
     @Test
+    void threadsAreComputeThreadsAndConcurrencyIsAdmission(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        Options options =
+                Options.parse(
+                        new String[] {
+                            "-m", m, "-p", "hi", "-t", "4", "--server", "--concurrency", "8"
+                        });
+        assertEquals(Integer.valueOf(4), options.threads(), "-t/--threads is the compute pool");
+        assertEquals(8, options.limits().threads(), "--concurrency is server admission");
+        assertEquals(
+                null,
+                Options.parse(new String[] {"-m", m, "-p", "hi"}).threads(),
+                "unset threads = the RuntimeFlags default");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Options.parse(new String[] {"-m", m, "-p", "hi", "--threads", "0"}));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Options.parse(new String[] {"-m", m, "-p", "hi", "--temperature", "0.5"}),
+                "one spelling: --temp");
+    }
+
+    @Test
     void parseReadsFlagsInBothSpellings(@TempDir Path dir) throws IOException {
         String m = model(dir).toString();
         Options options =

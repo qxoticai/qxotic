@@ -10,6 +10,7 @@
 // Build/run: `mvn package` then `java -jar target/jinfer.jar --help`.
 package com.qxotic.jinfer.cli;
 
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
@@ -80,6 +81,23 @@ public class Main {
                             + " jdk.incubator.vector -jar jinfer.jar ...");
             System.exit(1);
             return;
+        }
+        if (options.threads() != null) {
+            // --threads IS -Djinfer.threads: the compute pool is sized once, when RuntimeFlags
+            // loads, so the flag must land before anything sizes it - and says so if it did not
+            System.setProperty("jinfer.threads", Integer.toString(options.threads()));
+            if (RuntimeFlags.THREADS != options.threads()) {
+                System.err.println(
+                        "ERROR --threads "
+                                + options.threads()
+                                + " came too late: the compute pool was already sized to "
+                                + RuntimeFlags.THREADS
+                                + "; pass -Djinfer.threads="
+                                + options.threads()
+                                + " to the JVM instead");
+                System.exit(1);
+                return;
+            }
         }
         LoadedModel<?> model;
         // A cold load is seconds of silent work (mmap + parse + weight packing); on a terminal,
