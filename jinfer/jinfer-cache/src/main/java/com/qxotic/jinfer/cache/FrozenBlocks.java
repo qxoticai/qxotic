@@ -266,8 +266,7 @@ public final class FrozenBlocks {
                         throw new IOException("catalog " + file + " is shorter than its header");
                     }
                     if (read == 0) {
-                        throw new IOException(
-                                "catalog " + file + " header read made no progress");
+                        throw new IOException("catalog " + file + " header read made no progress");
                     }
                     headPos += read;
                 }
