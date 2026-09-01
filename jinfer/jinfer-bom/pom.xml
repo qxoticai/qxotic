@@ -110,6 +110,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-laguna</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-gemma4</artifactId>
         <version>${project.version}</version>
       </dependency>

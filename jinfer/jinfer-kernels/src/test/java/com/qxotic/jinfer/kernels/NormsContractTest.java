@@ -39,6 +39,36 @@ class NormsContractTest {
     }
 
     @Test
+    void ggmlRmsNormUsesFloatProductsAndDoubleAccumulation() {
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            float[] values = new float[2048];
+            float[] weights = new float[values.length];
+            values[0] = 4096f;
+            for (int i = 1; i < values.length; i++) values[i] = 1f;
+            for (int i = 0; i < weights.length; i++) weights[i] = 0.75f + i / 8192f;
+            var out = Views.allocateF32(memory, values.length);
+
+            Norms.rmsnormGgml(
+                    out,
+                    0,
+                    Views.fromFloatArray(memory, values),
+                    0,
+                    Views.fromFloatArray(memory, weights),
+                    values.length,
+                    1e-6f);
+
+            double sum = 0;
+            for (float value : values) sum += (double) (value * value);
+            float mean = (float) (sum / values.length);
+            float scale = 1f / (float) Math.sqrt(mean + 1e-6f);
+            float[] actual = Views.toFloatArray(out, "out");
+            for (int i = 0; i < values.length; i++)
+                assertEquals((values[i] * scale) * weights[i], actual[i], "lane " + i);
+        }
+    }
+
+    @Test
     void layerNormMatchesItsDefinitionPerRow() {
         try (Arena arena = Arena.ofConfined()) {
             var memory = MemoryAllocators.ofArena(arena);

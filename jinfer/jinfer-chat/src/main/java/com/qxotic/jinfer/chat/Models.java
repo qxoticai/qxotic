@@ -57,6 +57,7 @@ public final class Models {
                     "com.qxotic.jinfer.models.qwen3.Qwen3Provider",
                     "com.qxotic.jinfer.models.qwen35.Qwen35Provider",
                     "com.qxotic.jinfer.models.bailingmoe3.BailingMoe3Provider",
+                    "com.qxotic.jinfer.models.laguna.LagunaProvider",
                     "com.qxotic.jinfer.models.nemotronh.NemotronHProvider",
                     "com.qxotic.jinfer.models.gptoss.GptOssProvider",
                     "com.qxotic.jinfer.models.inflect2.Inflect2Provider");
@@ -293,6 +294,7 @@ public final class Models {
                     Map.entry("bailingmoe3", "com.qxotic:jinfer-bailingmoe3"),
                     Map.entry("gemma4", "com.qxotic:jinfer-gemma4"),
                     Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
+                    Map.entry("laguna", "com.qxotic:jinfer-laguna"),
                     Map.entry("lfm", "com.qxotic:jinfer-lfm2"),
                     Map.entry("llama", "com.qxotic:jinfer-llama"),
                     Map.entry("granite", "com.qxotic:jinfer-llama"),
