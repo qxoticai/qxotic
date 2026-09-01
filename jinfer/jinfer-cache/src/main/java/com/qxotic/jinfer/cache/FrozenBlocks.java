@@ -259,8 +259,17 @@ public final class FrozenBlocks {
             // the header re-read turns a stale view into a loud refusal instead of data loss.
             try (FileLock ignored = ch.lock()) {
                 ByteBuffer head = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
-                if (ch.read(head, COUNT_OFFSET) != head.capacity()) {
-                    throw new IOException("catalog " + file + " is shorter than its header");
+                long headPos = COUNT_OFFSET;
+                while (head.hasRemaining()) {
+                    int read = ch.read(head, headPos);
+                    if (read < 0) {
+                        throw new IOException("catalog " + file + " is shorter than its header");
+                    }
+                    if (read == 0) {
+                        throw new IOException(
+                                "catalog " + file + " header read made no progress");
+                    }
+                    headPos += read;
                 }
                 head.flip();
                 int diskCount = head.getInt();

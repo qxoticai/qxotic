@@ -153,9 +153,7 @@ public final class Gemma4
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (n == 1) {
-                    forward(state, ids, 0, from, n);
-                } else forward(state, ids, 0, from, n);
+                forward(state, ids, 0, from, n);
             }
             case Batch.Input.Embeddings e -> {
                 state.lastTokens = null; // media rows are no seed for the MTP draft
@@ -185,7 +183,9 @@ public final class Gemma4
 
     @Override
     public MemoryView<?> logits(State state, int output) {
-        return state.exclusively(() -> projectLogits(state, output));
+        MemoryView<?> result = state.exclusively(() -> projectLogits(state, output));
+        Reference.reachabilityFence(this);
+        return result;
     }
 
     private MemoryView<?> projectLogits(State state, int output) {
@@ -909,24 +909,25 @@ public final class Gemma4
             int depth,
             GenerationListener listener,
             SpeculationAudit audit) {
-        int capacity = state.contextCapacity();
-        int budget =
-                constraints.maxTokens() == Constraints.UNLIMITED
-                        ? capacity - state.position()
-                        : Math.min(constraints.maxTokens(), capacity - state.position());
         long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
         return state.exclusively(
-                () ->
-                        Gemma4Speculative.generate(
-                                this,
-                                state,
-                                budget,
-                                timeoutNanos,
-                                constraints.stopTokens(),
-                                depth,
-                                sampler,
-                                listener,
-                                audit));
+                () -> {
+                    int remaining = state.contextCapacity() - state.position();
+                    int budget =
+                            constraints.maxTokens() == Constraints.UNLIMITED
+                                    ? remaining
+                                    : Math.min(constraints.maxTokens(), remaining);
+                    return Gemma4Speculative.generate(
+                            this,
+                            state,
+                            budget,
+                            timeoutNanos,
+                            constraints.stopTokens(),
+                            depth,
+                            sampler,
+                            listener,
+                            audit);
+                });
     }
 
     /**
@@ -1125,10 +1126,12 @@ public final class Gemma4
                                     ModelLoader.requireF32(tensors, p + "ffn_gate_inp.scale"),
                                     Views.sliceLeadingAxis(
                                             ModelLoader.require(
-                                                    tensors, p + "ffn_gate_up_exps.weight")),
+                                                    tensors, p + "ffn_gate_up_exps.weight"),
+                                            c.expertCount),
                                     Views.sliceLeadingAxis(
                                             ModelLoader.require(
-                                                    tensors, p + "ffn_down_exps.weight")),
+                                                    tensors, p + "ffn_down_exps.weight"),
+                                            c.expertCount),
                                     ModelLoader.requireF32(tensors, p + "ffn_down_exps.scale"),
                                     ModelLoader.requireF32(tensors, p + "post_ffw_norm_1.weight"),
                                     ModelLoader.requireF32(tensors, p + "pre_ffw_norm_2.weight"),

@@ -17,6 +17,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -118,6 +119,7 @@ public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
         } finally {
             Arenas.close(scratch);
         }
+        Reference.reachabilityFence(this);
     }
 
     private MemoryView<MemorySegment> encode(

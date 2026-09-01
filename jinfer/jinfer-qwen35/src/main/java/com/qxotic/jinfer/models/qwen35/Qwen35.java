@@ -583,7 +583,9 @@ public final class Qwen35
 
     @Override
     public MemoryView<?> logits(State state, int output) {
-        return state.exclusively(() -> projectLogits(state, output));
+        MemoryView<?> result = state.exclusively(() -> projectLogits(state, output));
+        Reference.reachabilityFence(this);
+        return result;
     }
 
     private MemoryView<?> projectLogits(State state, int output) {
@@ -642,24 +644,25 @@ public final class Qwen35
             int depth,
             GenerationListener listener,
             SpeculationAudit audit) {
-        int capacity = state.contextCapacity();
-        int budget =
-                constraints.maxTokens() == Constraints.UNLIMITED
-                        ? capacity - state.position()
-                        : Math.min(constraints.maxTokens(), capacity - state.position());
         long timeoutNanos = constraints.timeout().isZero() ? 0 : constraints.timeout().toNanos();
         return state.exclusively(
-                () ->
-                        Qwen35Speculative.generate(
-                                this,
-                                state,
-                                budget,
-                                timeoutNanos,
-                                constraints.stopTokens(),
-                                depth,
-                                sampler,
-                                listener,
-                                audit));
+                () -> {
+                    int remaining = state.contextCapacity() - state.position();
+                    int budget =
+                            constraints.maxTokens() == Constraints.UNLIMITED
+                                    ? remaining
+                                    : Math.min(constraints.maxTokens(), remaining);
+                    return Qwen35Speculative.generate(
+                            this,
+                            state,
+                            budget,
+                            timeoutNanos,
+                            constraints.stopTokens(),
+                            depth,
+                            sampler,
+                            listener,
+                            audit);
+                });
     }
 
     public record Configuration(

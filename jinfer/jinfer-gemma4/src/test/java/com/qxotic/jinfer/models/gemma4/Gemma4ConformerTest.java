@@ -44,6 +44,18 @@ class Gemma4ConformerTest {
     }
 
     @Test
+    void reusesMelScratchAcrossFrames() {
+        float[] pcm = new float[1_000];
+        Arrays.fill(pcm, 1f);
+        AudioPreprocess.MelChunk mel = new AudioPreprocess(4).logMel(pcm).getFirst();
+
+        assertEquals(6, mel.frames());
+        for (int frame = 2; frame <= 4; frame++)
+            for (int bin = 0; bin < 4; bin++)
+                assertEquals(mel.data()[4 + bin], mel.data()[frame * 4 + bin], 0f);
+    }
+
+    @Test
     void computesWholeMelTowerThenStreamsFinalRows() {
         try (Arena weightsArena = Arena.ofConfined()) {
             MemoryArena<MemorySegment> weights = MemoryAllocators.ofArena(weightsArena);
