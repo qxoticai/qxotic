@@ -59,6 +59,7 @@ Architecture dispatch comes from providers on the classpath.
 | Gemma 4 | chat, E2B/E4B vision, E2B conformer audio, MTP |
 | Qwen 3 / 3.5 | chat, embeddings, reranking, Qwen 3.5 MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
+| Laguna XS 2.1 | chat |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) |
 | gpt-oss, Nemotron-H, Maple | chat |
 | Inflect | speech synthesis |

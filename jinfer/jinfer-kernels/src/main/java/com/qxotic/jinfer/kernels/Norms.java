@@ -106,6 +106,65 @@ public final class Norms {
     }
 
     /**
+     * ggml-compatible RMSNorm: FP32 products accumulated serially in FP64, then an FP32 scale and
+     * {@code (x * scale) * weight}. The reduction stays serial for reference parity; the
+     * independent output lanes use SIMD when available.
+     */
+    public static void rmsnormGgml(
+            MemoryView<MemorySegment> out,
+            long outOffset,
+            MemoryView<MemorySegment> x,
+            long xOffset,
+            MemoryView<MemorySegment> weight,
+            int size,
+            float rmsNormEps) {
+        Raw o = Raw.f32(out, "out");
+        Raw xv = Raw.f32(x, "x");
+        Raw w = Raw.f32(weight, "weight");
+        double sum = 0;
+        for (int i = 0; i < size; i++) {
+            float value = readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES);
+            sum += (double) (value * value);
+        }
+        float mean = (float) (sum / size);
+        float scale = 1f / (float) Math.sqrt(mean + rmsNormEps);
+        int i = 0;
+        if (USE_VECTOR_API) {
+            var species = F_SPECIES;
+            int upperBound = species.loopBound(size);
+            FloatVector scaleVector = FloatVector.broadcast(species, scale);
+            for (; i < upperBound; i += species.length()) {
+                var xvv =
+                        FloatVector.fromMemorySegment(
+                                species,
+                                xv.vseg(),
+                                xv.vbase() + (xOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                var wv =
+                        FloatVector.fromMemorySegment(
+                                species,
+                                w.vseg(),
+                                w.vbase() + (long) i * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+                xvv.mul(scaleVector)
+                        .mul(wv)
+                        .intoMemorySegment(
+                                o.vseg(),
+                                o.vbase() + (outOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+        for (; i < size; i++) {
+            float value = readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES);
+            float normalized = value * scale;
+            writeFloat(
+                    o.vseg(),
+                    o.vbase() + (outOffset + i) * Float.BYTES,
+                    normalized * readFloat(w.vseg(), w.vbase() + (long) i * Float.BYTES));
+        }
+    }
+
+    /**
      * Per-row {@link #rmsnorm} over {@code rows} rows of {@code rowDim} lanes ({@code out == x} for
      * in-place post-norms) - the pre/post-norm idiom of a transformer block, shared by every model
      * port so none of them re-rolls the row loop.
@@ -121,6 +180,27 @@ public final class Norms {
                 rows,
                 r ->
                         rmsnorm(
+                                out,
+                                (long) r * rowDim,
+                                x,
+                                (long) r * rowDim,
+                                weight,
+                                rowDim,
+                                rmsNormEps));
+    }
+
+    /** Per-row {@link #rmsnormGgml} over the live row prefix. */
+    public static void rmsnormRowsGgml(
+            MemoryView<MemorySegment> out,
+            MemoryView<MemorySegment> x,
+            MemoryView<MemorySegment> weight,
+            int rows,
+            int rowDim,
+            float rmsNormEps) {
+        Parallel.forLoop(
+                rows,
+                r ->
+                        rmsnormGgml(
                                 out,
                                 (long) r * rowDim,
                                 x,

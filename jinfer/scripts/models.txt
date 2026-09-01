@@ -23,6 +23,7 @@ hf.co unsloth gemma-4-26B-A4B-it-GGUF gemma-4-26B-A4B-it-Q8_0.gguf
 hf.co unsloth Qwen3.5-2B-GGUF Qwen3.5-2B-Q8_0.gguf
 hf.co unsloth Qwen3.5-4B-GGUF Qwen3.5-4B-Q8_0.gguf
 hf.co unsloth gpt-oss-20b-GGUF gpt-oss-20b-Q8_0.gguf
+hf.co poolside Laguna-XS-2.1-GGUF Laguna-XS-2.1-Q4_K_M.gguf
 hf.co deepgrove maple-preview-GGUF maple-preview-TQ1_0-head-Q4_K.gguf
 hf.co unsloth Llama-3.2-1B-Instruct-GGUF Llama-3.2-1B-Instruct-Q8_0.gguf
 hf.co unsloth Ministral-3-3B-Instruct-2512-GGUF Ministral-3-3B-Instruct-2512-Q8_0.gguf
