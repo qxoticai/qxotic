@@ -109,9 +109,7 @@ public final class GptOss
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (n == 1) {
-                    forward(state, ids, 0, from, n);
-                } else forward(state, ids, 0, from, n);
+                forward(state, ids, 0, from, n);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
@@ -664,20 +662,6 @@ public final class GptOss
                 gguf.getValueOrDefault(float.class, arch + ".expert_weights_scale", 1f));
     }
 
-    /**
-     * Pre-slice a stacked per-expert weight {@code [experts, rows, cols/elementsPerBlock]} into
-     * per-expert 2D views {@code [rows, cols/elementsPerBlock]} - zero-copy, computed once at load,
-     * so the hot MoE loop indexes the expert instead of doing offset arithmetic.
-     */
-    static MemoryView<MemorySegment>[] sliceExperts(
-            MemoryView<MemorySegment> stacked, int experts) {
-        MemoryView<MemorySegment>[] slices = Views.sliceLeadingAxis(stacked);
-        if (slices.length != experts)
-            throw new IllegalArgumentException(
-                    "stacked experts: expert axis " + slices.length + " != expertCount " + experts);
-        return slices;
-    }
-
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
         LayerWeights[] layers = new LayerWeights[c.numberOfLayers];
         for (int l = 0; l < layers.length; l++) {
@@ -699,16 +683,16 @@ public final class GptOss
                             new MoeFfnWeights(
                                     ModelLoader.require(tensors, p + "ffn_gate_inp.weight"),
                                     ModelLoader.requireF32(tensors, p + "ffn_gate_inp.bias"),
-                                    sliceExperts(
+                                    Views.sliceLeadingAxis(
                                             ModelLoader.require(
                                                     tensors, p + "ffn_gate_exps.weight"),
                                             c.expertCount),
                                     ModelLoader.requireF32(tensors, p + "ffn_gate_exps.bias"),
-                                    sliceExperts(
+                                    Views.sliceLeadingAxis(
                                             ModelLoader.require(tensors, p + "ffn_up_exps.weight"),
                                             c.expertCount),
                                     ModelLoader.requireF32(tensors, p + "ffn_up_exps.bias"),
-                                    sliceExperts(
+                                    Views.sliceLeadingAxis(
                                             ModelLoader.require(
                                                     tensors, p + "ffn_down_exps.weight"),
                                             c.expertCount),

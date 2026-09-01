@@ -102,9 +102,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 for (int id : tokens.ids())
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                if (rows == 1) {
-                    forward(state, tokens.ids(), startPos, rows);
-                } else forward(state, tokens.ids(), startPos, rows);
+                forward(state, tokens.ids(), startPos, rows);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
@@ -560,11 +558,14 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                             ModelLoader.requireF32(tensors, p + "ffn_norm.weight"),
                             ModelLoader.requireF32(tensors, p + "ffn_gate_inp.weight"),
                             Views.sliceLeadingAxis(
-                                    ModelLoader.require(tensors, p + "ffn_gate_exps.weight")),
+                                    ModelLoader.require(tensors, p + "ffn_gate_exps.weight"),
+                                    c.expertCount),
                             Views.sliceLeadingAxis(
-                                    ModelLoader.require(tensors, p + "ffn_up_exps.weight")),
+                                    ModelLoader.require(tensors, p + "ffn_up_exps.weight"),
+                                    c.expertCount),
                             Views.sliceLeadingAxis(
-                                    ModelLoader.require(tensors, p + "ffn_down_exps.weight")));
+                                    ModelLoader.require(tensors, p + "ffn_down_exps.weight"),
+                                    c.expertCount));
         }
         MemoryView<MemorySegment> embeddings = ModelLoader.require(tensors, "token_embd.weight");
         return new Weights(

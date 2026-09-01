@@ -49,7 +49,7 @@ public final class MistralChatTemplate implements ChatTemplate {
     private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
 
     @Override
-    public ReplyParser parser(Tokenizer tokenizer) {
+    public synchronized ReplyParser parser(Tokenizer tokenizer) {
         if (autoReply == null) {
             autoReply = ReplyLanguage.Selection.of(language(ReplyLanguage.free()), this.tokenizer);
         }

@@ -120,9 +120,7 @@ public final class NemotronH
             if (token < 0 || token >= configuration.vocabularySize)
                 throw new IllegalArgumentException(
                         "token id " + token + " outside [0," + configuration.vocabularySize + ")");
-        if (rows == 1) {
-            forward(state, tokens, start, rows);
-        } else forward(state, tokens, start, rows);
+        forward(state, tokens, start, rows);
         state.advance(batch);
     }
 
@@ -669,10 +667,12 @@ public final class NemotronH
                                                 .orElse(null),
                                         Views.sliceLeadingAxis(
                                                 ModelLoader.require(
-                                                        tensors, p + "ffn_up_exps.weight")),
+                                                        tensors, p + "ffn_up_exps.weight"),
+                                                c.expertCount),
                                         Views.sliceLeadingAxis(
                                                 ModelLoader.require(
-                                                        tensors, p + "ffn_down_exps.weight")),
+                                                        tensors, p + "ffn_down_exps.weight"),
+                                                c.expertCount),
                                         ModelLoader.find(tensors, p + "ffn_up_shexp.weight")
                                                 .orElse(null),
                                         ModelLoader.find(tensors, p + "ffn_down_shexp.weight")
