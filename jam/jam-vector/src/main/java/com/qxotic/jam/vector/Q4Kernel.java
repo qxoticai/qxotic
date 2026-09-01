@@ -224,8 +224,7 @@ public final class Q4Kernel {
     /**
      * Dequantize one Q4_0 weight row ({@code dim1 % 32 == 0}, block-aligned {@code rowElemOffset})
      * into {@code dst} at {@code dstBase}: per 32-elem block the 16 nibble bytes fan out as
-     * (lo-8)*d into elements [0,16) and (hi-8)*d into [16,32). 512-bit route only (one SPECIES_128
-     * load = one F_SPECIES f32 vector per half-block).
+     * (lo-8)*d into elements [0,16) and (hi-8)*d into [16,32).
      */
     static void dequantizeRow(
             MemorySegment w, long rowElemOffset, int dim1, MemorySegment dst, long dstBase) {
@@ -239,17 +238,10 @@ public final class Q4Kernel {
             var bytes =
                     ByteVector.fromMemorySegment(
                             ByteVector.SPECIES_128, ws, blkOff + 2, ByteOrder.LITTLE_ENDIAN);
-            var lo =
-                    ((FloatVector) bytes.and((byte) 0xF).sub((byte) 8).castShape(F_SPECIES, 0))
-                            .mul(vd);
-            var hi =
-                    ((FloatVector)
-                                    bytes.lanewise(VectorOperators.LSHR, 4)
-                                            .sub((byte) 8)
-                                            .castShape(F_SPECIES, 0))
-                            .mul(vd);
-            lo.intoMemorySegment(dst, d, ByteOrder.LITTLE_ENDIAN);
-            hi.intoMemorySegment(dst, d + 64, ByteOrder.LITTLE_ENDIAN);
+            var lo = bytes.and((byte) 0xF).sub((byte) 8);
+            var hi = bytes.lanewise(VectorOperators.LSHR, 4).sub((byte) 8);
+            VectorSupport.storeScaled(lo, vd, dst, d);
+            VectorSupport.storeScaled(hi, vd, dst, d + 64);
         }
     }
 
