@@ -48,7 +48,7 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-testkit</artifactId>
+      <artifactId>jinfer-cache</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

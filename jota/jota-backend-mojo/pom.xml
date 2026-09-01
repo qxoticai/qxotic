@@ -14,6 +14,9 @@
   <description>Experimental Mojo backend for Jota on AMD HIP.</description>
 
   <properties>
+    <!-- Experimental (needs mojo + hipcc toolchains; kernels generated at runtime): built and
+         tested, but never published. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
     <mojo.configure.extraArgs />
     <mojo.build.extraArgs />
     <native.dir>${project.basedir}/src/main/native</native.dir>
