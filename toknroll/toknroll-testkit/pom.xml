@@ -11,7 +11,8 @@
 
   <artifactId>toknroll-testkit</artifactId>
   <name>Tok'n'Roll Test Kit</name>
-  <description>Shared lightweight test fixtures and helpers for Tok'n'Roll modules</description>
+  <description>Shared lightweight test fixtures and helpers for the
+    Tok'n'Roll modules. Not published to Maven Central.</description>
 
   <properties>
     <surefire.excludedGroups />

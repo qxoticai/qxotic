@@ -11,8 +11,9 @@
   <artifactId>jinfer-testkit</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-testkit</name>
-  <description>Shared test fixtures: checkpoint acquisition via jinfer-hub, never a download</description>
+  <name>Jinfer Test Kit</name>
+  <description>Shared test fixtures for the Jinfer build: checkpoints resolved
+    from the local model store, never downloaded. Not published to Maven Central.</description>
 
   <properties>
     <!-- a jar so its dependencies resolve transitively (a test-jar's do not); test-scope in every

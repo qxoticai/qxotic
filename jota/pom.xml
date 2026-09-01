@@ -11,7 +11,7 @@
 
   <artifactId>jota-aggregator</artifactId>
   <packaging>pom</packaging>
-  <name>jota (parent)</name>
+  <name>Jota Parent</name>
   <description>JVM Open Tensor Algebra: multi-backend tensor computation with first-class
     GraalVM Native Image support. Aggregator/parent POM; depend on the individual jota-*
     artifacts.</description>

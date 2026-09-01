@@ -11,7 +11,8 @@
   <artifactId>graalvm-annotations</artifactId>
   <packaging>jar</packaging>
   <name>GraalVM Native Image Annotation Stubs</name>
-  <description>Compile-time stubs for GraalVM Native Image inlining annotations.</description>
+  <description>Compile-only stubs of GraalVM Native Image inlining annotations, matched by name at image
+    build time and never on the runtime classpath.</description>
 
   <!-- Compile-only stubs of GraalVM's inlining annotations (unpublishable upstream). They satisfy
        javac without being bundled into consumer jars. Native Image recognizes the annotations by

@@ -11,11 +11,9 @@
   <artifactId>jinfer-cli</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-cli</name>
-  <description>The jinfer command line on the MemoryView stack: one jar carrying the chat loop,
-    the one-shot instruct mode, the model hub and every model provider. Nothing depends on this
-    module - it is the deliverable, which is what lets it depend on everything. The OpenAI server
-    and speculation flags are provided by jinfer-server and model-specific draft heads.</description>
+  <name>Jinfer CLI</name>
+  <description>Command line for Jinfer: an interactive chat loop and a one-shot
+    instruct mode over any GGUF, in a single jar carrying the model hub and every model provider.</description>
 
   <properties>
     <jinfer.image.name>jinfer</jinfer.image.name>

@@ -11,8 +11,8 @@
   <artifactId>jinfer-example-local-rag</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-example-local-rag</name>
-  <description>Demo: fully-local RAG in one JVM - jinfer embeddings and chat over two GGUFs, no
+  <name>Jinfer Local RAG Example</name>
+  <description>Demo: fully-local RAG in one JVM - Jinfer embeddings and chat over two GGUFs, no
     server, no API key. Not published to Maven Central.</description>
 
   <properties>

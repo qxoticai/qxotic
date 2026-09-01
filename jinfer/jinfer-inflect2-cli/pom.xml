@@ -11,8 +11,9 @@
   <artifactId>jinfer-inflect2-cli</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-inflect2-cli</name>
-  <description>Example command line and native executable for jinfer-inflect2.</description>
+  <name>Jinfer Inflect 2 CLI</name>
+  <description>Command line and native executable that speaks text with
+    Jinfer Inflect 2. Not published to Maven Central.</description>
 
   <properties>
     <jinfer.image.name>inflect</jinfer.image.name>

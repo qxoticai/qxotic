@@ -10,8 +10,9 @@
 
   <artifactId>jinfer-maple</artifactId>
   <packaging>jar</packaging>
-  <name>jinfer-maple</name>
-  <description>MemoryView inference for Maple.</description>
+  <name>Jinfer Maple Provider</name>
+  <description>Local chat inference for DeepGrove Maple sparse-transformer models with
+    Jinfer.</description>
 
   <dependencies>
     <dependency>

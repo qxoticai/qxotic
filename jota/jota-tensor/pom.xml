@@ -10,9 +10,9 @@
   </parent>
 
   <artifactId>jota-tensor</artifactId>
-  <name>jota-tensor</name>
-  <description>Tensors, execution runtimes, the TIR/LIR intermediate representations, and kernel
-    compilation.</description>
+  <name>Jota Tensor</name>
+  <description>Tensors, execution runtimes, the TIR and LIR intermediate
+    representations, and kernel compilation for Jota.</description>
 
   <dependencies>
     <dependency>

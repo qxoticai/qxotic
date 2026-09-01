@@ -10,7 +10,7 @@
   </parent>
 
   <artifactId>jota-backend-c</artifactId>
-  <name>jota-backend-c</name>
+  <name>Jota C Backend</name>
   <description>C backend for Jota tensor operations over a per-platform native library; the
     default backend on GraalVM Native Image.</description>
 
