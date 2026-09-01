@@ -7,8 +7,11 @@
     <version>0.2.0</version>
   </parent>
   <artifactId>jinfer-nemotronh</artifactId>
-  <name>jinfer-nemotronh</name>
-  <description>MemoryView inference for Nemotron-H.</description>
+  <name>Jinfer Nemotron-H Provider</name>
+  <description>Local chat inference for NVIDIA Nemotron-H models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>

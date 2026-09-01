@@ -11,9 +11,13 @@
   <artifactId>jam-native</artifactId>
   <packaging>jar</packaging>
 
+  <name>JAM Native Backend</name>
+  <description>Native CPU and Apple Metal backend for JAM.</description>
+
   <!-- The libjam (C) backend: NativeJAM + NativeLoader, the CMake-built native library bundled per
        os.arch, reached via JNI (default) or Panama (-Djam.native.binding=ffm). -->
   <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
     <native.cmake.executable>cmake</native.cmake.executable>
     <jam.native.skip>false</jam.native.skip>
     <!-- -Djam.native.skip=true to reuse a pre-staged dist/native (cross-platform CI) -->

@@ -10,7 +10,10 @@
 
   <artifactId>json</artifactId>
   <name>Quixotic JSON</name>
-  <description>RFC 8259 compliant JSON parser/writer</description>
+  <description>Strict RFC 8259-compliant JSON parser and writer for Java.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

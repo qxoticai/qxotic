@@ -11,10 +11,11 @@
   <artifactId>jinfer-jinja</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-jinja</name>
-  <description>Internal to jinfer (no API promise). Standalone Jinja chat-template engine: template source in, rendered String out.
-        Public API is JinjaRenderer.template(String) -&gt; CompiledTemplate; the lexer/parser/AST
-        stay internal. Depends on no other jinfer module.</description>
+  <name>Jinfer Jinja</name>
+  <description>Standalone Jinja chat-template rendering for Java.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

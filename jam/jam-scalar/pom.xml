@@ -11,6 +11,13 @@
   <artifactId>jam-scalar</artifactId>
   <packaging>jar</packaging>
 
+  <name>JAM Scalar Backend</name>
+  <description>Portable pure-Java scalar backend for JAM.</description>
+
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
+
   <!-- Pure-Java backend: ScalarJAM, autovectorized gemm/gemv kernels that decode every supported dtype
        on the fly. No native code, no Vector API: the portable backend + the correctness reference. -->
   <dependencies>

@@ -12,8 +12,11 @@
   <packaging>jar</packaging>
 
   <name>Jinfer Spring AI Provider</name>
-  <description>Spring AI provider for local LLM inference inside the JVM. Supports chat,
+  <description>Spring AI provider for local AI inference with Jinfer. Supports chat,
     streaming, embeddings, reranking, tools, multimodal input, and speech.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencyManagement>
     <dependencies>

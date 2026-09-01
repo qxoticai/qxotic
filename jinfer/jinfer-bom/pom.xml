@@ -11,10 +11,11 @@
   <artifactId>jinfer-bom</artifactId>
   <packaging>pom</packaging>
 
-  <name>jinfer (BOM)</name>
-  <description>Version catalog for jinfer. Import it once and declare the individual artifacts without
-    versions; the substrate (jota, gguf, toknroll, jam) is pinned to the release jinfer was built
-    against.</description>
+  <name>Jinfer BOM</name>
+  <description>Version catalog for Jinfer and its Jota, GGUF, Tok'n'Roll, and JAM dependencies.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <!--
     a BOM is a dependencyManagement section with no jars behind it. This one manages the
@@ -56,15 +57,9 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-server</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
         <version>${project.version}</version>
       </dependency>
-      <!-- internal: managed for version alignment only, not an API -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
@@ -121,11 +116,6 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-gptoss</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-maple</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -189,17 +179,17 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jam-native</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jam-scalar</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-vector</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jam-native</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>

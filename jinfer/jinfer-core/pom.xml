@@ -11,11 +11,11 @@
   <artifactId>jinfer-core</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-core</name>
-  <description>The central model contracts - Model, ContextModel, LanguageModel, EmbeddingModel,
-    Reranker, SpeechSynthesisModel and their state/lifetime rules - plus memory plumbing over
-    com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt;, the decode execution pool, and telemetry.
-    The compute kernels live in jinfer-kernels.</description>
+  <name>Jinfer Core</name>
+  <description>Core model APIs, execution, memory management, and telemetry for Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

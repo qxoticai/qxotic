@@ -12,11 +12,12 @@
   <packaging>jar</packaging>
 
   <name>Jinfer LangChain4j Provider</name>
-  <description>LangChain4j provider for local LLM inference inside the JVM. Supports chat,
+  <description>LangChain4j provider for local AI inference with Jinfer. Supports chat,
     streaming, embeddings, scoring, tools, multimodal input, and speech.</description>
 
   <properties>
     <langchain4j.version>1.19.0</langchain4j.version>
+    <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
 
   <dependencyManagement>

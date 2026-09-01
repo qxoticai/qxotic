@@ -14,6 +14,9 @@
   <name>Jinfer Spring AI Spring Boot Starter</name>
   <description>Spring Boot starter for Jinfer models and the Spring AI ChatClient stack, including
     tools, chat memory, structured output, and reranking.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencyManagement>
     <dependencies>

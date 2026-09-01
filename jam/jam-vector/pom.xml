@@ -11,6 +11,13 @@
   <artifactId>jam-vector</artifactId>
   <packaging>jar</packaging>
 
+  <name>JAM Vector API Backend</name>
+  <description>JAM backend accelerated by the Java Vector API.</description>
+
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
+
   <!-- Java Vector API backend: VectorJAM + the per-dtype register-tiled SIMD kernels (relocated from
        jinfer, segment-based). Picks the tile shape from the CPU + JIT (-Djam.vector.tile). -->
   <dependencies>

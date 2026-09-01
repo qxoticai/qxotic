@@ -7,8 +7,11 @@
     <version>0.2.0</version>
   </parent>
   <artifactId>jinfer-qwen35</artifactId>
-  <name>jinfer-qwen35</name>
-  <description>MemoryView inference for Qwen3.5.</description>
+  <name>Jinfer Qwen 3.5+ Provider</name>
+  <description>Local chat and vision inference for Alibaba Qwen 3.5 and later models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>

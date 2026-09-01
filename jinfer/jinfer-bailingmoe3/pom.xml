@@ -7,8 +7,11 @@
     <version>0.2.0</version>
   </parent>
   <artifactId>jinfer-bailingmoe3</artifactId>
-  <name>jinfer-bailingmoe3</name>
-  <description>MemoryView inference for BailingMoe3.</description>
+  <name>Jinfer BailingMoe 3 Provider</name>
+  <description>Local chat inference for InclusionAI BailingMoe 3 models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>

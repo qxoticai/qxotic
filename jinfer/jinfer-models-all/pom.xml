@@ -11,9 +11,12 @@
   <artifactId>jinfer-models-all</artifactId>
   <packaging>jar</packaging>
 
-  <name>Jinfer Model Providers</name>
-  <description>Dependency bundle containing every Jinfer model provider. Applications can instead
-    depend on individual providers to reduce their runtime classpath.</description>
+  <name>Jinfer Model Providers Bundle</name>
+  <description>Dependency bundle containing every published Jinfer model provider. Applications can
+    instead depend on individual providers to reduce their runtime classpath.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>
@@ -59,11 +62,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-inflect2</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-maple</artifactId>
       <scope>runtime</scope>
     </dependency>
   </dependencies>

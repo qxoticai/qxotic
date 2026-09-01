@@ -10,8 +10,11 @@
   </parent>
 
   <artifactId>jota-memory</artifactId>
-  <name>jota-memory</name>
-  <description>Memory, MemoryView, allocators, access, and transfer APIs for Jota.</description>
+  <name>Jota Memory</name>
+  <description>Memory allocation, views, access, and transfer APIs for Jota.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>
