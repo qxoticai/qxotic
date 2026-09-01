@@ -29,6 +29,9 @@ import java.util.TreeSet;
  * @param contextCapacity the size of a session's state, and the ceiling on every one-shot; {@code
  *     null} (not given) is the engine's bounded default, min(4096, the model's context length);
  *     {@code 0} uses the model's context length; positive values above it are refused at load
+ * @param threads compute threads ({@code --threads}): the one pool every kernel and jam backend
+ *     runs on, the same knob as {@code -Djinfer.threads}; {@code null} (not given) is one per
+ *     physical core. Server admission is {@code --concurrency}, a different thing.
  */
 public record Options(
         Path modelPath,
@@ -61,7 +64,8 @@ public record Options(
         String apiKey,
         Set<String> allowedOrigins,
         boolean noGrammar,
-        ServerConfig.Limits limits) {
+        ServerConfig.Limits limits,
+        Integer threads) {
 
     /** The default bind port for {@code --server} (overridable with {@code --port}). */
     public static final int DEFAULT_PORT = 54154;
@@ -80,7 +84,8 @@ public record Options(
                         + " the sky blue?\"");
         require(
                 temperature == null || 0 <= temperature,
-                "Invalid argument: --temperature must be non-negative");
+                "Invalid argument: --temp must be non-negative");
+        require(threads == null || threads >= 1, "Invalid argument: --threads must be at least 1");
         require(
                 topp == null || (0 < topp && topp <= 1),
                 "Invalid argument: --top-p must be within (0, 1] (1 disables it)");
@@ -193,7 +198,8 @@ public record Options(
                 null,
                 Set.of("*"),
                 false,
-                ServerConfig.Limits.DEFAULTS);
+                ServerConfig.Limits.DEFAULTS,
+                null);
     }
 
     ServerConfig serverConfig(Sampling sampling) {
@@ -346,8 +352,9 @@ public record Options(
         String apiKey = null;
         Set<String> allowedOrigins = new TreeSet<>();
         boolean noGrammar = false;
+        Integer threads = null; // unset = one per physical core (RuntimeFlags)
         ServerConfig.Limits defaultLimits = ServerConfig.Limits.DEFAULTS;
-        int serverThreads = defaultLimits.threads();
+        int concurrency = defaultLimits.threads();
         int queueCapacity = defaultLimits.queueCapacity();
         long maxBodyBytes = defaultLimits.maxBodyBytes();
         Duration writeTimeout = defaultLimits.writeTimeout();
@@ -391,8 +398,7 @@ public record Options(
                     switch (optionName) {
                         case "--prompt", "-p" -> prompt = nextArg;
                         case "--system-prompt", "-sp" -> systemPrompt = nextArg;
-                        case "--temperature", "--temp" ->
-                                temperature = parseFloat(optionName, nextArg);
+                        case "--temp" -> temperature = parseFloat(optionName, nextArg);
                         case "--top-p" -> topp = parseFloat(optionName, nextArg);
                         case "--top-k" -> topk = parseInt(optionName, nextArg);
                         case "--min-p" -> minp = parseFloat(optionName, nextArg);
@@ -420,7 +426,9 @@ public record Options(
                         case "--port" -> port = parseInt(optionName, nextArg);
                         case "--api-key" -> apiKey = nextArg;
                         case "--cors-origin" -> allowedOrigins.add(nextArg);
-                        case "--threads" -> serverThreads = parseInt(optionName, nextArg);
+                        // -t is llama.cpp's spelling, and jinfer-bench's
+                        case "--threads", "-t" -> threads = parseInt(optionName, nextArg);
+                        case "--concurrency" -> concurrency = parseInt(optionName, nextArg);
                         case "--queue-capacity" -> queueCapacity = parseInt(optionName, nextArg);
                         case "--max-body-mb" ->
                                 maxBodyBytes = (long) parseInt(optionName, nextArg) << 20;
@@ -557,13 +565,14 @@ public record Options(
                 allowedOrigins.isEmpty() ? Set.of("*") : allowedOrigins,
                 noGrammar,
                 new ServerConfig.Limits(
-                        serverThreads,
+                        concurrency,
                         queueCapacity,
                         maxBodyBytes,
                         !noGrammar,
                         writeTimeout,
                         requestTimeout,
-                        defaultLimits.shutdownTimeout()));
+                        defaultLimits.shutdownTimeout()),
+                threads);
     }
 
     /**
@@ -608,7 +617,7 @@ public record Options(
                 "Cache: $JINFER_MODELS, else the platform cache dir. HF_TOKEN for gated repos,"
                         + " JINFER_OFFLINE=1 to never fetch.");
         out.println();
-        out.println("Options:");
+        out.println("Model:");
         out.println(
                 "  --model, -m <path|ref>        required, a .gguf file or a remote model -"
                         + " downloaded on first use");
@@ -618,57 +627,18 @@ public record Options(
                         + " tokenizer= (use another GGUF's tokenizer; id-space checked) are"
                         + " reserved; any other role is a COMPANION capability of the"
                         + " architecture, e.g. gemma4: media (vision/audio encoders)");
-        out.println("  --interactive, --chat, -i     run in chat mode");
-        out.println("  --instruct                    run in instruct (once) mode, default mode");
-        out.println("  --server                      run an OpenAI-compatible HTTP server");
-        out.println("  --host <host>                 bind host, default 127.0.0.1");
-        out.println("  --port <int>                  bind port, default " + DEFAULT_PORT);
-        out.println(
-                "  --api-key <token>             require a bearer token; mandatory off loopback");
-        out.println(
-                "  --cors-origin <origin>        allowed browser origin; repeatable, default *");
-        out.println(
-                "  --threads <int>               concurrent requests admitted (2x this many"
-                        + " in flight, the rest get 503), default 16");
-        out.println("  --queue-capacity <int>        waiting generations, default 4");
-        out.println("  --max-body-mb <int>           request body limit, default 32");
-        out.println("  --write-timeout <seconds>     stalled SSE write limit, default 30");
-        out.println("  --request-timeout <seconds>   generation deadline, default 300; 0 disables");
-        out.println("  --no-grammar                  reject grammar-constrained server requests");
+        out.println();
+        out.println("Mode (one of; default --instruct):");
+        out.println("  --instruct                    answer --prompt once and exit");
+        out.println("  --interactive, --chat, -i     chat in the terminal");
+        out.println("  --server                      serve an OpenAI-compatible HTTP API");
+        out.println();
+        out.println("Prompt:");
         out.println("  --prompt, -p <string>         input prompt");
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(
-                "  --temperature, --temp <float> temperature in [0,inf]; default: the model's"
-                        + " recommended value, else 0.8");
-        out.println(
-                "  --top-p <float>               top-p (nucleus) mass in (0,1]; default: the"
-                        + " model's recommended value, else 0.95");
-        out.println(
-                "  --top-k <int>                 top-k cutoff, 0 disables; default: the model's"
-                        + " recommended value, else 40");
-        out.println(
-                "  --min-p <float>               min-p cutoff relative to the top token, in"
-                        + " [0,1]; default: the model's recommended value, else 0.05");
-        out.println(
-                "  --seed, -s <long>             pins the sampling seed; default: a fresh random"
-                        + " seed per request");
-        out.println(
-                "  --context-capacity, -c <int>  allocated context positions (default: "
-                        + PromptCache.Options.DEFAULT_CONTEXT_CAPACITY
-                        + ", or the model's context length when smaller); 0 uses the model"
-                        + " maximum; refused above the model's context length");
-        out.println(
-                "  --max-output-tokens, -n <int> how much it may produce in one turn; -1 (the"
-                        + " default) = whatever the remaining context allows");
-        out.println(
-                "  --stream <boolean>            print tokens during generation; accepts"
-                        + " true|false|on|off, default true");
-        out.println(
-                "  --echo <boolean>              print ALL tokens to stderr; accepts"
-                        + " true|false|on|off, default false");
-        out.println(
-                "  --color <on|off|auto>         colorize thinking output in terminal (default:"
-                        + " auto)");
+                "  --raw-prompt                  bypass chat template and tokenize --prompt"
+                        + " directly (no system prompt, thinking or budget)");
         out.println(
                 "  --think <off|on|inline>       on: reason, thoughts on stderr (default); off: do"
                         + " not reason, the model answers directly; inline: thoughts on stdout");
@@ -678,20 +648,67 @@ public record Options(
         out.println(
                 "  --reasoning-budget-message <s>  forced as the model's own words when the budget"
                         + " runs out, e.g. \"... Let me wrap up.\" (default: a paragraph break)");
+        out.println();
+        out.println("Sampling (default: the model's recommended values):");
+        out.println("  --temp <float>                temperature in [0,inf]; else 0.8");
+        out.println("  --top-p <float>               top-p (nucleus) mass in (0,1]; else 0.95");
+        out.println("  --top-k <int>                 top-k cutoff, 0 disables; else 40");
         out.println(
-                "  --raw-prompt                  bypass chat template and tokenize --prompt"
-                        + " directly (no system prompt, thinking or budget)"
-                        + " directly");
+                "  --min-p <float>               min-p cutoff relative to the top token, in"
+                        + " [0,1]; else 0.05");
+        out.println(
+                "  --seed, -s <long>             pins the sampling seed; default: a fresh random"
+                        + " seed per request");
+        out.println();
+        out.println("Limits:");
+        out.println(
+                "  --context-capacity, -c <int>  allocated context positions (default: "
+                        + PromptCache.Options.DEFAULT_CONTEXT_CAPACITY
+                        + ", or the model's context length when smaller); 0 uses the model"
+                        + " maximum; refused above the model's context length");
+        out.println(
+                "  --max-output-tokens, -n <int> how much it may produce in one turn; -1 (the"
+                        + " default) = whatever the remaining context allows");
+        out.println(
+                "  --threads, -t <int>           compute threads, the one pool every kernel runs"
+                        + " on (default: one per physical core; same as -Djinfer.threads)");
+        out.println(
+                "  --speculation-depth <int>     drafts per verify block for a model with a"
+                        + " draft head (gemma4's MTP sidecar, attached with --with"
+                        + " speculation=<file>); 0 disables, default 4");
         out.println(
                 "  --cache <file>                persistent prompt cache (instruct/server) -"
                         + " serves matching prefixes, appends new prompts");
         out.println(
                 "  --cache-ro <file>             like --cache but read-only - serves matching"
                         + " prefixes, never writes");
+        out.println();
+        out.println("Output:");
         out.println(
-                "  --speculation-depth <int>     drafts per verify block for a model with a"
-                        + " draft head (gemma4's MTP sidecar, attached with --with"
-                        + " speculation=<file>); 0 disables, default 4");
+                "  --stream <boolean>            print tokens during generation; accepts"
+                        + " true|false|on|off, default true");
+        out.println(
+                "  --echo <boolean>              print ALL tokens to stderr; accepts"
+                        + " true|false|on|off, default false");
+        out.println(
+                "  --color <on|off|auto>         colorize thinking output in terminal (default:"
+                        + " auto)");
+        out.println();
+        out.println("Server (with --server):");
+        out.println("  --host <host>                 bind host, default 127.0.0.1");
+        out.println("  --port <int>                  bind port, default " + DEFAULT_PORT);
+        out.println(
+                "  --api-key <token>             require a bearer token; mandatory off loopback");
+        out.println(
+                "  --cors-origin <origin>        allowed browser origin; repeatable, default *");
+        out.println(
+                "  --concurrency <int>           requests admitted at once (2x this many in"
+                        + " flight, the rest get 503), default 16");
+        out.println("  --queue-capacity <int>        waiting generations, default 4");
+        out.println("  --max-body-mb <int>           request body limit, default 32");
+        out.println("  --write-timeout <seconds>     stalled SSE write limit, default 30");
+        out.println("  --request-timeout <seconds>   generation deadline, default 300; 0 disables");
+        out.println("  --no-grammar                  reject grammar-constrained server requests");
         out.println();
         out.println("Interactive commands:");
         out.println("  /quit, /exit                  exit the chat");
