@@ -10,7 +10,7 @@
   </parent>
 
   <artifactId>jota-backend-opencl</artifactId>
-  <name>jota-backend-opencl</name>
+  <name>Jota OpenCL Backend</name>
   <description>Cross-platform GPU/CPU backend for Jota tensor operations over OpenCL.</description>
 
   <properties>

@@ -11,11 +11,11 @@
   <artifactId>jinfer-bench</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-bench</name>
-  <description>Benchmark harness: llama-bench-parity pp/tg through the generic model
-    loader (any architecture on the classpath), plus engine-level capability metrics - TTFT,
-    prompt-cache hit latency, MTP acceptance, projected-media cold/warm, state allocation, peak
-    RSS, convolution tuning and decode-pool dispatch cost.</description>
+  <name>Jinfer Benchmark Harness</name>
+  <description>Benchmark harness for Jinfer: llama-bench-parity
+    prompt-processing and token-generation numbers for any model on the classpath, plus engine
+    metrics - time to first token, prompt-cache hit latency, speculative acceptance, projected
+    media, state allocation, and peak resident memory.</description>
 
   <properties>
     <jinfer.image.name>jinfer-bench</jinfer.image.name>

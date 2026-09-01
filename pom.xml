@@ -8,7 +8,8 @@
   <packaging>pom</packaging>
 
   <name>Quixotic AI Parent</name>
-  <description>Java toolkit for local LLM inference on the JVM</description>
+  <description>Java toolkit for local LLM inference on the JVM: models, tokenizers, tensors, and
+    quantized kernels. Aggregator/parent POM; depend on the individual artifacts.</description>
   <url>https://qxotic.ai</url>
   <inceptionYear>2026</inceptionYear>
 

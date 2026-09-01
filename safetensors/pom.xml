@@ -10,7 +10,8 @@
 
   <artifactId>safetensors</artifactId>
   <name>Quixotic Safetensors</name>
-  <description>HuggingFace Safetensors format support</description>
+  <description>Java library for reading and writing Hugging Face Safetensors tensor
+    files.</description>
 
   <dependencies>
     <dependency>

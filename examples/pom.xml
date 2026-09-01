@@ -10,7 +10,8 @@
 
   <artifactId>examples</artifactId>
   <name>Quixotic Examples</name>
-  <description>Example applications demonstrating Quixotic AI usage</description>
+  <description>Example applications demonstrating the Quixotic AI stack. Not published to
+    Maven Central.</description>
 
   <properties>
     <!-- Examples require Java 25 for Jota integration -->

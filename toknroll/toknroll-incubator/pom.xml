@@ -11,7 +11,8 @@
 
   <artifactId>toknroll-incubator</artifactId>
   <name>Tok'n'Roll Incubator</name>
-  <description>Experimental tokenizer loaders and splitter implementations</description>
+  <description>Experimental Tok'n'Roll tokenizer loaders and
+    splitter implementations. Not published to Maven Central.</description>
 
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>

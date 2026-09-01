@@ -12,8 +12,10 @@
   <artifactId>jinfer-parent</artifactId>
   <packaging>pom</packaging>
 
-  <name>jinfer (parent)</name>
-  <description>Java LLM inference engine (multi-module)</description>
+  <name>Jinfer Parent</name>
+  <description>Local LLM inference on the JVM: chat, vision, audio, embedding, reranking, and
+    speech over GGUF checkpoints. Aggregator/parent POM; depend on the individual jinfer-*
+    artifacts.</description>
 
   <modules>
     <module>jinfer-bom</module>

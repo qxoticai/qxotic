@@ -12,8 +12,9 @@
   <artifactId>jam</artifactId>
   <packaging>pom</packaging>
 
-  <name>jam (parent)</name>
-  <description>Fast quantized matrix multiplication for Java and native applications.</description>
+  <name>JAM Parent</name>
+  <description>Fast quantized matrix multiplication for Java and native applications.
+    Aggregator/parent POM; depend on the individual jam-* artifacts.</description>
 
   <modules>
     <module>jam-core</module>

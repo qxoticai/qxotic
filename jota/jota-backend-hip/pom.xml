@@ -10,7 +10,7 @@
   </parent>
 
   <artifactId>jota-backend-hip</artifactId>
-  <name>jota-backend-hip</name>
+  <name>Jota HIP/ROCm Backend</name>
   <description>AMD GPU backend for Jota tensor operations over HIP/ROCm.</description>
 
   <properties>

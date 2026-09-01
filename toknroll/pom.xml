@@ -11,8 +11,9 @@
 
   <artifactId>toknroll-aggregator</artifactId>
   <packaging>pom</packaging>
-  <name>Tok'n'Roll Aggregator</name>
-  <description>Aggregator parent POM for Tok'n'Roll tokenizer modules</description>
+  <name>Tok'n'Roll Parent</name>
+  <description>Customizable tiktoken-compatible and SentencePiece BPE tokenization for
+    language models. Aggregator/parent POM; depend on the individual toknroll-* artifacts.</description>
 
   <modules>
     <module>toknroll-testkit</module>
