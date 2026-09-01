@@ -11,11 +11,11 @@
   <artifactId>jinfer-cache</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-cache</name>
-  <description>The model-agnostic prompt cache over the
-    model boundary - retained sessions, content-keyed blocks with a RAM budget, and the JKVF catalog
-    artifact that survives restarts. Models contribute only a CheckpointCodec; seeds are
-    ContentKeys.</description>
+  <name>Jinfer Cache</name>
+  <description>Persistent, memory-bounded prompt caching for Jinfer models.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

@@ -11,8 +11,11 @@
   <artifactId>jinfer-lfm2</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-lfm2</name>
-  <description>MemoryView text, vision, embedding, and reranking inference for LFM2.5.</description>
+  <name>Jinfer LFM 2.5 Provider</name>
+  <description>Local chat, vision, embedding, and reranking inference for Liquid AI LFM 2.5 models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

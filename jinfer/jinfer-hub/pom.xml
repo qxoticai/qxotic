@@ -11,8 +11,11 @@
   <artifactId>jinfer-hub</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-hub</name>
-  <description>Model references: resolve and download GGUFs from HuggingFace and ModelScope</description>
+  <name>Jinfer Hub</name>
+  <description>Resolves and downloads GGUF model files from Hugging Face and ModelScope.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <!-- The repository listing APIs. No inference dependency on purpose: this module is a

@@ -11,7 +11,10 @@
 
   <artifactId>toknroll-core</artifactId>
   <name>Tok'n'Roll Core</name>
-  <description>Tiktoken-compatible, SentencePiece BPE, customizable tokenization for LLMs</description>
+  <description>Customizable tiktoken-compatible and SentencePiece BPE tokenization for language models.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

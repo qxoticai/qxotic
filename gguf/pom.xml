@@ -13,6 +13,9 @@
   <name>Quixotic GGUF</name>
   <description>Java library for reading and writing GGUF metadata and tensor descriptors for llama.cpp model files.</description>
   <url>https://github.com/qxoticai/qxotic</url>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

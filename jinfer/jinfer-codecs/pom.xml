@@ -11,9 +11,11 @@
   <artifactId>jinfer-codecs</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-codecs</name>
-  <description>Internal to jinfer (no API promise). Media decoding into jinfer's canonical inputs: image, audio and video codecs with
-    JVM (ImageIO, JavaSound) and native-image (ffmpeg) backend selection.</description>
+  <name>Jinfer Codecs</name>
+  <description>Media decoding for Jinfer image, audio, and video inputs on the JVM and in native images.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

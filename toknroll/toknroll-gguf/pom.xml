@@ -10,8 +10,11 @@
   </parent>
 
   <artifactId>toknroll-gguf</artifactId>
-  <name>Tok'n'Roll GGUF Utilities</name>
-  <description>GGUF tokenizer loader for Tok'n'Roll</description>
+  <name>Tok'n'Roll GGUF Loader</name>
+  <description>Loads Tok'n'Roll tokenizers from GGUF model files.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

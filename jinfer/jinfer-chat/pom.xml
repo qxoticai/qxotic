@@ -10,8 +10,11 @@
 
   <artifactId>jinfer-chat</artifactId>
   <packaging>jar</packaging>
-  <name>jinfer-chat</name>
-  <description>Chat messages, prompt templates, and structured reply parsing.</description>
+  <name>Jinfer Chat</name>
+  <description>Chat messages, prompt templates, and structured response parsing for Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

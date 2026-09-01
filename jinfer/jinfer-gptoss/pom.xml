@@ -11,8 +11,11 @@
   <artifactId>jinfer-gptoss</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-gptoss</name>
-  <description>MemoryView inference for GPT-OSS.</description>
+  <name>Jinfer gpt-oss Provider</name>
+  <description>Local chat inference for OpenAI gpt-oss models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <!-- MemoryView's public hierarchy includes jota-core's View; javac needs the supertype

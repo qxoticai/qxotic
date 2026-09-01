@@ -11,8 +11,11 @@
   <artifactId>jinfer-qwen3</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-qwen3</name>
-  <description>MemoryView text, embedding, and reranking inference for Qwen3.</description>
+  <name>Jinfer Qwen 3 Provider</name>
+  <description>Local embedding and reranking inference for Alibaba Qwen 3 models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

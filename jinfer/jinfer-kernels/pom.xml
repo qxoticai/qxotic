@@ -11,10 +11,11 @@
   <artifactId>jinfer-kernels</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-kernels</name>
-  <description>Internal to jinfer (no API promise). Compute kernels over com.qxotic.jota.memory.MemoryView&lt;MemorySegment&gt; (matmul, norms, rope,
-    convolutions, flash attention, activations, MoE) plus GGUF loading and FP16 KvTransfer. Model
-    implementation modules (jinfer-lfm2, ...) depend on this module for the kernels.</description>
+  <name>Jinfer Kernels</name>
+  <description>Compute kernels and GGUF tensor loading for Jinfer model providers.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

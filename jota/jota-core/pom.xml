@@ -10,8 +10,11 @@
   </parent>
 
   <artifactId>jota-core</artifactId>
-  <name>jota-core</name>
+  <name>Jota Core</name>
   <description>Foundational Jota data types: devices, shapes, strides, and layouts.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

@@ -10,6 +10,11 @@
 
   <artifactId>jam-core</artifactId>
   <packaging>jar</packaging>
+  <name>JAM Core</name>
+  <description>Core API for quantized matrix multiplication with JAM.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <!-- The public JAM contract and the shared internal dtype geometry. -->
   <dependencies>

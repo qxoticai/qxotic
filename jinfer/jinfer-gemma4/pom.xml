@@ -11,8 +11,11 @@
   <artifactId>jinfer-gemma4</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-gemma4</name>
-  <description>MemoryView text and vision inference for Gemma4.</description>
+  <name>Jinfer Gemma 4 Provider</name>
+  <description>Local chat, vision, and audio inference for Google Gemma 4 models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

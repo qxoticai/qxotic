@@ -14,6 +14,9 @@
   <name>Jinfer Spring AI Auto-configuration</name>
   <description>Spring Boot auto-configuration for Jinfer chat, embedding, reranking, and speech
     models.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencyManagement>
     <dependencies>

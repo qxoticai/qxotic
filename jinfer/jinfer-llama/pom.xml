@@ -11,8 +11,11 @@
   <artifactId>jinfer-llama</artifactId>
   <packaging>jar</packaging>
 
-  <name>jinfer-llama</name>
-  <description>MemoryView inference for Llama, Mistral, MiniCPM, SmolLM3, and Granite models.</description>
+  <name>Jinfer Llama Provider</name>
+  <description>Local chat inference for Meta Llama, Mistral AI Mistral, OpenBMB MiniCPM, Hugging Face SmolLM, and IBM Granite models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

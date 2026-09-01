@@ -69,6 +69,8 @@
 
   <properties>
     <qxotic.version>${project.version}</qxotic.version>
+    <!-- Publication is opt-in. Each supported or required transitive artifact overrides this. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
 
     <!-- Build properties -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
