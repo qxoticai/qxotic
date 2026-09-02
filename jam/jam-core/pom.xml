@@ -38,6 +38,7 @@
         <artifactId>maven-jar-plugin</artifactId>
         <executions>
           <execution>
+            <id>test-jar</id>
             <goals>
               <goal>test-jar</goal>
             </goals>
@@ -47,4 +48,26 @@
     </plugins>
   </build>
 
+  <profiles>
+    <!-- The test-jar exists for the reactor only (the backends' tests use TestPool); an attached
+         artifact would be published with the module, so the release build does not attach it.
+         Sibling modules still resolve it: Maven's reactor reader falls back to target/test-classes. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>test-jar</id>
+                <phase>none</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
