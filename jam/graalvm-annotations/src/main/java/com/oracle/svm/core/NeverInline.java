@@ -1,8 +1,7 @@
 /*
- * Compile-only stub of GraalVM's svm-core @NeverInline (GPLv2 with Classpath Exception), verbatim
- * shape: @Retention(RUNTIME) @Target({METHOD, CONSTRUCTOR}) with a single String value(). Same
- * reasoning as the AlwaysInline stub beside it: native-image honors the real class by name, HotSpot
- * never sees it.
+ * A compile-only declaration matching the NAME of GraalVM's svm-core @NeverInline: native-image
+ * binds the annotation by its fully qualified name at image build time, and HotSpot never sees
+ * this type. Written here; no GraalVM source is included, and this module is never published.
  */
 package com.oracle.svm.core;
 

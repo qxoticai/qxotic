@@ -1,15 +1,7 @@
 /*
- * Compile-only stub of GraalVM's svm-shared @AlwaysInline (GPLv2 with Classpath Exception), verbatim
- * shape: @Retention(RUNTIME) @Target({METHOD, CONSTRUCTOR}) with a single String value().
- *
- * WHY A STUB MODULE: native-image's hosted inlining matches this annotation BY NAME from the app
- * classpath bytecode. GraalVM's real svm-shared artifact is not published to Maven Central (only dev
- * builds ship it), so depending on it broke the build for anyone without a local snapshot. This
- * module ships the one annotation class so downstream code compiles anywhere; consumers depend on it
- * with `provided` scope, so it is NOT bundled into their jars. On a GraalVM 25.1+ native-image build
- * the real com.oracle.svm.shared.AlwaysInline is supplied by the image builder and honored; on
- * HotSpot the annotation is inert (its class is simply absent from the runtime classpath, and nothing
- * reflects on it).
+ * A compile-only declaration matching the NAME of GraalVM's svm-shared @AlwaysInline: native-image
+ * binds the annotation by its fully qualified name at image build time, and HotSpot never sees
+ * this type. Written here; no GraalVM source is included, and this module is never published.
  */
 package com.oracle.svm.shared;
 

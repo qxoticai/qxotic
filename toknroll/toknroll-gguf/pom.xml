@@ -14,6 +14,7 @@
   <description>Loads Tok'n'Roll tokenizers from GGUF model files.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
   </properties>
 
   <dependencies>

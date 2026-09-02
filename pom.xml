@@ -76,6 +76,8 @@
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
          (and only) gate, so one switch decides what reaches Maven Central. -->
     <maven.deploy.skip>true</maven.deploy.skip>
+    <!-- Which NOTICE a jar embeds; a component with third-party derivations points this at itself. -->
+    <qxotic.notice.dir>${maven.multiModuleProjectDirectory}</qxotic.notice.dir>
 
     <!-- Build properties -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -303,9 +305,11 @@
   </dependencyManagement>
 
   <build>
-    <!-- Every jar carries the canonical legal pair from the repo root (rooted at .mvn/). An
-         explicit <resources> list replaces the implicit src/main/resources, so it is declared
-         first; a module declaring its own <resources> (jam-native) must re-include this block. -->
+    <!-- Every jar carries the LICENSE from the repo root (rooted at .mvn/) and the NOTICE of its
+         component: the root one by default, its own when a module sets qxotic.notice.dir to
+         ${project.basedir} because it derives from third-party work. An explicit <resources>
+         list replaces the implicit src/main/resources, so it is declared first; a module
+         declaring its own <resources> (jam-native) must re-include these blocks. -->
     <resources>
       <resource>
         <directory>${project.basedir}/src/main/resources</directory>
@@ -315,6 +319,12 @@
         <directory>${maven.multiModuleProjectDirectory}</directory>
         <includes>
           <include>LICENSE</include>
+        </includes>
+      </resource>
+      <resource>
+        <targetPath>META-INF</targetPath>
+        <directory>${qxotic.notice.dir}</directory>
+        <includes>
           <include>NOTICE</include>
         </includes>
       </resource>

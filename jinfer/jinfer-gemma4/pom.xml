@@ -15,6 +15,7 @@
   <description>Local chat, vision, and audio inference for Google Gemma 4 models with Jinfer.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
   </properties>
 
   <dependencies>
