@@ -48,7 +48,7 @@ public interface JAM {
      * The host's parallel loop, offered to every backend. The backends here own no threads: a
      * kernel asks for {@code count} tasks, the host runs them {@link #width()} at a time on
      * whatever threads it has, and the call returns when all are done; the {@code slot} handed to a
-     * {@link Body} indexes per-participant scratch. A kernel calls this from the thread that called
+     * {@link Job} indexes per-participant scratch. A kernel calls this from the thread that called
      * {@link JAM#mm}, never from inside one of its own tasks, and a backend with no CPU work (a GPU
      * matmul) simply never calls it. A backend may run its own threads instead, under one rule:
      * while {@code mm} runs it uses at most {@code width()} cores and the host's workers are

@@ -48,10 +48,15 @@ abstract class AbstractCoarseCacheIT {
         try {
             base.chat(UserMessage.from("warmup")); // JIT-warm the kernels before the baseline
             String question = "What is the capital of France?";
-            ChatResponse plain = base.chat(PREFIX.get(0), UserMessage.from(question));
-
+            // the view request runs BEFORE the plain baseline: an earlier chat with the same
+            // prefix leaves a retained session whose tail snapshot (the coarse rewind) serves the
+            // view request without ever consulting the block tree - cheaper and correct, but this
+            // test exists to prove the DEFINED block serves a fresh conversation, so the tree must
+            // be the only cache that can answer
             JinferChatModel view = base.withCachedPrompt(PREFIX, List.of());
             ChatResponse cached = view.chat(UserMessage.from(question));
+
+            ChatResponse plain = base.chat(PREFIX.get(0), UserMessage.from(question));
 
             // the restored recurrent/KV state answers the question correctly. Exact-text equality
             // with the plain reply is NOT asserted: restore==live is byte-exact (gated strictly by
