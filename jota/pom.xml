@@ -22,7 +22,6 @@
     <module>jota-tensor</module>
     <module>jota-backend-panama</module>
     <module>jota-backend-c</module>
-    <module>jota-graal</module>
     <module>jota-backend-hip</module>
     <module>jota-backend-cuda</module>
     <module>jota-backend-mojo</module>

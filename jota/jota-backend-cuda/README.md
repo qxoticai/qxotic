@@ -31,15 +31,7 @@ CUDA backend is unsupported on macOS.
 </dependency>
 ```
 
-For GraalVM Native Image applications:
-
-```xml
-<dependency>
-  <groupId>com.qxotic</groupId>
-  <artifactId>jota-graal</artifactId>
-  <version>${qxotic.version}</version>
-</dependency>
-```
+GraalVM Native Image metadata is included in `jota-tensor`.
 
 ## Runtime dependencies
 

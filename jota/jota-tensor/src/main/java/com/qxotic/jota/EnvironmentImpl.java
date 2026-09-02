@@ -292,7 +292,6 @@ record EnvironmentImpl(
         message.append('\n').append("Suggested fixes:");
         message.append('\n').append("- Include a Panama backend: com.qxotic:jota-backend-panama");
         message.append('\n').append("- Include C backend: com.qxotic:jota-backend-c");
-        message.append('\n').append("- Graal Native Image: add dependency com.qxotic:jota-graal");
         message.append('\n')
                 .append(
                         "- Explicit backend override: -Djota.native.backend=<backend-id>"
