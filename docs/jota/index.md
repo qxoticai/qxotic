@@ -72,13 +72,6 @@ Put the backend JAR on the classpath; it becomes available on supported platform
     <version>0.2.0</version>
 </dependency>
 
-<!-- GraalVM Native Image convenience -->
-<dependency>
-    <groupId>com.qxotic</groupId>
-    <artifactId>jota-graal</artifactId>
-    <version>0.2.0</version>
-</dependency>
-
 <!-- AMD GPU -->
 <dependency>
     <groupId>com.qxotic</groupId>
@@ -110,7 +103,7 @@ Put the backend JAR on the classpath; it becomes available on supported platform
 
 ## GraalVM Native Image
 
-`jota-graal` gives out-of-the-box Native Image support across C/HIP/CUDA/Metal/OpenCL/Mojo. Panama is excluded because it depends on runtime class loading and JIT.
+`jota-tensor` includes Native Image support across C/HIP/CUDA/Metal/OpenCL/Mojo. Panama is excluded because it depends on runtime class loading and JIT.
 
 In Native Image, `Device.NATIVE` resolves to an available `MemorySegment`-capable backend (typically `Device.C`).
 

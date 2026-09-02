@@ -82,11 +82,6 @@
       <artifactId>jota-backend-mojo</artifactId>
     </dependency>
 
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jota-graal</artifactId>
-    </dependency>
-
   </dependencies>
 
   <build>

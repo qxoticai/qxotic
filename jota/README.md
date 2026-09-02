@@ -28,7 +28,7 @@ traces a computation graph once and emits
   they do.
 - **Simple IRs.** MLIR-like, with no data-dependent control flow. **TIR** (tensor IR) for
   high-level ops, **LIR** (loop IR) for optimization, scheduling and kernel generation.
-- **Native-image first.** `jota-graal` makes every backend except Panama compile to native.
+- **Native-image first.** `jota-tensor` includes GraalVM metadata for every backend except Panama.
 - **Escape hatches included.** The low-level API for memory, allocators and nested layouts
   (CuTe-style) is available when needed, and custom kernels plug in for the hot paths.
 
@@ -63,8 +63,8 @@ Pick the smallest API that fits. Each layer includes the previous ones transitiv
 | Mojo | `jota-backend-mojo` | experimental |
 
 Put the backend jar on the classpath and it becomes available on supported platforms. Native
-libraries are bundled and auto-extracted. Use `-Djava.library.path` only for custom overrides. For
-GraalVM Native Image, add `jota-graal`.
+libraries are bundled and auto-extracted. Use `-Djava.library.path` only for custom overrides.
+GraalVM Native Image support is included in `jota-tensor`.
 
 ## Performance
 
@@ -78,8 +78,8 @@ performance for everything else.
 
 ## GraalVM Native Image
 
-`jota-graal` gives out-of-the-box Native Image support across the C, HIP, CUDA, Metal, OpenCL and
-Mojo backends. Panama is intentionally excluded, since it relies on runtime class loading and JIT.
+`jota-tensor` includes Native Image support across the C, HIP, CUDA, Metal, OpenCL and Mojo
+backends. Panama is intentionally excluded, since it relies on runtime class loading and JIT.
 
 At native runtime, `Device.NATIVE` resolves to an available `MemorySegment`-capable backend,
 typically `Device.C`. Control registration when several backend jars are present:

@@ -251,11 +251,6 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jota-graal</artifactId>
-        <version>${qxotic.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
         <version>${qxotic.version}</version>
       </dependency>

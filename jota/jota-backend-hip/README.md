@@ -29,15 +29,7 @@ HIP/ROCm backend for Jota on AMD GPUs.
 </dependency>
 ```
 
-For GraalVM Native Image applications:
-
-```xml
-<dependency>
-  <groupId>com.qxotic</groupId>
-  <artifactId>jota-graal</artifactId>
-  <version>${qxotic.version}</version>
-</dependency>
-```
+GraalVM Native Image metadata is included in `jota-tensor`.
 
 ## Runtime dependencies
 
