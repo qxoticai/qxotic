@@ -5,6 +5,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * A kind of execution device, identified by a string such as {@code java}, {@code panama}, or
+ * {@code cuda}. Use {@link #fromId(String)} for normalized, interned instances.
+ */
 public record DeviceType(String id) {
     private static final Map<String, DeviceType> KNOWN = new ConcurrentHashMap<>();
 
@@ -24,10 +28,12 @@ public record DeviceType(String id) {
         return KNOWN.computeIfAbsent(normalized, DeviceType::new);
     }
 
+    /** The interned instance for {@code id}, normalized to trimmed lowercase. */
     public static DeviceType fromId(String id) {
         return of(id);
     }
 
+    /** The {@link Device} of this type at the given index. */
     public Device deviceIndex(long index) {
         return new Device(this, index);
     }

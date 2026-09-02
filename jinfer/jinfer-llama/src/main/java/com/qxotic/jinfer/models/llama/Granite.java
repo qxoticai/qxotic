@@ -34,6 +34,10 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * IBM Granite dense text models (GGUF architecture {@code granite}), with the same loading and
+ * inference contract as {@link Llama}.
+ */
 public final class Granite
         implements LanguageModel<Granite.Configuration, Granite.Weights, Granite.State> {
 

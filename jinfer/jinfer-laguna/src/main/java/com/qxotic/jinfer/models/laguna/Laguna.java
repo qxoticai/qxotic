@@ -35,7 +35,11 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 
-/** Poolside Laguna XS 2.1 decoder. */
+/**
+ * Poolside Laguna XS 2.1 decoder: a hybrid dense/MoE model with alternating sliding-window and
+ * full-attention layers, loaded from GGUF via {@link #loadModel(Path, Arena)}. Supports block
+ * caching through a {@link CheckpointCodec} over its FP16 KV caches.
+ */
 public final class Laguna
         implements LanguageModel<Laguna.Configuration, Laguna.Weights, Laguna.State> {
     private static final int SIGMOID_GATING = 2;
@@ -510,6 +514,12 @@ public final class Laguna
         }
     }
 
+    /**
+     * Loads a Laguna GGUF file, memory-mapping its weights into {@code arena} (the arena owns the
+     * weights' lifetime). The tokenizer is built from the GGUF metadata.
+     *
+     * @throws IllegalArgumentException if the file is not a {@code laguna} architecture model
+     */
     public static Laguna loadModel(Path path, Arena arena) throws IOException {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(channel, path.toString());
@@ -517,10 +527,15 @@ public final class Laguna
         }
     }
 
+    /** As {@link #loadModel(Path, Arena)} over an already-parsed GGUF header. */
     public static Laguna loadModel(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
         return loadModel(channel, gguf, arena, null);
     }
 
+    /**
+     * As {@link #loadModel(Path, Arena)} with a caller-supplied {@code tokenizer}; {@code null}
+     * builds one from the GGUF metadata.
+     */
     public static Laguna loadModel(FileChannel channel, GGUF gguf, Arena arena, Tokenizer tokenizer)
             throws IOException {
         String arch = gguf.getString("general.architecture");

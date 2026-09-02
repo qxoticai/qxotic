@@ -1,9 +1,11 @@
 package com.qxotic.jota;
 
+/** Conversions between row-major linear indexes, coordinates, and byte offsets. */
 public final class Indexing {
 
     private Indexing() {}
 
+    /** The coordinate of {@code linearIndex} in {@code shape}, in row-major order. */
     public static long[] linearToCoord(Shape shape, long linearIndex) {
         long[] dims = shape.toArray();
         int rank = dims.length;
@@ -28,6 +30,7 @@ public final class Indexing {
         return coord;
     }
 
+    /** The inverse of {@link #linearToCoord}: the row-major linear index of {@code coord}. */
     public static long coordToLinear(Shape shape, long... coord) {
         long[] dims = shape.toArray();
         if (coord.length != dims.length) {
@@ -54,6 +57,7 @@ public final class Indexing {
         return linear;
     }
 
+    /** The offset {@code Σ coord[i] × stride[i]}, in stride units. */
     public static long coordToOffset(Stride stride, long... coord) {
         int flatRank = stride.flatRank();
         if (coord.length != flatRank) {
@@ -70,6 +74,7 @@ public final class Indexing {
         return offset;
     }
 
+    /** The absolute byte offset of {@code coord} in {@code view} (includes its base offset). */
     public static long coordToOffset(View view, long... coord) {
         Stride stride = view.byteStride();
         int flatRank = stride.flatRank();
@@ -87,6 +92,7 @@ public final class Indexing {
         return offset;
     }
 
+    /** The byte offset of {@code linearIndex} (row-major) under the given shape and stride. */
     public static long linearToOffset(
             Shape shape, Stride stride, DataType dataType, long linearIndex) {
         long[] dims = shape.toArray();
@@ -121,10 +127,12 @@ public final class Indexing {
         return Math.multiplyExact(elementOffset, dataType.byteSize());
     }
 
+    /** The byte offset of {@code linearIndex} (row-major) under {@code layout}. */
     public static long linearToOffset(Layout layout, DataType dataType, long linearIndex) {
         return linearToOffset(layout.shape(), layout.stride(), dataType, linearIndex);
     }
 
+    /** The absolute byte offset of {@code linearIndex} (row-major) in {@code view}. */
     public static long linearToOffset(View view, long linearIndex) {
         long relativeOffset =
                 linearToOffset(view.shape(), view.stride(), view.dataType(), linearIndex);

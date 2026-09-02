@@ -18,7 +18,8 @@ import java.util.function.ToIntFunction;
  * countTokens} - the real vocabulary, not a heuristic); media counts come from the model's
  * preprocessing PLAN ({@code mediaPositions} - image tiers, audio frames; never an encoder run),
  * exact for plan-determined encodings. Message counts sum a message's parts through the same
- * converter the chat path uses. Deliberately scaffold-exclusive: chat-template markers add a few
+ * converter the chat path uses. Deliberately scaffold-exclusive: chat-template markers are not
+ * included.
  *
  * <p>Message-level counting DECODES media (base64 / local file) to size its position plan - cheap
  * for text, a real read for large media histories. Deliberate: a header-only probe would have to

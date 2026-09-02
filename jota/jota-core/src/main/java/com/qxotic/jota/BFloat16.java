@@ -1,11 +1,16 @@
 package com.qxotic.jota;
 
+/**
+ * Conversions to and from bfloat16 (brain floating point: 1 sign bit, 8 exponent bits, 7 mantissa
+ * bits), held as raw bits in a {@code short}. NaNs remain NaNs across conversions.
+ */
 public final class BFloat16 {
 
     private static final int ROUNDING_BIAS = 0x7fff;
 
     private BFloat16() {}
 
+    /** The bfloat16 bits nearest to {@code value} (round to nearest, ties to even). */
     public static short fromFloat(float value) {
         int bits = Float.floatToRawIntBits(value);
         int exponent = bits & 0x7f800000;
@@ -20,6 +25,7 @@ public final class BFloat16 {
         return (short) (rounded >>> 16);
     }
 
+    /** Converts IEEE 754 binary16 (half) bits to bfloat16 bits. */
     public static short fromFloat16(short float16Bits) {
         int bits = float16Bits & 0xffff;
         int sign = bits & 0x8000;
@@ -39,11 +45,13 @@ public final class BFloat16 {
         return fromFloat(Float.float16ToFloat(float16Bits));
     }
 
+    /** The exact {@code float} value of the bfloat16 bits (widening). */
     public static float toFloat(short bfloat16) {
         int bits = (bfloat16 & 0xffff) << 16;
         return Float.intBitsToFloat(bits);
     }
 
+    /** Converts bfloat16 bits to IEEE 754 binary16 (half) bits. */
     public static short toFloat16(short bfloat16Bits) {
         int bits = bfloat16Bits & 0xffff;
         int sign = bits & 0x8000;

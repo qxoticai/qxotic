@@ -10,6 +10,10 @@ public interface MediaProjector<R extends Media> {
     /** Number of context rows {@link #project} will produce for {@code media}. */
     int positions(R media);
 
+    /**
+     * Delivers the context rows for {@code media} to {@code sink}, in chunks of at most {@code
+     * maxChunkSize} rows. Each chunk is a borrowed view, live only until its sink call returns.
+     */
     void project(R media, int maxChunkSize, Consumer<MemoryView<?>> sink);
 
     /** Optional decoder positions for all rows, in the same order as {@link #project}. */

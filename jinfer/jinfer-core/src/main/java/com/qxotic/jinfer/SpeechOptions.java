@@ -24,6 +24,7 @@ public interface SpeechOptions {
     /** Every knob at the model's own default. */
     SpeechOptions NONE = () -> null;
 
+    /** Options with only the rate set; rejects a non-positive or non-finite speed. */
     static SpeechOptions speed(double speed) {
         // the one knob both frameworks pass through blind, so the funnel is where it is bounded:
         // a non-positive or non-finite rate multiplies predicted durations into garbage

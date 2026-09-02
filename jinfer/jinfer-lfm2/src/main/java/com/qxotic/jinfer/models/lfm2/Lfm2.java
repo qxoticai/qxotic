@@ -48,6 +48,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+/**
+ * Liquid LFM2 hybrid convolution/attention models for generation and embeddings, with an optional
+ * LFM2-VL vision sidecar.
+ */
 public final class Lfm2
         implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,
                 EmbeddingModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State>,

@@ -4,6 +4,11 @@ import com.qxotic.jota.DataType;
 import java.util.Locale;
 import java.util.Objects;
 
+/**
+ * Print options for {@link MemoryViewPrinter}: the {@code maxElements} truncation threshold, {@code
+ * edgeItems} retained per axis, which sections to include, and value formatting. A {@code null}
+ * formatter uses the default compact one.
+ */
 public record ViewPrintOptions(
         int maxElements,
         int edgeItems,
@@ -35,6 +40,7 @@ public record ViewPrintOptions(
         this.formatter = Objects.requireNonNullElse(formatter, DEFAULT_FORMATTER);
     }
 
+    /** The default preset: metadata plus values, truncated. */
     public static ViewPrintOptions compact() {
         return new ViewPrintOptions(
                 DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, true, true, DEFAULT_FORMATTER);

@@ -153,14 +153,6 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     /**
-     * The typed door ({@code EmbeddingRequest.inputType()}): {@code QUERY}/{@code DOCUMENT} apply
-     * the model card's retrieval framing (the port's {@code queryPrefix}/{@code documentPrefix})
-     * before tokenizing - retrieval-tuned embedders are TRAINED with these prefixes, and both
-     * {@code EmbeddingStoreIngestor} and {@code EmbeddingStoreContentRetriever} send the type via
-     * their {@code embeddingInputType(...)} builder knob. A typeless request embeds raw text as
-     * given.
-     */
-    /**
      * langchain4j listeners; core's default {@code embed(EmbeddingRequest)} dispatches
      * onRequest/onResponse/onError around the call ({@code EmbeddingModelListenerUtils}) as long as
      * this returns them.
@@ -170,6 +162,14 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return listeners;
     }
 
+    /**
+     * The typed door ({@code EmbeddingRequest.inputType()}): {@code QUERY}/{@code DOCUMENT} apply
+     * the model card's retrieval framing (the port's {@code queryPrefix}/{@code documentPrefix})
+     * before tokenizing - retrieval-tuned embedders are TRAINED with these prefixes, and both
+     * {@code EmbeddingStoreIngestor} and {@code EmbeddingStoreContentRetriever} send the type via
+     * their {@code embeddingInputType(...)} builder knob. A typeless request embeds raw text as
+     * given.
+     */
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
         int outputDimension =
@@ -244,6 +244,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             return this;
         }
 
+        /** The GGUF to load. Required unless {@link #model}. */
         public Builder modelPath(Path modelPath) {
             this.source = modelPath;
             return this;

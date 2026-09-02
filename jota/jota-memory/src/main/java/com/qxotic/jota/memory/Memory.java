@@ -14,22 +14,18 @@ public interface Memory<B> {
 
     Device device();
 
+    /** The backing storage (an array, {@code ByteBuffer}, {@code MemorySegment}, ...). */
     B base();
 
     /**
-     * Returns the memory access granularity in bytes. This is the size of each element in the
-     * backing buffer.
-     *
-     * @return the access granularity in bytes
+     * The access granularity in bytes: 1 for byte-addressable memory, else the size of one backing
+     * element.
      */
     long memoryGranularity();
 
     /**
-     * Checks whether this memory can store the given data type. Byte-addressable memory supports
-     * every data type. Other memory supports data types matching its element size.
-     *
-     * @param dataType the data type to check
-     * @return true if this memory can store the given data type
+     * Byte-addressable memory supports every data type; other memory supports data types whose
+     * {@link DataType#byteSize()} matches {@link #memoryGranularity()}.
      */
     default boolean supportsDataType(DataType dataType) {
         long granularity = memoryGranularity();

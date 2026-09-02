@@ -13,6 +13,12 @@ import java.util.stream.IntStream;
 /**
  * A shaped, typed window over a {@link Memory}: layout, dtype and byte offset. Views are immutable
  * and cheap; every transform returns a new view over the same bytes. Equality is identity.
+ *
+ * <pre>{@code
+ * Memory<float[]> memory = Memories.of(new float[] {0, 1, 2, 3, 4, 5});
+ * MemoryView<float[]> view = MemoryView.rowMajor(memory, DataType.FP32, Shape.flat(2, 3));
+ * MemoryView<float[]> transposed = view.transpose(0, 1); // same bytes, permuted layout
+ * }</pre>
  */
 public interface MemoryView<B> extends View {
 
@@ -52,6 +58,7 @@ public interface MemoryView<B> extends View {
         return layout().isNonOverlapping();
     }
 
+    /** Whether every byte the layout addresses lies inside {@code memory}. */
     static boolean isWithinBounds(
             Layout layout, DataType dataType, Memory<?> memory, long byteOffset) {
         if (layout.shape().size() == 0) {
@@ -83,6 +90,10 @@ public interface MemoryView<B> extends View {
         }
     }
 
+    /**
+     * Reinterprets this view as {@code newShape}; only exact affine reshapes are allowed (no
+     * reindexing or copying). Same total size required.
+     */
     MemoryView<B> view(Shape newShape);
 
     /**
@@ -93,10 +104,13 @@ public interface MemoryView<B> extends View {
      */
     MemoryView<B> viewCuTe(Shape newShape);
 
+    /** Reorders top-level modes; {@code permutation} lists the old index of each new mode. */
     MemoryView<B> permute(int... permutationIndices);
 
+    /** Expands singleton dimensions to {@code newShape} with zero strides (broadcast). */
     MemoryView<B> expand(Shape newShape);
 
+    /** A strided sub-range of one top-level mode (wrap-around axis). */
     MemoryView<B> slice(int _axis, long fromInclusive, long toExclusive, long indexStride);
 
     default MemoryView<B> slice(int _axis, long fromInclusive, long toExclusive) {

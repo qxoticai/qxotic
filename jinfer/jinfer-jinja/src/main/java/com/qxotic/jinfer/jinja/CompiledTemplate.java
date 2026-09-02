@@ -9,5 +9,10 @@ import java.util.Map;
  */
 @FunctionalInterface
 public interface CompiledTemplate {
+    /**
+     * Renders against {@code vars} - the chat-template context (typically {@code messages}, {@code
+     * add_generation_prompt}, {@code tools}). Nested values may be {@link Map}s, {@link
+     * java.util.List}s, strings, numbers and booleans.
+     */
     String render(Map<String, Object> vars);
 }

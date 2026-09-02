@@ -45,6 +45,12 @@ public final class MemoryViews {
         return MemoryViewFactory.allocate(allocator, dataType, shape);
     }
 
+    /**
+     * Allocates a flat row-major view of {@code count} elements filled with {@code value},
+     * converted to {@code dataType} with primitive-cast narrowing.
+     *
+     * @throws IllegalArgumentException if {@code dataType} is not a supported dense scalar type
+     */
     public static <B> MemoryView<B> full(
             MemoryDomain<B> domain, DataType dataType, long count, Number value) {
         Shape shape = Shape.flat(count);

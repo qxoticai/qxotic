@@ -41,6 +41,11 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Random;
 
+/**
+ * VITS-family text-to-waveform model; most callers want {@link InflectTTS}, which adds text
+ * normalization and phonemization on top. Synthesize directly only when you already have phoneme
+ * tokens.
+ */
 public final class Inflect2 {
 
     /** HiFi-GAN leaky-ReLU slope, and torch's default slope for the activation before conv_post. */

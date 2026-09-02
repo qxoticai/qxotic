@@ -15,7 +15,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.util.StringUtils;
 
-/** Wires one {@link JinferChatModel} bean from {@code spring.ai.jinfer.chat.*} properties. */
+/**
+ * Wires one {@link JinferChatModel} bean from {@code spring.ai.jinfer.chat.*} properties.
+ *
+ * <p>Active when {@code spring.ai.model.chat=jinfer} selects jinfer explicitly, or when no chat
+ * provider is selected and {@code spring.ai.jinfer.chat.model} is set:
+ *
+ * <pre>{@code
+ * spring.ai.jinfer.chat.model=unsloth/gemma-4-E2B-it-GGUF:Q4_K_M
+ * spring.ai.jinfer.chat.temperature=0.7
+ * }</pre>
+ */
 @AutoConfiguration
 @ConditionalOnClass(JinferChatModel.class)
 @Conditional(JinferChatSelected.class)

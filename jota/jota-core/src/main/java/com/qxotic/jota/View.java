@@ -1,10 +1,16 @@
 package com.qxotic.jota;
 
+/**
+ * A typed addressing recipe over storage: {@link #layout()}, {@link #dataType()} and a base {@link
+ * #byteOffset()}. Immutable and storage-free; the storage unit at coordinate {@code c} starts at
+ * {@code byteOffset() + Σ c[i] × stride[i] × dataType().byteSize()}.
+ */
 public interface View {
     Layout layout();
 
     DataType dataType();
 
+    /** The absolute base offset, in bytes, that the layout's offsets are relative to. */
     long byteOffset();
 
     /**
@@ -38,6 +44,7 @@ public interface View {
         return layout().stride();
     }
 
+    /** {@link #stride()} scaled to bytes ({@code × dataType().byteSize()}). */
     default Stride byteStride() {
         return stride().scale(dataType().byteSize());
     }

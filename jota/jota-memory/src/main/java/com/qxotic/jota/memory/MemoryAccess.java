@@ -1,5 +1,9 @@
 package com.qxotic.jota.memory;
 
+/**
+ * Typed element read/write on {@link Memory}, addressed by byte offset. A domain returns {@code
+ * null} for this when the host cannot address its memory (e.g. a GPU).
+ */
 public interface MemoryAccess<B> {
     byte readByte(Memory<B> memory, long byteOffset);
 

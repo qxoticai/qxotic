@@ -1,16 +1,8 @@
 package com.qxotic.format.gguf;
 
 /**
- * Unchecked exception thrown when GGUF format is invalid or corrupted.
- *
- * <p>This indicates the file structure violates the GGUF specification, such as:
- *
- * <ul>
- *   <li>Invalid magic number
- *   <li>Unsupported version
- *   <li>Invalid metadata types
- *   <li>Nested arrays (not supported by this implementation)
- * </ul>
+ * Unchecked exception thrown when GGUF content violates the format specification, e.g. bad magic
+ * number, unsupported version, or invalid metadata types.
  */
 public class GGUFFormatException extends RuntimeException {
 

@@ -23,19 +23,11 @@ import java.nio.file.Path;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Thread-safe and shared, like every other {@code TextToSpeechModel}: concurrent requests are
- * admitted in PARALLEL, each on a state of its own; their compute interleaves on the one shared
- * pool, so two requests take about twice as long each, not half.
+ * langchain4j {@code TextToSpeechModel} backed by jinfer: in-process CPU synthesis over a local
+ * GGUF, returning WAV audio.
  *
- * <p>A jinfer speech state is ONE SERIAL PIPELINE and cannot be shared - so this does not share
- * one. Minting per call costs a measured +3.5% against reusing one (~1 ms on a short utterance),
- * which is a small price for not having to reconcile an unshareable state with a shared bean by
- * serializing every caller. Serializing would have hidden the capacity limit; rejecting past a
- * timeout would have failed only under load, which is worse.
- *
- * <p>The one thing that must still be coordinated is the WEIGHTS arena, which every synthesis
- * reads: {@link #close()} takes a write lock and therefore waits for every in-flight request before
- * freeing it. Requests take the read lock and never block each other.
+ * <p>Thread-safe: concurrent requests use independent synthesis states and may run in parallel.
+ * {@link #close()} waits for in-flight requests before freeing owned weights.
  */
 public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable {
 
@@ -146,7 +138,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         /**
          * A model you loaded yourself - the typed path, where a port's own knobs are expressible
          * ({@code InflectTTS.load(gguf, weights).variation(0.5)}). Its weights arena stays yours.
-         * Mutually exclusive with both {@link #model(String)} and {@link #modelPath(Path)}.
+         * The model source is the last setter called: this replaces any earlier {@link
+         * #model(String)} or {@link #modelPath(Path)}.
          */
         public Builder model(SpeechSynthesisModel<?, ?, ?> model) {
             this.source = model;

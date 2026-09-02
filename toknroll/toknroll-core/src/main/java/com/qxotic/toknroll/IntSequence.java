@@ -23,46 +23,29 @@ import java.util.stream.StreamSupport;
  */
 public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> {
 
-    /**
-     * Returns an empty IntSequence.
-     *
-     * @return an empty sequence
-     */
+    /** Returns the shared empty sequence. */
     static IntSequence empty() {
         return ImplAccessor.empty();
     }
 
     /**
-     * Returns the integer at the specified position in this sequence.
-     *
-     * @param index index of the element to return
-     * @return the element at the specified position in this sequence
+     * @param index element index
+     * @return the element at {@code index}
      * @throws IndexOutOfBoundsException if the index is out of range
      */
     int intAt(int index);
 
-    /**
-     * Returns the length of this sequence.
-     *
-     * @return the number of elements in this sequence
-     */
+    /** Returns the number of elements in this sequence. */
     int length();
 
     /**
-     * Returns a new sequence that is a subsequence of this sequence.
+     * Returns the half-open range {@code [startInclusive, endExclusive)} of this sequence.
      *
-     * @param startInclusive the startInclusive index, inclusive
-     * @param endExclusive the endExclusive index, exclusive
-     * @return a new sequence containing the specified range of elements
-     * @throws IndexOutOfBoundsException if startInclusive or endExclusive are out of bounds
+     * @throws IndexOutOfBoundsException if the range is out of bounds
      */
     IntSequence subSequence(int startInclusive, int endExclusive);
 
-    /**
-     * Converts this sequence to a new integer array containing all elements.
-     *
-     * @return a new array containing all elements in this sequence
-     */
+    /** Returns a new {@code int[]} copy of this sequence. */
     default int[] toArray() {
         int length = length();
         int[] array = new int[length];
@@ -70,11 +53,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         return array;
     }
 
-    /**
-     * Converts this sequence to a new List containing all elements boxed as Integers.
-     *
-     * @return a new ArrayList containing all elements in this sequence
-     */
+    /** Returns a new {@code List} with all elements boxed as {@code Integer}. */
     default List<Integer> toList() {
         int length = length();
         List<Integer> list = new ArrayList<>(length);
@@ -85,12 +64,10 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
-     * Returns a primitive iterator over the integers in this sequence.
+     * Returns a primitive iterator over this sequence.
      *
-     * <p>The iterator captures the sequence length at creation time. Iteration does not extend to
-     * elements appended after iterator creation.
-     *
-     * @return a PrimitiveIterator.OfInt instance for this sequence
+     * <p>The iterator captures the sequence length at creation time; elements appended afterwards
+     * are not visited.
      */
     @Override
     default PrimitiveIterator.OfInt iterator() {
@@ -113,11 +90,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         };
     }
 
-    /**
-     * Creates an IntStream to process the elements of this sequence.
-     *
-     * @return an IntStream containing the elements of this sequence
-     */
+    /** Returns a sequential {@link IntStream} over this sequence. */
     default IntStream stream() {
         return StreamSupport.intStream(
                 Spliterators.spliterator(
@@ -127,12 +100,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
                 false);
     }
 
-    /**
-     * Creates an IntSequence from the given values.
-     *
-     * @param values the values to include in the sequence
-     * @return a new IntSequence containing the specified values
-     */
+    /** Returns a sequence copying {@code values}. */
     static IntSequence of(int... values) {
         if (values.length == 0) {
             return empty();
@@ -141,26 +109,20 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
-     * Creates an IntSequence from the given list of Integers.
+     * Wraps {@code integerList} without copying.
      *
-     * <p>The returned sequence is unmodifiable through this API, but may reflect subsequent
-     * mutations to the wrapped list.
-     *
-     * @param integerList the list of Integers to wrap
-     * @return a new IntSequence containing the elements from the list
+     * <p>The returned sequence is unmodifiable through this API, but reflects subsequent mutations
+     * to the wrapped list.
      */
     static IntSequence wrap(List<Integer> integerList) {
         return ImplAccessor.wrap(integerList);
     }
 
     /**
-     * Creates an IntSequence from the given array.
+     * Wraps {@code array} without copying.
      *
-     * <p>The returned sequence is unmodifiable through this API, but may reflect subsequent
-     * mutations to the wrapped array.
-     *
-     * @param array the array to wrap
-     * @return a new IntSequence containing the elements from the array
+     * <p>The returned sequence is unmodifiable through this API, but reflects subsequent mutations
+     * to the wrapped array.
      */
     static IntSequence wrap(int[] array) {
         if (array.length == 0) {
@@ -259,9 +221,8 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
-     * Returns the first integer in this sequence.
+     * Returns the first element of this sequence.
      *
-     * @return the first element
      * @throws NoSuchElementException if the sequence is empty
      */
     default int getFirst() {
@@ -272,9 +233,8 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
-     * Returns the last integer in this sequence.
+     * Returns the last element of this sequence.
      *
-     * @return the last element
      * @throws NoSuchElementException if the sequence is empty
      */
     default int getLast() {
@@ -284,11 +244,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         return intAt(length() - 1);
     }
 
-    /**
-     * Returns whether this sequence is empty.
-     *
-     * @return true if this sequence contains no elements
-     */
+    /** Returns whether this sequence contains no elements. */
     default boolean isEmpty() {
         return length() == 0;
     }
@@ -337,7 +293,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         }
     }
 
-    /** Performs the given action for each int value in this sequence. */
+    /** Applies {@code action} to each element of this sequence, in order. */
     default void forEachInt(IntConsumer action) {
         Objects.requireNonNull(action, "action");
         int sequenceLength = length();
@@ -458,10 +414,10 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
      * that reflects subsequent additions, and {@link #build()} for a stable copied sequence.
      */
     interface Builder {
-        /** Returns the current number of elements stored in this builder. */
+        /** Returns the number of elements added so far. */
         int size();
 
-        /** Returns whether this builder currently has no elements. */
+        /** Returns whether no elements have been added yet. */
         default boolean isEmpty() {
             return size() == 0;
         }
@@ -473,19 +429,10 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
          */
         void ensureCapacity(int minCapacity);
 
-        /**
-         * Adds a single value to the sequence being built.
-         *
-         * @param value the value to add
-         * @return this builder instance
-         */
+        /** Appends {@code value} and returns this builder. */
         Builder add(int value);
 
-        /**
-         * Builds and returns the final IntSequence.
-         *
-         * @return a new IntSequence containing all added elements
-         */
+        /** Returns a stable copied sequence of the elements added so far. */
         IntSequence build();
 
         /**
@@ -505,12 +452,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
          */
         IntSequence asSequenceView();
 
-        /**
-         * Adds all elements from the given sequence to this builder.
-         *
-         * @param elems the sequence of elements to add
-         * @return this builder instance
-         */
+        /** Appends all elements of {@code elems} and returns this builder. */
         default Builder addAll(IntSequence elems) {
             IntSequence nonNullElems = Objects.requireNonNull(elems, "elems");
             ensureCapacity(this.size() + nonNullElems.length());
@@ -522,43 +464,31 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         }
 
         /**
-         * Adds all elements from another builder.
-         *
-         * <p>The source builder is read as a fixed-size snapshot at call time.
+         * Appends all elements of another builder, read as a fixed-size snapshot at call time, and
+         * returns this builder.
          */
         default Builder addAll(Builder elems) {
             return addAll(Objects.requireNonNull(elems, "elems").snapshot());
         }
     }
 
-    /**
-     * Creates a new Builder instance with default initial capacity.
-     *
-     * @return a new Builder instance
-     */
+    /** Returns a new builder with default initial capacity. */
     static Builder newBuilder() {
         return ImplAccessor.newBuilder();
     }
 
     /**
-     * Creates a new Builder instance with the specified initial capacity.
+     * Returns a new builder with the given initial capacity.
      *
-     * @param initialCapacity the initial capacity of the builder
-     * @return a new Builder instance
-     * @throws IllegalArgumentException if initialCapacity is negative
+     * @throws IllegalArgumentException if {@code initialCapacity} is negative
      */
     static Builder newBuilder(int initialCapacity) {
         return ImplAccessor.newBuilder(initialCapacity);
     }
 
     /**
-     * Returns a string representation of this sequence using the specified delimiter and enclosing
-     * symbols.
-     *
-     * @param delimiter the separator between elements
-     * @param prefix the prefix for the string representation
-     * @param suffix the suffix for the string representation
-     * @return a string representation of this sequence
+     * Formats this sequence as {@code prefix} + elements joined by {@code delimiter} + {@code
+     * suffix}.
      */
     default String toString(CharSequence delimiter, CharSequence prefix, CharSequence suffix) {
         StringJoiner joiner = new StringJoiner(delimiter, prefix, suffix);

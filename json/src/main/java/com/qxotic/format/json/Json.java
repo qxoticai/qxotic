@@ -14,15 +14,29 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Minimal JSON parser and printer. RFC 8259 compliant. */
+/**
+ * Minimal JSON parser and printer, RFC 8259 compliant.
+ *
+ * <p>JSON values map to plain Java types: objects to {@code Map<String, Object>}, arrays to {@code
+ * List<Object>}, strings to {@code String}, numbers to {@code Long}, {@code BigInteger}, {@code
+ * Double} or {@code BigDecimal}, booleans to {@code Boolean}, and {@code null} to the {@link #NULL}
+ * singleton. {@code stringify} accepts compatible {@code Map}/{@code List} trees and rejects Java
+ * {@code null}; use {@link #NULL} for JSON null.
+ *
+ * <pre>{@code
+ * Map<String, Object> config = Json.parseMap("{\"name\": \"qxotic\", \"retries\": 3}");
+ * Optional<Number> retries = Json.queryNumber(config, "retries");
+ * String json = Json.stringify(config, true);
+ * }</pre>
+ */
 public final class Json {
 
     private Json() {}
 
-    /** JSON null distinct from Java null. */
+    /** Singleton for JSON null, used instead of Java {@code null} by both parsing and printing. */
     public static final Null NULL = Null.INSTANCE;
 
-    /** JSON null singleton type. */
+    /** Type of the {@link Json#NULL} singleton. */
     public static final class Null {
         private static final Null INSTANCE = new Null();
 
@@ -1033,6 +1047,10 @@ public final class Json {
 
     // === ParseOptions ===
 
+    /**
+     * Immutable parsing options. Each wither method returns a modified copy; {@link #defaults()}
+     * uses {@link #DEFAULT_MAX_DEPTH} and parses decimals as {@code BigDecimal}.
+     */
     public static final class ParseOptions {
         /** Default maximum object/array nesting depth. */
         public static final int DEFAULT_MAX_DEPTH = 1000;
@@ -1074,17 +1092,14 @@ public final class Json {
             return new ParseOptions(this.decimalsAsBigDecimal, this.maxDepth, enabled);
         }
 
-        /** Return whether decimals parse as {@code BigDecimal}. */
         public boolean decimalsAsBigDecimal() {
             return decimalsAsBigDecimal;
         }
 
-        /** Return maximum object/array nesting depth. */
         public int maxDepth() {
             return maxDepth;
         }
 
-        /** Return whether duplicate object keys are rejected. */
         public boolean failOnDuplicateKeys() {
             return failOnDuplicateKeys;
         }
@@ -1092,6 +1107,10 @@ public final class Json {
 
     // === ParseException ===
 
+    /**
+     * Thrown when JSON input is malformed. Exceptions produced by the parser include line, column,
+     * and a caret pointing at the offending position.
+     */
     public static final class ParseException extends RuntimeException {
         private static final long serialVersionUID = 1L;
 

@@ -4,12 +4,21 @@ import com.qxotic.jota.impl.NestedTuple;
 import com.qxotic.jota.impl.ShapeFactory;
 import java.util.Objects;
 
+/**
+ * An immutable tuple of dimension sizes, possibly nested: {@code Shape.of(2, Shape.of(3, 4), 5)}
+ * has rank 3 and flat rank 4. A shape is unit-agnostic; views use physical storage shapes, which
+ * differ from logical shapes for block-quantized data types (see {@link DataType}). Axis indexes
+ * wrap around: a negative index counts from the end.
+ */
 public interface Shape extends NestedTuple<Shape> {
 
+    /** The size of one top-level mode (wrap-around index). */
     long size(int _modeIndex);
 
+    /** The total element count: the product of all flat dimensions. */
     long size();
 
+    /** This shape with nesting removed (same flat dims, rank = flat rank). */
     Shape flattenModes();
 
     default boolean hasZeroElements() {
@@ -20,22 +29,35 @@ public interface Shape extends NestedTuple<Shape> {
         return size() == 1;
     }
 
+    /** A flat (non-nested) shape from dimension sizes. */
     static Shape flat(long... dims) {
         return ShapeFactory.flat(dims);
     }
 
+    /**
+     * A possibly nested shape from dimension sizes and nested shapes: {@code of(2, Shape.of(3, 4),
+     * 5)}. The empty call returns {@link #scalar()}.
+     */
     static Shape of(Object... elements) {
         return ShapeFactory.of(elements);
     }
 
+    /**
+     * A shape whose nesting is given in bracket notation: {@code pattern("(_,(b,c))", 2, 3, 4)} is
+     * {@code of(2, of(3, 4))}.
+     */
     static Shape pattern(String pattern, long... dims) {
         return ShapeFactory.pattern(pattern, dims);
     }
 
+    /**
+     * A shape with {@code template}'s nesting structure and the given flat dims, in flatten order.
+     */
     static Shape template(NestedTuple<?> template, long... dims) {
         return ShapeFactory.template(template, dims);
     }
 
+    /** The rank-0 shape: one element, no axes. */
     static Shape scalar() {
         return ShapeFactory.scalar();
     }

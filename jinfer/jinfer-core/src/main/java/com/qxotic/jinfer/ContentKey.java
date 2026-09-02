@@ -18,6 +18,7 @@ public record ContentKey(String value) {
 
     private static final String SHA256_PREFIX = "sha256:";
 
+    /** The canonical key for {@code source}: {@code "sha256:<hex>"} of its bytes. */
     public static ContentKey sha256(byte[] source) {
         try {
             return new ContentKey(

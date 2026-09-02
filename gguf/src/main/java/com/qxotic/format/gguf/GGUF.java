@@ -14,31 +14,24 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Interface for handling GGUF files, which are used to store large language models and their
- * associated metadata.
+ * Read and write access to GGUF files, the binary format used by GGML-based models to store
+ * metadata and tensor descriptors. Only the metadata section is read or written; tensor payload
+ * bytes are not accessed.
  *
- * <p>This interface provides methods to read and write GGUF files, access their metadata, and
- * manage tensor information. GGUF is a binary format that includes both model weights and
- * associated configuration data.
+ * <p>The header structure is read-only, but array-valued metadata is returned by reference. Do not
+ * mutate those arrays while an instance is shared between threads.
  *
  * @see <a href="https://github.com/ggml-org/ggml/blob/master/docs/gguf.md">GGUF format
  *     specification</a>
  */
 public interface GGUF {
-    /**
-     * Returns the version number of the GGUF instance.
-     *
-     * @return the GGUF format version
-     */
+    /** GGUF format version. */
     int getVersion();
 
     /**
-     * Returns the alignment value used in the GGUF file. If not explicitly set, returns the default
-     * alignment value.
+     * Tensor data alignment in bytes; returns the default when {@code general.alignment} is absent.
      *
-     * <p>The alignment determines the byte alignment requirements for tensor data.
-     *
-     * @return the alignment value in bytes
+     * @throws GGUFFormatException if {@code general.alignment} is present but not UINT32
      */
     default int getAlignment() {
         if (containsKey(ImplAccessor.alignmentKey())) {
@@ -52,24 +45,19 @@ public interface GGUF {
         return ImplAccessor.defaultAlignment();
     }
 
-    /**
-     * Returns the byte offset where tensor data begins in the GGUF file.
-     *
-     * @return the tensor data offset in bytes
-     */
+    /** Absolute byte offset where tensor data begins in the file. */
     long getTensorDataOffset();
 
-    /**
-     * Returns a set of all metadata keys present in the GGUF metadata, order is preserved.
-     *
-     * @return the metadata keys
-     */
+    /** All metadata keys, insertion order preserved. */
     Set<String> getMetadataKeys();
 
     /**
-     * Gets a metadata value associated with the given key, casting it to the specified target
-     * class, or null if the key is not found. The method handles primitive types, wrapper classes,
-     * strings, and arrays.
+     * Metadata value for {@code key} cast to {@code targetClass}, or {@code null} if the key is
+     * absent. Unsigned types map to the signed Java type of the same width (e.g. {@code UINT32} to
+     * {@code int}); unsigned conversion is up to the caller. Pass {@code Object.class} for
+     * unchecked access.
+     *
+     * <p>Array values are returned by reference, not copied.
      *
      * <p>The actual type of the stored value depends on {@link #getType(String)}:
      *
@@ -103,51 +91,19 @@ public interface GGUF {
      *       </ul>
      * </ul>
      *
-     * <p>Examples:
-     *
-     * <pre>{@code
-     * // Primitive types
-     * // Will throw NullPointerException is the key is not present.
-     * int intValue = getValue(int.class, "numberKey");
-     * boolean flag = getValue(boolean.class, "flagKey");
-     *
-     * // Wrapper classes
-     * Integer boxedInt = getValue(Integer.class, "numberKey");
-     * Boolean boxedFlag = getValue(Boolean.class, "flagKey");
-     *
-     * // Strings
-     * String text = getValue(String.class, "textKey");
-     *
-     * // Arrays
-     * int[] numbers = getValue(int[].class, "numberArrayKey");
-     * float[] floats = getValue(float[].class, "floatArrayKey");
-     * String[] strings = getValue(String[].class, "stringArrayKey");
-     *
-     * // For generic access without type checking
-     * Object generic = getValue(Object.class, "anyKey");
-     * }</pre>
-     *
      * @throws ClassCastException if the value cannot be cast to the requested type or if the
      *     requested type doesn't match the type indicated by {@link #getType(String)}
-     * @see #getType(String)
      * @see #getComponentType(String)
      */
     <T> T getValue(Class<T> targetClass, String key);
 
-    /**
-     * Retrieves the value associated with the specified metadata key, or returns a default value if
-     * the key is not present.
-     *
-     * @see #getValue(Class, String)
-     */
+    /** Metadata value for {@code key}, or {@code defaultValue} if the key is absent. */
     default <T> T getValueOrDefault(Class<T> targetClass, String key, T defaultValue) {
         return containsKey(key) ? getValue(targetClass, key) : defaultValue;
     }
 
     /**
-     * Gets a string value for the given key.
-     *
-     * <p>This is a convenience method equivalent to {@code getValue(String.class, key)}.
+     * Equivalent to {@code getValue(String.class, key)}.
      *
      * @throws ClassCastException if the value is not a string
      */
@@ -156,10 +112,7 @@ public interface GGUF {
     }
 
     /**
-     * Gets a string value for the given key, or returns the default value if the key is not found.
-     *
-     * <p>This is a convenience method equivalent to {@code getValueOrDefault(String.class, key,
-     * defaultValue)}.
+     * Equivalent to {@code getValueOrDefault(String.class, key, defaultValue)}.
      *
      * @throws ClassCastException if the value is not a string
      */
@@ -172,16 +125,16 @@ public interface GGUF {
         return getValue(Object.class, key) != null;
     }
 
-    /** Returns the metadata value type for the specified key. */
+    /** Type of the metadata value for the key. */
     MetadataValueType getType(String key);
 
-    /** Returns the component type for {@link MetadataValueType#ARRAY array} metadata values. */
+    /** Component type for {@link MetadataValueType#ARRAY array} metadata values. */
     MetadataValueType getComponentType(String key);
 
-    /** Returns information about all tensors stored in the GGUF metadata, order is preserved. */
+    /** All tensors, order preserved. */
     Collection<TensorEntry> getTensors();
 
-    /** Returns information about a specific tensor by name. */
+    /** Tensor entry for the name, or {@code null} if absent. */
     TensorEntry getTensor(String tensorName);
 
     /** Checks if a tensor with the specified name exists in the GGUF file. */
@@ -190,21 +143,7 @@ public interface GGUF {
     }
 
     /**
-     * Returns the absolute byte offset where the tensor's data begins in the GGUF file.
-     *
-     * <p>This is a convenience method equivalent to {@code getTensorDataOffset() +
-     * tensor.offset()}.
-     *
-     * <p>Example usage when reading tensor data:
-     *
-     * <pre>{@code
-     * GGUF gguf = GGUF.read(path);
-     * TensorEntry tensor = gguf.getTensor("weights");
-     * long absoluteOffset = gguf.absoluteOffset(tensor);
-     * // Use absoluteOffset to read from file channel
-     * }</pre>
-     *
-     * @throws NullPointerException if tensor is null
+     * Absolute byte offset of the tensor's data: {@code getTensorDataOffset() + tensor.offset()}.
      */
     default long absoluteOffset(TensorEntry tensor) {
         Objects.requireNonNull(tensor, "tensor");
@@ -238,14 +177,14 @@ public interface GGUF {
         }
     }
 
-    /** Returns a detailed string representation of the GGUF with control over what to display. */
+    /** Detailed string representation with control over what to display. */
     default String toString(boolean showKeys, boolean showTensors) {
         return ImplAccessor.toString(this, showKeys, showTensors);
     }
 
     /**
-     * Returns a detailed string representation of the GGUF with full control over display and
-     * elision.
+     * Detailed string representation with control over what to display and how long arrays and
+     * strings may be before they are elided.
      */
     default String toString(
             boolean showKeys, boolean showTensors, int maxArrayElements, int maxStringLength) {

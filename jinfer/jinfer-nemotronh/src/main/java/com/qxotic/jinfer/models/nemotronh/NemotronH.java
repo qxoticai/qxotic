@@ -34,7 +34,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Optional;
 
-/** Text-only MemoryView port of the Nemotron-H SSM/attention/MoE decoder. */
+/** Nemotron-H hybrid SSM/attention/MoE text models. */
 public final class NemotronH
         implements LanguageModel<NemotronH.Configuration, NemotronH.Weights, NemotronH.State> {
     private final Configuration configuration;

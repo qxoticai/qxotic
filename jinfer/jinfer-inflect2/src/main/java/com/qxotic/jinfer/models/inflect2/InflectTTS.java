@@ -28,6 +28,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
+/**
+ * Text-to-speech over an {@link Inflect2} checkpoint: text is normalized, phonemized, and
+ * synthesized sentence by sentence.
+ */
 public final class InflectTTS
         implements SpeechSynthesisModel<Inflect2.Configuration, Inflect2.Weights, Inflect2.State> {
 

@@ -57,6 +57,20 @@ import java.util.function.BooleanSupplier;
  *
  * <p>Everything here speaks jinfer types - no framework classes, no cache internals (the cache's
  * content addressing stays its own law).
+ *
+ * <pre>{@code
+ * try (ChatEngine engine = new ChatEngine(modelPath, Map.of(), PromptCache.Options.DEFAULTS)) {
+ *     ChatEngine.Request request = ChatEngine.Request.of(
+ *             List.of(Message.user("Explain HTTP/3 in two sentences.")),
+ *             engine.loaded().samplingDefaults().resolve(null, null, null, null, null));
+ *     ChatEngine.Completion completion = engine.complete(request, ChatEngine.ReplySink.NONE);
+ *     System.out.println(completion.reply().text());
+ * }
+ * }</pre>
+ *
+ * <p>Pass a {@link ReplySink} instead of {@link ReplySink#NONE} to stream {@link Delta}s as they
+ * are decoded. The engine is thread-safe: concurrent requests queue on the generation lock, and
+ * {@link #close()} blocks until the pipeline is quiescent.
  */
 public final class ChatEngine implements AutoCloseable {
 

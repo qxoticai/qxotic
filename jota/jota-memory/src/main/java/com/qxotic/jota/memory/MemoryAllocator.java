@@ -5,29 +5,26 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
 import java.util.Objects;
 
+/** Allocates {@link Memory} of a requested byte size and alignment on a device. */
 public interface MemoryAllocator<B> {
     Device device();
 
     Memory<B> allocateMemory(long byteSize, long byteAlignment);
 
+    /** The alignment used by the {@code allocateMemory} overloads without one. */
     default long defaultByteAlignment() {
         return 1;
     }
 
     /**
-     * Returns the memory allocation granularity in bytes. This is the size of each element in the
-     * backing buffer.
-     *
-     * @return the allocation granularity in bytes
+     * The allocation granularity in bytes: 1 for byte-addressable memory, else the size of one
+     * backing element.
      */
     long memoryGranularity();
 
     /**
-     * Checks whether this allocator can allocate memory for the given data type. Byte-addressable
-     * memory supports every data type. Other memory supports data types matching its element size.
-     *
-     * @param dataType the data type to check
-     * @return true if this allocator can allocate the given data type
+     * Byte-addressable memory supports every data type; other memory supports data types whose
+     * {@link DataType#byteSize()} matches {@link #memoryGranularity()}.
      */
     default boolean supportsDataType(DataType dataType) {
         long granularity = memoryGranularity();

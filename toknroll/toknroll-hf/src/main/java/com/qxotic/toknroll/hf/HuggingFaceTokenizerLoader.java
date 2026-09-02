@@ -38,6 +38,12 @@ import java.util.regex.Pattern;
  *   <li>If {@code forceRefresh=true}, the artifact is re-downloaded and cache is replaced.
  *   <li>If {@code useCacheOnly=true}, network is never used; loading fails on cache miss.
  * </ul>
+ *
+ * <pre>{@code
+ * Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromHuggingFace("openai-community", "gpt2");
+ * IntSequence tokens = tokenizer.encode("hello world");
+ * String text = tokenizer.decode(tokens);
+ * }</pre>
  */
 public final class HuggingFaceTokenizerLoader {
     private static final String DEFAULT_HUGGING_FACE_REVISION = "main";

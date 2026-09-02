@@ -3,12 +3,19 @@ package com.qxotic.jota;
 import com.qxotic.jota.impl.NestedTuple;
 import com.qxotic.jota.impl.StrideFactory;
 
+/**
+ * Step sizes per axis, mirroring a {@link Shape}'s nesting: coordinate {@code c} maps to layout
+ * offset {@code Σ c[i] × stride[i]}. Strides use the layout's units (elements for dense data, whole
+ * blocks for block-quantized data). A zero stride broadcasts its axis. Immutable.
+ */
 public interface Stride extends NestedTuple<Stride> {
 
+    /** The rank-0 stride. */
     static Stride scalar() {
         return StrideFactory.scalar();
     }
 
+    /** A flat (non-nested) stride. */
     static Stride flat(long... strides) {
         return StrideFactory.flat(strides);
     }
@@ -23,27 +30,35 @@ public interface Stride extends NestedTuple<Stride> {
         return StrideFactory.zeros(template);
     }
 
+    /** A possibly nested stride from step sizes and nested strides; see {@link Shape#of}. */
     static Stride of(Object... elements) {
         return StrideFactory.of(elements);
     }
 
+    /**
+     * A stride with {@code template}'s nesting structure and the given flat values, in flatten
+     * order.
+     */
     static Stride template(NestedTuple<?> template, long... strides) {
         return StrideFactory.template(template, strides);
     }
 
+    /** A stride whose nesting is given in bracket notation; see {@link Shape#pattern}. */
     static Stride pattern(String pattern, long... strides) {
         return StrideFactory.pattern(pattern, strides);
     }
 
+    /** Compact row-major (C-order) strides for {@code shape}, preserving its nesting. */
     static Stride rowMajor(Shape shape) {
         return computeStrides(shape, false);
     }
 
+    /** Compact column-major (Fortran-order) strides for {@code shape}, preserving its nesting. */
     static Stride columnMajor(Shape shape) {
         return computeStrides(shape, true);
     }
 
-    /** Scale stride by factor (multiplies each element). Preserves nested structure. */
+    /** Multiplies every step by {@code factor}, preserving nested structure. */
     Stride scale(long factor);
 
     private static Stride computeStrides(Shape shape, boolean columnMajor) {
