@@ -188,11 +188,11 @@ if(JAM_STRIP)
 endif()
 
 # ---- stage the native lib into the fat-jar layout: dist/native/com/qxotic/jam/native/<os>-<arch>/<lib> ----
-# Each platform's build (native or via cmake/toolchains/) stages its own subdir; the subdirs are
-# disjoint, so builds ACCUMULATE here. Everything is built/tested/packaged locally (a Linux VM covers
-# linux native + the windows cross targets; the Mac covers darwin-aarch64) - merge the dist/native/
-# trees into one checkout and run scripts/build-jar.sh. No CI by design.
-# The os/arch tokens MUST match NativeLoader.java.
+# This is the DEV tree: each platform's build (native or via cmake/toolchains/) stages its own subdir
+# here for the local jar. The shipped set lives apart, in dist/release, produced in one go by
+# scripts/natives.sh (linux + windows x86-64 here, darwin-aarch64 on a Mac over ssh) and stamped; the
+# release build only packages what `natives.sh verify` accepts. No CI by design. The os/arch tokens
+# MUST match NativeLoader.java.
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" JAM_OS)               # linux / darwin / windows
 set(JAM_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
 if (JAM_ARCH MATCHES "x86_64|AMD64|amd64")

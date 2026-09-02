@@ -381,6 +381,16 @@ public final class NativeJAM implements JAM, AutoCloseable {
                                                 JAVA_INT, JAVA_INT, JAVA_INT)); // m, n, k
     }
 
+    /**
+     * Binds every native symbol this class needs and returns the library's {@code jam_pack_abi()}.
+     * Class initialization does the binding, so a library that loaded but lacks a symbol (a stale
+     * bundle) fails HERE, where {@link NativeJAMProvider#isAvailable()} can turn it into a
+     * fallback, instead of on the first matmul.
+     */
+    static int probe() {
+        return PACK_ABI_NATIVE;
+    }
+
     /** {@code jam_pack_abi()} of the loaded library, read once. */
     private static final int PACK_ABI_NATIVE;
 

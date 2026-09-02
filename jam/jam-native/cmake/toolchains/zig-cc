@@ -1,0 +1,3 @@
+#!/bin/sh
+# CMake wants one executable; zig wants a subcommand. ZIG=/path/to/zig overrides the PATH lookup.
+exec "${ZIG:-zig}" cc "$@"

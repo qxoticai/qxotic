@@ -140,7 +140,7 @@ cmake --build build           # -> build/libjam.so, staged into dist/native/
 
 Flags: `-DJAM_METAL=OFF` (no Metal), `-DJAM_JNI=OFF` (C only), `-DJAM_TESTS=OFF`, `-DJAM_STRIP=ON`. `mvn package -Djam.native.skip=true` reuses a pre-staged `dist/native/`.
 
-Each host builds only the kernels it can run; the library picks the best at runtime. CI builds each platform natively and merges them into one fat `jam.jar`.
+Every build carries all kernel tiers of its architecture; the library binds the best one at runtime. The shipped libraries (linux-x86-64, windows-x86-64, darwin-aarch64) are built from one source tree by `jam-native/scripts/natives.sh`, which builds the Linux one with zig against glibc 2.17, cross-compiles the Windows one with MinGW-w64, and drives an Apple-silicon Mac over ssh for the macOS one. There is no CI.
 
 ## Tests
 

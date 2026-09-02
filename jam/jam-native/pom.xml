@@ -20,7 +20,10 @@
     <maven.deploy.skip>false</maven.deploy.skip>
     <native.cmake.executable>cmake</native.cmake.executable>
     <jam.native.skip>false</jam.native.skip>
-    <!-- -Djam.native.skip=true to reuse a pre-staged dist/native (cross-platform CI) -->
+    <jam.native.dir>dist/native</jam.native.dir>
+    <!-- -Djam.native.skip=true reuses a pre-staged dist/native (the release profile forces it) -->
+    <!-- -Djam.natives.check.skip=true bypasses the release gate (the canary, which only checks poms) -->
+    <jam.natives.check.skip>false</jam.natives.check.skip>
   </properties>
 
   <dependencies>
@@ -36,14 +39,16 @@
   </dependencies>
 
   <build>
-    <!-- CMake stages the per-platform lib into dist/native (com/qxotic/jam/native/<os>-<arch>/...); as a
-         resource it lands on the classpath, so NativeLoader finds + loads it exactly as from the fat jar. -->
+    <!-- CMake stages this host's lib into dist/native (com/qxotic/jam/native/<os>-<arch>/...); as a
+         resource it lands on the classpath, so NativeLoader finds + loads it exactly as from the fat jar.
+         The release profile points jam.native.dir at dist/release, the tree scripts/natives.sh fills
+         with every shipped platform - a tree no dev build writes to. -->
     <resources>
       <resource>
         <directory>src/main/resources</directory>
       </resource>
       <resource>
-        <directory>dist/native</directory>
+        <directory>${jam.native.dir}</directory>
       </resource>
       <!-- An explicit list shadows the parent's resources; re-include the legal pair. -->
       <resource>
@@ -124,4 +129,64 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- Release: package the shipped set that scripts/natives.sh built into dist/release (linux-x86-64,
+         windows-x86-64, darwin-aarch64) - never this host's cmake output. `natives.sh verify` refuses a
+         missing, stale, replaced, or foreign library. -->
+    <profile>
+      <id>release</id>
+      <properties>
+        <jam.native.skip>true</jam.native.skip>
+        <jam.native.dir>dist/release</jam.native.dir>
+      </properties>
+      <build>
+        <plugins>
+          <!-- target/classes keeps whatever earlier builds copied there (the dev tree's host library
+               included), so the release would package more than dist/release. Drop it first. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-clean-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>drop-previously-copied-natives</id>
+                <goals>
+                  <goal>clean</goal>
+                </goals>
+                <phase>generate-resources</phase>
+                <configuration>
+                  <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                  <filesets>
+                    <fileset>
+                      <directory>${project.build.outputDirectory}/com/qxotic/jam/native</directory>
+                    </fileset>
+                  </filesets>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>verify-natives</id>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <phase>generate-resources</phase>
+                <configuration>
+                  <skip>${jam.natives.check.skip}</skip>
+                  <executable>${project.basedir}/scripts/natives.sh</executable>
+                  <arguments>
+                    <argument>verify</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
