@@ -1,28 +1,41 @@
-# Security
+# Security Policy
 
 ## Reporting a vulnerability
 
 Email **hello@qxotic.ai**.
-Do not open a public issue or pull request for anything you believe is a security problem.
+Do not open a public issue or pull request for a suspected security problem.
 
-Include the affected module and version, the impact, and a reproduction if you have one.
+Include the affected module and version, the impact as you understand it, and a reproduction if you have one.
 
 ## What to expect
 
-An acknowledgement within three working days, a verdict within two weeks, and a fix in a release within 90 days for accepted reports, sooner when the impact warrants it.
-You are credited in the advisory unless you prefer otherwise.
+Acknowledgement within three working days.
+A verdict within two weeks.
+Accepted reports are fixed in a release within 90 days, sooner when the impact warrants it.
+The advisory credits you unless you prefer otherwise.
 There is no bounty program.
 
 ## Supported versions
 
 Fixes go into the latest release only.
-The `com.qxotic` artifacts are versioned together, so upgrade them together.
+The `com.qxotic` artifacts are versioned together; upgrade them together.
 
 ## Scope
 
 Model files are trusted input.
-Run only models from sources you trust; a malformed or malicious model file that crashes or misbehaves the engine is a bug to report normally, not a vulnerability.
+Run only models from sources you trust.
+A malformed or malicious model file that crashes or misbehaves the engine is a bug, not a vulnerability.
+Report it as a normal issue.
 
-In scope: the server's handling of client requests and its authentication, and the downloader's handling of what it fetches.
+In scope:
 
-Out of scope: model files and everything derived from them, model behaviour such as prompt injection or harmful output, running the server on a non-loopback interface without an API key, resource exhaustion through legitimate use, and dependency vulnerabilities with no reachable path through this code.
+- The server's handling of client requests and its authentication.
+- The downloader's handling of what it fetches.
+
+Out of scope:
+
+- Model files and everything derived from them.
+- Model behaviour, including prompt injection and harmful output.
+- Running the server on a non-loopback interface without an API key.
+- Resource exhaustion through legitimate use.
+- Dependency vulnerabilities with no reachable path through this code.
