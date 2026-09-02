@@ -122,6 +122,13 @@ class GGUFTokenizerLoaderParityTest {
                     "SmolLM3-3B-Q8_0.gguf",
                     null);
 
+    private static final FamilyCase LAGUNA_XS_21_POOLSIDE =
+            new FamilyCase(
+                    "laguna-xs-2.1-poolside",
+                    "poolside",
+                    "Laguna-XS-2.1-GGUF",
+                    "Laguna-XS-2.1-Q4_K_M.gguf",
+                    "gpt2");
     private static final List<String> SAMPLE_TEXTS =
             List.of(
                     "Hello world",
@@ -206,6 +213,11 @@ class GGUFTokenizerLoaderParityTest {
     @Test
     void smollm33bFromUnsloth_localAndHfParity() {
         assertLocalAndHfParity(SMOLLM3_3B_UNSLOTH);
+    }
+
+    @Test
+    void lagunaXs21FromPoolside_localAndHfParity() {
+        assertLocalAndHfParity(LAGUNA_XS_21_POOLSIDE);
     }
 
     private static void assertLocalAndHfParity(FamilyCase c) {

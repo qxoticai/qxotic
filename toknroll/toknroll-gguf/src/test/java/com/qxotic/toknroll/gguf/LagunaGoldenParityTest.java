@@ -31,7 +31,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * own {@code tokenizer.json} ({@code add_special_tokens=False}, the same contract as {@link
  * Tokenizer#encode}). The tokenizer under test comes from the GGUF's metadata - the {@code laguna}
  * pretokenizer registration, its vocabulary and merges - so the test pins the registration, not
- * just the BPE core.
+ * just the BPE core. The golden is generated, not committed: {@code
+ * toknroll-benchmarks/generate_laguna_golden.py} writes it, and the test skips until it exists.
  *
  * <p>Out of scope by contract: special-token spellings inside the text. {@link Tokenizer#encode} is
  * the non-special-aware path (llama.cpp's default), so it encodes "〈|EOS|〉" as text, where the
@@ -108,7 +109,12 @@ class LagunaGoldenParityTest {
 
     private static Map<String, Object> readGolden() {
         try (InputStream in = LagunaGoldenParityTest.class.getResourceAsStream("/" + GOLDEN)) {
-            if (in == null) throw new IllegalStateException("missing test resource " + GOLDEN);
+            if (in == null) {
+                Assumptions.abort(
+                        GOLDEN
+                                + " is not generated; run"
+                                + " toknroll-benchmarks/generate_laguna_golden.py");
+            }
             return Json.parseMap(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new UncheckedIOException(e);

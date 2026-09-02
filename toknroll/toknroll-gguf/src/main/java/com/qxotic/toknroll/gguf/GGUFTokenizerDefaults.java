@@ -63,6 +63,12 @@ final class GGUFTokenizerDefaults {
 
     private static final String GEMMA4_PATTERN = "[^\\n]+|[\\n]+";
 
+    // Laguna's first stage (tokenizer.json: Split "(?:\r?\n)+(?!\r?\n)" MergedWithNext): a
+    // newline run, CRLF included, travels with the text that follows it, so "\r\n" reaches the
+    // second stage whole and becomes one token. A lone "\r" is ordinary text.
+    private static final String LAGUNA_NEWLINES_PATTERN =
+            "(?:\\r?\\n)+(?:[^\\r\\n]|\\r(?!\\n))*|(?:[^\\r\\n]|\\r(?!\\n))+";
+
     private static final String KIMI_K2_PATTERN =
             "[\\p{IsHan}]+|[^\\r"
                 + "\\n"
@@ -185,7 +191,7 @@ final class GGUFTokenizerDefaults {
         registerSequencePreTokenizers(
                 builder, new String[] {"\\p{N}{1,3}", MINICPM5_MAIN}, "minicpm5");
         registerSequencePreTokenizers(
-                builder, new String[] {GEMMA4_PATTERN, QWEN2_PATTERN}, "laguna");
+                builder, new String[] {LAGUNA_NEWLINES_PATTERN, QWEN2_PATTERN}, "laguna");
 
         // SPM models with "default" pre-tokenizer need identity splitter + metaspace normalizer.
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());
