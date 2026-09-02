@@ -13,7 +13,8 @@ import org.openjdk.jmh.infra.Blackhole;
 /**
  * JMH Benchmark comparing Qxotic Json vs Jackson performance.
  *
- * <p>Run with: cd benchmarks && mvn clean package && java -jar target/json-benchmarks.jar
+ * <p>Run with: {@code mvn -pl json/benchmarks -am package && java -jar
+ * json/benchmarks/target/json-benchmarks.jar}
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)

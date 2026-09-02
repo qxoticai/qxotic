@@ -54,4 +54,28 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- The test-jar exists for the reactor only (jota-tensor and the backends extend
+         AbstractMemoryTest); an attached artifact would be staged to Maven Central with the
+         module, so the release build does not attach it. Sibling modules still resolve the
+         test-jar dependency: Maven's reactor reader falls back to target/test-classes. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-test-jar-early</id>
+                <phase>none</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
