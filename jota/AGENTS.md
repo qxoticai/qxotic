@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Jota (JVM Open Tensor Algebra) is a tensor algebra library with lazy evaluation, kernel compilation, and multi-device support. Part of the llm4j multi-module Maven project.
+Jota (JVM Open Tensor Algebra) is a tensor algebra library with lazy evaluation, kernel compilation, and multi-device support. Part of the qxotic multi-module Maven project.
 
 ## Build Commands
 
@@ -21,7 +21,6 @@ mvnd -Pc test             # C backend suite (runs regular tests against C runtim
 mvnd -Phip test           # HIP backend suite (requires HIP/ROCm toolchain/runtime)
 mvnd -Popencl test        # OpenCL backend suite (requires OpenCL ICD/runtime)
 mvnd -Pmetal test         # Metal backend suite (runs on macOS; non-mac skips native/test steps)
-mvnd -Phip,backend-matrix test   # Optional backend matrix mode for HIP profile
 
 # Targeted tests
 mvnd test -Dtest=TestClass
@@ -41,7 +40,6 @@ mvnd spotless:apply
 - Validate HIP backend behavior: `mvnd -Phip test` (with HIP toolchain/runtime available).
 - Validate OpenCL backend behavior: `mvnd -Popencl test` (with OpenCL toolchain/runtime available).
 - Validate Metal backend behavior: `mvnd -Pmetal test` (native/tests execute on macOS; non-mac skips).
-- Use `backend-matrix` only when explicitly needed; default profiles run deterministic single-backend tests.
 - Run a focused test while iterating: `mvnd test -Dtest=ClassName` or `mvnd test -Dtest=ClassName#methodName`.
 - Before finishing any change, run formatting: `mvnd spotless:apply` (then optionally `mvnd spotless:check`).
 - If touching backend-specific code, run both core (`mvnd test`) and the corresponding backend profile suite.
@@ -54,19 +52,13 @@ mvnd spotless:apply
 ### Tensor Evaluation Model
 
 **Lazy Tensors** - Expression tracing for kernel compilation:
-- `Tracer.trace(input, fn)` records operations into an `ExpressionGraph`
-- Graph nodes: `InputNode`, `UnaryOpNode`, `BinaryOpNode`, etc.
-- Materialization triggers compilation/execution via `tensor.materialize()`
+- `Tracer.trace(input, fn)` records operations into a `TIRGraph`
+- Graph nodes: `TensorInput`, `ScalarInput`, `BinaryOp`, `ReductionOp`, etc. (`ir/tir/`)
+- Materialization triggers scheduling/execution via `tensor.materialize()` (`ScheduledExecutor`)
 
 **Eager Tensors** - Immediate evaluation:
-- `EagerTensorOps` executes operations directly on `MemoryView`
+- Materialized tensors (`MaterializedTensorImpl`) execute operations directly on `MemoryView`
 - Default when not in traced context
-
-**Optimizing Call Sites** - Kernel specialization:
-```java
-OptimizingCallSite site = Jota.createOptimizingCallSite(t -> t.relu());
-Tensor result = site.apply(inputTensor); // Compiles on first call
-```
 
 ### Memory Abstraction Layers
 
@@ -86,15 +78,16 @@ Tensor result = site.apply(inputTensor); // Compiles on first call
 
 ### Kernel Compilation Pipeline
 
-`JavaKernelCompiler`: ExpressionGraph → Java source → compile via javax.tools → load → cache
+`Tracer` records ops into a `TIRGraph`; `TIRToLIRLowerer` lowers TIR to LIR; `LIRStandardPipeline` runs the optimization passes; the active backend's compute engine compiles/executes the LIR (Panama: `LIRKernelCompiler`, C: `CKernelCompiler`, GPU backends generate source).
 
-Fallback: `KernelInterpreter` for interpreted execution
+Fallback: `TIRInterpreter` / `LIRInterpreter` for interpreted execution
 
 ## Key Source Files
 
 - `tensor/Tensor.java` - Core tensor interface
 - `tensor/Tracer.java` - Expression tracing
-- `tensor/JavaKernelCompiler.java` - JIT kernel generation
+- `ir/tir/TIRToLIRLowerer.java` - TIR to LIR lowering
+- `ir/lir/LIRStandardPipeline.java` - LIR optimization passes
 - `memory/MemoryView.java` - Memory abstraction
 - `impl/ShapeImpl.java` - Shape implementation
 - `tensor/TensorOps.java` - Operations interface

@@ -2,9 +2,7 @@ package com.qxotic.json.benchmark;
 
 import java.util.*;
 
-/**
- * Generates JSON test data for benchmarks in memory. Uses fixed seed for reproducible results.
- */
+/** Generates JSON test data for benchmarks in memory. Uses fixed seed for reproducible results. */
 public class JsonDataGenerator {
 
     private static final Random RANDOM = new Random(42); // Fixed seed for reproducibility

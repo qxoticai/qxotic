@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.llama;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -67,12 +68,35 @@ final class LlamaConfigurationTest {
     @Test
     void ropeModesAreExplicitAndFrequencyFactorsAreChecked() {
         Llama.Configuration config = Llama.readConfiguration(metadata("llama").build(), "llama", 8);
+        // linear is what llama.cpp writes by default: no factor collapses to plain RoPE, a
+        // factor stretches positions (angles at pos*f match plain at pos), garbage is refused
+        float[] plain = new float[4];
+        float[] scaled = new float[4];
+        Llama.buildRope(metadata("llama").build(), "llama", config, Map.of()).angles(1, plain);
+        Llama.buildRope(
+                        metadata("llama").putString("llama.rope.scaling.type", "linear").build(),
+                        "llama",
+                        config,
+                        Map.of())
+                .angles(1, scaled);
+        assertArrayEquals(plain, scaled);
+        Llama.buildRope(
+                        metadata("llama")
+                                .putString("llama.rope.scaling.type", "linear")
+                                .putFloat("llama.rope.scaling.factor", 2f)
+                                .build(),
+                        "llama",
+                        config,
+                        Map.of())
+                .angles(2, scaled);
+        assertArrayEquals(plain, scaled, 1e-6f);
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
                         Llama.buildRope(
                                 metadata("llama")
                                         .putString("llama.rope.scaling.type", "linear")
+                                        .putFloat("llama.rope.scaling.factor", -2f)
                                         .build(),
                                 "llama",
                                 config,

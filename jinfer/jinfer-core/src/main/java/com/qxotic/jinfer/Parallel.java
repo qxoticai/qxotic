@@ -23,7 +23,7 @@ import java.util.function.IntConsumer;
  * the range as {@code 2 x width} contiguous bands, one job each: a participant then streams one
  * long band (a memory-bound gemv measured 3% faster than 64 pieces, 6% faster than 256) and the
  * second claims absorb a late starter (one band per participant measured straggler-fragile).
- * Nothing else in the pool decides granularity. A {@link Body} also learns its participant's {@code
+ * Nothing else in the pool decides granularity. A {@link Job} also learns its participant's {@code
  * slot} in {@code [0, width)}: the caller is slot 0, and within one loop no two iterations running
  * at once share a slot, so a slot indexes per-participant scratch owned by the loop's caller. A
  * body that throws ends the loop early: what has not started is skipped, and the first failure is
