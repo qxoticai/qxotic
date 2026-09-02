@@ -184,6 +184,8 @@ final class GGUFTokenizerDefaults {
                 builder, new String[] {"\\p{N}", GPT2_PATTERN}, "smollm", "command-r", "exaone");
         registerSequencePreTokenizers(
                 builder, new String[] {"\\p{N}{1,3}", MINICPM5_MAIN}, "minicpm5");
+        registerSequencePreTokenizers(
+                builder, new String[] {GEMMA4_PATTERN, QWEN2_PATTERN}, "laguna");
 
         // SPM models with "default" pre-tokenizer need identity splitter + metaspace normalizer.
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());

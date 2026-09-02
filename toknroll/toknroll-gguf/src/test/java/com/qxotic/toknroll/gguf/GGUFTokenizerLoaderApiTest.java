@@ -60,6 +60,7 @@ class GGUFTokenizerLoaderApiTest {
             "command-r",
             "exaone",
             "minicpm5",
+            "laguna",
             "default",
         };
         GGUFTokenizerLoader.Builder builder = GGUFTokenizerLoader.createBuilderWithBuiltins();
