@@ -112,6 +112,7 @@
     <maven-javadoc-plugin.version>3.10.1</maven-javadoc-plugin.version>
     <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
     <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
+    <build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
     <spotless-maven-plugin.version>3.3.0</spotless-maven-plugin.version>
     <google-java-format.version>1.27.0</google-java-format.version>
     <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
@@ -405,6 +406,13 @@
           <version>${spotless-maven-plugin.version}</version>
           <configuration>
             <java>
+              <!-- src/testkit/java: shared test support a module compiles into its own tests and
+                   lends to siblings through build-helper add-test-source (no test-jar). -->
+              <includes>
+                <include>src/main/java/**/*.java</include>
+                <include>src/test/java/**/*.java</include>
+                <include>src/testkit/java/**/*.java</include>
+              </includes>
               <googleJavaFormat>
                 <version>${google-java-format.version}</version>
                 <style>AOSP</style>
@@ -427,6 +435,11 @@
         </plugin>
 
         <!-- Coverage -->
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>build-helper-maven-plugin</artifactId>
+          <version>${build-helper-maven-plugin.version}</version>
+        </plugin>
         <plugin>
           <groupId>org.jacoco</groupId>
           <artifactId>jacoco-maven-plugin</artifactId>

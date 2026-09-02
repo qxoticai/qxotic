@@ -30,44 +30,28 @@
     </dependency>
   </dependencies>
 
-  <!-- test-jar: TestPool, a real pool for the backends' tests and benches -->
   <build>
     <plugins>
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
+        <!-- src/testkit/java holds TestPool, a real pool for the backends' tests, shared with them
+             as SOURCE (they add this folder the same way), so this published module ships no test-jar. -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
         <executions>
           <execution>
-            <id>test-jar</id>
+            <id>shared-test-sources</id>
             <goals>
-              <goal>test-jar</goal>
+              <goal>add-test-source</goal>
             </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/src/testkit/java</source>
+              </sources>
+            </configuration>
           </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
-
-  <profiles>
-    <!-- The test-jar exists for the reactor only (the backends' tests use TestPool); an attached
-         artifact would be published with the module, so the release build does not attach it.
-         Sibling modules still resolve it: Maven's reactor reader falls back to target/test-classes. -->
-    <profile>
-      <id>release</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-jar-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>test-jar</id>
-                <phase>none</phase>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 </project>
