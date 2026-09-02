@@ -85,7 +85,7 @@ class toknroll implements Callable<Integer> {
         long t2;
 
         if (decode) {
-            String trimmed = input.trim();
+            String trimmed = text.trim();
             if (trimmed.isEmpty()) {
                 System.err.println("error: no token IDs provided for decode");
                 return 1;
@@ -96,12 +96,12 @@ class toknroll implements Callable<Integer> {
             t2 = System.nanoTime();
             if (verbose) timing(t0, t1, t2, ids.length, "decode");
         } else if (count) {
-            IntSequence tokens = tokenizer.encode(input);
+            IntSequence tokens = tokenizer.encode(text);
             t2 = System.nanoTime();
             System.out.println(tokens.length());
             if (verbose) timing(t0, t1, t2, tokens.length(), "count");
         } else {
-            IntSequence tokens = tokenizer.encode(input);
+            IntSequence tokens = tokenizer.encode(text);
             t2 = System.nanoTime();
             for (int i = 0; i < tokens.length(); i++) System.out.println(tokens.intAt(i));
             if (verbose) timing(t0, t1, t2, tokens.length(), "encode");
