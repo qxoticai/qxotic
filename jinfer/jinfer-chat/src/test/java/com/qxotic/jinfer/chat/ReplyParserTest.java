@@ -181,8 +181,8 @@ public final class ReplyParserTest {
                         "<|/call|>",
                         ReplyParserTest::parseCalls,
                         "<think>",
-                        "</think>",
-                        false);
+                        "</think>");
+        p.disableToolCalls();
         steps = run(p, 2, 7, 3);
         check(
                 steps.equals(List.of(new Step("[f(x=1)]", false))),
@@ -394,12 +394,62 @@ public final class ReplyParserTest {
                         "<|/call|>",
                         ReplyParserTest::parseCalls,
                         "<think>",
-                        "</think>",
-                        false);
+                        "</think>");
+        p.disableToolCalls();
         run(p, 5, 2, 11);
         Message m = p.finish();
         Content.Text text = (Content.Text) m.content().get(m.content().size() - 1);
         Assertions.assertEquals("[f(", text.text());
         Assertions.assertEquals(IntSequence.of(2, 11), text.verbatim(), "ids verbatim");
+    }
+
+    @Test
+    void disablingCallsIsOneWayAndLifecycleBound() {
+        ReplyParser p =
+                ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
+        p.disableToolCalls();
+        p.disableToolCalls(); // capability revocation is idempotent
+
+        Assertions.assertEquals(Channel.CONTENT, p.channel());
+        List<Step> steps = run(p, 2, 7, 3);
+        Assertions.assertEquals(List.of(new Step("[f(x=1)]", false)), steps);
+        Assertions.assertThrows(IllegalStateException.class, p::disableToolCalls);
+
+        Message message = p.finish();
+        Assertions.assertTrue(
+                message.content().stream().noneMatch(Content.ToolCall.class::isInstance));
+        Assertions.assertThrows(IllegalStateException.class, p::disableToolCalls);
+    }
+
+    @Test
+    void anUnclaimedCallInsideReasoningStaysReasoning() {
+        ReplyParser p =
+                ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
+        p.disableToolCalls();
+
+        List<Step> steps = run(p, 0, 2, 7, 3, 1, 19);
+
+        Assertions.assertEquals(List.of(new Step("[f(x=1)]", true), new Step("Hi", false)), steps);
+        Content.Reasoning reasoning =
+                Assertions.assertInstanceOf(
+                        Content.Reasoning.class, p.finish().content().getFirst());
+        Assertions.assertEquals("[f(x=1)]", reasoning.text());
+        Assertions.assertEquals(
+                IntSequence.of(2, 7, 3),
+                ((Content.Text) reasoning.content().getFirst()).verbatim());
+    }
+
+    @Test
+    void decoratorsForwardCallDisabling() {
+        ReplyParser p =
+                ReplyParser.dropping(
+                        ReplyParser.spans(
+                                TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls),
+                        4);
+        p.disableToolCalls();
+
+        Assertions.assertEquals(List.of(new Step("[f(x=1)]", false)), run(p, 2, 7, 3, 4));
+        Assertions.assertTrue(
+                p.finish().content().stream().noneMatch(Content.ToolCall.class::isInstance));
     }
 }

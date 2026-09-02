@@ -67,12 +67,11 @@
  *
  * <p>Raw GBNF ({@link com.qxotic.jinfer.langchain4j.JinferChatRequestParameters#grammar}) is the
  * generalization for non-JSON shapes (label sets, numeric formats); grammar and JSON format are
- * mutually exclusive per request. Tools COMPOSE with a schema format - the schema rides the
- * family's reply language, so calls stay the family's own syntax while visible text can only be the
- * schema; raw GBNF and schemaless JSON still reject tools loudly. On reasoning models the
- * constraint binds only the OUTPUT channel - think spans sample free, so structured output does not
- * cost reasoning quality. Expect grammar-valid output always; expect FIELD QUALITY to track the
- * model - a constrained small model produces well-formed JSON with weak content.
+ * mutually exclusive per request. Tools are also mutually exclusive with constrained output: run
+ * the tool round first, then request the final schema-shaped answer without tools. On reasoning
+ * models the constraint binds only the OUTPUT channel - think spans sample free, so structured
+ * output does not cost reasoning quality. Expect grammar-valid output always; expect FIELD QUALITY
+ * to track the model - a constrained small model produces well-formed JSON with weak content.
  *
  * <h2>Constrained output: the prompt still has a job</h2>
  *

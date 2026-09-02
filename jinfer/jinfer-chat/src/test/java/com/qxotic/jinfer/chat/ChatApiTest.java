@@ -296,6 +296,26 @@ final class ChatApiTest {
     }
 
     @Test
+    void unclaimedCallSyntaxStaysVisibleText() {
+        ReplyParser parser =
+                ReplyParser.spans(
+                        TOKENIZER,
+                        "<call>",
+                        "</call>",
+                        text -> List.of(new Content.ToolCall("", text, Map.of())));
+        parser.disableToolCalls();
+        parser.feed(ByteTokenizer.CALL_OPEN);
+        TOKENIZER.encode("weather").forEachInt(parser::feed);
+        assertEquals(Channel.CONTENT, parser.channel());
+        ReplyParser.Fragment close = parser.feed(ByteTokenizer.CALL_CLOSE);
+
+        assertEquals("weather", close.text());
+        Message reply = parser.finish();
+        assertEquals("weather", reply.text());
+        assertTrue(reply.content().stream().noneMatch(Content.ToolCall.class::isInstance));
+    }
+
+    @Test
     void droppingAlsoFiltersPromptOwnedTokens() {
         ReplyParser parser =
                 ReplyParser.dropping(ReplyParser.spans(TOKENIZER), ByteTokenizer.THINK_CLOSE);

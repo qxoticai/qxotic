@@ -416,17 +416,19 @@ public final class ChatEngine implements AutoCloseable {
      * these fields. Direct, framework-free callers: {@link #of(List, Sampling)} covers the common
      * case without the 12 positional slots.
      *
+     * @param tools tools offered to the model; mutually exclusive with {@code contentGbnf}
      * @param thinking the caller's intent; {@link #prepare} still applies the {@link #THINK_FLOOR}
      *     and a forced call's override, so a request cannot ask for a think span it cannot afford
      * @param maxTokens completion budget, {@link Generator.Constraints#UNLIMITED} = bounded only by
      *     the context
-     * @param reasoningMaxTokens think-span cap override: null = the default policy (half of {@code
-     *     maxTokens}), -1 = uncapped, else the cap
+     * @param reasoningMaxTokens think-span cap override: null = the model family's default policy,
+     *     -1 = uncapped, else the cap
      * @param reasoningMessage forced as the model's own words when the think-span cap fires, before
      *     the close marker; null or blank = a bare paragraph break
      * @param timeout wall-clock budget for the whole pass (prefill AND decode); {@link
      *     Duration#ZERO} = none
-     * @param contentGbnf constrains decoding to a GBNF grammar (JSON schema, ...); null = free
+     * @param contentGbnf constrains decoding to a GBNF grammar (JSON schema, ...); null = free;
+     *     mutually exclusive with {@code tools}
      * @param forcedTool seed the family's call marker so the reply IS a tool call
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
      *     {@link #encode} skips the native codec when any key it does not understand is present
@@ -465,14 +467,11 @@ public final class ChatEngine implements AutoCloseable {
             tools = tools == null ? List.of() : List.copyOf(tools);
             stops = TextStops.checked(stops);
             forcedTool = forcedTool == null ? ForcedTool.NONE : forcedTool;
+            if (contentGbnf != null && !tools.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "tools and constrained output cannot be used in the same request");
+            }
             if (forcedTool != ForcedTool.NONE) {
-                if (contentGbnf != null) {
-                    // two independent walks would stack: the content walk never sees the seeded
-                    // call marker and masks the call's arguments into nothing (docs/reply-language)
-                    throw new IllegalArgumentException(
-                            "a forced tool call and a grammar-shaped answer cannot both be the"
-                                    + " reply");
-                }
                 if (tools.isEmpty()) {
                     throw new IllegalArgumentException("forcing a tool call needs offered tools");
                 }
@@ -644,6 +643,7 @@ public final class ChatEngine implements AutoCloseable {
                 new Conversation(request.messages(), request.tools(), think, "");
         Encoded encoded =
                 encode(conversation, request.templateKwargs(), MemoryAllocators.ofArena(memory));
+        if (request.tools().isEmpty()) encoded.parser().disableToolCalls();
         Sampler sampler =
                 sampler(
                         request.sampling(),
@@ -653,11 +653,7 @@ public final class ChatEngine implements AutoCloseable {
                         request.reasoningMessage(),
                         encoded.replyPrefix());
         if (request.contentGbnf() != null) {
-            // ONE selection constrains every chat decode: content can only be the grammar,
-            // thinking stays free, and with tools offered the family's own calls stay legal
-            sampler =
-                    constrained(
-                            request.contentGbnf(), request.tools(), sampler, encoded.replyPrefix());
+            sampler = constrained(request.contentGbnf(), sampler, encoded.replyPrefix());
         }
         if (request.forcedTool() != ForcedTool.NONE) {
             // a named choice pins that tool alone; the prompt still frames every offered tool
@@ -721,10 +717,9 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
-     * thinking on caps the think span so it cannot starve the visible answer ({@code
-     * reasoningOverride}: null = half of {@code maxTokens}, -1 = uncapped; {@code
-     * reasoningMessage}: what the model "decides" when the cap fires); thinking off masks the think
-     * markers outright.
+     * thinking on applies the family default or caller override ({@code reasoningOverride}: null =
+     * the family policy, -1 = uncapped; {@code reasoningMessage}: what the model "decides" when the
+     * cap fires); thinking off masks the think markers outright.
      */
     private Sampler sampler(
             Sampling sampling,
@@ -742,7 +737,9 @@ public final class ChatEngine implements AutoCloseable {
         int budget =
                 reasoningOverride != null
                         ? reasoningOverride
-                        : maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1;
+                        : loaded.template()
+                                .map(template -> template.defaultReasoningBudget(maxTokens))
+                                .orElse(maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
         // prompt-opened spans (replyPrefix carries the open id): the cap must start ARMED - the
         // open token never passes through the sampler on those families
         boolean startInThink = false;
@@ -766,22 +763,9 @@ public final class ChatEngine implements AutoCloseable {
                 markers.close());
     }
 
-    /**
-     * Every constrained CHAT decode is ONE selection: visible content can only be {@code
-     * contentGbnf}, thinking stays free, and offered tools state the reply's rights (the family's
-     * calls stay legal and the answer is optional). Native families derive it from their own reply
-     * language; a model without one gets the generic think-aware shape - unless tools are offered,
-     * which needs the family's call syntax and rejects loudly without it.
-     */
-    private Sampler constrained(
-            String contentGbnf, List<Tool> tools, Sampler base, IntSequence replyPrefix) {
+    private Sampler constrained(String contentGbnf, Sampler base, IntSequence replyPrefix) {
         Optional<ReplyLanguage.Selection> family =
-                loaded.template().flatMap(t -> t.constrainedReply(contentGbnf, tools));
-        if (family.isEmpty() && !tools.isEmpty()) {
-            throw new UnsupportedOperationException(
-                    "tools together with a JSON response format need a family reply language;"
-                            + " this model's template declares none");
-        }
+                loaded.template().flatMap(t -> t.constrainedReply(contentGbnf));
         ReplyLanguage.Selection selection =
                 family.orElseGet(
                         () -> {

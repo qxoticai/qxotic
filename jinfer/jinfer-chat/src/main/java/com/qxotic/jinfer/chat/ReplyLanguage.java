@@ -196,44 +196,18 @@ public final class ReplyLanguage {
             String callClose,
             Function<String, List<Content.ToolCall>> calls,
             Node terminator) {
-        return spans(thinkOpen, thinkClose, callOpen, callClose, calls, terminator, free());
-    }
-
-    /**
-     * As {@link #spans(String, String, String, String, Function, Node)} with the CONTENT hole
-     * stated: pass {@code gbnf(schemaGbnf)} and the family's visible text can only be that schema
-     * while calls stay its own syntax - tools and a JSON response format as ONE selection.
-     */
-    public static Node spans(
-            String thinkOpen,
-            String thinkClose,
-            String callOpen,
-            String callClose,
-            Function<String, List<Content.ToolCall>> calls,
-            Node terminator,
-            Node contentHole) {
         Node callSpan = call(calls, mark(callOpen), free(), mark(callClose));
-        if (contentHole instanceof Node.Free) {
-            return seq(
-                    opt(think(mark(thinkOpen), free(), mark(thinkClose))),
-                    rep(alt(content(contentHole), callSpan), 0, -1),
-                    opt(terminator));
-        }
-        // a STATED hole appears at most once: one request has ONE answer, and a repeatable
-        // schema region would admit a second document after the first completed
         return seq(
                 opt(think(mark(thinkOpen), free(), mark(thinkClose))),
-                rep(callSpan, 0, -1),
-                opt(seq(content(contentHole), rep(callSpan, 0, -1))),
+                rep(alt(content(free()), callSpan), 0, -1),
                 opt(terminator));
     }
 
     /**
      * One span family's derived faces, held by its template - the marker spellings are written ONCE
      * and every {@link ChatTemplate} grammar word delegates here: {@code parser()} (the memoized
-     * AUTO walk), {@code constrainedAuto} (the tree with the content hole stated - the tools +
-     * JSON-schema seam) and {@code forcedCall} (headers forced through offered names). Pruning
-     * still adapts the spellings per checkpoint.
+     * AUTO walk), {@code constrained} (one grammar-shaped content reply), and {@code forcedCall}
+     * (headers forced through offered names). Pruning still adapts the spellings per checkpoint.
      */
     public static final class Spans {
         private final String thinkOpen;
@@ -264,16 +238,12 @@ public final class ReplyLanguage {
 
         /** The family's memoized AUTO walk. */
         public synchronized Walk parser() {
-            if (auto == null) auto = Selection.of(language(free()), tokenizer);
+            if (auto == null) auto = Selection.of(language(), tokenizer);
             return auto.walk();
         }
 
-        /**
-         * The compiled constrained selection - with tools, the composed shape (calls stay legal,
-         * the answer optional); without, the document is REQUIRED and calls are out.
-         */
-        public Selection constrainedAuto(String contentGbnf, boolean toolsOffered) {
-            if (toolsOffered) return Selection.of(language(gbnf(contentGbnf)), tokenizer);
+        /** A required grammar-shaped content reply; requests with tools are rejected upstream. */
+        public Selection constrained(String contentGbnf) {
             return Selection.of(
                     seq(
                             opt(think(mark(thinkOpen), free(), mark(thinkClose))),
@@ -304,10 +274,9 @@ public final class ReplyLanguage {
             return Selection.of(seq(new Node.Alt(options), opt(terminator)), tokenizer);
         }
 
-        /** The family tree with the content hole stated. */
-        private Node language(Node contentHole) {
-            return spans(
-                    thinkOpen, thinkClose, callOpen, callClose, calls, terminator, contentHole);
+        /** The family's ordinary free-content tree. */
+        private Node language() {
+            return spans(thinkOpen, thinkClose, callOpen, callClose, calls, terminator);
         }
     }
 
@@ -352,10 +321,9 @@ public final class ReplyLanguage {
             this.ops = c.ops();
             this.regions = c.regions;
             this.controlIds = Set.copyOf(c.markIds);
-            // a GBNF-OPENING region (tools + schema output: content is the schema payload)
-            // dispatches on plain tokens its payload admits, so structure masking needs each
-            // such region's ENTRY set - computed once here from a throwaway cursor, never from
-            // the walk's own (the walk's cursor memo must stay untouched until entry)
+            // A mark-less GBNF region dispatches on plain tokens its payload admits, so structure
+            // masking needs its ENTRY set - computed once from a throwaway cursor, never from the
+            // walk's own (the walk's cursor memo must stay untouched until entry).
             this.regionEntry = new long[regions.size()][];
             for (int i = 0; i < regions.size(); i++) {
                 CRegion r = regions.get(i);
@@ -571,8 +539,7 @@ public final class ReplyLanguage {
                 Set<Integer> markIds,
                 boolean spanShaped) {
             // opener -1 covers TWO opening shapes sharing the plain-dispatch slot: a FREE hole
-            // (pass-through) and a mark-less SPEC (a GBNF-opening region - the tools+schema
-            // content shape - dispatching on exactly the plain tokens its payload admits)
+            // (pass-through) and a mark-less SPEC, which dispatches on its payload's entry tokens
             int opener =
                     segs.get(0) instanceof Seg.Spec s && s.leadMark() != -1 ? s.leadMark() : -1;
             return new CRegion(
@@ -828,6 +795,8 @@ public final class ReplyLanguage {
         private final ByteArrayOutputStream payload = new ByteArrayOutputStream();
         private IntSequence.Builder payloadIds = IntSequence.newBuilder();
         private IntSequence.Builder freeIds = IntSequence.newBuilder(); // CALL free holes only
+        private IntSequence.Builder callWireIds;
+        private ByteArrayOutputStream visibleCall;
         private final StringBuilder thinkText = new StringBuilder();
         private IntSequence.Builder thinkIds = IntSequence.newBuilder();
         private final StringBuilder contentText = new StringBuilder();
@@ -840,12 +809,25 @@ public final class ReplyLanguage {
         private boolean ended;
         private boolean generated;
         private boolean seeding;
+        private boolean toolCallsEnabled = true;
+        private int endTurnId = -1; // parse-only walks never bind one
         private Message finished;
 
         private Walk(Selection sel) {
             this.sel = sel;
             this.tokenizer = sel.tokenizer;
             this.at = sel.entry;
+        }
+
+        @Override
+        public void disableToolCalls() {
+            if (generated) throw new IllegalStateException("reply generation already started");
+            if (finished != null) throw new IllegalStateException("parser already finished");
+            toolCallsEnabled = false;
+            if (region != null && region.kind() == Kind.CALL && callWireIds == null) {
+                callWireIds = IntSequence.newBuilder();
+                visibleCall = new ByteArrayOutputStream();
+            }
         }
 
         /**
@@ -878,10 +860,11 @@ public final class ReplyLanguage {
 
         /**
          * The walk as a decode driver - mask, sample, feed, the ONE way a selection constrains a
-         * generation (the forced-call path and the tools+schema selection both ride it). A walk
-         * with nothing admissible emits {@code endTurn} (the model's own end of turn) forever.
+         * generation. A walk with nothing admissible emits {@code endTurn} (the model's own end of
+         * turn) forever.
          */
         public Sampler sampler(Sampler base, int endTurn) {
+            this.endTurnId = endTurn;
             return logits -> {
                 if (!maskLogits(logits)) return endTurn;
                 int token = base.sampleToken(logits);
@@ -915,7 +898,19 @@ public final class ReplyLanguage {
             if (region != null) {
                 if (region.segs().get(seg) instanceof Seg.Spec spec)
                     return cursor(spec).maskLogits(logits);
-                return true; // a free hole: pass-through
+                // a free hole with a declared closer masks the END-TURN id alone: emitting it
+                // there abandons a constrained reply mid-region (the observed escape: EOS inside
+                // the think span under a stated format - reasoning streamed, then no document).
+                // Other controls still cut by the control rule as they always did: rejecting
+                // EVERY control measurably perturbs the reasoning distribution (empty-but-legal
+                // documents on Lfm2ConstraintIT), so only the abandonment token is taken away.
+                if (region.segs().get(seg) instanceof Seg.Free f
+                        && f.closer() != -1
+                        && endTurnId >= 0
+                        && endTurnId != f.closer()) {
+                    reject(writable(logits), endTurnId);
+                }
+                return true;
             }
             Selection.Closure cl = sel.closure(at);
             long[] plainEntry = null;
@@ -1000,6 +995,9 @@ public final class ReplyLanguage {
             payload.reset();
             payloadIds = IntSequence.newBuilder();
             freeIds = IntSequence.newBuilder();
+            callWireIds =
+                    !toolCallsEnabled && r.kind() == Kind.CALL ? IntSequence.newBuilder() : null;
+            visibleCall = callWireIds == null ? null : new ByteArrayOutputStream();
         }
 
         // -- same-opener candidacy -------------------------------------------
@@ -1094,6 +1092,10 @@ public final class ReplyLanguage {
             if (!control(token)) {
                 byte[] bs = tokenizer.decodeBytes(new int[] {token});
                 if (region.kind() == Kind.CALL) { // a call's free hole IS payload: atomic, silent
+                    if (callWireIds != null) {
+                        callWireIds.add(token);
+                        visibleCall.writeBytes(bs);
+                    }
                     payload.writeBytes(bs);
                     payloadIds.add(token);
                     freeIds.add(token);
@@ -1124,7 +1126,10 @@ public final class ReplyLanguage {
                 // tokens included AS THEIR SPELLINGS - MiniCPM5's </param> closers and Gemma's
                 // <|"|> quote token are the payload syntax itself, and the payload parsers read
                 // exactly the decoded text the old span parsers fed them
-                payload.writeBytes(tokenizer.decodeBytes(new int[] {token}));
+                if (callWireIds != null) callWireIds.add(token);
+                byte[] bs = tokenizer.decodeBytes(new int[] {token});
+                if (visibleCall != null) visibleCall.writeBytes(bs);
+                payload.writeBytes(bs);
                 payloadIds.add(token);
                 freeIds.add(token);
                 return Fragment.EMPTY;
@@ -1149,6 +1154,7 @@ public final class ReplyLanguage {
          * scaffold segments stay silent.
          */
         private Fragment capture(int token, Seg.Spec spec) {
+            if (callWireIds != null) callWireIds.add(token);
             if (region.markIds().contains(token)) {
                 // a mark BETWEEN captured runs is a WORD BOUNDARY in a call payload (the old
                 // parser's defense: "get_time<|constrain|>json" must not read "get_timejson");
@@ -1159,6 +1165,7 @@ public final class ReplyLanguage {
             byte[] bs = tokenizer.decodeBytes(new int[] {token});
             if (bs.length == 0) return Fragment.EMPTY;
             if (region.kind() == Kind.CALL) {
+                if (visibleCall != null) visibleCall.writeBytes(bs);
                 payload.writeBytes(bs);
                 payloadIds.add(token);
                 return Fragment.EMPTY; // calls are ATOMIC: nothing surfaces mid-region
@@ -1251,9 +1258,31 @@ public final class ReplyLanguage {
             // think and content ACCUMULATE across regions: the reply's structure is one
             // coalesced reasoning part, one coalesced text part, then the calls (the ReplyParser
             // contract, and what every echo consumer expects)
-            if (region.kind() == Kind.CALL) commitCall();
+            if (region.kind() == Kind.CALL) {
+                if (toolCallsEnabled) commitCall();
+                else demoteCall();
+            }
             region = null;
             at = regionReturn;
+        }
+
+        private void demoteCall() {
+            String text =
+                    new String(
+                            visibleCall == null ? payload.toByteArray() : visibleCall.toByteArray(),
+                            StandardCharsets.UTF_8);
+            IntSequence ids = callWireIds == null ? payloadIds.build() : callWireIds.build();
+            contentText.append(text);
+            ids.forEachInt(contentIds::add);
+            if (!text.isEmpty()) {
+                carry = new Fragment(text, ids);
+                carryReasoning = false;
+            }
+            payload.reset();
+            payloadIds = IntSequence.newBuilder();
+            freeIds = IntSequence.newBuilder();
+            callWireIds = null;
+            visibleCall = null;
         }
 
         private void commitCall() {
@@ -1291,7 +1320,8 @@ public final class ReplyLanguage {
                 // pre-entry to a free-opening region: a text token fed now joins content
                 return sel.closure(at).plain() != -1 ? Channel.CONTENT : null;
             }
-            if (region.kind() == Kind.CALL) return Channel.TOOL_CALL; // ReplyLanes keys on this
+            if (region.kind() == Kind.CALL)
+                return toolCallsEnabled ? Channel.TOOL_CALL : Channel.CONTENT;
             boolean textual =
                     switch (region.segs().get(seg)) {
                         case Seg.Free f -> true;
@@ -1317,8 +1347,8 @@ public final class ReplyLanguage {
             if (finished != null) return finished;
             // an open free hole or accepting close-less payload flushes where it stood (an
             // unterminated think span is still reasoning; a balanced close-less call at the end
-            // of generation IS a call - llama.cpp commits these too); an incomplete CALL payload
-            // is discarded: a span the generation never closed is no call
+            // of generation IS a call - llama.cpp commits these too); an incomplete claimed CALL
+            // is discarded, while an unclaimed one remains ordinary content
             if (region != null) {
                 boolean complete =
                         switch (region.segs().get(seg)) {
@@ -1333,6 +1363,9 @@ public final class ReplyLanguage {
                         };
                 if (complete && region.kind() == Kind.CALL) {
                     exitRegion();
+                } else if (!toolCallsEnabled && region.kind() == Kind.CALL) {
+                    demoteCall();
+                    region = null;
                 } else {
                     flushPending(region.kind());
                     region = null;

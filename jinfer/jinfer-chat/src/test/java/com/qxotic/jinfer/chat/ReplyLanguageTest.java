@@ -22,6 +22,7 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.ReplyLanguage.Node;
 import com.qxotic.jinfer.chat.ReplyLanguage.Selection;
 import com.qxotic.jinfer.chat.ReplyLanguage.Walk;
+import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
@@ -118,6 +119,33 @@ public final class ReplyLanguageTest {
         boolean[] ok = new boolean[n];
         for (int i = 0; i < n; i++) ok[i] = values[i] == 0f;
         return ok;
+    }
+
+    static Node statedHole() {
+        return seq(
+                opt(think(mark("<think>"), free(), mark("</think>"))),
+                content(gbnf("root ::= \"{\\\"a\\\":1}\"")),
+                opt(mark("<end>")));
+    }
+
+    /**
+     * A free hole with a declared closer masks the END-TURN id alone: emitting it there abandons a
+     * constrained reply mid-region - the E2E escape both structure fixes missed (EOS inside the
+     * think span under a stated format: reasoning streamed, then no document). Other controls stay
+     * admitted; they cut by the control rule as they always did - masking every control measurably
+     * perturbed the reasoning distribution (empty-but-legal documents on LFM2).
+     */
+    @Test
+    void aThinkHoleUnderAStatedFormatMasksTheEndTurnAlone() {
+        Walk w = Selection.of(statedHole(), TOK).walk();
+        w.sampler(Sampler.ARGMAX, ODD); // binds ODD as the end-turn id
+        run(w, THINK, ch('a'));
+        boolean[] ok = admitted(w);
+        assertTrue(ok[ch('x')], "plain reasoning tokens stay free");
+        assertTrue(ok[END_THINK], "the closer stays open");
+        assertFalse(ok[ODD], "the end-turn id cannot abandon the reply mid-think");
+        assertTrue(ok[END], "other controls stay admitted - they cut, as they always did");
+        assertTrue(ok[CALL], "masking is surgical: only the abandonment token is taken away");
     }
 
     @Test
@@ -549,6 +577,123 @@ public final class ReplyLanguageTest {
     }
 
     @Test
+    void unclaimedCallRegionsStayContent() {
+        Node spanFamily =
+                seq(
+                        content(free()),
+                        rep(call(ONE, mark("<call>"), free(), mark("</call>")), 0, -1),
+                        mark("<end>"));
+        Walk complete = Selection.of(spanFamily, TOK).walk();
+        complete.disableToolCalls();
+        run(complete, toks("x"));
+        run(complete, CALL, ch('a'));
+        assertEquals(Channel.CONTENT, complete.channel());
+        ReplyParser.Fragment close = complete.feed(END_CALL);
+        assertEquals("a", close.text());
+        assertEquals(IntSequence.of(CALL, ch('a'), END_CALL), close.tokens());
+        run(complete, END);
+        Message completed = complete.finish();
+        assertEquals("xa", completed.text());
+        assertTrue(completed.content().stream().noneMatch(Content.ToolCall.class::isInstance));
+        assertEquals(
+                IntSequence.of(ch('x'), CALL, ch('a'), END_CALL),
+                ((Content.Text) completed.content().getFirst()).verbatim());
+
+        Walk partial = Selection.of(spanFamily, TOK).walk();
+        partial.disableToolCalls();
+        run(partial, toks("x"));
+        run(partial, CALL, ch('a'));
+        Message unfinished = partial.finish();
+        assertEquals("xa", unfinished.text(), "an unfinished unclaimed call is not lost");
+        assertEquals(
+                IntSequence.of(ch('x'), CALL, ch('a')),
+                ((Content.Text) unfinished.content().getFirst()).verbatim());
+
+        Walk repeated =
+                Selection.of(
+                                seq(
+                                        rep(
+                                                call(ONE, mark("<call>"), free(), mark("</call>")),
+                                                0,
+                                                -1),
+                                        mark("<end>")),
+                                TOK)
+                        .walk();
+        repeated.disableToolCalls();
+        run(repeated, CALL, ch('a'), END_CALL, CALL, ch('b'), END_CALL, END);
+        Message calls = repeated.finish();
+        assertEquals("ab", calls.text());
+        assertEquals(
+                IntSequence.of(CALL, ch('a'), END_CALL, CALL, ch('b'), END_CALL),
+                ((Content.Text) calls.content().getFirst()).verbatim(),
+                "each demoted call resets its capture before the next one");
+    }
+
+    @Test
+    void disablingCallsSkipsParsingAndPreservesInteriorWireMarks() {
+        int[] parsed = {0};
+        Node structured =
+                seq(
+                        call(
+                                text -> {
+                                    parsed[0]++;
+                                    return ONE.apply(text);
+                                },
+                                mark("<call>"),
+                                bytes("f"),
+                                mark("[ARGS]"),
+                                gbnf("root ::= \"(\" \"1\" \")\""),
+                                mark("</call>")),
+                        mark("<end>"));
+        Walk walk = Selection.of(structured, TOK).walk();
+        walk.disableToolCalls();
+
+        ReplyParser.Fragment close = walk.feed(CALL);
+        assertTrue(close.text().isEmpty());
+        run(walk, ch('f'), ARGS, ch('('), ch('1'), ch(')'));
+        close = walk.feed(END_CALL);
+        walk.feed(END);
+
+        assertEquals("f(1)", close.text(), "parser-only word-boundary spaces never leak");
+        assertEquals(
+                IntSequence.of(CALL, ch('f'), ARGS, ch('('), ch('1'), ch(')'), END_CALL),
+                close.tokens());
+        Message message = walk.finish();
+        assertEquals("f(1)", message.text());
+        assertEquals(0, parsed[0], "disabled calls are text, so payload parsing is unnecessary");
+        assertTrue(message.content().stream().noneMatch(Content.ToolCall.class::isInstance));
+    }
+
+    @Test
+    void disablingCallsAfterPromptSeedingStartsAVisibleGeneratedPayload() {
+        Node spanFamily = seq(call(ONE, mark("<call>"), free(), mark("</call>")), mark("<end>"));
+        Walk walk = Selection.of(spanFamily, TOK).walk();
+        walk.seed(IntSequence.of(CALL));
+        walk.disableToolCalls();
+
+        assertEquals(Channel.CONTENT, walk.channel());
+        assertEquals(List.of(new Step("a", false)), run(walk, ch('a'), END_CALL));
+        run(walk, END);
+        Message message = walk.finish();
+        assertEquals("a", message.text());
+        assertEquals(
+                IntSequence.of(ch('a'), END_CALL),
+                ((Content.Text) message.content().getFirst()).verbatim(),
+                "prompt-owned opener is not attributed to generated text");
+    }
+
+    @Test
+    void disablingCallsIsIdempotentAndLifecycleBound() {
+        Walk walk = Selection.of(family(), TOK).walk();
+        walk.disableToolCalls();
+        walk.disableToolCalls();
+        walk.feed(ch('x'));
+        assertThrows(IllegalStateException.class, walk::disableToolCalls);
+        walk.finish();
+        assertThrows(IllegalStateException.class, walk::disableToolCalls);
+    }
+
+    @Test
     void streamedAndOneShotAgree() {
         IntSequence.Builder reply = IntSequence.newBuilder();
         reply.add(THINK);
@@ -647,7 +792,7 @@ public final class ReplyLanguageTest {
                 "the seed's opening brace stays in the payload");
     }
 
-    /** The tools+schema shape: content is a GBNF payload, calls stay the family's own. */
+    /** Low-level composition exercise; ChatEngine request policy does not combine these modes. */
     static Node schemaFamily() {
         return seq(
                 rep(
@@ -679,29 +824,6 @@ public final class ReplyLanguageTest {
                 1,
                 m.content().stream().filter(p -> p instanceof Content.ToolCall).count(),
                 "the call still commits: " + m.content());
-    }
-
-    @Test
-    void aStatedContentHoleAppearsAtMostOnce() {
-        // the spans preset's composed form: one request has ONE answer - after the document
-        // completes, a second one is unrepresentable while calls stay legal
-        Walk w =
-                Selection.of(
-                                ReplyLanguage.spans(
-                                        "<think>",
-                                        "</think>",
-                                        "<call>",
-                                        "</call>",
-                                        ONE,
-                                        mark("<end>"),
-                                        gbnf("root ::= \"{\" \"1\" \"}\"")),
-                                TOK)
-                        .walk();
-        run(w, ch('{'), ch('1'), ch('}'));
-        boolean[] ok = admitted(w);
-        assertFalse(ok[ch('{')], "no second document");
-        assertTrue(ok[CALL], "calls stay legal after the answer");
-        assertTrue(ok[END]);
     }
 
     // ---- fixture -----------------------------------------------------------

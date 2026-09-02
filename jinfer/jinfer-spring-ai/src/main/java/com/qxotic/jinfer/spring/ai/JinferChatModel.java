@@ -328,7 +328,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : options.getMinP().floatValue(),
                                         options.getSeed()),
-                        contentGbnf(options.getOutputSchema(), !tools.isEmpty()),
+                        contentGbnf(options.getOutputSchema()),
                         ChatEngine.ForcedTool.NONE, // Spring AI has no forced-tool-call knob
                         options.getStopSequences(),
                         null); // Spring AI has no chat_template_kwargs equivalent
@@ -349,10 +349,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      *
      * <p>The output schema as GBNF source - the engine compiles the family's constrained selection.
      */
-    private static String contentGbnf(String outputSchema, boolean toolsOffered) {
+    private static String contentGbnf(String outputSchema) {
         if (outputSchema == null) return null;
-        Map<String, Object> schema = JinferMappings.jsonMap(outputSchema);
-        return toolsOffered ? Grammar.schemaHoleGbnf(schema) : Grammar.schemaGbnf(schema);
+        return Grammar.schemaGbnf(JinferMappings.jsonMap(outputSchema));
     }
 
     @Override
@@ -561,9 +560,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + "' (one loaded GGUF per instance)");
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
-        // tools together with an output schema COMPOSE: the schema rides the family's reply
-        // language (calls stay the family's own syntax, visible text can only be the schema);
-        // a family without a reply language rejects at prepare, loudly
     }
 
     private ChatResponse response(AssistantMessage ai, ChatEngine.Completion done) {

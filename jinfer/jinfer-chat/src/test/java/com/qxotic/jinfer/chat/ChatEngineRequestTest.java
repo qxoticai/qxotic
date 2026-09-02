@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.chat;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -324,24 +325,38 @@ final class ChatEngineRequestTest {
     }
 
     @Test
-    void aForcedCallAndAContentGrammarCannotBothBeTheReply() {
-        IllegalArgumentException e =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () ->
-                                new ChatEngine.Request(
-                                        ONE_TURN,
-                                        ONE_TOOL,
-                                        true,
-                                        -1,
-                                        null,
-                                        null,
-                                        Duration.ZERO,
-                                        SAMPLING,
-                                        "root ::= \"x\"",
-                                        ChatEngine.ForcedTool.ANY,
-                                        List.of(),
-                                        null));
-        assertTrue(e.getMessage().contains("both"), e.getMessage());
+    void toolsAndConstrainedOutputCannotShareARequest() {
+        String grammar = "root ::= \"x\"";
+        assertDoesNotThrow(() -> request(List.of(), grammar, ChatEngine.ForcedTool.NONE));
+        assertDoesNotThrow(() -> request(ONE_TOOL, null, ChatEngine.ForcedTool.NONE));
+
+        for (ChatEngine.ForcedTool choice :
+                List.of(
+                        ChatEngine.ForcedTool.NONE,
+                        ChatEngine.ForcedTool.ANY,
+                        new ChatEngine.ForcedTool.Named("f"))) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> request(ONE_TOOL, grammar, choice));
+            assertTrue(e.getMessage().contains("cannot be used"), e.getMessage());
+        }
+    }
+
+    private static ChatEngine.Request request(
+            List<Tool> tools, String grammar, ChatEngine.ForcedTool forcedTool) {
+        return new ChatEngine.Request(
+                ONE_TURN,
+                tools,
+                true,
+                -1,
+                null,
+                null,
+                Duration.ZERO,
+                SAMPLING,
+                grammar,
+                forcedTool,
+                List.of(),
+                null);
     }
 }

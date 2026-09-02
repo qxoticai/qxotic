@@ -50,9 +50,8 @@ public interface ChatTemplate {
         return ReplyParser.spans(tokenizer);
     }
 
-    /** The family's output grammar composed with calls to the offered tools. */
-    default Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
+    /** The family's grammar-constrained content reply. */
+    default Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
         return Optional.empty();
     }
 
@@ -64,6 +63,14 @@ public interface ChatTemplate {
      */
     default ThinkMarkers thinkMarkers() {
         return ThinkMarkers.GENERIC;
+    }
+
+    /**
+     * Default generated-token budget for a reasoning span. Negative leaves it uncapped. Families
+     * may override this when their published generation policy expects unrestricted reasoning.
+     */
+    default int defaultReasoningBudget(int maxTokens) {
+        return maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1;
     }
 
     /** One family's think-span marker spellings. */

@@ -186,11 +186,24 @@ public final class Llama32ChatTemplate implements ChatTemplate {
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         private IntSequence.Builder ids = IntSequence.newBuilder();
         private State state = State.UNDECIDED;
+        private boolean generated;
         private Message finished;
 
         BareToolCallParser(Tokenizer tokenizer) {
             this.tokenizer = tokenizer;
             this.content = ReplyParser.spans(tokenizer);
+        }
+
+        @Override
+        public void disableToolCalls() {
+            if (generated) throw new IllegalStateException("reply generation already started");
+            if (finished != null) throw new IllegalStateException("parser already finished");
+            if (state != State.CONTENT) {
+                IntSequence held = ids.build();
+                clear();
+                state = State.CONTENT;
+                content.seed(held);
+            }
         }
 
         @Override
@@ -215,6 +228,7 @@ public final class Llama32ChatTemplate implements ChatTemplate {
         @Override
         public Fragment feed(int token) {
             if (finished != null) throw new IllegalStateException("parser already finished");
+            generated = true;
             if (state == State.CONTENT) return content.feed(token);
             if (SpecialTokens.isSpecial(tokenizer, token)) return EMPTY;
             hold(token);

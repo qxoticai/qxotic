@@ -194,7 +194,6 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
         }
         out.finish();
 
-        boolean claimCalls = !conversation.tools().isEmpty();
         ReplyParser parser =
                 ReplyParser.spans(
                         tokenizer,
@@ -202,9 +201,9 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                         CALL_CLOSE,
                         Lfm2ToolCodec::parse,
                         THINK_OPEN,
-                        THINK_CLOSE,
-                        claimCalls);
+                        THINK_CLOSE);
         parser.seed(replyPrefix);
+        if (conversation.tools().isEmpty()) parser.disableToolCalls();
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -214,9 +213,8 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
-        return Optional.of(replyLanguage.constrainedAuto(contentGbnf, !callableTools.isEmpty()));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
+        return Optional.of(replyLanguage.constrained(contentGbnf));
     }
 
     @Override

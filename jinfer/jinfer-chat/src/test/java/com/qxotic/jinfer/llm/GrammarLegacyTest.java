@@ -628,10 +628,15 @@ public final class GrammarLegacyTest {
                         v);
         check("obj unknown required skipped", acceptsDoc(skip, v, "{\"a\":1}"));
 
-        // no properties: only the empty object
+        // no properties declared: a FREE-FORM object, open by JSON Schema's default (llama.cpp's
+        // free-form object rule too) - the empty object is one of its members, not its language
         Grammar.Spec empty = Grammar.fromSchema(Map.of("type", "object"), v);
         check("obj empty ok", acceptsDoc(empty, v, "{}"));
-        check("obj empty rejects props", rejectsDoc(empty, v, "{\"a\":1}"));
+        check("obj free-form admits props", acceptsDoc(empty, v, "{\"a\":1}"));
+        Grammar.Spec closed =
+                Grammar.fromSchema(linked("type", "object", "additionalProperties", false), v);
+        check("obj closed ok", acceptsDoc(closed, v, "{}"));
+        check("obj closed rejects props", rejectsDoc(closed, v, "{\"a\":1}"));
     }
 
     static void testSchemaArrays() {
@@ -1467,11 +1472,12 @@ public final class GrammarLegacyTest {
         System.out.println("-- schema node shapes --");
         MockV v = new MockV();
 
-        // properties that is not a Map: the object collapses to {}
+        // properties that is not a Map: unusable = nothing DECLARED, so the object is free-form,
+        // exactly as if properties were absent (a junk node never narrows a language)
         Grammar.Spec weird =
                 Grammar.fromSchema(linked("type", "object", "properties", List.of(1, 2)), v);
-        check("properties non-Map = {}", acceptsDoc(weird, v, "{}"));
-        check("properties non-Map rejects props", rejectsDoc(weird, v, "{\"a\":1}"));
+        check("properties non-Map = free-form", acceptsDoc(weird, v, "{}"));
+        check("properties non-Map admits props", acceptsDoc(weird, v, "{\"a\":1}"));
 
         // nested non-Map nodes fall back to "any JSON" (value)
         Grammar.Spec junkUnion =

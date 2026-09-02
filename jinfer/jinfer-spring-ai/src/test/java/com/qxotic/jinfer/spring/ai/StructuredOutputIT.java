@@ -144,10 +144,7 @@ class StructuredOutputIT {
     }
 
     @Test
-    void schemaWithToolsComposesAcrossTheCallRoundTrip() {
-        // the composed mask deliberately admits BOTH calling and answering (the schema rides the
-        // family's reply language) - the choice is the model's; the prompt makes it unambiguous so
-        // the test pins the MASK, not a near-tie (mirrors langchain4j's ToolsWithSchemaIT)
+    void toolRoundThenConstrainedAnswer() {
         ToolDefinition def =
                 DefaultToolDefinition.builder()
                         .name("get_weather")
@@ -172,13 +169,17 @@ class StructuredOutputIT {
                         + "\"city\":{\"type\":\"string\"},"
                         + "\"temperature_c\":{\"type\":\"number\"}},"
                         + "\"required\":[\"city\",\"temperature_c\"]}";
-        JinferChatOptions options =
+        JinferChatOptions toolOptions =
                 JinferChatOptions.builder()
-                        .outputSchema(schema)
                         .toolCallbacks(List.of(weather))
                         .maxTokens(512)
-                        // the xlang twin pins this deterministic: the mask admits BOTH calling
-                        // and answering, so the choice must not ride a sampled near-tie
+                        .temperature(0.0)
+                        .seed(7L)
+                        .build();
+        JinferChatOptions answerOptions =
+                JinferChatOptions.builder()
+                        .outputSchema(schema)
+                        .maxTokens(512)
                         .temperature(0.0)
                         .seed(7L)
                         .build();
@@ -190,8 +191,7 @@ class StructuredOutputIT {
                                 + schema); // this surface never states the schema itself -
         // BeanOutputConverter does; a test must say it the same way, or the model has no
         // reason to pick the (grammar-forced) JSON answer over calling again
-        // round 1: the mask must not trap the call
-        ChatResponse r1 = model.call(new Prompt(user, options));
+        ChatResponse r1 = model.call(new Prompt(user, toolOptions));
         AssistantMessage callMessage = r1.getResult().getOutput();
         Assumptions.assumeTrue(
                 callMessage.hasToolCalls(),
@@ -216,7 +216,7 @@ class StructuredOutputIT {
                                                                         "get_weather",
                                                                         "18C, sunny")))
                                                 .build()),
-                                options));
+                                answerOptions));
         String text = r2.getResult().getOutput().getText();
         Map<String, Object> json = parseJson(text);
         assertTrue(String.valueOf(json.get("city")).contains("Munich"), "grounded: " + text);
@@ -326,12 +326,8 @@ class StructuredOutputIT {
 
     @Test
     void toolCallThenListOfRecords() {
-        // the PaymentTransactionIT shape: tool round trips first, then the final answer as a
-        // List<record> under the native schema. The rounds are driven by hand, as upstream
-        // does. Thinking stays on: with the span closed the 2.6B re-issues its calls after a
-        // tool turn instead of answering. The composed mask admits BOTH calling and answering
-        // (the choice is the model's, and llama.cpp flips the same way run to run), so a model
-        // that never settles within four rounds is assumed away, as in the tools+schema test
+        // Finish tool rounds first, then request the final List<record> with tools removed and the
+        // schema enabled.
         var type = new ParameterizedTypeReference<List<Transaction>>() {};
         var converter = new BeanOutputConverter<>(type);
         Function<Map<String, Object>, String> lookup =
@@ -344,10 +340,16 @@ class StructuredOutputIT {
                                 "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"description\":\"the"
                                     + " transaction id\"}},\"required\":[\"id\"]}")
                         .build();
-        JinferChatOptions options =
+        JinferChatOptions toolOptions =
+                JinferChatOptions.builder()
+                        .toolCallbacks(List.of(status))
+                        .temperature(0.0)
+                        .seed(7L)
+                        .maxTokens(2048)
+                        .build();
+        JinferChatOptions answerOptions =
                 JinferChatOptions.builder()
                         .outputSchema(converter.getJsonSchema())
-                        .toolCallbacks(List.of(status))
                         .temperature(0.0)
                         .seed(7L)
                         .maxTokens(2048)
@@ -360,14 +362,12 @@ class StructuredOutputIT {
                                 + " statuses, reply with JSON matching this schema, and nothing"
                                 + " else:\n"
                                 + converter.getJsonSchema()));
-        AssistantMessage answer = null;
-        for (int round = 0; round < 4 && answer == null; round++) {
+        int calls = 0;
+        for (int round = 0; round < 4 && calls < 2; round++) {
             AssistantMessage reply =
-                    model.call(new Prompt(conversation, options)).getResult().getOutput();
-            if (!reply.hasToolCalls()) {
-                answer = reply;
-                continue;
-            }
+                    model.call(new Prompt(conversation, toolOptions)).getResult().getOutput();
+            if (!reply.hasToolCalls()) break;
+            calls += reply.getToolCalls().size();
             conversation.add(reply);
             conversation.add(
                     ToolResponseMessage.builder()
@@ -382,9 +382,9 @@ class StructuredOutputIT {
                                             .toList())
                             .build());
         }
-        Assumptions.assumeTrue(
-                answer != null && answer.getText() != null && !answer.getText().isBlank(),
-                "the model kept calling or deliberating instead of answering");
+        Assumptions.assumeTrue(calls >= 2, "the model did not request both transactions");
+        AssistantMessage answer =
+                model.call(new Prompt(conversation, answerOptions)).getResult().getOutput();
         List<Transaction> transactions = converter.convert(answer.getText());
         assertEquals(2, transactions.size(), answer.getText());
         Transaction first =

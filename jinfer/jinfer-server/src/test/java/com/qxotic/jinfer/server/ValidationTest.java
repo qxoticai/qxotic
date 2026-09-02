@@ -209,6 +209,25 @@ class ValidationTest {
     }
 
     @Test
+    void toolsAndConstrainedOutputAreMutuallyExclusive() {
+        Map<String, Object> request = new HashMap<>(user("return JSON"));
+        request.put(
+                "tools",
+                List.of(Map.of("type", "function", "function", Map.of("name", "weather"))));
+        request.put("response_format", Map.of("type", "json_object"));
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Validation.validateGenerationParams(
+                                        request, "model", ServerConfig.local(0)));
+        assertTrue(error.getMessage().contains("cannot be used"), error.getMessage());
+
+        request.put("tool_choice", "none");
+        Validation.validateGenerationParams(request, "model", ServerConfig.local(0));
+    }
+
+    @Test
     void acceptsEverySupportedMediaInputWithoutKnowingTheModel() {
         Map<String, Object> request =
                 Map.of(

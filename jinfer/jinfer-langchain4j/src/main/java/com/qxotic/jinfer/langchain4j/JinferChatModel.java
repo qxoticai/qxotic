@@ -404,7 +404,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : j.minP().floatValue(),
                                         j == null ? null : j.seed()),
-                        contentGbnf(p, j, schema, !tools.isEmpty()),
+                        contentGbnf(p, j, schema),
                         p.toolChoice() == ToolChoice.REQUIRED
                                 ? ChatEngine.ForcedTool.ANY
                                 : ChatEngine.ForcedTool.NONE,
@@ -423,19 +423,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     /**
      * The request's decoding constraint as GBNF SOURCE, or null - the one currency every
-     * constrained chat decode speaks: a typed schema (tools present = the leading-ws-free
-     * content-hole form), schemaless JSON mode, or raw GBNF. The engine compiles it into the
-     * family's constrained selection; specs cache per (source, vocab), so repeated schemas reuse
-     * the compiled masks.
+     * constrained chat decode speaks: a typed schema, schemaless JSON mode, or raw GBNF. The engine
+     * compiles it into the family's constrained selection; specs cache per (source, vocab), so
+     * repeated schemas reuse the compiled masks.
      */
     private static String contentGbnf(
-            ChatRequestParameters p,
-            JinferChatRequestParameters j,
-            Map<String, Object> schema,
-            boolean toolsOffered) {
-        if (schema != null) {
-            return toolsOffered ? Grammar.schemaHoleGbnf(schema) : Grammar.schemaGbnf(schema);
-        }
+            ChatRequestParameters p, JinferChatRequestParameters j, Map<String, Object> schema) {
+        if (schema != null) return Grammar.schemaGbnf(schema);
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON) return Grammar.jsonGbnf();
         // raw GBNF: the JSON format's generalization (validate() guaranteed they are not combined)
@@ -479,19 +473,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             throw new UnsupportedFeatureException("presencePenalty is not supported");
         ResponseFormat rf = p.responseFormat();
         if (rf != null && rf.type() == ResponseFormatType.JSON && tools) {
-            // WITH a schema the two compose: the schema rides the family's reply language
-            // (calls stay the family's own syntax, visible text can only be the schema).
-            // Schemaless JSON has no language to state, and a FORCED call plus a schema-shaped
-            // answer cannot both be THE reply - those two stay loud.
-            if (rf.jsonSchema() == null)
-                throw new UnsupportedFeatureException(
-                        "tools together with schemaless JSON format are not supported: state a"
-                                + " schema, the composed selection needs one");
-            if (p.toolChoice() == ToolChoice.REQUIRED)
-                throw new UnsupportedFeatureException(
-                        "toolChoice REQUIRED together with a JSON response format is not"
-                                + " supported: a forced call and a schema-shaped answer cannot"
-                                + " both be the reply");
+            throw new UnsupportedFeatureException(
+                    "tools and a JSON response format cannot be used in the same request; run the"
+                            + " tool round first, then request constrained output without tools");
         }
         String grammar = p instanceof JinferChatRequestParameters j ? j.grammar() : null;
         if (grammar != null && tools)
