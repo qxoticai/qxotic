@@ -688,8 +688,13 @@ static void suite_contract(void) {
  * leak grows it linearly). Two ISA caps per cycle so both the avx512 band scratch and the avx2 paths run. */
 static size_t heap_inuse(void) {
 #if defined(__GLIBC__)
+#  if __GLIBC_PREREQ(2, 33)            /* nested: the macro only exists under glibc (not on macOS/MinGW) */
     struct mallinfo2 mi = mallinfo2();
     return mi.uordblks;
+#  else
+    struct mallinfo mi = mallinfo();   /* pre-2.33 (the glibc 2.17 release target): int fields, enough for a delta */
+    return (size_t)(unsigned)mi.uordblks;
+#  endif
 #else
     return 0;
 #endif

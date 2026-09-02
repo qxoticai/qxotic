@@ -98,6 +98,9 @@ jota-clean: ## Wipe just the jota subtree's output
 release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile a BOM consumer against ONLY it
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-canary.sh
 
+jam-natives: ## Build, stage and stamp every shipped libjam (linux/windows x86-64 here, darwin-aarch64 on JAM_MAC=user@mac over ssh)
+	jam/jam-native/scripts/natives.sh build
+
 ##@ Miscellaneous
 
 examples: ## Build the demo apps (already in the default reactor; this target just limits the build to them)
@@ -112,4 +115,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples release-canary
+	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives

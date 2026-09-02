@@ -55,10 +55,52 @@ static int arm_has_i8mm(void)    { return 0; }
 #  endif
 #endif
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <cpuid.h>
+/* CPUID probe with __builtin_cpu_supports' spellings and semantics (an AVX-family answer includes
+ * the OS having enabled the YMM/ZMM state). Not the builtin itself: that leans on libgcc/compiler-rt's
+ * __cpu_model, which zig's compiler-rt (the linux-x86-64 release toolchain) does not provide, and a
+ * direct probe makes the dispatch independent of the C runtime anyway. Re-read on every call: it
+ * only runs at context creation, and no cache means nothing to race on. */
+typedef struct { unsigned eax, ebx, ecx, edx; } x86_regs;
+static x86_regs x86_cpuid(unsigned leaf, unsigned sub) {
+    x86_regs r = {0, 0, 0, 0};
+    if (leaf <= __get_cpuid_max(leaf & 0x80000000u, 0)) __cpuid_count(leaf, sub, r.eax, r.ebx, r.ecx, r.edx);
+    return r;
+}
+static int x86_has(const char* f) {
+    x86_regs l1 = x86_cpuid(1, 0), l7 = x86_cpuid(7, 0), l71 = {0, 0, 0, 0};
+    if (l7.eax >= 1) l71 = x86_cpuid(7, 1);                       /* leaf 7 EAX = its max subleaf */
+    unsigned long long xcr0 = 0;
+    if ((l1.ecx >> 27) & 1) {                                    /* OSXSAVE: XGETBV is legal */
+        unsigned lo, hi;
+        __asm__ volatile("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+        xcr0 = ((unsigned long long)hi << 32) | lo;
+    }
+    int ymm = (xcr0 & 0x06) == 0x06;                             /* XMM + YMM state */
+    int zmm = ymm && (xcr0 & 0xE0) == 0xE0;                      /* + opmask, ZMM_Hi256, Hi16_ZMM */
+    #define BIT(r, n) (((r) >> (n)) & 1u)
+    if (!strcmp(f, "sse2"))       return BIT(l1.edx, 26);
+    if (!strcmp(f, "sse3"))       return BIT(l1.ecx, 0);
+    if (!strcmp(f, "ssse3"))      return BIT(l1.ecx, 9);
+    if (!strcmp(f, "fma"))        return ymm && BIT(l1.ecx, 12);
+    if (!strcmp(f, "f16c"))       return ymm && BIT(l1.ecx, 29);
+    if (!strcmp(f, "avx2"))       return ymm && BIT(l7.ebx, 5);
+    if (!strcmp(f, "avxvnni"))    return ymm && BIT(l71.eax, 4);
+    if (!strcmp(f, "avx512f"))    return zmm && BIT(l7.ebx, 16);
+    if (!strcmp(f, "avx512dq"))   return zmm && BIT(l7.ebx, 17);
+    if (!strcmp(f, "avx512bw"))   return zmm && BIT(l7.ebx, 30);
+    if (!strcmp(f, "avx512vl"))   return zmm && BIT(l7.ebx, 31);
+    if (!strcmp(f, "avx512vnni")) return zmm && BIT(l7.ecx, 11);
+    if (!strcmp(f, "avx512bf16")) return zmm && BIT(l71.eax, 5);
+    #undef BIT
+    return 0;                                                    /* unknown name: never bind on it */
+}
+#endif
+
 static jam_isa detect_best(void) {
 #if defined(__x86_64__) || defined(_M_X64)
-    __builtin_cpu_init();
-    #define HAS(f) __builtin_cpu_supports(f)
+    #define HAS(f) x86_has(f)
     /* Gate each level on EVERY feature its kernel TU is compiled with - never bind a kernel the CPU
      * can't run. The AVX-512 TU uses bw/dq/vl (+f16c, +vnni for Q8): Knights Landing/Mill have avx512f
      * but NOT bw/dq/vl, so they must fall through to AVX2. The AVX2/AVX-VNNI TUs use fma + f16c. */
@@ -166,13 +208,11 @@ static const char* q8_kernel_name(jam_task_fn k) {
 
 static void debug_report(const jam_ctx* c, jam_isa cap) {
 #if defined(__x86_64__) || defined(_M_X64)
-    __builtin_cpu_init();
     fprintf(stderr, "[jam] cpu=x86_64 features:");
-    /* __builtin_cpu_supports needs a STRING LITERAL, so the name can't be a loop variable. */
-    #define FEAT(n) do { if (__builtin_cpu_supports(n)) fprintf(stderr, " " n); } while (0)
+    #define FEAT(n) do { if (x86_has(n)) fprintf(stderr, " " n); } while (0)
     FEAT("sse2"); FEAT("avx2"); FEAT("fma"); FEAT("f16c");
     FEAT("avx512f"); FEAT("avx512bw"); FEAT("avx512dq"); FEAT("avx512vl");
-    FEAT("avx512vnni"); FEAT("avxvnni");
+    FEAT("avx512vnni"); FEAT("avxvnni"); FEAT("avx512bf16");
     #undef FEAT
     fprintf(stderr, "\n");
 #elif defined(__aarch64__)
@@ -262,7 +302,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_AVXVNNI
     /* AVX-VNNI is orthogonal to the ladder: cpu>=AVX_VNNI is necessary (it respects max_isa) but NOT
      * sufficient (an AVX-512 CPU may lack AVX-VNNI), so confirm the feature explicitly here. */
-    if (cpu >= JAM_ISA_AVX_VNNI && __builtin_cpu_supports("avxvnni")) {
+    if (cpu >= JAM_ISA_AVX_VNNI && x86_has("avxvnni")) {
         c->q8_kernel = jam_mm_q8_0_avxvnni; c->mxfp4_kernel = jam_mm_mxfp4_avxvnni;
         c->q4_0_kernel = jam_mm_q4_0_avxvnni;
         }
@@ -279,7 +319,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_AVX512_VNNI) c->q8_kernel  = jam_mm_q8_0_avx512;    /* 512-bit VNNI (best) */
 #ifdef JAM_HAVE_AVX512BF16
     /* orthogonal to the ladder (like AVX-VNNI): needs the explicit feature, not just the level */
-    if (cpu >= JAM_ISA_AVX512 && __builtin_cpu_supports("avx512bf16")) {
+    if (cpu >= JAM_ISA_AVX512 && x86_has("avx512bf16")) {
         c->bf16z_kernel = jam_mm_bf16_avx512bf16; c->bf16z_cvt = jam_bf16_cvt_avx512bf16;
         c->bf16zp_kernel = jam_mm_bf16p_avx512bf16; c->bf16zp_pack = jam_bf16_pack_avx512bf16; }
 #endif
