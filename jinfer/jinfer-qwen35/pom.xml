@@ -11,6 +11,7 @@
   <description>Local chat and vision inference for Alibaba Qwen 3.5 and later models with Jinfer.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
   </properties>
   <dependencies>
     <dependency>

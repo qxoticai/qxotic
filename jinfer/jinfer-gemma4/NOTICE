@@ -1,4 +1,4 @@
-toknroll-gguf
+jinfer-gemma4
 Copyright 2026 Quixotic AI (https://qxotic.ai)
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -7,7 +7,7 @@ This product includes work derived from the following third-party projects.
 
 llama.cpp and ggml (https://github.com/ggml-org/llama.cpp, https://github.com/ggml-org/ggml)
   Copyright (c) 2023-2024 The ggml authors. MIT License.
-  - The pretokenizer regular expressions and their family groups mirror llama-vocab.cpp.
+  - The Gemma 4 multi-token-prediction head follows the structure of gemma4-assistant.cpp.
 
   Permission is hereby granted, free of charge, to any person obtaining a copy of this
   software and associated documentation files (the "Software"), to deal in the Software

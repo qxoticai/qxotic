@@ -1,8 +1,24 @@
-qxotic
-Copyright 2026 Quixotic AI
+Quixotic AI
+Copyright 2026 Quixotic AI (https://qxotic.ai)
 
-This product includes software developed by
-Quixotic AI (https://qxotic.ai).
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
-This product is licensed under the Apache License, Version 2.0
-(see LICENSE file for full text).
+Components that include work derived from third-party projects carry their own NOTICE, which
+their jars embed: jam-native, jinfer-qwen35, jinfer-gemma4, toknroll-gguf (llama.cpp, ggml,
+llamafile) and jinfer-inflect2 (an optional external program).
+
+Source repository only (not part of any published artifact)
+  - jam/graalvm-annotations declares two annotation types whose names match GraalVM Native
+    Image's @AlwaysInline and @NeverInline so that native-image recognises them at build time.
+    The declarations are written here; no GraalVM source is included.
+  - jinfer-jinja/src/test/resources/chat_templates: chat templates copied from the respective
+    model repositories on Hugging Face, each under its model's own license, used only to check
+    template rendering.
+  - jinfer-chat LlamaCppGrammarCorpusTest: grammar cases from llama.cpp's
+    tests/test-grammar-integration.cpp (MIT, Copyright (c) 2023-2024 The ggml authors).
+  - toknroll-core/src/test/resources/ground_truth_tokens.json: generated with OpenAI's tiktoken
+    (MIT).
+  - jinfer-langchain4j/src/test/resources/kit-images: the two photos LangChain4j's compliance kit
+    references, cat.png from Wikimedia Commons
+    (https://commons.wikimedia.org/wiki/File:Felis_silvestris_silvestris_small_gradual_decrease_of_quality.png,
+    see the file page for its license) and dice.png from the LangChain4j repository (Apache-2.0).

@@ -1,4 +1,4 @@
-toknroll-gguf
+jam-native
 Copyright 2026 Quixotic AI (https://qxotic.ai)
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
@@ -7,7 +7,9 @@ This product includes work derived from the following third-party projects.
 
 llama.cpp and ggml (https://github.com/ggml-org/llama.cpp, https://github.com/ggml-org/ggml)
   Copyright (c) 2023-2024 The ggml authors. MIT License.
-  - The pretokenizer regular expressions and their family groups mirror llama-vocab.cpp.
+  - The Q1_0 AVX2 dot product is a port of ggml_vec_dot_q1_0_q8_0, the NEON Q1_0 kernel reuses
+    ggml's table_b2b_0 sign-expansion construction, and the K-quant block layouts and decode
+    arithmetic follow ggml's quants.
 
   Permission is hereby granted, free of charge, to any person obtaining a copy of this
   software and associated documentation files (the "Software"), to deal in the Software
@@ -21,3 +23,8 @@ llama.cpp and ggml (https://github.com/ggml-org/llama.cpp, https://github.com/gg
   HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+llamafile tinyBLAS (https://github.com/Mozilla-Ocho/llamafile)
+  Copyright 2024 Mozilla Foundation. Apache License, Version 2.0.
+  - The register-tiled dense GEMM kernels and their recursive tile selection (mnpack) follow
+    tinyBLAS's design.

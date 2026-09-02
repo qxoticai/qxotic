@@ -1,0 +1,8 @@
+jinfer-inflect2
+Copyright 2026 Quixotic AI (https://qxotic.ai)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Optional external program (not distributed with this product)
+  - espeak-ng (GPL-3.0): this module can invoke an espeak-ng binary found on the PATH as a
+    phonemizer. It is neither bundled nor required.
