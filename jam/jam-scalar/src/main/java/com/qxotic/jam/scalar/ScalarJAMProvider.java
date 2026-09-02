@@ -2,6 +2,10 @@ package com.qxotic.jam.scalar;
 
 import com.qxotic.jam.JAM;
 
+/**
+ * Provider for the portable pure-Java scalar backend (id {@code scalar}). Always available at
+ * priority 0 - the guaranteed fallback when no faster backend is.
+ */
 public final class ScalarJAMProvider implements JAM.Provider {
     @Override
     public String id() {

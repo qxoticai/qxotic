@@ -2,6 +2,11 @@ package com.qxotic.jam.libjam;
 
 import com.qxotic.jam.JAM;
 
+/**
+ * Provider for the native {@code libjam} backend (id {@code native}). Highest priority (1000);
+ * available when the bundled library for the current OS/arch loads and exports the expected
+ * symbols, otherwise silently skipped.
+ */
 public final class NativeJAMProvider implements JAM.Provider {
     @Override
     public String id() {

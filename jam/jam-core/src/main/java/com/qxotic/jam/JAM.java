@@ -9,6 +9,13 @@ import java.util.function.IntConsumer;
 /**
  * jam - fast multithreaded CPU matmul ({@code R = W @ Aᵀ}) with quantized weights.
  *
+ * <pre>{@code
+ * List<JAM.Provider> providers = JAM.providers(); // highest priority first
+ * JAM jam = providers.get(0).create();           // single-threaded; pass a JAM.Parallel to fan out
+ * MemorySegment w = ..., a = ..., r = ...;       // W[m,k] weights, A[n,k] F32, R[m,n] F32
+ * int status = jam.mm(w, a, r, JAM.Q4_K, m, n, k);
+ * }</pre>
+ *
  * <p>{@code JAM} is the matmul contract. Backends are discovered through {@link Provider}. Operands
  * are native {@link MemorySegment}s + byte offsets; an implementation is responsible for its own
  * bounds/liveness handling. Liveness contract: every implementation of {@link #mm} must keep each
