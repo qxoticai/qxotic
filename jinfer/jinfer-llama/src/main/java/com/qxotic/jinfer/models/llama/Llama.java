@@ -39,6 +39,10 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Llama-family GGUF text models, including Llama 3.x, MiniCPM, Mistral 3, and SmolLM3, dispatched
+ * by the checkpoint's {@code general.architecture}.
+ */
 public final class Llama implements LanguageModel<Llama.Configuration, Llama.Weights, Llama.State> {
 
     private final Configuration configuration;

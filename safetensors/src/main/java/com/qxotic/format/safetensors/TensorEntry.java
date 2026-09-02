@@ -3,7 +3,10 @@ package com.qxotic.format.safetensors;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Metadata about a tensor in a safetensors file. */
+/**
+ * Immutable descriptor for a tensor in a safetensors file: name, {@link DType}, shape, and byte
+ * offset relative to {@link Safetensors#getTensorDataOffset()}.
+ */
 public final class TensorEntry {
     private final String name;
     private final DType dtype;
@@ -17,7 +20,9 @@ public final class TensorEntry {
         this.byteOffset = byteOffset;
     }
 
-    /** Creates a tensor entry. */
+    /**
+     * Creates an entry; {@code offset} is relative to {@link Safetensors#getTensorDataOffset()}.
+     */
     public static TensorEntry create(String name, DType dtype, long[] shape, long offset) {
         return new TensorEntry(
                 Objects.requireNonNull(name, "name"),

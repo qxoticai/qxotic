@@ -46,7 +46,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Gemma4 inference against the MemoryView boundary. */
+/** Gemma 4 models with optional vision and audio towers, and optional MTP speculative decoding. */
 public final class Gemma4
         implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
                 Multimodal,

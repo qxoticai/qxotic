@@ -1,31 +1,9 @@
 package com.qxotic.toknroll;
 
 /**
- * A marker interface that defines token classification types used in tokenization systems. This
- * interface serves as a base for different token type classification schemes, allowing for
- * extensible token categorization across different tokenizer implementations and model formats.
- *
- * <p>Token types are used to:
- *
- * <ul>
- *   <li>Classify tokens based on their role (e.g., normal text, control tokens, special markers)
- *   <li>Determine token processing behavior during tokenization and detokenization
- *   <li>Support different token classification schemes for various model formats
- * </ul>
- *
- * <p>Common implementations include:
- *
- * <pre>{@code
- * // Standard GGUF token types
- * public enum StandardTokenType implements TokenType {
- *     NORMAL, UNKNOWN, CONTROL, USER_DEFINED, UNUSED, BYTE
- * }
- *
- * // Custom token types for specific models
- * public enum CustomTokenType implements TokenType {
- *     TEXT, SEPARATOR, SPECIAL, METADATA
- * }
- * }</pre>
+ * Marker interface for token classification schemes. Implementations (typically enums) categorize
+ * tokens by role - normal text, control markers, raw bytes - so vocabularies and loaders can attach
+ * per-token behavior without a fixed category set.
  *
  * @see StandardTokenType
  */

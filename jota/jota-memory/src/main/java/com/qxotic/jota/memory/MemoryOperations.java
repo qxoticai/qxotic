@@ -3,6 +3,11 @@ package com.qxotic.jota.memory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
+/**
+ * Bulk operations on {@link Memory}: raw byte copies (within a backend and, via {@link
+ * MemorySegment} staging, across backends) and typed fills. Offsets and sizes are in bytes and must
+ * respect each side's {@link Memory#memoryGranularity()}.
+ */
 public interface MemoryOperations<B> {
 
     void copy(Memory<B> src, long srcByteOffset, Memory<B> dst, long dstByteOffset, long byteSize);
@@ -43,6 +48,10 @@ public interface MemoryOperations<B> {
         fillLong(memory, byteOffset, byteSize, Double.doubleToRawLongBits(doubleValue));
     }
 
+    /**
+     * Copies between two backends in chunks through the caller-provided staging buffer; its size
+     * must be a positive multiple of both sides' granularity.
+     */
     static <S, T> void copy(
             MemoryOperations<S> srcOps,
             Memory<S> src,
@@ -72,6 +81,10 @@ public interface MemoryOperations<B> {
         }
     }
 
+    /**
+     * Copies between two backends: directly when one side is a {@link MemorySegment}, otherwise
+     * staged through a temporary native segment.
+     */
     static <S, T> void copy(
             MemoryOperations<S> srcOps,
             Memory<S> src,

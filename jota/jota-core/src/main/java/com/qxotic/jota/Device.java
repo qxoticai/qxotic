@@ -2,6 +2,10 @@ package com.qxotic.jota;
 
 import java.util.Objects;
 
+/**
+ * An execution target: a {@link DeviceType} plus a non-negative index, rendered as {@code
+ * type:index}.
+ */
 public record Device(DeviceType type, long index) {
     public Device(DeviceType type, long index) {
         this.type = Objects.requireNonNull(type, "type");

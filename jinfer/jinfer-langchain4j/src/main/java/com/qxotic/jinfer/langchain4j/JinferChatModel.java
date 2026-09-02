@@ -631,9 +631,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * Upper bound on the context available to each conversation, in tokens. The default is
          * min(4096, the model's context length), deliberately bounded because a full-context state
          * can consume substantial memory. A value above the model's context length is refused at
-         * build; {@code 0} asks for the model's maximum. {@code 0} uses the model's declared
-         * context length; otherwise the effective capacity is the smaller of this value and that
-         * length.
+         * build; {@code 0} uses the model's declared context length; otherwise the effective
+         * capacity is the smaller of this value and that length.
          *
          * @throws IllegalArgumentException if {@code contextLength < 0}
          */

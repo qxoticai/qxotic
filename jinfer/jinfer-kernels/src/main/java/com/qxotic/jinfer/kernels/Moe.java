@@ -1,11 +1,3 @@
-// Shared Mixture-of-Experts plumbing over FP32-checked views. Shared here: the top-k selection
-// (selectTopK, with an optional separate weights source for llama.cpp's selection-only exp_probs_b
-// bias), the softmax+renormalize spine (softmaxSelectTopK), the CSR grouping of tokens by routed
-// expert, the gather (a raw row copy), and the prob-weighted scatter-add (Ops.saxpyInPlace).
-// Per-architecture - the model's identity - stay the gating flavor (softmax/sigmoid, extra
-// scales), the normalization policy, and the per-expert FFN math (gated/ungated, activation,
-// biases, layout), the latter supplied as an ExpertKernel closure - called once per expert
-// (never per element), so the vector kernels inside stay monomorphic.
 package com.qxotic.jinfer.kernels;
 
 import static com.qxotic.jinfer.Segments.readFloat;
@@ -16,6 +8,11 @@ import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
+/**
+ * Shared mixture-of-experts routing over FP32 views: top-k selection, optional routing bias,
+ * normalization, token grouping, gather, and weighted scatter-add. Each architecture supplies its
+ * gating policy and per-expert feed-forward kernel.
+ */
 public final class Moe {
     private Moe() {}
 

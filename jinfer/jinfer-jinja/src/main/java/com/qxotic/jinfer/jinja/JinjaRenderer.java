@@ -15,9 +15,20 @@ import java.util.function.LongBinaryOperator;
 import java.util.regex.Pattern;
 
 /**
- * Minimal Jinja template renderer for LLM chat templates. Two-phase architecture (lexer → parser,
- * like llama.cpp's jinja/): tokenize the template into a flat token stream, then parse the stream
- * into an AST, then execute the AST against a variable context.
+ * Minimal Jinja template renderer for LLM chat templates. {@link #template(String)} compiles the
+ * source once; the returned {@link CompiledTemplate} renders it against a variable context as many
+ * times as needed.
+ *
+ * <pre>{@code
+ * CompiledTemplate template = JinjaRenderer.template(chatTemplateSource);
+ * String prompt = template.render(Map.of(
+ *         "messages", List.of(Map.of("role", "user", "content", "Hello!")),
+ *         "add_generation_prompt", true));
+ * }</pre>
+ *
+ * <p>Two-phase architecture (lexer then parser, like llama.cpp's jinja/): tokenize the template
+ * into a flat token stream, parse the stream into an AST, then execute the AST against the variable
+ * context. The AST and parser are internal; callers only see a render-only template.
  */
 public final class JinjaRenderer {
 

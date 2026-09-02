@@ -33,7 +33,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Map;
 import java.util.Optional;
 
-/** GPT-OSS inference against the MemoryView boundary. */
+/** OpenAI GPT-OSS mixture-of-experts text models. */
 public final class GptOss
         implements LanguageModel<GptOss.Configuration, GptOss.Weights, GptOss.State> {
     private final Configuration configuration;

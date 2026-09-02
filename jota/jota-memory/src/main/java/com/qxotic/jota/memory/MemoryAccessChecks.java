@@ -1,5 +1,9 @@
 package com.qxotic.jota.memory;
 
+/**
+ * Bounds, read-only and alignment checks for memory access. {@code
+ * -Djota.memory.checks=off|assert|runtime} (default {@code runtime}) selects how violations fail.
+ */
 public final class MemoryAccessChecks {
 
     public static void checkBounds(Memory<?> memory, long byteOffset, long byteSize) {
@@ -20,6 +24,7 @@ public final class MemoryAccessChecks {
         checkAlignment((value & (alignment - 1)) == 0, "unaligned access");
     }
 
+    /** How checks fail: skip them, evaluate as {@code assert}, or throw. */
     public enum Mode {
         OFF,
         ASSERT,

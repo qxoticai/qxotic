@@ -21,33 +21,29 @@ public interface MemoryDomain<B> extends AutoCloseable {
 
     MemoryOperations<B> memoryOperations();
 
-    /**
-     * Returns the memory allocation granularity in bytes. Delegates to the underlying memory
-     * allocator.
-     *
-     * @return the allocation granularity in bytes
-     * @see MemoryAllocator#memoryGranularity()
-     */
+    /** Delegates to the allocator's {@link MemoryAllocator#memoryGranularity()}. */
     default long memoryGranularity() {
         return memoryAllocator().memoryGranularity();
     }
 
-    /**
-     * Checks if this domain can allocate memory for the given DataType. Delegates to the underlying
-     * memory allocator.
-     *
-     * @param dataType the data type to check
-     * @return true if this domain can allocate the given DataType
-     * @see MemoryAllocator#supportsDataType(DataType)
-     */
+    /** Delegates to the allocator's {@link MemoryAllocator#supportsDataType(DataType)}. */
     default boolean supportsDataType(DataType dataType) {
         return memoryAllocator().supportsDataType(dataType);
     }
 
+    /**
+     * Strided copy between views on this domain (same dtype and shape required). Opaque domains
+     * stage through the host.
+     */
     default void copy(MemoryView<B> src, MemoryView<B> dst) {
         StridedCopy.copy(this, src, dst);
     }
 
+    /**
+     * Copies between views on possibly different domains and devices. Arbitrary layouts are
+     * preserved; the implementation uses a direct same-backend path or contiguous staging as
+     * needed. Requires equal data type and shape.
+     */
     static <S, D> void copy(
             MemoryDomain<S> srcDomain,
             MemoryView<S> src,

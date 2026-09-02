@@ -13,16 +13,9 @@ import org.springframework.context.annotation.Bean;
 /**
  * Wires one {@link JinferSpeechModel} bean from {@code spring.ai.jinfer.speech.*}.
  *
- * <p>Chat, embedding and reranking were auto-configured and speech was not, so a Boot application
- * got three of jinfer's four model types for free and had to hand-wire the fourth.
- *
  * <p>Activated by the model path, like reranking and for the same reason: Spring AI's {@code
  * spring.ai.model.*} switches name the model types it defines, and pointing this at a GGUF is the
  * unambiguous signal that speech is wanted. An app with no speech model configures nothing.
- *
- * <p>The bean owns an arena and is {@link AutoCloseable}; Spring calls {@code close()} at context
- * shutdown, which frees the weights deterministically rather than at a GC a native-heavy JVM may
- * never run.
  */
 @AutoConfiguration
 @ConditionalOnClass(JinferSpeechModel.class)

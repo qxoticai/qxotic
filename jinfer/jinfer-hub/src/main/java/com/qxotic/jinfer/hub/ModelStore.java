@@ -63,6 +63,14 @@ import java.util.regex.Pattern;
  * <p>Nothing in the inference engine calls this. Resolution happens in a CLI, before {@code
  * Models.load}, so a Java caller that passes a path gets exactly that path and no library load ever
  * touches the network.
+ *
+ * <pre>{@code
+ * ModelStore store = ModelStore.standard();
+ * // downloads on a cache miss, returns the cached file on a hit:
+ * Path model = store.resolve("unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0");
+ * }</pre>
+ *
+ * <p>Pair with {@code Models.load(model, arena)} to run the resolved file.
  */
 public final class ModelStore {
 

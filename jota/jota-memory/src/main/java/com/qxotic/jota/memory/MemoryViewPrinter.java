@@ -4,6 +4,10 @@ import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 
+/**
+ * Renders a {@link MemoryView} as metadata and/or pretty-printed values; values require the
+ * domain's {@link MemoryAccess}.
+ */
 public final class MemoryViewPrinter {
 
     private MemoryViewPrinter() {}

@@ -50,8 +50,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * MemoryView port of the hybrid Qwen3.5 gated-delta/full-attention decoder, optionally with the
- * Qwen3-VL vision tower attached ({@link #withMedia}).
+ * Qwen3.5 hybrid gated-delta/full-attention models. Attach the Qwen3-VL vision tower with {@link
+ * #withMedia} for multimodal input.
  */
 public final class Qwen35
         implements LanguageModel<Qwen35.Configuration, Qwen35.Weights, Qwen35.State>,

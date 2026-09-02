@@ -78,6 +78,11 @@ public abstract class ContextState extends RuntimeState {
         return lastBatchSize;
     }
 
+    /**
+     * Repositions the context cursor, discarding retained outputs. Pair with a checkpoint restore
+     * to resume an earlier prefix; the KV between here and the old position is left to be
+     * overwritten.
+     */
     public final void resumeAt(int position) {
         if (position < 0 || position > contextCapacity) {
             throw new IllegalArgumentException(
@@ -91,6 +96,7 @@ public abstract class ContextState extends RuntimeState {
                 });
     }
 
+    /** Rewinds to an empty context: clears accumulated history and zeroes the bookkeeping. */
     public final void reset() {
         exclusively(
                 () -> {

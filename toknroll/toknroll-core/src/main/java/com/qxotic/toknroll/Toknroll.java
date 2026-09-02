@@ -15,6 +15,15 @@ import java.util.Set;
  * TokenizationModel} (tiktoken or SentencePiece BPE), optional {@link Normalizer}, and optional
  * {@link Splitter}. Callers chain them into a {@link TokenizationPipeline}, which implements {@link
  * Tokenizer}.
+ *
+ * <pre>{@code
+ * Vocabulary vocabulary = Toknroll.vocabulary("h", "e", "l", "o", "he", "hello");
+ * TokenizationModel model =
+ *         Toknroll.sentencePieceBpeModel(vocabulary, new float[] {0, 0, 0, 0, 1, 2});
+ * Tokenizer tokenizer = Toknroll.pipeline(Normalizer.identity(), Splitter.identity(), model);
+ * IntSequence tokens = tokenizer.encode("hello");
+ * String text = tokenizer.decode(tokens);
+ * }</pre>
  */
 public final class Toknroll {
     private Toknroll() {}

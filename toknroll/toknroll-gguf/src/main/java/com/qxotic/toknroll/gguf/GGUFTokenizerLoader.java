@@ -33,6 +33,14 @@ import java.util.stream.Collectors;
  * <p>When loading from Hugging Face or ModelScope, only the GGUF header and metadata key-value
  * pairs are downloaded and cached - tensors and model weights are never fetched.
  *
+ * <pre>{@code
+ * Tokenizer tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
+ *         .build()
+ *         .fromLocal(Path.of("model.gguf"));
+ * IntSequence tokens = tokenizer.encode("hello world");
+ * String text = tokenizer.decode(tokens);
+ * }</pre>
+ *
  * <p>Pre-tokenizer schemes resolve in three layers, each outranking the previous: the builtins
  * ({@link #createBuilderWithBuiltins()}), programmatic registrations on the builder, and the
  * system-property escape hatch {@code -Dtoknroll.gguf.pre.<name>=...}, applied last inside {@link

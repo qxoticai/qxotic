@@ -13,15 +13,20 @@ import java.util.Set;
  * @see <a href="https://github.com/huggingface/safetensors">Safetensors specification</a>
  */
 public interface Builder extends Cloneable {
+    /** Returns a builder pre-populated with a copy of {@code safetensors}. */
     static Builder newBuilder(Safetensors safetensors) {
         Objects.requireNonNull(safetensors, "safetensors");
         return ImplAccessor.newBuilder(safetensors);
     }
 
+    /** Returns a new empty builder. */
     static Builder newBuilder() {
         return ImplAccessor.newBuilder();
     }
 
+    /**
+     * Builds with tensor offsets recomputed for alignment and packing; same as {@code build(true)}.
+     */
     default Safetensors build() {
         return build(true);
     }

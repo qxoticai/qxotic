@@ -39,6 +39,12 @@ public final class LagunaChatTemplate implements ChatTemplate {
     private final int thinkClose;
     private final ReplyLanguage.Spans spans;
 
+    /**
+     * @param tokenizer tokenizer used for prompt and reply tokens
+     * @param bosToken the sequence-opening token, prepended to every encoded prompt
+     * @throws IllegalArgumentException if the tokenizer lacks the {@code <think>}/{@code </think>}
+     *     special tokens this format requires
+     */
     public LagunaChatTemplate(Tokenizer tokenizer, int bosToken) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         promptStart = IntSequence.of(bosToken);

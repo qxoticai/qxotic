@@ -18,11 +18,7 @@ import java.util.Objects;
  */
 public interface Tokenizer {
 
-    /**
-     * Returns the underlying vocabulary.
-     *
-     * @return vocabulary of this tokenizer
-     */
+    /** Returns the vocabulary backing this tokenizer. */
     Vocabulary vocabulary();
 
     /**

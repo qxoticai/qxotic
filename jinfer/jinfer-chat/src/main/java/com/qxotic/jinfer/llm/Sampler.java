@@ -11,14 +11,17 @@ import java.util.Set;
 /** Composable token sampling over a dense FP32 logits view. */
 @FunctionalInterface
 public interface Sampler {
+    /** One token id sampled from dense FP32 logits, which the sampler may mutate. */
     int sampleToken(MemoryView<?> logits);
 
+    /** Greedy decoding: always the maximum-logit token. */
     Sampler ARGMAX =
             logits -> {
                 MemoryView<MemorySegment> values = checked(logits);
                 return Ops.argmax(values, 0, size(values));
             };
 
+    /** Masks {@code bannedTokens} to negative infinity before delegating to {@code inner}. */
     static Sampler banning(Sampler inner, Set<Integer> bannedTokens) {
         Objects.requireNonNull(inner, "inner");
         Objects.requireNonNull(bannedTokens, "bannedTokens");

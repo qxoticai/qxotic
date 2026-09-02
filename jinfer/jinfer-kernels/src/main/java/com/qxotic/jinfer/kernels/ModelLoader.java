@@ -1,6 +1,3 @@
-// Shared GGUF loading plumbing: parse metadata, memory-map tensors, and expose them as
-// MemoryView<MemorySegment> weights (one jota Memory over the READ_ONLY mmap, one view per
-// tensor). Views carry real Shapes; unsupported dtypes fail at LOAD time, not inside a kernel.
 package com.qxotic.jinfer.kernels;
 
 import com.qxotic.format.gguf.GGUF;
@@ -24,6 +21,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Shared GGUF loading support: parses metadata, memory-maps tensor data read-only, and exposes each
+ * tensor as a {@code MemoryView<MemorySegment>}. Unsupported data types fail during loading.
+ */
 public final class ModelLoader {
 
     private ModelLoader() {}
@@ -67,6 +68,10 @@ public final class ModelLoader {
                 fileChannel, baseOffset + gguf.getTensorDataOffset(), gguf.getTensors(), arena);
     }
 
+    /**
+     * Maps the tensors described by {@code tensors}, whose data starts at {@code tensorDataOffset}
+     * in the channel. The mappings remain valid for the lifetime of {@code arena}.
+     */
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
             FileChannel fileChannel,
             long tensorDataOffset,

@@ -50,6 +50,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+/**
+ * Qwen3 dense models for generation and embeddings, plus reranking through {@link Qwen3Reranker}.
+ */
 public final class Qwen3
         implements LanguageModel<Qwen3.Configuration, Qwen3.Weights, Qwen3.State>,
                 EmbeddingModel<Qwen3.Configuration, Qwen3.Weights, Qwen3.State> {

@@ -4,13 +4,20 @@ import com.qxotic.jota.impl.LayoutFactory;
 import java.util.Arrays;
 import java.util.Comparator;
 
+/**
+ * An immutable affine map from coordinates to element offsets: a {@link #shape()} plus a matching
+ * {@link #stride()}, with {@code c -> Σ c[i] × stride[i]}. Modes may be nested; offsets are in
+ * storage units (whole blocks for block-quantized dtypes).
+ */
 public interface Layout {
     Shape shape();
 
     Stride stride();
 
+    /** The sub-layout of one top-level mode (wrap-around index). */
     Layout modeAt(int modeIndex);
 
+    /** This layout with nesting removed; identity when already flat. */
     default Layout flatten() {
         if (shape().isFlat() && stride().isFlat()) {
             return this;
@@ -44,6 +51,10 @@ public interface Layout {
      */
     Layout coalesce(int _modeIndex);
 
+    /**
+     * Whether {@code other} has the same nesting profile (rank, flat rank, mode structure),
+     * regardless of dimension and stride values.
+     */
     boolean isCongruentWith(Layout other);
 
     /**
@@ -269,32 +280,39 @@ public interface Layout {
         return LayoutFactory.of(shape, stride);
     }
 
+    /** The rank-0 layout. */
     static Layout scalar() {
         return LayoutFactory.scalar();
     }
 
+    /** Compact row-major (C-order) layout for {@code shape}. */
     static Layout rowMajor(Shape shape) {
         return of(shape, Stride.rowMajor(shape));
     }
 
+    /** Compact column-major (Fortran-order) layout for {@code shape}. */
     static Layout columnMajor(Shape shape) {
         return of(shape, Stride.columnMajor(shape));
     }
 
+    /** Compact row-major layout for a flat shape of the given dims. */
     static Layout rowMajor(long... dims) {
         Shape shape = Shape.flat(dims);
         return of(shape, Stride.rowMajor(shape));
     }
 
+    /** Compact column-major layout for a flat shape of the given dims. */
     static Layout columnMajor(long... dims) {
         Shape shape = Shape.flat(dims);
         return of(shape, Stride.columnMajor(shape));
     }
 
+    /** A layout with {@code shape}'s nesting imposed on {@code stride}'s flat values. */
     static Layout nestedLikeShape(Shape shape, Stride stride) {
         return LayoutFactory.of(shape, Stride.template(shape, stride.toArray()));
     }
 
+    /** A layout with {@code stride}'s nesting imposed on {@code shape}'s flat dims. */
     static Layout nestedLikeStride(Stride stride, Shape shape) {
         return LayoutFactory.of(Shape.template(stride, shape.toArray()), stride);
     }

@@ -4,6 +4,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import java.util.Objects;
 
+/** An allocator whose buffers are {@link ScopedMemory}: each can be freed on its own. */
 public interface ScopedMemoryAllocator<B> extends MemoryAllocator<B> {
 
     ScopedMemory<B> allocateMemory(long byteSize, long byteAlignment);
