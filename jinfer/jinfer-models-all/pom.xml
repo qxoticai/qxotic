@@ -16,6 +16,9 @@
     instead depend on individual providers to reduce their runtime classpath.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <!-- No sources: javadoc has nothing to document, and Maven Central still requires the jar.
+         The release profile attaches an empty one, as Central's guidelines allow. -->
+    <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
 
   <dependencies>
@@ -70,4 +73,31 @@
       <scope>runtime</scope>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>empty-javadoc-jar</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+                <phase>package</phase>
+                <configuration>
+                  <classifier>javadoc</classifier>
+                  <classesDirectory>${project.build.directory}/javadoc-placeholder</classesDirectory>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
