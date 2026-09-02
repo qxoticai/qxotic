@@ -602,6 +602,8 @@ public record Options(
         out.println(
                 "        java -jar jinfer.jar pull [--force] <ref>...  download models, print"
                         + " paths");
+        out.println(
+                "        java -jar jinfer.jar list                     cached models and sizes");
         out.println();
         out.println(
                 "A remote model is a URL without the scheme: "

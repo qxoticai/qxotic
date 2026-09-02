@@ -78,7 +78,7 @@ catch (Json.ParseException e) {
 ```
 
 Options (depth limits, duplicate-key strictness, decimal handling) and validation without parsing
-(`Json.isValid`) are covered in the [documentation](https://qxotic.ai/docs/json).
+(`Json.isValid`) are covered in the [documentation](https://qxotic.ai/json).
 
 ## Benchmarks
 
@@ -93,7 +93,7 @@ Reproduce with `cd benchmarks && mvn package && java -jar target/json-benchmarks
 
 ## Documentation
 
-[qxotic.ai/docs/json](https://qxotic.ai/docs/json) covers parsing, serialization, error handling
+[qxotic.ai/json](https://qxotic.ai/json) covers parsing, serialization, error handling
 and migration from Jackson or Gson.
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.

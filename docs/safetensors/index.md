@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Safetensors
 
-**Safetensors for the JVM.** Read and write [Hugging Face's model format](https://huggingface.co/docs/safetensors/index) in pure Java. Zero dependencies, Java 11+, GraalVM native-image ready. Strict schema validation, single-file and sharded models.
+**Safetensors for the JVM.** Read and write [Hugging Face's model format](https://huggingface.co/docs/safetensors/index) in pure Java. One dependency (`com.qxotic:json`, itself dependency-free), Java 11+, GraalVM native-image ready. Strict schema validation, single-file and sharded models.
 
 ## Quick Start
 

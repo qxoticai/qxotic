@@ -1,7 +1,7 @@
 # Safetensors
 
-**Safetensors for the JVM.** Read and write HuggingFace's model format in pure Java. Zero
-dependencies, Java 11+, GraalVM native-image ready.
+**Safetensors for the JVM.** Read and write HuggingFace's model format in pure Java. One
+dependency (`com.qxotic:json`, itself dependency-free), Java 11+, GraalVM native-image ready.
 
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
@@ -64,7 +64,7 @@ Path shard = index.requireSafetensorsPath("model.layers.0.self_attn.q_proj.weigh
 ## Documentation
 
 Full docs and examples at
-[qxotic.ai/docs/safetensors](https://qxotic.ai/docs/safetensors).
+[qxotic.ai/safetensors](https://qxotic.ai/safetensors).
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 

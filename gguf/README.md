@@ -63,7 +63,7 @@ Small, focused and dependency-free, by design.
 
 ## Documentation
 
-[qxotic.ai/docs/gguf](https://qxotic.ai/docs/gguf) covers reading from files, channels and URLs,
+[qxotic.ai/gguf](https://qxotic.ai/gguf) covers reading from files, channels and URLs,
 type-safe metadata access, creating and modifying files, tensor offsets and every GGML data type.
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.

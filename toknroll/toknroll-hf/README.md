@@ -57,10 +57,10 @@ Artifacts are cached on disk and reused across runs.
 
 ## Tested Models
 
-Token-perfect tested against 10 model families:
+Token-perfect tested against 15 model families:
 
-- **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
-- **Google** - Gemma 3, Gemma 4
+- **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
+- **Google** - Gemma 4
 - **Alibaba** - Qwen 3.5+
 - **Moonshot AI** - Kimi 2.5+
 - **DeepSeek** - DeepSeek 3.2, DeepSeek 4
@@ -69,6 +69,11 @@ Token-perfect tested against 10 model families:
 - **Meta** - Llama 3+
 - **Microsoft** - Phi 4+
 - **HuggingFace** - SmolLM3
+- **NVIDIA** - Nemotron 3
+- **Z.ai** - GLM 5.1
+- **MiniMax** - M2.7
+- **Xiaomi** - MiMo V2
+- **Poolside** - Laguna XS 2.1
 
 Other models are likely to work but are not tested against reference Python tokenizers.
 
