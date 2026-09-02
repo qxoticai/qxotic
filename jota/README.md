@@ -10,6 +10,10 @@ first-class GraalVM Native Image support.
 Write tensor code once. Run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
 Backends self-register, with no launch flags and no `-Djava.library.path`.
 
+**What is on Maven Central at 0.2.0:** `jota-core` and `jota-memory`, the layers jinfer builds on.
+The tensor engine (`jota-tensor`) and the backends build from this repository (`mvn -f jota/pom.xml
+install`) and are not published yet; their sections below describe the source tree.
+
 ## One graph, one generated kernel
 
 [Mandelbrot.java](https://github.com/qxoticai/qxotic/blob/96abe2e3546ec133ffd2daa39a0303fbbe241912/examples/src/main/java/com/qxotic/jota/examples/demos/Mandelbrot.java#L83-L106)
@@ -36,21 +40,21 @@ traces a computation graph once and emits
 
 Pick the smallest API that fits. Each layer includes the previous ones transitively:
 
-| Artifact | Contents |
-|----------|--------------|
-| `jota-core` | data types, devices, shapes, strides, layouts |
-| `jota-memory` | `Memory`, `MemoryView`, allocators, access, transfers |
-| `jota-tensor` | tensors, environments, runtimes, IR, kernel compilation |
+| Artifact | Contents | 0.2.0 |
+|----------|--------------|-------|
+| `jota-core` | data types, devices, shapes, strides, layouts | Maven Central |
+| `jota-memory` | `Memory`, `MemoryView`, allocators, access, transfers | Maven Central |
+| `jota-tensor` | tensors, environments, runtimes, IR, kernel compilation | from source |
 
 ```xml
 <dependency>
     <groupId>com.qxotic</groupId>
-    <artifactId>jota-tensor</artifactId>
+    <artifactId>jota-memory</artifactId>
     <version>0.2.0</version>
 </dependency>
 ```
 
-## Backends
+## Backends (from source)
 
 | Backend | Artifact | Notes |
 |---------|----------|-------|
@@ -62,9 +66,10 @@ Pick the smallest API that fits. Each layer includes the previous ones transitiv
 | OpenCL | `jota-backend-opencl` | cross-platform GPU |
 | Mojo | `jota-backend-mojo` | experimental |
 
-Put the backend jar on the classpath and it becomes available on supported platforms. Native
-libraries are bundled and auto-extracted. Use `-Djava.library.path` only for custom overrides.
-GraalVM Native Image support is included in `jota-tensor`.
+Put the backend jar on the classpath and it becomes available on supported platforms. A backend
+built with its native library (`-Pc`, `-Pcuda`, ... below) bundles and auto-extracts it; use
+`-Djava.library.path` only for custom overrides. GraalVM Native Image support is included in
+`jota-tensor`.
 
 ## Performance
 
@@ -81,8 +86,7 @@ performance for everything else.
 `jota-tensor` includes Native Image support across the C, HIP, CUDA, Metal, OpenCL and Mojo
 backends. Panama is intentionally excluded, since it relies on runtime class loading and JIT.
 
-At native runtime, `Device.NATIVE` resolves to an available `MemorySegment`-capable backend,
-typically `Device.C`. Control registration when several backend jars are present:
+Control registration when several backend jars are present:
 
 ```bash
 -Djota.backends.include=c,opencl

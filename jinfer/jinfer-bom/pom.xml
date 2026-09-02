@@ -19,8 +19,9 @@
 
   <!--
     a BOM is a dependencyManagement section with no jars behind it. This one manages the
-    jinfer artifacts that are meant to be depended on (the shaded executables jinfer-cli,
-    jinfer-bench and jinfer-inflect2-cli are excluded - nobody consumes a fat jar as a library) plus
+    jinfer artifacts that are meant to be depended on (excluded: the shaded executables jinfer-cli,
+    jinfer-bench and jinfer-inflect2-cli, nobody consumes a fat jar as a library; jinfer-server,
+    which only the CLI embeds; jinfer-maple, not shipping yet) plus
     the substrate versions jinfer's transitive graph resolves against. Keeping the substrate here,
     rather than letting each jinfer artifact's own POM float it, is what makes "one import, one
     coherent release" true for downstream builds that also add a jam accelerator or jota directly.

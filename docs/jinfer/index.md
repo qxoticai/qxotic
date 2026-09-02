@@ -60,6 +60,7 @@ Architecture dispatch comes from providers on the classpath.
 | Qwen 3 / 3.5 | chat, embeddings, reranking, Qwen 3.5 MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
 | Laguna XS 2.1 | chat |
+| Ling 3 | chat |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) |
 | gpt-oss, Nemotron-H | chat |
 | Inflect | speech synthesis |
@@ -77,7 +78,6 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, N
 | audio input | `jinfer-gemma4` | E2B conformer |
 | speech synthesis | `jinfer-inflect2` | Inflect TTS |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
-| OpenAI server | `jinfer-server` | `/v1/*` |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
 | hub + downloads | `jinfer-hub` | `owner/repo`, `modelscope.cn/...` |
 
