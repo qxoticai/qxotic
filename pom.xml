@@ -600,6 +600,11 @@
             <artifactId>flatten-maven-plugin</artifactId>
             <configuration>
               <flattenMode>oss</flattenMode>
+              <!-- Every profile in this reactor is build-time (release, natives, the compile-only
+                   graalvm-annotations stubs); none is meant to activate in a consumer's build. -->
+              <pomElements>
+                <profiles>remove</profiles>
+              </pomElements>
             </configuration>
             <executions>
               <execution>
