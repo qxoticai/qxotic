@@ -26,12 +26,6 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jota-memory</artifactId>
     </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>graalvm-annotations</artifactId>
-      <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
-      <scope>provided</scope>
-    </dependency>
   </dependencies>
 
   <build>
@@ -51,4 +45,25 @@
     </plugins>
   </build>
 
+  <profiles>
+    <!-- Build-time only: the GraalVM inlining annotations compile against name-matching stubs that
+         are never published. Declared in a build profile (always on in this reactor) because the
+         flatten plugin drops such dependencies from the released POM, so no consumer ever sees the
+         com.qxotic:graalvm-annotations coordinate. -->
+    <profile>
+      <id>graalvm-annotations</id>
+      <activation>
+        <property>
+          <name>!qxotic.noGraalvmAnnotations</name>
+        </property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>com.qxotic</groupId>
+          <artifactId>graalvm-annotations</artifactId>
+          <scope>provided</scope>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
 </project>
