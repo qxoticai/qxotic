@@ -61,7 +61,7 @@ Architecture dispatch comes from providers on the classpath.
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
 | Laguna XS 2.1 | chat |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) |
-| gpt-oss, Nemotron-H, Maple | chat |
+| gpt-oss, Nemotron-H | chat |
 | Inflect | speech synthesis |
 
 GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.

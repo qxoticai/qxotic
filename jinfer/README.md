@@ -230,7 +230,7 @@ family:
 | LFM 2.5 | chat, embeddings, ColBERT reranking, vision | `jinfer-lfm2` |
 | Laguna XS 2.1 | chat | `jinfer-laguna` |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) | `jinfer-llama` |
-| gpt-oss · Nemotron-H · Maple | chat | `jinfer-gptoss`, `jinfer-nemotronh`, `jinfer-maple` |
+| gpt-oss · Nemotron-H | chat | `jinfer-gptoss`, `jinfer-nemotronh` |
 | Inflect | speech synthesis | `jinfer-inflect2` |
 
 Supported quantizations: Q4_0, Q8_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, plus dense F32/F16/BF16.

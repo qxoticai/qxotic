@@ -72,7 +72,9 @@
 
   <properties>
     <qxotic.version>${project.version}</qxotic.version>
-    <!-- Publication is opt-in. Each supported or required transitive artifact overrides this. -->
+    <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
+         The release profile forwards it to central-publishing's skipPublishing, the plugin's own
+         (and only) gate, so one switch decides what reaches Maven Central. -->
     <maven.deploy.skip>true</maven.deploy.skip>
 
     <!-- Build properties -->
@@ -575,6 +577,9 @@
             <extensions>true</extensions>
             <configuration>
               <publishingServerId>central</publishingServerId>
+              <!-- The plugin ignores maven.deploy.skip; this is evaluated per module, so the
+                   opt-in matrix decides what is staged. The final upload still runs regardless. -->
+              <skipPublishing>${maven.deploy.skip}</skipPublishing>
               <!-- Keep manual control in Central UI before public release. -->
               <autoPublish>false</autoPublish>
               <waitUntil>validated</waitUntil>

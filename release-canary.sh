@@ -39,11 +39,12 @@ case "$SPRING_AI_VERSION" in
 esac
 
 echo "==> installing the $VERSION release build into throwaway repo $REPO"
-# jam.native.skip: the canary exercises pom/artifact resolution, not the cmake build.
+# jam.natives.check.skip: the canary exercises pom/artifact resolution, not the native libraries
+# (the release profile itself never runs cmake; it packages the staged, verified set).
 # shellcheck disable=SC2086
 $MVN -B -q -f "$ROOT/pom.xml" -Prelease install \
     -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-spring-ai,jinfer/jinfer-spring-ai-autoconfigure,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-lfm2,jinfer/jinfer-models-all -am \
-    -DskipTests -Dspotless.check.skip=true -Dgpg.skip=true -Djam.native.skip=true \
+    -DskipTests -Dspotless.check.skip=true -Dgpg.skip=true -Djam.natives.check.skip=true \
     -Dmaven.repo.local="$REPO"
 
 mkdir -p \
