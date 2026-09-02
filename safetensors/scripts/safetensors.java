@@ -1,6 +1,6 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS com.qxotic:safetensors:0.1-SNAPSHOT
-//DEPS com.qxotic:json:0.1-SNAPSHOT
+//DEPS com.qxotic:safetensors:0.2.0
+//DEPS com.qxotic:json:0.2.0
 //DEPS info.picocli:picocli:4.7.7
 //DEPS info.picocli:picocli-codegen:4.7.7
 //JAVAC_OPTIONS -proc:full

@@ -229,6 +229,7 @@ family:
 | Qwen 3 / 3.5 | chat, embeddings, reranking, vision, MTP | `jinfer-qwen3`, `jinfer-qwen35` |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, vision | `jinfer-lfm2` |
 | Laguna XS 2.1 | chat | `jinfer-laguna` |
+| Ling 3 | chat | `jinfer-bailingmoe3` |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) | `jinfer-llama` |
 | gpt-oss · Nemotron-H | chat | `jinfer-gptoss`, `jinfer-nemotronh` |
 | Inflect | speech synthesis | `jinfer-inflect2` |

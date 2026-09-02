@@ -6,12 +6,14 @@ sidebar_position: 2
 
 **One tensor API, every backend.** A tensor library with pluggable CPU/GPU backends and first-class GraalVM Native Image support. Write tensor code once, run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
 
+**On Maven Central at 0.2.0:** `jota-core` and `jota-memory`, the layers jinfer builds on. The tensor engine (`jota-tensor`) and the backends build from the [repository](https://github.com/qxoticai/qxotic) with `mvn -f jota/pom.xml install` and are not published yet.
+
 jota's IRs are simple and MLIR-like; no data-dependent control flow:
 
 - **TIR** (Tensor IR): high-level tensor operations, no control flow
 - **LIR** (Loop IR): explicit loops for optimization, scheduling, and kernel generation
 
-## Backends
+## Backends (from source)
 
 | Backend | Artifact | Notes |
 |---------|----------|-------|
@@ -29,9 +31,9 @@ The low-level API (memory, allocators, nested layouts) stays within reach when y
 
 Pick the smallest API you need. Each layer includes the preceding layers transitively:
 
-- `jota-core`: data types, devices, shapes, strides, layouts
-- `jota-memory`: `Memory`, `MemoryView`, allocators, access, transfers
-- `jota-tensor`: tensors, environments, runtimes, IR, kernel compilation
+- `jota-core`: data types, devices, shapes, strides, layouts (Maven Central)
+- `jota-memory`: `Memory`, `MemoryView`, allocators, access, transfers (Maven Central)
+- `jota-tensor`: tensors, environments, runtimes, IR, kernel compilation (from source)
 
 Memory-only applications need one dependency:
 
@@ -43,7 +45,7 @@ Memory-only applications need one dependency:
 </dependency>
 ```
 
-Tensor applications use `jota-tensor`:
+Tensor applications use `jota-tensor`, after a source build (`mvn -f jota/pom.xml install`):
 
 ```xml
 <dependency>
@@ -53,9 +55,9 @@ Tensor applications use `jota-tensor`:
 </dependency>
 ```
 
-## Backend dependencies
+## Backend dependencies (from source)
 
-Put the backend JAR on the classpath; it becomes available on supported platforms. **No `-Djava.library.path`**: native libraries are bundled and auto-extracted. Use `-Djava.library.path` only for custom overrides.
+Put the backend JAR on the classpath; it becomes available on supported platforms. A backend built with its native library (`mvn -f jota/pom.xml -Pc install`, likewise `-Pcuda`, `-Phip`, `-Pmetal`) bundles and auto-extracts it. Use `-Djava.library.path` only for custom overrides.
 
 ```xml
 <!-- Java backend (not Native Image compatible) -->
@@ -104,8 +106,6 @@ Put the backend JAR on the classpath; it becomes available on supported platform
 ## GraalVM Native Image
 
 `jota-tensor` includes Native Image support across C/HIP/CUDA/Metal/OpenCL/Mojo. Panama is excluded because it depends on runtime class loading and JIT.
-
-In Native Image, `Device.NATIVE` resolves to an available `MemorySegment`-capable backend (typically `Device.C`).
 
 Control backend registration when backend jars are present:
 

@@ -12,6 +12,9 @@
   <name>Quixotic Safetensors</name>
   <description>Java library for reading and writing Hugging Face Safetensors tensor
     files.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>
