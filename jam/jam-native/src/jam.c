@@ -271,6 +271,12 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     /* METAL is a GPU backend, not a CPU ISA, so it does NOT cap the CPU ladder - the CPU kernels stay
      * resolved (fallback for dtypes Metal declines). Any other cap clamps the ladder normally. */
     jam_isa cpu = (cap != JAM_ISA_AUTO && cap != JAM_ISA_METAL && cap < detected) ? cap : detected;
+#if defined(__x86_64__) || defined(_M_X64)
+    /* AVX-VNNI sits below AVX-512 on the ladder but is not a subset of it: Zen 4 has every AVX-512
+     * rung and no VEX vpdpbusd. A cap that lands exactly on AVX_VNNI must not name a level the CPU
+     * cannot execute (the band paths key on active == AVX_VNNI), so it falls to AVX2 instead. */
+    if (cpu == JAM_ISA_AVX_VNNI && !x86_has("avxvnni")) cpu = JAM_ISA_AVX2;
+#endif
 
     /* Resolve the best CPU kernels for `cpu`, ONCE (tinyBLAS-style). The hot path then just calls
      * through the bound pointer; each kernel is a row-range worker the pool fans out automatically. */
