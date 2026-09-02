@@ -62,6 +62,7 @@ One logical change per commit.
 A pull request may hold several commits if the whole is reviewable in one sitting.
 No co-author trailers for tools.
 
+CI runs on pull requests once a maintainer approves the run; it covers the default suite and the release build, without models.
 Pull requests are rebased onto `main`, not squashed.
 Expect a first response within a week.
 If none comes, one reminder is fine.
