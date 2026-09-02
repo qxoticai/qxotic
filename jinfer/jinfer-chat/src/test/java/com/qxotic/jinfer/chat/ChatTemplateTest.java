@@ -22,6 +22,12 @@ class ChatTemplateTest {
     }
 
     @Test
+    void theDefaultReasoningBudgetIsHalfTheCompletion() {
+        assertEquals(64, STUB.defaultReasoningBudget(128));
+        assertEquals(-1, STUB.defaultReasoningBudget(-1));
+    }
+
+    @Test
     void markerSpellingsAreRequired() {
         assertThrows(
                 NullPointerException.class, () -> new ChatTemplate.ThinkMarkers(null, "</think>"));

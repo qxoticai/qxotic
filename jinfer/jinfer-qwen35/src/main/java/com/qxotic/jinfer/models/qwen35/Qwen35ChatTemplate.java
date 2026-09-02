@@ -399,9 +399,8 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
-        return Optional.of(spans().constrainedAuto(contentGbnf, !callableTools.isEmpty()));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
+        return Optional.of(spans().constrained(contentGbnf));
     }
 
     /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */

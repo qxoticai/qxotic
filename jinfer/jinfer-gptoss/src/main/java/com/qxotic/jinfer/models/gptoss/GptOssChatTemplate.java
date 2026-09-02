@@ -55,20 +55,17 @@ public final class GptOssChatTemplate implements ChatTemplate {
 
     /** The FINAL channel takes the hole; analysis and preamble stay free (channel-scoping). */
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
         return Optional.of(
                 ReplyLanguage.Selection.of(
-                        harmonyLanguage(ReplyLanguage.gbnf(contentGbnf), !callableTools.isEmpty()),
-                        tokenizer));
+                        harmonyLanguage(ReplyLanguage.gbnf(contentGbnf), false), tokenizer));
     }
 
     private ReplyLanguage.Node harmonyLanguage(ReplyLanguage.Node contentHole) {
         return harmonyLanguage(contentHole, true);
     }
 
-    private ReplyLanguage.Node harmonyLanguage(
-            ReplyLanguage.Node contentHole, boolean toolsOffered) {
+    private ReplyLanguage.Node harmonyLanguage(ReplyLanguage.Node contentHole, boolean allowCalls) {
         ReplyLanguage.Node sep =
                 ReplyLanguage.alt(
                         ReplyLanguage.mark("<|end|>"),
@@ -90,7 +87,7 @@ public final class GptOssChatTemplate implements ChatTemplate {
                             "commentary",
                             null,
                             ReplyLanguage.free()));
-            if (toolsOffered) {
+            if (allowCalls) {
                 shapes.add(
                         message(reopened, ReplyLanguage.Kind.CONTENT, "final", null, contentHole));
                 shapes.add(
@@ -105,7 +102,7 @@ public final class GptOssChatTemplate implements ChatTemplate {
         ReplyLanguage.Node msg = new ReplyLanguage.Node.Alt(shapes);
         ReplyLanguage.Node stream =
                 ReplyLanguage.rep(ReplyLanguage.seq(msg, ReplyLanguage.opt(sep)), 0, -1);
-        if (toolsOffered) return stream;
+        if (allowCalls) return stream;
         // tool-less: reasoning and preambles stay free, then ONE final message is REQUIRED -
         // an empty reply must not comply, and there are no calls to take instead
         ReplyLanguage.Node requiredFinal =

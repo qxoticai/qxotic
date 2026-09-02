@@ -23,10 +23,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tools AND a JSON-schema response format on ONE request, through the public API: the schema rides
- * the family's reply language, so round 1 still CALLS the tool (the mask admits the family's own
- * call syntax) and round 2's answer can only be schema JSON. What hosted APIs promise as trained
- * behavior, as a mask guarantee.
+ * The supported two-phase workflow: finish the tool round, then remove tools and constrain the
+ * final answer to the JSON schema.
  */
 @Tag("integration")
 class ToolsWithSchemaIT {
@@ -63,9 +61,12 @@ class ToolsWithSchemaIT {
                                     .build())
                     .build();
 
-    static ChatRequestParameters toolsAndSchema() {
+    static ChatRequestParameters toolsOnly() {
+        return ChatRequestParameters.builder().toolSpecifications(WEATHER).build();
+    }
+
+    static ChatRequestParameters schemaOnly() {
         return ChatRequestParameters.builder()
-                .toolSpecifications(WEATHER)
                 .responseFormat(
                         ResponseFormat.builder()
                                 .type(ResponseFormatType.JSON)
@@ -84,16 +85,12 @@ class ToolsWithSchemaIT {
     }
 
     @Test
-    void theSchemaMaskStillAdmitsTheCallAndThenShapesTheAnswer() {
-        // the composed mask deliberately admits BOTH calling and answering - that choice is the
-        // model's; the prompt makes it unambiguous so the test pins the MASK, not a near-tie
+    void toolRoundThenSchemaShapesTheAnswer() {
         UserMessage user =
                 UserMessage.from(
                         "What is the weather in Munich right now? Check with your tool - do not"
                                 + " guess.");
-        var r1 =
-                model.chat(
-                        ChatRequest.builder().messages(user).parameters(toolsAndSchema()).build());
+        var r1 = model.chat(ChatRequest.builder().messages(user).parameters(toolsOnly()).build());
         AiMessage ai = r1.aiMessage();
         assertEquals(1, ai.toolExecutionRequests().size(), "the mask must not trap the call");
         assertEquals("get_weather", ai.toolExecutionRequests().get(0).name());
@@ -107,7 +104,7 @@ class ToolsWithSchemaIT {
                                         ai,
                                         ToolExecutionResultMessage.from(
                                                 ai.toolExecutionRequests().get(0), "18C, sunny"))
-                                .parameters(toolsAndSchema())
+                                .parameters(schemaOnly())
                                 .build());
         String text = r2.aiMessage().text().strip();
         Object parsed = Json.parse(text);

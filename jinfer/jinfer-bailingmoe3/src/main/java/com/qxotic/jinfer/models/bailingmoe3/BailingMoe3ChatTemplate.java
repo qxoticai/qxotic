@@ -281,9 +281,8 @@ public final class BailingMoe3ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
-        return Optional.of(spans.constrainedAuto(contentGbnf, !callableTools.isEmpty()));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
+        return Optional.of(spans.constrained(contentGbnf));
     }
 
     @Override

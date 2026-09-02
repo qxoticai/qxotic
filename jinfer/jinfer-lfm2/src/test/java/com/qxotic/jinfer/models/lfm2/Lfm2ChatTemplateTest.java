@@ -479,7 +479,7 @@ final class Lfm2ChatTemplateTest {
     @Test
     void exposesConstrainedAndForcedSelectionsWithoutInventingAnEmptyCall() {
         Lfm2ChatTemplate template = new Lfm2ChatTemplate(tokenizer, false);
-        assertTrue(template.constrainedReply("root ::= \"ok\"", List.of()).isPresent());
+        assertTrue(template.constrainedReply("root ::= \"ok\"").isPresent());
         assertTrue(template.forcedCall(List.of()).isEmpty());
         var forced = template.forcedCall(List.of(weather())).orElseThrow();
         assertTrue(forced.forcedPrefix().length > 0);

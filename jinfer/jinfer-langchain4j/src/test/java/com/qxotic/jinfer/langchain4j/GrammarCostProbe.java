@@ -3,7 +3,6 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.ReplyLanguage;
-import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -103,22 +102,22 @@ class GrammarCostProbe {
                 fillOnly / 1e3 / (rounds * doc.length()),
                 (warmWalk - fillOnly) / 1e3 / (rounds * doc.length()));
 
-        // 3. the per-REQUIRED-request cost: a full tools+schema Selection (compile + validate +
-        //    closures + forcedPrefix), like the prototype's constrainedAuto
+        // 3. the per-request cost of a schema-shaped content selection
         t0 = System.nanoTime();
         ReplyLanguage.Selection sel =
                 ReplyLanguage.Selection.of(
-                        ReplyLanguage.spans(
-                                "<think>",
-                                "</think>",
-                                "<|tool_call_start|>",
-                                "<|tool_call_end|>",
-                                ToolCallSyntax::parseBlock,
-                                ReplyLanguage.mark("<|im_end|>"),
-                                ReplyLanguage.gbnf(Grammar.schemaGbnf(SCHEMA))),
+                        ReplyLanguage.seq(
+                                ReplyLanguage.opt(
+                                        ReplyLanguage.think(
+                                                ReplyLanguage.mark("<think>"),
+                                                ReplyLanguage.free(),
+                                                ReplyLanguage.mark("</think>"))),
+                                ReplyLanguage.content(
+                                        ReplyLanguage.gbnf(Grammar.schemaGbnf(SCHEMA))),
+                                ReplyLanguage.opt(ReplyLanguage.mark("<|im_end|>"))),
                         tok);
         long selBuild = System.nanoTime() - t0;
-        System.out.printf("tools+schema Selection.of: %.2f ms%n", selBuild / 1e6);
+        System.out.printf("schema Selection.of: %.2f ms%n", selBuild / 1e6);
 
         // 4. walk feed on FREE content (the AUTO/think path): pure parse, no mask
         ReplyLanguage.Walk walk = sel.walk();

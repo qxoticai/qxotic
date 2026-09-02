@@ -14,7 +14,7 @@ final class SpansReplyParser implements ReplyParser {
     private final int thinkOpen;
     private final int thinkClose;
     private final SpanToolCallDetector toolCalls;
-    private final boolean claimToolCalls;
+    private boolean toolCallsEnabled = true;
     private final PendingUtf8 pending = new PendingUtf8();
     private final ContentBuilder content = new ContentBuilder();
     private ContentBuilder reasoningContent;
@@ -31,20 +31,17 @@ final class SpansReplyParser implements ReplyParser {
             SpanToolCallDetector toolCalls,
             String thinkOpen,
             String thinkClose) {
-        this(tokenizer, toolCalls, thinkOpen, thinkClose, true);
-    }
-
-    SpansReplyParser(
-            Tokenizer tokenizer,
-            SpanToolCallDetector toolCalls,
-            String thinkOpen,
-            String thinkClose,
-            boolean claimToolCalls) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.toolCalls = toolCalls;
-        this.claimToolCalls = claimToolCalls;
         this.thinkOpen = SpecialTokens.find(tokenizer, thinkOpen).orElse(-1);
         this.thinkClose = SpecialTokens.find(tokenizer, thinkClose).orElse(-1);
+    }
+
+    @Override
+    public void disableToolCalls() {
+        if (generated) throw new IllegalStateException("reply generation already started");
+        if (result != null) throw new IllegalStateException("parser already finished");
+        toolCallsEnabled = false;
     }
 
     @Override
@@ -116,7 +113,7 @@ final class SpansReplyParser implements ReplyParser {
 
     @Override
     public Channel channel() {
-        if (claimToolCalls && toolCalls != null && toolCalls.inSpan()) return Channel.TOOL_CALL;
+        if (toolCallsEnabled && toolCalls != null && toolCalls.inSpan()) return Channel.TOOL_CALL;
         return inThink ? Channel.REASONING : Channel.CONTENT;
     }
 
@@ -175,7 +172,7 @@ final class SpansReplyParser implements ReplyParser {
         for (; seenSpans < spans.size(); seenSpans++) {
             SpanToolCallDetector.Span span = spans.get(seenSpans);
             ContentBuilder target = inThink ? reasoningContent : content;
-            if (claimToolCalls && !span.calls().isEmpty()) {
+            if (toolCallsEnabled && !span.calls().isEmpty()) {
                 for (Content.ToolCall call : span.calls()) target.add(call);
             } else {
                 target.add(new Content.Text(span.text(), span.wireIds()));

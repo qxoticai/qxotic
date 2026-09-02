@@ -9,6 +9,11 @@ import java.util.function.Function;
 
 /** Stateful, single-use decoding of one generated reply. */
 public interface ReplyParser {
+    /**
+     * Keeps native call syntax as ordinary text. May follow prompt seeding; must precede output.
+     */
+    void disableToolCalls();
+
     /** Applies prompt-owned reply tokens without exposing them as generated content. */
     void seed(IntSequence promptOwnedTokens);
 
@@ -74,27 +79,11 @@ public interface ReplyParser {
             Function<String, List<Content.ToolCall>> payload,
             String thinkOpen,
             String thinkClose) {
-        return spans(tokenizer, callStart, callEnd, payload, thinkOpen, thinkClose, true);
-    }
-
-    /**
-     * A span parser whose call syntax is either claimed structurally or retained as visible text.
-     * Unclaimed spans keep their complete wire ids for exact re-encoding.
-     */
-    static ReplyParser spans(
-            Tokenizer tokenizer,
-            String callStart,
-            String callEnd,
-            Function<String, List<Content.ToolCall>> payload,
-            String thinkOpen,
-            String thinkClose,
-            boolean claimToolCalls) {
         return new SpansReplyParser(
                 tokenizer,
                 new SpanToolCallDetector(tokenizer, callStart, callEnd, payload),
                 thinkOpen,
-                thinkClose,
-                claimToolCalls);
+                thinkClose);
     }
 
     static ReplyParser dropping(ReplyParser inner, int token) {
@@ -102,6 +91,12 @@ public interface ReplyParser {
         return new ReplyParser() {
             private boolean generated;
             private boolean finished;
+
+            public void disableToolCalls() {
+                if (generated) throw new IllegalStateException("reply generation already started");
+                if (finished) throw new IllegalStateException("parser already finished");
+                inner.disableToolCalls();
+            }
 
             public void seed(IntSequence seed) {
                 if (generated)

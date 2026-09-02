@@ -235,6 +235,9 @@ final class Validation {
                             || "json_schema".equals(format.get("type"));
         }
         require(
+                !usesGrammar || !ToolUse.offered(request),
+                "tools and constrained output cannot be used in the same request");
+        require(
                 !usesGrammar || config.limits().grammar(),
                 "Grammar constraints disabled (--no-grammar)");
         if (present(request, "reasoning_effort")) {

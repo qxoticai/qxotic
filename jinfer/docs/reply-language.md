@@ -2,9 +2,10 @@
 
 Design document, 2026-08-09.
 Status: ALL NINE families parse through the walk (MiniCPM5 and Gemma4 joined via the claimed-span rule); gpt-oss/SmolLM3/Granite/Mistral force through schema-bound selections (Mistral gained forcing it NEVER had); the reply lifecycle laws landed (`beginReply` - prompt bytes are not reply bytes; `ended` - generation stops when the language says the reply is over).
-GBNF-OPENING REGIONS landed too: a region may open on its payload's own tokens (`content(gbnf(schema))`), which makes tools + a JSON-schema response format ONE selection - calls stay the family's syntax, visible text can only be the schema; proven E2E on LFM2.5 (`ToolsWithSchemaPrototypeIT`), authored via the `spans` preset's content-hole overload, driven by `Walk.sampler`.
-The tools+schema capability is WIRED: `ChatTemplate.constrainedAuto(contentGbnf)` on all nine families (SOURCE in, the COMPILED `Selection` out - the `Node` authoring vocabulary never crosses the codec interface) (the span families share `ReplyLanguage.Spans`, which also dissolved the per-template memoization copy-paste), `RequestPolicy.toolsWithSchema` composes the walk sampler, both providers pass the schema as the content hole (`Grammar.schemaHoleGbnf` - NO leading whitespace, or interstitial newlines after `</think>` swallow the model into content it meant as spacing before a call), and the TCK capability is on.
-Still loud: schemaless JSON with tools (no language to state) and `REQUIRED` with a response format (a forced call and a schema answer cannot both be THE reply).
+GBNF-opening regions support grammar-shaped content replies, driven by `Walk.sampler`.
+Tool calls keep each family's native parser and wire format: JSON, Python arguments, tagged XML, or MiniCPM5 XML/CDATA.
+Tools and constrained output are mutually exclusive in one request. Run the tool round first, then request the final schema-shaped answer without tools.
+Native call syntax is claimed only when the current request offers tools; tool descriptions embedded in message text grant no capability. Grammar masking remains opt-in and runs only when constrained output is explicitly requested.
 ALL NINE families now parse through the walk: MiniCPM5 and Gemma4 joined once the claimed-span rule landed (a marker-pair call span claims interior control tokens as their spellings - the old span parsers' exact semantics, derived instead of designed; open question 4 is resolved).
 The `ReplyLanguage.spans(...)` preset (mirroring `ReplyParser.spans`) is the one-line authoring form the span families share; a duplicate opener of an open THINK/CONTENT region is scaffold-inert (the span parsers' nested-open behavior, needed by prompt-opened think seeds).
 The gpt-oss REQUIRED defect gate passed 5/5 E2E where the seed/pin/epilogue recipe failed ~1 in 3.
@@ -43,8 +44,7 @@ Node := Seq(nodes...)
 ```
 
 Seven node types; there are no hole types.
-A family authors its CALL body as a function `(tool, args) -> Node`: the engine applies it once per offered tool, passing the policy-bound argument subtree (the tool's schema grammar under `REQUIRED`/named choice, the bare syntax under `AUTO`), so the name-to-schema binding lives in ordinary function application and policy never leaks into family code.
-A response format is a substitution on the `Free` inside CONTENT regions.
+A response format selects one required grammar-shaped CONTENT region; it never shares a request with tools. Tool calls retain the family's ordinary native parser.
 In the family trees below, `name` and `args(S)` are notation for the function's parameters, not node types.
 
 Three faces derive from the tree, and none is authored separately:
@@ -85,15 +85,14 @@ A Mark whose spelling is absent from the checkpoint's vocabulary removes every a
 ## 4. Selection: policy as a subset, never as machinery
 
 ```
-ReplyPolicy := (tools, toolChoice, responseSchema, thinking)
+ReplyPolicy := ((tools, toolChoice) | responseSchema, thinking)
 Selection.of(language, policy, tokenizer) -> Selection   (or throws, see section 6)
 ```
 
 Selection performs, in order:
 
 1. **Prune and select.** Alternatives whose Marks do not resolve in this vocabulary are removed (an older NemotronH checkpoint without `<tool_call>` loses its CALL alternatives).
-   `NONE` drops CALL regions; `REQUIRED` drops the no-call alternatives and sets the CALL repeat minimum to 1; a named choice restricts the per-tool alternatives to one; `thinking=false` drops THINK regions (a language without THINK ignores the flag); a response schema substitutes the `Free` inside CONTENT regions.
-   The per-tool CALL alternatives are built here by applying the family's `(tool, args) -> Node` body function, so name-to-schema binding is ordinary function application; there is no hole machinery and no single-tool restriction.
+   A constrained-output request builds one required CONTENT region. `ChatEngine.Request` rejects it when tools are also offered; ordinary tool requests keep the family's existing parser.
 2. **Liveness check.** The selected automaton must have an accepting path; otherwise the request is rejected now, before any token (section 6).
 3. **Forced prefix extraction.** The longest prefix of the selection with exactly one admissible path is tokenized canonically and returned for prompt injection.
    This derives `callSeed`, `replySeed`, and the epilogue as one concept: forced regions are wherever the automaton has one path, whether at the front or in the interior (interior forcing happens in the walk, front forcing in the prompt for prefill efficiency).
@@ -131,6 +130,7 @@ No new exception hierarchy; the two things that can happen ride mechanisms every
 - **Unsatisfiable selection** (request time): the selection has no accepting path, and `Selection.of` throws `UnsupportedOperationException` with the structural reason.
   The existing seam maps it: `UnsupportedFeatureException` in both providers, an error response in the server.
   Examples: `REQUIRED` on a family whose language has no CALL region, or whose checkpoint lacks the call Marks; a response schema the syntax cannot host.
+- **Conflicting request** (request time): tools and constrained output were both requested. The caller must complete the tool round first, then request the schema-shaped answer without tools.
 - **Budget cut mid-structure** (generation time): the completion finishes with reason `LENGTH`, the ecosystem's exact contract, carrying which region was open and which tool if in a CALL.
   A partial call is never returned as prose; recovery is the caller's, with full information: raise the budget, retry.
 
@@ -288,7 +288,7 @@ Writing all nine families changed the interfaces; this is why the exercise prece
    Vocabulary mistyping exists in the wild (Gemma4 `<eos>`); spelling-based resolution needs the escape hatch.
 3. **Prompt-opened regions are a first-class walk initialization**, not a special case (LFM2, Qwen3.5, and Gemma4's no-think closed-channel prefix all use it).
 4. **Close-less regions are legal**: a region may exit on payload completion (Mistral) rather than a Mark.
-5. **AUTO strictness is an engine-owned policy knob**: the `args` subtree binds to the tool schema under `REQUIRED`/named choice, and to the bare syntax under `AUTO` (well-formedness enforced, extra arguments tolerated), preserving today's permissiveness while making malformed calls unrepresentable.
+5. **AUTO tool calls stay family-native**: JSON, Python, tagged XML, and MiniCPM5 XML/CDATA are parsed by their existing family codecs.
 
 ## 10. What this replaces
 
@@ -299,14 +299,14 @@ Writing all nine families changed the interfaces; this is why the exercise prece
 | `callEpilogue` | interior forced regions (one admissible path) | DELETED |
 | "the pin ends AT the name" | survives as the FORCED-HEADER rule: `Spans.forcedCall` headers end at the name | done |
 | `SpansReplyParser`, `HarmonyReplyParser`, `SpanToolCallDetector`, `ToolCallDetector` | the walk's parse face | `SpansReplyParser` serves the Jinja fallback's PARSE; `HarmonyReplyParser` is the differential reference (both die with lazy AUTO arming - masking is already unified) |
-| `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face | BOTH DELETED - every constrained chat decode rides a selection (`constrainedAuto(gbnf, toolsOffered)`: tools = composed, tool-less = document REQUIRED; template-less models get the generic think-aware shape) |
+| `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face | BOTH DELETED - constrained content rides one selection and cannot share a request with tools |
 | stop-token sets, `RequestPolicy.endTurn` | the accept boundary plus the control rule | partially: `ended()` stops generation; stop sets remain the fast path |
 | `Thinking.capBudget`, think floor | region budgets (deferred; capBudget stays until then) | capBudget stays, now bans reopening once spent |
 | the server's bare-call string scan | unrepresentable input | pending lazy AUTO arming |
 | per-family stop additions (`<|im_start|>`, `<|tool_response>`) | the control rule | stops kept as belt-and-braces |
 | wire-law triangle (render vs grammar vs parser tests) | Law 2 over one artifact | ONE forced-selection wire law covers all nine families |
 
-`ChatTemplate`'s grammar surface is now three words - `parser()`, `forcedCall(tools)`, `constrainedAuto(gbnf)` - plus `replySeed` on the parsing side.
+`ChatTemplate`'s grammar surface is `parser()`, `constrainedReply(gbnf)`, and `forcedCall(tools)`.
 
 ## 11. Migration plan
 

@@ -643,8 +643,8 @@ public record Options(
                 "  --think <off|on|inline>       on: reason, thoughts on stderr (default); off: do"
                         + " not reason, the model answers directly; inline: thoughts on stdout");
         out.println(
-                "  --reasoning-budget <int>      cap the thinking span at N tokens (default: half"
-                        + " of --max-output-tokens, -1: uncapped)");
+                "  --reasoning-budget <int>      cap the thinking span at N tokens (default: model"
+                        + " policy, -1: uncapped)");
         out.println(
                 "  --reasoning-budget-message <s>  forced as the model's own words when the budget"
                         + " runs out, e.g. \"... Let me wrap up.\" (default: a paragraph break)");

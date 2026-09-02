@@ -5,11 +5,9 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
-import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
 import com.qxotic.toknroll.Tokenizer;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -34,9 +32,8 @@ public final class MapleChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
-        return Optional.of(spans().constrainedAuto(contentGbnf, !callableTools.isEmpty()));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
+        return Optional.of(spans().constrained(contentGbnf));
     }
 
     private ReplyLanguage.Spans spans() {

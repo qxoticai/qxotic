@@ -51,30 +51,26 @@ public final class MistralChatTemplate implements ChatTemplate {
     @Override
     public synchronized ReplyParser parser(Tokenizer tokenizer) {
         if (autoReply == null) {
-            autoReply = ReplyLanguage.Selection.of(language(ReplyLanguage.free()), this.tokenizer);
+            autoReply = ReplyLanguage.Selection.of(language(), this.tokenizer);
         }
         return autoReply.walk();
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(
-            String contentGbnf, List<Tool> callableTools) {
-        ReplyLanguage.Node hole = ReplyLanguage.gbnf(contentGbnf);
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
         ReplyLanguage.Node tree =
-                !callableTools.isEmpty()
-                        ? language(hole)
-                        : ReplyLanguage.seq(
-                                ReplyLanguage.content(hole),
-                                ReplyLanguage.opt(ReplyLanguage.mark("</s>")));
+                ReplyLanguage.seq(
+                        ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf)),
+                        ReplyLanguage.opt(ReplyLanguage.mark("</s>")));
         return Optional.of(ReplyLanguage.Selection.of(tree, tokenizer));
     }
 
-    /** The family tree with the content hole stated: {@code (content | call)* </s>?}. */
-    private static ReplyLanguage.Node language(ReplyLanguage.Node contentHole) {
+    /** The family's ordinary free-content tree: {@code (content | call)* </s>?}. */
+    private static ReplyLanguage.Node language() {
         return ReplyLanguage.seq(
                 ReplyLanguage.rep(
                         ReplyLanguage.alt(
-                                ReplyLanguage.content(contentHole),
+                                ReplyLanguage.content(ReplyLanguage.free()),
                                 ReplyLanguage.call(
                                         MistralChatTemplate::walkCalls,
                                         ReplyLanguage.mark("[TOOL_CALLS]"),

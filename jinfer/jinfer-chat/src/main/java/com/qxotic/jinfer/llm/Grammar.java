@@ -1177,16 +1177,6 @@ public final class Grammar {
         return JSON_GRAMMAR;
     }
 
-    /**
-     * {@link #schemaGbnf} without LEADING whitespace - the reply-language content-hole form. At a
-     * dispatch point interstitial newlines are scaffold between spans, and a hole whose entry set
-     * admits them swallows the model into content it meant as spacing before a tool call (observed
-     * on LFM2.5: "I should call" in the reasoning, then a hallucinated schema answer).
-     */
-    public static String schemaHoleGbnf(Map<String, Object> schema) {
-        return Schema.toGbnf(schema, false);
-    }
-
     /** Translates a JSON Schema node tree into a GBNF grammar string. */
     static final class Schema {
         private final StringBuilder rules = new StringBuilder();
@@ -1351,8 +1341,14 @@ public final class Grammar {
         @SuppressWarnings("unchecked")
         private String objectBody(Map<String, Object> m) {
             Object propsObj = m.get("properties");
-            if (!(propsObj instanceof Map) || ((Map<?, ?>) propsObj).isEmpty())
-                return "\"{\" ws \"}\"";
+            if (!(propsObj instanceof Map) || ((Map<?, ?>) propsObj).isEmpty()) {
+                // No declared properties = a FREE-FORM object, open by JSON Schema's own default:
+                // any keys, any values (the shared `jobject` rule). Only an explicit
+                // additionalProperties:false closes it to the empty object.
+                return Boolean.FALSE.equals(m.get("additionalProperties"))
+                        ? "\"{\" ws \"}\""
+                        : "jobject";
+            }
             Map<String, Object> props = (Map<String, Object>) propsObj;
             Set<String> required = new HashSet<>();
             if (m.get("required") instanceof List<?> req)
@@ -1391,14 +1387,15 @@ public final class Grammar {
          */
         private String optionalSubset(List<String> pairs, int from) {
             String kv = pairs.get(from);
-            String body =
-                    from + 1 == pairs.size()
-                            ? kv
-                            : kv
-                                    + " (ws \",\" ws "
-                                    + optionalSubset(pairs, from + 1)
-                                    + ")? | "
-                                    + optionalSubset(pairs, from + 1);
+            String body;
+            if (from + 1 == pairs.size()) {
+                body = kv;
+            } else {
+                // the tail is ONE rule referenced twice, not two copies: two copies per level
+                // made the rule set exponential in the number of optional properties
+                String next = optionalSubset(pairs, from + 1);
+                body = kv + " (ws \",\" ws " + next + ")? | " + next;
+            }
             String name = "r" + (counter++);
             rules.append(name).append(" ::= ").append(body).append("\n");
             return name;

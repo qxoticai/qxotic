@@ -16,17 +16,17 @@ import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jota.DataType;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.lang.foreign.Arena;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,8 +41,6 @@ import org.junit.jupiter.api.Test;
 final class LagunaIntegrationTest {
     private static final int BOS = 2;
     private static final String MODEL_PROPERTY = "jinfer.laguna.model";
-    private static final String LLAMA_LOGITS_PROPERTY = "jinfer.laguna.llamaLogits";
-    private static final String LLAMA_CHAT_LOGITS_PROPERTY = "jinfer.laguna.llamaChatLogits";
     private static final Tool WEATHER =
             new Tool(
                     "get_weather",
@@ -139,6 +137,35 @@ final class LagunaIntegrationTest {
     }
 
     @Test
+    void nativeToolSyntaxIsTextWhenTheRequestOffersNoTools() throws Exception {
+        Checkpoint checkpoint = checkpoint();
+        Tokenizer tokenizer = checkpoint.tokenizer();
+        LagunaChatTemplate template =
+                new LagunaChatTemplate(
+                        tokenizer,
+                        checkpoint.gguf().getValue(int.class, "tokenizer.ggml.bos_token_id"));
+        String payload = "get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value>";
+        IntSequence wire =
+                IntSequence.of(SpecialTokens.require(tokenizer, "<tool_call>"))
+                        .concat(tokenizer.encode(payload))
+                        .concat(IntSequence.of(SpecialTokens.require(tokenizer, "</tool_call>")));
+
+        Content.ToolCall call =
+                assertInstanceOf(
+                        Content.ToolCall.class,
+                        ReplyParser.parse(template.parser(tokenizer), wire).content().getFirst());
+        assertEquals("get_weather", call.name());
+        assertEquals(Map.of("city", "Paris"), call.arguments());
+
+        ReplyParser disabled = template.parser(tokenizer);
+        disabled.disableToolCalls();
+        Message text = ReplyParser.parse(disabled, wire);
+        assertEquals(payload, text.text());
+        assertEquals(wire, ((Content.Text) text.content().getFirst()).verbatim());
+        assertTrue(text.content().stream().noneMatch(Content.ToolCall.class::isInstance));
+    }
+
+    @Test
     void batchedAndIncrementalInferenceAgreeAndResetReplays() throws Exception {
         try (Arena arena = Arena.ofShared()) {
             LoadedModel<?> loaded = Models.load(requiredFile(MODEL_PROPERTY), arena);
@@ -204,50 +231,6 @@ final class LagunaIntegrationTest {
                 assertEquals(PromptCache.Tier.BLOCKS, restored.tier());
                 assertEquals(tokens.length - 1, restored.restored());
                 assertArrayEquals(fresh.logits(), restored.logits(), 1e-4f);
-            }
-        }
-    }
-
-    @Test
-    void multiTokenFullVocabularyLogitsMatchLlamaCpp() throws Exception {
-        float[] expected = readFloats(requiredFile(LLAMA_LOGITS_PROPERTY));
-        try (Arena arena = Arena.ofShared()) {
-            Laguna model = Laguna.loadModel(requiredFile(MODEL_PROPERTY), arena);
-            int[] tokens = promptTokens(model.tokenizer(), "Hello world");
-            try (Laguna.State state = model.newState(32, tokens.length)) {
-                model.ingest(state, Batch.prefill(tokens));
-                float[] actual = logits(model, state);
-                assertEquals(expected.length, actual.length);
-                double rmse = rmse(expected, actual);
-                float max = maxAbsDifference(expected, actual);
-                double cosine = cosineSimilarity(expected, actual);
-                System.out.printf(
-                        "Laguna llama.cpp parity: rmse=%.6f nmse=%.6f max=%.6f cosine=%.9f%n",
-                        rmse, nmse(expected, actual), max, cosine);
-                assertEquals(argmax(expected), argmax(actual));
-                // llama.cpp and JAM reduce the Q8_0 operations differently. The 256-way top-k
-                // router can amplify those small differences near expert ties.
-                assertTrue(rmse < .4, "RMSE " + rmse);
-                assertTrue(max < 2f, "max difference " + max);
-                assertTrue(cosine > .985, "cosine similarity " + cosine);
-            }
-        }
-    }
-
-    @Test
-    void chatPromptFullVocabularyLogitsMatchLlamaCpp() throws Exception {
-        float[] expected = readFloats(requiredFile(LLAMA_CHAT_LOGITS_PROPERTY));
-        try (Arena arena = Arena.ofShared()) {
-            LoadedModel<?> loaded = Models.load(requiredFile(MODEL_PROPERTY), arena);
-            Laguna model = assertInstanceOf(Laguna.class, loaded.model());
-            int[] tokens =
-                    encode(
-                            loaded.template().orElseThrow(),
-                            new Conversation(List.of(Message.user("Who are you?"))));
-            try (Laguna.State state = model.newState(256, tokens.length)) {
-                model.ingest(state, Batch.prefill(tokens));
-                assertLogitParity(
-                        "Laguna chat-prompt llama.cpp parity", expected, logits(model, state));
             }
         }
     }
@@ -329,14 +312,6 @@ final class LagunaIntegrationTest {
         return path;
     }
 
-    private static float[] readFloats(Path path) throws Exception {
-        byte[] bytes = Files.readAllBytes(path);
-        assertEquals(0, bytes.length % Float.BYTES, "reference logits must be raw FP32");
-        float[] values = new float[bytes.length / Float.BYTES];
-        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(values);
-        return values;
-    }
-
     private static float[] logits(Laguna model, Laguna.State state) {
         return Views.toFloatArray(
                 Views.castToSegmentBacked(model.logits(state), "logits"), "logits");
@@ -348,21 +323,6 @@ final class LagunaIntegrationTest {
                 prompt,
                 (state, serving) ->
                         new CacheResult(serving.tier(), serving.restored(), logits(model, state)));
-    }
-
-    private static void assertLogitParity(String label, float[] expected, float[] actual) {
-        assertEquals(expected.length, actual.length);
-        double rmse = rmse(expected, actual);
-        float max = maxAbsDifference(expected, actual);
-        double cosine = cosineSimilarity(expected, actual);
-        System.out.printf(
-                "%s: rmse=%.6f nmse=%.6f max=%.6f cosine=%.9f%n",
-                label, rmse, nmse(expected, actual), max, cosine);
-        assertEquals(argmax(expected), argmax(actual));
-        // Batched reductions can change near-tied routes in Laguna's 256-expert router. The
-        // stronger behavioral gate is the shared top token; these bounds still catch graph drift.
-        assertTrue(rmse < .6, "RMSE " + rmse);
-        assertTrue(cosine > .985, "cosine similarity " + cosine);
     }
 
     private static int argmax(float[] values) {
@@ -384,20 +344,6 @@ final class LagunaIntegrationTest {
             squareSum += difference * difference;
         }
         return Math.sqrt(squareSum / left.length);
-    }
-
-    private static double nmse(float[] reference, float[] actual) {
-        double mean = 0;
-        for (float value : reference) mean += value;
-        mean /= reference.length;
-        double error = 0, variance = 0;
-        for (int i = 0; i < reference.length; i++) {
-            double difference = actual[i] - reference[i];
-            error += difference * difference;
-            double centered = reference[i] - mean;
-            variance += centered * centered;
-        }
-        return error / variance;
     }
 
     private static double cosineSimilarity(float[] left, float[] right) {

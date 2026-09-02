@@ -29,10 +29,8 @@ import org.springframework.ai.tool.definition.ToolDefinition;
  * output must behave identically whatever the family's wire syntax (pythonic spans, JSON blocks,
  * XML, Harmony channels). Wire fidelity per family is the langchain4j AbstractToolIT + wire
  * battery's job; THIS contract pins the Spring mapping layer: calls surface as {@link
- * AssistantMessage.ToolCall}s, round-trips ground, schemas bind output only. Schema+tools
- * composition (legal on this stack, a rejection on the old one) is pinned on LFM2.5 by {@code
- * StructuredOutputIT#schemaWithToolsComposesAcrossTheCallRoundTrip} - cross-family it is not a
- * guarantee.
+ * AssistantMessage.ToolCall}s, round-trips ground, and schemas bind output. Tool rounds and the
+ * final constrained answer are separate requests.
  *
  * <p>Parameterized by model: each subclass names one GGUF (system-property overridable);
  * assume-skips when absent. Output assertions strip() first (the documented boilerplate-newline

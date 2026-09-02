@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.llama;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
@@ -86,7 +87,13 @@ class JsonEnvelopeReplyLanguageTest {
         feed(walk, selection.forcedPrefix());
         assertAdmitted(walk, tokenizer, "{\"city\": \"Paris\"}");
         assertTrue(walk.accepted());
-        assertCall(walk);
+        Content.ToolCall call = (Content.ToolCall) walk.finish().content().get(0);
+        assertEquals("get_weather", call.name());
+        assertEquals(Map.of("city", "Paris"), call.arguments());
+        // Mistral's wire has an INTERIOR mark ([ARGS]): not span-shaped, and with no free hole
+        // there is no exact splice unit - verbatim is EMPTY by the verbatim law (a missing
+        // splice merely re-tokenizes the echo; a wrong one would corrupt it)
+        assertTrue(call.verbatim().isEmpty());
     }
 
     @Test
@@ -107,6 +114,36 @@ class JsonEnvelopeReplyLanguageTest {
         Content.ToolCall call = (Content.ToolCall) parsed.content().getFirst();
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
+
+        ReplyParser unclaimed = template.parser(tokenizer);
+        unclaimed.disableToolCalls();
+        Message text = ReplyParser.parse(unclaimed, tokenizer.encode(wire));
+        assertEquals(wire, text.text());
+        assertTrue(text.content().stream().noneMatch(Content.ToolCall.class::isInstance));
+        assertEquals(tokenizer.encode(wire), ((Content.Text) text.content().getFirst()).verbatim());
+
+        ReplyParser seeded = template.parser(tokenizer);
+        seeded.seed(tokenizer.encode(" \n"));
+        seeded.disableToolCalls();
+        assertEquals(
+                wire,
+                ReplyParser.parse(seeded, tokenizer.encode(wire)).text(),
+                "prompt-owned ambiguous whitespace is not response text");
+
+        ReplyParser partial = template.parser(tokenizer);
+        partial.disableToolCalls();
+        assertEquals(
+                "{\"name\":",
+                ReplyParser.parse(partial, tokenizer.encode("{\"name\":")).text(),
+                "partial call-shaped JSON is not lost");
+
+        ReplyParser lifecycle = template.parser(tokenizer);
+        lifecycle.disableToolCalls();
+        lifecycle.disableToolCalls();
+        lifecycle.feed(tokenizer.encode("{").intAt(0));
+        assertThrows(IllegalStateException.class, lifecycle::disableToolCalls);
+        lifecycle.finish();
+        assertThrows(IllegalStateException.class, lifecycle::disableToolCalls);
 
         // the model's own merge of the same wire, which tokenizer.encode does not reproduce
         Message generatedTokenization =
@@ -136,6 +173,34 @@ class JsonEnvelopeReplyLanguageTest {
         Message ordinary =
                 ReplyParser.parse(template.parser(tokenizer), tokenizer.encode("No tool needed."));
         assertEquals("No tool needed.", ordinary.text());
+    }
+
+    @Test
+    void miniCpmCdataCallIsClaimedOnlyWhenToolsAreEnabled() throws Exception {
+        Tokenizer tokenizer = tokenizer("hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf");
+        MiniCpm5ChatTemplate template = new MiniCpm5ChatTemplate(tokenizer);
+        String first = " name=\"search\"><param name=\"query\"><![CDATA[a < b & c\nnext]]>";
+        String second = "<param name=\"limit\">3";
+        IntSequence wire =
+                IntSequence.of(SpecialTokens.require(tokenizer, "<function"))
+                        .concat(tokenizer.encode(first))
+                        .concat(IntSequence.of(SpecialTokens.require(tokenizer, "</param>")))
+                        .concat(tokenizer.encode(second))
+                        .concat(IntSequence.of(SpecialTokens.require(tokenizer, "</param>")))
+                        .concat(IntSequence.of(SpecialTokens.require(tokenizer, "</function>")));
+
+        Content.ToolCall call =
+                (Content.ToolCall)
+                        ReplyParser.parse(template.parser(tokenizer), wire).content().getFirst();
+        assertEquals("search", call.name());
+        assertEquals(Map.of("query", "a < b & c\nnext", "limit", "3"), call.arguments());
+
+        ReplyParser disabled = template.parser(tokenizer);
+        disabled.disableToolCalls();
+        Message text = ReplyParser.parse(disabled, wire);
+        assertEquals(first + "</param>" + second + "</param>", text.text());
+        assertEquals(wire, ((Content.Text) text.content().getFirst()).verbatim());
+        assertTrue(text.content().stream().noneMatch(Content.ToolCall.class::isInstance));
     }
 
     @Test

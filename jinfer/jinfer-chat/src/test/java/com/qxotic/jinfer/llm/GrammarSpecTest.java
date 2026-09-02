@@ -1124,6 +1124,19 @@ public final class GrammarSpecTest {
     }
 
     static void testSchema() {
+        // A FREE-FORM object - "type": "object" with no properties declared - is OPEN by JSON
+        // Schema's own default: any keys, any values. Compiling it to the empty object alone was
+        // silent until calls became grammar-bound, and then it forced {"amounts":{}} onto every
+        // model that was asked for a map. additionalProperties:false is the closed spelling.
+        Grammar.Spec free = sc(map("type", "object"));
+        acc("sc-freeobj", free, "{\"travel\": 120.5, \"meals\": 42}");
+        acc("sc-freeobj", free, "{\"a\": {\"b\": [1, 2]}}");
+        acc("sc-freeobj", free, "{}");
+        rej("sc-freeobj", free, "[]");
+        Grammar.Spec closed = sc(map("type", "object", "additionalProperties", false));
+        acc("sc-closedobj", closed, "{}");
+        rej("sc-closedobj", closed, "{\"travel\": 1}");
+
         // scalar types
         Grammar.Spec str = sc(map("type", "string"));
         acc("sc-str", str, "\"hi\"");
