@@ -99,24 +99,12 @@ A property that replaces a registered name is logged, naming the aliases that fo
 
 ### Factory Signatures
 
+Each registration takes a plain `java.util.function.Function` from the GGUF metadata to the part it builds:
+
 ```java
-// Model factory: GGUF metadata -> TokenizationModel
-@FunctionalInterface
-interface TokenizerModelFactory {
-    TokenizationModel create(GGUF gguf);
-}
-
-// Pre-tokenizer factory: GGUF metadata -> Splitter
-@FunctionalInterface
-interface PreTokenizerFactory {
-    Splitter create(GGUF gguf);
-}
-
-// Normalizer factory: GGUF metadata -> Normalizer
-@FunctionalInterface
-interface NormalizerFactory {
-    Normalizer create(GGUF gguf);
-}
+builder.registerModelFactory(name, (Function<GGUF, TokenizationModel>) factory);
+builder.registerPreTokenizer(name, (Function<GGUF, Splitter>) factory);
+builder.registerNormalizer(name, (Function<GGUF, Normalizer>) factory);
 ```
 
 ## Built-in Support

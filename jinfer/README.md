@@ -234,7 +234,7 @@ family:
 | gpt-oss · Nemotron-H | chat | `jinfer-gptoss`, `jinfer-nemotronh` |
 | Inflect | speech synthesis | `jinfer-inflect2` |
 
-Supported quantizations: Q4_0, Q8_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, plus dense F32/F16/BF16.
+Supported GGUF types: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.
 `Q8_0` is the best-supported quant. A reference with no `:quant` follows llama.cpp and selects
 `Q4_K_M`. Custom architectures plug in through `ModelProvider`.
 
@@ -250,7 +250,7 @@ java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
 
 Swap `--chat` for `--prompt "..."` (one-shot) or `--server --port 54154`. The server implements
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`,
-`/health` and Prometheus `/metrics`, so any OpenAI client can use it. Loopback is the default;
+`/v1/detokenize`, `/health` and Prometheus `/metrics`, so any OpenAI client can use it. Loopback is the default;
 non-loopback binding requires `--api-key`. Multimodal models attach their projector with
 `--mmproj <clip.gguf>`. Run `--help` for the complete contract.
 
@@ -265,7 +265,7 @@ One self-contained binary, millisecond startup. Requires GraalVM Native Image 25
 
 ## Documentation
 
-The [documentation](https://qxotic.ai/docs/jinfer) covers the topics this README omits: hub
+The [documentation](https://qxotic.ai/jinfer) covers the topics this README omits: hub
 model references and download knobs, prompt caching internals,
 embedding and reranking framing, parallel pipelines over shared weights, JFR observability, and
 benchmarking with [`jinfer-bench`](jinfer-bench/README.md).

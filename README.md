@@ -79,7 +79,7 @@ it are usable on their own.
 | Use the tensor API or add a backend | [jota](./jota/README.md) |
 | Read or write model files directly | [gguf](./gguf/README.md), [safetensors](./safetensors/README.md) |
 
-Full documentation is at [qxotic.ai/docs](https://qxotic.ai/docs).
+Full documentation is at [qxotic.ai](https://qxotic.ai).
 
 ---
 

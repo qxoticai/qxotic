@@ -122,12 +122,12 @@ A `jam_ctx` is a serial stream: one `mm` at a time. For concurrent matmuls, use 
 
 ## Build
 
-Requirements: **CMake ≥ 3.16**, a **C11 compiler** (clang preferred), **JDK ≥ 25**. On macOS, `xcode-select --install` covers clang, cmake, and Metal. On Windows, clang is required (MSVC can't build the SIMD kernels).
+Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 25**. On macOS, `xcode-select --install` covers clang, cmake, and Metal. On Windows the toolchain is MinGW-w64; MSVC is refused because the kernel flags are GCC/Clang spellings.
 
 **Maven** runs cmake, javac, and tests in one step:
 
 ```sh
-mvn package      # -> dist/jam.jar  (native lib built for you)
+mvn package      # -> target/jam-native-0.2.0.jar with this host's library
 mvn test         # configure + build + JUnit
 ```
 

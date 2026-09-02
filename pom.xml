@@ -65,11 +65,6 @@
     <url>https://github.com/qxoticai/qxotic/issues</url>
   </issueManagement>
 
-  <ciManagement>
-    <system>GitHub Actions</system>
-    <url>https://github.com/qxoticai/qxotic/actions</url>
-  </ciManagement>
-
   <properties>
     <qxotic.version>${project.version}</qxotic.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.

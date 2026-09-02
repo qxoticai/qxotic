@@ -35,7 +35,7 @@ echo "Hello\!" | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
 ## Why Tok'n'Roll
 
 - **Token-perfect.** Byte-exact parity with the reference tokenizers for
-  [10 model families](#tested-implementations), not "close enough".
+  [15 model families](#tested-implementations), not "close enough".
 - **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model family,
   and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
 - **Loads existing files.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
@@ -70,16 +70,21 @@ Tokenizer tokenizer = Toknroll.pipeline(splitter, model);
 
 Token-perfect, backed by parity tests against the reference Python tokenizers:
 
-- **OpenAI:** tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
-- **Google:** Gemma 3, Gemma 4
-- **Alibaba:** Qwen 3.5+
-- **Moonshot AI:** Kimi 2.5+
-- **DeepSeek:** DeepSeek 3.2, DeepSeek 4
-- **Mistral AI:** Tekken
-- **IBM:** Granite 4+
-- **Meta:** Llama 3+
-- **Microsoft:** Phi 4+
-- **HuggingFace:** SmolLM3
+- **OpenAI**: tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
+- **Google**: Gemma 4
+- **Alibaba**: Qwen 3.5+
+- **Moonshot AI**: Kimi 2.5+
+- **DeepSeek**: DeepSeek 3.2, DeepSeek 4
+- **Mistral AI**: Tekken
+- **IBM**: Granite 4+
+- **Meta**: Llama 3+
+- **Microsoft**: Phi 4+
+- **HuggingFace**: SmolLM3
+- **NVIDIA**: Nemotron 3
+- **Z.ai**: GLM 5.1
+- **MiniMax**: M2.7
+- **Xiaomi**: MiMo V2
+- **Poolside**: Laguna XS 2.1
 
 Other BPE-based tokenizers likely work. They just are not parity-tested.
 
@@ -101,7 +106,7 @@ rarely the right answer:
 
 To reproduce them: `make toknroll-fixtures` fetches the enwik corpora explicitly, never as a side
 effect, then the drivers in `toknroll-benchmarks` write to `bench-output/` under the shared cache
-root. Details in the [documentation](https://qxotic.ai/docs/toknroll).
+root. Details in the [documentation](https://qxotic.ai/toknroll).
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 

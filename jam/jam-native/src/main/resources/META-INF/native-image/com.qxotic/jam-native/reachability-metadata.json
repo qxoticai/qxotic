@@ -1,14 +1,6 @@
 {
   "comment": "NativeJAM in a GraalVM image. 'jni' registers the JNI binding (the default -Djam.native.binding=jni) - unregistered native methods fail at call time with UnsatisfiedLinkError naming the JNI symbol: mmJni/jam_mm and createPfJni (the host-executor context). 'resources' embeds the bundled libjam so NativeLoader can extract and System.load it. 'foreign' (-H:+ForeignAPISupport is default-on in 25) registers every FFM descriptor NativeJAM creates: the jam_mm downcall for -Djam.native.binding=ffm; the ALWAYS-built task downcall TASK_FFM void(fn, begin, end, tid) and the jam_parallel_for upcall stub void(pool, n, fn, arg) behind parallelFor; and the load-time pack queries jam_pack_abi() -> jint and jam_pack_size(ctx, dtype, m, k) -> jlong (no JNI twins - FFM only).",
   "resources": [{"glob": "com/qxotic/jam/native/**"}],
-  "reflection": [
-    {
-      "type": {"name": "com.qxotic.jam.libjam.NativeJAM"},
-      "methods": [
-        {"name": "parallelExecutor", "parameterTypes": ["java.util.function.ObjIntConsumer"]}
-      ]
-    }
-  ],
   "jni": [
     {
       "type": {"name": "com.qxotic.jam.libjam.NativeJAM"},

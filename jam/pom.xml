@@ -54,8 +54,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
-          <!-- Provider and shared-internal packages are deliberately not exported API. -->
-          <excludePackageNames>com.qxotic.jam.internal:com.qxotic.jam.libjam:com.qxotic.jam.scalar:com.qxotic.jam.vector</excludePackageNames>
+          <!-- The shared-internal package is not API; the provider packages are what each
+               backend artifact publishes, so their javadoc jars document them. -->
+          <excludePackageNames>com.qxotic.jam.internal</excludePackageNames>
         </configuration>
       </plugin>
       <plugin>
