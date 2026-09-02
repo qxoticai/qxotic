@@ -26,13 +26,6 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jota-memory</artifactId>
-      <version>${project.version}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
@@ -41,6 +34,26 @@
 
   <build>
     <plugins>
+      <plugin>
+        <!-- jota-memory's AbstractMemoryTest, compiled from source; this module's own test-jar then
+             carries it to the backends that scan the tensor suite. -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>shared-test-sources</id>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/../jota-memory/src/testkit/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
