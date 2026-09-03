@@ -126,6 +126,16 @@ DocumentPostProcessor reranker = JinferDocumentPostProcessor.builder()
         .build();
 ```
 
+The reranker needs the Spring AI RAG API, which `jinfer-spring-ai` declares as optional.
+The starter brings it in; without the starter, add it at the same Spring AI version, for example by importing `spring-ai-bom`:
+
+```xml
+<dependency>
+  <groupId>org.springframework.ai</groupId>
+  <artifactId>spring-ai-rag</artifactId>
+</dependency>
+```
+
 Embedding requests are packed into ragged batches. `EmbeddingOptions.dimensions` requests a supported Matryoshka width; fixed-width models accept only their native width. Typed query/document entry points apply retrieval framing; `call(EmbeddingRequest)` stays raw.
 
 ## Spring Boot
