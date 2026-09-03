@@ -557,6 +557,9 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-source-plugin</artifactId>
+            <configuration>
+              <skipSource>${maven.deploy.skip}</skipSource>
+            </configuration>
             <executions>
               <execution>
                 <id>attach-sources</id>
@@ -570,6 +573,7 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
             <configuration>
+              <skip>${maven.deploy.skip}</skip>
               <doclint>all,-missing</doclint>
             </configuration>
             <executions>
@@ -584,6 +588,9 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-gpg-plugin</artifactId>
+            <configuration>
+              <skip>${maven.deploy.skip}</skip>
+            </configuration>
             <executions>
               <execution>
                 <id>sign-artifacts</id>
@@ -603,6 +610,10 @@
               <!-- The plugin ignores maven.deploy.skip; this is evaluated per module, so the
                    opt-in matrix decides what is staged. The final upload still runs regardless. -->
               <skipPublishing>${maven.deploy.skip}</skipPublishing>
+              <!-- Belt and braces for the one module that must never ship: the stub annotations. -->
+              <excludeArtifacts>
+                <excludeArtifact>graalvm-annotations</excludeArtifact>
+              </excludeArtifacts>
               <!-- Keep manual control in Central UI before public release. -->
               <autoPublish>false</autoPublish>
               <waitUntil>validated</waitUntil>

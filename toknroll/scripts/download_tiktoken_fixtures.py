@@ -16,6 +16,9 @@ FILES = ("r50k_base.tiktoken", "p50k_base.tiktoken", "cl100k_base.tiktoken", "o2
 def download_one(target_dir: pathlib.Path, name: str) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / name
+    if target.is_file():
+        print(f"present {name}")
+        return
     tmp = target.with_suffix(target.suffix + ".part")
     url = f"{BASE_URL}/{name}"
     try:

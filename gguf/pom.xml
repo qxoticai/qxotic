@@ -12,7 +12,6 @@
   <artifactId>gguf</artifactId>
   <name>Quixotic GGUF</name>
   <description>Java library for reading and writing GGUF metadata and tensor descriptors for llama.cpp model files.</description>
-  <url>https://github.com/qxoticai/qxotic</url>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
@@ -38,13 +37,10 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
-          <source>11</source>
-          <show>public</show>
-          <nohelp>true</nohelp>
-          <failOnError>false</failOnError>
-          <doclint>none</doclint>
-          <legacyMode>true</legacyMode>
           <excludePackageNames>com.qxotic.format.gguf.impl</excludePackageNames>
+          <sourceFileExcludes>
+            <sourceFileExclude>**/module-info.java</sourceFileExclude>
+          </sourceFileExcludes>
         </configuration>
       </plugin>
     </plugins>
