@@ -95,9 +95,14 @@ jota-clean: ## Wipe just the jota subtree's output
 
 ##@ CI
 
-ci: ## What the pull-request CI runs: formatting, the default suite without models, the release shape
+test-fixtures: ## Fetch the tiktoken vocabularies and the enwik8 corpus the suites read (idempotent, ~107MB once)
+	python3 toknroll/scripts/download_tiktoken_fixtures.py
+	python3 toknroll/scripts/download_enwik8.py
+
+ci: test-fixtures ## What the pull-request CI runs: formatting, the default suite without models, the corpus tests, the release shape
 	$(MAVEN) $(MAVEN_FLAGS) -B spotless:check
 	HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models $(MAVEN) $(MAVEN_FLAGS) -B test
+	HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models $(MAVEN) $(MAVEN_FLAGS) -B test -Dgroups=corpus -Dsurefire.excludedGroups=
 	$(MAVEN) $(MAVEN_FLAGS) -B clean -Prelease verify -DskipTests -Dgpg.skip=true -Djam.natives.check.skip=true
 
 ##@ Release
@@ -122,4 +127,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives ci
+	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives test-fixtures ci
