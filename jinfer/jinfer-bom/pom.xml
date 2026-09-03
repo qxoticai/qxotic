@@ -180,6 +180,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-hf</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jam-core</artifactId>
         <version>${project.version}</version>
       </dependency>
