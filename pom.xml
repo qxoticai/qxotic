@@ -552,14 +552,18 @@
     <!-- Release profile: signing and javadoc -->
     <profile>
       <id>release</id>
+      <properties>
+        <!-- Sources, javadoc and signatures only for what ships. These are the plugins' own
+             switches, so -Dgpg.skip=true and friends on the command line still win. -->
+        <maven.source.skip>${maven.deploy.skip}</maven.source.skip>
+        <maven.javadoc.skip>${maven.deploy.skip}</maven.javadoc.skip>
+        <gpg.skip>${maven.deploy.skip}</gpg.skip>
+      </properties>
       <build>
         <plugins>
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-source-plugin</artifactId>
-            <configuration>
-              <skipSource>${maven.deploy.skip}</skipSource>
-            </configuration>
             <executions>
               <execution>
                 <id>attach-sources</id>
@@ -573,7 +577,6 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
             <configuration>
-              <skip>${maven.deploy.skip}</skip>
               <doclint>all,-missing</doclint>
             </configuration>
             <executions>
@@ -588,9 +591,6 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-gpg-plugin</artifactId>
-            <configuration>
-              <skip>${maven.deploy.skip}</skip>
-            </configuration>
             <executions>
               <execution>
                 <id>sign-artifacts</id>

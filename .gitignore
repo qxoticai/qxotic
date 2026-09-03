@@ -149,3 +149,4 @@ bench-results/
 toknroll/toknroll-gguf/src/test/resources/laguna_golden_tokens.json
 .ci-empty-hf-home/
 .ci-no-models/
+.ci-toknroll-cache/

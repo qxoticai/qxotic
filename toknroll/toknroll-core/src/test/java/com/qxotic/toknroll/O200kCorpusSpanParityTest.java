@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("slow")
-@Tag("local-external")
+@Tag("corpus")
 class O200kCorpusSpanParityTest {
 
     private static final String O200K_PATTERN =

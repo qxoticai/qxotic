@@ -33,7 +33,8 @@
          be set directly: -Dtoknroll.skipDependentTests=true. -->
     <skipTests>false</skipTests>
     <toknroll.skipDependentTests>${skipTests}</toknroll.skipDependentTests>
-    <surefire.baseExcludedGroups>local-external,network</surefire.baseExcludedGroups>
+    <!-- corpus = needs only the enwik8 corpus (make test-fixtures); CI opts it back in. -->
+    <surefire.baseExcludedGroups>local-external,network,corpus</surefire.baseExcludedGroups>
     <surefire.excludedGroups>${surefire.baseExcludedGroups}</surefire.excludedGroups>
   </properties>
 

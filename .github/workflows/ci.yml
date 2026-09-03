@@ -1,9 +1,10 @@
 # Pull-request CI, gated: the job targets the `ci` environment, whose required reviewers are the
 # maintainers, so nothing runs until one of them approves the run. Pushes never trigger it, and a
 # new commit on a PR replaces the pending run rather than adding one. Linux only, no model files,
-# no native image, no cross-platform natives. The only download is the 7 MB of tiktoken vocabularies
-# the toknroll suite reads, cached across runs. Formatting first, then the default suite, then the
-# release shape, each step gating the next; `make ci` is the single source of those steps.
+# no native image, no cross-platform natives. The only downloads are the test fixtures the toknroll
+# suites read (7 MB of tiktoken vocabularies, the 100 MB enwik8 corpus), cached across runs.
+# Formatting first, then the default suite, then the corpus tests, then the release shape, each
+# step gating the next; `make ci` is the single source of those steps.
 name: ci
 
 on:
@@ -21,6 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: ci
     timeout-minutes: 60
+    env:
+      # Where the toknroll tests and `make test-fixtures` keep the corpus; inside the workspace so
+      # the cache step can address it without knowing the OS cache layout.
+      TOKNROLL_CACHE_ROOT: ${{ github.workspace }}/.ci-toknroll-cache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -28,12 +33,14 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      # The tiktoken fixtures are not in git; without them toknroll-core fails outright.
+      # Neither fixture set is in git; `make test-fixtures` (the first step of `make ci`) fills in
+      # whatever the cache did not restore.
       - uses: actions/cache@v4
         with:
           path: test-fixtures/tiktoken
           key: tiktoken-fixtures-${{ hashFiles('toknroll/scripts/download_tiktoken_fixtures.py') }}
-      - run: python3 toknroll/scripts/download_tiktoken_fixtures.py
-      # The same three steps a developer runs with `make ci`: formatting, the default suite with
-      # empty model caches, the release shape without signing or natives.
+      - uses: actions/cache@v4
+        with:
+          path: .ci-toknroll-cache/corpus
+          key: enwik8-corpus-${{ hashFiles('toknroll/scripts/download_enwik8.py') }}
       - run: make ci
