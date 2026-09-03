@@ -1,6 +1,6 @@
 <h1 align="center">jinfer</h1>
 
-<p align="center"><strong>AI in a jar</strong></p>
+<p align="center"><strong>AI, in a jar</strong></p>
 
 <p align="center">
   <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
@@ -8,26 +8,41 @@
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
 </p>
 
-**A fast, local AI inference engine for the JVM.**
+`jinfer` stands for "**J**VM **Infer**ence": a low-level AI engine for the JVM.  
+No sidecar process, Docker container, Python, ONNX or HTTP requests involved.  
+AI on the JVM, just a Maven dependency away.
 
-`jinfer` runs chat, vision, audio, embeddings, reranking and speech models end-to-end within the JVM: weights stay local, everything happens in one
-process, no sidecar server, Python runtime, ONNX or HTTP hop involved. Add a
-dependency, call a builder, and the model is loaded into the heap and freed when it is closed.
+## Highlights
 
-## What it does
+- **Multi-modal support.** Vision, audio, video, embeddings for RAG, text-to-speech.
+- **Supports popular Java AI frameworks.** [LangChain4j](jinfer-langchain4j/README.md) and
+  [Spring AI](jinfer-spring-ai/README.md) providers and an OpenAI-compatible server.
+- **Top performance.** Efficient prompt caching, speculative decoding, Matryoshka embeddings and optional hand-tuned native kernels from [JAM](../jam), with a performant Vector API fallback.
+- **Constrained generation.** Models can only generate tokens that follow the schema.
+- **First-class support for GraalVM's Native Image.** Self-contained binaries with millisecond startup.
 
-- **In-process.** The model loads into the running JVM. There is no separate service to deploy or
-  keep running between requests.
-- **Modalities.** Chat and streaming, tool calling, vision, audio, video, embeddings, reranking and speech synthesis, all from one engine.
-- **Constrained output.** Compiled grammars mask logits during sampling, so the model cannot emit
-  output that violates the schema. There is no parse-and-retry loop.
-- **Framework bindings.** [LangChain4j](jinfer-langchain4j/README.md) and
-  [Spring AI](jinfer-spring-ai/README.md) providers, plus an OpenAI-compatible server.
-- **Performance.** Prompt caching that survives restarts, MTP speculative decoding, Matryoshka
-  embeddings and hand-tuned kernels from [JAM](../jam), falling back to a portable Vector API
-  path when JAM is absent.
-- **Native image.** `make native` produces a self-contained binary with millisecond startup.
-- **Apache 2.0.** No API key and no quota. Observability is local JFR events.
+
+## Supported models
+
+| Family | Capabilities | Artifact |
+|--------|--------------|----------|
+| Google Gemma 4 | chat, vision, audio, MTP | `jinfer-gemma4` |
+| Liquid AI LFM 2.5 | chat, vision, embeddings, reranking | `jinfer-lfm2` |
+| OpenAI gpt-oss  Nemotron-H | chat | `jinfer-gptoss` |
+| Poolside Laguna XS 2.1 | chat | `jinfer-laguna` |
+| Meta Llama 3+ | chat | `jinfer-llama` |
+| IBM Granite 4.1+ | chat | `jinfer-llama` |
+| Mistral Ministral 3 | chat | `jinfer-llama` |
+| Hugging Face SmolLM 3 | SmolLM | `jinfer-llama` |
+| inflectionAI Ling 3 | chat | `jinfer-bailingmoe3` |
+| MiniCPM 5 | chat | `jinfer-llama` |
+| Alibaba Qwen 3 | embeddings, reranking | `jinfer-qwen3` |
+| Alibaba Qwen 3.5+ | chat, vision, MTP | `jinfer-qwen35` |
+| NVIDIA Nemotron | chat | `jinfer-nemotronh` |
+| Owen Song's Inflect | speech synthesis | `jinfer-inflect2` |
+
+Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and dense `F32`, `F16`, `BF16`.  
+Jinfer recommends the `Q8_0` quant, top-quality with good performance.
 
 ## Run the demos
 
@@ -65,7 +80,7 @@ Import the BOM once:
 </dependencyManagement>
 ```
 
-Add one API binding and one model family (`jinfer-models-all` grabs every architecture):
+Add one API binding and one model family (`jinfer-models-all` for all model architectures):
 
 ```xml
 <dependency>
@@ -84,22 +99,20 @@ Then generate:
 try (var model = JinferChatModel.builder()
         .model("LiquidAI/LFM2.5-350M-GGUF:Q8_0")
         .build()) {
-
-    System.out.println(model.chat("Explain virtual threads in one sentence."));
+    System.out.println(model.chat("What is the answer to the ultimate question of life, the universe, and everything?"));
 }
 ```
 
-A model reference is `owner/repo[:quant]`, which Hugging Face carries. Name a host to reach
-another source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`. Use `modelPath(...)` for a file
-already on disk.
+A model reference is defined as `[provider.com/]owner/repository[/path][@revision][:quant]`, downloaded once from Hugging Face and cached.  
+Supports other model providers/hosts e.g. `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.  
+Use `.modelPath(Path modelPath)` to specify a model file already on disk.
 
 Run with `--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED`, and add
-`jam-native` at runtime scope for the fast matmul path.
+`jam-native` at runtime scope to accelerate matrix multiplications.
 
 ## Examples
 
-The snippets below use the LangChain4j binding. The [Spring AI](jinfer-spring-ai/README.md)
-binding covers the same features.
+The snippets below use the [LangChain4j](jinfer-langchain4j) integration. The [Spring AI](jinfer-spring-ai/README.md) integration cover the same features.
 
 **Streaming.**
 
@@ -114,7 +127,7 @@ assistant.chat("Tell me a haiku about rivers.")
         .start();
 ```
 
-**Structured output.** The sampler is constrained to the schema, so the result cannot come back
+**Structured output.** The generation is constrained to the schema, so the result cannot come back
 malformed:
 
 ```java
@@ -123,7 +136,7 @@ record Person(String name, int age, String city) {}
 interface PersonExtractor { Person extract(String text); }
 
 Person p = AiServices.create(PersonExtractor.class, model)
-        .extract("Johann is 42 and lives in Munich.");   // Person[name=Johann, age=42, city=Munich]
+        .extract("Johann is 42 and lives in Munich."); // Person[name=Johann, age=42, city=Munich]
 ```
 
 To constrain the output to a specific shape instead of a POJO, pass a GBNF grammar:
@@ -140,7 +153,7 @@ var response = model.chat(ChatRequest.builder()
 ```java
 class Weather {
     @Tool("Current weather for a city")
-    String weather(String city) { return "18C, sunny in " + city; }
+    String weather(@P("city") String city) { return "18C, sunny in " + city; }
 }
 
 interface WeatherAssistant { String chat(String message); }
@@ -150,7 +163,7 @@ WeatherAssistant assistant = AiServices.builder(WeatherAssistant.class)
         .tools(new Weather())
         .build();
 
-assistant.chat("What's the weather in Paris?");   // calls weather("Paris"), then answers
+assistant.chat("What's the weather in Zurich?");   // calls weather("Zurich"), then answers
 ```
 
 **Vision.** Multimodal models attach their encoder as a companion, following llama.cpp's `mmproj`
@@ -195,7 +208,7 @@ base.saveCachedPrompts(Path.of("personas.jkv"));
 ```
 
 
-**Speech synthesis.**
+**Text-to-Speech.**
 
 ```java
 try (var speech = JinferSpeechModel.builder()
@@ -208,44 +221,16 @@ try (var speech = JinferSpeechModel.builder()
 }
 ```
 
-## Choose an API
-
-| Use case | Start here                                                                                                |
-|----------|-----------------------------------------------------------------------------------------------------------|
-| LangChain4j applications | [`jinfer-langchain4j`](jinfer-langchain4j/README.md)                                                      |
-| Spring AI / Spring Boot | [`jinfer-spring-ai`](jinfer-spring-ai/README.md) (`jinfer-spring-ai-spring-boot-starter`)                 |
-| Terminal and HTTP | [CLI and OpenAI-compatible server](#cli-and-server)                                                       |
-| Single-file demos | [JBang demos](examples/scripts/README.md)                                                                 |
-| Full applications | [Local RAG](jinfer-example-local-rag/README.md) · [Judge advisor](jinfer-example-judge-advisor/README.md) |
-
-## What runs
-
-Architecture dispatch comes from the providers on the classpath. Add an artifact to support a
-family:
-
-| Family | Capabilities | Artifact |
-|--------|--------------|----------|
-| Gemma 4 | chat, vision, audio, MTP | `jinfer-gemma4` |
-| Qwen 3 / 3.5 | chat, embeddings, reranking, vision, MTP | `jinfer-qwen3`, `jinfer-qwen35` |
-| LFM 2.5 | chat, embeddings, ColBERT reranking, vision | `jinfer-lfm2` |
-| Laguna XS 2.1 | chat | `jinfer-laguna` |
-| Ling 3 | chat | `jinfer-bailingmoe3` |
-| Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) | `jinfer-llama` |
-| gpt-oss · Nemotron-H | chat | `jinfer-gptoss`, `jinfer-nemotronh` |
-| Inflect | speech synthesis | `jinfer-inflect2` |
-
-Supported GGUF types: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.
-`Q8_0` is the best-supported quant. A reference with no `:quant` follows llama.cpp and selects
-`Q4_K_M`. Custom architectures plug in through `ModelProvider`.
-
 ## CLI and server
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
-java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+java \
+  --add-modules jdk.incubator.vector \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
-  --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 --chat
+  --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
+  --chat
 ```
 
 Swap `--chat` for `--prompt "..."` (one-shot) or `--server --port 54154`. The server implements
@@ -261,15 +246,4 @@ make -C jinfer native
 ./jinfer/jinfer --model ./model.gguf --chat
 ```
 
-One self-contained binary, millisecond startup. Requires GraalVM Native Image 25.0.3+.
-
-## Documentation
-
-The [documentation](https://qxotic.ai/jinfer) covers the topics this README omits: hub
-model references and download knobs, prompt caching internals,
-embedding and reranking framing, parallel pipelines over shared weights, JFR observability, and
-benchmarking with [`jinfer-bench`](jinfer-bench/README.md).
-
-Part of [Quixotic AI](../README.md) project umbrella, an open stack for local AI on the JVM. `jinfer` is the inference engine; the
-layers under it include [jam](../jam) (quantized matmul), [jota](../jota) (tensors),
-[toknroll](../toknroll) (tokenizers) and [gguf](../gguf) (model files).
+One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.3+.
