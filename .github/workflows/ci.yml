@@ -1,7 +1,8 @@
 # Pull-request CI, gated: the job targets the `ci` environment, whose required reviewers are the
 # maintainers, so nothing runs until one of them approves the run. Pushes never trigger it, and a
 # new commit on a PR replaces the pending run rather than adding one. Linux only, no model files,
-# no native image, no cross-platform natives. Formatting first, then the default suite, then the
+# no native image, no cross-platform natives. The only download is the 7 MB of tiktoken vocabularies
+# the toknroll suite reads, cached across runs. Formatting first, then the default suite, then the
 # release shape, each step gating the next; `make ci` is the single source of those steps.
 name: ci
 
@@ -27,6 +28,12 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+      # The tiktoken fixtures are not in git; without them toknroll-core fails outright.
+      - uses: actions/cache@v4
+        with:
+          path: test-fixtures/tiktoken
+          key: tiktoken-fixtures-${{ hashFiles('toknroll/scripts/download_tiktoken_fixtures.py') }}
+      - run: python3 toknroll/scripts/download_tiktoken_fixtures.py
       # The same three steps a developer runs with `make ci`: formatting, the default suite with
       # empty model caches, the release shape without signing or natives.
       - run: make ci
