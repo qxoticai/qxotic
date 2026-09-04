@@ -12,8 +12,32 @@ import urllib.error
 import urllib.request
 import zipfile
 
-URL = "https://www.mattmahoney.net/dc/enwik8.zip"
+# Sources in order of preference; both serve the same 36,445,475-byte archive. A host may
+# answer some networks (GitHub runners, for one) with an HTML page and status 200, so every
+# download is checked for the zip signature and the exact length before it is trusted.
+URLS = (
+    "https://www.mattmahoney.net/dc/enwik8.zip",
+    "https://data.deepai.org/enwik8.zip",
+)
+ZIP_SIZE = 36_445_475
 SIZE = 100_000_000
+
+
+def fetch(url: str, sink: pathlib.Path) -> str | None:
+    """Download url into sink; None on success, else why this source was rejected."""
+    request = urllib.request.Request(url, headers={"User-Agent": "qxotic-toknroll-fixtures"})
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, sink.open("wb") as out:
+            first = response.read(4)
+            if first != b"PK\x03\x04":
+                return f"not a zip (starts with {first!r}, {response.headers.get('Content-Type')})"
+            out.write(first)
+            while chunk := response.read(1 << 20):
+                out.write(chunk)
+    except (urllib.error.URLError, OSError) as exc:
+        return str(exc)
+    size = sink.stat().st_size
+    return None if size == ZIP_SIZE else f"{size} bytes, expected {ZIP_SIZE}"
 
 
 def default_corpus_dir() -> pathlib.Path:
@@ -47,12 +71,15 @@ def main() -> None:
         return
     out.mkdir(parents=True, exist_ok=True)
     zip_path = out / "enwik8.zip.part"
-    try:
-        with urllib.request.urlopen(URL, timeout=120) as response, zip_path.open("wb") as sink:
-            while chunk := response.read(1 << 20):
-                sink.write(chunk)
-    except (urllib.error.URLError, OSError) as exc:
-        raise SystemExit(f"ERROR: failed to download {URL}: {exc}") from exc
+    rejected = []
+    for url in URLS:
+        problem = fetch(url, zip_path)
+        if problem is None:
+            break
+        rejected.append(f"{url}: {problem}")
+    else:
+        zip_path.unlink(missing_ok=True)
+        raise SystemExit("ERROR: no source delivered enwik8.zip\n  " + "\n  ".join(rejected))
     with zipfile.ZipFile(zip_path) as archive:
         with archive.open("enwik8") as source, (out / "enwik8.part").open("wb") as sink:
             while chunk := source.read(1 << 20):
