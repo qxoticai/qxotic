@@ -36,7 +36,7 @@ final class JamPack {
 
     /** Row-read outside matmul (embedding lookup; covers the tied-LM-head case). Never packed. */
     private static boolean rowRead(String name) {
-        return name.equals("token_embd.weight");
+        return name.equals("token_embd.weight") || name.equals("per_layer_token_embd.weight");
     }
 
     private record Job(
