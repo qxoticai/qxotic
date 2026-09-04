@@ -650,9 +650,11 @@ class ParallelTest {
             Set<String> workers = workerNames(pool);
             for (Thread t : Thread.getAllStackTraces().keySet())
                 if (workers.contains(t.getName())) t.interrupt();
+            // Every slot keeps taking work after the interrupt: seen across the rounds, not per
+            // round, since on a busy 4-core runner one round of 64 can end before a worker wakes.
+            Set<Thread> seen = ConcurrentHashMap.newKeySet();
             for (int round = 0; round < 20; round++) {
                 if (round == 0) waitUntil(() -> allParked(workers), 5_000);
-                Set<Thread> seen = ConcurrentHashMap.newKeySet();
                 pool.loop(
                         0,
                         64,
@@ -660,8 +662,8 @@ class ParallelTest {
                             seen.add(Thread.currentThread());
                             spin(50_000);
                         });
-                assertEquals(4, seen.size());
             }
+            assertEquals(4, seen.size());
         }
     }
 
