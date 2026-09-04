@@ -24,7 +24,7 @@ The following are declined regardless of quality:
 
 The root README covers the build.
 The default test run needs no model files and no network.
-It does need the tiktoken vocabularies, which are not in git: run `make test-fixtures` once after cloning.
+It does read the tiktoken vocabularies, which are not in git: run `make test-fixtures` once after cloning.
 The suites that verify the project's claims are opt-in because they need models, fixtures, or hardware.
 Each module's README says how to run them.
 A skipped suite proves nothing.
