@@ -49,20 +49,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <classpathDependencyExcludes>
-            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
-            <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
-          </classpathDependencyExcludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>

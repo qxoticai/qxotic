@@ -15,7 +15,6 @@
     Tok'n'Roll modules. Not published to Maven Central.</description>
 
   <properties>
-    <surefire.excludedGroups />
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
