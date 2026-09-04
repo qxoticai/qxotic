@@ -31,7 +31,6 @@
     <module>jinfer-laguna</module>
     <module>jinfer-gemma4</module>
     <module>jinfer-gptoss</module>
-    <module>jinfer-maple</module>
     <module>jinfer-nemotronh</module>
     <module>jinfer-llama</module>
     <module>jinfer-inflect2</module>
@@ -88,6 +87,8 @@
          bench       = measurement harnesses (run by name: mvn test -Dtest=GemvBench -Dsurefire.excludedGroups=)
          driver      = hand tools (run by name, args via -Djinfer.args="...") -->
     <surefire.excludedGroups>integration,bench,driver</surefire.excludedGroups>
+    <!-- The JVM flags every jinfer process needs; surefire executions append their own -D switches. -->
+    <jinfer.jvm.flags>--add-modules jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED</jinfer.jvm.flags>
     <jinfer.preload />
 
     <!-- Spring provider modules -->
@@ -159,11 +160,6 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-gptoss</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-maple</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -342,7 +338,7 @@
             <!-- Every src/test class is JUnit; discovery scans all classes (non-@Test helpers are
                  ignored). Integration/bench/driver tags are opt-in; see surefire.excludedGroups
                  above. -->
-            <argLine>--add-modules jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED</argLine>
+            <argLine>@{argLine} ${jinfer.jvm.flags}</argLine>
             <excludedGroups>${surefire.excludedGroups}</excludedGroups>
             <includes>
               <include>**/*.java</include>
@@ -412,7 +408,7 @@
           <artifactId>spring-boot-maven-plugin</artifactId>
           <version>${spring-boot.version}</version>
           <configuration>
-            <jvmArguments>--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</jvmArguments>
+            <jvmArguments>${jinfer.jvm.flags}</jvmArguments>
           </configuration>
         </plugin>
         <plugin>
@@ -481,6 +477,13 @@
   </build>
 
   <profiles>
+    <!-- Not shipping: built only on request. -->
+    <profile>
+      <id>maple</id>
+      <modules>
+        <module>jinfer-maple</module>
+      </modules>
+    </profile>
     <profile>
       <id>examples</id>
       <modules>

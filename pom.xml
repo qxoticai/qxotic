@@ -78,11 +78,14 @@
     <maven.deploy.skip>true</maven.deploy.skip>
     <!-- Which NOTICE a jar embeds; a component with third-party derivations points this at itself. -->
     <qxotic.notice.dir>${maven.multiModuleProjectDirectory}</qxotic.notice.dir>
+    <!-- Empty unless a coverage agent (-Pcoverage) fills it; surefire argLines prefix @{argLine}. -->
+    <argLine />
 
     <!-- Build properties -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+    <!-- Reproducible builds: move this with every release. -->
+    <project.build.outputTimestamp>2026-09-04T00:00:00Z</project.build.outputTimestamp>
     <maven.compiler.release>11</maven.compiler.release>
 
     <!-- Dependency versions -->
@@ -108,7 +111,6 @@
     <maven-install-plugin.version>3.1.4</maven-install-plugin.version>
     <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
     <maven-help-plugin.version>3.5.2</maven-help-plugin.version>
-    <maven-release-plugin.version>3.1.1</maven-release-plugin.version>
     <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
     <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
     <!-- default-lifecycle plugin; pinned so requirePluginVersions has nothing implicit -->
@@ -451,17 +453,10 @@
           <version>${jacoco-maven-plugin.version}</version>
         </plugin>
 
-        <!-- Release and deployment -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-release-plugin</artifactId>
-          <version>${maven-release-plugin.version}</version>
-          <configuration>
-            <autoVersionSubmodules>true</autoVersionSubmodules>
-            <useReleaseProfile>false</useReleaseProfile>
-            <releaseProfiles>release</releaseProfiles>
-            <goals>deploy</goals>
-          </configuration>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>${maven-enforcer-plugin.version}</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -502,7 +497,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>${maven-enforcer-plugin.version}</version>
         <executions>
           <execution>
             <id>enforce-maven</id>
