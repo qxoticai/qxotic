@@ -24,7 +24,7 @@ REPO=$WORK/repo
 
 VERSION=$($MVN -q -B -f "$ROOT/pom.xml" help:evaluate -Dexpression=project.version \
     -DforceStdout 2>/dev/null | tail -1)
-LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/jinfer-langchain4j/pom.xml" help:evaluate \
+LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" help:evaluate \
     -Dexpression=langchain4j.version -DforceStdout 2>/dev/null | tail -1)
 SPRING_AI_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" help:evaluate \
     -Dexpression=spring-ai.version -DforceStdout 2>/dev/null | tail -1)

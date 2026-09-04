@@ -92,7 +92,10 @@
     <jinfer.preload />
 
     <!-- Spring provider modules -->
+    <langchain4j.version>1.19.0</langchain4j.version>
     <spring-ai.version>2.0.1</spring-ai.version>
+    <!-- enforcer pin, see dependencyManagement -->
+    <jackson-core.version>3.1.5</jackson-core.version>
     <spring-boot.version>4.1.1</spring-boot.version>
     <!-- Direct provider dependencies aligned with Spring Boot's tested stack. -->
     <spring-framework.version>7.0.9</spring-framework.version>
@@ -284,19 +287,10 @@
       <dependency>
         <groupId>tools.jackson.core</groupId>
         <artifactId>jackson-core</artifactId>
-        <version>3.1.5</version>
+        <version>${jackson-core.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
-
-  <!-- The one test framework, inherited by every module (version managed by the qxotic parent). -->
-  <dependencies>
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
 
   <build>
     <!-- Legal pair (LICENSE + NOTICE) is inherited from the qxotic parent's resources. -->

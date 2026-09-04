@@ -175,7 +175,7 @@ GraalVM Native Image 25.0.3 or newer:
 
 ```bash
 make native
-./jinfer --model ./model.gguf --chat
+./jinfer/jinfer --model ./model.gguf --chat
 ```
 
 `PRELOAD_GGUF=model.gguf make native` embeds load metadata/tokenizer data for faster startup. Media decoding uses ffmpeg in the native image, so `java.desktop` is not pulled in.
