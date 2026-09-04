@@ -159,11 +159,15 @@ class JamPackTest {
         var odd = Views.wrap(canonical(DataType.Q4_K, 6, 256, 3), DataType.Q4_K, Shape.flat(6, 1));
         var q8 = Views.wrap(Oracles.q8(arena, 8, 256, 4), DataType.Q8_0, Shape.flat(8, 8));
         views.put("token_embd.weight", embd); // row-read (embedding lookup)
+        views.put(
+                "per_layer_token_embd.weight",
+                embd); // row-read (Gemma 4 per-layer embedding lookup)
         views.put("flat", flat); // rank 1
         views.put("odd", odd); // rows % 4 != 0
         views.put("q8", q8); // no packed layout for the dtype
         Map<String, MemoryView<MemorySegment>> out = JamPack.apply(views, arena, SPEC);
         assertSame(embd, out.get("token_embd.weight"));
+        assertSame(embd, out.get("per_layer_token_embd.weight"));
         assertSame(flat, out.get("flat"));
         assertSame(odd, out.get("odd"));
         assertSame(q8, out.get("q8"));
