@@ -1,0 +1,11 @@
+{
+  "comment": "RuntimeFlags uses sysctlbyname on Apple silicon to size the worker pool from P-cores.",
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": ["jlong", "jlong", "jlong", "jlong", "jlong"]
+      }
+    ]
+  }
+}
