@@ -35,8 +35,9 @@
   <build>
     <plugins>
       <plugin>
-        <!-- jota-memory's AbstractMemoryTest, compiled from source; this module's own test-jar then
-             carries it to the backends that scan the tensor suite. -->
+        <!-- The tensor suite lives in src/testkit/java: it needs a runtime provider, so every
+             backend compiles it as its own tests (plus jota-memory's AbstractMemoryTest). It is
+             compiled here too, so a broken test fails this module first; no test-jar is built. -->
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
         <executions>
@@ -48,6 +49,7 @@
             <phase>generate-test-sources</phase>
             <configuration>
               <sources>
+                <source>${project.basedir}/src/testkit/java</source>
                 <source>${project.basedir}/../jota-memory/src/testkit/java</source>
               </sources>
             </configuration>
@@ -56,23 +58,9 @@
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>attach-test-jar-early</id>
-            <goals>
-              <goal>test-jar</goal>
-            </goals>
-            <phase>process-test-classes</phase>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <!-- This suite needs a runtime provider: it runs inside jota-backend-panama via
-               dependenciesToScan on the jota-tensor test-jar. -pl jota-tensor alone runs nothing. -->
+          <!-- No runtime provider here: the suite runs inside the backends. -->
           <skip>true</skip>
         </configuration>
       </plugin>

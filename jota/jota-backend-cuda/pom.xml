@@ -47,13 +47,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota-tensor</artifactId>
-      <version>${project.version}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jota-backend-panama</artifactId>
       <scope>test</scope>
     </dependency>
@@ -62,13 +55,31 @@
   <build>
     <plugins>
       <plugin>
+        <!-- The jota-tensor suite and jota-memory's AbstractMemoryTest, compiled from source
+             against this backend (jota-tensor publishes no test-jar). -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>shared-test-sources</id>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/../jota-tensor/src/testkit/java</source>
+                <source>${project.basedir}/../jota-memory/src/testkit/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <skipTests>${native.skip.tests}</skipTests>
-          <dependenciesToScan>
-            <dependency>com.qxotic:jota-tensor:test-jar:tests:${project.version}</dependency>
-          </dependenciesToScan>
         </configuration>
       </plugin>
 
