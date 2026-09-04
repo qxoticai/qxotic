@@ -10,8 +10,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
 import java.util.Random;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -29,7 +31,21 @@ import org.junit.jupiter.api.Test;
 class JamBackendParityTest {
 
     private static final long SEED = 0x5A11C0DEL;
-    private static final Arena A = Arena.ofAuto();
+
+    // One confined arena per test, closed after it: the sweeps allocate gigabytes across the
+    // class, and an automatic arena frees them only when the GC gets round to it, which a 4 GB
+    // direct-memory budget (a CI runner) does not survive.
+    private static Arena A;
+
+    @BeforeEach
+    void openArena() {
+        A = Arena.ofConfined();
+    }
+
+    @AfterEach
+    void closeArena() {
+        A.close();
+    }
 
     private static final JAM SCALAR =
             JAM.providers().stream()
@@ -75,12 +91,14 @@ class JamBackendParityTest {
 
     /** One tiny probe mm's status: does the loaded libjam carry the jam_mm_q1_0 kernels? */
     private static int q1_0ProbeStatus() {
-        Random rng = new Random(SEED);
-        QuantWeights.Weight w = QuantWeights.encode(JAM.Q1_0, 8, 128, A, rng);
-        MemorySegment a = A.allocate(2 * 128 * 4L, 64);
-        MemorySegment r = A.allocate(2 * 8 * 4L, 64);
-        return NATIVE.mm(
-                w.seg(), 0L, JAM.Q1_0, 128, a, 0L, JAM.F32, 128, r, 0L, JAM.F32, 8, 8, 2, 128);
+        try (Arena ar = Arena.ofConfined()) {
+            Random rng = new Random(SEED);
+            QuantWeights.Weight w = QuantWeights.encode(JAM.Q1_0, 8, 128, ar, rng);
+            MemorySegment a = ar.allocate(2 * 128 * 4L, 64);
+            MemorySegment r = ar.allocate(2 * 8 * 4L, 64);
+            return NATIVE.mm(
+                    w.seg(), 0L, JAM.Q1_0, 128, a, 0L, JAM.F32, 128, r, 0L, JAM.F32, 8, 8, 2, 128);
+        }
     }
 
     private static JAM tryNative() {
