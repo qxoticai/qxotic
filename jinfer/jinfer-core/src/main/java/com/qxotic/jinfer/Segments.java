@@ -65,6 +65,15 @@ public final class Segments {
     public static final VectorSpecies<Integer> I_SPECIES;
     public static final VectorSpecies<Short> S_SPECIES_HALF;
 
+    /**
+     * Byte lanes for unpacking packed weights: the widest hardware shape up to 256 bits. Wider than
+     * the hardware (256-bit bytes on NEON) is not intrinsified and falls back to Java. Held here,
+     * not in a kernel class: the kernels are run-time initialised in the native image, so their
+     * statics are not build-time constants and a load with a non-constant species never expands;
+     * the JIT folds it only as a static final too.
+     */
+    public static final VectorSpecies<Byte> B_SPECIES;
+
     static {
         if (USE_VECTOR_API) {
             F_SPECIES = VectorShape.forBitSize(VECTOR_BIT_SIZE).withLanes(float.class);
@@ -72,10 +81,13 @@ public final class Segments {
             S_SPECIES_HALF =
                     VectorShape.forBitSize(F_SPECIES.vectorBitSize() / 2).withLanes(short.class);
             assert F_SPECIES.length() == S_SPECIES_HALF.length();
+            B_SPECIES =
+                    VectorShape.forBitSize(Math.min(256, VECTOR_BIT_SIZE)).withLanes(byte.class);
         } else {
             F_SPECIES = null;
             I_SPECIES = null;
             S_SPECIES_HALF = null;
+            B_SPECIES = null;
         }
     }
 
