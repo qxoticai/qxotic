@@ -2,6 +2,7 @@ package com.qxotic.jinfer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -375,19 +376,24 @@ class ParallelTest {
             for (int failing = 0; failing < 4; failing++) {
                 int failSlot = failing;
                 AtomicBoolean hit = new AtomicBoolean();
-                RuntimeException thrown =
-                        assertThrows(
-                                RuntimeException.class,
-                                () ->
-                                        pool.loop(
-                                                0,
-                                                4 * 16,
-                                                (i, slot) -> {
-                                                    spin(20_000);
-                                                    if (slot == failSlot
-                                                            && hit.compareAndSet(false, true))
-                                                        throw new RuntimeException("slot " + slot);
-                                                }));
+                // A slot only throws once it runs a task; on a busy 4-core runner the others can
+                // finish all 64 before a worker wakes, so loop until the slot has taken part.
+                RuntimeException thrown = null;
+                for (int attempt = 0; attempt < 100 && thrown == null; attempt++) {
+                    try {
+                        pool.loop(
+                                0,
+                                4 * 16,
+                                (i, slot) -> {
+                                    spin(20_000);
+                                    if (slot == failSlot && hit.compareAndSet(false, true))
+                                        throw new RuntimeException("slot " + slot);
+                                });
+                    } catch (RuntimeException e) {
+                        thrown = e;
+                    }
+                }
+                assertNotNull(thrown, "slot " + failSlot + " never ran a task");
                 assertEquals("slot " + failSlot, thrown.getMessage());
             }
         }
