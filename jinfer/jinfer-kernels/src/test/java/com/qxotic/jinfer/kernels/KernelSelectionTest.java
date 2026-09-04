@@ -62,12 +62,18 @@ class KernelSelectionTest {
     @Test
     void detectionReadsTheCompilerOption() throws Exception {
         // the rule from the port: java.vm.version says "jvmci" on GraalVM even under
-        // -XX:-UseJVMCICompiler, so the VM option is the only honest source
-        boolean jvmci =
-                Boolean.parseBoolean(
-                        ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class)
-                                .getVMOption("UseJVMCICompiler")
-                                .getValue());
+        // -XX:-UseJVMCICompiler, so the VM option is the only honest source; a JDK without JVMCI
+        // (Temurin) has no such option at all, which the detection reads as C2
+        boolean jvmci;
+        try {
+            jvmci =
+                    Boolean.parseBoolean(
+                            ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class)
+                                    .getVMOption("UseJVMCICompiler")
+                                    .getValue());
+        } catch (IllegalArgumentException noJvmci) {
+            jvmci = false;
+        }
         assertEquals(jvmci, Segments.vectorJitDetected());
     }
 
