@@ -8,7 +8,6 @@ import argparse
 import os
 import pathlib
 import platform
-import sys
 import urllib.error
 import urllib.request
 import zipfile
@@ -24,7 +23,8 @@ def default_corpus_dir() -> pathlib.Path:
     home = pathlib.Path.home()
     system = platform.system()
     if system == "Windows":
-        base = pathlib.Path(os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or home / "AppData" / "Local")
+        local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        base = pathlib.Path(local) if local else home / "AppData" / "Local"
     elif system == "Darwin":
         base = home / "Library" / "Caches"
     else:
@@ -34,7 +34,11 @@ def default_corpus_dir() -> pathlib.Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download the enwik8 test corpus")
-    parser.add_argument("--output-dir", default=None, help="Directory to write enwik8 into (default: the toknroll corpus cache)")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory to write enwik8 into (default: the toknroll corpus cache)",
+    )
     args = parser.parse_args()
     out = pathlib.Path(args.output_dir) if args.output_dir else default_corpus_dir()
     target = out / "enwik8"
@@ -63,4 +67,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

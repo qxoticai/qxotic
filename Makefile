@@ -99,10 +99,13 @@ test-fixtures: ## Fetch the tiktoken vocabularies and the enwik8 corpus the suit
 	python3 toknroll/scripts/download_tiktoken_fixtures.py
 	python3 toknroll/scripts/download_enwik8.py
 
+# Empty model caches: a test that reaches for a model fails instead of downloading one.
+NO_MODELS := HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models
+
 ci: test-fixtures ## What the pull-request CI runs: formatting, the default suite without models, the corpus tests, the release shape
 	$(MAVEN) $(MAVEN_FLAGS) -B spotless:check
-	HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models $(MAVEN) $(MAVEN_FLAGS) -B test
-	HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models $(MAVEN) $(MAVEN_FLAGS) -B test -Dgroups=corpus -Dsurefire.excludedGroups=
+	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test
+	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test -Dgroups=corpus -Dsurefire.excludedGroups=
 	$(MAVEN) $(MAVEN_FLAGS) -B clean -Prelease verify -DskipTests -Dgpg.skip=true -Djam.natives.check.skip=true
 
 ##@ Release
