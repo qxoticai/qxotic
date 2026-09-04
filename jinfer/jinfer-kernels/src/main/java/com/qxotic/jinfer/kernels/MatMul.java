@@ -30,6 +30,7 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Static, dtype-switched matmul over views. Per-dtype dispatch is hoisted out of the row loop.
@@ -1374,110 +1375,94 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q5_K·F32 dot - Q5_KFloatTensor.vectorDot (Q4_K + the 5th bit plane).
+    // Q5_K·F32 dot - Q4_K plus the fifth bit plane. Byte work on the widest hardware byte vector
+    // up to 256 bits (nibbles and bit plane loaded together per chunk), scales unpacked once per
+    // super-block, four accumulators: the dot is bound by vector op count, and 128-bit byte lanes
+    // on a 512-bit machine doubled it (Zen 5, 16T tg128 on a 2.6B: 33 -> 39 t/s, the DRAM wall).
     // ------------------------------------------------------------------
+
+    // A shape the hardware lacks (256-bit bytes on NEON) is not intrinsified: the Vector API
+    // falls back to Java, orders of magnitude slower. Never wider than the float species.
+    private static final VectorSpecies<Byte> Q5K_BYTES =
+            F_SPECIES != null && F_SPECIES.vectorBitSize() >= 256
+                    ? ByteVector.SPECIES_256
+                    : ByteVector.SPECIES_128;
 
     private static float dotQ5K(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
         if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, DataType.Q5_K);
         int upperBound = k / QK_K * QK_K;
-        FloatVector val = FloatVector.zero(F_SPECIES);
-        FloatVector val2 = FloatVector.zero(F_SPECIES);
+        int chunk = Q5K_BYTES.length(); // nibble bytes per load: 32 or 16 of a group's 32
+        int parts = chunk / F_SPECIES.length(); // F_SPECIES slices per chunk of dequantised bytes
+        long sliceBytes = 4L * F_SPECIES.length();
+        FloatVector acc0 = FloatVector.zero(F_SPECIES);
+        FloatVector acc1 = FloatVector.zero(F_SPECIES);
+        FloatVector acc2 = FloatVector.zero(F_SPECIES);
+        FloatVector acc3 = FloatVector.zero(F_SPECIES);
         long bo = wByte;
         int j = 0;
         for (; j < upperBound; j += QK_K, bo += Q5_K_BYTES) {
             float d = readFloat16(w, bo);
             float dmin = readFloat16(w, bo + 2);
-            long scalesOff = bo + 4;
+            long packedSc = packedScales(w, bo + 4);
+            long packedMn = packedMins(w, bo + 4);
             long qhOff = bo + 16;
             long qsOff = bo + 48;
-            var qh0 =
-                    ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, qhOff, ByteOrder.LITTLE_ENDIAN);
-            var qh1 =
-                    ByteVector.fromMemorySegment(
-                            ByteVector.SPECIES_128, w, qhOff + 16, ByteOrder.LITTLE_ENDIAN);
             for (int g = 0; g < 4; g++) {
-                int loSubBlock = g * 2;
-                int hiSubBlock = loSubBlock + 1;
-                float d1 = d * getScaleMinK4(loSubBlock, w, scalesOff, false);
-                float m1 = dmin * getScaleMinK4(loSubBlock, w, scalesOff, true);
-                float d2 = d * getScaleMinK4(hiSubBlock, w, scalesOff, false);
-                float m2 = dmin * getScaleMinK4(hiSubBlock, w, scalesOff, true);
-                int qhBitPosLo = 2 * g;
-                int qhBitPosHi = qhBitPosLo + 1;
-                long groupQsOff = qsOff + (long) g * 32;
+                float d1 = d * (int) ((packedSc >>> (16 * g)) & 0xFF);
+                float negM1 = -(dmin * (int) ((packedMn >>> (16 * g)) & 0xFF));
+                float d2 = d * (int) ((packedSc >>> (16 * g + 8)) & 0xFF);
+                float negM2 = -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF));
                 var d1Vec = FloatVector.broadcast(F_SPECIES, d1);
+                var negM1Vec = FloatVector.broadcast(F_SPECIES, negM1);
                 var d2Vec = FloatVector.broadcast(F_SPECIES, d2);
-                var negM1Vec = FloatVector.broadcast(F_SPECIES, -m1);
-                var negM2Vec = FloatVector.broadcast(F_SPECIES, -m2);
-                for (int c = 0; c < 2; c++) {
-                    long loBase = xByte + 4L * (j + g * 64 + c * 16);
-                    long hiBase = xByte + 4L * (j + g * 64 + 32 + c * 16);
-                    var wBytes =
+                var negM2Vec = FloatVector.broadcast(F_SPECIES, negM2);
+                // qh byte i carries the high bit of elements g*64 + i (bit 2g) and g*64 + 32 + i
+                // (bit 2g + 1): the same lanes as nibble byte i of group g.
+                for (int c = 0; c < 32; c += chunk) {
+                    var qs =
                             ByteVector.fromMemorySegment(
-                                    ByteVector.SPECIES_128,
-                                    w,
-                                    groupQsOff + c * 16L,
-                                    ByteOrder.LITTLE_ENDIAN);
-                    var loQ = wBytes.and((byte) 0xF);
-                    var hiQ = wBytes.lanewise(VectorOperators.LSHR, 4);
-                    var qhBytes = c == 0 ? qh0 : qh1;
-                    loQ =
-                            loQ.or(
-                                    qhBytes.lanewise(VectorOperators.LSHR, qhBitPosLo)
-                                            .and((byte) 1)
-                                            .lanewise(VectorOperators.LSHL, 4));
-                    hiQ =
-                            hiQ.or(
-                                    qhBytes.lanewise(VectorOperators.LSHR, qhBitPosHi)
-                                            .and((byte) 1)
-                                            .lanewise(VectorOperators.LSHL, 4));
-                    switch (F_SPECIES.vectorBitSize()) {
-                        case 512 -> {
-                            var loQf = loQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
-                            var hiQf = hiQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
-                            val = loQf.fma(d1Vec, negM1Vec).fma(floatsAt(x, loBase), val);
-                            val2 = hiQf.fma(d2Vec, negM2Vec).fma(floatsAt(x, hiBase), val2);
-                        }
-                        case 256 -> {
-                            var loQf0 = loQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
-                            var loQf1 = loQ.castShape(F_SPECIES, 1).reinterpretAsFloats();
-                            var hiQf0 = hiQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
-                            var hiQf1 = hiQ.castShape(F_SPECIES, 1).reinterpretAsFloats();
-                            val = loQf0.fma(d1Vec, negM1Vec).fma(floatsAt(x, loBase), val);
-                            val =
-                                    loQf1.fma(d1Vec, negM1Vec)
-                                            .fma(
-                                                    floatsAt(x, loBase + 4L * F_SPECIES.length()),
-                                                    val);
-                            val2 = hiQf0.fma(d2Vec, negM2Vec).fma(floatsAt(x, hiBase), val2);
-                            val2 =
-                                    hiQf1.fma(d2Vec, negM2Vec)
-                                            .fma(
-                                                    floatsAt(x, hiBase + 4L * F_SPECIES.length()),
-                                                    val2);
-                        }
-                        case 128 -> {
-                            for (int p = 0; p < 4; p++) {
-                                long off = 4L * p * F_SPECIES.length();
-                                var loQf = loQ.castShape(F_SPECIES, p).reinterpretAsFloats();
-                                var hiQf = hiQ.castShape(F_SPECIES, p).reinterpretAsFloats();
-                                val = loQf.fma(d1Vec, negM1Vec).fma(floatsAt(x, loBase + off), val);
-                                val2 =
-                                        hiQf.fma(d2Vec, negM2Vec)
-                                                .fma(floatsAt(x, hiBase + off), val2);
-                            }
-                        }
-                        default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+                                    Q5K_BYTES, w, qsOff + g * 32 + c, ByteOrder.LITTLE_ENDIAN);
+                    var qh =
+                            ByteVector.fromMemorySegment(
+                                    Q5K_BYTES, w, qhOff + c, ByteOrder.LITTLE_ENDIAN);
+                    var lo = withHighBit(qs.and((byte) 0xF), qh, 1 << (2 * g));
+                    var hi =
+                            withHighBit(qs.lanewise(VectorOperators.LSHR, 4), qh, 1 << (2 * g + 1));
+                    long loBase = xByte + 4L * (j + g * 64 + c);
+                    long hiBase = loBase + 128;
+                    for (int p = 0; p < parts; p += 2) {
+                        long off = p * sliceBytes;
+                        acc0 = fmaQ(acc0, lo, p, d1Vec, negM1Vec, x, loBase + off);
+                        acc1 = fmaQ(acc1, lo, p + 1, d1Vec, negM1Vec, x, loBase + off + sliceBytes);
+                        acc2 = fmaQ(acc2, hi, p, d2Vec, negM2Vec, x, hiBase + off);
+                        acc3 = fmaQ(acc3, hi, p + 1, d2Vec, negM2Vec, x, hiBase + off + sliceBytes);
                     }
                 }
             }
         }
-        float result = val.add(val2).reduceLanes(VectorOperators.ADD);
+        float result = acc0.add(acc1).add(acc2.add(acc3)).reduceLanes(VectorOperators.ADD);
         if (j < k) {
             result += scalarDotLegacy(w, bo, x, xByte + 4L * j, k - j, DataType.Q5_K);
         }
         return result;
+    }
+
+    /** q + 16 in the lanes whose {@code bit} is set in the bit plane. */
+    private static ByteVector withHighBit(ByteVector q, ByteVector qh, int bit) {
+        return q.add((byte) 16, qh.and((byte) bit).compare(VectorOperators.NE, 0));
+    }
+
+    /** acc += (q[part] * d + negM) * x[xByte..]: one F_SPECIES-wide slice of dequantised bytes. */
+    private static FloatVector fmaQ(
+            FloatVector acc,
+            ByteVector q,
+            int part,
+            FloatVector dVec,
+            FloatVector negMVec,
+            MemorySegment x,
+            long xByte) {
+        var qf = q.castShape(F_SPECIES, part).reinterpretAsFloats();
+        return qf.fma(dVec, negMVec).fma(floatsAt(x, xByte), acc);
     }
 
     // ------------------------------------------------------------------
