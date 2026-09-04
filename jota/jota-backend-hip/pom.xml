@@ -42,11 +42,6 @@
       <artifactId>jota-tensor</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-backend-panama</artifactId>
       <scope>test</scope>

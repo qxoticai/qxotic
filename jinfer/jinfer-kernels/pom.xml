@@ -147,6 +147,16 @@
             </configuration>
           </execution>
           <execution>
+            <!-- AVX2 width: the two-slices-per-32-bytes mapping of the k-quant dots. -->
+            <id>vector-256</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.vectorBitSize=256</argLine>
+            </configuration>
+          </execution>
+          <execution>
             <!-- No Vector API at all: the scalar fallbacks of every dot, norm, activation and conversion. -->
             <id>scalar</id>
             <goals>

@@ -16,7 +16,6 @@
     streaming, embeddings, scoring, tools, multimodal input, and speech.</description>
 
   <properties>
-    <langchain4j.version>1.19.0</langchain4j.version>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
 

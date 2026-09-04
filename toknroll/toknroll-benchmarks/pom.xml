@@ -16,7 +16,6 @@
 
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
-    <surefire.excludedGroups>${surefire.baseExcludedGroups},benchmarks</surefire.excludedGroups>
   </properties>
 
   <dependencies>
@@ -48,11 +47,6 @@
     <dependency>
       <groupId>com.knuddels</groupId>
       <artifactId>jtokkit</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

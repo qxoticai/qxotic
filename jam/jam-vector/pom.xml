@@ -37,11 +37,6 @@
       <!-- cross-backend parity also checks NativeJAM, when libjam loads -->
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>test</scope>
-    </dependency>
   </dependencies>
 
   <build>
