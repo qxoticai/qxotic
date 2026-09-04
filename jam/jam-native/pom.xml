@@ -100,6 +100,25 @@
                 <argument>${project.basedir}/build</argument>
                 <argument>--target</argument>
                 <argument>jam</argument>
+                <argument>jam_test</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <!-- The C suite sweeps every ISA cap this CPU supports (a CI runner sits on a lower
+                 level than any dev box), so it runs wherever the library was just built. -->
+            <id>ctest</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>test</phase>
+            <configuration>
+              <skip>${jam.native.skip}</skip>
+              <executable>ctest</executable>
+              <arguments>
+                <argument>--test-dir</argument>
+                <argument>${project.basedir}/build</argument>
+                <argument>--output-on-failure</argument>
               </arguments>
             </configuration>
           </execution>

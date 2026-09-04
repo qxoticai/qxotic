@@ -450,9 +450,12 @@ static void suite_extreme(int m, int n, int k, int mode) {
     float* W=malloc(4llu*(size_t)m*k); float* B=malloc(4llu*(size_t)n*k); float* C=malloc(4llu*(size_t)m*n);
     double* R=malloc(8llu*(size_t)m*n);
     for (size_t i=0;i<(size_t)m*k;i++) W[i] = (((i ^ (i>>3)) & 1) ? -8.0f : 8.0f);            /* |W|=8 -> qs=±127 */
-    if (mode==0) for (size_t i=0;i<(size_t)n*k;i++) B[i] = (((i ^ (i>>2)) & 1) ? -8.0f : 8.0f); /* qa=±127 */
-    else         for (size_t i=0;i<(size_t)n*k;i++) B[i] = (i%32==0) ? 1.0e4f : 1.0e-3f;        /* dyn range */
+    if (mode==1) for (size_t i=0;i<(size_t)n*k;i++) B[i] = (i%32==0) ? 1.0e4f : 1.0e-3f;        /* dyn range */
+    else         for (size_t i=0;i<(size_t)n*k;i++) B[i] = (((i ^ (i>>2)) & 1) ? -8.0f : 8.0f); /* qa=±127 */
     jam_ref_blk* WQ = jam_ref_quant_q8_0(W,m,k);
+    /* mode 2: every negative weight byte becomes -128, the sign-trick edge (|-128| must read as u8 128;
+     * sign() cannot negate it). Symmetric quantizers never emit it, other GGUF writers may. */
+    if (mode==2) for (size_t i=0;i<(size_t)m*nb;i++) for (int e=0;e<32;e++) if (WQ[i].qs[e]<0) WQ[i].qs[e]=-128;
     for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
         double s=0;
         for (int b=0;b<nb;b++) {
@@ -800,8 +803,8 @@ int main(void) {
     }
 
     /* extreme/saturation: drive the Q8_0 int8 dot to its ±127 accumulator edges + the requant clamp,
-     * partial m, prefill (band/int8) + gemv (floor/dot). */
-    for (int mode=0; mode<2; mode++) {
+     * then -128 weights (mode 2), partial m, prefill (band/int8) + gemv (floor/dot). */
+    for (int mode=0; mode<3; mode++) {
         suite_extreme(37, 16, 256, mode);   /* prefill: maddubs/vpdpbusd 8-wide + the avx512 band */
         suite_extreme(33,  1, 512, mode);   /* gemv: the dot kernels + the generic floor */
         suite_extreme(64,  4, 128, mode);
