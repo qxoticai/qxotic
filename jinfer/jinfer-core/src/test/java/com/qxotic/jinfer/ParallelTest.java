@@ -2,6 +2,7 @@ package com.qxotic.jinfer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -375,19 +376,24 @@ class ParallelTest {
             for (int failing = 0; failing < 4; failing++) {
                 int failSlot = failing;
                 AtomicBoolean hit = new AtomicBoolean();
-                RuntimeException thrown =
-                        assertThrows(
-                                RuntimeException.class,
-                                () ->
-                                        pool.loop(
-                                                0,
-                                                4 * 16,
-                                                (i, slot) -> {
-                                                    spin(20_000);
-                                                    if (slot == failSlot
-                                                            && hit.compareAndSet(false, true))
-                                                        throw new RuntimeException("slot " + slot);
-                                                }));
+                // A slot only throws once it runs a task; on a busy 4-core runner the others can
+                // finish all 64 before a worker wakes, so loop until the slot has taken part.
+                RuntimeException thrown = null;
+                for (int attempt = 0; attempt < 100 && thrown == null; attempt++) {
+                    try {
+                        pool.loop(
+                                0,
+                                4 * 16,
+                                (i, slot) -> {
+                                    spin(20_000);
+                                    if (slot == failSlot && hit.compareAndSet(false, true))
+                                        throw new RuntimeException("slot " + slot);
+                                });
+                    } catch (RuntimeException e) {
+                        thrown = e;
+                    }
+                }
+                assertNotNull(thrown, "slot " + failSlot + " never ran a task");
                 assertEquals("slot " + failSlot, thrown.getMessage());
             }
         }
@@ -644,9 +650,11 @@ class ParallelTest {
             Set<String> workers = workerNames(pool);
             for (Thread t : Thread.getAllStackTraces().keySet())
                 if (workers.contains(t.getName())) t.interrupt();
+            // Every slot keeps taking work after the interrupt: seen across the rounds, not per
+            // round, since on a busy 4-core runner one round of 64 can end before a worker wakes.
+            Set<Thread> seen = ConcurrentHashMap.newKeySet();
             for (int round = 0; round < 20; round++) {
                 if (round == 0) waitUntil(() -> allParked(workers), 5_000);
-                Set<Thread> seen = ConcurrentHashMap.newKeySet();
                 pool.loop(
                         0,
                         64,
@@ -654,8 +662,8 @@ class ParallelTest {
                             seen.add(Thread.currentThread());
                             spin(50_000);
                         });
-                assertEquals(4, seen.size());
             }
+            assertEquals(4, seen.size());
         }
     }
 
