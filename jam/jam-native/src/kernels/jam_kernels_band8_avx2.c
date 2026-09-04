@@ -14,7 +14,7 @@
  *   Q5_K       : peak 2*31*127 = 7874        -> chains of 4 (31496)
  *   Q6_K       : peak 2*63*127 = 16002       -> NO chaining (2 already wrap); per-group madd
  *   Q8_0       : sign trick peaks at 32258   -> NO chaining; per-group madd
- * Weight operands are UNSIGNED for every quant except Q8_0 (sign trick: u = |x|, s = sign(w,x)). */
+ * Weight operands are UNSIGNED for every quant except Q8_0 (sign trick: u = |w|, s = sign(x,w)). */
 #include "jam_internal.h"
 #include "jam_kquant.h"
 #include "jam_mxfp4.h"
@@ -497,7 +497,9 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
 
 /* ================= 32-block quants (Q8_0 / Q4_0 / MXFP4) - 8-row bands ==================
  * Same band machinery as the K-quants above; per-quant dot schemes chosen by saturation math:
- *   Q8_0 : signed weights, so maddubs needs the SIGN TRICK - u = |x| broadcast, s = sign(w, x)
+ *   Q8_0 : signed weights, so maddubs needs the SIGN TRICK - u = |w|, s = sign(x, w): |w| is the u8
+ *          operand because a weight may be -128 (|-128| reads as u8 128, exact) while sign() cannot
+ *          negate -128; the activation is requantized to +-127, so sign(x, w) is always exact
  *          (int16 peak 127*127*2 = 32258, the exact margin) -> exact w*x, no bias correction.
  *   Q4_0 : unsigned nibbles 0..15 as the u operand, x signed as s (peak 15*127*2) - the -8
  *          offset folds into mw = 8*d against the RAW per-32 activation sums (exact).
@@ -527,7 +529,7 @@ static inline __m256 q8s_block8(const uint8_t* qs, const float* dw, const int8_t
             __m256i xb = _mm256_set1_epi32(((const int*) x)[g]);
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
             acc = _mm256_add_epi32(acc, _mm256_madd_epi16(
-                      _mm256_maddubs_epi16(_mm256_abs_epi8(xb), _mm256_sign_epi8(w, xb)),
+                      _mm256_maddubs_epi16(_mm256_abs_epi8(w), _mm256_sign_epi8(xb, w)),
                       _mm256_set1_epi16(1)));
         }
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), _mm256_set1_ps(d[b])), f);
@@ -553,7 +555,7 @@ static inline void q8s_block8_nr(const uint8_t* qs, const float* dw, const int8_
             for (int c = 0; c < B8_NR_Q8; c++) {
                 __m256i xb = _mm256_set1_epi32(((const int*) x[c])[g]);
                 acc[c] = _mm256_add_epi32(acc[c], _mm256_madd_epi16(
-                             _mm256_maddubs_epi16(_mm256_abs_epi8(xb), _mm256_sign_epi8(w, xb)),
+                             _mm256_maddubs_epi16(_mm256_abs_epi8(w), _mm256_sign_epi8(xb, w)),
                              _mm256_set1_epi16(1)));
             }
         }
