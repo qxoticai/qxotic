@@ -17,7 +17,6 @@ import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-@Tag("slow")
 @Tag("local-external")
 class HuggingFaceLlamaNoSpecialsRegressionTest {
 
