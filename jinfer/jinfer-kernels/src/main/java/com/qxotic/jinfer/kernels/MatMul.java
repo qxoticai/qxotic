@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.kernels;
 
+import static com.qxotic.jinfer.Segments.B_SPECIES;
 import static com.qxotic.jinfer.Segments.FAST_VECTOR_JIT;
 import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static com.qxotic.jinfer.Segments.I_SPECIES;
@@ -30,7 +31,6 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Static, dtype-switched matmul over views. Per-dtype dispatch is hoisted out of the row loop.
@@ -1381,17 +1381,10 @@ public final class MatMul {
     // on a 512-bit machine doubled it (Zen 5, 16T tg128 on a 2.6B: 33 -> 39 t/s, the DRAM wall).
     // ------------------------------------------------------------------
 
-    // A shape the hardware lacks (256-bit bytes on NEON) is not intrinsified: the Vector API
-    // falls back to Java, orders of magnitude slower. Never wider than the float species.
-    private static final VectorSpecies<Byte> Q5K_BYTES =
-            F_SPECIES != null && F_SPECIES.vectorBitSize() >= 256
-                    ? ByteVector.SPECIES_256
-                    : ByteVector.SPECIES_128;
-
     private static float dotQ5K(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
         if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, DataType.Q5_K);
         int upperBound = k / QK_K * QK_K;
-        int chunk = Q5K_BYTES.length(); // nibble bytes per load: 32 or 16 of a group's 32
+        int chunk = B_SPECIES.length(); // nibble bytes per load: 32 or 16 of a group's 32
         int parts = chunk / F_SPECIES.length(); // F_SPECIES slices per chunk of dequantised bytes
         long sliceBytes = 4L * F_SPECIES.length();
         FloatVector acc0 = FloatVector.zero(F_SPECIES);
@@ -1421,10 +1414,10 @@ public final class MatMul {
                 for (int c = 0; c < 32; c += chunk) {
                     var qs =
                             ByteVector.fromMemorySegment(
-                                    Q5K_BYTES, w, qsOff + g * 32 + c, ByteOrder.LITTLE_ENDIAN);
+                                    B_SPECIES, w, qsOff + g * 32 + c, ByteOrder.LITTLE_ENDIAN);
                     var qh =
                             ByteVector.fromMemorySegment(
-                                    Q5K_BYTES, w, qhOff + c, ByteOrder.LITTLE_ENDIAN);
+                                    B_SPECIES, w, qhOff + c, ByteOrder.LITTLE_ENDIAN);
                     var lo = withHighBit(qs.and((byte) 0xF), qh, 1 << (2 * g));
                     var hi =
                             withHighBit(qs.lanewise(VectorOperators.LSHR, 4), qh, 1 << (2 * g + 1));
