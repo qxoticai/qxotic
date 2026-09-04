@@ -64,6 +64,8 @@
     <native.dir>${project.basedir}/src/main/native</native.dir>
     <native.build.dir>${native.dir}/build</native.build.dir>
     <native.resource.dir>${project.build.outputDirectory}/META-INF/native/${os.name}/${os.arch}</native.resource.dir>
+    <!-- Normalised names the runtime loader looks up (linux|macos|windows, x86_64|aarch64);
+         the platform profiles below set them from the building JVM. -->
     <os.name>linux</os.name>
     <os.arch>x86_64</os.arch>
     <native.cmake.executable>cmake</native.cmake.executable>
@@ -459,7 +461,6 @@ exit 1)</argument>
       </activation>
       <properties>
         <os.name>windows</os.name>
-        <os.arch>x86_64</os.arch>
       </properties>
     </profile>
     <profile>
@@ -482,6 +483,17 @@ exit 1)</argument>
       </activation>
       <properties>
         <os.name>macos</os.name>
+      </properties>
+    </profile>
+    <profile>
+      <id>native-aarch64</id>
+      <activation>
+        <os>
+          <arch>aarch64</arch>
+        </os>
+      </activation>
+      <properties>
+        <os.arch>aarch64</os.arch>
       </properties>
     </profile>
 
