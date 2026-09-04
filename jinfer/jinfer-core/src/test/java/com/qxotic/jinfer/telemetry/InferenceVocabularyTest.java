@@ -51,7 +51,11 @@ class InferenceVocabularyTest {
 
         List<RecordedEvent> events = new ArrayList<>();
         try (RecordingFile file = new RecordingFile(recordingPath)) {
-            while (file.hasMoreEvents()) events.add(file.readEvent());
+            while (file.hasMoreEvents()) {
+                RecordedEvent event = file.readEvent();
+                // the recording also holds the JDK's own bookkeeping events (ActiveRecording, ...)
+                if (event.getEventType().getName().equals("jinfer.Inference")) events.add(event);
+            }
         }
         assertEquals(2, events.size());
         for (RecordedEvent event : events) {
