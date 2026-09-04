@@ -1,8 +1,9 @@
 /* 128-bit SSSE3 quantized GEMM engine: C = W @ Aᵀ, W decoded to int8 (two __m128i halves), A int8. Same
  * shape as jam_gemm_q128.inc (the true-SSE3 floor) but the int8 dot uses the SSSE3 maddubs sign-trick  -
- * maddubs(|a|, sign(w,a)) -> int16 pairs, madd_epi16(.,1) -> int32 - instead of sign-extend + madd, halving
- * the dot's op count. Weights are assumed in [-127,127] (real Q8_0/Q4_0 quantization; the sign-trick's only
- * pitfall is w=-128, which symmetric quant never produces). The includer defines, before #include:
+ * maddubs(|w|, sign(a,w)) -> int16 pairs, madd_epi16(.,1) -> int32 - instead of sign-extend + madd, halving
+ * the dot's op count. |w| is the u8 operand because a weight may be -128 (|-128| reads as u8 128, exact)
+ * while sign() cannot negate -128; the activation is requantized to +-127, so sign(a,w) is always exact.
+ * The includer defines, before #include:
  *
  *   JAM_BLK                            weight block struct (for the row stride)           [per QUANT]
  *   JAM_DECODE(blk, &wlo, &whi, &dW)   decode -> two __m128i int8 halves + float scale    [per QUANT]
@@ -13,8 +14,8 @@
 
 #ifndef JAM_SSSE3_DOT_DEFINED
 #define JAM_SSSE3_DOT_DEFINED
-/* 16-int8 dot via maddubs sign-trick (|a| u8 operand, sign(w,a) carries the product sign) -> 4 int32. */
-#define JAM_SSSE3_DOT16(w, a, ones) _mm_madd_epi16(_mm_maddubs_epi16(_mm_abs_epi8(a), _mm_sign_epi8((w), (a))), (ones))
+/* 16-int8 dot via maddubs sign-trick (|w| u8 operand, sign(a,w) carries the product sign) -> 4 int32. */
+#define JAM_SSSE3_DOT16(w, a, ones) _mm_madd_epi16(_mm_maddubs_epi16(_mm_abs_epi8(w), _mm_sign_epi8((a), (w))), (ones))
 /* full 32-int8 block dot (two halves) for activation pointer p -> 4 int32. */
 #define JAM_SSSE3_DOTBLK(wlo, whi, p, ones) _mm_add_epi32( \
         JAM_SSSE3_DOT16((wlo), _mm_loadu_si128((const __m128i*) (p)), (ones)), \
