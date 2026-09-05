@@ -66,6 +66,30 @@ class FetchDownloadTest {
     }
 
     @Test
+    void aRefusedChunkedFileIsNotRetriedEither(@TempDir Path dir) throws IOException {
+        // the parallel path: every chunk asks once, the first refusal ends the download
+        try (FileServer server = FileServer.start().deny("/gated.gguf", 401)) {
+            Path dest = dir.resolve("gated.gguf");
+
+            var failure =
+                    assertThrows(
+                            Fetch.HttpStatusException.class,
+                            () ->
+                                    Fetch.download(
+                                            server.url("/gated.gguf"),
+                                            dest,
+                                            Fetch.PARALLEL_FLOOR,
+                                            null,
+                                            Map.of()));
+
+            assertEquals(401, failure.status);
+            assertTrue(
+                    server.hits("/gated.gguf") <= 2,
+                    "at most one request per chunk, got " + server.hits("/gated.gguf"));
+        }
+    }
+
+    @Test
     void aMatchingSha256IsVerifiedSilently(@TempDir Path dir) throws IOException {
         try (FileServer server = FileServer.start().serve("/m.gguf", PAYLOAD)) {
             Path dest = dir.resolve("m.gguf");

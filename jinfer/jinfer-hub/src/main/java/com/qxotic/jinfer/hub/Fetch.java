@@ -546,13 +546,7 @@ final class Fetch {
                                     + " disk",
                             e);
                 }
-                if (e instanceof HttpStatusException h
-                        && h.status >= 400
-                        && h.status < 500
-                        && h.status != 408
-                        && h.status != 429) {
-                    throw e; // the server said no, not "not now": retrying cannot change its mind
-                }
+                if (refused(e)) throw e; // the server said no, not "not now"
                 last = e;
                 // the .part and its chunk map survive on purpose: the next attempt resumes
                 if (attempt < MAX_ATTEMPTS) {
@@ -562,6 +556,15 @@ final class Fetch {
             }
         }
         throw last;
+    }
+
+    /** A client error other than a timeout or a rate limit: retrying cannot change the answer. */
+    private static boolean refused(IOException e) {
+        return e instanceof HttpStatusException h
+                && h.status >= 400
+                && h.status < 500
+                && h.status != 408
+                && h.status != 429;
     }
 
     private static boolean diskFull(IOException e) {
@@ -701,6 +704,7 @@ final class Fetch {
             } catch (RangeIgnored e) {
                 throw e; // retrying the same request cannot make the server honor Range
             } catch (IOException e) {
+                if (refused(e)) throw e; // a 4xx is the answer, not a bad moment
                 last = e;
                 written.addAndGet(start - at); // un-count what this failed attempt had reported
             } finally {
