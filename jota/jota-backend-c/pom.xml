@@ -12,7 +12,7 @@
   <artifactId>jota-backend-c</artifactId>
   <name>Jota C Backend</name>
   <description>C backend for Jota tensor operations over a per-platform native library; the
-    default backend on GraalVM Native Image.</description>
+    default backend on GraalVM Native Image. Not published to Maven Central.</description>
 
   <properties>
     <c.configure.extraArgs />

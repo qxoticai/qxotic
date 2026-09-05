@@ -18,15 +18,15 @@ ROOT=$(cd "$(dirname "$0")" && pwd)
 # unquoted MAVEN_FLAGS: word-splitting intended, same convention as the Makefiles
 MVN="${MAVEN:-mvn} ${MAVEN_FLAGS:-}"
 
-WORK=${CANARY_WORK:-$(mktemp -d /tmp/release-canary.XXXXXX)}
+WORK=${CANARY_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/release-canary.XXXXXX")}
 if [ -z "${CANARY_WORK:-}" ]; then trap 'rm -rf "$WORK"' EXIT; fi
 REPO=$WORK/repo
 
-VERSION=$($MVN -q -B -f "$ROOT/pom.xml" help:evaluate -Dexpression=project.version \
+VERSION=$($MVN -q -B -f "$ROOT/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate -Dexpression=project.version \
     -DforceStdout 2>/dev/null | tail -1)
-LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" help:evaluate \
+LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
     -Dexpression=langchain4j.version -DforceStdout 2>/dev/null | tail -1)
-SPRING_AI_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" help:evaluate \
+SPRING_AI_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
     -Dexpression=spring-ai.version -DforceStdout 2>/dev/null | tail -1)
 case "$VERSION" in
     ''|*' '*) echo "canary: could not determine project version (got '$VERSION')" >&2; exit 1 ;;

@@ -7,19 +7,13 @@
 *.log
 
 # BlueJ files
-*.ctxt
 
 # Mobile Tools for Java (J2ME)
-.mtj.tmp/
 
 # Package Files
 *.jar
-*.war
-*.nar
-*.ear
 *.zip
 *.tar.gz
-*.rar
 
 # Virtual machine crash logs
 hs_err_pid*
@@ -31,9 +25,6 @@ target/
 **/.flattened-pom.xml
 
 # === Mill Build System ===
-.bsp/
-out/
-.mill-version.bak
 build/
 
 # === IDE/Editor ===
@@ -83,8 +74,6 @@ __pycache__/
 # === Generated Files ===
 
 # Documentation
-site/
-mkdocs/site/
 
 # Dump files
 dump*.json
@@ -93,7 +82,6 @@ dump*.json
 *.tmp
 *.temp
 *.cache
-*.kate-swp
 
 # Generated images
 *.ppm
@@ -130,7 +118,6 @@ desktop.ini
 .agents/
 
 # Raytracer output
-raytrace*.ppm
 
 # Shade's dependency-reduced pom (generated at package time)
 **/dependency-reduced-pom.xml
@@ -139,7 +126,6 @@ test-fixtures
 
 # Docusaurus
 node_modules/
-build/
 .docusaurus/
 .cache-loader/
 

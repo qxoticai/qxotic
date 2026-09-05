@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run the Tokenizer Demo Server
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 echo "Building tokenizer demo..."
 mvn compile -pl examples -am -DskipTests -q

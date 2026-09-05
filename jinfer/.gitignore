@@ -8,7 +8,6 @@ jinfer.jar
 /jinfer.exe
 
 # Native images and PGO artifacts
-./jinfer
 jinfer.pgo
 *.debug
 default.iprof

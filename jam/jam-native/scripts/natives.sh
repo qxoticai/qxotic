@@ -212,6 +212,7 @@ cmd_verify() {
         check_symbols "$lib" || failed=1
     done
     for t in "$NATIVE"/*/; do
+        [ -d "$t" ] || continue   # an empty tree leaves the glob unexpanded
         t=$(basename "$t")
         case " $SHIPPED " in *" $t "*) ;; *) echo "natives: unexpected staged target '$t' (not shipped)" >&2; failed=1 ;; esac
     done

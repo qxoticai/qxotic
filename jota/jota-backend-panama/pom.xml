@@ -12,7 +12,7 @@
   <artifactId>jota-backend-panama</artifactId>
   <name>Jota Panama (FFM) Backend</name>
   <description>Pure-Java backend for Jota tensor operations built on the FFM (Panama) API; the
-    default backend on the JVM.</description>
+    default backend on the JVM. Not published to Maven Central.</description>
 
   <dependencies>
     <!-- Backends implement the core/memory API surface directly; declare, not inherit. -->

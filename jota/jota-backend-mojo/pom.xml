@@ -11,7 +11,7 @@
 
   <artifactId>jota-backend-mojo</artifactId>
   <name>Jota Mojo Backend</name>
-  <description>Experimental Mojo backend for Jota on AMD HIP.</description>
+  <description>Experimental Mojo backend for Jota on AMD HIP. Not published to Maven Central.</description>
 
   <properties>
     <!-- Experimental (needs mojo + hipcc toolchains; kernels generated at runtime): built and
