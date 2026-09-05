@@ -27,19 +27,19 @@ jobs:
       # the cache step can address it without knowing the OS cache layout.
       TOKNROLL_CACHE_ROOT: ${{ github.workspace }}/.ci-toknroll-cache
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
       # Neither fixture set is in git; `make test-fixtures` (the first step of `make ci`) fills in
       # whatever the cache did not restore.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: test-fixtures/tiktoken
           key: tiktoken-fixtures-${{ hashFiles('toknroll/scripts/download_tiktoken_fixtures.py') }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .ci-toknroll-cache/corpus
           key: enwik8-corpus-${{ hashFiles('toknroll/scripts/download_enwik8.py') }}
