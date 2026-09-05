@@ -38,8 +38,8 @@ install: ## Install every artifact into ~/.m2 (the prerequisite for `mvn -f <sub
 
 jar: jinfer-jar ## Alias for jinfer-jar
 
-jinfer-jar: ## The jinfer CLI jar, copied to jinfer/jinfer.jar (incremental)
-	$(MAVEN) $(MAVEN_FLAGS) -pl jinfer/jinfer-cli -am package -DskipTests
+jinfer-jar: ## The jinfer CLI jar, copied to jinfer/jinfer.jar (a clean build: shading has reused a stale module jar)
+	$(MAVEN) $(MAVEN_FLAGS) -pl jinfer/jinfer-cli -am clean package -DskipTests
 	cp jinfer/jinfer-cli/target/jinfer.jar jinfer/jinfer.jar
 
 ##@ Test
