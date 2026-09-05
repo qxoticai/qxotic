@@ -18,12 +18,16 @@ public class Speak {
 
     private static final String DEFAULT_MODEL =
             "remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
+    private static final String DEFAULT_LEXICON =
+            "remixerdec/Inflect-Nano-v2-GGUF/lexicon.bin";
 
     public static void main(String[] args) throws IOException {
         String text = args.length > 0 ? args[0] : "Local inference, in Java. No server, no Python.";
         String modelRef = args.length > 1 ? args[1] : DEFAULT_MODEL;
 
-        try (var tts = JinferSpeechModel.builder().model(modelRef).build()) {
+        var builder = JinferSpeechModel.builder().model(modelRef);
+        if (modelRef.equals(DEFAULT_MODEL)) builder.companion("lexicon", DEFAULT_LEXICON);
+        try (var tts = builder.build()) {
             byte[] wav = tts.synthesize(text).audio().binaryData();
             Files.write(Path.of("hello.wav"), wav);
             System.out.printf("Wrote hello.wav (%.1f KB).%n", wav.length / 1024.0);

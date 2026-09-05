@@ -31,6 +31,7 @@ class JinferSpeechAutoConfigurationTest {
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
                         "spring.ai.jinfer.speech.model=/speech.gguf",
+                        "spring.ai.jinfer.speech.companions.lexicon=/lexicon.bin",
                         "spring.ai.jinfer.speech.speed=1.25",
                         "spring.ai.jinfer.speech.max-input-chars=500")
                 .run(
@@ -38,6 +39,7 @@ class JinferSpeechAutoConfigurationTest {
                             JinferSpeechProperties p =
                                     context.getBean(JinferSpeechProperties.class);
                             assertThat(p.model()).isEqualTo("/speech.gguf");
+                            assertThat(p.companions()).containsEntry("lexicon", "/lexicon.bin");
                             assertThat(p.speed()).isEqualTo(1.25);
                             assertThat(p.maxInputChars()).isEqualTo(500);
                         });
@@ -51,6 +53,36 @@ class JinferSpeechAutoConfigurationTest {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
                                     .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
+    void companionUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.speech.model=/missing.gguf",
+                        "spring.ai.jinfer.speech.companions.lexicon=https://example.org/lexicon.bin")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.speech.companions.lexicon")
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    @Test
+    void blankCompanionIsRejectedBeforeResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.speech.model=/missing.gguf",
+                        "spring.ai.jinfer.speech.companions.lexicon=")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.speech.companions.lexicon must not be"
+                                                    + " blank");
                         });
     }
 

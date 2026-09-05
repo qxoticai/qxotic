@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.util.StringUtils;
 
 /**
  * Wires one {@link JinferSpeechModel} bean from {@code spring.ai.jinfer.speech.*}.
@@ -35,6 +36,31 @@ public class JinferSpeechAutoConfiguration {
             builder.model(properties.model());
         } else {
             builder.modelPath(Path.of(properties.model()));
+        }
+        if (properties.companions() != null) {
+            properties
+                    .companions()
+                    .forEach(
+                            (capability, value) -> {
+                                if (!StringUtils.hasText(value)) {
+                                    throw new IllegalStateException(
+                                            "spring.ai.jinfer.speech.companions."
+                                                    + capability
+                                                    + " must not be blank");
+                                }
+                                if (value.contains("://")) {
+                                    throw new IllegalStateException(
+                                            "spring.ai.jinfer.speech.companions."
+                                                    + capability
+                                                    + " is a URL; download it first and configure"
+                                                    + " its local path");
+                                }
+                                if (ModelStore.isRef(value)) {
+                                    builder.companion(capability, value);
+                                } else {
+                                    builder.companionPath(capability, Path.of(value));
+                                }
+                            });
         }
         // 0 means "leave the model's own default alone" - passing it through would override the
         // port's choice with a meaningless value

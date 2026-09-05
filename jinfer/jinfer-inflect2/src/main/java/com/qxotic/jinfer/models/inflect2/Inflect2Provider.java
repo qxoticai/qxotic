@@ -36,7 +36,7 @@ public final class Inflect2Provider implements ModelProvider {
     /** The pronunciation lexicon: what turns text into phonemes without an external process. */
     @Override
     public Map<String, String> companionFiles() {
-        return Map.of("phonemes", "lexicon");
+        return Map.of("lexicon", "lexicon");
     }
 
     /** A speech-only family: nothing to generate with - {@code Models.loadSpeech} is the door. */
@@ -65,7 +65,7 @@ public final class Inflect2Provider implements ModelProvider {
             Arena arena,
             Map<String, Path> companions)
             throws IOException {
-        Path lexicon = companions.get("phonemes");
+        Path lexicon = companions.get("lexicon");
         return lexicon == null
                 ? InflectTTS.load(fileChannel, gguf, path, arena)
                 : InflectTTS.load(fileChannel, gguf, path, arena, lexicon);

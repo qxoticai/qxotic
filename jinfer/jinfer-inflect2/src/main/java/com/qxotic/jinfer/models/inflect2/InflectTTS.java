@@ -158,13 +158,14 @@ public final class InflectTTS
                     .log(
                             System.Logger.Level.WARNING,
                             "no lexicon found, using espeak-ng: one subprocess per"
-                                    + " punctuation-free run, and it must stay installed. Ship a"
-                                    + " lexicon.bin beside the GGUF to avoid it.");
+                                    + " punctuation-free run, and it must stay installed. Attach"
+                                    + " the repository's lexicon.bin as the 'lexicon' companion, or"
+                                    + " put it beside the GGUF.");
             return espeak;
         }
         throw new IOException(
-                "no phonemizer: pass a lexicon to InflectTTS.load(gguf, arena, lexicon), put"
-                    + " lexicon.bin beside the model or on the classpath, or install espeak-ng");
+                "no phonemizer: attach the repository's lexicon.bin as the 'lexicon' companion,"
+                        + " put it beside the model or on the classpath, or install espeak-ng");
     }
 
     // ── tuning: a re-wrap over the SAME weights, so no reload and no arena ─

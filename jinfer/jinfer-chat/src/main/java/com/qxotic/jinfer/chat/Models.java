@@ -197,7 +197,7 @@ public final class Models {
     }
 
     /**
-     * As {@link #loadSpeech(Path, Arena)} with COMPANIONS - {@code "phonemes"} for a pronunciation
+     * As {@link #loadSpeech(Path, Arena)} with COMPANIONS - {@code "lexicon"} for a pronunciation
      * lexicon. A port's own discovery (a lexicon beside the GGUF, then the classpath, then an
      * external tool) remains the DEFAULT; naming one here overrides that ladder rather than
      * extending it.

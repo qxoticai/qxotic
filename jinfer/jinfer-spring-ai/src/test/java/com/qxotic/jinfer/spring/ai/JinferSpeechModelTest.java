@@ -42,6 +42,34 @@ final class JinferSpeechModelTest {
     // ── builder ───────────────────────────────────────────────────────────
 
     @Test
+    void aCompanionMustBeAModelRef() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferSpeechModel.builder().companion("lexicon", "/tmp/lexicon.bin"));
+        assertEquals(
+                "'/tmp/lexicon.bin' is not a companion model ref. Use companionPath(...) for a"
+                        + " local file; download plain URLs first.",
+                e.getMessage());
+    }
+
+    @Test
+    void companionsStillBelongToTheLoad() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                JinferSpeechModel.builder()
+                                        .model(new ToyModel())
+                                        .companionPath("lexicon", Path.of("lexicon.bin"))
+                                        .build());
+        assertEquals(
+                "companions are load-time settings; apply them when you load the model passed to"
+                        + " model(...)",
+                e.getMessage());
+    }
+
+    @Test
     void aModelIsRequired() {
         IllegalArgumentException e =
                 assertThrows(

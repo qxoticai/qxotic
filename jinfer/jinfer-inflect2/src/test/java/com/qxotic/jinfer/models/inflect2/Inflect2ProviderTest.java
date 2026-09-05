@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.inflect2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -14,5 +15,11 @@ final class Inflect2ProviderTest {
         assertEquals(Set.of("inflect-v2"), provider.architectures());
         assertFalse(provider.supports("inflect-v3"));
         assertFalse(provider.supports("inflection"));
+    }
+
+    /** The one companion: the pronunciation lexicon, attached as {@code lexicon}. */
+    @Test
+    void offersTheLexiconAsItsOnlyCompanion() {
+        assertEquals(Map.of("lexicon", "lexicon"), new Inflect2Provider().companionFiles());
     }
 }

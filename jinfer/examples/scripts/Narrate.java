@@ -26,6 +26,8 @@ public class Narrate {
             "unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf";
     private static final String DEFAULT_SPEECH_MODEL =
             "remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
+    private static final String DEFAULT_LEXICON =
+            "remixerdec/Inflect-Nano-v2-GGUF/lexicon.bin";
 
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {
@@ -54,7 +56,11 @@ public class Narrate {
         }
 
         System.out.println(description);
-        try (var voice = JinferSpeechModel.builder().model(speechModelRef).build()) {
+        var voiceBuilder = JinferSpeechModel.builder().model(speechModelRef);
+        if (speechModelRef.equals(DEFAULT_SPEECH_MODEL)) {
+            voiceBuilder.companion("lexicon", DEFAULT_LEXICON);
+        }
+        try (var voice = voiceBuilder.build()) {
             byte[] wav = voice.synthesize(description).audio().binaryData();
             Files.write(Path.of("narration.wav"), wav);
             System.out.printf("%nWrote narration.wav (%.1f KB).%n", wav.length / 1024.0);

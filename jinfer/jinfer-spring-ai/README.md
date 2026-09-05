@@ -316,6 +316,7 @@ streaming emits PCM clips as they are synthesized:
 ```java
 try (var speech = JinferSpeechModel.builder()
         .model("remixerdec/Inflect-Nano-v2-GGUF:Q8_0")
+        .companion("lexicon", "remixerdec/Inflect-Nano-v2-GGUF/lexicon.bin")
         .build()) {
 
     Files.write(Path.of("hello.wav"), speech.call("Hello from local Java inference."));

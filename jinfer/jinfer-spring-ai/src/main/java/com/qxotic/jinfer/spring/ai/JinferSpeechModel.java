@@ -15,7 +15,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.springframework.ai.audio.tts.Speech;
 import org.springframework.ai.audio.tts.TextToSpeechModel;
@@ -57,7 +62,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         try {
             this.model =
                     (SpeechSynthesisModel<?, ?, RuntimeState>)
-                            (b.model != null ? b.model : Models.loadSpeech(b.modelPath, created));
+                            (b.model != null
+                                    ? b.model
+                                    : Models.loadSpeech(b.modelPath, created, b.companionPaths));
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
@@ -218,6 +225,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         private Path modelPath; // derived from source at build()
         private Double speed;
         private int maxInputChars = DEFAULT_MAX_INPUT_CHARS;
+        private Map<String, Path> companionPaths; // resolved at build()
+        private final Map<String, String> companionRefs = new LinkedHashMap<>();
+        private final Map<String, Path> localCompanions = new LinkedHashMap<>();
 
         /**
          * A model you loaded yourself - the typed path, where a port's own knobs are expressible
@@ -256,6 +266,34 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         }
 
         /** Rate multiplier for requests that do not carry one, 1.0 = the model's natural rate. */
+        /** Attaches a local companion file. This method never touches the network. */
+        public Builder companionPath(String capability, Path companionPath) {
+            Objects.requireNonNull(capability, "capability");
+            Objects.requireNonNull(companionPath, "companionPath");
+            companionRefs.remove(capability);
+            localCompanions.put(capability, companionPath);
+            return this;
+        }
+
+        /**
+         * Attaches a companion from a supported model repository - {@code "lexicon"} for an Inflect
+         * model's pronunciation lexicon, as {@code owner/repo/lexicon.bin}. The reference is
+         * resolved at {@link #build()}.
+         */
+        public Builder companion(String capability, String companionRef) {
+            Objects.requireNonNull(capability, "capability");
+            if (!ModelStore.isRef(companionRef)) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + companionRef
+                                + "' is not a companion model ref. Use companionPath(...) for a"
+                                + " local file; download plain URLs first.");
+            }
+            localCompanions.remove(capability);
+            companionRefs.put(capability, companionRef);
+            return this;
+        }
+
         public Builder speed(double speed) {
             this.speed = speed;
             return this;
@@ -277,15 +315,37 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         public JinferSpeechModel build() {
             model = null;
             modelPath = null;
+            companionPaths = Map.of();
             switch (source) {
-                case String ref -> modelPath = ModelStore.standard().resolve(ref);
+                case SpeechSynthesisModel<?, ?, ?> m -> {
+                    if (!companionRefs.isEmpty() || !localCompanions.isEmpty())
+                        throw new IllegalArgumentException(
+                                "companions are load-time settings; apply them when you load the"
+                                        + " model passed to model(...)");
+                    model = m;
+                    return new JinferSpeechModel(this);
+                }
                 case Path path -> modelPath = path;
-                case SpeechSynthesisModel<?, ?, ?> m -> model = m;
+                case String ref -> {} // resolved below, in one batch with the companions
                 case null, default ->
                         throw new IllegalArgumentException(
                                 "a model is required: model(\"owner/repo:Q4_K_M\"),"
                                         + " modelPath(...) or model(SpeechSynthesisModel)");
             }
+            // the model (when it is a ref) and the companions resolve in ONE batch, so a cold
+            // start pays the slowest download, not the sum
+            List<String> wanted = new ArrayList<>();
+            if (source instanceof String ref) wanted.add(ref);
+            wanted.addAll(companionRefs.values());
+            List<Path> resolved =
+                    wanted.isEmpty() ? List.of() : ModelStore.standard().resolveAll(wanted);
+            int at = 0;
+            if (modelPath == null) modelPath = resolved.get(at++);
+            var attached = new LinkedHashMap<>(localCompanions);
+            for (String capability : companionRefs.keySet()) {
+                attached.put(capability, resolved.get(at++));
+            }
+            companionPaths = Collections.unmodifiableMap(attached);
             return new JinferSpeechModel(this);
         }
     }

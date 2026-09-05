@@ -324,6 +324,7 @@ Turn text into WAV bytes:
 ```java
 try (var speech = JinferSpeechModel.builder()
         .model("remixerdec/Inflect-Nano-v2-GGUF:Q8_0")
+        .companion("lexicon", "remixerdec/Inflect-Nano-v2-GGUF/lexicon.bin")
         .build()) {
 
     var audio = speech.synthesize("Hello from local Java inference.").audio();
