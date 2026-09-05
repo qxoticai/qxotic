@@ -142,6 +142,10 @@ public class Main {
             } else {
                 Instruct.run(engine, sampling, options);
             }
+        } catch (IllegalArgumentException e) {
+            // a taken port, a refused option at run time: the message is the remedy
+            System.err.println("ERROR " + e.getMessage());
+            System.exit(1);
         } finally {
             engine.close();
         }

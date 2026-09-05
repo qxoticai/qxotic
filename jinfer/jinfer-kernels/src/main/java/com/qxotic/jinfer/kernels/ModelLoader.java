@@ -78,12 +78,24 @@ public final class ModelLoader {
             Collection<TensorEntry> tensors,
             Arena arena)
             throws IOException {
+        long available = fileChannel.size() - tensorDataOffset;
+        for (TensorEntry tensor : tensors) {
+            long end =
+                    tensor.offset()
+                            + tensor.ggmlType().byteSizeFor(Shape.flat(tensor.shape()).size());
+            if (end > available) {
+                throw new IllegalArgumentException(
+                        "GGUF is truncated, or holds metadata only: tensor "
+                                + tensor.name()
+                                + " needs bytes up to "
+                                + end
+                                + " of the tensor data, the file has "
+                                + Math.max(available, 0)
+                                + ". Re-download it, or convert the model again.");
+            }
+        }
         MemorySegment tensorData =
-                fileChannel.map(
-                        FileChannel.MapMode.READ_ONLY,
-                        tensorDataOffset,
-                        fileChannel.size() - tensorDataOffset,
-                        arena);
+                fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset, available, arena);
         // ONE jota Memory over the whole mapping; each tensor is a byte-offset view into it
         // (replaces FloatTensor.create over per-tensor asSlice segments).
         Memory<MemorySegment> memory = Memories.of(tensorData);

@@ -568,6 +568,18 @@ public final class ModelStore {
                     throw e; // the best answer there is: the ref's fault, or the last word
                 }
                 warn(source, ref, e);
+            } catch (Fetch.HttpStatusException e) {
+                // a download refused with 401/403 is the same "no" as a refused listing
+                Exception failure =
+                        e.status == 401 || e.status == 403
+                                ? new IllegalArgumentException(RepositorySource.denied(ref), e)
+                                : new UncheckedIOException(
+                                        "could not resolve " + ref + ": " + e, e);
+                if (last) {
+                    if (failure instanceof IllegalArgumentException denied) throw denied;
+                    throw (UncheckedIOException) failure;
+                }
+                warn(source, ref, e);
             } catch (IOException e) {
                 if (last) {
                     throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
