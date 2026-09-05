@@ -39,6 +39,14 @@ final class FakeSource implements ModelSource {
         return this;
     }
 
+    private IOException fetchFailure;
+
+    /** The listing succeeds, the download does not: a gated file behind a public listing. */
+    FakeSource fetchFailing(IOException failure) {
+        this.fetchFailure = failure;
+        return this;
+    }
+
     FakeSource bytes(String bytes) {
         this.bytes = bytes;
         return this;
@@ -78,6 +86,7 @@ final class FakeSource implements ModelSource {
 
     @Override
     public void fetch(ModelRef ref, RemoteFile file, Path into) throws IOException {
+        if (fetchFailure != null) throw fetchFailure;
         fetched.set(true);
         Files.createDirectories(into.getParent());
         Files.writeString(into, bytes);

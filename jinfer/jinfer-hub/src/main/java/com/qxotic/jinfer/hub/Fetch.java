@@ -546,10 +546,18 @@ final class Fetch {
                                     + " disk",
                             e);
                 }
+                if (e instanceof HttpStatusException h
+                        && h.status >= 400
+                        && h.status < 500
+                        && h.status != 408
+                        && h.status != 429) {
+                    throw e; // the server said no, not "not now": retrying cannot change its mind
+                }
                 last = e;
                 // the .part and its chunk map survive on purpose: the next attempt resumes
                 if (attempt < MAX_ATTEMPTS) {
-                    progress.note(e + " - retrying (" + attempt + "/" + MAX_ATTEMPTS + ")");
+                    progress.note(
+                            e.getMessage() + " - retrying (" + attempt + "/" + MAX_ATTEMPTS + ")");
                 }
             }
         }

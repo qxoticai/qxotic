@@ -48,6 +48,24 @@ class FetchDownloadTest {
     }
 
     @Test
+    void aRefusedFileIsNotRetried(@TempDir Path dir) throws IOException {
+        // 401/403/404 are the server's answer, not a bad moment: one request, the status kept
+        try (FileServer server = FileServer.start().deny("/gated.gguf", 401)) {
+            Path dest = dir.resolve("gated.gguf");
+
+            var failure =
+                    assertThrows(
+                            Fetch.HttpStatusException.class,
+                            () ->
+                                    Fetch.download(
+                                            server.url("/gated.gguf"), dest, 3, null, Map.of()));
+
+            assertEquals(401, failure.status);
+            assertEquals(1, server.hits("/gated.gguf"), "no retry");
+        }
+    }
+
+    @Test
     void aMatchingSha256IsVerifiedSilently(@TempDir Path dir) throws IOException {
         try (FileServer server = FileServer.start().serve("/m.gguf", PAYLOAD)) {
             Path dest = dir.resolve("m.gguf");

@@ -158,6 +158,22 @@ class RepositorySource implements ModelSource {
     }
 
     /**
+     * What a 401/403 means to a user, for a listing or a download alike. Hugging Face answers 401
+     * for a repository that does not exist too, so the message hedges on existence first.
+     */
+    static String denied(ModelRef ref) {
+        ModelRef.Host host = ModelRef.Host.byName(ref.host());
+        String token = host == null ? "the host's token variable" : host.tokenEnv;
+        return ref.repoId()
+                + " does not exist, or is gated or private: check the name, or accept its licence"
+                + " at "
+                + ref.repoUrl()
+                + " and set "
+                + token
+                + (host == ModelRef.Host.HF ? " (or log in once with: hf auth login)" : "");
+    }
+
+    /**
      * A listing GET, translating the failures a user can actually fix: a gated repository, and one
      * that is not there. Both surface as {@link IllegalArgumentException} caused by the status, so
      * the store can tell "this source answered no" from "this source is down".
@@ -167,16 +183,7 @@ class RepositorySource implements ModelSource {
             return Fetch.getString(url, headers(host));
         } catch (Fetch.HttpStatusException e) {
             if (e.status == 401 || e.status == 403) {
-                throw new IllegalArgumentException(
-                        ref.repoId()
-                                + " is gated or private. Accept its licence at "
-                                + ref.repoUrl()
-                                + " then set "
-                                + host.tokenEnv
-                                + (host == ModelRef.Host.HF
-                                        ? " (or log in once with: hf auth login)"
-                                        : ""),
-                        e);
+                throw new IllegalArgumentException(denied(ref), e);
             }
             if (e.status == 404) {
                 throw new IllegalArgumentException(

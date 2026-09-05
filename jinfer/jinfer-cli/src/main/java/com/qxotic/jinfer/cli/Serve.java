@@ -22,7 +22,19 @@ final class Serve {
         System.out.printf(
                 "speculation %s (depth %d)%n",
                 engine.speculationReady() ? "ready" : "unavailable", engine.speculationDepth());
-        Server.Running running = Server.start(engine, options.serverConfig(sampling));
+        var config = options.serverConfig(sampling);
+        Server.Running running;
+        try {
+            running = Server.start(engine, config);
+        } catch (java.net.BindException e) {
+            throw new IllegalArgumentException(
+                    "port "
+                            + config.bind().getPort()
+                            + " on "
+                            + config.bind().getHostString()
+                            + " is already in use (--port picks another)",
+                    e);
+        }
         final class Stop implements Runnable {
             private boolean done;
 

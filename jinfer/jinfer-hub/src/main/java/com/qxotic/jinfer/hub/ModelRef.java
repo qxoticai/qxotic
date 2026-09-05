@@ -82,6 +82,12 @@ public record ModelRef(
             this.prefix = prefix;
         }
 
+        /** The host a ref names ({@link ModelRef#host()}), or null for a host this enum lacks. */
+        static Host byName(String name) {
+            for (Host host : values()) if (host.name.equals(name)) return host;
+            return null;
+        }
+
         /** The base URL, honoring this host's mirror variable ({@code HF_ENDPOINT} etc.). */
         String base() {
             String endpoint = System.getenv(endpointEnv);

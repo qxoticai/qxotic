@@ -30,6 +30,7 @@ final class FileServer implements AutoCloseable {
     private final Map<String, String> lastQuery = new ConcurrentHashMap<>();
     private final List<String> noRange = new CopyOnWriteArrayList<>();
     private final Map<String, String> etags = new ConcurrentHashMap<>();
+    private final Map<String, Integer> denied = new ConcurrentHashMap<>();
 
     private FileServer(HttpServer server) {
         this.server = server;
@@ -57,6 +58,12 @@ final class FileServer implements AutoCloseable {
 
     FileServer serve(String path, String payload) {
         return serve(path, payload.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Every request for {@code path} is answered with {@code status} (a gated file: 401). */
+    FileServer deny(String path, int status) {
+        denied.put(path, status);
+        return this;
     }
 
     /**
@@ -101,6 +108,17 @@ final class FileServer implements AutoCloseable {
             lastQuery.put(path, query);
         }
         byte[] payload = files.get(path);
+        Integer refusal = denied.get(path);
+        if (refusal != null) {
+            hits.computeIfAbsent(path, p -> new AtomicInteger()).incrementAndGet();
+            byte[] body = "denied".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(refusal, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+            exchange.close();
+            return;
+        }
         if (payload == null) {
             exchange.sendResponseHeaders(404, -1);
             exchange.close();

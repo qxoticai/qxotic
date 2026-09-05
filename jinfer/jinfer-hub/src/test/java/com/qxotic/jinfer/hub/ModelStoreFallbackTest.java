@@ -95,6 +95,24 @@ class ModelStoreFallbackTest {
     }
 
     @Test
+    void aDeniedDownloadTeachesTheSameAsADeniedListing(@TempDir Path root) {
+        // Hugging Face lists a gated repository but answers the file with 401: the user must see
+        // the licence/token remedy, not an HTTP status wrapped in a resolve failure
+        FakeSource gated =
+                new FakeSource("gated")
+                        .serving("", new RemoteFile("model-q8_0.gguf", 3, null))
+                        .fetchFailing(new Fetch.HttpStatusException(401, "https://x", ""));
+
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ModelStore.of(root, gated).resolve(REF));
+        assertTrue(failure.getMessage().contains("gated or private"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("does not exist"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("HF_TOKEN"), failure.getMessage());
+    }
+
+    @Test
     void aSingleSourcesNoIsDeliveredAsItself(@TempDir Path root) {
         // no fallback is possible, so the teaching message must arrive unwrapped: "gated or
         // private, accept the licence, set the token" - not an aggregate of one
