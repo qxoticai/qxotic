@@ -4,6 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.2.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-llama
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
+//DEPS org.slf4j:slf4j-nop:2.0.18
 
 // Stream a local model directly to the terminal.
 //   jbang Chat.java "Explain HTTP/3 in two sentences."

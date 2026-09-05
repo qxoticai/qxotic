@@ -4,6 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.2.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-llama
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
+//DEPS org.slf4j:slf4j-nop:2.0.18
 
 // Prefill a system prompt once and report how many tokens each request restores.
 //   jbang CachedPrompt.java
