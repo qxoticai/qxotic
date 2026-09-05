@@ -503,10 +503,14 @@
             <configuration>
               <rules>
                 <requireMavenVersion>
-                  <version>[3.8.0,)</version>
+                  <version>[3.9.0,)</version>
+                  <message>Maven 3.9 or newer (.mvn/maven.config carries a comment)</message>
                 </requireMavenVersion>
+                <!-- The libraries compile to release 11 where they can, but the reactor as a whole
+                     (jota, jam, jinfer: Vector API, FFM) needs JDK 25 to build. -->
                 <requireJavaVersion>
-                  <version>[11,)</version>
+                  <version>[25,)</version>
+                  <message>JDK 25 or newer builds this reactor</message>
                 </requireJavaVersion>
                 <banDuplicatePomDependencyVersions />
                 <requireUpperBoundDeps />

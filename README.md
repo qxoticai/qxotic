@@ -34,3 +34,18 @@ Quixotic AI provides a complete, open stack, for local AI on the JVM Java. From 
 | [`jota`](./jota) | Tensor engine | **Write once, accelerate everywhere.** Java, C, CUDA, HIP, Metal, OpenCL, Mojo |
 | [`gguf`](./gguf) | GGUF reader/writer | llama.cpp's model format, pure Java, zero dependencies |
 | [`safetensors`](./safetensors) | Safetensors reader/writer | HuggingFace's model format, pure Java, zero dependencies |
+
+## Build and test
+
+JDK 25 and Maven 3.9 build everything; cmake and a C compiler build the native jam kernels.
+
+```bash
+make test-fixtures   # once after cloning: the tokenizer vocabularies and the enwik8 corpus
+make test            # the default suite: no models, no network
+make ci              # what a pull request runs: formatting, the suite, the corpus tests, the release shape
+```
+
+`make help` lists the rest.
+The suites that need models or hardware are opt-in; each module's README says how to run them.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+

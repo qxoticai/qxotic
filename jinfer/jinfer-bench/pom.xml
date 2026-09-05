@@ -15,7 +15,7 @@
   <description>Benchmark harness for Jinfer: llama-bench-parity
     prompt-processing and token-generation numbers for any model on the classpath, plus engine
     metrics - time to first token, prompt-cache hit latency, speculative acceptance, projected
-    media, state allocation, and peak resident memory.</description>
+    media, state allocation, and peak resident memory. Not published to Maven Central.</description>
 
   <properties>
     <jinfer.image.name>jinfer-bench</jinfer.image.name>

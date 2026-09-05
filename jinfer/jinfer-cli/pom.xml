@@ -13,7 +13,7 @@
 
   <name>Jinfer CLI</name>
   <description>Command line for Jinfer: an interactive chat loop and a one-shot
-    instruct mode over any GGUF, in a single jar carrying the model hub and every model provider.</description>
+    instruct mode over any GGUF, in a single jar carrying the model hub and every model provider. Not published to Maven Central.</description>
 
   <properties>
     <jinfer.image.name>jinfer</jinfer.image.name>

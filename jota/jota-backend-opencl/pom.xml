@@ -11,7 +11,7 @@
 
   <artifactId>jota-backend-opencl</artifactId>
   <name>Jota OpenCL Backend</name>
-  <description>Cross-platform GPU/CPU backend for Jota tensor operations over OpenCL.</description>
+  <description>Cross-platform GPU/CPU backend for Jota tensor operations over OpenCL. Not published to Maven Central.</description>
 
   <properties>
     <opencl.configure.extraArgs />

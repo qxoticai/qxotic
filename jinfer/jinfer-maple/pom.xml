@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
   <name>Jinfer Maple Provider</name>
   <description>Local chat inference for DeepGrove Maple sparse-transformer models with
-    Jinfer.</description>
+    Jinfer. Not published to Maven Central.</description>
 
   <dependencies>
     <dependency>

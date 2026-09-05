@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
   <name>GraalVM Native Image Annotation Stubs</name>
   <description>Compile-only stubs of GraalVM Native Image inlining annotations, matched by name at image
-    build time and never on the runtime classpath.</description>
+    build time and never on the runtime classpath. Not published to Maven Central.</description>
 
   <!-- Compile-only stubs of GraalVM's inlining annotations (unpublishable upstream). They satisfy
        javac without being bundled into consumer jars. Native Image recognizes the annotations by

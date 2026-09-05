@@ -239,6 +239,17 @@ Swap `--chat` for `--prompt "..."` (one-shot) or `--server --port 54154`. The se
 non-loopback binding requires `--api-key`. Multimodal models attach their projector with
 `--mmproj <clip.gguf>`. Run `--help` for the complete contract.
 
+## Testing
+
+`mvn test` runs the default suite; it needs no model files and no network.
+The model-backed suites are tagged `integration` and skip unless the model is in a local cache:
+
+```bash
+mvn -pl jinfer/jinfer-lfm2 test -Dsurefire.excludedGroups= -Dgroups=integration
+```
+
+`JINFER_MODELS` points them at a cache; `TestModels` in the testkit names the file each suite wants when it skips.
+
 ## GraalVM Native image
 
 ```bash

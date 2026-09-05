@@ -11,7 +11,7 @@
 
   <artifactId>jota-backend-hip</artifactId>
   <name>Jota HIP/ROCm Backend</name>
-  <description>AMD GPU backend for Jota tensor operations over HIP/ROCm.</description>
+  <description>AMD GPU backend for Jota tensor operations over HIP/ROCm. Not published to Maven Central.</description>
 
   <properties>
     <hip.configure.extraArgs />

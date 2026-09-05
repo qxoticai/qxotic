@@ -64,7 +64,7 @@ toknroll-fixtures: ## Download the enwik benchmark corpora into the cache (FIXTU
 
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 
-native: ## jinfer CLI native image -> jinfer/jinfer; PRELOAD_GGUF=model.gguf embeds metadata
+native: ## jinfer CLI native image for THIS machine (-march=native) -> jinfer/jinfer; PRELOAD_GGUF=model.gguf embeds metadata
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
@@ -74,7 +74,7 @@ native: ## jinfer CLI native image -> jinfer/jinfer; PRELOAD_GGUF=model.gguf emb
 		echo "ERROR: native-image $$v is too old for the jinfer kernels (need >= 25.0.3)."; \
 		exit 1; \
 	fi
-	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF)
+	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF) -Djinfer.image.march=native
 	cp jinfer/jinfer-cli/target/jinfer$(EXE) jinfer/jinfer$(EXE)
 
 ##@ Tidy
@@ -133,9 +133,9 @@ help: ## Show this help
 	@awk 'BEGIN { FS = " *## *" } \
 		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next } \
 		NF >= 2 && $$1 ~ /^[a-zA-Z_-]+:/ { t = $$1; sub(/:.*/, "", t); \
-			printf "  \033[36m%-14s\033[0m %s\n", t, $$2 }' $(MAKEFILE_LIST)
+			printf "  \033[36m%-18s\033[0m %s\n", t, $$2 }' $(MAKEFILE_LIST)
 	@echo
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives test-fixtures ci ci-format ci-test ci-corpus ci-release
+	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release
