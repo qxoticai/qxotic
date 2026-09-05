@@ -79,15 +79,28 @@ jam_pool* jam_pool_create(int nthreads) {
     jam_pool* pool = (jam_pool*) calloc(1, sizeof *pool);
     if (!pool) return NULL;
     pool->nworkers = nthreads - 1;
-    pthread_mutex_init(&pool->mtx, NULL);
-    pthread_cond_init(&pool->cv, NULL);
+    if (pthread_mutex_init(&pool->mtx, NULL) != 0) { free(pool); return NULL; }
+    if (pthread_cond_init(&pool->cv, NULL) != 0) {
+        pthread_mutex_destroy(&pool->mtx);
+        free(pool);
+        return NULL;
+    }
     if (pool->nworkers > 0) {
         pool->threads = (pthread_t*) calloc(pool->nworkers, sizeof(pthread_t));
         pool->wargs   = (jam_worker*) calloc(pool->nworkers, sizeof(jam_worker));
+        if (!pool->threads || !pool->wargs) {
+            pool->nworkers = 0;
+            jam_pool_destroy(pool);
+            return NULL;
+        }
         for (int i = 0; i < pool->nworkers; ++i) {
             pool->wargs[i].pool = pool;
             pool->wargs[i].idx  = i + 1;   /* participants 1..nworkers; the submitter is 0 */
-            pthread_create(&pool->threads[i], NULL, worker_main, &pool->wargs[i]);
+            if (pthread_create(&pool->threads[i], NULL, worker_main, &pool->wargs[i]) != 0) {
+                pool->nworkers = i;
+                jam_pool_destroy(pool);
+                return NULL;
+            }
         }
     }
     return pool;

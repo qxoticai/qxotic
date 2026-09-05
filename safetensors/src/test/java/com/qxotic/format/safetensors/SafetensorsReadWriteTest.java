@@ -510,6 +510,16 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
     }
 
     @Test
+    public void testOversizedHeaderRejectedBeforeAllocation() {
+        byte[] data = new byte[8];
+        ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).putLong(100_000_001L);
+
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> Safetensors.read(Channels.newChannel(new ByteArrayInputStream(data))));
+    }
+
+    @Test
     public void testTensorSizeMismatch() {
         // F32[2,2] = 16 bytes, but data_offsets says 10 bytes
         String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[2,2],\"data_offsets\":[0,10]}}";

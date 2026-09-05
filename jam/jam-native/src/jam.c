@@ -262,6 +262,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     /* nthreads is the participant count: with a host executor, how many distinct tid values the host
      * may pass (the per-tid scratch is sized by it); without one, the size of the pool jam owns. */
     if (c->nthreads <= 0) c->nthreads = online_cpus();
+    if (c->nthreads > JAM_MAX_THREADS) { free(c); return NULL; }
     if (!c->parallel_for) {
         c->ipool = jam_pool_create(c->nthreads);
         if (!c->ipool) { free(c); return NULL; }

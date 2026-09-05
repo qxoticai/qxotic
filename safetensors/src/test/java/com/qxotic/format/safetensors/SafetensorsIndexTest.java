@@ -182,6 +182,42 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     }
 
     @Test
+    public void testShardCannotEscapeModelDirectory(@TempDir Path tempDir) throws IOException {
+        Path modelDir = Files.createDirectory(tempDir.resolve("model"));
+        Safetensors.write(Builder.newBuilder().build(), tempDir.resolve("outside.safetensors"));
+        writeIndex(modelDir, "../outside.safetensors");
+
+        assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(modelDir));
+    }
+
+    @Test
+    public void testShardPathMustBeRelative(@TempDir Path tempDir) throws IOException {
+        Path shard = tempDir.resolve("outside.safetensors");
+        Safetensors.write(Builder.newBuilder().build(), shard);
+        writeIndex(tempDir, shard.toString());
+
+        assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
+    }
+
+    @Test
+    public void testNormalizedShardPathInsideModelDirectory(@TempDir Path tempDir)
+            throws IOException {
+        Path shard = tempDir.resolve("shard.safetensors");
+        Safetensors.write(Builder.newBuilder().build(), shard);
+        writeIndex(tempDir, "unused/../shard.safetensors");
+
+        assertEquals(shard, SafetensorsIndex.load(tempDir).getSafetensorsPath("layer.weight"));
+    }
+
+    @Test
+    public void testShardMustBeRegularSafetensorsFile(@TempDir Path tempDir) throws IOException {
+        Files.createDirectory(tempDir.resolve("shard.safetensors"));
+        writeIndex(tempDir, "shard.safetensors");
+
+        assertThrows(IOException.class, () -> SafetensorsIndex.load(tempDir));
+    }
+
+    @Test
     public void testInvalidIndexJsonFormat(@TempDir Path tempDir) throws IOException {
         // Create invalid JSON (missing closing brace)
         String invalidJson =
@@ -301,6 +337,13 @@ public class SafetensorsIndexTest extends SafetensorsTest {
         Files.writeString(txtFile, "not a safetensors file");
 
         assertThrows(IOException.class, () -> SafetensorsIndex.load(txtFile));
+    }
+
+    private static void writeIndex(Path directory, String fileName) throws IOException {
+        String escaped = fileName.replace("\\", "\\\\").replace("\"", "\\\"");
+        Files.writeString(
+                directory.resolve("model.safetensors.index.json"),
+                "{\"weight_map\":{\"layer.weight\":\"" + escaped + "\"}}");
     }
 
     @Test

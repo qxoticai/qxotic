@@ -148,6 +148,7 @@ JAM_API const char* jam_isa_name(jam_isa isa);   /* user-facing name, e.g. "avx5
  * jam calls parallel_for(pool, n, fn, arg): run fn over [0,n) in slices, block till done. Every
  * slice's tid must be below the config's nthreads and unique among the slices running at once: the
  * kernels index per-tid scratch by it. A tid at or above nthreads fails the call with JAM_EINVAL. */
+#define JAM_MAX_THREADS 1024
 typedef void (*jam_task_fn)(void* arg, int begin, int end, int tid);
 typedef void (*jam_parallel_for)(void* pool, int n, jam_task_fn fn, void* arg);
 
@@ -155,9 +156,9 @@ typedef void (*jam_parallel_for)(void* pool, int n, jam_task_fn fn, void* arg);
 typedef struct {
     jam_parallel_for parallel_for;   /* NULL -> the context owns a small pool of its own */
     void*            pool;            /* opaque, passed back to parallel_for */
-    int32_t          nthreads;        /* participants: the tid values the host may pass, or the own pool's
-                                      * size. 0 = every online cpu: fine for a test, wrong on an SMT or
-                                      * hybrid machine - a real host decides its count (physical cores) */
+    int32_t          nthreads;        /* participants, at most JAM_MAX_THREADS: the tid values the host may
+                                      * pass, or the own pool's size. 0 = every online cpu: fine for a test,
+                                      * wrong on an SMT or hybrid machine - a real host decides its count */
     jam_isa          max_isa;         /* JAM_ISA_AUTO = best; else cap here (disables higher levels) */
     const char*      name;            /* optional label for JAM_DEBUG logs (copied; NULL = unnamed) */
 } jam_config;

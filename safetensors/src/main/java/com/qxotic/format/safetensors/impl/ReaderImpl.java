@@ -23,6 +23,7 @@ import java.util.Set;
 class ReaderImpl {
     static final String METADATA_KEY = "__metadata__";
     static final int HEADER_SIZE_BYTES = 8;
+    private static final int MAX_HEADER_SIZE = 100_000_000;
     private static final long MAX_SIZE_T = 281474976710655L;
     private static final String DTYPE_FIELD = "dtype";
     private static final String SHAPE_FIELD = "shape";
@@ -49,10 +50,15 @@ class ReaderImpl {
         }
         sizeBuffer.flip();
         long headerSizeLong = sizeBuffer.getLong();
-        if (headerSizeLong <= 0 || headerSizeLong > Integer.MAX_VALUE) {
-            throw new SafetensorsFormatException("Invalid header size: " + headerSizeLong);
+        if (headerSizeLong <= 0 || headerSizeLong > MAX_HEADER_SIZE) {
+            throw new SafetensorsFormatException(
+                    "Invalid header size: "
+                            + headerSizeLong
+                            + " (maximum "
+                            + MAX_HEADER_SIZE
+                            + ")");
         }
-        int headerSize = Math.toIntExact(headerSizeLong);
+        int headerSize = (int) headerSizeLong;
 
         // Read header
         ByteBuffer headerBuffer = ByteBuffer.allocate(headerSize);

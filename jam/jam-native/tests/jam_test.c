@@ -621,6 +621,9 @@ static void suite_api(void) {
     OK("tid >= nthreads -> EINVAL", jam_mm(bt, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
     jam_ctx_destroy(bt);
 
+    memset(&cfg,0,sizeof cfg); cfg.nthreads = JAM_MAX_THREADS + 1;
+    OK("nthreads above limit rejected", jam_ctx_create(&cfg) == NULL);
+
     /* jam_global_destroy: frees the global; a later jam_mm(NULL) lazily re-creates it; idempotent */
     OK("global mm pre-destroy",   jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
     jam_global_destroy();

@@ -7,6 +7,7 @@ import com.qxotic.format.safetensors.SafetensorsIndex;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
@@ -91,14 +92,34 @@ final class SafetensorsIndexImpl implements SafetensorsIndex {
         for (Map.Entry<String, String> entry : weightMap.entrySet()) {
             String tensorName = entry.getKey();
             String fileName = entry.getValue();
-            Path filePath = rootPath.resolve(fileName);
-
-            if (!Files.exists(filePath)) {
-                throw new IOException("Shard file not found: " + fileName);
-            }
-
-            tensorIndex.put(tensorName, filePath);
+            tensorIndex.put(tensorName, resolveShard(rootPath, fileName));
         }
+    }
+
+    private static Path resolveShard(Path rootPath, String fileName) throws IOException {
+        final Path relative;
+        try {
+            relative = Path.of(fileName);
+        } catch (InvalidPathException e) {
+            throw new SafetensorsFormatException("Invalid shard path: " + fileName, e);
+        }
+
+        if (relative.isAbsolute()) {
+            throw new SafetensorsFormatException("Shard path must be relative: " + fileName);
+        }
+
+        Path filePath = rootPath.resolve(relative).normalize();
+        Path root = rootPath.toAbsolutePath().normalize();
+        if (!filePath.toAbsolutePath().normalize().startsWith(root)) {
+            throw new SafetensorsFormatException("Shard path escapes model directory: " + fileName);
+        }
+        if (!filePath.getFileName().toString().endsWith(".safetensors")) {
+            throw new SafetensorsFormatException("Shard must be a .safetensors file: " + fileName);
+        }
+        if (!Files.isRegularFile(filePath)) {
+            throw new IOException("Shard file not found: " + fileName);
+        }
+        return filePath;
     }
 
     private static void loadSingleFile(Path filePath, Map<String, Path> tensorIndex)
