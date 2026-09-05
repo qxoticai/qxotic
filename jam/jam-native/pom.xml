@@ -25,6 +25,9 @@
     <!-- -Djam.native.skip=true reuses a pre-staged dist/native (the release profile forces it) -->
     <!-- -Djam.natives.check.skip=true bypasses the release gate (the canary, which only checks poms) -->
     <jam.natives.check.skip>false</jam.natives.check.skip>
+    <!-- The C suite (ctest) follows surefire's switch: exec runs are not covered by -DskipTests. -->
+    <skipTests>false</skipTests>
+    <jam.native.tests.skip>${skipTests}</jam.native.tests.skip>
   </properties>
 
   <dependencies>
@@ -113,7 +116,7 @@
             </goals>
             <phase>test</phase>
             <configuration>
-              <skip>${jam.native.skip}</skip>
+              <skip>${jam.native.tests.skip}</skip>
               <executable>ctest</executable>
               <arguments>
                 <argument>--test-dir</argument>
@@ -159,6 +162,7 @@
       <id>release</id>
       <properties>
         <jam.native.skip>true</jam.native.skip>
+        <jam.native.tests.skip>true</jam.native.tests.skip>
         <jam.native.dir>dist/release</jam.native.dir>
       </properties>
       <build>

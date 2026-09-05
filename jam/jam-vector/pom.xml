@@ -66,6 +66,39 @@
         <configuration>
           <argLine>@{argLine} --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</argLine>
         </configuration>
+        <executions>
+          <!-- The parity suite again with libjam capped at the pre-VNNI tiers, which no dev box
+               reaches on its own (CI runners and old clients do). A cap from another architecture
+               drops to the portable kernels, so the runs are valid on ARM too. -->
+          <execution>
+            <id>native-avx2</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/JamBackendParityTest.java</include>
+              </includes>
+              <environmentVariables>
+                <JAM_ISA>avx2</JAM_ISA>
+              </environmentVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <id>native-ssse3</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/JamBackendParityTest.java</include>
+              </includes>
+              <environmentVariables>
+                <JAM_ISA>ssse3</JAM_ISA>
+              </environmentVariables>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

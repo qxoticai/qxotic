@@ -19,7 +19,7 @@ class JsonFuzzerTest {
     @Test
     void fuzzValidRoundTrip() {
         assertTimeoutPreemptively(
-                Duration.ofSeconds(5),
+                Duration.ofSeconds(60), // a hang guard, not a budget: cold JIT on a shared runner
                 () -> {
                     Random rnd = new Random(SEED);
                     for (int i = 0; i < 100_000; i++) {
@@ -42,7 +42,7 @@ class JsonFuzzerTest {
     @Test
     void fuzzMutatedInputsNeverCrash() {
         assertTimeoutPreemptively(
-                Duration.ofSeconds(5),
+                Duration.ofSeconds(60), // a hang guard, not a budget: cold JIT on a shared runner
                 () -> {
                     Random rnd = new Random(SEED ^ 0x5EEDBEEFL);
                     for (int i = 0; i < 200_000; i++) {
