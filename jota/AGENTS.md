@@ -1,98 +1,94 @@
-# CLAUDE.md
+# Jota Agent Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for coding agents working in `jota/`, the tensor engine of the qxotic monorepo.
+Read the module README for the user-facing story; this file is about how the code is laid out and how to prove a change.
 
-## Project Overview
+## What jota is
 
-Jota (JVM Open Tensor Algebra) is a tensor algebra library with lazy evaluation, kernel compilation, and multi-device support. Part of the qxotic multi-module Maven project.
+Jota (JVM Open Tensor Algebra) is a tensor algebra library with lazy evaluation, kernel compilation and multi-device support.
+It is one subtree of the qxotic multi-module Maven build; the root `Makefile` and root `pom.xml` own the shared configuration.
+Only `jota-core` and `jota-memory` are published to Maven Central at 0.2.0; `jota-tensor` and the backends build from source.
 
-## Build Commands
+## Modules
+
+| module | role |
+|---|---|
+| `jota-core` | data types, devices, shapes, strides, layouts, views; a real JPMS module `com.qxotic.jota` that exports only `com.qxotic.jota` |
+| `jota-memory` | the memory abstraction: domains, memories, views, access, bulk operations; backends on heap arrays, ByteBuffer, Unsafe and MemorySegment |
+| `jota-tensor` | tensors, tracing, the TIR and LIR intermediate representations, scheduling, the native library loader |
+| `jota-backend-panama` | the always-on Java backend; the one the default test run exercises |
+| `jota-backend-c`, `-cuda`, `-hip`, `-metal`, `-opencl`, `-mojo` | native and GPU backends, each behind a profile of the same name (`-Pc`, `-Pcuda`, `-Phip`, `-Pmetal`, `-Popencl`, `-Pmojo`, or `-Pall`) |
+
+`com.qxotic.jota.impl` is internal: it is not exported by the module descriptor and is not documented.
+Code that needs it from the module path must ask for an export rather than reach in.
+
+## Build and test
+
+Work from the repository root with `make`, or from `jota/` with Maven.
+`mvnd` keeps a warm daemon and makes the edit, build, test loop faster; the commands below accept either.
 
 ```bash
-# Always use mvnd (never mvn) to keep a warmed daemon and faster edit/build/test loops.
-# From jota/ directory
-
-# Build
-mvnd clean compile
-
-# Test suites
-mvnd test                 # Core suite (Panama/default runtime)
-mvnd -Pc test             # C backend suite (runs regular tests against C runtime + C-specific tests)
-mvnd -Phip test           # HIP backend suite (requires HIP/ROCm toolchain/runtime)
-mvnd -Popencl test        # OpenCL backend suite (requires OpenCL ICD/runtime)
-mvnd -Pmetal test         # Metal backend suite (runs on macOS; non-mac skips native/test steps)
-
-# Targeted tests
-mvnd test -Dtest=TestClass
-mvnd test -Dtest=TestClass#testMethod
-
-# Formatting (always run before finishing changes)
-mvnd spotless:check
-mvnd spotless:apply
+make jota-test                       # from the root: core, memory, and the tensor suite on the Java backend
+cd jota && mvnd test                 # the same, from the subtree
+mvnd -Pc test                        # add the C backend (needs cmake and a C compiler)
+mvnd test -Dtest=ShapeTest           # one class
+mvnd test -Dtest=ShapeTest#nested    # one method
+mvnd spotless:apply                  # Google Java Format, AOSP style; run before finishing
 ```
 
-## Development Workflow (Quick Reference)
+The tensor suite lives in `jota-tensor/src/testkit/java`, not under `src/test`.
+It needs a runtime provider, so every backend compiles it as its own tests through `build-helper`, and `jota-tensor` alone runs nothing.
+`jota-memory/src/testkit/java` is shared the same way; there are no test jars anywhere in the reactor.
+A backend's tests run only when its profile is active; the panama backend is always on.
+Tests run with `--enable-native-access=ALL-UNNAMED`, set once in `jota/pom.xml`, because jota-memory and the native backends call restricted methods.
+Java 25 is required; the root enforcer says so.
 
-- Work from `jota/` root and always use `mvnd`.
-- Fast compile loop: `mvnd clean compile` (first run) then `mvnd compile`.
-- Run core tests during normal iteration: `mvnd test`.
-- Validate C backend behavior with full C profile: `mvnd -Pc test`.
-- Validate HIP backend behavior: `mvnd -Phip test` (with HIP toolchain/runtime available).
-- Validate OpenCL backend behavior: `mvnd -Popencl test` (with OpenCL toolchain/runtime available).
-- Validate Metal backend behavior: `mvnd -Pmetal test` (native/tests execute on macOS; non-mac skips).
-- Run a focused test while iterating: `mvnd test -Dtest=ClassName` or `mvnd test -Dtest=ClassName#methodName`.
-- Before finishing any change, run formatting: `mvnd spotless:apply` (then optionally `mvnd spotless:check`).
-- If touching backend-specific code, run both core (`mvnd test`) and the corresponding backend profile suite.
-- Keep Panama as the default/core runtime path; treat C/HIP/Metal as profile-scoped validation paths.
-
-**Java Version:** 25 (source/target)
+Native libraries are packaged under `META-INF/native/<os>/<arch>/`.
+The `os.name` and `os.arch` properties in `jota/pom.xml` are normalised names the loader looks up, set by the platform profiles from the building JVM; `native-aarch64` is what makes Apple Silicon and linux-aarch64 land in the right directory.
 
 ## Architecture
 
-### Tensor Evaluation Model
+### Tensor evaluation
 
-**Lazy Tensors** - Expression tracing for kernel compilation:
-- `Tracer.trace(input, fn)` records operations into a `TIRGraph`
-- Graph nodes: `TensorInput`, `ScalarInput`, `BinaryOp`, `ReductionOp`, etc. (`ir/tir/`)
-- Materialization triggers scheduling/execution via `tensor.materialize()` (`ScheduledExecutor`)
+Lazy tensors: `Tracer.trace(input, fn)` records operations into a `TIRGraph` (`ir/tir/`: `TensorInput`, `ScalarInput`, `BinaryOp`, `ReductionOp` and friends).
+`tensor.materialize()` hands the graph to `ScheduledExecutor`, which lowers and runs it on the active backend.
 
-**Eager Tensors** - Immediate evaluation:
-- Materialized tensors (`MaterializedTensorImpl`) execute operations directly on `MemoryView`
-- Default when not in traced context
+Eager tensors: a materialized tensor (`MaterializedTensorImpl`) executes operations directly on a `MemoryView`.
+This is the default outside a traced context.
 
-### Memory Abstraction Layers
+### Memory layers
 
-1. `MemoryDomain<B>` - Device context (allocator, access, operations)
-2. `Memory<B>` - Backing buffer (ByteBuffer, MemorySegment, arrays, etc.)
-3. `MemoryView<B>` - View with Layout (shape + stride) over Memory
-4. `MemoryAccess<B>` - Element read/write
-5. `MemoryOperations<B>` - Bulk copy/broadcast/reshape
+1. `MemoryDomain<B>`: the device context, with allocator, access and operations.
+2. `Memory<B>`: the backing buffer.
+3. `MemoryView<B>`: a view with a `Layout` (shape plus stride) over a memory.
+4. `MemoryAccess<B>`: element reads and writes.
+5. `MemoryOperations<B>`: bulk copy, broadcast, reshape.
 
-**Memory backends:** Java heap arrays, ByteBuffer, sun.misc.Unsafe (off-heap), Panama Foreign Memory API (MemorySegment)
+### Shapes
 
-### Shape System (CuTe-inspired)
+Shapes are immutable and nest, CuTe style: `Shape.of(2, Shape.of(3, 4), 5)`.
+Wrap-around indexing convention: a `_prefix` wraps with respect to the input, a `suffix_` with respect to the output.
+A `Layout` is a shape plus a stride, with contiguity checks.
 
-- Immutable shapes with nested structure: `Shape.of(2, Shape.of(3, 4), 5)`
-- **Wrap-around indexing convention:** `_prefix` = wrap wrt input, `suffix_` = wrap wrt output
-- Layout = Shape + Stride with contiguity checks
+### Compilation pipeline
 
-### Kernel Compilation Pipeline
+`Tracer` records into a `TIRGraph`; `ir/TIRToLIRLowerer` lowers TIR to LIR; `ir/lir/LIRStandardPipeline` runs the optimisation passes.
+The active backend's compute engine compiles or executes the LIR: `LIRKernelCompiler` on panama, `CKernelCompiler` on the C backend, source generation on the GPU backends.
+`TIRInterpreter` and `LIRInterpreter` are the interpreted fallbacks.
+Compiled kernels are cached under the path `KernelCachePaths` resolves.
 
-`Tracer` records ops into a `TIRGraph`; `TIRToLIRLowerer` lowers TIR to LIR; `LIRStandardPipeline` runs the optimization passes; the active backend's compute engine compiles/executes the LIR (Panama: `LIRKernelCompiler`, C: `CKernelCompiler`, GPU backends generate source).
+## Key files
 
-Fallback: `TIRInterpreter` / `LIRInterpreter` for interpreted execution
+- `jota-tensor/.../tensor/Tensor.java`, `TensorOps.java`: the tensor interface and its operations.
+- `jota-tensor/.../tensor/Tracer.java`, `ScheduledExecutor.java`: tracing and execution.
+- `jota-tensor/.../ir/TIRToLIRLowerer.java`, `ir/lir/LIRStandardPipeline.java`: lowering and passes.
+- `jota-tensor/.../runtime/NativeLibraryLoader.java`: how a backend's native library is found and loaded.
+- `jota-memory/.../memory/MemoryView.java`: the memory abstraction.
+- `jota-core/.../impl/ShapeImpl.java`: the shape implementation, internal.
 
-## Key Source Files
+## Conventions
 
-- `tensor/Tensor.java` - Core tensor interface
-- `tensor/Tracer.java` - Expression tracing
-- `ir/tir/TIRToLIRLowerer.java` - TIR to LIR lowering
-- `ir/lir/LIRStandardPipeline.java` - LIR optimization passes
-- `memory/MemoryView.java` - Memory abstraction
-- `impl/ShapeImpl.java` - Shape implementation
-- `tensor/TensorOps.java` - Operations interface
-
-## Code Style
-
-- Google Java Format (AOSP style) via Spotless
-- UNIX line endings, trailing whitespace trimmed
+- Formatting is decided by Spotless; the build fails on unformatted code.
+- Every backend must handle strided operands on-device; bailing out to the CPU breaks the layout-contract tests.
+- A change to a backend runs the default suite and that backend's profile suite.
+- Long Markdown files keep one sentence per line.
