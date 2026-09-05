@@ -246,7 +246,7 @@ Plain `embed`/`embedAll` embeds raw text; a one-time stderr note points at the k
 
 ```java
 ScoringModel reranker = JinferScoringModel.builder()
-        .model("Qwen/Qwen3-Reranker-0.6B-GGUF:Q8_0")
+        .model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")
         .build();
 
 RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
