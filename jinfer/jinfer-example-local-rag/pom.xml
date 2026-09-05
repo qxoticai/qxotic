@@ -55,6 +55,11 @@
       <artifactId>jinfer-qwen3</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-vector-store</artifactId>
     </dependency>

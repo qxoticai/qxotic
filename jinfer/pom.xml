@@ -407,6 +407,8 @@
           <version>${spring-boot.version}</version>
           <configuration>
             <jvmArguments>${jinfer.jvm.flags}</jvmArguments>
+            <!-- The default optimizedLaunch pins C1 (-XX:TieredStopAtLevel=1); the Vector API then never compiles. -->
+            <optimizedLaunch>false</optimizedLaunch>
           </configuration>
         </plugin>
         <plugin>

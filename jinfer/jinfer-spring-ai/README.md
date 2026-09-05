@@ -42,6 +42,9 @@ Java 25 is required. Add these options to the application JVM:
 --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 ```
 
+With `mvn spring-boot:run`, also set `<optimizedLaunch>false</optimizedLaunch>` on the plugin.
+Its default pins the JIT to C1, which never compiles the Vector API, and inference runs about 100x slower.
+
 Point a property at a model reference or a local model path:
 
 ```yaml
