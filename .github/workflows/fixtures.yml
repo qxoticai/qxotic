@@ -1,0 +1,33 @@
+# Seeds the fixture caches on the default branch: pull-request runs can read a base-branch cache
+# but never write one, so without this every new PR downloads the 107 MB again. Runs no tests.
+name: fixtures
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - toknroll/scripts/download_tiktoken_fixtures.py
+      - toknroll/scripts/download_enwik8.py
+      - .github/workflows/fixtures.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TOKNROLL_CACHE_ROOT: ${{ github.workspace }}/.ci-toknroll-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: test-fixtures/tiktoken
+          key: tiktoken-fixtures-${{ hashFiles('toknroll/scripts/download_tiktoken_fixtures.py') }}
+      - uses: actions/cache@v6
+        with:
+          path: .ci-toknroll-cache/corpus
+          key: enwik8-corpus-${{ hashFiles('toknroll/scripts/download_enwik8.py') }}
+      - run: make test-fixtures

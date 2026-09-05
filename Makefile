@@ -102,10 +102,18 @@ test-fixtures: ## Fetch the tiktoken vocabularies and the enwik8 corpus the suit
 # Empty model caches: a test that reaches for a model fails instead of downloading one.
 NO_MODELS := HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models
 
-ci: test-fixtures ## What the pull-request CI runs: formatting, the default suite without models, the corpus tests, the release shape
+ci: test-fixtures ci-format ci-test ci-corpus ci-release ## What the pull-request CI runs, as one local sequence
+
+ci-format: ## CI gate 1: formatting
 	$(MAVEN) $(MAVEN_FLAGS) -B spotless:check
+
+ci-test: ## CI gate 2: the default suite, no models
 	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test
-	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test -Dgroups=corpus -Dsurefire.excludedGroups=
+
+ci-corpus: ## CI gate 3: the tests that read the enwik8 corpus (toknroll-core and what it builds on)
+	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B -pl toknroll/toknroll-core -am test -Dgroups=corpus -Dsurefire.excludedGroups=
+
+ci-release: ## CI gate 4: the release shape, unsigned, no natives
 	$(MAVEN) $(MAVEN_FLAGS) -B clean -Prelease verify -DskipTests -Dgpg.skip=true -Djam.natives.check.skip=true
 
 ##@ Release
@@ -130,4 +138,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives test-fixtures ci
+	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives test-fixtures ci ci-format ci-test ci-corpus ci-release

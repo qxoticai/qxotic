@@ -187,6 +187,20 @@ class JamBackendParityTest {
                 parity(VECTOR, "VectorJAM " + name(t), t, 104, n, blockK(t), tol(VECTOR));
     }
 
+    /**
+     * A libjam that failed to load must fail here, not turn the native half of this suite into
+     * skips.
+     */
+    @Test
+    void nativeLibraryLoads() {
+        if (NATIVE != null) return;
+        assertTrue(
+                Boolean.getBoolean("jam.native.optional"),
+                "libjam did not load; on a box without the native toolchain pass"
+                        + " -Djam.native.optional=true");
+        Assumptions.abort("libjam absent, allowed by -Djam.native.optional=true");
+    }
+
     @Test
     void nativeGemmEveryDtype() {
         Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
