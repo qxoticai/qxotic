@@ -73,6 +73,7 @@ final class Thinking {
             int thought;
             int[] pending = new int[0]; // forced filler + close, one id per draw
             int pendingPos;
+            boolean spent; // the cap fired: the span was force-closed
 
             @Override
             public int sampleToken(MemoryView<?> logits) {
@@ -81,7 +82,11 @@ final class Thinking {
                 }
                 if (inThink && thought >= budget) {
                     inThink = false;
-                    if (filler.length > 0) {
+                    spent = true;
+                    // a zero budget has nothing to break away from: the bare closed span is the
+                    // shape a no-reasoning turn takes (and a filler here derailed the 8B-A1B into
+                    // junk under a tiny completion budget)
+                    if (filler.length > 0 && thought > 0) {
                         pending = new int[filler.length + 1];
                         System.arraycopy(filler, 0, pending, 0, filler.length);
                         pending[pending.length - 1] = closeToken;
@@ -96,8 +101,10 @@ final class Thinking {
                 // marker after the spend is scaffold the reply grammar does not expect, and
                 // the un-banned cap ping-pongs marker noise until LENGTH with a blank
                 // visible answer, the exact starvation the cap exists to prevent
+                // (a zero budget still lets the model OPEN its span - the cap then closes it on
+                // the very next draw; banning the opener outright is the mask, and the mask leaks)
                 int token =
-                        thought >= budget
+                        spent || (budget > 0 && thought >= budget)
                                 ? markersBanned.sampleToken(logits)
                                 : inner.sampleToken(logits);
                 if (token == openToken) inThink = true;

@@ -42,6 +42,12 @@ public final class GptOssChatTemplate implements ChatTemplate {
         throw new UnsupportedConversation("gpt-oss framing punts to the whole-render");
     }
 
+    /** Harmony has no non-reasoning turn: every reply opens with the analysis channel. */
+    @Override
+    public ThinkingPolicy thinkingPolicy() {
+        return ThinkingPolicy.ALWAYS;
+    }
+
     private ReplyLanguage.Selection autoReply; // memoized: tools-independent, built once
 
     @Override

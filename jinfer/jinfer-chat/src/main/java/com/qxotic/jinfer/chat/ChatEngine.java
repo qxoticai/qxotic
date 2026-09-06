@@ -663,11 +663,14 @@ public final class ChatEngine implements AutoCloseable {
      */
     public void requireThinkingRenderable(boolean thinking) {
         if (thinking || !alwaysReasons()) return;
+        boolean cappable =
+                SpecialTokens.find(loaded.tokenizer(), thinkMarkers().open()).isPresent();
         throw new UnsupportedOperationException(
                 modelName
                         + " always reasons: its template has no non-thinking turn, so thinking off"
-                        + " cannot be rendered. Reasoning arrives separated from the answer; cap it"
-                        + " with a reasoning budget, or pick a model with a thinking switch");
+                        + " cannot be rendered. Reasoning arrives separated from the answer;"
+                        + (cappable ? " cap it with a reasoning budget, or" : "")
+                        + " pick a model with a thinking switch");
     }
 
     /** The family's own answer: only it can say ALWAYS, and it costs no tokenizer lookup. */
@@ -701,6 +704,8 @@ public final class ChatEngine implements AutoCloseable {
                         encoded.replyPrefix());
         if (request.contentGbnf() != null) {
             sampler = constrained(request.contentGbnf(), sampler, encoded.replyPrefix());
+        } else if (request.forcedTool() == ForcedTool.NONE) {
+            sampler = guarded(sampler, encoded.replyPrefix(), request.tools().isEmpty());
         }
         if (request.forcedTool() != ForcedTool.NONE) {
             // a named choice pins that tool alone; the prompt still frames every offered tool
@@ -781,12 +786,17 @@ public final class ChatEngine implements AutoCloseable {
             return Thinking.banMarkers(
                     sampler, loaded.tokenizer(), markers.open(), markers.close());
         }
+        // under THINK_FLOOR only an always-reasoning model still thinks (off cannot be rendered):
+        // a zero budget closes its span at once, so the few tokens left buy answer, not analysis
+        boolean underFloor = maxTokens >= 0 && maxTokens < THINK_FLOOR;
         int budget =
                 reasoningOverride != null
                         ? reasoningOverride
-                        : loaded.template()
-                                .map(template -> template.defaultReasoningBudget(maxTokens))
-                                .orElse(maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
+                        : underFloor
+                                ? 0
+                                : loaded.template()
+                                        .map(template -> template.defaultReasoningBudget(maxTokens))
+                                        .orElse(maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
         // prompt-opened spans (replyPrefix carries the open id): the cap must start ARMED - the
         // open token never passes through the sampler on those families
         boolean startInThink = false;
@@ -808,6 +818,23 @@ public final class ChatEngine implements AutoCloseable {
                 reasoningMessage,
                 markers.open(),
                 markers.close());
+    }
+
+    /**
+     * The reply language as a GUARD on an otherwise free reply: a fresh walk of the family's own
+     * parser, seeded like the parser, masks every position the language scaffolds - a call header,
+     * a channel name, the marks around a span - while free holes stay the model's own. Without it a
+     * control token the language never expects there (gpt-oss: a second {@code <|channel|>} right
+     * after a recipient, a greedy near-tie after a tool result) is sampled, the control rule cuts
+     * the reply, and the caller sees no answer at all. Whole-render families without a language
+     * have nothing to guard with.
+     */
+    private Sampler guarded(Sampler base, IntSequence replyPrefix, boolean noTools) {
+        Optional<ReplyParser> parser = loaded.template().map(t -> t.parser(loaded.tokenizer()));
+        if (parser.isEmpty() || !(parser.get() instanceof ReplyLanguage.Walk walk)) return base;
+        walk.seed(replyPrefix);
+        if (noTools) walk.disableToolCalls();
+        return walk.sampler(base, endTurn());
     }
 
     private Sampler constrained(String contentGbnf, Sampler base, IntSequence replyPrefix) {

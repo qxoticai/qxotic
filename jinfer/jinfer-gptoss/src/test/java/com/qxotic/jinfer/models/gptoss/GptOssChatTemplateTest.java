@@ -1,15 +1,18 @@
 package com.qxotic.jinfer.models.gptoss;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
@@ -355,5 +358,36 @@ class GptOssChatTemplateTest {
         public Iterator<Map.Entry<String, Integer>> iterator() {
             return IntStream.range(0, size()).mapToObj(id -> Map.entry(token(id), id)).iterator();
         }
+    }
+
+    @Test
+    void harmonyAlwaysReasons() {
+        assertEquals(ChatTemplate.ThinkingPolicy.ALWAYS, TEMPLATE.thinkingPolicy());
+    }
+
+    /**
+     * The AUTO language as a sampler guard: inside a call header only the header's own
+     * continuations are admissible. A second {@code <|channel|>} right after the recipient (a
+     * greedy near-tie gpt-oss lands on after a tool result) used to be sampled, cut the reply and
+     * left the caller with no answer.
+     */
+    @Test
+    void theGuardRejectsAStrayChannelMarkInsideACallHeader() {
+        ReplyLanguage.Walk guard = (ReplyLanguage.Walk) TEMPLATE.parser(TOKENIZER);
+        guard.sampler(Sampler.ARGMAX, special("<|return|>"));
+        guard.feed(special("<|channel|>"));
+        feed(guard, TOKENIZER.encode("commentary to=functions.now").toArray());
+        MemoryView<MemorySegment> logits = zeros();
+        assertTrue(guard.maskLogits(logits));
+        assertEquals(
+                Float.NEGATIVE_INFINITY, Views.getFloat(logits, special("<|channel|>"), "logits"));
+        assertEquals(
+                0f, Views.getFloat(logits, special("<|message|>"), "logits"), "the body may open");
+        assertEquals(
+                0f,
+                Views.getFloat(logits, special("<|constrain|>"), "logits"),
+                "or the constrain adornment");
+        assertEquals(0f, logit(logits, 'w'), "or more of the recipient name");
+        assertFalse(guard.ended());
     }
 }

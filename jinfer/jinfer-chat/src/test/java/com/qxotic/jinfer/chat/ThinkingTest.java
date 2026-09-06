@@ -90,12 +90,14 @@ class ThinkingTest {
     }
 
     @Test
-    void aZeroBudgetBansBothMarkersFromTheFirstDraw() {
+    void aZeroBudgetClosesTheSpanTheModelOpensAndThenBansBothMarkers() {
         Sampler capped = cap(0, false, null);
-        // thought(0) >= budget(0) before anything is sampled: a zero budget is a ban
-        assertEquals(A, capped.sampleToken(logits(OPEN)));
-        assertEquals(A, capped.sampleToken(logits(CLOSE)));
-        assertEquals(A, capped.sampleToken(logits(A)));
+        // a zero budget is NOT a ban on the opener - that is the mask, and a model that always
+        // reasons then reasons on as visible text; it is the closed span, forced at once
+        assertEquals(OPEN, capped.sampleToken(logits(OPEN)));
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(OPEN)), "spent: the opener is banned");
+        assertEquals(A, capped.sampleToken(logits(CLOSE)), "and so is the close");
     }
 
     @Test

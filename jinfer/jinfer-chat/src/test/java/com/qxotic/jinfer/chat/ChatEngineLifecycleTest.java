@@ -16,6 +16,7 @@ import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -384,12 +386,25 @@ final class ChatEngineLifecycleTest {
                                 (proxy, method, args) -> {
                                     throw new UnsupportedOperationException(method.getName());
                                 });
+        // a vocabulary that knows no spelling: the refusal's remedy asks whether the family has
+        // think markers, and a throwing tokenizer would turn that question into the failure
+        Vocabulary vocabulary =
+                (Vocabulary)
+                        Proxy.newProxyInstance(
+                                Vocabulary.class.getClassLoader(),
+                                new Class<?>[] {Vocabulary.class},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("findId"))
+                                        return OptionalInt.empty();
+                                    throw new UnsupportedOperationException(method.getName());
+                                });
         Tokenizer tokenizer =
                 (Tokenizer)
                         Proxy.newProxyInstance(
                                 Tokenizer.class.getClassLoader(),
                                 new Class<?>[] {Tokenizer.class},
                                 (proxy, method, args) -> {
+                                    if (method.getName().equals("vocabulary")) return vocabulary;
                                     throw new UnsupportedOperationException(method.getName());
                                 });
         set(
