@@ -60,6 +60,7 @@ class AiServicesPatternsIT {
                         .contextLength(4096)
                         .maxOutputTokens(256)
                         .thinking(false)
+                        .temperature(0.0)
                         .seed(7L)
                         .build();
         streaming = model.streaming();
@@ -118,7 +119,9 @@ class AiServicesPatternsIT {
 
         List<ToolExecution> executed = new CopyOnWriteArrayList<>();
         CompletableFuture<ChatResponse> done = new CompletableFuture<>();
-        watchman.ask("What is the server room temperature right now? Answer in one sentence.")
+        watchman.ask(
+                        "What is the server room temperature right now? Use the tool, then one"
+                                + " sentence.")
                 .onToolExecuted(executed::add)
                 .onPartialResponse(delta -> {})
                 .onCompleteResponse(done::complete)

@@ -2,7 +2,7 @@
 //JAVA 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 //DEPS com.qxotic:jinfer-bom:0.2.0@pom
-//DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-llama
+//DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-qwen35
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
 //DEPS org.slf4j:slf4j-nop:2.0.18
 
@@ -17,8 +17,7 @@ import java.util.List;
 
 public class Logic {
 
-    private static final String DEFAULT_MODEL =
-            "unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0";
+    private static final String DEFAULT_MODEL = "unsloth/Qwen3.5-4B-GGUF:Q8_0"; // reasons before it answers
 
     private static final String ANSWER_GRAMMAR = """
             root ::= word "," ws word "," ws word
@@ -53,8 +52,11 @@ public class Logic {
         int correct = 0;
         try (var model = JinferChatModel.builder()
                 .model(modelRef)
-                .maxOutputTokens(128)
+                .maxOutputTokens(1024)
                 .thinking(true)
+                .reasoningBudget(768) // room to reason before the grammar takes the answer
+                .temperature(0.0) // deterministic: the same puzzles score the same every run
+                .seed(42L)
                 .build()) {
             for (Puzzle puzzle : PUZZLES) {
                 String reply = ask(model, puzzle);

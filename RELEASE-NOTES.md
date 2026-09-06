@@ -18,7 +18,10 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Spring Boot examples.** `mvn spring-boot:run` runs with full tiered compilation; its default `optimizedLaunch` pinned C1 and slowed the Vector API about a hundredfold.
 - **CLI errors.** A bad `--cache` file, a read-only cache root and other wrapped IO failures print one `ERROR` line.
 
+- **Tools with constrained output.** A request may offer tools together with a JSON schema or a grammar: the family's reply language then offers a tool call or the document, so langchain4j's tool-round-then-structured-answer loop works in one service call.
+  A forced tool call with constrained output is still refused, and a family without a combined language refuses at request time.
+- **Stringified arguments.** A small model that sends an array or object argument as a JSON string, Llama 3.2 1B does, gets it unwrapped where the tool's schema declares that shape.
+
 ### Known limits
 
-- Tools and a JSON response format in one request are refused on families without a combined reply language; run the tool round first, then request the constrained answer.
-- Llama 3.2 1B sends array and object arguments as JSON strings; larger models in the family do not.
+- The `Logic` gallery demo and the model-backed tests pin temperature 0 and a seed; small models still fail some puzzles, which the demo reports honestly.

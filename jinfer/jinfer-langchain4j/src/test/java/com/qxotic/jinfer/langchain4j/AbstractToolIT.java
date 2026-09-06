@@ -235,6 +235,8 @@ abstract class AbstractToolIT {
                         .modelPath(modelPath())
                         .contextLength(4096)
                         .maxOutputTokens(1024)
+                        .temperature(0.0) // greedy and seeded: a red run is a fact, not a draw
+                        .seed(7L)
                         // deliberately UNSEEDED: this battery is about the wire holding for
                         // whatever the model says, and one pinned draw is not a safer sample -
                         // it just picks a different trajectory for all nine families at once.
