@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class ProcessRssTest {
 
     @Test
-    void linuxAndMacReportAResidentSetAndEverywhereElseIsEmptyWithAReason() {
+    void linuxMacAndWindowsReportAResidentSetAndEverywhereElseIsEmptyWithAReason() {
         OptionalLong rss = ProcessRss.kilobytes();
         if (ProcessRss.supported()) {
             assertTrue(rss.isPresent() && rss.getAsLong() > 10_000, "kB: " + rss);
