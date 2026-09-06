@@ -1624,12 +1624,6 @@ public final class Grammar {
         }
         for (int i = 0; i < rules.size(); i++)
             if (rules.get(i) == null) rules.set(i, new Rule(i, List.of()));
-        // `root ::= ` (or `root ::= |`) compiles to a model that can say nothing at all; like the
-        // unbalanced parenthesis above, a typo must be an error, not a silent empty reply
-        if (!rules.isEmpty()
-                && rules.get(0).body().stream().allMatch(e -> e instanceof Rule.Element.Pipe)) {
-            throw new IllegalArgumentException("the root rule matches only the empty string");
-        }
         return rules;
     }
 

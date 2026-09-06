@@ -26,7 +26,7 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Vector API check in the library.** A JVM started without `--add-modules jdk.incubator.vector` fails at model load with the one-line remedy, on every binding, instead of a NoClassDefFoundError inside a kernel.
 - **Builder ranges.** The langchain4j builders refuse an out-of-range temperature, top-p, top-k, min-p, output limit, timeout or speech speed where it is set, with the range in the message.
 - **`--raw-prompt` writes the start token.** The raw lane prepends the model's start tokens (BOS, where the family has one) unless the prompt already spells them, as llama.cpp's `add_bos_token` does; an LFM 2.5 raw prompt no longer decodes to noise.
-- **Errors that name the mistake.** An unknown flag in last position is reported as unknown; the server answers 404 for a model name it does not serve and refuses `max_tokens: 0`; the always-reasoning refusal names the lever on every front end; a GBNF root that can only match the empty string is an error; a null embedding batch fails instead of returning nothing; the Narrate and Detect demos report a missing image in one line.
+- **Errors that name the mistake.** An unknown flag in last position is reported as unknown; the server answers 404 for a model name it does not serve and refuses `max_tokens: 0`; the always-reasoning refusal names the lever on every front end; a null embedding batch fails instead of returning nothing; the Narrate and Detect demos report a missing image in one line.
 - **LFM2.5 thinking policy.** A checkpoint whose template never writes a think span (the 350M instruct) reports `NONE`; the ones that do keep `OPTIONAL` or `ALWAYS`.
 
 ### Known limits

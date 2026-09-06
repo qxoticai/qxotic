@@ -86,15 +86,4 @@ final class GrammarTest {
                         () -> Grammar.of("root := \"yes\" | \"no\"", VOCAB));
         assertTrue(e.getMessage().contains("::="), e.getMessage());
     }
-
-    @Test
-    void aRootThatMatchesOnlyTheEmptyStringIsAnError() {
-        // `root ::= ` compiled to a model that could say nothing, with no error
-        for (String grammar : new String[] {"root ::= ", "root ::= |", "root ::= \n"}) {
-            IllegalArgumentException e =
-                    assertThrows(IllegalArgumentException.class, () -> Grammar.of(grammar, VOCAB));
-            assertTrue(e.getMessage().contains("empty string"), e.getMessage());
-        }
-        Grammar.of("root ::= \"\" | \"a\"", VOCAB); // an empty ALTERNATIVE is still fine
-    }
 }
