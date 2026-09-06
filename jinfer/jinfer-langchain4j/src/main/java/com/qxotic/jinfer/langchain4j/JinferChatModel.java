@@ -706,6 +706,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * 0.8. Per-request values override; pass 0 for greedy argmax.
          */
         public Builder temperature(Double temperature) {
+            if (temperature != null && !(temperature >= 0))
+                throw new IllegalArgumentException("temperature must be >= 0: " + temperature);
             this.temperature = temperature;
             return this;
         }
@@ -715,6 +717,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * recommended value (the GGUF's {@code general.sampling.top_p}, or the port's), else 0.95.
          */
         public Builder topP(Double topP) {
+            if (topP != null && !(topP > 0 && topP <= 1))
+                throw new IllegalArgumentException("topP must be within (0, 1]: " + topP);
             this.topP = topP;
             return this;
         }
@@ -724,6 +728,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * general.sampling.top_k}, or the port's), else 40. Per-request values override.
          */
         public Builder topK(Integer topK) {
+            if (topK != null && topK < 0)
+                throw new IllegalArgumentException("topK must be >= 0 (0 disables it): " + topK);
             this.topK = topK;
             return this;
         }
@@ -734,6 +740,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * {@link JinferChatRequestParameters#minP} overrides.
          */
         public Builder minP(Double minP) {
+            if (minP != null && !(minP >= 0 && minP <= 1))
+                throw new IllegalArgumentException("minP must be within [0, 1]: " + minP);
             this.minP = minP;
             return this;
         }
@@ -744,6 +752,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * scaffold would return empty text.
          */
         public Builder maxOutputTokens(Integer maxOutputTokens) {
+            if (maxOutputTokens != null && maxOutputTokens < -1)
+                throw new IllegalArgumentException(
+                        "maxOutputTokens must be -1 (the remaining context) or >= 0: "
+                                + maxOutputTokens);
             this.maxOutputTokens = maxOutputTokens;
             return this;
         }
@@ -822,6 +834,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /** Wall-clock deadline per request; unset = none. Exceeding it finishes with LENGTH. */
         public Builder timeout(Duration timeout) {
+            if (timeout == null || timeout.isNegative())
+                throw new IllegalArgumentException("timeout must be >= 0: " + timeout);
             this.timeout = timeout;
             return this;
         }

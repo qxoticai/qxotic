@@ -328,6 +328,10 @@ public final class ModelStore {
         require(
                 scheme.equals("https") || scheme.equals("http"),
                 "cannot fetch '" + url + "': only http and https URLs are supported");
+        String ref = repositoryRef(uri);
+        if (ref != null) {
+            return resolveRef(ModelRef.parse(ref)); // a repository page pasted from the browser
+        }
         String path = uri.getPath() == null ? "" : uri.getPath();
         require(
                 !path.isEmpty() && !path.endsWith("/") && !nameOf(path).isEmpty(),
@@ -361,10 +365,75 @@ public final class ModelStore {
                         + " publishes no checksum - verifying size only");
         try {
             Fetch.download(url, dest, size, null, headers);
+            rejectWebPage(dest, url);
         } catch (IOException e) {
             throw new UncheckedIOException("could not fetch " + url + ": " + e, e);
         }
         return dest;
+    }
+
+    /**
+     * The ref a browser URL of a known host spells, or null for any other URL. {@code
+     * https://huggingface.co/owner/repo} is the repository, {@code .../tree/rev} pins its revision,
+     * {@code .../blob/rev/file} and {@code .../resolve/rev/file} name a file in it; the host's
+     * default revision is dropped so the ref reads as a user would write it.
+     */
+    static String repositoryRef(URI uri) {
+        String hostName = uri.getHost();
+        ModelRef.Host host = hostName == null ? null : ModelRef.lookup(hostName);
+        if (host == null) {
+            return null;
+        }
+        String path = uri.getPath() == null ? "" : uri.getPath();
+        if (!host.prefix.isEmpty() && path.startsWith(host.prefix + "/")) {
+            path = path.substring(host.prefix.length());
+        }
+        List<String> parts = new ArrayList<>();
+        for (String segment : path.split("/")) {
+            if (!segment.isEmpty()) {
+                parts.add(segment);
+            }
+        }
+        if (parts.size() < 2) {
+            return null;
+        }
+        String repo = host.name + "/" + parts.get(0) + "/" + parts.get(1);
+        if (parts.size() == 2) {
+            return repo;
+        }
+        String view = parts.get(2);
+        if (parts.size() < 4
+                || !(view.equals("tree") || view.equals("blob") || view.equals("resolve"))) {
+            return null; // discussions, settings and the like: not a model
+        }
+        String revision = parts.get(3);
+        if (!revision.equals(host.defaultRevision)) {
+            repo += "@" + revision;
+        }
+        List<String> file = parts.subList(4, parts.size());
+        return file.isEmpty() ? repo : repo + "/" + String.join("/", file);
+    }
+
+    /**
+     * A URL that answers with HTML is a page, never a model: the file leaves the cache and the
+     * caller learns what to write instead (an hf.co page has already been turned into a ref above,
+     * so this is the mirror or the private server that redirected to a login page).
+     */
+    static void rejectWebPage(Path file, String url) throws IOException {
+        byte[] head;
+        try (var in = Files.newInputStream(file)) {
+            head = in.readNBytes(256);
+        }
+        String text = new String(head, StandardCharsets.ISO_8859_1).stripLeading();
+        if (text.regionMatches(true, 0, "<!doctype", 0, 9)
+                || text.regionMatches(true, 0, "<html", 0, 5)) {
+            Files.deleteIfExists(file);
+            throw new IllegalArgumentException(
+                    "'"
+                            + url
+                            + "' served a web page, not a model file. A repository is"
+                            + " owner/repo[:quant]; a file in it is owner/repo/path/file.gguf");
+        }
     }
 
     /**

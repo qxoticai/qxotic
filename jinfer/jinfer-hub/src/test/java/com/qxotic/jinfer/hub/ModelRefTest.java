@@ -433,4 +433,14 @@ class ModelRefTest {
         }
         assertEquals(4096, Files.size(part), "setLength can");
     }
+
+    @Test
+    void theBrowserSpellingOfAHostIsTheSameRef() {
+        ModelRef ref = ModelRef.parse("huggingface.co/unsloth/Qwen3.5-4B-GGUF:Q8_0");
+        assertEquals("hf.co", ref.host());
+        assertEquals("unsloth", ref.owner());
+        assertEquals("Q8_0", ref.quant());
+        assertTrue(ModelRef.isRef("huggingface.co/unsloth/Qwen3.5-4B-GGUF"));
+        assertEquals("modelscope.cn", ModelRef.parse("www.modelscope.cn/a/b").host());
+    }
 }

@@ -22,6 +22,10 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
   A forced tool call with constrained output is still refused, and a family without a combined language refuses at request time.
 - **Stringified arguments.** A small model that sends an array or object argument as a JSON string, Llama 3.2 1B does, gets it unwrapped where the tool's schema declares that shape.
 - **Gemma 4 video.** A `VideoContent` (langchain4j), a video `Media` (Spring AI) or a `video_url` part (server) renders the way the Gemma 4 processor does: every sampled frame is a timestamped image block, `mm:ss <|image>...<image|>`, one space between frames. Qwen 3.5 still refuses video: its vision tower takes images only.
+- **Browser URLs as model refs.** A repository page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope alike) is the ref it spells, so it lands in the same cache as `owner/repo`; `huggingface.co/owner/repo` is accepted as a host spelling. A plain URL that answers with a web page is refused and never kept in the cache.
+- **Vector API check in the library.** A JVM started without `--add-modules jdk.incubator.vector` fails at model load with the one-line remedy, on every binding, instead of a NoClassDefFoundError inside a kernel.
+- **Builder ranges.** The langchain4j builders refuse an out-of-range temperature, top-p, top-k, min-p, output limit, timeout or speech speed where it is set, with the range in the message.
+- **`--raw-prompt` writes the start token.** The raw lane prepends the model's start tokens (BOS, where the family has one) unless the prompt already spells them, as llama.cpp's `add_bos_token` does; an LFM 2.5 raw prompt no longer decodes to noise.
 
 ### Known limits
 

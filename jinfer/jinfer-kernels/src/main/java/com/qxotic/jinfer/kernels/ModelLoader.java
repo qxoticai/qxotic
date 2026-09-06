@@ -52,6 +52,20 @@ public final class ModelLoader {
      * (Kernels read via raw addresses ({@code Segments.GLOBAL_SEGMENT}) that bypass liveness
      * checks; ports run {@code Views.checkAlive} once per forward on the weight/KV views.)
      */
+    /**
+     * The one-line remedy for a JVM started without the incubating Vector API, which every kernel
+     * needs: a library user otherwise meets a NoClassDefFoundError deep in the packer. Every loader
+     * passes through here; a native image has the module compiled in.
+     */
+    public static void requireVectorApi() {
+        if (System.getProperty("org.graalvm.nativeimage.imagecode") == null
+                && ModuleLayer.boot().findModule("jdk.incubator.vector").isEmpty()) {
+            throw new IllegalStateException(
+                    "jinfer needs the Vector API: start the JVM with --add-modules"
+                            + " jdk.incubator.vector (and --enable-native-access=ALL-UNNAMED)");
+        }
+    }
+
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
             FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors(), arena);
@@ -78,6 +92,7 @@ public final class ModelLoader {
             Collection<TensorEntry> tensors,
             Arena arena)
             throws IOException {
+        requireVectorApi();
         long available = fileChannel.size() - tensorDataOffset;
         for (TensorEntry tensor : tensors) {
             long end =

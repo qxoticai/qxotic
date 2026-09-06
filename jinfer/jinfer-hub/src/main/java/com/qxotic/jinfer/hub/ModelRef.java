@@ -21,6 +21,7 @@ import java.util.Locale;
  *   unsloth/Qwen3.5-4B-GGUF@a1b2c3d:Q8_0                                 pin a revision (branch, tag, commit)
  *   hf.co/unsloth/Qwen3.5-4B-GGUF:Q8_0                                   the default host, written out
  *   modelscope.cn/unsloth/Qwen3.5-4B-GGUF:Q8_0                           ModelScope, the other host
+ *   huggingface.co/unsloth/Qwen3.5-4B-GGUF:Q8_0                          the browser's spelling, same ref
  * </pre>
  *
  * <p>Position is the whole grammar: {@code /path} says WHERE, {@code :quant} says WHICH, {@code
@@ -51,14 +52,23 @@ public record ModelRef(
      * prefix, token and mirror variables, default branch). Adding a host is one enum constant.
      */
     enum Host {
-        HF("hf.co", "main", "HF_TOKEN", "HF_ENDPOINT", "https://huggingface.co", ""),
+        HF(
+                "hf.co",
+                "main",
+                "HF_TOKEN",
+                "HF_ENDPOINT",
+                "https://huggingface.co",
+                "",
+                "huggingface.co",
+                "www.huggingface.co"),
         MODELSCOPE(
                 "modelscope.cn",
                 "master",
                 "MODELSCOPE_API_TOKEN",
                 "MODELSCOPE_ENDPOINT",
                 "https://modelscope.cn",
-                "/models");
+                "/models",
+                "www.modelscope.cn");
 
         final String name;
         final String defaultRevision;
@@ -67,19 +77,26 @@ public record ModelRef(
         final String defaultBase;
         final String prefix;
 
+        /**
+         * Other spellings of the same host, as a browser shows them; the ref keeps {@link #name}.
+         */
+        final List<String> aliases;
+
         Host(
                 String name,
                 String defaultRevision,
                 String tokenEnv,
                 String endpointEnv,
                 String defaultBase,
-                String prefix) {
+                String prefix,
+                String... aliases) {
             this.name = name;
             this.defaultRevision = defaultRevision;
             this.tokenEnv = tokenEnv;
             this.endpointEnv = endpointEnv;
             this.defaultBase = defaultBase;
             this.prefix = prefix;
+            this.aliases = List.of(aliases);
         }
 
         /** The host a ref names ({@link ModelRef#host()}), or null for a host this enum lacks. */
@@ -99,11 +116,11 @@ public record ModelRef(
         }
     }
 
-    /** The host this exact name spells, or null. Only the canonical names are known. */
-    private static Host lookup(String name) {
+    /** The host this name spells, canonical or an alias ({@code huggingface.co}), or null. */
+    static Host lookup(String name) {
         String canonical = name.toLowerCase(Locale.ROOT);
         for (Host host : Host.values()) {
-            if (host.name.equals(canonical)) {
+            if (host.name.equals(canonical) || host.aliases.contains(canonical)) {
                 return host;
             }
         }

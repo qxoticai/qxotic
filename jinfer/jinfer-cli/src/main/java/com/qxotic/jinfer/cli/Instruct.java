@@ -1,10 +1,12 @@
 package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.toknroll.IntSequence;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,10 +16,33 @@ final class Instruct {
 
     private Instruct() {}
 
+    /**
+     * The model's start tokens (BOS, where the family writes one) ahead of a raw prompt, as
+     * llama.cpp's {@code add_bos_token} does: a raw prompt bypasses the chat template, not the
+     * framing every input sequence begins with. A prompt that already spells them is left alone.
+     */
+    static int[] withPromptStart(IntSequence start, int[] tokens) {
+        int n = start.length();
+        if (n == 0) return tokens;
+        boolean present = tokens.length >= n;
+        for (int i = 0; present && i < n; i++) present = tokens[i] == start.intAt(i);
+        if (present) return tokens;
+        int[] out = new int[n + tokens.length];
+        for (int i = 0; i < n; i++) out[i] = start.intAt(i);
+        System.arraycopy(tokens, 0, out, n, tokens.length);
+        return out;
+    }
+
     static void run(ChatEngine engine, Sampling sampling, Options options) {
         if (options.rawPrompt()) {
             int[] tokens =
-                    SpecialTokens.encode(engine.loaded().tokenizer(), options.prompt()).toArray();
+                    withPromptStart(
+                            engine.loaded()
+                                    .template()
+                                    .map(ChatTemplate::promptStart)
+                                    .orElse(IntSequence.empty()),
+                            SpecialTokens.encode(engine.loaded().tokenizer(), options.prompt())
+                                    .toArray());
             Turn turn = Turn.startRaw(engine.loaded().tokenizer(), tokens, options);
             ChatEngine.Completion completion;
             try (ChatEngine.Prepared prepared =

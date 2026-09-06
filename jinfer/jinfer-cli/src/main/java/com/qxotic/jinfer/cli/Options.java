@@ -646,7 +646,8 @@ public record Options(
         out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
         out.println(
                 "  --raw-prompt                  bypass chat template and tokenize --prompt"
-                        + " directly (no system prompt, thinking or budget)");
+                        + " directly, after the model's start token (no system prompt,"
+                        + " thinking or budget)");
         out.println(
                 "  --think <off|on|inline>       on: reason, thoughts on stderr (default); off: do"
                         + " not reason, the model answers directly (a model that always reasons"
