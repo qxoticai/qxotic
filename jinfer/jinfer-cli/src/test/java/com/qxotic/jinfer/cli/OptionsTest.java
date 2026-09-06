@@ -468,4 +468,18 @@ final class OptionsTest {
                         () -> Options.parse(new String[] {"--model", model.toString(), "--temp"}));
         assertTrue(e.getMessage().contains("Missing argument for option --temp"), e.getMessage());
     }
+
+    @Test
+    void theValueOptionTableMatchesTheUsageText() {
+        var text = new java.io.ByteArrayOutputStream();
+        Options.printUsage(
+                new java.io.PrintStream(text, true, java.nio.charset.StandardCharsets.UTF_8));
+        java.util.Set<String> documented = new java.util.TreeSet<>();
+        for (String line : text.toString(java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
+            var m = java.util.regex.Pattern.compile("^  (-[-a-z]+(?:, -[-a-z]+)*) <").matcher(line);
+            if (m.find()) documented.addAll(java.util.List.of(m.group(1).split(", ")));
+        }
+        assertTrue(documented.size() > 20, "the usage text lists the value options: " + documented);
+        assertEquals(documented, new java.util.TreeSet<>(Options.VALUE_OPTIONS));
+    }
 }

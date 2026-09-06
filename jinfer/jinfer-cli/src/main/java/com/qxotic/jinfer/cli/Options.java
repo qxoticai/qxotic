@@ -336,9 +336,13 @@ public record Options(
         return root.getMessage();
     }
 
-    /** Every option that takes a value: the labels of the value switch in {@link #parse}. */
-    private static final java.util.Set<String> VALUE_OPTIONS =
-            java.util.Set.of(
+    /**
+     * Every option that takes a value: the labels of the value switch in {@link #parse}, so an
+     * unknown flag is reported as unknown even where an argument could have followed it. A test
+     * holds this table to the usage text.
+     */
+    static final Set<String> VALUE_OPTIONS =
+            Set.of(
                     "--prompt",
                     "-p",
                     "--system-prompt",
