@@ -4,19 +4,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.ProcessRss;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -175,7 +176,9 @@ class JinferLifecycleIT {
     void repeatedLoadChatCloseIsFootprintBounded() throws Exception {
         // the leak gate that would have caught the 51GB battery OOM: every cycle frees its
         // states deterministically at close, so N cycles cost ~one model, not N
+        Assumptions.assumeTrue(ProcessRss.supported(), ProcessRss.unsupportedReason());
         long before = rssKb();
+        Assumptions.assumeTrue(before > 0, "the resident set could not be read");
         for (int i = 0; i < 6; i++) {
             JinferChatModel m = load();
             m.chat(UserMessage.from("hi"));
@@ -187,13 +190,9 @@ class JinferLifecycleIT {
                 grownMb < 1500, "RSS grew " + grownMb + " MB over 6 load/chat/close cycles");
     }
 
-    private static long rssKb() throws Exception {
-        for (String line : Files.readAllLines(Path.of("/proc/self/status"))) {
-            if (line.startsWith("VmRSS:")) {
-                return Long.parseLong(line.replaceAll("[^0-9]", ""));
-            }
-        }
-        throw new IllegalStateException("no VmRSS");
+    /** Linux through /proc, macOS through ps; 0 when the reading fails (the gate then skips). */
+    private static long rssKb() {
+        return ProcessRss.kilobytes().orElse(0);
     }
 
     @Test
