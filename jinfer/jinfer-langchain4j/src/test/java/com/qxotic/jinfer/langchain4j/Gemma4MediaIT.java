@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -11,12 +12,17 @@ import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import java.awt.Color;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +53,53 @@ class Gemma4MediaIT extends AbstractMediaIT {
     @Override
     Path mediaCompanion() {
         return TestModels.require(MMPROJ_REF);
+    }
+
+    @Test
+    void consumesVideoAsTimestampedFrames() throws Exception {
+        // the sampler is the ffmpeg seam: here it hands back two solid frames, red then blue,
+        // so the case needs no codec and no fixture file
+        Media.Video clip =
+                new Media.Video(
+                        List.of(
+                                new Media.Video.Frame(
+                                        ImageCodec.decode(
+                                                Base64.getDecoder().decode(solidPngB64(Color.RED))),
+                                        Duration.ZERO),
+                                new Media.Video.Frame(
+                                        ImageCodec.decode(
+                                                Base64.getDecoder()
+                                                        .decode(solidPngB64(Color.BLUE))),
+                                        Duration.ofSeconds(1))));
+        Path placeholder = Files.createTempFile("clip", ".mp4");
+        try (JinferChatModel videoModel =
+                JinferChatModel.builder()
+                        .modelPath(modelPath())
+                        .companionPath("media", mediaCompanion())
+                        .videoSampler(ignored -> clip)
+                        .contextLength(4096)
+                        .maxOutputTokens(64)
+                        .temperature(0.0)
+                        .thinking(false)
+                        .build()) {
+            String answer =
+                    videoModel
+                            .chat(
+                                    UserMessage.from(
+                                            VideoContent.from(placeholder.toUri().toString()),
+                                            TextContent.from(
+                                                    "Name the solid colour of the first frame and"
+                                                            + " of the last frame, in order, two"
+                                                            + " words.")))
+                            .aiMessage()
+                            .text()
+                            .toLowerCase();
+            assertTrue(
+                    answer.indexOf("red") >= 0 && answer.indexOf("blue") > answer.indexOf("red"),
+                    answer);
+        } finally {
+            Files.deleteIfExists(placeholder);
+        }
     }
 
     @Test

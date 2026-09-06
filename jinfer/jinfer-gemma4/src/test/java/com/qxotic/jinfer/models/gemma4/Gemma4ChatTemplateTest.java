@@ -31,6 +31,7 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -103,6 +104,83 @@ final class Gemma4ChatTemplateTest {
             }
         }
         assertEquals(1, projections.get());
+    }
+
+    @Test
+    void videoRendersAsTimestampedFrames() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        ContentKey videoKey = new ContentKey("video:test");
+        Media.Image frame = new Media.Image(new float[] {0, 0, 0}, 1, 1, 3);
+        Media.Video video =
+                new Media.Video(
+                        List.of(
+                                new Media.Video.Frame(frame, Duration.ZERO),
+                                new Media.Video.Frame(frame, Duration.ofSeconds(61))));
+        Message message =
+                new Message(
+                        Role.USER,
+                        List.of(new Content.Text("watch "), new Content.Media(video, videoKey)));
+
+        try (Arena arena = Arena.ofConfined()) {
+            Gemma4ChatTemplate template =
+                    new Gemma4ChatTemplate(tokenizer, new TestMedia(arena), false);
+            List<Batch> batches = new ArrayList<>();
+            template.encode(
+                    new Conversation(List.of(message), List.of(), false, ""), 4, batches::add);
+
+            List<Batch.Input.Embeddings> embeddings =
+                    batches.stream()
+                            .map(Batch::input)
+                            .filter(Batch.Input.Embeddings.class::isInstance)
+                            .map(Batch.Input.Embeddings.class::cast)
+                            .toList();
+            assertEquals(2, embeddings.size());
+            assertTrue(embeddings.get(0).bidirectional());
+            assertEquals(new ContentKey("video:test:frame:0"), embeddings.get(0).contentKey());
+            assertEquals(new ContentKey("video:test:frame:1"), embeddings.get(1).contentKey());
+
+            // the processor's replace_video_token: "mm:ss <|image>...<image|>" per frame, one
+            // space between frames
+            IntSequence.Builder out = IntSequence.newBuilder();
+            out.add(SpecialTokens.require(tokenizer, "<bos>"));
+            out.add(SpecialTokens.require(tokenizer, "<|turn>"));
+            out.addAll(tokenizer.encode("user\nwatch 00:00 "));
+            out.add(SpecialTokens.require(tokenizer, "<|image>"));
+            out.add(SpecialTokens.require(tokenizer, "<image|>"));
+            out.addAll(tokenizer.encode(" 01:01 "));
+            out.add(SpecialTokens.require(tokenizer, "<|image>"));
+            out.add(SpecialTokens.require(tokenizer, "<image|>"));
+            out.add(SpecialTokens.require(tokenizer, "<turn|>"));
+            out.addAll(tokenizer.encode("\n"));
+            out.add(SpecialTokens.require(tokenizer, "<|turn>"));
+            out.addAll(tokenizer.encode("model\n"));
+            assertArrayEquals(out.build().toArray(), tokenIds(batches));
+            assertEquals(4, template.mediaPositions(video));
+        }
+    }
+
+    @Test
+    void repeatedVideoReplaysEveryFrame() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        Media.Image frame = new Media.Image(new float[] {0, 0, 0}, 1, 1, 3);
+        Media.Video video =
+                new Media.Video(
+                        List.of(
+                                new Media.Video.Frame(frame, Duration.ZERO),
+                                new Media.Video.Frame(frame, Duration.ofSeconds(1))));
+        Message message =
+                new Message(
+                        Role.USER, List.of(new Content.Media(video, new ContentKey("video:test"))));
+        AtomicInteger projections = new AtomicInteger();
+        try (Arena arena = Arena.ofConfined()) {
+            Gemma4ChatTemplate template =
+                    new Gemma4ChatTemplate(tokenizer, new TestMedia(arena, projections), false);
+            MediaEncodingCache cache = new MediaEncodingCache();
+            for (int pass = 0; pass < 2; pass++) {
+                template.encode(new Conversation(List.of(message)), 4, cache, ignored -> {});
+            }
+        }
+        assertEquals(2, projections.get());
     }
 
     @Test

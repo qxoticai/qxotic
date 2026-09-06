@@ -21,11 +21,12 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-/** Gemma 4 chat framing with structural image and audio input and the tool round-trip. */
+/** Gemma 4 chat framing with structural image, audio and video input and the tool round-trip. */
 public final class Gemma4ChatTemplate implements ChatTemplate {
     private static final String CHANNEL_OPEN = "<|channel>";
     private static final String CHANNEL_CLOSE = "<channel|>";
@@ -375,8 +376,28 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
                             audioOpen,
                             audioClose,
                             false);
-            case Media.Video ignored ->
-                    throw new UnsupportedConversation("Gemma 4 video framing is not ported");
+            case Media.Video video -> writeVideo(out, video, content.contentKey());
+        }
+    }
+
+    /**
+     * A video is its sampled frames, each a timestamped image block: {@code mm:ss <|image>...
+     * <image|>}, frames joined by one space - the Gemma 4 processor's {@code replace_video_token}
+     * (timestamps floor to whole seconds). Each frame caches under its own key, derived from the
+     * video's, so a repeated video replays every frame's projection.
+     */
+    private void writeVideo(PromptWriter out, Media.Video video, ContentKey videoKey) {
+        List<Media.Video.Frame> frames = video.frames();
+        for (int i = 0; i < frames.size(); i++) {
+            Media.Video.Frame frame = frames.get(i);
+            long seconds = frame.timestamp().toSeconds();
+            // Locale.ROOT: the model wants ASCII digits whatever the JVM's default locale prints
+            String stamp = String.format(Locale.ROOT, "%02d:%02d ", seconds / 60, seconds % 60);
+            out.text((i == 0 ? "" : " ") + stamp);
+            ContentKey frameKey =
+                    videoKey == null ? null : new ContentKey(videoKey.value() + ":frame:" + i);
+            writeMedia(
+                    out, frame.image(), frameKey, Media.Image.class, imageOpen, imageClose, true);
         }
     }
 
@@ -407,9 +428,8 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
         return switch (m) {
             case Media.Image img -> plan(Media.Image.class, img);
             case Media.Audio aud -> plan(Media.Audio.class, aud);
-            default ->
-                    throw new UnsupportedOperationException(
-                            m.getClass().getSimpleName() + " is not supported by this model");
+            case Media.Video video ->
+                    video.frames().stream().mapToInt(f -> plan(Media.Image.class, f.image())).sum();
         };
     }
 

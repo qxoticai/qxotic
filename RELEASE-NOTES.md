@@ -21,6 +21,7 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Tools with constrained output.** A request may offer tools together with a JSON schema or a grammar: the family's reply language then offers a tool call or the document, so langchain4j's tool-round-then-structured-answer loop works in one service call.
   A forced tool call with constrained output is still refused, and a family without a combined language refuses at request time.
 - **Stringified arguments.** A small model that sends an array or object argument as a JSON string, Llama 3.2 1B does, gets it unwrapped where the tool's schema declares that shape.
+- **Gemma 4 video.** A `VideoContent` (langchain4j), a video `Media` (Spring AI) or a `video_url` part (server) renders the way the Gemma 4 processor does: every sampled frame is a timestamped image block, `mm:ss <|image>...<image|>`, one space between frames. Qwen 3.5 still refuses video: its vision tower takes images only.
 
 ### Known limits
 
