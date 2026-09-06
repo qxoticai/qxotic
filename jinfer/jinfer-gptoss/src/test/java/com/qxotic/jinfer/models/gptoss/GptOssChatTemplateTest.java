@@ -390,4 +390,25 @@ class GptOssChatTemplateTest {
         assertEquals(0f, logit(logits, 'w'), "or more of the recipient name");
         assertFalse(guard.ended());
     }
+
+    /** With tools offered, a constrained reply may still be a call: both headers are admissible. */
+    @Test
+    void aConstrainedReplyWithCallsOffersTheCallHeaderToo() {
+        ReplyLanguage.Selection with =
+                TEMPLATE.constrainedReply("root ::= \"{\\\"a\\\":1}\"", true).orElseThrow();
+        ReplyLanguage.Walk walk = with.walk();
+        walk.sampler(Sampler.ARGMAX, special("<|return|>"));
+        walk.feed(special("<|channel|>"));
+        MemoryView<MemorySegment> logits = zeros();
+        assertTrue(walk.maskLogits(logits));
+        assertEquals(0f, logit(logits, 'f'), "final");
+        assertEquals(0f, logit(logits, 'c'), "commentary, a call header");
+        ReplyLanguage.Selection without =
+                TEMPLATE.constrainedReply("root ::= \"{\\\"a\\\":1}\"", false).orElseThrow();
+        ReplyLanguage.Walk alone = without.walk();
+        alone.sampler(Sampler.ARGMAX, special("<|return|>"));
+        alone.feed(special("<|channel|>"));
+        feed(alone, TOKENIZER.encode("commentary to=").toArray());
+        assertTrue(alone.ended(), "without tools a call header is not on offer");
+    }
 }

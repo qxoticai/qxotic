@@ -242,12 +242,35 @@ public final class ReplyLanguage {
             return auto.walk();
         }
 
-        /** A required grammar-shaped content reply; requests with tools are rejected upstream. */
+        /** A required grammar-shaped content reply, no tools offered. */
         public Selection constrained(String contentGbnf) {
+            return constrained(contentGbnf, false);
+        }
+
+        /**
+         * A grammar-shaped content reply; with {@code calls}, the model may instead call one or
+         * more offered tools - the tool-round-then-structured-answer loop, where every request
+         * carries both the tools and the schema and the model decides which it is doing.
+         */
+        public Selection constrained(String contentGbnf, boolean calls) {
+            Node document = content(gbnf(contentGbnf));
+            Node body =
+                    calls
+                            ? alt(
+                                    document,
+                                    rep(
+                                            call(
+                                                    this.calls,
+                                                    mark(callOpen),
+                                                    free(),
+                                                    mark(callClose)),
+                                            1,
+                                            -1))
+                            : document;
             return Selection.of(
                     seq(
                             opt(think(mark(thinkOpen), free(), mark(thinkClose))),
-                            content(gbnf(contentGbnf)),
+                            body,
                             opt(terminator)),
                     tokenizer);
         }
@@ -334,6 +357,16 @@ public final class ReplyLanguage {
             }
             validate();
             this.forcedPrefix = extractForcedPrefix();
+        }
+
+        /** Whether {@code token} decodes to whitespace only (and to at least one byte). */
+        boolean isWhitespace(int token) {
+            byte[] bytes = tokenizer.decodeBytes(new int[] {token});
+            if (bytes.length == 0) return false;
+            for (byte b : bytes) {
+                if (b != ' ' && b != '\n' && b != '\r' && b != '\t') return false;
+            }
+            return true;
         }
 
         /**
@@ -1026,6 +1059,14 @@ public final class ReplyLanguage {
                 // generates anything. A free-opening point still enters: that is prompt text
                 // becoming the parse's own content region, and seed() drops the text afterwards.
                 if (seeding && sel.regionEntry[op.arg] != null) return Fragment.EMPTY;
+                // whitespace at a point that also offers marks is framing, not a commitment: Qwen
+                // writes a blank line after </think> before <tool_call>, and a JSON grammar's
+                // leading whitespace rule would take that newline into the document, after which
+                // the call opener is no longer admissible and the tool round the model reasoned
+                // about never happens
+                if (sel.regionEntry[op.arg] != null
+                        && !cl.marks().isEmpty()
+                        && sel.isWhitespace(token)) return Fragment.EMPTY;
                 enter(sel.regions.get(op.arg), op.next);
                 return feedRegion(token);
             }

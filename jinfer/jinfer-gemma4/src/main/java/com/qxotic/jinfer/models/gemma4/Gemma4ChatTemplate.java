@@ -466,6 +466,11 @@ public final class Gemma4ChatTemplate implements ChatTemplate {
     }
 
     @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(spans().constrained(contentGbnf, calls));
+    }
+
+    @Override
     public ThinkMarkers thinkMarkers() {
         return CHANNEL_MARKERS;
     }

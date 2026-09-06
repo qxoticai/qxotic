@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -326,5 +327,95 @@ class MappingsTest {
         assertEquals(
                 "{\"origin\":\"Zurich\",\"flexible\":null}",
                 ai.toolExecutionRequests().get(0).arguments());
+    }
+
+    /** With tools offered, the line waits for a tool result: round one is the tool decision. */
+    @Test
+    void theSchemaLineWaitsForTheToolRound() {
+        List<Message> roundOne = List.of(Message.user("Report the weather in Lisbon."));
+        assertFalse(JinferChatModel.afterAToolRound(roundOne));
+        List<Message> roundTwo =
+                List.of(
+                        Message.user("Report the weather in Lisbon."),
+                        new Message(
+                                Role.ASSISTANT,
+                                List.of(
+                                        new Content.ToolCall(
+                                                "c1",
+                                                "temperature",
+                                                Map.of("city", "Lisbon"),
+                                                null))),
+                        new Message(Role.TOOL, List.of(new Content.ToolResult("c1", "21.5"))));
+        assertTrue(JinferChatModel.afterAToolRound(roundTwo));
+    }
+
+    /** A stringified array or object is unwrapped only where the tool declares that shape. */
+    @Test
+    void stringifiedArgumentsUnwrapWhereTheToolDeclaresAnArrayOrObject() {
+        Tool tag =
+                new Tool(
+                        "tag_ticket",
+                        Map.of(
+                                "type",
+                                "function",
+                                "function",
+                                Map.of(
+                                        "name",
+                                        "tag_ticket",
+                                        "parameters",
+                                        Map.of(
+                                                "type",
+                                                "object",
+                                                "properties",
+                                                Map.of(
+                                                        "priorities", Map.of("type", "array"),
+                                                        "amounts", Map.of("type", "object"),
+                                                        "note", Map.of("type", "string"))))));
+        AiMessage sent =
+                AiMessage.builder()
+                        .toolExecutionRequests(
+                                List.of(
+                                        ToolExecutionRequest.builder()
+                                                .id("c1")
+                                                .name("tag_ticket")
+                                                .arguments(
+                                                        "{\"priorities\":\"[\\\"high\\\"]\",\"amounts\":\"{\\\"a\\\":1}\",\"note\":\"[keep]\"}")
+                                                .build()))
+                        .build();
+        AiMessage fixed = Mappings.unwrapStringifiedArguments(sent, List.of(tag));
+        assertEquals(
+                "{\"priorities\":[\"high\"],\"amounts\":{\"a\":1},\"note\":\"[keep]\"}",
+                fixed.toolExecutionRequests().get(0).arguments());
+        assertEquals("c1", fixed.toolExecutionRequests().get(0).id());
+        // a well-formed call, or an unknown tool, passes through untouched (same instance)
+        AiMessage fine =
+                AiMessage.builder()
+                        .toolExecutionRequests(
+                                List.of(
+                                        ToolExecutionRequest.builder()
+                                                .name("tag_ticket")
+                                                .arguments("{\"priorities\":[\"low\"]}")
+                                                .build()))
+                        .build();
+        assertTrue(Mappings.unwrapStringifiedArguments(fine, List.of(tag)) == fine);
+        assertTrue(Mappings.unwrapStringifiedArguments(sent, List.of()) == sent);
+        // the pythonic spelling a 1B model falls into is unwrapped too
+        AiMessage pythonic =
+                AiMessage.builder()
+                        .toolExecutionRequests(
+                                List.of(
+                                        ToolExecutionRequest.builder()
+                                                .name("tag_ticket")
+                                                .arguments(
+                                                        "{\"amounts\":\"{'travel': 120.5, 'meals':"
+                                                                + " 42}\"}")
+                                                .build()))
+                        .build();
+        assertEquals(
+                "{\"amounts\":{\"travel\":120.5,\"meals\":42}}",
+                Mappings.unwrapStringifiedArguments(pythonic, List.of(tag))
+                        .toolExecutionRequests()
+                        .get(0)
+                        .arguments());
     }
 }

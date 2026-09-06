@@ -209,20 +209,16 @@ class ValidationTest {
     }
 
     @Test
-    void toolsAndConstrainedOutputAreMutuallyExclusive() {
+    void offeredToolsMayShareARequestWithConstrainedOutput() {
+        // the tool-round-then-structured-answer loop sends both on every request; whether a
+        // family can offer a call OR the document is the engine's call at request time, and a
+        // family without that language refuses there - validation no longer pre-empts it
         Map<String, Object> request = new HashMap<>(user("return JSON"));
         request.put(
                 "tools",
                 List.of(Map.of("type", "function", "function", Map.of("name", "weather"))));
         request.put("response_format", Map.of("type", "json_object"));
-        IllegalArgumentException error =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () ->
-                                Validation.validateGenerationParams(
-                                        request, "model", ServerConfig.local(0)));
-        assertTrue(error.getMessage().contains("cannot be used"), error.getMessage());
-
+        Validation.validateGenerationParams(request, "model", ServerConfig.local(0));
         request.put("tool_choice", "none");
         Validation.validateGenerationParams(request, "model", ServerConfig.local(0));
     }

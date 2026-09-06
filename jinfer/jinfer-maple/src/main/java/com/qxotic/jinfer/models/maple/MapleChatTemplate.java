@@ -36,6 +36,11 @@ public final class MapleChatTemplate implements ChatTemplate {
         return Optional.of(spans().constrained(contentGbnf));
     }
 
+    @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(spans().constrained(contentGbnf, calls));
+    }
+
     private ReplyLanguage.Spans spans() {
         if (spans == null)
             spans =

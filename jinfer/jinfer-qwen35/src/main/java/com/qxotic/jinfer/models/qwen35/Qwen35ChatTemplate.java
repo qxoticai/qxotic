@@ -403,6 +403,11 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
         return Optional.of(spans().constrained(contentGbnf));
     }
 
+    @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(spans().constrained(contentGbnf, calls));
+    }
+
     /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
     @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {

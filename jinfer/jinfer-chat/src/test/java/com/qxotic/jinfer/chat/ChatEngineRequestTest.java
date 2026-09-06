@@ -325,16 +325,15 @@ final class ChatEngineRequestTest {
     }
 
     @Test
-    void toolsAndConstrainedOutputCannotShareARequest() {
+    void offeredToolsMayShareARequestWithConstrainedOutputButAForcedCallMayNot() {
         String grammar = "root ::= \"x\"";
         assertDoesNotThrow(() -> request(List.of(), grammar, ChatEngine.ForcedTool.NONE));
         assertDoesNotThrow(() -> request(ONE_TOOL, null, ChatEngine.ForcedTool.NONE));
+        // offered tools with a stated format: the family's language offers a call OR the document
+        assertDoesNotThrow(() -> request(ONE_TOOL, grammar, ChatEngine.ForcedTool.NONE));
 
         for (ChatEngine.ForcedTool choice :
-                List.of(
-                        ChatEngine.ForcedTool.NONE,
-                        ChatEngine.ForcedTool.ANY,
-                        new ChatEngine.ForcedTool.Named("f"))) {
+                List.of(ChatEngine.ForcedTool.ANY, new ChatEngine.ForcedTool.Named("f"))) {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,

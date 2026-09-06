@@ -341,7 +341,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     public ChatResponse doChat(ChatRequest request) {
         try (ChatEngine.Prepared p = prepare(request)) {
             ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
-            AiMessage ai = Mappings.toAiMessage(done.reply());
+            AiMessage ai =
+                    Mappings.unwrapStringifiedArguments(
+                            Mappings.toAiMessage(done.reply()), offeredTools(request));
             if (done.stopped()) {
                 ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
             }
@@ -387,6 +389,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
+    /** The tools this request offers, after the cached prefix's precedence rule. */
+    List<Tool> offeredTools(ChatRequest request) {
+        return prefix.resolveTools(statedTools(request.parameters()));
+    }
+
     ChatEngine.Prepared prepare(ChatRequest request) {
         ChatRequestParameters p = request.parameters();
         // request > view default (CachedPrompt.resolveTools, THE precedence rule): an override
@@ -406,7 +413,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // words should be told by whoever wrote the request.
         Map<String, Object> schema = schemaOf(p);
         messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
-        if (schema != null && describeSchema) describeSchemaOnTheLastUserMessage(messages, schema);
+        if (schema != null && describeSchema && (tools.isEmpty() || afterAToolRound(messages))) {
+            // with tools offered the line waits for the tool round: read on round one it made
+            // models answer from memory instead of calling the tool they were told to use
+            describeSchemaOnTheLastUserMessage(messages, schema);
+        }
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
@@ -447,6 +458,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * schema capability, so the model produces the whole object instead of the shortest valid one.
      * {@link Builder#describeSchema describeSchema(false)} leaves the prompt untouched.
      */
+    static boolean afterAToolRound(List<Message> messages) {
+        return messages.stream().anyMatch(m -> m.role() == Role.TOOL);
+    }
+
     static void describeSchemaOnTheLastUserMessage(
             List<Message> messages, Map<String, Object> schema) {
         for (int i = messages.size() - 1; i >= 0; i--) {
@@ -517,16 +532,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (p.presencePenalty() != null)
             throw new UnsupportedFeatureException("presencePenalty is not supported");
         ResponseFormat rf = p.responseFormat();
-        if (rf != null && rf.type() == ResponseFormatType.JSON && tools) {
-            throw new UnsupportedFeatureException(
-                    "tools and a JSON response format cannot be used in the same request; run the"
-                            + " tool round first, then request constrained output without tools");
-        }
+        // tools with a grammar or a JSON schema are one request: the family's reply language
+        // offers a call OR the document, and a family without that language refuses in the engine
         String grammar = p instanceof JinferChatRequestParameters j ? j.grammar() : null;
-        if (grammar != null && tools)
-            throw new UnsupportedFeatureException(
-                    "tools together with a grammar are not supported: grammar-constrained output"
-                            + " cannot admit tool-call syntax");
         if (grammar != null && rf != null && rf.type() == ResponseFormatType.JSON)
             throw new UnsupportedFeatureException(
                     "grammar and a JSON response format are mutually exclusive: both constrain the"

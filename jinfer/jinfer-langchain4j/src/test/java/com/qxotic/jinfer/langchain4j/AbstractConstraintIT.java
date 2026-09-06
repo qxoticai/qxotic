@@ -7,10 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.json.Json;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
+import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
@@ -57,6 +57,8 @@ abstract class AbstractConstraintIT {
                         .modelPath(modelPath())
                         .contextLength(4096)
                         .maxOutputTokens(512)
+                        .temperature(0.0) // greedy and seeded: a red run is a fact, not a draw
+                        .seed(7L)
                         .build();
     }
 
@@ -154,23 +156,39 @@ abstract class AbstractConstraintIT {
                 "reasoning must flow unconstrained while output is grammar-bound");
     }
 
+    /** Tools with a grammar are one request: the reply is a call or the grammar's document. */
     @Test
-    void grammarRejectsToolsLoudly() {
+    void grammarWithToolsYieldsACallOrTheDocument() {
         ToolSpecification noop =
                 ToolSpecification.builder()
                         .name("noop")
                         .parameters(JsonObjectSchema.builder().build())
                         .build();
+        ChatResponse r =
+                model.chat(
+                        ChatRequest.builder()
+                                .messages(UserMessage.from("Say x."))
+                                .parameters(
+                                        JinferChatRequestParameters.builder()
+                                                .grammar("root ::= \"x\"")
+                                                .toolSpecifications(noop)
+                                                .build())
+                                .build());
+        assertTrue(
+                r.aiMessage().hasToolExecutionRequests() || "x".equals(r.aiMessage().text()),
+                "a call or the grammar's document, never free text: " + r.aiMessage());
+        // a FORCED call contradicts a stated format and stays refused
         assertThrows(
-                UnsupportedFeatureException.class,
+                IllegalArgumentException.class,
                 () ->
                         model.chat(
                                 ChatRequest.builder()
-                                        .messages(UserMessage.from("hi"))
+                                        .messages(UserMessage.from("Say x."))
                                         .parameters(
                                                 JinferChatRequestParameters.builder()
                                                         .grammar("root ::= \"x\"")
                                                         .toolSpecifications(noop)
+                                                        .toolChoice(ToolChoice.REQUIRED)
                                                         .build())
                                         .build()));
     }

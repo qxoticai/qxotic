@@ -327,6 +327,98 @@ final class Mappings {
         return type instanceof String t ? t : "any";
     }
 
+    /**
+     * Small models (Llama 3.2 1B) send an array or object argument as a JSON STRING, {@code
+     * "priorities": "[\"high\"]"}; the tool then receives a string where it declared a list. Where
+     * the offered tool's schema declares an array or object and the value is a string that parses
+     * to one, the parsed value takes its place. Anything else is left exactly as sent.
+     */
+    @SuppressWarnings("unchecked")
+    static AiMessage unwrapStringifiedArguments(AiMessage ai, List<Tool> tools) {
+        if (!ai.hasToolExecutionRequests() || tools.isEmpty()) return ai;
+        List<ToolExecutionRequest> requests = new ArrayList<>(ai.toolExecutionRequests().size());
+        boolean changed = false;
+        for (ToolExecutionRequest request : ai.toolExecutionRequests()) {
+            Map<String, Object> declared = declaredProperties(tools, request.name());
+            Object parsed = declared.isEmpty() ? null : parseQuietly(request.arguments());
+            if (!(parsed instanceof Map<?, ?> args)) {
+                requests.add(request);
+                continue;
+            }
+            Map<String, Object> arguments = new LinkedHashMap<>((Map<String, Object>) args);
+            boolean touched = false;
+            for (Map.Entry<String, Object> e : arguments.entrySet()) {
+                if (!(e.getValue() instanceof String text)) continue;
+                String kind = declaredKind(declared.get(e.getKey()));
+                String trimmed = text.strip();
+                boolean wanted =
+                        ("array".equals(kind) && trimmed.startsWith("["))
+                                || ("object".equals(kind) && trimmed.startsWith("{"));
+                if (!wanted) continue;
+                Object inner = parseQuietly(trimmed);
+                if (("array".equals(kind) && inner instanceof List)
+                        || ("object".equals(kind) && inner instanceof Map)) {
+                    e.setValue(inner);
+                    touched = true;
+                }
+            }
+            if (touched) {
+                changed = true;
+                requests.add(
+                        ToolExecutionRequest.builder()
+                                .id(request.id())
+                                .name(request.name())
+                                .arguments(JsonCodec.stringify(arguments))
+                                .build());
+            } else {
+                requests.add(request);
+            }
+        }
+        if (!changed) return ai;
+        return AiMessage.builder()
+                .text(ai.text())
+                .thinking(ai.thinking())
+                .toolExecutionRequests(requests)
+                .attributes(ai.attributes())
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> declaredProperties(List<Tool> tools, String name) {
+        for (Tool tool : tools) {
+            if (!tool.name().equals(name)) continue;
+            // the OpenAI shape this adapter builds: {type: function, function: {parameters}}
+            Object function = tool.definition().get("function");
+            Map<?, ?> holder = function instanceof Map<?, ?> f ? f : tool.definition();
+            if (holder.get("parameters") instanceof Map<?, ?> parameters
+                    && parameters.get("properties") instanceof Map<?, ?> properties) {
+                return (Map<String, Object>) properties;
+            }
+        }
+        return Map.of();
+    }
+
+    private static String declaredKind(Object schema) {
+        return schema instanceof Map<?, ?> m && m.get("type") instanceof String type ? type : "";
+    }
+
+    private static Object parseQuietly(String json) {
+        try {
+            return JsonCodec.parse(json);
+        } catch (RuntimeException malformed) {
+            // the pythonic spelling small models fall into: {'travel': 120.5} - single quotes
+            // and no double quote anywhere, so swapping them is lossless
+            if (json.indexOf('"') < 0 && json.indexOf('\'') >= 0) {
+                try {
+                    return JsonCodec.parse(json.replace('\'', '"'));
+                } catch (RuntimeException stillMalformed) {
+                    return null;
+                }
+            }
+            return null;
+        }
+    }
+
     /** One schema element as a plain JSON-Schema map (recursive; ordering is insertion order). */
     static Map<String, Object> toSchemaMap(JsonSchemaElement element) {
         Map<String, Object> map = new LinkedHashMap<>();

@@ -56,6 +56,15 @@ public interface ChatTemplate {
     }
 
     /**
+     * As {@link #constrainedReply(String)}, with {@code calls} the model may call an offered tool
+     * instead of writing the document. Empty when the family has no combined language: the engine
+     * then refuses tools together with constrained output.
+     */
+    default Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return calls ? Optional.empty() : constrainedReply(contentGbnf);
+    }
+
+    /**
      * The model's think-span marker spellings - {@link ThinkMarkers#GENERIC} unless the family
      * frames reasoning differently (Gemma 4's {@code <|channel>}/{@code <channel|>} channel span).
      * The sampling policy - masking the markers when thinking is off, capping the span when on -

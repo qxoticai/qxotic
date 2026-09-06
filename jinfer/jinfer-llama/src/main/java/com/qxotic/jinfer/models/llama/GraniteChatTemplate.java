@@ -47,6 +47,11 @@ public final class GraniteChatTemplate implements ChatTemplate {
         return Optional.of(spans().constrained(contentGbnf));
     }
 
+    @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(spans().constrained(contentGbnf, calls));
+    }
+
     /** Forced calls: the wire carries an offered name; the model supplies its arguments. */
     @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {

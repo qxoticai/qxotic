@@ -1002,4 +1002,35 @@ public final class ReplyLanguageTest {
         assertTrue(steps.get(0).reasoning(), "the flushed byte belongs to the thought");
         assertEquals(new Step("x", false), steps.get(1));
     }
+
+    /**
+     * Tools offered together with a stated format: the model either writes the document or calls a
+     * tool, never free text - the tool-round-then-structured-answer loop in one language.
+     */
+    @Test
+    void aStatedFormatWithCallsAdmitsADocumentOrACallAndNothingElse() {
+        Node withCalls =
+                seq(
+                        opt(think(mark("<think>"), free(), mark("</think>"))),
+                        alt(content(gbnf("root ::= \"{\\\"a\\\":1}\"")), rep(weatherCall(), 1, -1)),
+                        opt(mark("<end>")));
+        Walk w = Selection.of(withCalls, TOK).walk();
+        w.sampler(Sampler.ARGMAX, END);
+        boolean[] start = admitted(w);
+        assertTrue(start[ch('{')], "the document may begin");
+        assertTrue(start[CALL], "or a call");
+        assertTrue(start[THINK], "or reasoning first");
+        assertFalse(start[ch('x')], "free text is not on offer");
+        assertFalse(start[END], "an empty reply does not comply");
+
+        Walk call = Selection.of(withCalls, TOK).walk();
+        call.sampler(Sampler.ARGMAX, END);
+        run(call, CALL, ch('{'), ch('"'), ch('a'), ch('"'), ch(':'), ch('1'), ch('}'), END_CALL);
+        boolean[] afterCall = admitted(call);
+        assertTrue(afterCall[CALL], "another call may follow");
+        assertTrue(afterCall[END], "or the turn ends");
+        assertFalse(afterCall[ch('{')], "a document after a call is not this loop's shape");
+        Message m = call.finish();
+        assertEquals(1, m.content().stream().filter(c -> c instanceof Content.ToolCall).count());
+    }
 }

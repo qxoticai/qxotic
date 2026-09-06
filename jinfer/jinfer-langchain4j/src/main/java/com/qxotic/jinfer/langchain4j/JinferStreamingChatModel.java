@@ -4,6 +4,7 @@ import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.TextStops;
+import com.qxotic.jinfer.chat.Tool;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.StreamingChatModel;
@@ -93,11 +94,12 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
         // the WHOLE preparation is synchronous: every request-shape rejection (unsupported
         // params, media the model cannot frame, remote URLs) throws raw from chat(), unwrapped
         ChatEngine.Prepared p = model.prepare(request);
+        List<Tool> offered = model.offeredTools(request);
         try {
             model.engine.stream(
                     () -> {
                         try (p) {
-                            stream(p, handler);
+                            stream(p, offered, handler);
                         } catch (Throwable t) {
                             handler.onError(t);
                         }
@@ -108,7 +110,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
         }
     }
 
-    private void stream(ChatEngine.Prepared p, StreamingChatResponseHandler handler) {
+    private void stream(
+            ChatEngine.Prepared p, List<Tool> offered, StreamingChatResponseHandler handler) {
         ChatEngine engine = model.engine;
         AtomicBoolean cancelled = new AtomicBoolean();
         StreamingHandle handle =
@@ -156,7 +159,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
         if (done.cancelled()) {
             return; // a cancelled stream ends silently: no complete callback
         }
-        AiMessage ai = Mappings.toAiMessage(done.reply());
+        AiMessage ai =
+                Mappings.unwrapStringifiedArguments(Mappings.toAiMessage(done.reply()), offered);
         if (done.stopped()) {
             ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
         }

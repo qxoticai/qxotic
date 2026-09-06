@@ -481,9 +481,12 @@ public final class ChatEngine implements AutoCloseable {
             tools = tools == null ? List.of() : List.copyOf(tools);
             stops = TextStops.checked(stops);
             forcedTool = forcedTool == null ? ForcedTool.NONE : forcedTool;
-            if (contentGbnf != null && !tools.isEmpty()) {
+            if (contentGbnf != null && forcedTool != ForcedTool.NONE) {
+                // offered tools may share a request with constrained output (the family's
+                // language then offers a call OR the document); a FORCED call contradicts it
                 throw new IllegalArgumentException(
-                        "tools and constrained output cannot be used in the same request");
+                        "a forced tool call and constrained output cannot be used in the same"
+                                + " request");
             }
             if (forcedTool != ForcedTool.NONE) {
                 if (tools.isEmpty()) {
@@ -703,7 +706,12 @@ public final class ChatEngine implements AutoCloseable {
                         request.reasoningMessage(),
                         encoded.replyPrefix());
         if (request.contentGbnf() != null) {
-            sampler = constrained(request.contentGbnf(), sampler, encoded.replyPrefix());
+            sampler =
+                    constrained(
+                            request.contentGbnf(),
+                            !request.tools().isEmpty(),
+                            sampler,
+                            encoded.replyPrefix());
         } else if (request.forcedTool() == ForcedTool.NONE) {
             sampler = guarded(sampler, encoded.replyPrefix(), request.tools().isEmpty());
         }
@@ -837,9 +845,17 @@ public final class ChatEngine implements AutoCloseable {
         return walk.sampler(base, endTurn());
     }
 
-    private Sampler constrained(String contentGbnf, Sampler base, IntSequence replyPrefix) {
+    private Sampler constrained(
+            String contentGbnf, boolean calls, Sampler base, IntSequence replyPrefix) {
         Optional<ReplyLanguage.Selection> family =
-                loaded.template().flatMap(t -> t.constrainedReply(contentGbnf));
+                loaded.template().flatMap(t -> t.constrainedReply(contentGbnf, calls));
+        if (calls && family.isEmpty()) {
+            throw new UnsupportedOperationException(
+                    modelName
+                            + " has no reply language that offers tools together with constrained"
+                            + " output: run the tool round first, then request the constrained"
+                            + " answer without tools");
+        }
         ReplyLanguage.Selection selection =
                 family.orElseGet(
                         () -> {

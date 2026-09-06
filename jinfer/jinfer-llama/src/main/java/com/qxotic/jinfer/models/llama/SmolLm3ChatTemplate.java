@@ -43,6 +43,11 @@ public final class SmolLm3ChatTemplate implements ChatTemplate {
         return Optional.of(spans().constrained(contentGbnf));
     }
 
+    @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(spans().constrained(contentGbnf, calls));
+    }
+
     /** Forced calls: the envelope carries an OFFERED name, the schema binds the arguments. */
     @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {

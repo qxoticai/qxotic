@@ -233,6 +233,11 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(replyLanguage.constrained(contentGbnf, calls));
+    }
+
+    @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {
         if (callableTools.isEmpty()) return Optional.empty();
         return Optional.of(replyLanguage.forcedCall(callableTools, tool -> "[" + tool.name()));

@@ -286,6 +286,11 @@ public final class BailingMoe3ChatTemplate implements ChatTemplate {
     }
 
     @Override
+    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+        return Optional.of(spans.constrained(contentGbnf, calls));
+    }
+
+    @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {
         if (callableTools.isEmpty()) return Optional.empty();
         return Optional.of(spans.forcedCall(callableTools, Tool::name));
