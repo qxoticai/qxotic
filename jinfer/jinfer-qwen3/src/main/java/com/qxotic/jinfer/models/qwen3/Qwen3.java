@@ -140,7 +140,7 @@ public final class Qwen3
                 nPieces = 1;
             }
             case Batch.Input.Sequences seq -> {
-                requireCovers(seq, from + n);
+                EmbeddingModel.requireCovers(seq, from + n);
                 ids = seq.tokens().ids();
                 nPieces = cutPieces(seq.seqLen(), from, n, s);
             }
@@ -151,25 +151,6 @@ public final class Qwen3
         requireTokens(ids);
         forward(s, ids, from, n, nPieces);
         s.advance(batch);
-    }
-
-    /**
-     * A chunk of a packed stream: every length positive, and the layout reaches the chunk's end.
-     * The default {@code embedAll} feeds one context-sized group in batch-capacity chunks, each
-     * carrying the group's FULL layout, so a chunk is shorter than the layout by design.
-     */
-    private static void requireCovers(Batch.Input.Sequences sequences, int end) {
-        long total = 0;
-        int[] lengths = sequences.seqLen();
-        for (int i = 0; i < lengths.length; i++) {
-            if (lengths[i] <= 0)
-                throw new IllegalArgumentException(
-                        "sequence " + i + " has invalid length " + lengths[i]);
-            total += lengths[i];
-        }
-        if (total < end)
-            throw new IllegalArgumentException(
-                    "packed stream of " + total + " tokens ends before row " + end);
     }
 
     private void requireTokens(int[] tokens) {

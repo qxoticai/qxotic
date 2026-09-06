@@ -55,6 +55,26 @@ public interface EmbeddingModel<C extends ContextConfiguration, W, S extends Con
         state.exclusively(() -> embedAll0(state, sequences, sink));
     }
 
+    /**
+     * A chunk of a packed stream: every length positive, and the layout reaches {@code end}. The
+     * default {@link #embedAll} feeds one context-sized group in batch-capacity chunks that each
+     * carry the group's FULL layout, so a chunk is shorter than its layout by design; ports call
+     * this from {@code ingest} instead of demanding equality.
+     */
+    static void requireCovers(Batch.Input.Sequences sequences, int end) {
+        long total = 0;
+        int[] lengths = sequences.seqLen();
+        for (int i = 0; i < lengths.length; i++) {
+            if (lengths[i] <= 0)
+                throw new IllegalArgumentException(
+                        "sequence " + i + " has invalid length " + lengths[i]);
+            total += lengths[i];
+        }
+        if (total < end)
+            throw new IllegalArgumentException(
+                    "packed stream of " + total + " tokens ends before row " + end);
+    }
+
     private static void requireComplete(Batch.Input.Sequences sequences) {
         long total = 0;
         int[] lengths = sequences.seqLen();
