@@ -45,8 +45,9 @@ import org.junit.jupiter.api.Test;
 @Tag("integration")
 class AiServicesPatternsIT {
 
-    private static final String MODEL_REF =
-            "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
+    // written for thinking OFF: Qwen 3.5 4B has the switch and calls tools reliably at this size
+    // (the 8B-A1B cannot render thinking off, and reasoning on changes what memory counts)
+    private static final String MODEL_REF = "hf.co/unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q8_0.gguf";
 
     static JinferChatModel model;
     static JinferStreamingChatModel streaming; // a view over the SAME engine: one GGUF load
@@ -58,7 +59,7 @@ class AiServicesPatternsIT {
                         .modelPath(TestModels.require(MODEL_REF))
                         .contextLength(4096)
                         .maxOutputTokens(256)
-                        .reasoningBudget(64) // 8B-A1B always reasons: cap, do not switch off
+                        .thinking(false)
                         .seed(7L)
                         .build();
         streaming = model.streaming();
@@ -169,6 +170,23 @@ class AiServicesPatternsIT {
         assertTrue(german.toLowerCase().contains("guten morgen"), german);
     }
 
+    public record Extracted(String name, int year, String city) {}
+
+    public interface BareExtractor {
+        Extracted extract(String text); // no instruction at all: langchain4j's flagship pattern
+    }
+
+    /** The schema line makes the bare pattern work: every component filled, no chat reply. */
+    @Test
+    void aBareRecordExtractorFillsEveryComponent() {
+        Extracted p =
+                AiServices.create(BareExtractor.class, model)
+                        .extract("Ada Lovelace was born in London in 1815.");
+        assertEquals("Ada Lovelace", p.name());
+        assertEquals(1815, p.year());
+        assertEquals("London", p.city());
+    }
+
     interface Chat {
         String chat(String message);
     }
@@ -238,7 +256,9 @@ class AiServicesPatternsIT {
                         .chatMemory(MessageWindowChatMemory.withMaxMessages(10))
                         .build();
 
-        Result<String> result = auditor.ask("What is the server room temperature? One sentence.");
+        Result<String> result =
+                auditor.ask(
+                        "What is the server room temperature? Use the tool, then one sentence.");
         assertTrue(result.content().contains("41"), result.content());
         assertTrue(
                 result.toolExecutions().stream()

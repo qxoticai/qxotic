@@ -23,12 +23,18 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
+import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
+import dev.langchain4j.model.chat.request.json.JsonNullSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonReferenceSchema;
+import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.model.output.FinishReason;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -244,5 +250,81 @@ class MappingsTest {
                                                 ImageContent.from(
                                                         URI.create("https://example.com/a.png")))),
                                 VideoSampler.UNIFORM));
+    }
+
+    // ---- the schema line: what the grammar cannot tell the model ----
+
+    @Test
+    void describeSchemaSketchesEveryShapeInOneLine() {
+        JsonObjectSchema item =
+                JsonObjectSchema.builder()
+                        .addStringProperty("sku")
+                        .addIntegerProperty("qty")
+                        .build();
+        JsonObjectSchema root =
+                JsonObjectSchema.builder()
+                        .addStringProperty("name", "full name")
+                        .addIntegerProperty("year")
+                        .addEnumProperty("genre", List.of("comedy", "drama"))
+                        .addProperty(
+                                "address",
+                                JsonObjectSchema.builder().addStringProperty("city").build())
+                        .addProperty("items", JsonArraySchema.builder().items(item).build())
+                        .addProperty(
+                                "nickname",
+                                JsonAnyOfSchema.builder()
+                                        .anyOf(new JsonStringSchema(), new JsonNullSchema())
+                                        .build())
+                        .addProperty("ref", JsonReferenceSchema.builder().reference("Item").build())
+                        .definitions(Map.of("Item", item))
+                        .required("name", "year")
+                        .build();
+        assertEquals(
+                "Reply with JSON of this shape: {\"name\": string (full name), \"year\": integer,"
+                        + " \"genre\": \"comedy\"|\"drama\", \"address\": {\"city\": string},"
+                        + " \"items\": [{\"sku\": string, \"qty\": integer}], \"nickname\":"
+                        + " string|null, \"ref\": {\"sku\": string, \"qty\": integer}} Leave out a"
+                        + " field the text does not give.",
+                Mappings.describeSchema(Mappings.toSchemaMap(root)));
+    }
+
+    @Test
+    void theSchemaLineLandsOnTheLastUserMessageOnly() {
+        List<Message> messages =
+                new ArrayList<>(
+                        List.of(
+                                Message.system("Be terse."),
+                                Message.user("first"),
+                                Message.assistant("ok"),
+                                Message.user("Extract the person from: Ada, 1815.")));
+        JinferChatModel.describeSchemaOnTheLastUserMessage(
+                messages,
+                Mappings.toSchemaMap(
+                        JsonObjectSchema.builder()
+                                .addStringProperty("name")
+                                .addIntegerProperty("year")
+                                .build()));
+        assertEquals("first", messages.get(1).text(), "earlier user turns are untouched");
+        assertEquals(
+                "Extract the person from: Ada, 1815.\n\nReply with JSON of this shape: {\"name\":"
+                        + " string, \"year\": integer} Leave out a field the text does not give.",
+                messages.get(3).text());
+        assertEquals(Role.USER, messages.get(3).role());
+    }
+
+    /** A model may send a null argument; the adapter forwards JSON null instead of failing. */
+    @Test
+    void aNullToolArgumentIsForwardedAsJsonNull() {
+        Map<String, Object> args = new java.util.LinkedHashMap<>();
+        args.put("origin", "Zurich");
+        args.put("flexible", null);
+        Message reply =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(new Content.ToolCall("c1", "book_flight", args, null)));
+        AiMessage ai = Mappings.toAiMessage(reply);
+        assertEquals(
+                "{\"origin\":\"Zurich\",\"flexible\":null}",
+                ai.toolExecutionRequests().get(0).arguments());
     }
 }

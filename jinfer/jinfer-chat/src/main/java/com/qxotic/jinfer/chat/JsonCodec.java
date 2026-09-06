@@ -10,17 +10,20 @@ import java.util.Map;
  * The one place the external JSON library meets the engine's value model: {@code Json.NULL} maps to
  * Java {@code null}, and decimals to {@code double}.
  */
-final class JsonCodec {
+public final class JsonCodec {
     private static final Json.ParseOptions OPTIONS =
             Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
 
     private JsonCodec() {}
 
-    static Object parse(String text) {
+    public static Object parse(String text) {
         return fromLibrary(Json.parse(text, OPTIONS));
     }
 
-    static String stringify(Object value) {
+    /**
+     * Serializes an engine value; a Java {@code null} inside a map or list is JSON {@code null}.
+     */
+    public static String stringify(Object value) {
         return Json.stringify(toLibrary(value));
     }
 

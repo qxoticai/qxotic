@@ -3,8 +3,10 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
+import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.VideoSampler;
@@ -77,6 +79,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final ChatRequestParameters defaults;
     final boolean thinking;
     final Integer reasoningBudget;
+    final boolean describeSchema;
     final String reasoningBudgetMessage;
     final Duration timeout;
     final List<ChatModelListener> listeners;
@@ -131,6 +134,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         try {
             this.thinking = b.thinking;
             this.reasoningBudget = b.reasoningBudget;
+            this.describeSchema = b.describeSchema;
             this.reasoningBudgetMessage = b.reasoningBudgetMessage;
             framed(() -> engine.requireThinkingRenderable(b.thinking));
             this.timeout = b.timeout == null ? Duration.ZERO : b.timeout;
@@ -188,6 +192,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.defaults = base.defaults;
         this.thinking = base.thinking;
         this.reasoningBudget = base.reasoningBudget;
+        this.describeSchema = base.describeSchema;
         this.reasoningBudgetMessage = base.reasoningBudgetMessage;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
@@ -228,6 +233,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.defaults = base.defaults;
         this.thinking = base.thinking;
         this.reasoningBudget = base.reasoningBudget;
+        this.describeSchema = base.describeSchema;
         this.reasoningBudgetMessage = base.reasoningBudgetMessage;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
@@ -400,6 +406,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // words should be told by whoever wrote the request.
         Map<String, Object> schema = schemaOf(p);
         messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
+        if (schema != null && describeSchema) describeSchemaOnTheLastUserMessage(messages, schema);
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
@@ -434,6 +441,24 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /** The request's JSON schema as a plain map, or null when it carries none. */
+    /**
+     * The one line the grammar cannot convey: which fields exist. Appended to the last user
+     * message, the way langchain4j's own fallback describes the format to providers without a
+     * schema capability, so the model produces the whole object instead of the shortest valid one.
+     * {@link Builder#describeSchema describeSchema(false)} leaves the prompt untouched.
+     */
+    static void describeSchemaOnTheLastUserMessage(
+            List<Message> messages, Map<String, Object> schema) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message m = messages.get(i);
+            if (m.role() != Role.USER) continue;
+            List<Content> content = new ArrayList<>(m.content());
+            content.add(new Content.Text("\n\n" + Mappings.describeSchema(schema)));
+            messages.set(i, new Message(Role.USER, content));
+            return;
+        }
+    }
+
     private static Map<String, Object> schemaOf(ChatRequestParameters p) {
         ResponseFormat rf = p.responseFormat();
         if (rf == null || rf.type() != ResponseFormatType.JSON || rf.jsonSchema() == null)
@@ -538,6 +563,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private boolean thinking = true;
         private Integer reasoningBudget;
         private String reasoningBudgetMessage;
+        private boolean describeSchema = true;
         private Long seed;
         private Duration timeout;
 
@@ -761,6 +787,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder reasoningBudgetMessage(String message) {
             this.reasoningBudgetMessage = message;
+            return this;
+        }
+
+        /**
+         * Whether a JSON-schema response format is also described to the model in one line appended
+         * to the last user message (default true). The grammar enforces the shape either way; the
+         * line is what tells the model which fields exist. Turn it off when your prompt already
+         * states the shape.
+         */
+        public Builder describeSchema(boolean describeSchema) {
+            this.describeSchema = describeSchema;
             return this;
         }
 

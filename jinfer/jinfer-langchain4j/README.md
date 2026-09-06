@@ -188,6 +188,7 @@ Person p = AiServices.create(PersonExtractor.class, model)
 ```
 
 The sampler rejects tokens outside the generated schema. No parser retry loop is required.
+The grammar cannot tell the model which fields exist, so one line describing the shape is appended to the last user message; `describeSchema(false)` on the builder leaves the prompt untouched when it already states the shape.
 
 ## Streaming
 

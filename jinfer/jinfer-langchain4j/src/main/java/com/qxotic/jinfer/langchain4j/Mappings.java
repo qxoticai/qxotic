@@ -4,6 +4,7 @@ import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
@@ -237,6 +238,95 @@ final class Mappings {
     // internal implementation as an oracle, so a semantic drift upstream fails a test rather than
     // a user's prompt. ----
 
+    /**
+     * One line telling the model the shape a JSON response format enforces: {@code Reply with JSON
+     * of this shape: {"name": string (full name), "tags": [string], "genre": "a"|"b"}}. The grammar
+     * guarantees the shape; without this line the model never sees the fields and settles on the
+     * shortest valid object (a lone {@code "name"}, or the words of the chat reply it was
+     * composing). About ten tokens per field, appended to the last user message.
+     */
+    static String describeSchema(Map<String, Object> schema) {
+        // per-field optional marks made models drop fields the text DID give (3/12 seeds on the
+        // 8B); one trailing sentence keeps "fill what is there, omit what is not" without that
+        return "Reply with JSON of this shape: "
+                + sketch(schema, schema)
+                + (hasOptionalProperty(schema) ? " Leave out a field the text does not give." : "");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean hasOptionalProperty(Map<String, Object> node) {
+        if (node.get("properties") instanceof Map<?, ?> props && !props.isEmpty()) {
+            List<?> required = node.get("required") instanceof List<?> r ? r : List.of();
+            for (Map.Entry<?, ?> e : props.entrySet()) {
+                if (!required.contains(e.getKey())) return true;
+                if (e.getValue() instanceof Map<?, ?> m
+                        && hasOptionalProperty((Map<String, Object>) m)) return true;
+            }
+        }
+        return node.get("items") instanceof Map<?, ?> items
+                && hasOptionalProperty((Map<String, Object>) items);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String sketch(Map<String, Object> node, Map<String, Object> root) {
+        if (node.get("$ref") instanceof String ref && ref.startsWith("#/$defs/")) {
+            Object def =
+                    ((Map<String, Object>) root.getOrDefault("$defs", Map.of()))
+                            .get(ref.substring(8));
+            return def instanceof Map<?, ?> m ? sketch((Map<String, Object>) m, root) : "object";
+        }
+        if (node.get("enum") instanceof List<?> values) {
+            StringBuilder sb = new StringBuilder();
+            for (Object v : values)
+                sb.append(sb.isEmpty() ? "" : "|").append('"').append(v).append('"');
+            return sb.toString();
+        }
+        for (String key : List.of("anyOf", "oneOf")) {
+            if (node.get(key) instanceof List<?> branches) {
+                StringBuilder sb = new StringBuilder();
+                for (Object b : branches) {
+                    if (b instanceof Map<?, ?> m)
+                        sb.append(sb.isEmpty() ? "" : "|")
+                                .append(sketch((Map<String, Object>) m, root));
+                }
+                return sb.toString();
+            }
+        }
+        Object type = node.get("type");
+        if (node.get("properties") instanceof Map<?, ?> props || "object".equals(type)) {
+            Map<String, Object> props =
+                    (Map<String, Object>) node.getOrDefault("properties", Map.of());
+            StringBuilder sb = new StringBuilder("{");
+            props.forEach(
+                    (name, child) -> {
+                        if (sb.length() > 1) sb.append(", ");
+                        sb.append('"').append(name).append("\": ");
+                        sb.append(
+                                child instanceof Map<?, ?> m
+                                        ? sketch((Map<String, Object>) m, root)
+                                        : "any");
+                        if (child instanceof Map<?, ?> m
+                                && m.get("description") instanceof String d
+                                && !d.isBlank()) {
+                            sb.append(" (").append(d.strip()).append(')');
+                        }
+                    });
+            return sb.append('}').toString();
+        }
+        if (node.get("items") instanceof Map<?, ?> items || "array".equals(type)) {
+            Object items = node.get("items");
+            return "["
+                    + (items instanceof Map<?, ?> m ? sketch((Map<String, Object>) m, root) : "any")
+                    + "]";
+        }
+        if (type instanceof List<?> types) {
+            StringBuilder sb = new StringBuilder();
+            for (Object t : types) sb.append(sb.isEmpty() ? "" : "|").append(t);
+            return sb.toString();
+        }
+        return type instanceof String t ? t : "any";
+    }
+
     /** One schema element as a plain JSON-Schema map (recursive; ordering is insertion order). */
     static Map<String, Object> toSchemaMap(JsonSchemaElement element) {
         Map<String, Object> map = new LinkedHashMap<>();
@@ -376,7 +466,9 @@ final class Mappings {
                                 ToolExecutionRequest.builder()
                                         .id(c.id().isEmpty() ? "call_" + calls.size() : c.id())
                                         .name(c.name())
-                                        .arguments(Json.stringify(c.arguments()))
+                                        // the engine's value model: a null argument (a model
+                                        // sending "flexible": null) is JSON null, not a crash
+                                        .arguments(JsonCodec.stringify(c.arguments()))
                                         .build());
                 default -> {} // ToolResult/Media never appear in a generated reply
             }
