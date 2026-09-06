@@ -336,6 +336,48 @@ public record Options(
         return root.getMessage();
     }
 
+    /** Every option that takes a value: the labels of the value switch in {@link #parse}. */
+    private static final java.util.Set<String> VALUE_OPTIONS =
+            java.util.Set.of(
+                    "--prompt",
+                    "-p",
+                    "--system-prompt",
+                    "-sp",
+                    "--temp",
+                    "--top-p",
+                    "--top-k",
+                    "--min-p",
+                    "--model",
+                    "-m",
+                    "--mmproj",
+                    "--with",
+                    "--host",
+                    "--port",
+                    "--api-key",
+                    "--cors-origin",
+                    "--threads",
+                    "-t",
+                    "--concurrency",
+                    "--queue-capacity",
+                    "--max-body-mb",
+                    "--write-timeout",
+                    "--request-timeout",
+                    "--seed",
+                    "-s",
+                    "--max-output-tokens",
+                    "-n",
+                    "--context-capacity",
+                    "-c",
+                    "--speculation-depth",
+                    "--stream",
+                    "--echo",
+                    "--reasoning-budget",
+                    "--reasoning-budget-message",
+                    "--color",
+                    "--cache",
+                    "--cache-ro",
+                    "--think");
+
     static Options parse(String[] args) {
         String prompt = null;
         String systemPrompt = null;
@@ -397,6 +439,11 @@ public record Options(
                         optionName = parts[0];
                         nextArg = parts[1];
                     } else {
+                        // an unknown flag in last position is unknown, not short of an argument
+                        require(
+                                VALUE_OPTIONS.contains(optionName),
+                                "Unknown option: %s",
+                                optionName);
                         require(i + 1 < args.length, "Missing argument for option %s", optionName);
                         nextArg = args[i + 1];
                         i += 1;

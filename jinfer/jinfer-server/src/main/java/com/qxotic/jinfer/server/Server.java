@@ -375,7 +375,7 @@ public final class Server {
                         // validator throws are the client's fault. A blanket RuntimeException ->
                         // 400 here told clients their request was malformed whenever this server
                         // had a defect, and echoed the JVM's own text while doing it
-                        Http.sendError(exchange, 400, Http.errorMessage(e));
+                        Http.sendError(exchange, clientStatus(e), Http.errorMessage(e));
                     } catch (RuntimeException e) {
                         Log.LOG.log(
                                 System.Logger.Level.ERROR, "unhandled fault serving " + path, e);
@@ -435,7 +435,7 @@ public final class Server {
                         // the request is genuinely at fault: a bad parameter, or input this model
                         // cannot frame (media on a text-only model, a shape with no codec)
                         metrics.record(Metrics.Outcome.INVALID_REQUEST);
-                        Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
+                        Http.sendErrorQuietly(exchange, clientStatus(e), Http.errorMessage(e));
                     } catch (IOException e) {
                         metrics.record(Metrics.Outcome.CLIENT_DISCONNECTED);
                         Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
@@ -934,5 +934,10 @@ public final class Server {
             metrics.record(Metrics.Outcome.FAILED);
             Http.sendErrorQuietly(exchange, 500, "Internal server error");
         }
+    }
+
+    /** A client fault is a 400, except a model this server does not serve, which is a 404. */
+    private static int clientStatus(RuntimeException e) {
+        return e instanceof Validation.UnknownModel ? 404 : 400;
     }
 }

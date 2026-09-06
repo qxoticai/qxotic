@@ -37,6 +37,10 @@ public class Narrate {
         }
 
         Path image = Path.of(args[0]);
+        if (!Files.isRegularFile(image)) {
+            System.err.println("no such image: " + image);
+            System.exit(2);
+        }
         String visionModelRef = args.length > 1 ? args[1] : DEFAULT_VISION_MODEL;
         String mediaRef = args.length > 2 ? args[2] : DEFAULT_MEDIA;
         String speechModelRef = args.length > 3 ? args[3] : DEFAULT_SPEECH_MODEL;

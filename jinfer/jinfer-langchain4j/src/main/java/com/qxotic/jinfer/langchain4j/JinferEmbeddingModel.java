@@ -172,6 +172,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      */
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
+        if (request.inputs() == null) throw new IllegalArgumentException("inputs cannot be null");
         int outputDimension =
                 request.dimensions() == null ? loaded.dimension() : request.dimensions();
         String prefix =

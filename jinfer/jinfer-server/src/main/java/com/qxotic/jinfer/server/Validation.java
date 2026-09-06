@@ -178,6 +178,15 @@ final class Validation {
      * what is wrong with the request and never what the server is called or how it is configured.
      * The CLI has its own copy for argv, whose failure mode is different: usage text and exit 1.
      */
+    /**
+     * A model name this server does not serve: OpenAI's SDKs expect 404 {@code not_found_error}.
+     */
+    static final class UnknownModel extends IllegalArgumentException {
+        UnknownModel(String message) {
+            super(message);
+        }
+    }
+
     static void require(boolean condition, String messageFormat, Object... args) {
         if (!condition) {
             throw new IllegalArgumentException(messageFormat.formatted(args));
@@ -204,11 +213,10 @@ final class Validation {
         if (request.containsKey("model") && request.get("model") != null) {
             require(request.get("model") instanceof String, "model must be a string");
             String name = (String) request.get("model");
-            require(
-                    name.isBlank() || name.equalsIgnoreCase(servedModel),
-                    "Unknown model: %s (this server serves %s)",
-                    name,
-                    servedModel);
+            if (!name.isBlank() && !name.equalsIgnoreCase(servedModel)) {
+                throw new UnknownModel(
+                        "Unknown model: %s (this server serves %s)".formatted(name, servedModel));
+            }
         }
         if (present(request, "stream")) {
             require(request.get("stream") instanceof Boolean, "stream must be a boolean");
@@ -285,9 +293,10 @@ final class Validation {
                     "Invalid argument: min_p must be within [0, 1]");
         }
         if (Requests.budget(request) != null) {
+            int budget = Values.intValue(Requests.budget(request), -1);
             require(
-                    -1 <= Values.intValue(Requests.budget(request), -1),
-                    "Invalid argument: max_tokens must be -1 (context-bounded) or non-negative");
+                    budget == -1 || budget >= 1,
+                    "Invalid argument: max_tokens must be -1 (context-bounded) or at least 1");
         }
         require(
                 -1 <= Values.intValue(request.get("reasoning_max_tokens"), -1),

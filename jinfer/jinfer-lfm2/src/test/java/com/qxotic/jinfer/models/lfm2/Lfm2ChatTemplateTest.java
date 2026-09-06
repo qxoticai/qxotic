@@ -376,7 +376,9 @@ final class Lfm2ChatTemplateTest {
             Lfm2Vision vision = tinyVision(MemoryAllocators.ofArena(arena));
             Lfm2ChatTemplate template =
                     new Lfm2ChatTemplate(
-                            current, vision, new Lfm2ChatTemplate.Dialect(false, false, true));
+                            current,
+                            vision,
+                            new Lfm2ChatTemplate.Dialect(false, false, true, true));
             MediaEncodingCache mediaCache = new MediaEncodingCache();
             IntSequence.Builder tokens = IntSequence.newBuilder();
             List<Integer> embeddingRows = new ArrayList<>();
@@ -608,10 +610,20 @@ final class Lfm2ChatTemplateTest {
                 "8B-A1B keeps thinking after the last user turn but never opens it: the model"
                         + " does");
         assertEquals(
+                ChatTemplate.ThinkingPolicy.NONE,
+                new Lfm2ChatTemplate(
+                                tokenizer,
+                                null,
+                                new Lfm2ChatTemplate.Dialect(false, true, true, false))
+                        .thinkingPolicy(),
+                "350M's instruct dialect strips past thinking but never writes a span");
+        assertEquals(
                 ChatTemplate.ThinkingPolicy.OPTIONAL,
                 new Lfm2ChatTemplate(
-                                tokenizer, null, new Lfm2ChatTemplate.Dialect(false, true, true))
+                                tokenizer,
+                                null,
+                                new Lfm2ChatTemplate.Dialect(false, true, true, true))
                         .thinkingPolicy(),
-                "350M's instruct dialect preserves history thinking, it does not reason");
+                "a history-keeping dialect that writes the span can reason on request");
     }
 }

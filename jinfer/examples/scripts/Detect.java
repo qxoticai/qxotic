@@ -23,6 +23,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,10 @@ public class Detect {
             System.exit(2);
         }
         Path image = Path.of(args[0]);
+        if (!Files.isRegularFile(image)) {
+            System.err.println("no such image: " + image);
+            System.exit(2);
+        }
         String what = args.length > 1 ? args[1] : "every prominent object";
         String modelRef = args.length > 2 ? args[2] : DEFAULT_MODEL;
         String mediaRef = args.length > 3 ? args[3] : DEFAULT_MEDIA;

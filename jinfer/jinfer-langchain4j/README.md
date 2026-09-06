@@ -170,7 +170,7 @@ instead of being ignored.
 
 `thinkingPolicy()` says how a checkpoint reasons.
 `NONE` has no think span, `OPTIONAL` honours `thinking(false)`, and `ALWAYS` (LFM2.5-8B-A1B) has no non-thinking turn, so `thinking(false)` fails at `build()` with an `UnsupportedFeatureException` naming the remedy.
-Reasoning always arrives separated in `AiMessage.thinking()`; `reasoningBudget(n)` caps the span on every policy, and a per-request `JinferChatRequestParameters.reasoningBudget` wins over the builder's.
+Reasoning always arrives separated in `AiMessage.thinking()`; `reasoningBudget(n)` caps the span on every policy (a budget of 0 makes the model answer first, which costs accuracy even on simple questions: prefer a small positive budget), and a per-request `JinferChatRequestParameters.reasoningBudget` wins over the builder's.
 
 ## Structured output
 

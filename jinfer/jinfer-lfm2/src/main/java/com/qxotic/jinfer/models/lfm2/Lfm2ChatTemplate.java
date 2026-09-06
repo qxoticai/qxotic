@@ -55,13 +55,17 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     public record Dialect(
             boolean promptOpensThinking,
             boolean lastAssistantKeepsThinking,
-            boolean escapesArguments) {
+            boolean escapesArguments,
+            boolean rendersThinking) {
         public static Dialect of(String templateSource) {
             return new Dialect(
                     Lfm2ChatTemplate.promptOpensThinking(templateSource),
                     templateSource.contains("last_assistant_index"),
                     !templateSource.contains("format_arg_value")
-                            || templateSource.contains("replace("));
+                            || templateSource.contains("replace("),
+                    // the 350M's instruct template only strips past "</think>" spans; a template
+                    // that never writes "<think>" has no reasoning turn to render
+                    templateSource.contains("<think>"));
         }
     }
 
@@ -95,11 +99,14 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     public Lfm2ChatTemplate(Tokenizer tokenizer, boolean promptOpensThinking) {
-        this(tokenizer, null, new Dialect(promptOpensThinking, false, true));
+        this(tokenizer, null, new Dialect(promptOpensThinking, false, true, true));
     }
 
     public Lfm2ChatTemplate(Lfm2 model, boolean promptOpensThinking) {
-        this(model.tokenizer(), model.vision(), new Dialect(promptOpensThinking, false, true));
+        this(
+                model.tokenizer(),
+                model.vision(),
+                new Dialect(promptOpensThinking, false, true, true));
     }
 
     Lfm2ChatTemplate(Tokenizer tokenizer, Lfm2Vision vision, Dialect dialect) {
@@ -132,7 +139,7 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     /**
      * 8B-A1B's dialect keeps thinking after the last user turn yet never opens the span: the model
      * opens it on every reply, so there is no non-thinking turn to render. The 2.6B opens the span
-     * itself (closable), the 350M's instruct dialect merely preserves history.
+     * itself (closable); the 350M's instruct template never writes one, so it cannot reason.
      */
     @Override
     public ThinkingPolicy thinkingPolicy() {
@@ -141,7 +148,8 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                         && !dialect.lastAssistantKeepsThinking()
                         && thinkOpen >= 0
                         && thinkClose >= 0;
-        return reasoningOnly ? ThinkingPolicy.ALWAYS : ThinkingPolicy.OPTIONAL;
+        if (reasoningOnly) return ThinkingPolicy.ALWAYS;
+        return dialect.rendersThinking() ? ThinkingPolicy.OPTIONAL : ThinkingPolicy.NONE;
     }
 
     @Override

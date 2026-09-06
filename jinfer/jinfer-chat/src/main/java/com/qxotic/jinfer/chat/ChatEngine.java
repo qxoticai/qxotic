@@ -672,7 +672,10 @@ public final class ChatEngine implements AutoCloseable {
                 modelName
                         + " always reasons: its template has no non-thinking turn, so thinking off"
                         + " cannot be rendered. Reasoning arrives separated from the answer;"
-                        + (cappable ? " cap it with a reasoning budget, or" : "")
+                        + (cappable
+                                ? " cap it with a reasoning budget (--reasoning-budget,"
+                                        + " reasoningBudget(n), reasoning_max_tokens), or"
+                                : "")
                         + " pick a model with a thinking switch");
     }
 

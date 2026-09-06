@@ -91,6 +91,25 @@ class ValidationTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> Validation.validateGenerationParams(request, "model", config));
+        request.put("max_tokens", 0); // OpenAI refuses it too: nothing to generate
+        assertTrue(
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> Validation.validateGenerationParams(request, "model", config))
+                        .getMessage()
+                        .contains("at least 1"));
+    }
+
+    @Test
+    void anotherModelsNameIsNotFound() {
+        ServerConfig config = ServerConfig.local(0);
+        Map<String, Object> request = new HashMap<>(user("hi"));
+        request.put("model", "gpt-4o");
+        Validation.UnknownModel e =
+                assertThrows(
+                        Validation.UnknownModel.class,
+                        () -> Validation.validateGenerationParams(request, "model", config));
+        assertTrue(e.getMessage().contains("gpt-4o") && e.getMessage().contains("model"));
     }
 
     @Test

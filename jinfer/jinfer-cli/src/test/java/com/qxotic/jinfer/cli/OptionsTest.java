@@ -448,4 +448,24 @@ final class OptionsTest {
                 "outer says more",
                 Options.rootMessage(new IllegalStateException("outer says more", io)));
     }
+
+    @Test
+    void anUnknownFlagIsUnknownWhereverItStands(@TempDir Path dir) throws IOException {
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        for (String[] argv :
+                new String[][] {
+                    {"--model", model.toString(), "--wat"},
+                    {"--wat", "--model", model.toString()},
+                    {"--model", model.toString(), "--wat", "x"}
+                }) {
+            IllegalArgumentException e =
+                    assertThrows(IllegalArgumentException.class, () -> Options.parse(argv));
+            assertTrue(e.getMessage().contains("Unknown option: --wat"), e.getMessage());
+        }
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Options.parse(new String[] {"--model", model.toString(), "--temp"}));
+        assertTrue(e.getMessage().contains("Missing argument for option --temp"), e.getMessage());
+    }
 }
