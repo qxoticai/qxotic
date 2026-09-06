@@ -1,5 +1,7 @@
 package com.qxotic.jinfer.testkit;
 
+import com.qxotic.jinfer.hub.HuggingFaceSource;
+import com.qxotic.jinfer.hub.ModelScopeSource;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,7 +17,8 @@ import org.opentest4j.TestAbortedException;
  * file ({@code unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf} - the hub keeps companions out of quant
  * matching on purpose). LOOKUP ONLY: a test never downloads; an absent model aborts the test with
  * the fix in the message. Resolution is {@link ModelStore#find}: jinfer's own cache ({@code
- * -Djinfer.models} / {@code JINFER_MODELS}) first, then the HuggingFace hub cache.
+ * -Djinfer.models} / {@code JINFER_MODELS}) first, then the HuggingFace hub cache, then the fixture
+ * tree next to the git checkout that {@code scripts/download-models.sh} fills.
  *
  * <p>The per-model override: {@code -Djinfer.testModel.<last-ref-segment>=<path>} makes that file
  * serve the ref - e.g. {@code -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=/models/my-Q4_K_M.gguf}
@@ -32,7 +35,7 @@ public final class TestModels {
 
     /** The cached path for {@code ref}, or the test aborts - with the fix in the message. */
     public static Path require(String ref) {
-        return require(ref, ModelStore.standard()::find, System::getProperty);
+        return require(ref, TestModels::lookup, System::getProperty);
     }
 
     static Path require(
@@ -45,8 +48,9 @@ public final class TestModels {
                                                 + ref
                                                 + " - fetch it with scripts/download-models.sh"
                                                 + " (adding a line to scripts/models.txt if it's"
-                                                + " missing), with any HuggingFace client into"
-                                                + " the hub cache, or point -Djinfer.models /"
+                                                + " missing) into ../models next to the checkout,"
+                                                + " with any HuggingFace client into the hub"
+                                                + " cache, or point -Djinfer.models /"
                                                 + " JINFER_MODELS at a cache that has it"));
     }
 
@@ -56,7 +60,39 @@ public final class TestModels {
     }
 
     private static Optional<Path> resolve(String ref) {
-        return resolve(ref, ModelStore.standard()::find, System::getProperty);
+        return resolve(ref, TestModels::lookup, System::getProperty);
+    }
+
+    /**
+     * The standard store (jinfer's cache, then the hub cache), then the fixture tree {@code
+     * scripts/download-models.sh} fills by default: {@code ../models} next to the git checkout.
+     */
+    private static Optional<Path> lookup(String ref) {
+        Optional<Path> cached = ModelStore.standard().find(ref);
+        if (cached.isPresent()) {
+            return cached;
+        }
+        return checkoutModels(Path.of("").toAbsolutePath())
+                .flatMap(root -> fixtureStore(root).find(ref));
+    }
+
+    /** The fixture tree read with the standard hosts: a store without sources finds nothing. */
+    private static ModelStore fixtureStore(Path root) {
+        return ModelStore.of(root, new HuggingFaceSource(), new ModelScopeSource());
+    }
+
+    /**
+     * {@code <parent of the git checkout>/models} when it exists, walking up from {@code start}. A
+     * worktree's {@code .git} is a file, so presence is what marks the checkout.
+     */
+    static Optional<Path> checkoutModels(Path start) {
+        for (Path dir = start; dir != null; dir = dir.getParent()) {
+            if (Files.exists(dir.resolve(".git"))) {
+                Path models = dir.resolveSibling("models");
+                return Files.isDirectory(models) ? Optional.of(models) : Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 
     // Package-private seam for TestModelsTest: the store and the property source are injected so

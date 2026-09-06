@@ -105,4 +105,25 @@ class TestModelsTest {
                                         key -> null));
         assertTrue(failure.getMessage().contains("mmproj-F32.gguf"), failure.getMessage());
     }
+
+    @Test
+    void theFixtureTreeNextToTheCheckoutIsFound() throws IOException {
+        Path checkout = Files.createDirectories(root.resolve("work/qxotic"));
+        Files.createDirectories(checkout.resolve(".git"));
+        Path deep = Files.createDirectories(checkout.resolve("jinfer/jinfer-x"));
+        assertEquals(Optional.empty(), TestModels.checkoutModels(deep), "no ../models yet");
+        Path models = Files.createDirectories(root.resolve("work/models"));
+        assertEquals(Optional.of(models), TestModels.checkoutModels(deep));
+        assertEquals(
+                Optional.empty(),
+                TestModels.checkoutModels(root.resolve("elsewhere")),
+                "no checkout above: nothing");
+        Path worktree = Files.createDirectories(root.resolve("wt/qxotic"));
+        Files.writeString(worktree.resolve(".git"), "gitdir: elsewhere");
+        Path wtModels = Files.createDirectories(root.resolve("wt/models"));
+        assertEquals(
+                Optional.of(wtModels),
+                TestModels.checkoutModels(worktree.resolve("jinfer")),
+                "a worktree marks its checkout with a .git file");
+    }
 }

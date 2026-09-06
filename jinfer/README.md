@@ -248,7 +248,8 @@ The model-backed suites are tagged `integration` and skip unless the model is in
 mvn -pl jinfer/jinfer-lfm2 test -Dsurefire.excludedGroups= -Dgroups=integration
 ```
 
-`JINFER_MODELS` points them at a cache; `TestModels` in the testkit names the file each suite wants when it skips.
+`scripts/download-models.sh` fetches them into `../models` next to the checkout, where the suites look by default.
+`JINFER_MODELS` points them at another cache, and `TestModels` in the testkit names the file each suite wants when it skips.
 
 ## GraalVM Native image
 

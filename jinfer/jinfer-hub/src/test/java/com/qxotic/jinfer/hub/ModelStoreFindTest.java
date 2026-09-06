@@ -19,7 +19,9 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class ModelStoreFindTest {
 
-    private static final String REF = "hf.co/ggml-org/stories15M_MOE:Q8_0";
+    // an owner that exists nowhere: find() also reads the developer's real HuggingFace hub cache,
+    // where a real download of the ggml-org repo once turned three misses into hits
+    private static final String REF = "hf.co/jinfer-tests/stories15M_MOE:Q8_0";
 
     @TempDir Path root;
 
@@ -30,7 +32,7 @@ class ModelStoreFindTest {
 
     private Path plant(String repoRelative) throws IOException {
         System.setProperty("jinfer.models", root.toString());
-        Path file = root.resolve("hf.co/ggml-org/stories15M_MOE").resolve(repoRelative);
+        Path file = root.resolve("hf.co/jinfer-tests/stories15M_MOE").resolve(repoRelative);
         Files.createDirectories(file.getParent());
         return Files.writeString(file, "not really a model");
     }
@@ -46,7 +48,7 @@ class ModelStoreFindTest {
         Path file = plant("mmproj-F32.gguf");
         assertEquals(
                 Optional.of(file),
-                ModelStore.standard().find("hf.co/ggml-org/stories15M_MOE/mmproj-F32.gguf"));
+                ModelStore.standard().find("hf.co/jinfer-tests/stories15M_MOE/mmproj-F32.gguf"));
     }
 
     @Test
