@@ -364,13 +364,18 @@ class JinferChatModelIT {
         Assumptions.assumeTrue(
                 thinking.getResult().getOutput().getMetadata().get("thinking") != null,
                 "not a thinking model reply");
-        ChatResponse suppressed =
-                model.call(
-                        new Prompt(
-                                new UserMessage("What is 17 + 25? Answer briefly."),
-                                JinferChatOptions.builder().thinking(false).build()));
-        assertNull(suppressed.getResult().getOutput().getMetadata().get("thinking"));
-        assertNotNull(suppressed.getResult().getOutput().getText());
+        // 8B-A1B has no non-thinking turn: off is refused per request, with the remedy
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.call(
+                                        new Prompt(
+                                                new UserMessage("What is 17 + 25? Answer briefly."),
+                                                JinferChatOptions.builder()
+                                                        .thinking(false)
+                                                        .build())));
+        assertTrue(refused.getMessage().contains("always reasons"), refused.getMessage());
     }
 
     @Test
@@ -510,23 +515,22 @@ class JinferChatModelIT {
     }
 
     @Test
-    void streamingThinkingOffEmitsNoThoughtChunks() {
-        List<ChatResponse> chunks =
-                model.stream(
-                                new Prompt(
-                                        new UserMessage("What is 17 + 25? Answer briefly."),
-                                        JinferChatOptions.builder()
-                                                .thinking(false)
-                                                // thinking-off on a reasoning-tuned model can
-                                                // free-run off-distribution; the assertion is
-                                                // about FLAGS, so a tight budget keeps it fast
-                                                .maxTokens(48)
-                                                .build()))
-                        .collectList()
-                        .block(Duration.ofMinutes(2));
-        assertNotNull(chunks);
-        for (ChatResponse c : chunks) {
-            assertNull(c.getResult().getOutput().getMetadata().get(JinferChatModel.IS_THOUGHT_KEY));
-        }
+    void streamingThinkingOffIsRefusedOnAnAlwaysReasoningModel() {
+        // the free-run this test once budgeted around IS the refusal's reason
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.stream(
+                                                new Prompt(
+                                                        new UserMessage(
+                                                                "What is 17 + 25? Answer briefly."),
+                                                        JinferChatOptions.builder()
+                                                                .thinking(false)
+                                                                .maxTokens(48)
+                                                                .build()))
+                                        .collectList()
+                                        .block(Duration.ofMinutes(2)));
+        assertTrue(refused.getMessage().contains("always reasons"), refused.getMessage());
     }
 }

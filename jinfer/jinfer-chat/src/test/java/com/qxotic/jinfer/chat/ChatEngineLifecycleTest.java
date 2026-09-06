@@ -474,12 +474,14 @@ final class ChatEngineLifecycleTest {
     void anAlwaysReasoningCheckpointRefusesThinkingOffBeforeEncoding() throws Exception {
         Arena weights = Arena.ofShared();
         AtomicBoolean encoded = new AtomicBoolean();
+        AtomicReference<Boolean> thinkingSeen = new AtomicReference<>();
         ChatTemplate always =
                 new ChatTemplate() {
                     @Override
                     public ReplyState encode(
                             Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
                         encoded.set(true);
+                        thinkingSeen.set(conversation.thinking());
                         throw new IllegalStateException("expected: encode reached");
                     }
 
@@ -497,14 +499,16 @@ final class ChatEngineLifecycleTest {
                             () -> engine.prepare(request(false, -1, null)));
             assertTrue(off.getMessage().contains("always reasons"), off.getMessage());
             assertTrue(off.getMessage().contains("thinking off"), off.getMessage());
-            UnsupportedOperationException tiny =
-                    assertThrows(
-                            UnsupportedOperationException.class,
-                            () -> engine.prepare(request(true, ChatEngine.THINK_FLOOR - 1, null)));
-            assertTrue(tiny.getMessage().contains("fewer than 16"), tiny.getMessage());
             assertFalse(encoded.get(), "a refusal never reaches the template");
             assertThrows(IllegalStateException.class, () -> engine.prepare(request(true, -1, 48)));
             assertTrue(encoded.get(), "thinking on with a budget is rendered");
+            // under THINK_FLOOR the floor rule would switch thinking off; here that cannot be
+            // rendered, so the span stays open for the cap to bound
+            thinkingSeen.set(null);
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> engine.prepare(request(true, ChatEngine.THINK_FLOOR - 1, null)));
+            assertEquals(Boolean.TRUE, thinkingSeen.get(), "a tiny budget keeps the span open");
         } finally {
             engine.close();
         }

@@ -22,7 +22,9 @@ import org.junit.jupiter.api.condition.EnabledIf;
 @EnabledIf("com.qxotic.jinfer.langchain4j.JinferChatModelListenerIT#modelAvailable")
 class JinferChatModelListenerIT extends AbstractChatModelListenerIT {
 
-    static final String REF = "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
+    // the 2.6B: a thinking SWITCH and a 7-token budget are what the kit's defaults ask for, and
+    // the 8B-A1B refuses both (it always reasons)
+    static final String REF = "hf.co/LiquidAI/LFM2.5-2.6B-GGUF/LFM2.5-2.6B-Q8_0.gguf";
 
     static boolean modelAvailable() {
         return TestModels.find(REF).isPresent();

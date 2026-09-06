@@ -562,9 +562,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
         try {
-            engine.requireThinkingRenderable(
-                    o.getThinking() != Boolean.FALSE,
-                    o.getMaxTokens() == null ? -1 : o.getMaxTokens());
+            engine.requireThinkingRenderable(o.getThinking() != Boolean.FALSE);
         } catch (UnsupportedOperationException e) {
             throw new IllegalArgumentException(e.getMessage(), e);
         }

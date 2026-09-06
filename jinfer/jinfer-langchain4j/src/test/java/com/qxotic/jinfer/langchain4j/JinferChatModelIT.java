@@ -11,6 +11,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -231,24 +232,26 @@ class JinferChatModelIT {
     }
 
     @Test
-    void thinkingExposedAndSuppressible() {
+    void thinkingExposedAndOffRefusedOnAnAlwaysReasoningModel() {
         ChatResponse thinking = model.chat(UserMessage.from("What is 17 + 25? Answer briefly."));
         Assumptions.assumeTrue(
                 thinking.aiMessage().thinking() != null, "not a thinking model reply");
         assertTrue(!thinking.aiMessage().thinking().isBlank());
         assertTrue(!thinking.aiMessage().text().isBlank());
 
-        try (JinferChatModel quiet =
-                JinferChatModel.builder()
-                        .modelPath(TestModels.require(MODEL_REF))
-                        .contextLength(2048)
-                        .maxOutputTokens(128)
-                        .thinking(false)
-                        .build()) {
-            ChatResponse plain = quiet.chat(UserMessage.from("What is 17 + 25? Answer briefly."));
-            assertEquals(null, plain.aiMessage().thinking());
-            assertTrue(!plain.aiMessage().text().isBlank());
-        }
+        // 8B-A1B has no non-thinking turn: off is refused at build, with the remedy
+        UnsupportedFeatureException refused =
+                assertThrows(
+                        UnsupportedFeatureException.class,
+                        () ->
+                                JinferChatModel.builder()
+                                        .modelPath(TestModels.require(MODEL_REF))
+                                        .contextLength(2048)
+                                        .maxOutputTokens(128)
+                                        .thinking(false)
+                                        .build());
+        assertTrue(refused.getMessage().contains("always reasons"), refused.getMessage());
+        assertTrue(refused.getMessage().contains("reasoning budget"), refused.getMessage());
     }
 
     @Test

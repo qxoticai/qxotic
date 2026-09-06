@@ -132,11 +132,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             this.thinking = b.thinking;
             this.reasoningBudget = b.reasoningBudget;
             this.reasoningBudgetMessage = b.reasoningBudgetMessage;
-            framed(
-                    () ->
-                            engine.requireThinkingRenderable(
-                                    b.thinking,
-                                    b.maxOutputTokens == null ? -1 : b.maxOutputTokens));
+            framed(() -> engine.requireThinkingRenderable(b.thinking));
             this.timeout = b.timeout == null ? Duration.ZERO : b.timeout;
             this.listeners = List.copyOf(b.listeners);
             this.videoSampler = b.videoSampler;

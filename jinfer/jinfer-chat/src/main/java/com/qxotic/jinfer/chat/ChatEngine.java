@@ -654,38 +654,38 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * Refuses what an {@link ChatTemplate.ThinkingPolicy#ALWAYS always-reasoning} checkpoint cannot
-     * render: thinking off, or a completion budget under {@link #THINK_FLOOR} (which would switch
-     * thinking off). Masking the markers instead would not stop the reasoning, only its separation:
+     * Refuses thinking off on an {@link ChatTemplate.ThinkingPolicy#ALWAYS always-reasoning}
+     * checkpoint. Masking the markers instead would not stop the reasoning, only its separation:
      * the model reasons on in visible text and starves the answer to LENGTH. Builders call this at
-     * build with their defaults; {@link #prepare} calls it for every request.
+     * build with their default; {@link #prepare} calls it for every request.
      *
      * @throws UnsupportedOperationException naming the model and the remedy
      */
-    public void requireThinkingRenderable(boolean thinking, int maxTokens) {
-        boolean tiny = maxTokens >= 0 && maxTokens < THINK_FLOOR;
-        if (thinking && !tiny) return;
-        // the family's own answer: only it can say ALWAYS, and it costs no tokenizer lookup
-        boolean always =
-                loaded.template().map(ChatTemplate::thinkingPolicy).orElse(null)
-                        == ChatTemplate.ThinkingPolicy.ALWAYS;
-        if (!always) return;
+    public void requireThinkingRenderable(boolean thinking) {
+        if (thinking || !alwaysReasons()) return;
         throw new UnsupportedOperationException(
                 modelName
-                        + " always reasons: its template has no non-thinking turn, so "
-                        + (thinking
-                                ? "fewer than " + THINK_FLOOR + " completion tokens"
-                                : "thinking off")
+                        + " always reasons: its template has no non-thinking turn, so thinking off"
                         + " cannot be rendered. Reasoning arrives separated from the answer; cap it"
                         + " with a reasoning budget, or pick a model with a thinking switch");
     }
 
+    /** The family's own answer: only it can say ALWAYS, and it costs no tokenizer lookup. */
+    private boolean alwaysReasons() {
+        return loaded.template().map(ChatTemplate::thinkingPolicy).orElse(null)
+                == ChatTemplate.ThinkingPolicy.ALWAYS;
+    }
+
     private Prepared prepare(Request request, Arena memory) {
-        requireThinkingRenderable(request.thinking(), request.maxTokens());
+        requireThinkingRenderable(request.thinking());
+        // a completion budget under THINK_FLOOR switches thinking off, except where off cannot be
+        // rendered: there the span stays open and the reasoning cap (half the budget) bounds it
         boolean think =
                 request.thinking()
                         && request.forcedTool() == ForcedTool.NONE
-                        && (request.maxTokens() < 0 || request.maxTokens() >= THINK_FLOOR);
+                        && (request.maxTokens() < 0
+                                || request.maxTokens() >= THINK_FLOOR
+                                || alwaysReasons());
         Conversation conversation =
                 new Conversation(request.messages(), request.tools(), think, "");
         Encoded encoded =

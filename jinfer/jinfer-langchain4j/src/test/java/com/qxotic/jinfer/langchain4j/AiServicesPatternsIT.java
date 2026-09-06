@@ -58,7 +58,7 @@ class AiServicesPatternsIT {
                         .modelPath(TestModels.require(MODEL_REF))
                         .contextLength(4096)
                         .maxOutputTokens(256)
-                        .thinking(false)
+                        .reasoningBudget(64) // 8B-A1B always reasons: cap, do not switch off
                         .seed(7L)
                         .build();
         streaming = model.streaming();
