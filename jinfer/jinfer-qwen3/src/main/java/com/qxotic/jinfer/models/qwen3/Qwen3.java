@@ -140,7 +140,7 @@ public final class Qwen3
                 nPieces = 1;
             }
             case Batch.Input.Sequences seq -> {
-                requireComplete(seq);
+                requireCovers(seq, from + n);
                 ids = seq.tokens().ids();
                 nPieces = cutPieces(seq.seqLen(), from, n, s);
             }
@@ -153,7 +153,12 @@ public final class Qwen3
         s.advance(batch);
     }
 
-    private static void requireComplete(Batch.Input.Sequences sequences) {
+    /**
+     * A chunk of a packed stream: every length positive, and the layout reaches the chunk's end.
+     * The default {@code embedAll} feeds one context-sized group in batch-capacity chunks, each
+     * carrying the group's FULL layout, so a chunk is shorter than the layout by design.
+     */
+    private static void requireCovers(Batch.Input.Sequences sequences, int end) {
         long total = 0;
         int[] lengths = sequences.seqLen();
         for (int i = 0; i < lengths.length; i++) {
@@ -162,10 +167,9 @@ public final class Qwen3
                         "sequence " + i + " has invalid length " + lengths[i]);
             total += lengths[i];
         }
-        int tokens = sequences.tokens().ids().length;
-        if (total != tokens)
+        if (total < end)
             throw new IllegalArgumentException(
-                    "packed token count " + tokens + " != sequence lengths " + total);
+                    "packed stream of " + total + " tokens ends before row " + end);
     }
 
     private void requireTokens(int[] tokens) {

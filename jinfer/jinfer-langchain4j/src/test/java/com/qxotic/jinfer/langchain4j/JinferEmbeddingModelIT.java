@@ -146,6 +146,22 @@ class JinferEmbeddingModelIT {
         for (Embedding e : r.content()) assertEquals(model.dimension(), e.dimension());
     }
 
+    /**
+     * One packing group can exceed the state's batch capacity (512 rows) while fitting its context:
+     * the group is then ingested in chunks that each carry the full layout. Sixty-four short
+     * segments are about 630 tokens - past the first chunk, inside the 1024-token group.
+     */
+    @Test
+    void aGroupLargerThanTheBatchCapacityIsChunkedNotRefused() {
+        List<TextSegment> segments = corpus(64);
+        Response<List<Embedding>> r = model.embedAll(segments);
+        assertEquals(64, r.content().size());
+        assertTrue(r.tokenUsage().inputTokenCount() > 512, "the group spans two chunks");
+        Embedding solo = model.embed(segments.get(63)).content();
+        double cos = cosine(r.content().get(63), solo);
+        assertTrue(cos > 0.999, "a vector from the second chunk equals its solo embedding: " + cos);
+    }
+
     @Test
     void usageIsExact() {
         Response<List<Embedding>> r = model.embedAll(corpus(5));

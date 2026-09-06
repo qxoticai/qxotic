@@ -168,7 +168,7 @@ public final class Lfm2
                             "this LFM2.5 checkpoint is generative: batched embedding needs the"
                                     + " embedding checkpoint (LFM2.5-Embedding, attention.causal ="
                                     + " false)");
-                requireComplete(seq);
+                requireCovers(seq, from + n);
                 requireTokens(seq.tokens().ids());
                 forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), n);
             }
@@ -773,6 +773,25 @@ public final class Lfm2
         // CLS: the sequence's FIRST row (its BOS)
         forEachSequence(
                 state, sequences, (index, rowStart) -> projectEmbedding(state, rowStart, sink));
+    }
+
+    /**
+     * A chunk of a packed stream: every length positive, and the layout reaches the chunk's end.
+     * The default {@code embedAll} feeds one context-sized group in batch-capacity chunks, each
+     * carrying the group's FULL layout, so a chunk is shorter than the layout by design.
+     */
+    private static void requireCovers(Batch.Input.Sequences sequences, int end) {
+        long total = 0;
+        int[] lengths = sequences.seqLen();
+        for (int i = 0; i < lengths.length; i++) {
+            if (lengths[i] <= 0)
+                throw new IllegalArgumentException(
+                        "sequence " + i + " has invalid length " + lengths[i]);
+            total += lengths[i];
+        }
+        if (total < end)
+            throw new IllegalArgumentException(
+                    "packed stream of " + total + " tokens ends before row " + end);
     }
 
     private static void requireComplete(Batch.Input.Sequences sequences) {
