@@ -54,13 +54,15 @@ import org.junit.jupiter.api.Test;
  */
 public final class ReplyLanguageTest {
 
-    // ids 0..6: specials.  7, 8: the halves of a split UTF-8 code point.  9+: single chars.
+    // ids 0..7: specials (<eot> decodes to NO bytes, like a real vocabulary's specials).
+    // 8, 9: the halves of a split UTF-8 code point.  10+: single chars.
     static final String[] SPECIALS = {
-        "<think>", "</think>", "<call>", "</call>", "<end>", "<odd>", "[ARGS]"
+        "<think>", "</think>", "<call>", "</call>", "<end>", "<odd>", "[ARGS]", "<eot>"
     };
     static final String CHARS = "abxy{}\":1,()f2[] \n";
     static final int THINK = 0, END_THINK = 1, CALL = 2, END_CALL = 3, END = 4, ODD = 5, ARGS = 6;
-    static final int HALF_1 = 7, HALF_2 = 8; // 0xC3, 0xA9: e-acute split across tokens
+    static final int EOT = 7; // an empty-byte special: a grammar admits it wherever it accepts
+    static final int HALF_1 = 8, HALF_2 = 9; // 0xC3, 0xA9: e-acute split across tokens
 
     static int ch(char c) {
         int at = CHARS.indexOf(c);
@@ -146,6 +148,75 @@ public final class ReplyLanguageTest {
         assertFalse(ok[ODD], "the end-turn id cannot abandon the reply mid-think");
         assertTrue(ok[END], "other controls stay admitted - they cut, as they always did");
         assertTrue(ok[CALL], "masking is surgical: only the abandonment token is taken away");
+    }
+
+    /**
+     * After a stated format completes, only its terminator and the end of turn are admissible: any
+     * other special would be cut by the control rule, but only after being sampled and fed to the
+     * reply parser, where a call opener opened a span that surfaced as visible text (LFM2.5).
+     */
+    @Test
+    void aCompletedStatedFormatAdmitsOnlyTheTerminatorAndTheEndTurn() {
+        Walk w = Selection.of(statedHole(), TOK).walk();
+        w.sampler(Sampler.ARGMAX, END); // binds <end> as the end-turn id
+        run(w, toks("{\"a\":1}"));
+        assertTrue(w.accepted(), "the grammar is complete");
+        boolean[] ok = admitted(w);
+        assertTrue(ok[END], "the terminator / end of turn");
+        assertFalse(ok[CALL], "a call opener has no place after a finished document");
+        assertFalse(ok[ODD], "nor any other special");
+        assertFalse(ok[THINK], "nor a think opener");
+        assertFalse(ok[ch('x')], "nor plain text");
+        assertFalse(w.ended());
+    }
+
+    /**
+     * A template's thinking-off seed ends in framing after the closed span ({@code
+     * <think>\n\n</think>\n\n}); under a stated format that framing must not enter the grammar as
+     * the first content token, which killed the walk before the model generated anything (Qwen 3.5,
+     * every raw grammar, empty replies).
+     */
+    @Test
+    void seedFramingAfterAClosedThinkSpanLeavesAStatedFormatAtItsEntry() {
+        Walk w = Selection.of(statedHole(), TOK).walk();
+        w.sampler(Sampler.ARGMAX, END);
+        w.seed(IntSequence.of(THINK, ch('\n'), END_THINK, ch('\n')));
+        assertFalse(w.ended(), "framing in the seed is not content");
+        boolean[] ok = admitted(w);
+        assertTrue(ok[ch('{')], "the stated format's entry is what comes next");
+        assertFalse(ok[ch('\n')], "the format does not start with framing");
+        List<Step> steps = run(w, toks("{\"a\":1}"));
+        assertEquals("{\"a\":1}", steps.stream().map(Step::fragment).reduce("", String::concat));
+        run(w, END);
+        assertEquals("{\"a\":1}", w.finish().text());
+    }
+
+    /**
+     * A payload grammar admits every empty-byte token where it accepts (its "may stop now"); in a
+     * reply language only the successor may follow - the exit here, since nothing but the
+     * terminator is left. Same law at the entry of a grammar that accepts the empty string.
+     */
+    @Test
+    void anAcceptingPayloadAdmitsNoControlButItsSuccessorOrTheExit() {
+        Node optionalTail = seq(content(gbnf("root ::= \"a\" \"b\"?")), opt(mark("<end>")));
+        Walk w = Selection.of(optionalTail, TOK).walk();
+        w.sampler(Sampler.ARGMAX, END);
+        run(w, ch('a'));
+        boolean[] mid = admitted(w);
+        assertTrue(mid[ch('b')], "the grammar's own continuation");
+        assertTrue(mid[END], "the exit");
+        assertFalse(mid[EOT], "an empty-byte special the grammar would admit as a stop");
+        assertFalse(mid[CALL], "no call opener after a finished document");
+        assertFalse(w.ended());
+
+        Node maybeEmpty = seq(content(gbnf("root ::= \"a\" | \"\"")), opt(mark("<end>")));
+        Walk e = Selection.of(maybeEmpty, TOK).walk();
+        e.sampler(Sampler.ARGMAX, END);
+        boolean[] start = admitted(e);
+        assertTrue(start[ch('a')], "the grammar's first token");
+        assertTrue(start[END], "an empty document ends the turn");
+        assertFalse(start[EOT], "the entry set's empty-byte admissions are not exits");
+        assertFalse(start[CALL]);
     }
 
     @Test
@@ -852,6 +923,7 @@ public final class ReplyLanguageTest {
             int id = tokens.intAt(tokenStartIndex);
             if (id == HALF_1) out.put((byte) 0xC3);
             else if (id == HALF_2) out.put((byte) 0xA9);
+            else if (id == EOT) return 1; // no bytes
             else if (id < SPECIALS.length) out.put(SPECIALS[id].getBytes(StandardCharsets.UTF_8));
             else {
                 out.put(

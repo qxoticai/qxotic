@@ -295,6 +295,7 @@ public final class ReplyLanguage {
         final Op[] ops;
         final List<CRegion> regions;
         final Set<Integer> controlIds; // every resolved mark: pinned ids are control too
+        private long[] controlMask; // every id the walk's control rule fires on, computed once
         final int entry;
         // per region: the entry-admissible token set of a GBNF-opening first segment (null for
         // mark- and free-opening regions) - structure masking's plain-dispatch union
@@ -333,6 +334,25 @@ public final class ReplyLanguage {
             }
             validate();
             this.forcedPrefix = extractForcedPrefix();
+        }
+
+        /**
+         * Every control id of this vocabulary, one bit per id: specials, empty-byte tokens, marks.
+         */
+        synchronized long[] controlMask() {
+            if (controlMask == null) {
+                int n = tokenizer.vocabulary().size();
+                long[] m = new long[(n + 63) >> 6];
+                for (int t = 0; t < n; t++) {
+                    if (SpecialTokens.isSpecial(tokenizer, t)
+                            || controlIds.contains(t)
+                            || tokenizer.decodeBytes(new int[] {t}).length == 0) {
+                        m[t >> 6] |= 1L << (t & 63);
+                    }
+                }
+                controlMask = m;
+            }
+            return controlMask;
         }
 
         /** Every op is a reachable walk position: ambiguity anywhere must throw NOW. */
@@ -896,8 +916,31 @@ public final class ReplyLanguage {
                 return true;
             }
             if (region != null) {
-                if (region.segs().get(seg) instanceof Seg.Spec spec)
-                    return cursor(spec).maskLogits(logits);
+                if (region.segs().get(seg) instanceof Seg.Spec spec) {
+                    Grammar.Cursor c = cursor(spec);
+                    boolean any = c.maskLogits(logits);
+                    // where a payload grammar accepts, it admits every empty-byte token as its
+                    // "may stop now" - in this language only the segment's successor may follow:
+                    // the next segment's lead mark, or the exit. Any other control would be cut
+                    // by the control rule, but only after being sampled and handed to the reply
+                    // parser, where a stray call opener once surfaced as visible text.
+                    if (any && endTurnId >= 0 && c.accepting()) {
+                        int successor =
+                                seg + 1 < region.segs().size()
+                                                && region.segs().get(seg + 1) instanceof Seg.Spec n
+                                        ? n.leadMark()
+                                        : -1;
+                        MemoryView<MemorySegment> writable = writable(logits);
+                        long[] controls = sel.controlMask();
+                        int n = Math.toIntExact(logits.shape().size());
+                        for (int t = 0; t < n; t++) {
+                            if ((controls[t >> 6] & (1L << (t & 63))) != 0
+                                    && t != successor
+                                    && !exit(t)) reject(writable, t);
+                        }
+                    }
+                    return any;
+                }
                 // a free hole with a declared closer masks the END-TURN id alone: emitting it
                 // there abandons a constrained reply mid-region (the observed escape: EOS inside
                 // the think span under a stated format - reasoning streamed, then no document).
@@ -923,11 +966,16 @@ public final class ReplyLanguage {
             MemoryView<MemorySegment> writable = writable(logits);
             int n = Math.toIntExact(logits.shape().size());
             boolean accept = cl.accept() != -1;
+            long[] controls = sel.controlMask();
             for (int t = 0; t < n; t++) {
-                boolean ok =
-                        (plainEntry != null && (plainEntry[t >> 6] >>> (t & 63) & 1L) != 0)
-                                || cl.marks().containsKey(t)
-                                || (accept && control(t));
+                boolean control = (controls[t >> 6] & (1L << (t & 63))) != 0;
+                // a GBNF entry set that accepts the empty string admits every empty-byte token as
+                // its "may stop now"; here only the exit is a stop
+                boolean entry =
+                        plainEntry != null
+                                && (plainEntry[t >> 6] >>> (t & 63) & 1L) != 0
+                                && (!control || exit(t));
+                boolean ok = entry || cl.marks().containsKey(t) || (accept && exit(t));
                 if (!ok) reject(writable, t);
             }
             return true;
@@ -972,12 +1020,30 @@ public final class ReplyLanguage {
             }
             if (!control(token) && cl.plain() != -1) {
                 Op op = sel.ops[cl.plain()];
+                // a seed's plain token at a GBNF-opening point is prompt framing (the "\n\n" a
+                // template writes after a closed think span), not the first token of the stated
+                // format: entering the grammar with it would kill the walk before the model
+                // generates anything. A free-opening point still enters: that is prompt text
+                // becoming the parse's own content region, and seed() drops the text afterwards.
+                if (seeding && sel.regionEntry[op.arg] != null) return Fragment.EMPTY;
                 enter(sel.regions.get(op.arg), op.next);
                 return feedRegion(token);
             }
             ended = true; // the control rule: nothing here expects this token
             flushPending(null);
             return Fragment.EMPTY;
+        }
+
+        /**
+         * The control exit at an accept position: the end of turn when the sampler bound one, any
+         * control otherwise (parse-only walks never mask). A completed constrained reply has
+         * nothing legitimate left but its terminator; admitting every special there let a model
+         * pick a call opener after a finished grammar (LFM2.5, thinking off), which the control
+         * rule cut - but the stray token had already opened a call span in the reply parser, and
+         * its demotion put the end marker's spelling into the visible text.
+         */
+        private boolean exit(int token) {
+            return endTurnId >= 0 ? token == endTurnId : control(token);
         }
 
         /** Control = a vocabulary special, an empty-byte token, or a language-pinned mark id. */
