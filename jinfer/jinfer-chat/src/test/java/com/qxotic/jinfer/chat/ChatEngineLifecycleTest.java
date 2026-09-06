@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.cache.PromptCache;
@@ -18,6 +19,7 @@ import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import sun.misc.Unsafe;
 
@@ -464,5 +467,62 @@ final class ChatEngineLifecycleTest {
         Field field = ChatEngine.class.getDeclaredField(name);
         field.setAccessible(true);
         return field;
+    }
+
+    /** A checkpoint that always reasons refuses thinking off before any encoding happens. */
+    @Test
+    void anAlwaysReasoningCheckpointRefusesThinkingOffBeforeEncoding() throws Exception {
+        Arena weights = Arena.ofShared();
+        AtomicBoolean encoded = new AtomicBoolean();
+        ChatTemplate always =
+                new ChatTemplate() {
+                    @Override
+                    public ReplyState encode(
+                            Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
+                        encoded.set(true);
+                        throw new IllegalStateException("expected: encode reached");
+                    }
+
+                    @Override
+                    public ThinkingPolicy thinkingPolicy() {
+                        return ThinkingPolicy.ALWAYS;
+                    }
+                };
+        ChatEngine engine = preparingEngine(weights, always);
+        try {
+            assertEquals(ChatTemplate.ThinkingPolicy.ALWAYS, engine.thinkingPolicy());
+            UnsupportedOperationException off =
+                    assertThrows(
+                            UnsupportedOperationException.class,
+                            () -> engine.prepare(request(false, -1, null)));
+            assertTrue(off.getMessage().contains("always reasons"), off.getMessage());
+            assertTrue(off.getMessage().contains("thinking off"), off.getMessage());
+            UnsupportedOperationException tiny =
+                    assertThrows(
+                            UnsupportedOperationException.class,
+                            () -> engine.prepare(request(true, ChatEngine.THINK_FLOOR - 1, null)));
+            assertTrue(tiny.getMessage().contains("fewer than 16"), tiny.getMessage());
+            assertFalse(encoded.get(), "a refusal never reaches the template");
+            assertThrows(IllegalStateException.class, () -> engine.prepare(request(true, -1, 48)));
+            assertTrue(encoded.get(), "thinking on with a budget is rendered");
+        } finally {
+            engine.close();
+        }
+    }
+
+    private static ChatEngine.Request request(boolean thinking, int maxTokens, Integer budget) {
+        return new ChatEngine.Request(
+                List.of(Message.user("hello")),
+                List.of(),
+                thinking,
+                maxTokens,
+                budget,
+                null,
+                Duration.ZERO,
+                new Sampling(0, 1, 0, 0, 1L),
+                null,
+                null,
+                null,
+                null);
     }
 }

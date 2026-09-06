@@ -27,8 +27,12 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param topP nucleus sampling mass; null uses the model recommendation
  * @param maxTokens maximum completion tokens; null lets the context bound the reply
  * @param seed sampling seed; null chooses a fresh seed per request
- * @param thinking the model's reasoning scaffold toggle (templates without one ignore it); default
- *     on
+ * @param thinking the model's reasoning scaffold toggle (templates without one ignore it; a model
+ *     that always reasons refuses {@code false}); default on
+ * @param reasoningBudget cap on the reasoning span in generated tokens, the lever for models that
+ *     always reason; {@code -1} uncaps; unset = the family's policy
+ * @param reasoningBudgetMessage what the model "decides" when the budget runs out, in its own
+ *     words; unset = a paragraph break
  * @param timeout wall-clock generation deadline; null = none
  * @param speculationDepth draft tokens per verify block for self-speculative decoding (0 disables,
  *     unset = the engine's default); inert unless the model carries a draft head (e.g. Gemma 4's
@@ -46,6 +50,8 @@ public record JinferChatProperties(
         Integer maxTokens,
         Long seed,
         Boolean thinking,
+        Integer reasoningBudget,
+        String reasoningBudgetMessage,
         Duration timeout,
         Integer speculationDepth) {
 
@@ -57,6 +63,8 @@ public record JinferChatProperties(
                 .maxTokens(maxTokens)
                 .seed(seed)
                 .thinking(thinking)
+                .reasoningBudget(reasoningBudget)
+                .reasoningBudgetMessage(reasoningBudgetMessage)
                 .timeout(timeout)
                 .build();
     }

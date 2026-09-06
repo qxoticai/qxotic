@@ -3,6 +3,7 @@ package com.qxotic.jinfer.spring.ai;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TextStops;
@@ -311,8 +312,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         tools,
                         options.getThinking() != Boolean.FALSE,
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
-                        null, // Spring AI has no reasoning-budget knob
-                        null, // nor a reasoning-message one
+                        options.getReasoningBudget(),
+                        options.getReasoningBudgetMessage(),
                         options.getTimeout() == null ? Duration.ZERO : options.getTimeout(),
                         engine.loaded()
                                 .samplingDefaults()
@@ -560,6 +561,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + "' (one loaded GGUF per instance)");
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
+        try {
+            engine.requireThinkingRenderable(
+                    o.getThinking() != Boolean.FALSE,
+                    o.getMaxTokens() == null ? -1 : o.getMaxTokens());
+        } catch (UnsupportedOperationException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
+    }
+
+    /** How the loaded checkpoint reasons; {@code ALWAYS} models refuse {@code thinking=false}. */
+    public ChatTemplate.ThinkingPolicy thinkingPolicy() {
+        return engine.thinkingPolicy();
     }
 
     private ChatResponse response(AssistantMessage ai, ChatEngine.Completion done) {

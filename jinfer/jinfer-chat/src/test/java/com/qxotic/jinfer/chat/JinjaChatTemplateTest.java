@@ -5,12 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
+import java.lang.reflect.Proxy;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -19,6 +23,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
@@ -313,5 +320,59 @@ class JinjaChatTemplateTest {
         List<Object> messages = List.of(Map.of("role", "user", "content", "<think>hi"));
         assertEquals("<think>hi<think>", render(scaffold, messages, true), "scaffold still opened");
         assertEquals("<think>hi", render(scaffold, messages, false), "nothing to close");
+    }
+
+    /** The effective policy: a template's OPTIONAL is NONE on a tokenizer without think markers. */
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void theLoadedModelReportsNoneWithoutThinkMarkers() {
+        LanguageModel model =
+                (LanguageModel)
+                        Proxy.newProxyInstance(
+                                LanguageModel.class.getClassLoader(),
+                                new Class<?>[] {LanguageModel.class},
+                                (proxy, method, args) -> {
+                                    throw new UnsupportedOperationException(method.getName());
+                                });
+        Tokenizer bare =
+                new CharTokenizer(
+                        List.of("<|im_start|>", "<|im_end|>"), "hi<|im_start|><|im_end|>");
+        ChatTemplate always =
+                new ChatTemplate() {
+                    @Override
+                    public ReplyState encode(
+                            Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public ThinkingPolicy thinkingPolicy() {
+                        return ThinkingPolicy.ALWAYS;
+                    }
+                };
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.OPTIONAL,
+                loaded(model, CHAR_TOKENIZER, Optional.empty()).thinkingPolicy(),
+                "markers present, no family answer: optional");
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.NONE,
+                loaded(model, bare, Optional.empty()).thinkingPolicy(),
+                "no markers: nothing to switch");
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.ALWAYS,
+                loaded(model, bare, Optional.of(always)).thinkingPolicy(),
+                "a family's ALWAYS is trusted as is");
+    }
+
+    private static LoadedModel<?> loaded(
+            LanguageModel<?, ?, ?> model, Tokenizer tokenizer, Optional<ChatTemplate> template) {
+        return new LoadedModel(
+                model,
+                tokenizer,
+                "",
+                Set.of(1),
+                ContentKey.sha256(new byte[] {1}),
+                template,
+                LoadedModel.SamplingDefaults.NONE);
     }
 }

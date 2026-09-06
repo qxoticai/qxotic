@@ -648,7 +648,40 @@ public final class ChatEngine implements AutoCloseable {
         }
     }
 
+    /** How the loaded checkpoint reasons; {@code ALWAYS} refuses a request with thinking off. */
+    public ChatTemplate.ThinkingPolicy thinkingPolicy() {
+        return loaded.thinkingPolicy();
+    }
+
+    /**
+     * Refuses what an {@link ChatTemplate.ThinkingPolicy#ALWAYS always-reasoning} checkpoint cannot
+     * render: thinking off, or a completion budget under {@link #THINK_FLOOR} (which would switch
+     * thinking off). Masking the markers instead would not stop the reasoning, only its separation:
+     * the model reasons on in visible text and starves the answer to LENGTH. Builders call this at
+     * build with their defaults; {@link #prepare} calls it for every request.
+     *
+     * @throws UnsupportedOperationException naming the model and the remedy
+     */
+    public void requireThinkingRenderable(boolean thinking, int maxTokens) {
+        boolean tiny = maxTokens >= 0 && maxTokens < THINK_FLOOR;
+        if (thinking && !tiny) return;
+        // the family's own answer: only it can say ALWAYS, and it costs no tokenizer lookup
+        boolean always =
+                loaded.template().map(ChatTemplate::thinkingPolicy).orElse(null)
+                        == ChatTemplate.ThinkingPolicy.ALWAYS;
+        if (!always) return;
+        throw new UnsupportedOperationException(
+                modelName
+                        + " always reasons: its template has no non-thinking turn, so "
+                        + (thinking
+                                ? "fewer than " + THINK_FLOOR + " completion tokens"
+                                : "thinking off")
+                        + " cannot be rendered. Reasoning arrives separated from the answer; cap it"
+                        + " with a reasoning budget, or pick a model with a thinking switch");
+    }
+
     private Prepared prepare(Request request, Arena memory) {
+        requireThinkingRenderable(request.thinking(), request.maxTokens());
         boolean think =
                 request.thinking()
                         && request.forcedTool() == ForcedTool.NONE

@@ -649,7 +649,8 @@ public record Options(
                         + " directly (no system prompt, thinking or budget)");
         out.println(
                 "  --think <off|on|inline>       on: reason, thoughts on stderr (default); off: do"
-                        + " not reason, the model answers directly; inline: thoughts on stdout");
+                        + " not reason, the model answers directly (a model that always reasons"
+                        + " refuses off: use --reasoning-budget); inline: thoughts on stdout");
         out.println(
                 "  --reasoning-budget <int>      cap the thinking span at N tokens (default: model"
                         + " policy, -1: uncapped)");

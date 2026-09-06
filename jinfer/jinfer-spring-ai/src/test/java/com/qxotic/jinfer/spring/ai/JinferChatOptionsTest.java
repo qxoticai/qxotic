@@ -3,6 +3,7 @@ package com.qxotic.jinfer.spring.ai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Duration;
 import java.util.List;
@@ -218,5 +219,27 @@ class JinferChatOptionsTest {
 
         assertEquals(requested.getInstructions(), effective.getInstructions());
         assertSame(defaults, effective.getOptions());
+    }
+
+    @Test
+    void reasoningBudgetRoundTripsAndCombinesLikeEveryJinferExtra() {
+        JinferChatOptions o =
+                JinferChatOptions.builder()
+                        .reasoningBudget(48)
+                        .reasoningBudgetMessage("... Let me answer.")
+                        .build();
+        JinferChatOptions copy = o.mutate().build();
+        assertEquals(48, copy.getReasoningBudget());
+        assertEquals("... Let me answer.", copy.getReasoningBudgetMessage());
+        JinferChatOptions merged =
+                o.mutate().combineWith(JinferChatOptions.builder().reasoningBudget(-1)).build();
+        assertEquals(-1, merged.getReasoningBudget(), "the request's cap wins");
+        assertEquals(
+                "... Let me answer.",
+                merged.getReasoningBudgetMessage(),
+                "unset keeps the default");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferChatOptions.builder().reasoningBudget(-2));
     }
 }

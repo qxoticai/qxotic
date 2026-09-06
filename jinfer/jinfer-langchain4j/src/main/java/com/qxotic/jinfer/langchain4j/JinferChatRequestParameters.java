@@ -45,12 +45,14 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     private final String grammar;
     private final Long seed;
     private final Double minP;
+    private final Integer reasoningBudget;
 
     protected JinferChatRequestParameters(Builder builder) {
         super(builder);
         this.grammar = builder.grammar;
         this.seed = builder.seed;
         this.minP = builder.minP;
+        this.reasoningBudget = builder.reasoningBudget;
     }
 
     /** Raw GBNF constraining the reply, or null. */
@@ -72,6 +74,11 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return minP;
     }
 
+    /** Reasoning-span cap for this request; null = the model's builder default. */
+    public Integer reasoningBudget() {
+        return reasoningBudget;
+    }
+
     @Override
     public JinferChatRequestParameters overrideWith(ChatRequestParameters that) {
         return builder().overrideWith(this).overrideWith(that).build();
@@ -83,12 +90,13 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 && super.equals(that)
                 && Objects.equals(grammar, that.grammar)
                 && Objects.equals(seed, that.seed)
-                && Objects.equals(minP, that.minP);
+                && Objects.equals(minP, that.minP)
+                && Objects.equals(reasoningBudget, that.reasoningBudget);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), grammar, seed, minP);
+        return Objects.hash(super.hashCode(), grammar, seed, minP, reasoningBudget);
     }
 
     @Override
@@ -99,6 +107,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 + seed
                 + ", minP="
                 + minP
+                + ", reasoningBudget="
+                + reasoningBudget
                 + ", "
                 + super.toString()
                 + "}";
@@ -113,6 +123,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         private String grammar;
         private Long seed;
         private Double minP;
+        private Integer reasoningBudget;
 
         @Override
         public Builder overrideWith(ChatRequestParameters parameters) {
@@ -121,6 +132,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 if (j.grammar() != null) grammar(j.grammar());
                 if (j.seed() != null) seed(j.seed());
                 if (j.minP() != null) minP(j.minP());
+                if (j.reasoningBudget() != null) reasoningBudget(j.reasoningBudget());
             }
             return this;
         }
@@ -137,6 +149,14 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
 
         public Builder minP(Double minP) {
             this.minP = minP;
+            return this;
+        }
+
+        /** Caps the reasoning span for this request; {@code -1} uncaps, null leaves the default. */
+        public Builder reasoningBudget(Integer reasoningBudget) {
+            if (reasoningBudget != null && reasoningBudget < -1)
+                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
+            this.reasoningBudget = reasoningBudget;
             return this;
         }
 

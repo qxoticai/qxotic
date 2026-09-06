@@ -245,4 +245,13 @@ final class BuilderContractTest {
                     e.getMessage());
         }
     }
+
+    @Test
+    void aReasoningBudgetBelowUncappedIsRefusedBeforeAnyLoad() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferChatModel.builder().reasoningBudget(-2));
+        assertEquals("reasoningBudget -2", e.getMessage());
+    }
 }

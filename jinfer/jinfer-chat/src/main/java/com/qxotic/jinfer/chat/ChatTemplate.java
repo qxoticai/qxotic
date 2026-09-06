@@ -66,6 +66,25 @@ public interface ChatTemplate {
     }
 
     /**
+     * What the checkpoint's template can express about reasoning. {@code OPTIONAL} renders a turn
+     * with or without a think span; {@code ALWAYS} has no non-thinking turn (LFM2.5-8B-A1B: a bare
+     * header the model follows with its own {@code <think>}), so "thinking off" cannot be rendered
+     * and the engine refuses it instead of masking the markers, which only turns the reasoning into
+     * leaked visible text. Families answer from their template source; the engine reports {@code
+     * NONE} when an {@code OPTIONAL} template meets a tokenizer without think markers.
+     */
+    default ThinkingPolicy thinkingPolicy() {
+        return ThinkingPolicy.OPTIONAL;
+    }
+
+    /** How a checkpoint reasons: never, when asked, or on every turn. */
+    enum ThinkingPolicy {
+        NONE,
+        OPTIONAL,
+        ALWAYS
+    }
+
+    /**
      * Default generated-token budget for a reasoning span. Negative leaves it uncapped. Families
      * may override this when their published generation policy expects unrestricted reasoning.
      */

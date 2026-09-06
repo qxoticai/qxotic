@@ -594,4 +594,24 @@ final class Lfm2ChatTemplateTest {
         for (int id : ids) if (id == target) count++;
         return count;
     }
+
+    /** Only the bare-header reasoning dialect (8B-A1B) has no turn without a think span. */
+    @Test
+    void thinkingPolicyFollowsTheDialect() {
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.OPTIONAL,
+                new Lfm2ChatTemplate(tokenizer, true).thinkingPolicy(),
+                "2.6B opens the span in the prompt, so it can close it");
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.ALWAYS,
+                new Lfm2ChatTemplate(tokenizer, false).thinkingPolicy(),
+                "8B-A1B keeps thinking after the last user turn but never opens it: the model"
+                        + " does");
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.OPTIONAL,
+                new Lfm2ChatTemplate(
+                                tokenizer, null, new Lfm2ChatTemplate.Dialect(false, true, true))
+                        .thinkingPolicy(),
+                "350M's instruct dialect preserves history thinking, it does not reason");
+    }
 }

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.util.Collections;
@@ -43,6 +44,25 @@ public record LoadedModel<S extends ContextState>(
         // meaning - the family's own end-of-turn comes first, and a decode ended from outside
         // emits iterator().next(). Set.copyOf is salt-randomized per JVM run.
         stopTokens = Collections.unmodifiableSet(new LinkedHashSet<>(stopTokens));
+    }
+
+    /**
+     * The effective {@link ChatTemplate.ThinkingPolicy}: the template's answer, downgraded to
+     * {@code NONE} when an {@code OPTIONAL} template meets a tokenizer without think markers. A
+     * family that answers {@code ALWAYS} is trusted as is.
+     */
+    public ChatTemplate.ThinkingPolicy thinkingPolicy() {
+        ChatTemplate.ThinkingPolicy policy =
+                template.map(ChatTemplate::thinkingPolicy)
+                        .orElse(ChatTemplate.ThinkingPolicy.OPTIONAL);
+        if (policy != ChatTemplate.ThinkingPolicy.OPTIONAL) return policy;
+        String open =
+                template.map(ChatTemplate::thinkMarkers)
+                        .orElse(ChatTemplate.ThinkMarkers.GENERIC)
+                        .open();
+        return SpecialTokens.find(tokenizer, open).isPresent()
+                ? policy
+                : ChatTemplate.ThinkingPolicy.NONE;
     }
 
     /**

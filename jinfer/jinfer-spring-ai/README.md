@@ -213,13 +213,17 @@ try (var model = JinferChatModel.builder()
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
-                .thinking(false)
+                .reasoningBudget(256)   // 8B-A1B always reasons: cap the span; thinking(false) is refused
                 .build())
         .build()) {
 
     System.out.println(model.call("What is the capital of France?"));
 }
 ```
+
+`thinkingPolicy()` says how a checkpoint reasons.
+`NONE` has no think span, `OPTIONAL` honours `thinking(false)`, and `ALWAYS` (LFM2.5-8B-A1B) has no non-thinking turn, so `thinking(false)` is refused with an `IllegalArgumentException` naming the remedy.
+`reasoningBudget` caps the span on every policy, as an option or as `spring.ai.jinfer.chat.reasoning-budget`.
 
 Use `model("...")` for a model reference and `modelPath(Path.of("model.gguf"))` for a local
 file. Companions follow the same pattern with `companion(...)` and `companionPath(...)`.

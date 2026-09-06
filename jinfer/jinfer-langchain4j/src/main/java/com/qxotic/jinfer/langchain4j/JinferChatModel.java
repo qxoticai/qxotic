@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TextStops;
@@ -75,6 +76,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final ChatEngine engine;
     final ChatRequestParameters defaults;
     final boolean thinking;
+    final Integer reasoningBudget;
+    final String reasoningBudgetMessage;
     final Duration timeout;
     final List<ChatModelListener> listeners;
     final VideoSampler videoSampler;
@@ -127,6 +130,13 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
         try {
             this.thinking = b.thinking;
+            this.reasoningBudget = b.reasoningBudget;
+            this.reasoningBudgetMessage = b.reasoningBudgetMessage;
+            framed(
+                    () ->
+                            engine.requireThinkingRenderable(
+                                    b.thinking,
+                                    b.maxOutputTokens == null ? -1 : b.maxOutputTokens));
             this.timeout = b.timeout == null ? Duration.ZERO : b.timeout;
             this.listeners = List.copyOf(b.listeners);
             this.videoSampler = b.videoSampler;
@@ -181,6 +191,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.engine = engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
+        this.reasoningBudget = base.reasoningBudget;
+        this.reasoningBudgetMessage = base.reasoningBudgetMessage;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
@@ -219,6 +231,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.engine = base.engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
+        this.reasoningBudget = base.reasoningBudget;
+        this.reasoningBudgetMessage = base.reasoningBudgetMessage;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
@@ -306,6 +320,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return listeners; // core's chat() dispatches onRequest/onResponse/onError
     }
 
+    /**
+     * How the loaded checkpoint reasons. {@code ALWAYS} models refuse {@link Builder#thinking
+     * thinking(false)}; {@link Builder#reasoningBudget} is the lever that works on them.
+     */
+    public ChatTemplate.ThinkingPolicy thinkingPolicy() {
+        return engine.thinkingPolicy();
+    }
+
     @Override
     public Set<Capability> supportedCapabilities() {
         // grammar-constrained decoding honors JSON schemas natively - AiServices reads this to
@@ -389,8 +411,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         tools,
                         thinking,
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
-                        null, // langchain4j has no reasoning-budget knob
-                        null, // nor a reasoning-message one
+                        j != null && j.reasoningBudget() != null
+                                ? j.reasoningBudget()
+                                : reasoningBudget,
+                        reasoningBudgetMessage,
                         timeout,
                         engine.loaded()
                                 .samplingDefaults()
@@ -516,6 +540,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private ChatRequestParameters defaultParameters;
         private List<ChatModelListener> listeners = List.of();
         private boolean thinking = true;
+        private Integer reasoningBudget;
+        private String reasoningBudgetMessage;
         private Long seed;
         private Duration timeout;
 
@@ -715,6 +741,30 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder thinking(boolean thinking) {
             this.thinking = thinking;
+            return this;
+        }
+
+        /**
+         * Caps the reasoning span at {@code tokens} generated tokens: when it runs out, a paragraph
+         * break, the {@link #reasoningBudgetMessage} and the close marker are forced, and the
+         * answer follows. The lever for checkpoints that {@link ChatTemplate.ThinkingPolicy#ALWAYS
+         * always reason}. Default: the family's own policy (half of maxOutputTokens, else
+         * uncapped); {@code -1} uncaps; a per-request {@link
+         * JinferChatRequestParameters#reasoningBudget} wins over this.
+         */
+        public Builder reasoningBudget(int tokens) {
+            if (tokens < -1) throw new IllegalArgumentException("reasoningBudget " + tokens);
+            this.reasoningBudget = tokens;
+            return this;
+        }
+
+        /**
+         * What the model "decides" when the budget runs out, in its own words, e.g. {@code "... Let
+         * me wrap up."} - so the answer continues coherently from a stated decision instead of an
+         * unexplained stop. Default: a bare paragraph break.
+         */
+        public Builder reasoningBudgetMessage(String message) {
+            this.reasoningBudgetMessage = message;
             return this;
         }
 

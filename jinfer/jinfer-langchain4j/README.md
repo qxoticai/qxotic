@@ -150,7 +150,7 @@ try (var model = JinferChatModel.builder()
         .contextLength(8192)      // 0 = the model's full context
         .temperature(0.7)
         .maxOutputTokens(1024)
-        .thinking(false)          // reasoning scaffold off (models without one ignore it)
+        .reasoningBudget(256)     // cap the think span; 8B-A1B always reasons, so thinking(false) is refused
         .seed(42L)                // deterministic sampling
         .build()) {
 
@@ -167,6 +167,10 @@ try (var model = JinferChatModel.builder()
 
 Stops, JSON response formats and `toolChoice=REQUIRED` are supported. Unsupported parameters fail
 instead of being ignored.
+
+`thinkingPolicy()` says how a checkpoint reasons.
+`NONE` has no think span, `OPTIONAL` honours `thinking(false)`, and `ALWAYS` (LFM2.5-8B-A1B) has no non-thinking turn, so `thinking(false)` fails at `build()` with an `UnsupportedFeatureException` naming the remedy.
+Reasoning always arrives separated in `AiMessage.thinking()`; `reasoningBudget(n)` caps the span on every policy, and a per-request `JinferChatRequestParameters.reasoningBudget` wins over the builder's.
 
 ## Structured output
 

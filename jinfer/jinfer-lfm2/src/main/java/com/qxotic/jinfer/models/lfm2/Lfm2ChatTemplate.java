@@ -129,6 +129,21 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                         tokenizer);
     }
 
+    /**
+     * 8B-A1B's dialect keeps thinking after the last user turn yet never opens the span: the model
+     * opens it on every reply, so there is no non-thinking turn to render. The 2.6B opens the span
+     * itself (closable), the 350M's instruct dialect merely preserves history.
+     */
+    @Override
+    public ThinkingPolicy thinkingPolicy() {
+        boolean reasoningOnly =
+                !dialect.promptOpensThinking()
+                        && !dialect.lastAssistantKeepsThinking()
+                        && thinkOpen >= 0
+                        && thinkClose >= 0;
+        return reasoningOnly ? ThinkingPolicy.ALWAYS : ThinkingPolicy.OPTIONAL;
+    }
+
     @Override
     public IntSequence promptStart() {
         return promptStart;

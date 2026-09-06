@@ -22,6 +22,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     private final Long seed;
     private final Double minP;
     private final Boolean thinking;
+    private final Integer reasoningBudget;
+    private final String reasoningBudgetMessage;
     private final Duration timeout;
     private final String outputSchema;
 
@@ -51,6 +53,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         this.seed = b.seed;
         this.minP = b.minP;
         this.thinking = b.thinking;
+        this.reasoningBudget = b.reasoningBudget;
+        this.reasoningBudgetMessage = b.reasoningBudgetMessage;
         this.timeout = b.timeout;
         this.outputSchema = b.outputSchema;
     }
@@ -72,6 +76,16 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     /** The model's reasoning scaffold toggle (templates without one ignore it). Default on. */
     public Boolean getThinking() {
         return thinking;
+    }
+
+    /** Reasoning-span cap in generated tokens; {@code -1} uncaps, null = the family's policy. */
+    public Integer getReasoningBudget() {
+        return reasoningBudget;
+    }
+
+    /** What the model "decides" when the budget runs out, in its own words; null = a break. */
+    public String getReasoningBudgetMessage() {
+        return reasoningBudgetMessage;
     }
 
     /** Wall-clock generation deadline; null = none. */
@@ -105,6 +119,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 .seed(seed)
                 .minP(minP)
                 .thinking(thinking)
+                .reasoningBudget(reasoningBudget)
+                .reasoningBudgetMessage(reasoningBudgetMessage)
                 .timeout(timeout)
                 .outputSchema(outputSchema);
     }
@@ -136,6 +152,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         private Long seed;
         private Double minP;
         private Boolean thinking;
+        private Integer reasoningBudget;
+        private String reasoningBudgetMessage;
         private Duration timeout;
         private String outputSchema;
 
@@ -153,6 +171,18 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
 
         public Builder thinking(Boolean thinking) {
             this.thinking = thinking;
+            return this;
+        }
+
+        public Builder reasoningBudget(Integer reasoningBudget) {
+            if (reasoningBudget != null && reasoningBudget < -1)
+                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
+            this.reasoningBudget = reasoningBudget;
+            return this;
+        }
+
+        public Builder reasoningBudgetMessage(String reasoningBudgetMessage) {
+            this.reasoningBudgetMessage = reasoningBudgetMessage;
             return this;
         }
 
@@ -178,6 +208,9 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 if (j.seed != null) seed = j.seed;
                 if (j.minP != null) minP = j.minP;
                 if (j.thinking != null) thinking = j.thinking;
+                if (j.reasoningBudget != null) reasoningBudget = j.reasoningBudget;
+                if (j.reasoningBudgetMessage != null)
+                    reasoningBudgetMessage = j.reasoningBudgetMessage;
                 if (j.timeout != null) timeout = j.timeout;
                 if (j.outputSchema != null) outputSchema = j.outputSchema;
             }

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
@@ -125,5 +126,23 @@ class JinferChatRequestParametersTest {
         assertEquals(a.hashCode(), same.hashCode());
         assertNotEquals(a, otherSeed);
         assertNotEquals(a, otherGrammar);
+    }
+
+    @Test
+    void reasoningBudgetRidesTheMergeLikeEveryJinferExtra() {
+        JinferChatRequestParameters defaults =
+                JinferChatRequestParameters.builder().reasoningBudget(48).build();
+        ChatRequestParameters plain =
+                DefaultChatRequestParameters.builder().temperature(0.5).build();
+        assertEquals(
+                48, ((JinferChatRequestParameters) defaults.overrideWith(plain)).reasoningBudget());
+        JinferChatRequestParameters pinned =
+                JinferChatRequestParameters.builder().reasoningBudget(-1).build();
+        assertEquals(
+                -1,
+                ((JinferChatRequestParameters) defaults.overrideWith(pinned)).reasoningBudget());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferChatRequestParameters.builder().reasoningBudget(-2));
     }
 }
