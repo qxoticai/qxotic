@@ -117,7 +117,7 @@ public class Main {
             // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack
             // trace; anything else is a bug and still traces
             spinner.stop();
-            System.err.println("ERROR " + e.getMessage());
+            System.err.println("ERROR " + Options.rootMessage(e));
             System.exit(1);
             return;
         }
@@ -131,9 +131,20 @@ public class Main {
         }
         cacheOptions =
                 cacheOptions.withCatalog(options.promptCache(), options.promptCacheReadOnly());
-        ChatEngine engine =
-                new ChatEngine(model, options.modelPath().getFileName().toString(), cacheOptions)
-                        .speculationDepth(options.speculationDepth());
+        ChatEngine engine;
+        try {
+            engine =
+                    new ChatEngine(
+                                    model,
+                                    options.modelPath().getFileName().toString(),
+                                    cacheOptions)
+                            .speculationDepth(options.speculationDepth());
+        } catch (IllegalArgumentException | IllegalStateException | UncheckedIOException e) {
+            // a --cache file that is not a cache, or was cut short, names itself in the message
+            System.err.println("ERROR " + Options.rootMessage(e));
+            System.exit(1);
+            return;
+        }
         try {
             if (options.server()) {
                 Serve.run(engine, model, sampling, options);

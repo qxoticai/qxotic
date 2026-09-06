@@ -432,4 +432,20 @@ final class OptionsTest {
                 IllegalArgumentException.class,
                 () -> Options.parse(withModel("--chat", "--raw-prompt")));
     }
+
+    /** ERROR lines carry the remedy, never a wrapper's class name in front of it. */
+    @Test
+    void theErrorLineSkipsWrappersThatOnlyNameTheirCause() {
+        var io = new java.io.IOException("cache root is not writable: /models");
+        assertEquals(
+                "cache root is not writable: /models",
+                Options.rootMessage(new java.io.UncheckedIOException(io)));
+        assertEquals(
+                "cache root is not writable: /models",
+                Options.rootMessage(new RuntimeException(new java.io.UncheckedIOException(io))));
+        assertEquals("bad magic", Options.rootMessage(new IllegalStateException("bad magic")));
+        assertEquals(
+                "outer says more",
+                Options.rootMessage(new IllegalStateException("outer says more", io)));
+    }
 }

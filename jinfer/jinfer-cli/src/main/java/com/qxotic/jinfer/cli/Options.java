@@ -322,9 +322,15 @@ public record Options(
     }
 
     /** The remedy a failure carries, unwrapping the plumbing around it. */
+    /**
+     * The message a user reads: a wrapper that adds nothing but its cause's class name (an
+     * UncheckedIOException, a bare RuntimeException over a cause) is skipped for the cause's text.
+     */
     static String rootMessage(Throwable failure) {
         Throwable root = failure;
-        while (root.getMessage() == null && root.getCause() != null) {
+        while (root.getCause() != null
+                && (root.getMessage() == null
+                        || root.getMessage().equals(root.getCause().toString()))) {
             root = root.getCause();
         }
         return root.getMessage();
