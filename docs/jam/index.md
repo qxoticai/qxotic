@@ -145,6 +145,9 @@ Every build carries all kernel tiers of its architecture; the library binds the 
 ## Tests
 
 ```sh
+mvn -f jam/jam-native/pom.xml test     # JNI + FFM on AUTO; host-pool bridge on generic CPU
 cd build && ctest --output-on-failure   # every kernel, 1 & 3 threads, vs a double-precision reference
 ./jam_bench [M N K] [iters]             # GMAC/s (compute) and GB/s (bandwidth)
 ```
+
+On Apple Silicon, the AUTO Java passes exercise Metal. Maven runs `HostPoolTest` separately with `JAM_ISA=generic` because a GPU matmul has no CPU work and therefore never calls the host pool.

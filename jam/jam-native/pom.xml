@@ -135,9 +135,31 @@
           <!-- System.load is "restricted" on JDK 24+ -->
         </configuration>
         <executions>
-          <!-- default-test runs the suite through the JNI backend (the default jam.native.binding); this
-               second pass re-runs the SAME suite through the FFM/Panama backend, so both bindings and the
-               jam.native.binding selector are exercised end-to-end. -->
+          <!-- AUTO may route matmul to Metal, which deliberately bypasses the host pool. Keep the
+               binding tests on AUTO and exercise the host bridge separately on a portable CPU ISA. -->
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <excludes>
+                <exclude>**/HostPoolTest.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
+            <id>test-host-pool-jni</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <phase>test</phase>
+            <configuration>
+              <includes>
+                <include>**/HostPoolTest.java</include>
+              </includes>
+              <environmentVariables>
+                <JAM_ISA>generic</JAM_ISA>
+              </environmentVariables>
+            </configuration>
+          </execution>
           <execution>
             <id>test-ffm</id>
             <goals>
@@ -146,6 +168,26 @@
             <phase>test</phase>
             <configuration>
               <argLine>@{argLine} --enable-native-access=ALL-UNNAMED -Djam.native.binding=ffm</argLine>
+              <excludes>
+                <exclude>**/HostPoolTest.java</exclude>
+              </excludes>
+              <reportsDirectory>${project.build.directory}/surefire-reports-ffm</reportsDirectory>
+            </configuration>
+          </execution>
+          <execution>
+            <id>test-host-pool-ffm</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <phase>test</phase>
+            <configuration>
+              <argLine>@{argLine} --enable-native-access=ALL-UNNAMED -Djam.native.binding=ffm</argLine>
+              <includes>
+                <include>**/HostPoolTest.java</include>
+              </includes>
+              <environmentVariables>
+                <JAM_ISA>generic</JAM_ISA>
+              </environmentVariables>
               <reportsDirectory>${project.build.directory}/surefire-reports-ffm</reportsDirectory>
             </configuration>
           </execution>
