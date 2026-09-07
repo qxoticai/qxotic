@@ -46,18 +46,26 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     private final ReplyLanguage.Spans replyLanguage;
 
     /**
-     * What a checkpoint's Jinja template does that the codec must mirror, read off its source: the
-     * LFM2.5 family ships three dialects. 2.6B opens the think span in its generation prompt, keeps
-     * thinking after the last user turn and escapes call arguments; 8B keeps thinking the same way
-     * but renders string arguments raw and lists as Python repr; 350M keeps the LAST assistant
-     * turn's thinking wherever it sits.
+     * What a checkpoint does that the codec must mirror. Four components are read off the Jinja
+     * source: 2.6B opens the think span in its generation prompt, keeps thinking after the last
+     * user turn and escapes call arguments; 8B-A1B keeps thinking the same way but renders string
+     * arguments raw and lists as Python repr; 350M keeps the LAST assistant turn's thinking
+     * wherever it sits.
+     *
+     * <p>{@code modelOpensThinking} is the fifth and comes from the architecture instead, because
+     * the source cannot answer it: 8B-A1B and LFM2.5-VL ship the same template, yet the MoE opens a
+     * think span on every reply and LFM2.5-VL never reasons at all. {@code general.name} is no help
+     * - the 8B and 2.6B checkpoints ship a hex blob there.
      */
     public record Dialect(
             boolean promptOpensThinking,
             boolean lastAssistantKeepsThinking,
             boolean escapesArguments,
-            boolean rendersThinking) {
-        public static Dialect of(String templateSource) {
+            boolean rendersThinking,
+            boolean modelOpensThinking) {
+        /** Reads the dialect off a checkpoint: its template source, plus its architecture. */
+        public static Dialect of(GGUF gguf) {
+            String templateSource = gguf.getStringOrDefault("tokenizer.chat_template", "");
             return new Dialect(
                     Lfm2ChatTemplate.promptOpensThinking(templateSource),
                     templateSource.contains("last_assistant_index"),
@@ -65,26 +73,21 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
                             || templateSource.contains("replace("),
                     // the 350M's instruct template only strips past "</think>" spans; a template
                     // that never writes "<think>" has no reasoning turn to render
-                    templateSource.contains("<think>"));
+                    templateSource.contains("<think>"),
+                    "lfm2moe".equals(gguf.getStringOrDefault("general.architecture", "")));
         }
     }
 
     /** Builds the native template in the checkpoint's dialect. */
     public static Lfm2ChatTemplate fromGguf(Tokenizer tokenizer, GGUF gguf) {
         Objects.requireNonNull(gguf, "gguf");
-        return new Lfm2ChatTemplate(
-                tokenizer,
-                null,
-                Dialect.of(gguf.getStringOrDefault("tokenizer.chat_template", "")));
+        return new Lfm2ChatTemplate(tokenizer, null, Dialect.of(gguf));
     }
 
     /** Builds the native template in the checkpoint's dialect, with the model's vision tower. */
     public static Lfm2ChatTemplate fromGguf(Lfm2 model, GGUF gguf) {
         Objects.requireNonNull(gguf, "gguf");
-        return new Lfm2ChatTemplate(
-                model.tokenizer(),
-                model.vision(),
-                Dialect.of(gguf.getStringOrDefault("tokenizer.chat_template", "")));
+        return new Lfm2ChatTemplate(model.tokenizer(), model.vision(), Dialect.of(gguf));
     }
 
     /**
@@ -99,14 +102,14 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     public Lfm2ChatTemplate(Tokenizer tokenizer, boolean promptOpensThinking) {
-        this(tokenizer, null, new Dialect(promptOpensThinking, false, true, true));
+        this(tokenizer, null, new Dialect(promptOpensThinking, false, true, true, true));
     }
 
     public Lfm2ChatTemplate(Lfm2 model, boolean promptOpensThinking) {
         this(
                 model.tokenizer(),
                 model.vision(),
-                new Dialect(promptOpensThinking, false, true, true));
+                new Dialect(promptOpensThinking, false, true, true, true));
     }
 
     Lfm2ChatTemplate(Tokenizer tokenizer, Lfm2Vision vision, Dialect dialect) {
@@ -137,17 +140,20 @@ public final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     /**
-     * 8B-A1B's dialect keeps thinking after the last user turn yet never opens the span: the model
-     * opens it on every reply, so there is no non-thinking turn to render. The 2.6B opens the span
-     * itself (closable); the 350M's instruct template never writes one, so it cannot reason.
+     * A checkpoint reasons unconditionally when the model opens the span on every reply (8B-A1B)
+     * and the prompt leaves the codec none to close: there is then no non-thinking turn to render.
+     * The 2.6B opens the span in its own prompt, so the codec closes it; the 350M's instruct
+     * template never writes one, so it cannot reason; LFM2.5-VL renders a span from history but
+     * answers directly, so thinking is simply optional.
      */
     @Override
     public ThinkingPolicy thinkingPolicy() {
         boolean reasoningOnly =
-                !dialect.promptOpensThinking()
-                        && !dialect.lastAssistantKeepsThinking()
+                dialect.rendersThinking()
                         && thinkOpen >= 0
-                        && thinkClose >= 0;
+                        && thinkClose >= 0
+                        && dialect.modelOpensThinking()
+                        && !dialect.promptOpensThinking();
         if (reasoningOnly) return ThinkingPolicy.ALWAYS;
         return dialect.rendersThinking() ? ThinkingPolicy.OPTIONAL : ThinkingPolicy.NONE;
     }

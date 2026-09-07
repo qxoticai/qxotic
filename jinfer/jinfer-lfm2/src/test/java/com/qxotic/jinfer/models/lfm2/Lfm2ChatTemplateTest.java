@@ -378,7 +378,7 @@ final class Lfm2ChatTemplateTest {
                     new Lfm2ChatTemplate(
                             current,
                             vision,
-                            new Lfm2ChatTemplate.Dialect(false, false, true, true));
+                            new Lfm2ChatTemplate.Dialect(false, false, true, true, false));
             MediaEncodingCache mediaCache = new MediaEncodingCache();
             IntSequence.Builder tokens = IntSequence.newBuilder();
             List<Integer> embeddingRows = new ArrayList<>();
@@ -614,7 +614,7 @@ final class Lfm2ChatTemplateTest {
                 new Lfm2ChatTemplate(
                                 tokenizer,
                                 null,
-                                new Lfm2ChatTemplate.Dialect(false, true, true, false))
+                                new Lfm2ChatTemplate.Dialect(false, true, true, false, false))
                         .thinkingPolicy(),
                 "350M's instruct dialect strips past thinking but never writes a span");
         assertEquals(
@@ -622,8 +622,57 @@ final class Lfm2ChatTemplateTest {
                 new Lfm2ChatTemplate(
                                 tokenizer,
                                 null,
-                                new Lfm2ChatTemplate.Dialect(false, true, true, true))
+                                new Lfm2ChatTemplate.Dialect(false, true, true, true, false))
                         .thinkingPolicy(),
                 "a history-keeping dialect that writes the span can reason on request");
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.OPTIONAL,
+                new Lfm2ChatTemplate(
+                                tokenizer,
+                                null,
+                                new Lfm2ChatTemplate.Dialect(false, false, true, true, false))
+                        .thinkingPolicy(),
+                "LFM2.5-VL-3B shares 8B-A1B's template but answers directly: thinking is optional,"
+                        + " not compulsory");
+    }
+
+    /**
+     * 8B-A1B and LFM2.5-VL-3B ship the same template, so the only thing that separates a model that
+     * reasons on every reply from one that never does is the checkpoint's architecture.
+     */
+    @Test
+    void theDialectReadsUnconditionalReasoningFromTheArchitecture() {
+        String shared =
+                """
+                {%- if thinking and (preserve_thinking or loop.index0 > ns.last_user_index) -%}
+                    {{- "<think>" + thinking + "</think>" -}}
+                {%- endif -%}
+                {%- if add_generation_prompt -%}{{- "<|im_start|>assistant\\n" -}}{%- endif -%}
+                """;
+        Lfm2ChatTemplate.Dialect moe = Lfm2ChatTemplate.Dialect.of(checkpoint("lfm2moe", shared));
+        Lfm2ChatTemplate.Dialect dense = Lfm2ChatTemplate.Dialect.of(checkpoint("lfm2", shared));
+        assertTrue(moe.modelOpensThinking(), "the MoE opens its own think span");
+        assertEquals(
+                new Lfm2ChatTemplate.Dialect(
+                        moe.promptOpensThinking(),
+                        moe.lastAssistantKeepsThinking(),
+                        moe.escapesArguments(),
+                        moe.rendersThinking(),
+                        false),
+                dense,
+                "one template, one architecture apart");
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.ALWAYS,
+                new Lfm2ChatTemplate(tokenizer, null, moe).thinkingPolicy());
+        assertEquals(
+                ChatTemplate.ThinkingPolicy.OPTIONAL,
+                new Lfm2ChatTemplate(tokenizer, null, dense).thinkingPolicy());
+    }
+
+    private static GGUF checkpoint(String architecture, String chatTemplate) {
+        return Builder.newBuilder()
+                .putString("general.architecture", architecture)
+                .putString("tokenizer.chat_template", chatTemplate)
+                .build();
     }
 }

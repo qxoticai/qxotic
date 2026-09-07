@@ -28,6 +28,7 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **`--raw-prompt` writes the start token.** The raw lane prepends the model's start tokens (BOS, where the family has one) unless the prompt already spells them, as llama.cpp's `add_bos_token` does; an LFM 2.5 raw prompt no longer decodes to noise.
 - **Errors that name the mistake.** An unknown flag in last position is reported as unknown; the server answers 404 for a model name it does not serve and refuses `max_tokens: 0`; the always-reasoning refusal names the lever on every front end; a null embedding batch fails instead of returning nothing; the Narrate and Detect demos report a missing image in one line.
 - **LFM2.5 thinking policy.** A checkpoint whose template never writes a think span (the 350M instruct) reports `NONE`; the ones that do keep `OPTIONAL` or `ALWAYS`.
+  LFM2.5-VL-3B ships the same template as the 8B-A1B but does not reason, so it is read off the architecture rather than the template source: `thinking(false)` on the vision models works instead of being refused.
 
 ### Known limits
 
