@@ -7,6 +7,27 @@
 # (Oracle GraalVM) this happens automatically; weaker inliners (GraalVM CE, plain C2 under budget pressure)
 # need the hint. Forcing the inline makes the whole loop allocation-free - measured +~45% prefill on GraalVM CE.
 #
+# This file is a MEASUREMENT INSTRUMENT for A/B comparison against the defaults. It is never a requirement:
+# jinfer must be fast on a stock JVM with no flags, and a kernel that is only fast with these hints is a bug
+# in the kernel. Do not add an entry to paper over one.
+#
+# Force-inline the LEAF helpers, never the TILE BODIES. A leaf (loadF32/loadF16/accumulate/normalize/qkRowF32)
+# is a few instructions returning one vector: inlining it removes a boundary the vector would otherwise cross.
+# A tile body is already a large compilation unit, and forcing it into its caller pushes that unit past what the
+# JIT will expand, so the vectors box wholesale - the same failure the Convert NOTE below records. The qkTile*
+# and pvTile* entries were removed on 2026-09-07 after measuring, per 512x512 image on LFM2.5-VL-3B and per
+# 565-token prefill on LFM2.5-8B-A1B-Q4_K_M:
+#
+#                          vision prefill        text prefill
+#                       Graal        C2        Graal       C2
+#   no flags            1059 ms    1612 ms    1120 t/s   1168 t/s
+#   with tile bodies    3023 ms    9220 ms    1192 t/s   1204 t/s
+#   leaves only         1054 ms    1592 ms    1207 t/s   1193 t/s
+#
+# Removing them costs text prefill nothing (it gains on Graal, and stays within noise of the full file on C2)
+# and takes vision prefill off a 2.9x/5.7x cliff. Not measured on GraalVM CE - the +45% figure above predates
+# this and is unverified against the current entries.
+#
 # Use with:  -XX:CompileCommandFile=<path>/hotspot_compile_commands
 # Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.
 #
@@ -18,11 +39,14 @@
 # (FreqInlineSize/MaxInlineSize) does nothing because this check fires first. Decode needs no
 # flags at all: MatMul routes the C2-hostile k-quant dots to JAM.
 #
-# NOTE: Convert.f16ToF32Vector is deliberately NOT force-inlined: loadF16 (below) is, and
-# Graal inlines the tiny converter into it naturally. Force-inlining the converter AT EVERY CALL
-# SITE on top of the already-forced qkTile/pvTile bodies blew Graal's compilation units in qwen35's
-# hybrid attention layers - measured 2.0x SLOWER prefill on Oracle GraalVM 25.1 (863 vs 1776 t/s,
-# Qwen3.5-0.8B-Q8_0). Bisect: the regression needs BOTH this line and the FlashAttention lines.
+# NOTE: Convert.f16ToF32Vector is deliberately NOT force-inlined: loadF16 (below) is, and the tiny
+# converter goes into it naturally. Force-inlining the converter AT EVERY CALL SITE blows the
+# compilation units it lands in - measured twice, and it is the same cliff as the tile bodies above.
+# 2026-08: on top of the then-forced qkTile/pvTile bodies it made qwen35's hybrid attention layers
+# 2.0x SLOWER on Oracle GraalVM 25.1 (863 vs 1776 t/s, Qwen3.5-0.8B-Q8_0); the regression needed
+# BOTH that line and the tile-body lines, which is why those are gone now. 2026-09-07: added on its
+# own to the entries below, one 512x512 image on LFM2.5-VL-3B went from 3023 ms to 19825 ms and from
+# 83 GB to 712 GB allocated. Leave it out.
 inline com/qxotic/jinfer/kernels/Ops.siluVec
 inline com/qxotic/jinfer/kernels/Ops.tanhVec
 inline com/qxotic/jinfer/kernels/VectorGatedDeltaNet.load
@@ -32,13 +56,6 @@ inline com/qxotic/jinfer/kernels/VectorMamba2.store
 inline com/qxotic/jinfer/kernels/FlashAttention.loadF32
 inline com/qxotic/jinfer/kernels/FlashAttention.loadF16
 inline com/qxotic/jinfer/kernels/FlashAttention.accumulate
-inline com/qxotic/jinfer/kernels/FlashAttention.qkTile
-inline com/qxotic/jinfer/kernels/FlashAttention.qkTile64F32
-inline com/qxotic/jinfer/kernels/FlashAttention.qkTileWideF32
 inline com/qxotic/jinfer/kernels/FlashAttention.qkRowF32
-inline com/qxotic/jinfer/kernels/FlashAttention.pvTile
-# the bodies pvTile dispatches to (per element type): inlining the dispatcher alone still leaves
-# a vector-crossing boundary
-inline com/qxotic/jinfer/kernels/FlashAttention.pvTileF16
-inline com/qxotic/jinfer/kernels/FlashAttention.pvTileF32
 inline com/qxotic/jinfer/kernels/FlashAttention.normalize
+# NOT the tile bodies (qkTile, qkTile64F32, qkTileWideF32, pvTile, pvTileF16, pvTileF32): see the header table.
