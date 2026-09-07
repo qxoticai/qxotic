@@ -21,7 +21,6 @@ import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorSpecies;
 
 /**
  * Online-softmax accumulation and normalization over a head vector, plus per-thread tile scratch.
@@ -385,8 +384,6 @@ public final class FlashAttention {
             int runStart,
             int nKeys,
             float[] P,
-            VectorSpecies<Float> sp,
-            int len,
             int bound,
             int ob0,
             int ob1,
@@ -396,6 +393,13 @@ public final class FlashAttention {
             int p1,
             int p2,
             int p3) {
+        // The species is read from the constant here, NOT taken as a parameter: a species that
+        // arrives as an argument is only constant while this method is inlined, and the moment the
+        // JIT compiles the tile standalone every FloatVector.broadcast below de-intrinsifies into
+        // an allocating FloatSpecies.broadcastBits. Reading Segments.F_SPECIES keeps the broadcast
+        // a register splat whatever the inliner decides.
+        var sp = Segments.F_SPECIES;
+        int len = sp.length();
         // Native image: the f16->f32 conversion chain fused into the fma accumulation defeats the
         // AOT Vector API expansion for this graph (the whole component stays boxed; the same code
         // expands fine in isolation). Routing the converted vector through a tiny L1-hot scratch
@@ -448,8 +452,6 @@ public final class FlashAttention {
             int runStart,
             int nKeys,
             float[] P,
-            VectorSpecies<Float> sp,
-            int len,
             int bound,
             int ob0,
             int ob1,
@@ -459,6 +461,9 @@ public final class FlashAttention {
             int p1,
             int p2,
             int p3) {
+        // constant species, not a parameter - see pvTileF16
+        var sp = Segments.F_SPECIES;
+        int len = sp.length();
         for (int d = 0; d < bound; d += len) {
             FloatVector o0 = loadF32(out, ob0 + d),
                     o1 = loadF32(out, ob1 + d),
@@ -774,7 +779,6 @@ public final class FlashAttention {
             int pRow0,
             int BcRows) {
         var sp = Segments.F_SPECIES;
-        int len = sp.length();
         int bound = sp.loopBound(headSize);
         int ob0 = oBase,
                 ob1 = oBase + oStride,
@@ -794,8 +798,6 @@ public final class FlashAttention {
                     runStart,
                     nKeys,
                     P,
-                    sp,
-                    len,
                     bound,
                     ob0,
                     ob1,
@@ -813,8 +815,6 @@ public final class FlashAttention {
                     runStart,
                     nKeys,
                     P,
-                    sp,
-                    len,
                     bound,
                     ob0,
                     ob1,
