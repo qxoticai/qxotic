@@ -14,7 +14,12 @@ public interface Reranker<S extends ContextState> {
         return true;
     }
 
-    /** Scores all documents safely; implementations own exclusive access to {@code state}. */
+    /**
+     * Scores all documents safely; implementations own exclusive access to {@code state}.
+     *
+     * @throws IllegalArgumentException when a document does not fit the context - the message says
+     *     which document, and how to fit it: a larger context, or a smaller document
+     */
     int scoreAll(
             S state, String instruction, String query, List<String> documents, DoubleConsumer sink);
 }

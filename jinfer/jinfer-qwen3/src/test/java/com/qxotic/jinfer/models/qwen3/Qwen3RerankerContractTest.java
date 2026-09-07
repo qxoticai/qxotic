@@ -2,6 +2,8 @@ package com.qxotic.jinfer.models.qwen3;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -60,6 +62,32 @@ class Qwen3RerankerContractTest {
             assertEquals(whole.values().size(), chunked.values().size());
             for (int i = 0; i < whole.values().size(); i++) {
                 assertEquals(whole.values().get(i), chunked.values().get(i), 5e-3, "document " + i);
+            }
+        }
+    }
+
+    @Test
+    void aDocumentOverTheContextIsRefusedByIndexWithTheRemedy() throws Exception {
+        // the refusal law: name the failing candidate AND the knob to raise (the speech and
+        // embedding surfaces speak the same idiom). The langchain4j adapter pins this end to
+        // end with a 2048-token scorer; this pin lives in the module that OWNS the message,
+        // so the next time the scoring loop moves, the contract moves with it
+        try (Arena weights = Arena.ofShared()) {
+            Qwen3Reranker reranker = reranker(weights);
+            try (Qwen3.State state =
+                    reranker.model().newState(128, 64)) { // prefix fits; +200 does not
+                IllegalArgumentException e =
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        reranker.scoreAll(
+                                                state,
+                                                reranker.defaultInstruction(),
+                                                QUERY,
+                                                List.of("a small one", "lattice tower ".repeat(64)),
+                                                d -> {}));
+                assertTrue(e.getMessage().contains("document 1"), e.getMessage());
+                assertTrue(e.getMessage().contains("contextLength"), e.getMessage());
             }
         }
     }

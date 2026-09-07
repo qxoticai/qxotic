@@ -162,7 +162,7 @@ public final class Qwen3Reranker implements Reranker<Qwen3.State> {
                                 + (prefixLength + document.count())
                                 + " tokens, over the "
                                 + state.contextCapacity()
-                                + "-token context");
+                                + "-token context - raise contextLength(...) or chunk smaller");
             }
             total += document.count();
             state.resumeAt(prefixLength);
