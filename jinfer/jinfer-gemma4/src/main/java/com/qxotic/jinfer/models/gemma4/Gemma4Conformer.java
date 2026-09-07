@@ -64,11 +64,11 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
             MemoryView<MemorySegment> ffPostNorm1,
             MemoryView<MemorySegment> outputNorm) {}
 
-    private final int dim, heads, headDim, ffDim, nMel, outputDim;
+    private final int dim, heads, headDim, ffDim, nMel, encoderOutputDim, outputDim;
     private final float eps;
     private final AudioPreprocess preprocess;
     private final float[] conv0, conv1;
-    private final MemoryView<MemorySegment> norm0, norm1, outputBias;
+    private final MemoryView<MemorySegment> norm0, norm1, outputBias, softEmbNorm;
     private final Clamped inputProjection, outputProjection, modelProjection;
     private final Block[] blocks;
 
@@ -77,6 +77,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
             int heads,
             int ffDim,
             int nMel,
+            int encoderOutputDim,
             int outputDim,
             float eps,
             float[] conv0,
@@ -87,15 +88,21 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
             Block[] blocks,
             Clamped outputProjection,
             MemoryView<MemorySegment> outputBias,
+            MemoryView<MemorySegment> softEmbNorm,
             Clamped modelProjection) {
         validateArchitecture(Path.of("gemma4a"), dim, heads, nMel);
-        if (ffDim <= 0 || outputDim <= 0 || !(eps > 0f) || !Float.isFinite(eps))
+        if (ffDim <= 0
+                || encoderOutputDim <= 0
+                || outputDim <= 0
+                || !(eps > 0f)
+                || !Float.isFinite(eps))
             throw new IllegalArgumentException("invalid gemma4a dimensions or epsilon");
         this.dim = dim;
         this.heads = heads;
         this.headDim = dim / heads;
         this.ffDim = ffDim;
         this.nMel = nMel;
+        this.encoderOutputDim = encoderOutputDim;
         this.outputDim = outputDim;
         this.eps = eps;
         this.preprocess = new AudioPreprocess(nMel);
@@ -107,10 +114,15 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         this.blocks = Objects.requireNonNull(blocks, "blocks").clone();
         for (int i = 0; i < this.blocks.length; i++) validateBlock(this.blocks[i], i);
         this.outputProjection =
-                requireClamped(outputProjection, "a.pre_encode.out", outputDim, dim);
-        this.outputBias = requireF32(outputBias, "a.pre_encode.out.bias", outputDim);
+                requireClamped(outputProjection, "a.pre_encode.out", encoderOutputDim, dim);
+        this.outputBias = requireF32(outputBias, "a.pre_encode.out.bias", encoderOutputDim);
+        this.softEmbNorm =
+                softEmbNorm == null
+                        ? null
+                        : requireF32(softEmbNorm, "mm.a.soft_emb_norm.weight", encoderOutputDim);
         this.modelProjection =
-                requireClamped(modelProjection, "mm.a.input_projection", outputDim, outputDim);
+                requireClamped(
+                        modelProjection, "mm.a.input_projection", outputDim, encoderOutputDim);
     }
 
     @Override
@@ -176,7 +188,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         MemoryView<MemorySegment> flat = Views.allocateF32(scratch, rows, dim);
         Ops.channelLastCopy(c1, CONV1_CHANNELS, rows, frequency4, flat);
 
-        Scratch work = Scratch.allocate(scratch, rows, dim, ffDim, outputDim);
+        Scratch work = Scratch.allocate(scratch, rows, dim, ffDim, encoderOutputDim, outputDim);
         inputProjection.gemm(flat, dim, work.x, dim, rows, work.clamp);
         for (Block block : blocks) {
             halfFfn(work.x, block.ffNorm, block.ffUp, block.ffDown, block.ffPostNorm, rows, work);
@@ -192,19 +204,30 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
                     work);
             Norms.rmsnormRows(work.x, work.x, block.outputNorm, rows, dim, eps);
         }
-        outputProjection.gemm(work.x, dim, work.projected, outputDim, rows, work.clamp);
-        Ops.addRowBiasInPlace(work.projected, 0, outputBias, 0, rows, outputDim);
+        outputProjection.gemm(work.x, dim, work.projected, encoderOutputDim, rows, work.clamp);
+        Ops.addRowBiasInPlace(work.projected, 0, outputBias, 0, rows, encoderOutputDim);
         Parallel.forLoop(
                 rows,
                 row ->
                         Norms.rmsnormNoWeight(
                                 work.projected,
-                                (long) row * outputDim,
+                                (long) row * encoderOutputDim,
                                 work.projected,
-                                (long) row * outputDim,
-                                outputDim,
+                                (long) row * encoderOutputDim,
+                                encoderOutputDim,
                                 eps));
-        modelProjection.gemm(work.projected, outputDim, work.output, outputDim, rows, work.clamp);
+        if (softEmbNorm != null)
+            Parallel.forLoop(
+                    rows,
+                    row ->
+                            Ops.multiplyInPlace(
+                                    work.projected,
+                                    (long) row * encoderOutputDim,
+                                    softEmbNorm,
+                                    0,
+                                    encoderOutputDim));
+        modelProjection.gemm(
+                work.projected, encoderOutputDim, work.output, outputDim, rows, work.clamp);
         return work.output;
     }
 
@@ -223,8 +246,13 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
             MemoryView<MemorySegment> output,
             MemoryView<MemorySegment> clamp) {
         static Scratch allocate(
-                MemoryArena<MemorySegment> arena, int rows, int dim, int ffDim, int outputDim) {
-            int max = Math.max(Math.max(dim * 2, ffDim), outputDim);
+                MemoryArena<MemorySegment> arena,
+                int rows,
+                int dim,
+                int ffDim,
+                int encoderOutputDim,
+                int outputDim) {
+            int max = Math.max(Math.max(dim * 2, ffDim), Math.max(encoderOutputDim, outputDim));
             return new Scratch(
                     Views.allocateF32(arena, rows, dim),
                     Views.allocateF32(arena, rows, dim),
@@ -236,7 +264,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
                     Views.allocateF32(arena, rows, dim),
                     Views.allocateF32(arena, rows, dim * 2),
                     Views.allocateF32(arena, rows, dim),
-                    Views.allocateF32(arena, rows, outputDim),
+                    Views.allocateF32(arena, rows, encoderOutputDim),
                     Views.allocateF32(arena, rows, outputDim),
                     Views.allocateF32(arena, rows, max));
         }
@@ -424,6 +452,10 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
         int blockCount = gguf.getValue(int.class, "clip.audio.block_count");
         int nMel = gguf.getValue(int.class, "clip.audio.num_mel_bins");
         int outputDim = gguf.getValue(int.class, "clip.audio.projection_dim");
+        MemoryView<MemorySegment> outputBias = tensors.get("a.pre_encode.out.bias");
+        if (outputBias == null)
+            throw new IllegalStateException("mmproj tensor missing: a.pre_encode.out.bias");
+        int encoderOutputDim = Math.toIntExact(outputBias.shape().size());
         float eps =
                 gguf.getValueOrDefault(
                         float.class, "clip.audio.attention.layer_norm_epsilon", 1e-6f);
@@ -475,6 +507,7 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
                 heads,
                 ffDim,
                 nMel,
+                encoderOutputDim,
                 outputDim,
                 eps,
                 taps(tensors, "a.conv1d.0.weight", persistent, CONV0_CHANNELS, 1, 3, 3),
@@ -490,9 +523,10 @@ public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
                 requireF32(tensors, "a.conv1d.1.norm.weight", CONV1_CHANNELS),
                 Clamped.load(tensors, "a.input_projection", dim, dim),
                 blocks,
-                Clamped.load(tensors, "a.pre_encode.out", outputDim, dim),
-                requireF32(tensors, "a.pre_encode.out.bias", outputDim),
-                Clamped.load(tensors, "mm.a.input_projection", outputDim, outputDim));
+                Clamped.load(tensors, "a.pre_encode.out", encoderOutputDim, dim),
+                requireF32(outputBias, "a.pre_encode.out.bias", encoderOutputDim),
+                tensors.get("mm.a.soft_emb_norm.weight"),
+                Clamped.load(tensors, "mm.a.input_projection", outputDim, encoderOutputDim));
     }
 
     static void validateArchitecture(Path label, int dim, int heads, int nMel) {

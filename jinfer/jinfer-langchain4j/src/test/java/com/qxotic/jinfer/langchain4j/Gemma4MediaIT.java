@@ -29,9 +29,8 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link AbstractMediaIT} against Gemma 4 multimodal end-to-end: text GGUF + mmproj sidecar, image
  * through the native codec (media lowers to wrapped embeddings batches). This subclass keeps the
- * two Gemma-specific lanes the battery cannot generalize: audio (the 12B mmproj carries the
- * gemma4ua audio adapter; the E2B sidecar is vision-only) and the tool-call interplay. Model-gated:
- * assume-skips when a GGUF is absent.
+ * two Gemma-specific lanes the battery cannot generalize: the 12B {@code gemma4ua} audio path and
+ * the tool-call interplay. Model-gated: assume-skips when a GGUF is absent.
  */
 class Gemma4MediaIT extends AbstractMediaIT {
 
@@ -39,7 +38,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
             "hf.co/unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf";
     private static final String MMPROJ_REF = "hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf";
 
-    // Audio: the 12B mmproj carries the gemma4ua audio adapter (the E2B sidecar is vision-only).
+    // Exercise 12B's gemma4ua path; E2B/E4B use the separate gemma4a Conformer.
     private static final String AUDIO_MODEL_REF =
             "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf";
     private static final String AUDIO_MMPROJ_REF =

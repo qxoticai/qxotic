@@ -42,7 +42,7 @@ jbang Detect.java ../street.jpg "person, bicycle, traffic light"
 with `-Djinfer.video.frames=<count>`.
 
 `GemmaVision.java` and `GemmaVideo.java` accept model and media references as trailing arguments.
-E variants use the E2B projector:
+Use the projector published for the same model size:
 
 ```bash
 # E2B (default)
@@ -51,7 +51,7 @@ jbang GemmaVision.java cat.jpg "Describe it"
 # E4B
 jbang GemmaVision.java cat.jpg "Describe it" \
   unsloth/gemma-4-E4B-it-GGUF:Q8_0 \
-  unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
+  unsloth/gemma-4-E4B-it-GGUF/mmproj-F32.gguf
 
 # 12B
 jbang GemmaVision.java cat.jpg "Describe it" \

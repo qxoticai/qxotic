@@ -24,7 +24,8 @@ import org.junit.jupiter.api.Test;
 
 class Gemma4ConformerTest {
     private static final int DIM = 32;
-    private static final int OUTPUT_DIM = 3;
+    private static final int ENCODER_OUTPUT_DIM = 3;
+    private static final int OUTPUT_DIM = 5;
 
     @Test
     void preservesPositionGeometryAndRelativePositionOrdering() {
@@ -79,7 +80,7 @@ class Gemma4ConformerTest {
             assertEquals(2, conformer.positions(audio));
             assertEquals(2, output.size());
             float rms = (float) Math.sqrt((1 + 4 + 9) / 3f + 1e-6f);
-            float[] expected = {1 / rms, 2 / rms, 3 / rms};
+            float[] expected = {2 / rms, 6 / rms, 12 / rms, 0f, 0f};
             assertArrayEquals(expected, output.get(0), 0f);
             assertArrayEquals(expected, output.get(1), 0f);
             assertFalse(((MemorySegment) borrowed.getFirst().memory().base()).scope().isAlive());
@@ -94,8 +95,13 @@ class Gemma4ConformerTest {
             Map<String, MemoryView<MemorySegment>> tensors = tensors(memory);
             Gemma4Conformer.loadModel(Path.of("synthetic.gguf"), gguf, tensors, arena);
 
+            Map<String, MemoryView<MemorySegment>> withoutOptionalNorm = new HashMap<>(tensors);
+            withoutOptionalNorm.remove("mm.a.soft_emb_norm.weight");
+            Gemma4Conformer.loadModel(Path.of("synthetic.gguf"), gguf, withoutOptionalNorm, arena);
+
             Map<String, MemoryView<MemorySegment>> wrongShape = new HashMap<>(tensors);
-            wrongShape.put("a.pre_encode.out.bias", Views.allocateF32(memory, OUTPUT_DIM + 1));
+            wrongShape.put(
+                    "a.pre_encode.out.bias", Views.allocateF32(memory, ENCODER_OUTPUT_DIM + 1));
             assertThrows(
                     IllegalArgumentException.class,
                     () ->
@@ -121,6 +127,7 @@ class Gemma4ConformerTest {
                 1,
                 8,
                 4,
+                ENCODER_OUTPUT_DIM,
                 OUTPUT_DIM,
                 1e-6f,
                 new float[9 * 128],
@@ -129,9 +136,10 @@ class Gemma4ConformerTest {
                 filled(memory, new long[] {32}, 1f),
                 unclamped(identity(memory, DIM, DIM)),
                 new Gemma4Conformer.Block[0],
-                unclamped(filled(memory, new long[] {OUTPUT_DIM, DIM}, 0f)),
-                tensor(memory, new long[] {OUTPUT_DIM}, 1f, 2f, 3f),
-                unclamped(identity(memory, OUTPUT_DIM, OUTPUT_DIM)));
+                unclamped(filled(memory, new long[] {ENCODER_OUTPUT_DIM, DIM}, 0f)),
+                tensor(memory, new long[] {ENCODER_OUTPUT_DIM}, 1f, 2f, 3f),
+                tensor(memory, new long[] {ENCODER_OUTPUT_DIM}, 2f, 3f, 4f),
+                unclamped(identity(memory, OUTPUT_DIM, ENCODER_OUTPUT_DIM)));
     }
 
     private static GGUF metadata(String projectorType) {
@@ -154,9 +162,17 @@ class Gemma4ConformerTest {
         tensors.put("a.conv1d.1.weight", filled(memory, new long[] {32, 128, 3, 3}, 0f));
         tensors.put("a.conv1d.1.norm.weight", filled(memory, new long[] {32}, 1f));
         tensors.put("a.input_projection.weight", identity(memory, DIM, DIM));
-        tensors.put("a.pre_encode.out.weight", filled(memory, new long[] {OUTPUT_DIM, DIM}, 0f));
-        tensors.put("a.pre_encode.out.bias", tensor(memory, new long[] {OUTPUT_DIM}, 1f, 2f, 3f));
-        tensors.put("mm.a.input_projection.weight", identity(memory, OUTPUT_DIM, OUTPUT_DIM));
+        tensors.put(
+                "a.pre_encode.out.weight",
+                filled(memory, new long[] {ENCODER_OUTPUT_DIM, DIM}, 0f));
+        tensors.put(
+                "a.pre_encode.out.bias",
+                tensor(memory, new long[] {ENCODER_OUTPUT_DIM}, 1f, 2f, 3f));
+        tensors.put(
+                "mm.a.soft_emb_norm.weight",
+                tensor(memory, new long[] {ENCODER_OUTPUT_DIM}, 2f, 3f, 4f));
+        tensors.put(
+                "mm.a.input_projection.weight", identity(memory, OUTPUT_DIM, ENCODER_OUTPUT_DIM));
         return tensors;
     }
 

@@ -1,14 +1,14 @@
-# Gemma 4 E2B audio encoder (projector_type `gemma4a`) - port spec
+# Gemma 4 E-variant audio encoder (projector_type `gemma4a`) - port spec
 
 Reverse-engineered from the reference `../llama.cpp` across
 `tools/mtmd/{clip.cpp,clip-impl.h,clip-model.h,mtmd-audio.cpp,models/gemma4a.cpp}`.
-The E2B (`gemma-4-E2B-it-GGUF/mmproj-F32.gguf`) uses `PROJECTOR_TYPE_GEMMA4A` = a real
-24-block **Conformer** ASR encoder. This is NOT the 12B's encoder-free `gemma4ua`
+The E2B and E4B media projectors use `PROJECTOR_TYPE_GEMMA4A`: a 24-block **Conformer**
+ASR encoder. This is not the 12B's encoder-free `gemma4ua`
 (single `mm.a.input_projection` matmul, already ported in `Gemma4Audio.java`).
 
 ## Status
 - **Mel front-end**: implemented by `AudioPreprocess` and covered by `Gemma4AudioTest`.
-- **Conformer body**: implemented by `Gemma4Conformer`; component, shape and end-to-end contracts
+- **Conformer body**: implemented by `Gemma4Conformer`; component and shape contracts
   live in `Gemma4ConformerTest` and `Gemma4ConformerOpsTest`.
 - The details below remain the port's compact architecture and tensor-map reference.
 
@@ -93,6 +93,6 @@ The port keeps the unusual operations explicit and independently tested:
 
 ## Validation strategy
 Keep the mel front-end, subsampling, local attention/RPE, convolution module and output projection
-independently testable. A real E2B acceptance test remains the final check that tensor mapping,
+independently testable. A real E-variant acceptance test remains the final check that tensor mapping,
 clamps and framing compose into coherent audio understanding; microbenchmarks should optimize only
 after these contracts remain green.

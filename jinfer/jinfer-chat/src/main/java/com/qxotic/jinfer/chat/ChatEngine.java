@@ -942,9 +942,7 @@ public final class ChatEngine implements AutoCloseable {
         if (hasMedia(conversation)) {
             throw new UnsupportedOperationException(
                     "image/audio/video input is not supported by this model"
-                            + (punted != null ? ": " + punted.getMessage() : "")
-                            + " (for Gemma 4, attach the media companion: companion(\"media\","
-                            + " mmproj))");
+                            + (punted != null ? ": " + punted.getMessage() : ""));
         }
         IntSequence ids =
                 jinja.render(
