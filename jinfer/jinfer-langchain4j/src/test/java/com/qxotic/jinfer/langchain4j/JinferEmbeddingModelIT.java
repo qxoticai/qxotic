@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -528,5 +529,27 @@ class JinferEmbeddingModelIT {
     private static void normalize(float[] vector) {
         double scale = 1 / norm(vector);
         for (int i = 0; i < vector.length; i++) vector[i] *= (float) scale;
+    }
+
+    /**
+     * The mistake to expect: pointing the embedder at LFM2.5-ColBERT, which IS bidirectional, so a
+     * bare "not an embedder" would read as a contradiction and a pointer at Models.load would send
+     * the caller somewhere it also does not work. The refusal must name the reranker face.
+     */
+    @Test
+    void aRerankerIsNotAnEmbedder() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                JinferEmbeddingModel.builder()
+                                        .modelPath(
+                                                TestModels.require(
+                                                        "hf.co/LiquidAI/LFM2.5-ColBERT-350M-GGUF/LFM2.5-ColBERT-350M-Q8_0.gguf"))
+                                        .build());
+        assertTrue(e.getMessage().contains("LFM2.5-ColBERT"), e.getMessage());
+        assertTrue(e.getMessage().contains("Models.loadReranker"), e.getMessage());
+        assertFalse(e.getMessage().contains("generative"), e.getMessage());
+        assertFalse(e.getMessage().contains("chat with it"), e.getMessage());
     }
 }
