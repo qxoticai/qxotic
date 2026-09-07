@@ -40,6 +40,11 @@
       <groupId>com.qxotic</groupId>
       <artifactId>jota-tensor</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-panama</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
