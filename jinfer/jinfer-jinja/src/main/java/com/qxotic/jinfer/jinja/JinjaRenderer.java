@@ -419,7 +419,6 @@ public final class JinjaRenderer {
 
     static Val split(Val v, String delimiter) {
         String s = v.asStr();
-        if (s.isEmpty()) return new Val.Arr(List.of());
         var parts = new ArrayList<Val>();
         for (String part : s.split(Pattern.quote(delimiter), -1)) parts.add(new Val.Str(part));
         return new Val.Arr(parts);

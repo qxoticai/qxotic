@@ -80,6 +80,11 @@ class JinjaSemanticsTest {
     }
 
     @Test
+    void explicitDelimiterSplitPreservesAnEmptyString() {
+        assertEquals("", render("{{ ''.split('<tool_sep>')[0].lstrip() }}"));
+    }
+
+    @Test
     void stringsIterateByCharacter() {
         assertEquals("[a][b]", render("{% for c in 'ab' %}[{{ c }}]{% endfor %}"));
         assertEquals("[é][😀]", render("{% for c in 'é😀' %}[{{ c }}]{% endfor %}"));
