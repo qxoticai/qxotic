@@ -34,9 +34,17 @@
 # helpers, and with jam-native present its C kernels carry the prefill GEMM and hide whatever the Java path
 # does (1235 t/s against 487 on the vector backend - the same A/B run that way shows nothing either way).
 #
-# On the vector backend, without this file 487.0 / 486.6 / 471.7 t/s, with it 490.4 / 478.0 / 469.9 t/s:
-# +0.7%, -1.8%, -0.4% paired within a run. No gain. Compare pairs rather than columns - both arms drift down
-# together over a 20-minute session as the box heats, which is larger than the effect being measured.
+# On the vector backend, without this file 494.9 / 490.7 / 486.9 t/s, with it 489.2 / 488.9 / 485.3 t/s:
+# -1.1%, -0.4%, -0.3% paired within a run. No gain and no loss. Compare pairs rather than columns - both arms
+# drift down together over a 20-minute session as the box heats, by more than the effect being measured.
+#
+# The entry list mirrors the @AlwaysInline set in jinfer-kernels, minus two deliberate exclusions:
+#   - FlashAttention.pvTile is a TILE BODY. Its entry was removed here on 2026-09-07 after measuring the
+#     2.9x/5.7x vision cliff in the table above; it keeps the annotation because that binds the AOT compiler,
+#     a different inliner, but do NOT restore the entry. (The annotation's own text still points at this file
+#     for a rationale that lives here only as this exclusion.)
+#   - FlashAttention.srcFloat is a scalar accessor, not a vector helper, and its annotation records an
+#     AOT-specific profile. Nothing for the JIT to hold open.
 #
 # The +~45% figure this header used to carry predated the current entry list and did not reproduce, so it is
 # removed rather than restated. The entries stay because they cost nothing and still guard the C2 and vision
@@ -72,4 +80,14 @@ inline com/qxotic/jinfer/kernels/FlashAttention.loadF16
 inline com/qxotic/jinfer/kernels/FlashAttention.accumulate
 inline com/qxotic/jinfer/kernels/FlashAttention.qkRowF32
 inline com/qxotic/jinfer/kernels/FlashAttention.normalize
+inline com/qxotic/jinfer/kernels/Convert.f16ToF32Vector
+inline com/qxotic/jinfer/kernels/Convert.f16BitsToF32
+inline com/qxotic/jinfer/kernels/MatMul.bytesAt
+inline com/qxotic/jinfer/kernels/MatMul.floatsAt
+inline com/qxotic/jinfer/kernels/MatMul.blockFma
+inline com/qxotic/jinfer/kernels/KimiDeltaAttention.load
+inline com/qxotic/jinfer/kernels/KimiDeltaAttention.store
+inline com/qxotic/jinfer/kernels/KimiDeltaAttention.update
+inline com/qxotic/jinfer/kernels/Convolutions.load
+inline com/qxotic/jinfer/kernels/Convolutions.store
 # NOT the tile bodies (qkTile, qkTile64F32, qkTileWideF32, pvTile, pvTileF16, pvTileF32): see the header table.
