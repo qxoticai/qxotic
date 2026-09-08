@@ -35,3 +35,4 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 ### Known limits
 
 - The `Logic` gallery demo and the model-backed tests pin temperature 0 and a seed; small models still fail some puzzles, which the demo reports honestly.
+- When a JSON schema's fields are all optional, LFM2.5-8B-A1B may leave out a field the text does state. Mark the fields you rely on as `required`, or check the extracted values; `describeSchema(false)` turns the description line off entirely.
