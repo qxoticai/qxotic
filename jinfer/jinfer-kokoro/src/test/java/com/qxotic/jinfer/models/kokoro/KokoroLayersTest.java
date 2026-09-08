@@ -8,6 +8,7 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 final class KokoroLayersTest {
@@ -30,13 +31,64 @@ final class KokoroLayersTest {
     void transposedConvMatchesPyTorchLengthAndTapPlacement() {
         try (Arena arena = Arena.ofConfined()) {
             var allocator = MemoryAllocators.ofArena(arena);
-            var conv = new KokoroLayers.ConvTranspose1d(new float[] {1, 10, 100}, null, 3, 1, 1);
+            var conv =
+                    new KokoroLayers.ConvTranspose1d(
+                            floats(allocator, new float[] {1, 10, 100}, 3, 1), null, 3, 1, 1);
 
             var output =
                     conv.forward(
                             floats(allocator, new float[] {1, 2}, 1, 2), 2, 2, 1, 1, allocator);
 
             assertArrayEquals(new float[] {10, 102, 20, 200}, Views.toFloatArray(output, "output"));
+        }
+    }
+
+    @Test
+    void transposedConvMatchesScalarOracleAcrossKokoroShapes() {
+        try (Arena arena = Arena.ofShared()) {
+            var allocator = MemoryAllocators.ofArena(arena);
+            Random random = new Random(42);
+            int inChannels = 3, outChannels = 2, time = 7;
+            float[] input = randomFloats(random, inChannels * time);
+            float[] bias = randomFloats(random, outChannels);
+            int[][] shapes = {{3, 2, 1, 1}, {20, 10, 5, 0}, {12, 6, 3, 0}};
+
+            for (int[] shape : shapes) {
+                int kernel = shape[0], stride = shape[1], padding = shape[2];
+                int outputPadding = shape[3];
+                float[] weight = randomFloats(random, outChannels * kernel * inChannels);
+                var conv =
+                        new KokoroLayers.ConvTranspose1d(
+                                floats(allocator, weight, outChannels * kernel, inChannels),
+                                floats(allocator, bias, outChannels),
+                                kernel,
+                                inChannels,
+                                outChannels);
+
+                var actual =
+                        conv.forward(
+                                floats(allocator, input, inChannels, time),
+                                time,
+                                stride,
+                                padding,
+                                outputPadding,
+                                allocator);
+
+                assertArrayEquals(
+                        scalarConvTranspose(
+                                input,
+                                weight,
+                                bias,
+                                time,
+                                stride,
+                                padding,
+                                outputPadding,
+                                kernel,
+                                inChannels,
+                                outChannels),
+                        Views.toFloatArray(actual, "output"),
+                        1e-5f);
+            }
         }
     }
 
@@ -133,5 +185,38 @@ final class KokoroLayersTest {
         MemoryView<MemorySegment> view = Views.allocateF32(allocator, shape);
         Views.copyFromArray(view, 0, values, 0, values.length, "fixture");
         return view;
+    }
+
+    private static float[] randomFloats(Random random, int size) {
+        float[] values = new float[size];
+        for (int i = 0; i < size; i++) values[i] = random.nextFloat() * 2 - 1;
+        return values;
+    }
+
+    private static float[] scalarConvTranspose(
+            float[] input,
+            float[] weight,
+            float[] bias,
+            int time,
+            int stride,
+            int padding,
+            int outputPadding,
+            int kernel,
+            int inChannels,
+            int outChannels) {
+        int outTime = (time - 1) * stride - 2 * padding + kernel + outputPadding;
+        float[] output = new float[outChannels * outTime];
+        for (int oc = 0; oc < outChannels; oc++) {
+            for (int target = 0; target < outTime; target++)
+                output[oc * outTime + target] = bias[oc];
+            for (int k = 0; k < kernel; k++)
+                for (int ic = 0; ic < inChannels; ic++)
+                    for (int t = 0, target = k - padding; t < time; t++, target += stride)
+                        if (target >= 0 && target < outTime)
+                            output[oc * outTime + target] +=
+                                    input[ic * time + t]
+                                            * weight[(oc * kernel + k) * inChannels + ic];
+        }
+        return output;
     }
 }

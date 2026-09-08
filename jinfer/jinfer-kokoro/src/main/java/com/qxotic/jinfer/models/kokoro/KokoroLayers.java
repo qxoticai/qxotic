@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.kokoro;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;
@@ -13,7 +14,6 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
-import java.util.Arrays;
 import java.util.Map;
 
 /** Small reusable layers shared by Kokoro's predictor and decoder. */
@@ -87,9 +87,9 @@ final class KokoroLayers {
         }
     }
 
-    /** Taps are laid out {@code [outChannel][kernel][inChannel]}. */
+    /** Weight rows are laid out {@code [outChannel * kernel][inChannel]}. */
     record ConvTranspose1d(
-            float[] taps,
+            MemoryView<MemorySegment> weight,
             MemoryView<MemorySegment> bias,
             int kernel,
             int inChannels,
@@ -114,28 +114,61 @@ final class KokoroLayers {
                             outputPadding);
             require(outTime >= 0, "transposed convolution output length is negative");
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, outChannels, outTime);
-            float[] source = KokoroWorkspace.takeFloats(allocator, inChannels * time);
-            float[] result = KokoroWorkspace.takeFloats(allocator, outChannels * outTime);
-            Views.copyToArray(input, 0, source, 0, source.length, "conv transpose input");
             for (int oc = 0; oc < outChannels; oc++) {
                 float b = bias == null ? 0f : Views.getFloat(bias, oc, "conv transpose bias");
-                int outputRow = oc * outTime;
-                Arrays.fill(result, outputRow, outputRow + outTime, b);
-                int tapRow = oc * kernel * inChannels;
-                for (int k = 0; k < kernel; k++) {
-                    int tap = tapRow + k * inChannels;
-                    for (int ic = 0; ic < inChannels; ic++) {
-                        float weight = taps[tap + ic];
-                        int inputIndex = ic * time;
-                        int target = k - padding;
-                        for (int t = 0; t < time; t++, target += stride) {
-                            if (target >= 0 && target < outTime)
-                                result[outputRow + target] += source[inputIndex + t] * weight;
-                        }
-                    }
+                Ops.fillInPlace(output, (long) oc * outTime, outTime, b);
+            }
+            try (var ignored = KokoroWorkspace.scope(allocator)) {
+                int columnsPerTime = Math.multiplyExact(outChannels, kernel);
+                MemoryView<MemorySegment> inputRows =
+                        Views.allocateF32(allocator, time, inChannels);
+                Ops.transposeCopy(input, inChannels, time, inputRows);
+                MemoryView<MemorySegment> columns =
+                        Views.allocateF32(allocator, time, columnsPerTime);
+                MatMul.gemm(
+                        weight,
+                        inputRows,
+                        inChannels,
+                        columns,
+                        columnsPerTime,
+                        columnsPerTime,
+                        time,
+                        inChannels);
+
+                MemorySegment columnSegment = columns.memory().base();
+                MemorySegment outputSegment = output.memory().base();
+                long columnBase = columns.byteOffset(), outputBase = output.byteOffset();
+                // Inputs this many steps apart write disjoint output spans, so each color can
+                // scatter concurrently without atomics or worker-local output buffers.
+                int colors = (kernel + stride - 1) / stride;
+                for (int color = 0; color < colors; color++) {
+                    int first = color;
+                    int jobs = (time - first + colors - 1) / colors;
+                    Parallel.forLoop(
+                            jobs,
+                            job -> {
+                                int t = first + job * colors;
+                                int targetBase = t * stride - padding;
+                                int from = Math.max(0, -targetBase);
+                                int to = Math.min(kernel, outTime - targetBase);
+                                long column = (long) t * columnsPerTime;
+                                for (int oc = 0; oc < outChannels; oc++) {
+                                    long source = column + (long) oc * kernel + from;
+                                    long target = (long) oc * outTime + targetBase + from;
+                                    for (int k = from; k < to; k++, source++, target++) {
+                                        long outputByte = outputBase + target * Float.BYTES;
+                                        writeFloat(
+                                                outputSegment,
+                                                outputByte,
+                                                readFloat(outputSegment, outputByte)
+                                                        + readFloat(
+                                                                columnSegment,
+                                                                columnBase + source * Float.BYTES));
+                                    }
+                                }
+                            });
                 }
             }
-            Views.copyFromArray(output, 0, result, 0, result.length, "conv transpose output");
             return output;
         }
     }
@@ -324,8 +357,11 @@ final class KokoroLayers {
                         result[(oc * kernel + k) * inChannels + ic] =
                                 stored[(ic * outChannels + oc) * kernel + k];
         }
+        MemoryView<MemorySegment> packed =
+                Views.allocateF32(allocator, Math.multiplyExact(outChannels, kernel), inChannels);
+        Views.copyFromArray(packed, 0, result, 0, result.length, name + ".weight");
         return new ConvTranspose1d(
-                result,
+                packed,
                 optionalVector(tensors, allocator, name + ".bias", outChannels),
                 kernel,
                 inChannels,
