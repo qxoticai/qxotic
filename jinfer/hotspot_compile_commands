@@ -4,8 +4,10 @@
 # These small methods return / consume jdk.incubator.vector FloatVector values. When the JIT does NOT inline
 # them into their hot loop, the vector escapes the method boundary and is boxed (a FloatVector object + its
 # backing float[] are allocated per call) instead of scalar-replaced into a SIMD register. On a strong inliner
-# (Oracle GraalVM) this happens automatically; weaker inliners (GraalVM CE, plain C2 under budget pressure)
-# need the hint. Forcing the inline makes the whole loop allocation-free - measured +~45% prefill on GraalVM CE.
+# (Oracle GraalVM) this happens automatically; a weaker one can leave the helper out of line - plain C2 under
+# budget pressure here, and GraalVM's AOT inliner, which needs the same calls held open by @AlwaysInline
+# (see jinfer-kernels' native-image.properties; that one is a 57x cliff, not a few percent). Forcing the
+# inline makes the whole loop allocation-free.
 #
 # This file is a MEASUREMENT INSTRUMENT for A/B comparison against the defaults. It is never a requirement:
 # jinfer must be fast on a stock JVM with no flags, and a kernel that is only fast with these hints is a bug
@@ -25,8 +27,20 @@
 #   leaves only         1054 ms    1592 ms    1207 t/s   1193 t/s
 #
 # Removing them costs text prefill nothing (it gains on Graal, and stays within noise of the full file on C2)
-# and takes vision prefill off a 2.9x/5.7x cliff. Not measured on GraalVM CE - the +45% figure above predates
-# this and is unverified against the current entries.
+# and takes vision prefill off a 2.9x/5.7x cliff.
+#
+# GraalVM CE measured 2026-09-08 (CE 25.4.4.1.1-dev, LFM2.5-2.6B-Q8_0, jinfer-bench -p 512 -r 5, three runs
+# per configuration, alternating). MEASURE THIS WITH -Djam.native.disabled=true: these entries are Vector API
+# helpers, and with jam-native present its C kernels carry the prefill GEMM and hide whatever the Java path
+# does (1235 t/s against 487 on the vector backend - the same A/B run that way shows nothing either way).
+#
+# On the vector backend, without this file 487.0 / 486.6 / 471.7 t/s, with it 490.4 / 478.0 / 469.9 t/s:
+# +0.7%, -1.8%, -0.4% paired within a run. No gain. Compare pairs rather than columns - both arms drift down
+# together over a 20-minute session as the box heats, which is larger than the effect being measured.
+#
+# The +~45% figure this header used to carry predated the current entry list and did not reproduce, so it is
+# removed rather than restated. The entries stay because they cost nothing and still guard the C2 and vision
+# paths measured above.
 #
 # Use with:  -XX:CompileCommandFile=<path>/hotspot_compile_commands
 # Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.
