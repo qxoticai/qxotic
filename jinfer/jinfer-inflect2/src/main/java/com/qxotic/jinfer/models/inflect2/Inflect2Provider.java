@@ -70,4 +70,18 @@ public final class Inflect2Provider implements ModelProvider {
                 ? InflectTTS.load(fileChannel, gguf, path, arena)
                 : InflectTTS.load(fileChannel, gguf, path, arena, lexicon);
     }
+
+    @Override
+    public SpeechSynthesisModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            long baseOffset,
+            Arena arena,
+            Map<String, Path> companions)
+            throws IOException {
+        Path lexicon = companions.get("lexicon");
+        return lexicon == null
+                ? InflectTTS.load(fileChannel, gguf, baseOffset, arena)
+                : InflectTTS.load(fileChannel, gguf, baseOffset, arena, lexicon);
+    }
 }

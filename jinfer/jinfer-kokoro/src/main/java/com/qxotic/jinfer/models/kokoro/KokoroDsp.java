@@ -91,8 +91,7 @@ final class KokoroDsp {
         for (int frame = 0; frame < frames; frame++) {
             int offset = frame * HOP_SIZE;
             for (int n = 0; n < FFT_SIZE; n++) {
-                // DC is the magnitude itself, irrespective of its supplied phase.
-                float value = magnitude[0][frame];
+                float value = magnitude[0][frame] * (float) Math.cos(phase[0][frame]);
                 float nyquist =
                         magnitude[BINS - 1][frame] * (float) Math.cos(phase[BINS - 1][frame]);
                 value += (n & 1) == 0 ? nyquist : -nyquist;

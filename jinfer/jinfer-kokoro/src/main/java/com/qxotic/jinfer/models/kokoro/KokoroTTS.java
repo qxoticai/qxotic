@@ -11,6 +11,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
@@ -37,8 +38,14 @@ public final class KokoroTTS
 
     public static KokoroTTS load(FileChannel channel, GGUF gguf, Path voice, Arena arena)
             throws IOException {
+        return load(channel, gguf, 0, voice, arena);
+    }
+
+    public static KokoroTTS load(
+            FileChannel channel, GGUF gguf, long baseOffset, Path voice, Arena arena)
+            throws IOException {
         KokoroPhonemizer phonemizer = requirePhonemizer();
-        return new KokoroTTS(Kokoro.load(channel, gguf, voice, arena), phonemizer);
+        return new KokoroTTS(Kokoro.load(channel, gguf, baseOffset, voice, arena), phonemizer);
     }
 
     private static KokoroPhonemizer requirePhonemizer() throws IOException {
@@ -69,6 +76,11 @@ public final class KokoroTTS
     }
 
     @Override
+    public int sampleRate() {
+        return configuration().sampleRate();
+    }
+
+    @Override
     public void speak(
             Kokoro.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("text is empty");
@@ -77,14 +89,22 @@ public final class KokoroTTS
                 () -> {
                     try {
                         int chunk = 0;
-                        for (String part : chunks(text)) {
+                        var parts = new ArrayDeque<>(chunks(text));
+                        while (!parts.isEmpty()) {
+                            String part = parts.removeFirst();
                             int[] phonemes = model.symbols().toRaw(phonemizer.phonemize(part));
                             if (phonemes.length == 0) continue;
-                            if (phonemes.length > Kokoro.MAX_PHONEMES)
-                                throw new IllegalArgumentException(
-                                        "phonemized chunk exceeds "
-                                                + Kokoro.MAX_PHONEMES
-                                                + " symbols");
+                            if (phonemes.length > Kokoro.MAX_PHONEMES) {
+                                if (part.codePointCount(0, part.length()) < 2)
+                                    throw new IllegalArgumentException(
+                                            "phonemized chunk exceeds "
+                                                    + Kokoro.MAX_PHONEMES
+                                                    + " symbols");
+                                int split = splitAtWord(part, part.length() / 2, 1);
+                                parts.addFirst(part.substring(split).trim());
+                                parts.addFirst(part.substring(0, split).trim());
+                                continue;
+                            }
                             float[] pcm = model.synthesize(state, phonemes, speed, chunk++);
                             if (!sink.test(new Media.Audio(pcm, configuration().sampleRate(), 1)))
                                 return;
@@ -99,22 +119,26 @@ public final class KokoroTTS
     }
 
     static List<String> chunks(String text) {
-        String normalized = text.replaceAll("\\s+", " ").trim();
+        String normalized = text.replaceAll("(?U)\\s+", " ").trim();
         List<String> chunks = new ArrayList<>();
         for (String sentence : normalized.split("(?<=[.!?;:])\\s+")) {
             String rest = sentence.trim();
             while (rest.length() > CHUNK_LIMIT) {
-                int split = rest.lastIndexOf(' ', CHUNK_LIMIT);
-                if (split < CHUNK_LIMIT / 2) split = CHUNK_LIMIT;
-                if (split < rest.length()
-                        && Character.isHighSurrogate(rest.charAt(split - 1))
-                        && Character.isLowSurrogate(rest.charAt(split))) split--;
+                int split = splitAtWord(rest, CHUNK_LIMIT, CHUNK_LIMIT / 2);
                 chunks.add(rest.substring(0, split).trim());
                 rest = rest.substring(split).trim();
             }
             if (!rest.isEmpty()) chunks.add(rest);
         }
         return chunks;
+    }
+
+    private static int splitAtWord(String text, int preferred, int earliest) {
+        int split = text.lastIndexOf(' ', preferred);
+        if (split < earliest) split = preferred;
+        if (Character.isHighSurrogate(text.charAt(split - 1))
+                && Character.isLowSurrogate(text.charAt(split))) split--;
+        return split;
     }
 
     private static double speed(SpeechOptions options) {

@@ -113,6 +113,14 @@ public final class InflectTTS
         return wrap(Inflect2.load(channel, gguf, baseOffset, arena), null, null);
     }
 
+    /** Loads an embedded GGUF with an explicit pronunciation lexicon. */
+    public static InflectTTS load(
+            FileChannel channel, GGUF gguf, long baseOffset, Arena arena, Path lexicon)
+            throws IOException {
+        if (lexicon == null) throw new IllegalArgumentException("null lexicon");
+        return wrap(Inflect2.load(channel, gguf, baseOffset, arena), null, lexicon);
+    }
+
     /**
      * As {@link #load(FileChannel, GGUF, Path, Arena)} with an explicit pronunciation lexicon,
      * which REPLACES the discovery ladder rather than joining it: naming a file and silently
@@ -218,6 +226,7 @@ public final class InflectTTS
     }
 
     /** Ponytail: kept as a one-liner over configuration, used four times in the CLI. */
+    @Override
     public int sampleRate() {
         return model.sampleRate();
     }

@@ -215,6 +215,22 @@ public final class Models {
                 });
     }
 
+    /** Loads a speech GGUF embedded at {@code baseOffset} in an already-open channel. */
+    public static SpeechSynthesisModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            long baseOffset,
+            Arena arena,
+            Map<String, Path> companions)
+            throws IOException {
+        if (baseOffset < 0)
+            throw new IllegalArgumentException("negative base offset: " + baseOffset);
+        Map<String, Path> attached = Map.copyOf(companions);
+        ModelProvider provider = provider(gguf);
+        requireAccepted(provider, gguf, attached.keySet());
+        return provider.loadSpeech(fileChannel, gguf, baseOffset, arena, attached);
+    }
+
     /**
      * The capabilities {@code path}'s architecture can gain from a companion, and the filename that
      * carries each - the GGUF header only, no weights. A caller uses it to reject a capability this

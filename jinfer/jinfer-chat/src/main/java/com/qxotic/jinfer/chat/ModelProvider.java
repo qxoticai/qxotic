@@ -155,4 +155,18 @@ public interface ModelProvider {
                         + companions.keySet()
                         + " were attached");
     }
+
+    /** Loads a speech GGUF embedded at {@code baseOffset} in {@code fileChannel}. */
+    default SpeechSynthesisModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            long baseOffset,
+            Arena arena,
+            Map<String, Path> companions)
+            throws IOException {
+        throw new UnsupportedOperationException(
+                "'"
+                        + gguf.getString("general.architecture")
+                        + "' does not support embedded speech models");
+    }
 }

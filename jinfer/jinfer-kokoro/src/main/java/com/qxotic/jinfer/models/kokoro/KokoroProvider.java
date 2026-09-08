@@ -55,9 +55,20 @@ public final class KokoroProvider implements ModelProvider {
             Arena arena,
             Map<String, Path> companions)
             throws IOException {
+        return loadSpeech(fileChannel, gguf, 0, arena, companions);
+    }
+
+    @Override
+    public SpeechSynthesisModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            long baseOffset,
+            Arena arena,
+            Map<String, Path> companions)
+            throws IOException {
         Path voice = companions.get("voice");
         if (voice == null)
             throw new IllegalArgumentException("Kokoro requires the 'voice' companion GGUF");
-        return KokoroTTS.load(fileChannel, gguf, voice, arena);
+        return KokoroTTS.load(fileChannel, gguf, baseOffset, voice, arena);
     }
 }

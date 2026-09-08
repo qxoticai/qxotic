@@ -37,6 +37,7 @@
     <module>jinfer-kokoro</module>
     <module>jinfer-inflect2-cli</module>
     <module>jinfer-models-all</module>
+    <module>jinfer-tts</module>
     <module>jinfer-chat</module>
     <module>jinfer-server</module>
     <module>jinfer-cli</module>

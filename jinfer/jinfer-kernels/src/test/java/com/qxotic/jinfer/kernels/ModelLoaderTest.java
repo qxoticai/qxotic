@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.kernels;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -9,6 +10,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,38 @@ class ModelLoaderTest {
             assertTrue(failure.getMessage().contains("blk.0.attn_q.weight"), failure.getMessage());
             assertTrue(failure.getMessage().contains("truncated"), failure.getMessage());
             assertTrue(failure.getMessage().contains("64"), failure.getMessage()); // 4*4 floats
+        }
+    }
+
+    @Test
+    void rejectsUnalignedEmbeddedTensorData(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("model.gguf");
+        GGUF.write(Builder.newBuilder().build(), file);
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
+                Arena arena = Arena.ofConfined()) {
+            var failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> ModelLoader.loadTensors(channel, 1, java.util.List.of(), arena));
+            assertTrue(failure.getMessage().contains("4-byte aligned"), failure.getMessage());
+        }
+    }
+
+    @Test
+    void mapsOnlyTensorData(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("model.gguf");
+        GGUF.write(
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("test", new long[] {1}, GGMLType.F32, 0))
+                        .build(),
+                file);
+        GGUF gguf = GGUF.read(file);
+        Files.write(file, new byte[68], StandardOpenOption.APPEND);
+
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
+                Arena arena = Arena.ofConfined()) {
+            var tensors = ModelLoader.loadTensors(channel, gguf, arena);
+            assertEquals(Float.BYTES, tensors.get("test").memory().base().byteSize());
         }
     }
 }

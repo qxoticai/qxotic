@@ -46,20 +46,19 @@ final class KokoroDspTest {
     }
 
     @Test
-    void istftIgnoresDcPhase() {
+    void istftAppliesDcPhase() {
         float[][] magnitude = new float[11][4];
         float[][] zeroPhase = new float[11][4];
         float[][] changedDcPhase = new float[11][4];
         for (int frame = 0; frame < 4; frame++) {
             magnitude[0][frame] = 1;
-            changedDcPhase[0][frame] = (frame + 1) * 0.7f;
+            changedDcPhase[0][frame] = (float) Math.PI;
         }
 
         float[] expected = KokoroDsp.istft(magnitude, zeroPhase, null);
         float[] actual = KokoroDsp.istft(magnitude, changedDcPhase, null);
 
-        assertArrayEquals(expected, actual);
-        assertTrue(actual[0] > 0);
+        for (int i = 0; i < actual.length; i++) assertEquals(-expected[i], actual[i], 1e-6f);
     }
 
     @Test

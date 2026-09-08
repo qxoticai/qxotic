@@ -79,7 +79,10 @@ public final class ModelLoader {
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
             FileChannel fileChannel, GGUF gguf, long baseOffset, Arena arena) throws IOException {
         return loadTensors(
-                fileChannel, baseOffset + gguf.getTensorDataOffset(), gguf.getTensors(), arena);
+                fileChannel,
+                checkedAdd(baseOffset, gguf.getTensorDataOffset(), "tensor data offset"),
+                gguf.getTensors(),
+                arena);
     }
 
     /**
@@ -93,11 +96,17 @@ public final class ModelLoader {
             Arena arena)
             throws IOException {
         requireVectorApi();
+        if ((tensorDataOffset & (Float.BYTES - 1)) != 0)
+            throw new IllegalArgumentException(
+                    "GGUF tensor data offset must be 4-byte aligned, got " + tensorDataOffset);
         long available = fileChannel.size() - tensorDataOffset;
+        long required = 0;
         for (TensorEntry tensor : tensors) {
             long end =
-                    tensor.offset()
-                            + tensor.ggmlType().byteSizeFor(Shape.flat(tensor.shape()).size());
+                    checkedAdd(
+                            tensor.offset(),
+                            tensor.ggmlType().byteSizeFor(Shape.flat(tensor.shape()).size()),
+                            "tensor " + tensor.name() + " end");
             if (end > available) {
                 throw new IllegalArgumentException(
                         "GGUF is truncated, or holds metadata only: tensor "
@@ -108,9 +117,10 @@ public final class ModelLoader {
                                 + Math.max(available, 0)
                                 + ". Re-download it, or convert the model again.");
             }
+            required = Math.max(required, end);
         }
         MemorySegment tensorData =
-                fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset, available, arena);
+                fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset, required, arena);
         // ONE jota Memory over the whole mapping; each tensor is a byte-offset view into it
         // (replaces FloatTensor.create over per-tensor asSlice segments).
         Memory<MemorySegment> memory = Memories.of(tensorData);
@@ -139,6 +149,14 @@ public final class ModelLoader {
         // packed tensors move into a page-aligned slab in the SAME arena and their canonical mmap
         // pages are dropped - one copy total, shared as-is with Metal via unified memory.
         return JamPack.apply(tensorViews, arena);
+    }
+
+    private static long checkedAdd(long left, long right, String name) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("GGUF " + name + " overflows", overflow);
+        }
     }
 
     /**

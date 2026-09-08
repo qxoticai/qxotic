@@ -9,6 +9,11 @@ import java.util.function.Predicate;
 /** A text-to-waveform model with reusable runtime state. */
 public interface SpeechSynthesisModel<C, W, S extends RuntimeState> extends Model<C, W, S> {
 
+    /** Output sample rate, or zero when it is not known until the first clip. */
+    default int sampleRate() {
+        return 0;
+    }
+
     /** Creates state that owns its memory. */
     S newState();
 

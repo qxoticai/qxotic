@@ -10,6 +10,7 @@ final class KokoroTTSTest {
     @Test
     void splitsLongTextAtSentenceAndWordBoundaries() {
         assertEquals(List.of("One.", "Two?"), KokoroTTS.chunks(" One.  Two? "));
+        assertEquals(List.of("One.", "Two?"), KokoroTTS.chunks("One.\u2003Two?"));
         String words = "word ".repeat(50).trim();
         List<String> chunks = KokoroTTS.chunks(words);
         assertEquals(words, String.join(" ", chunks));

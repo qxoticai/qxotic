@@ -151,13 +151,20 @@ public final class Kokoro {
     /** Loads a pre-parsed base model and a separate voice GGUF into the same arena. */
     public static Kokoro load(FileChannel channel, GGUF gguf, Path voice, Arena arena)
             throws IOException {
+        return load(channel, gguf, 0, voice, arena);
+    }
+
+    /** Loads a pre-parsed base model embedded at {@code baseOffset}. */
+    public static Kokoro load(
+            FileChannel channel, GGUF gguf, long baseOffset, Path voice, Arena arena)
+            throws IOException {
         Configuration configuration = readConfig(gguf);
 
         try (FileChannel voiceChannel = FileChannel.open(voice, StandardOpenOption.READ)) {
             GGUF voiceGguf = ModelLoader.readGguf(voiceChannel, voice.toString());
             Voice voiceConfiguration = readVoice(voiceGguf);
             Map<String, MemoryView<MemorySegment>> modelWeights =
-                    ModelLoader.loadTensors(channel, gguf, arena);
+                    ModelLoader.loadTensors(channel, gguf, baseOffset, arena);
             MemoryAllocator<MemorySegment> persistent = MemoryAllocators.ofArena(arena);
             TextEncoder.Weights textEncoder =
                     TextEncoder.load(modelWeights, configuration, persistent);
