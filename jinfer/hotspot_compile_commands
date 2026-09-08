@@ -1,23 +1,21 @@
 #
 # JIT inline directives for jinfer's hot Vector API helpers.
 #
-# These small methods return / consume jdk.incubator.vector FloatVector values. When the JIT does NOT inline
-# them into their hot loop, the vector escapes the method boundary and is boxed (a FloatVector object + its
-# backing float[] are allocated per call) instead of scalar-replaced into a SIMD register. On a strong inliner
-# (Oracle GraalVM) this happens automatically; a weaker one can leave the helper out of line - plain C2 under
-# budget pressure here, and GraalVM's AOT inliner, which needs the same calls held open by @AlwaysInline
-# (see jinfer-kernels' native-image.properties; that one is a 57x cliff, not a few percent). Forcing the
-# inline makes the whole loop allocation-free.
+# WHAT THIS FIXES. These small methods return or consume jdk.incubator.vector values. When the JIT does not
+# inline one into its hot loop, the vector escapes the method boundary and is boxed - a FloatVector object plus
+# its backing float[] per call - instead of being scalar-replaced into a SIMD register. A strong inliner
+# (Oracle GraalVM) does it unprompted; a weaker one may not: plain C2 under budget pressure here, and GraalVM's
+# AOT inliner, which needs the same calls held open by @AlwaysInline (see jinfer-kernels' native-image.properties
+# - that one is a 57x cliff, not a few percent). Forcing the inline makes the loop allocation-free.
 #
-# This file is a MEASUREMENT INSTRUMENT for A/B comparison against the defaults. It is never a requirement:
-# jinfer must be fast on a stock JVM with no flags, and a kernel that is only fast with these hints is a bug
-# in the kernel. Do not add an entry to paper over one.
+# THIS FILE IS A MEASUREMENT INSTRUMENT, never a requirement. jinfer must be fast on a stock JVM with no flags,
+# and a kernel that is only fast with these hints is a bug in the kernel. Do not add an entry to paper over one,
+# and do not add one you have not measured - two of the three notes below exist because that was done anyway.
 #
-# Force-inline the LEAF helpers, never the TILE BODIES. A leaf (loadF32/loadF16/accumulate/normalize/qkRowF32)
-# is a few instructions returning one vector: inlining it removes a boundary the vector would otherwise cross.
-# A tile body is already a large compilation unit, and forcing it into its caller pushes that unit past what the
-# JIT will expand, so the vectors box wholesale - the same failure the Convert NOTE below records. The qkTile*
-# and pvTile* entries were removed on 2026-09-07 after measuring, per 512x512 image on LFM2.5-VL-3B and per
+# LEAVES ONLY, NEVER TILE BODIES. A leaf is a few instructions returning one vector; inlining it removes a
+# boundary the vector would otherwise cross. A tile body is already a large compilation unit, and forcing it
+# into its caller pushes that unit past what the JIT will expand, so the vectors box wholesale. The qkTile* and
+# pvTile* entries were removed on 2026-09-07 after measuring, per 512x512 image on LFM2.5-VL-3B and per
 # 565-token prefill on LFM2.5-8B-A1B-Q4_K_M:
 #
 #                          vision prefill        text prefill
@@ -26,32 +24,35 @@
 #   with tile bodies    3023 ms    9220 ms    1192 t/s   1204 t/s
 #   leaves only         1054 ms    1592 ms    1207 t/s   1193 t/s
 #
-# Removing them costs text prefill nothing (it gains on Graal, and stays within noise of the full file on C2)
-# and takes vision prefill off a 2.9x/5.7x cliff.
+# Removing them cost text prefill nothing and took vision prefill off a 2.9x/5.7x cliff.
 #
-# GraalVM CE measured 2026-09-08 (CE 25.4.4.1.1-dev, LFM2.5-2.6B-Q8_0, jinfer-bench -p 512 -r 5, three runs
-# per configuration, alternating). MEASURE THIS WITH -Djam.native.disabled=true: these entries are Vector API
-# helpers, and with jam-native present its C kernels carry the prefill GEMM and hide whatever the Java path
-# does (1235 t/s against 487 on the vector backend - the same A/B run that way shows nothing either way).
+# HOW TO MEASURE THIS FILE. Pass -Djam.native.disabled=true: these are Vector API helpers, and with jam-native
+# present its C kernels carry the prefill GEMM and hide the Java path entirely (1235 t/s against 487 on the
+# vector backend - the A/B run that way shows nothing either way). Alternate the arms and compare pairs within
+# a run rather than columns; both drift down together over a 20-minute session as the box heats, by more than
+# the effect under test. And measure VISION as well as text: the two cliffs recorded here are vision-only, and
+# a text-prefill A/B cannot see them.
 #
-# On the vector backend, without this file 494.9 / 490.7 / 486.9 t/s, with it 489.2 / 488.9 / 485.3 t/s:
-# -1.1%, -0.4%, -0.3% paired within a run. No gain and no loss. Compare pairs rather than columns - both arms
-# drift down together over a 20-minute session as the box heats, by more than the effect being measured.
+# Last measured 2026-09-09 against the list below, LFM2.5-2.6B-Q8_0, jinfer-bench -p 512 -r 5, three runs per
+# arm on the vector backend: without this file 493.3 / 488.8 / 488.4 t/s, with it 491.2 / 489.0 / 486.0,
+# paired -0.4% / +0.0% / -0.5%. No gain and no loss on that JIT.
 #
-# The entry list mirrors the @AlwaysInline set in jinfer-kernels, minus two deliberate exclusions:
-#   - FlashAttention.pvTile is the thin dispatcher that branches to pvTileF16/pvTileF32; those two, and the
-#     qkTile* family, are the TILE BODIES whose entries were removed on 2026-09-07 for the 2.9x/5.7x vision
-#     cliff in the table above, and they must not come back. The dispatcher keeps its @AlwaysInline and is
-#     left unhinted here because it measured neutral: native images built with and without that annotation,
-#     LFM2.5-VL-3B-Q8_0 + mmproj-F16 on a 519x600 image, three runs each, media cold 458.0 vs 446.1 ms and
-#     warm 111.0 vs 107.8, pp512 1190.5 vs 1176.1 t/s - differences of 1-3% with overlapping ranges, in
-#     opposite directions, and nothing resembling a cliff.
-#   - FlashAttention.srcFloat is a scalar accessor, not a vector helper, and its annotation records an
-#     AOT-specific profile. Nothing for the JIT to hold open.
+# CAVEAT ON THE JVM USED. These numbers, and the pvTile ones below, come from a LOCALLY BUILT, PATCHED GraalVM
+# CE - 25.4.4.1.1-dev+1.1, graal at 22d016e97a2, carrying the 32-ZMM register work - not from any released CE.
+# Its inliner and register allocator differ from a stock build, so treat the figures as "no effect on that
+# compiler" rather than as a statement about GraalVM CE releases. A stock CE has not been measured here.
+# (A "+~45% on GraalVM CE" figure this header carried until 2026-09-08 predated the current entry list and did
+# not reproduce on the patched build; do not restore it from memory.)
 #
-# The +~45% figure this header used to carry predated the current entry list and did not reproduce, so it is
-# removed rather than restated. The entries stay because they cost nothing and still guard the C2 and vision
-# paths measured above.
+# EXCLUDED ON PURPOSE, beyond the tile bodies above:
+#   - Convert.f16ToF32Vector and f16BitsToF32: see the NOTE below. Added 2026-09-08 by mirroring the
+#     @AlwaysInline set without reading that note, and removed again the same day.
+#   - FlashAttention.pvTile, the thin dispatcher branching to pvTileF16/pvTileF32. It keeps its @AlwaysInline,
+#     which binds only the AOT compiler, and measured neutral there: native images built with and without it
+#     (same patched CE, see the caveat above), LFM2.5-VL-3B-Q8_0 + mmproj-F16 on a 519x600 image, three runs
+#     each, gave media cold 458.0 vs 446.1 ms, warm 111.0 vs 107.8, pp512 1190.5 vs 1176.1 t/s - 1-3%,
+#     overlapping ranges, opposite directions.
+#   - FlashAttention.srcFloat, a scalar accessor rather than a vector helper; nothing for the JIT to hold open.
 #
 # Use with:  -XX:CompileCommandFile=<path>/hotspot_compile_commands
 # Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.
@@ -83,8 +84,6 @@ inline com/qxotic/jinfer/kernels/FlashAttention.loadF16
 inline com/qxotic/jinfer/kernels/FlashAttention.accumulate
 inline com/qxotic/jinfer/kernels/FlashAttention.qkRowF32
 inline com/qxotic/jinfer/kernels/FlashAttention.normalize
-inline com/qxotic/jinfer/kernels/Convert.f16ToF32Vector
-inline com/qxotic/jinfer/kernels/Convert.f16BitsToF32
 inline com/qxotic/jinfer/kernels/MatMul.bytesAt
 inline com/qxotic/jinfer/kernels/MatMul.floatsAt
 inline com/qxotic/jinfer/kernels/MatMul.blockFma
@@ -93,4 +92,5 @@ inline com/qxotic/jinfer/kernels/KimiDeltaAttention.store
 inline com/qxotic/jinfer/kernels/KimiDeltaAttention.update
 inline com/qxotic/jinfer/kernels/Convolutions.load
 inline com/qxotic/jinfer/kernels/Convolutions.store
-# NOT the tile bodies (qkTile, qkTile64F32, qkTileWideF32, pvTile, pvTileF16, pvTileF32): see the header table.
+# NOT the tile bodies (qkTile, qkTile64F32, qkTileWideF32, pvTileF16, pvTileF32), nor pvTile, the dispatcher
+# in front of the last two: see the header.
