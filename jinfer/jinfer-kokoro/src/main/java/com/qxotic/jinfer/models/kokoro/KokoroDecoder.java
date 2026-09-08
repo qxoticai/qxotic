@@ -24,8 +24,8 @@ final class KokoroDecoder {
             KokoroLayers.Conv1d f0Convolution,
             KokoroLayers.Conv1d noiseConvolution,
             KokoroLayers.Conv1d asrResidual,
-            ProsodyPredictor.AdainResBlk1d encoder,
-            List<ProsodyPredictor.AdainResBlk1d> decoder) {
+            KokoroLayers.AdainResBlock encoder,
+            List<KokoroLayers.AdainResBlock> decoder) {
         Weights {
             decoder = List.copyOf(decoder);
         }
@@ -35,17 +35,17 @@ final class KokoroDecoder {
 
     static Weights load(
             Map<String, MemoryView<MemorySegment>> tensors,
-            Kokoro.Configuration config,
             MemoryAllocator<MemorySegment> persistent) {
-        List<ProsodyPredictor.AdainResBlk1d> decoder = new ArrayList<>(4);
+        List<KokoroLayers.AdainResBlock> decoder = new ArrayList<>(4);
         for (int layer = 0; layer < 4; layer++) {
             decoder.add(
-                    block(
+                    KokoroLayers.adainResBlock(
                             tensors,
                             persistent,
                             "dec.decode." + layer,
                             CONDITIONED_CHANNELS,
                             layer == 3 ? TEXT_CHANNELS : ENCODED_CHANNELS,
+                            STYLE_CHANNELS,
                             layer == 3));
         }
         return new Weights(
@@ -58,12 +58,13 @@ final class KokoroDecoder {
                         1,
                         TEXT_CHANNELS,
                         ASR_RESIDUAL_CHANNELS),
-                block(
+                KokoroLayers.adainResBlock(
                         tensors,
                         persistent,
                         "dec.encode",
                         TEXT_CHANNELS + 2,
                         ENCODED_CHANNELS,
+                        STYLE_CHANNELS,
                         false),
                 decoder);
     }
@@ -91,7 +92,7 @@ final class KokoroDecoder {
         current = weights.encoder().forward(current, time, decoderStyle, scratch);
 
         MemoryView<MemorySegment> asrResidual = weights.asrResidual().forward(asr, time, scratch);
-        for (ProsodyPredictor.AdainResBlk1d block : weights.decoder()) {
+        for (KokoroLayers.AdainResBlock block : weights.decoder()) {
             current =
                     concatenateConditioning(
                             current,
@@ -163,42 +164,6 @@ final class KokoroDecoder {
         Convert.copyF32(f0, 0, result, inputSize + asrSize, time);
         Convert.copyF32(noise, 0, result, inputSize + asrSize + time, time);
         return result;
-    }
-
-    private static ProsodyPredictor.AdainResBlk1d block(
-            Map<String, MemoryView<MemorySegment>> tensors,
-            MemoryAllocator<MemorySegment> allocator,
-            String prefix,
-            int inputChannels,
-            int outputChannels,
-            boolean upsample) {
-        return new ProsodyPredictor.AdainResBlk1d(
-                new KokoroLayers.AdaIN(
-                        KokoroLayers.linear(
-                                tensors,
-                                allocator,
-                                prefix + ".adain1",
-                                STYLE_CHANNELS,
-                                2 * inputChannels),
-                        inputChannels),
-                new KokoroLayers.AdaIN(
-                        KokoroLayers.linear(
-                                tensors,
-                                allocator,
-                                prefix + ".adain2",
-                                STYLE_CHANNELS,
-                                2 * outputChannels),
-                        outputChannels),
-                upsample
-                        ? KokoroLayers.depthwiseUpsample(
-                                tensors, allocator, prefix + ".pool", inputChannels)
-                        : null,
-                KokoroLayers.conv1d(
-                        tensors, allocator, prefix + ".conv1", 3, inputChannels, outputChannels),
-                KokoroLayers.conv1d(
-                        tensors, allocator, prefix + ".conv2", 3, outputChannels, outputChannels),
-                KokoroLayers.conv1d(
-                        tensors, allocator, prefix + ".conv1x1", 1, inputChannels, outputChannels));
     }
 
     private static void checkMatrix(

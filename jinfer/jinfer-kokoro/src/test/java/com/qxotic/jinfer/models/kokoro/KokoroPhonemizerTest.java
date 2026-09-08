@@ -76,6 +76,18 @@ final class KokoroPhonemizerTest {
     }
 
     @Test
+    void usesTheVoiceLanguage(@TempDir Path dir) throws IOException {
+        KokoroPhonemizer phonemizer =
+                stub(
+                        dir,
+                        "language.sh",
+                        "if [ \"$4\" = es ]; then printf 'ola\\n'; else exit 2; fi\n",
+                        5);
+
+        assertEquals("ola", phonemizer.phonemize("hola", "es"));
+    }
+
+    @Test
     void nonzeroExitIsReported(@TempDir Path dir) throws IOException {
         KokoroPhonemizer phonemizer = stub(dir, "broken.sh", "cat >/dev/null\nexit 3\n", 5);
 

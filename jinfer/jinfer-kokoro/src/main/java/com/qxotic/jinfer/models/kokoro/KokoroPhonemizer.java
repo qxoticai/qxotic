@@ -28,21 +28,29 @@ public final class KokoroPhonemizer {
         probe();
     }
 
-    /** Returns the first working eSpeak implementation on PATH, or {@code null} if none exists. */
-    static KokoroPhonemizer tryCreate() {
+    /** Returns the first working eSpeak implementation on PATH. */
+    static KokoroPhonemizer create() throws IOException {
+        IOException failure = null;
         for (String name : new String[] {"espeak-ng", "espeak"}) {
             try {
                 return new KokoroPhonemizer(name);
-            } catch (IOException ignored) {
-                if (Thread.currentThread().isInterrupted()) return null;
+            } catch (IOException e) {
+                failure = e;
+                if (Thread.currentThread().isInterrupted()) throw e;
             }
         }
-        return null;
+        throw new IOException(
+                "Kokoro requires espeak-ng or espeak on PATH for phonemization", failure);
     }
 
     /** Converts raw text to normalized IPA while preserving its punctuation. */
     public String phonemize(String text) throws IOException {
+        return phonemize(text, "en-us");
+    }
+
+    String phonemize(String text, String language) throws IOException {
         Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(language, "language");
         var result = new StringBuilder();
         var run = new StringBuilder();
         for (int offset = 0; offset < text.length(); ) {
@@ -62,25 +70,26 @@ public final class KokoroPhonemizer {
                             && Character.isDigit(text.codePointBefore(start))
                             && Character.isDigit(text.codePointAt(offset));
             if (isPunctuation(codePoint) && !insideToken) {
-                flush(run, result);
+                flush(run, result, language);
                 result.appendCodePoint(codePoint).append(' ');
             } else {
                 run.appendCodePoint(codePoint);
             }
         }
-        flush(run, result);
+        flush(run, result, language);
         return normalizeWhitespace(result.toString());
     }
 
-    private void flush(StringBuilder run, StringBuilder result) throws IOException {
+    private void flush(StringBuilder run, StringBuilder result, String language)
+            throws IOException {
         String words = normalizeWhitespace(run.toString());
         run.setLength(0);
-        if (!words.isEmpty()) result.append(ipaRun(words)).append(' ');
+        if (!words.isEmpty()) result.append(ipaRun(words, language)).append(' ');
     }
 
-    private String ipaRun(String words) throws IOException {
+    private String ipaRun(String words, String language) throws IOException {
         Process espeak =
-                new ProcessBuilder(binary, "--ipa", "-q", "-v", "en-us", "--stdin")
+                new ProcessBuilder(binary, "--ipa", "-q", "-v", language, "--stdin")
                         .redirectError(ProcessBuilder.Redirect.DISCARD)
                         .start();
         var output =
@@ -110,7 +119,8 @@ public final class KokoroPhonemizer {
         } catch (ExecutionException e) {
             throw new IOException(binary + " IPA output could not be read", e.getCause());
         } finally {
-            if (espeak.isAlive()) espeak.destroyForcibly();
+            output.cancel(true);
+            terminate(espeak);
         }
     }
 
@@ -138,7 +148,17 @@ public final class KokoroPhonemizer {
             Thread.currentThread().interrupt();
             throw new IOException("eSpeak executable probe was interrupted: " + binary, e);
         } finally {
-            if (process.isAlive()) process.destroyForcibly();
+            terminate(process);
+        }
+    }
+
+    private static void terminate(Process process) {
+        if (!process.isAlive()) return;
+        process.destroyForcibly();
+        try {
+            process.waitFor(1, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.models.kokoro;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.SpeechOptions;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -22,5 +24,12 @@ final class KokoroTTSTest {
         String text = "a".repeat(199) + "\uD83D\uDE00" + "b";
 
         assertEquals(List.of("a".repeat(199), "\uD83D\uDE00b"), KokoroTTS.chunks(text));
+    }
+
+    @Test
+    void rejectsNonFiniteSpeed() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> KokoroTTS.speed(SpeechOptions.speed(Double.NaN)));
     }
 }

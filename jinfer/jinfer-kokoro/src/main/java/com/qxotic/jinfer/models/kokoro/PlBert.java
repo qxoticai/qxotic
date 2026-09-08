@@ -5,7 +5,6 @@ import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.FlashAttention;
 import com.qxotic.jinfer.kernels.MatMul;
-import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.memory.MemoryAllocator;
@@ -51,10 +50,13 @@ final class PlBert {
         int intermediate = config.plbertIntermediateSize();
 
         MemoryView<MemorySegment> tokenEmbedding =
-                matrix(tensors, "bert.embd.tok.weight", config.tokenCount(), embedding);
+                KokoroLayers.matrix(
+                        tensors, "bert.embd.tok.weight", config.tokenCount(), embedding);
         MemoryView<MemorySegment> positionEmbedding =
-                matrix(tensors, "bert.embd.pos.weight", config.plbertMaxPositions(), embedding);
-        MemoryView<MemorySegment> tokenTypes = matrix(tensors, "bert.embd.tt.weight", 2, embedding);
+                KokoroLayers.matrix(
+                        tensors, "bert.embd.pos.weight", config.plbertMaxPositions(), embedding);
+        MemoryView<MemorySegment> tokenTypes =
+                KokoroLayers.matrix(tensors, "bert.embd.tt.weight", 2, embedding);
         MemoryView<MemorySegment> tokenType = Views.allocateF32(allocator, embedding);
         Convert.copyToF32(tokenTypes, 0, tokenType, 0, embedding);
 
@@ -203,20 +205,6 @@ final class PlBert {
                 rows,
                 linear.inputSize());
         Ops.addRowBiasInPlace(output, 0, linear.bias(), 0, rows, linear.outputSize());
-    }
-
-    private static MemoryView<MemorySegment> matrix(
-            Map<String, MemoryView<MemorySegment>> tensors, String name, int rows, int columns) {
-        MemoryView<MemorySegment> value = ModelLoader.require(tensors, name);
-        Views.requireContiguous(value, name);
-        require(value.shape().flatRank() == 2, name + " must be a matrix");
-        long actualRows = value.shape().flatAt(0);
-        long actualColumns =
-                Math.multiplyExact(value.shape().flatAt(1), value.dataType().elementsPerBlock());
-        require(
-                actualRows == rows && actualColumns == columns,
-                name + " must be [" + rows + ", " + columns + "]");
-        return value;
     }
 
     private static void validateLayer(Layer layer, int hidden, int intermediate) {

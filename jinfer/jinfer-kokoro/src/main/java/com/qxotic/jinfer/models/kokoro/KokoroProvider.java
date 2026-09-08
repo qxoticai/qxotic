@@ -43,12 +43,6 @@ public final class KokoroProvider implements ModelProvider {
 
     @Override
     public SpeechSynthesisModel<?, ?, ?> loadSpeech(
-            FileChannel fileChannel, GGUF gguf, Path path, Arena arena) {
-        throw new IllegalArgumentException("Kokoro requires the 'voice' companion GGUF");
-    }
-
-    @Override
-    public SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel fileChannel,
             GGUF gguf,
             Path path,

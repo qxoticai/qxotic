@@ -32,7 +32,7 @@ public final class KokoroTTS
     }
 
     public static KokoroTTS load(Path model, Path voice, Arena arena) throws IOException {
-        KokoroPhonemizer phonemizer = requirePhonemizer();
+        KokoroPhonemizer phonemizer = KokoroPhonemizer.create();
         return new KokoroTTS(Kokoro.load(model, voice, arena), phonemizer);
     }
 
@@ -44,15 +44,8 @@ public final class KokoroTTS
     public static KokoroTTS load(
             FileChannel channel, GGUF gguf, long baseOffset, Path voice, Arena arena)
             throws IOException {
-        KokoroPhonemizer phonemizer = requirePhonemizer();
+        KokoroPhonemizer phonemizer = KokoroPhonemizer.create();
         return new KokoroTTS(Kokoro.load(channel, gguf, baseOffset, voice, arena), phonemizer);
-    }
-
-    private static KokoroPhonemizer requirePhonemizer() throws IOException {
-        KokoroPhonemizer phonemizer = KokoroPhonemizer.tryCreate();
-        if (phonemizer == null)
-            throw new IOException("Kokoro requires espeak-ng or espeak on PATH for phonemization");
-        return phonemizer;
     }
 
     @Override
@@ -92,7 +85,9 @@ public final class KokoroTTS
                         var parts = new ArrayDeque<>(chunks(text));
                         while (!parts.isEmpty()) {
                             String part = parts.removeFirst();
-                            int[] phonemes = model.symbols().toRaw(phonemizer.phonemize(part));
+                            int[] phonemes =
+                                    model.symbols()
+                                            .toRaw(phonemizer.phonemize(part, model.language()));
                             if (phonemes.length == 0) continue;
                             if (phonemes.length > Kokoro.MAX_PHONEMES) {
                                 if (part.codePointCount(0, part.length()) < 2)
@@ -141,10 +136,10 @@ public final class KokoroTTS
         return split;
     }
 
-    private static double speed(SpeechOptions options) {
+    static double speed(SpeechOptions options) {
         Double speed = options == null ? null : options.speed();
         if (speed == null) return 1;
-        if (speed < MIN_SPEED || speed > MAX_SPEED)
+        if (!Double.isFinite(speed) || speed < MIN_SPEED || speed > MAX_SPEED)
             throw new IllegalArgumentException(
                     "speed must be in [" + MIN_SPEED + ", " + MAX_SPEED + "]: " + speed);
         return speed;

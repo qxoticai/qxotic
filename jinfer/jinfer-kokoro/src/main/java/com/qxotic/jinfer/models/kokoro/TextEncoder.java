@@ -68,8 +68,9 @@ final class TextEncoder {
         return new Weights(
                 embedding,
                 convolutions,
-                lstm(tensors, allocator, "", hidden / 2),
-                lstm(tensors, allocator, "_reverse", hidden / 2));
+                KokoroLayers.lstm(tensors, allocator, "text_enc.lstm", "", hidden, hidden / 2),
+                KokoroLayers.lstm(
+                        tensors, allocator, "text_enc.lstm", "_reverse", hidden, hidden / 2));
     }
 
     /**
@@ -128,20 +129,6 @@ final class TextEncoder {
         KokoroOps.bidirectionalLstm(
                 timeMajor, weights.forward(), weights.reverse(), output, scratch);
         return output;
-    }
-
-    private static KokoroOps.LstmWeights lstm(
-            Map<String, MemoryView<MemorySegment>> tensors,
-            MemoryAllocator<MemorySegment> allocator,
-            String suffix,
-            int hidden) {
-        int gates = Math.multiplyExact(4, hidden);
-        return new KokoroOps.LstmWeights(
-                ModelLoader.require(tensors, "text_enc.lstm.weight_ih_l0" + suffix),
-                ModelLoader.require(tensors, "text_enc.lstm.weight_hh_l0" + suffix),
-                KokoroLayers.vector(tensors, allocator, "text_enc.lstm.bias_ih_l0" + suffix, gates),
-                KokoroLayers.vector(
-                        tensors, allocator, "text_enc.lstm.bias_hh_l0" + suffix, gates));
     }
 
     private static void require(boolean condition, String message) {

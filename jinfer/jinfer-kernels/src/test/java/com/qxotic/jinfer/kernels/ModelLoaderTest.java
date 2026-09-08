@@ -76,4 +76,31 @@ class ModelLoaderTest {
             assertEquals(Float.BYTES, tensors.get("test").memory().base().byteSize());
         }
     }
+
+    @Test
+    void validatesBoundedTensorData() {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("weight", new long[] {4}, GGMLType.F32, 8))
+                        .build();
+        TensorEntry weight = gguf.getTensor("weight");
+        long required = gguf.getTensorDataOffset() + weight.offset() + weight.byteSize();
+
+        ModelLoader.requireComplete(gguf, required, "model.gguf");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelLoader.requireComplete(gguf, required - 1, "model.gguf"));
+    }
+
+    @Test
+    void rejectsNegativeTensorOffsets() {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("weight", new long[] {1}, GGMLType.F32, -1))
+                        .build(false);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ModelLoader.requireComplete(gguf, Long.MAX_VALUE, "model.gguf"));
+    }
 }

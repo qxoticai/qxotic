@@ -6,6 +6,7 @@ import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.toknroll.Tokenizer;
@@ -223,8 +224,26 @@ public final class Models {
             Arena arena,
             Map<String, Path> companions)
             throws IOException {
-        if (baseOffset < 0)
-            throw new IllegalArgumentException("negative base offset: " + baseOffset);
+        if (baseOffset < 0 || baseOffset > fileChannel.size())
+            throw new IllegalArgumentException("invalid base offset: " + baseOffset);
+        return loadSpeech(
+                fileChannel, gguf, baseOffset, fileChannel.size() - baseOffset, arena, companions);
+    }
+
+    /** Loads a speech GGUF whose declared tensors fit within {@code byteSize}. */
+    public static SpeechSynthesisModel<?, ?, ?> loadSpeech(
+            FileChannel fileChannel,
+            GGUF gguf,
+            long baseOffset,
+            long byteSize,
+            Arena arena,
+            Map<String, Path> companions)
+            throws IOException {
+        if (baseOffset < 0 || byteSize < 0 || baseOffset > fileChannel.size() - byteSize)
+            throw new IllegalArgumentException(
+                    "invalid embedded model range: " + baseOffset + " + " + byteSize);
+        rejectSplit(gguf, "embedded GGUF");
+        ModelLoader.requireComplete(gguf, byteSize, "embedded GGUF");
         Map<String, Path> attached = Map.copyOf(companions);
         ModelProvider provider = provider(gguf);
         requireAccepted(provider, gguf, attached.keySet());
@@ -285,22 +304,23 @@ public final class Models {
                                 + " convert it with llama.cpp's convert_hf_to_gguf.py",
                         e);
             }
-            // a SPLIT part carries only its own slice of the tensors; loading one alone would
-            // build a silently WRONG model (missing weights) - refuse with the remedy instead
-            long splitCount = metadataLong(gguf, "split.count");
-            if (splitCount > 1) {
-                throw new UnsupportedOperationException(
-                        path.getFileName()
-                                + " is part "
-                                + (metadataLong(gguf, "split.no") + 1)
-                                + " of a "
-                                + splitCount
-                                + "-file split GGUF - split models are not supported yet; merge the"
-                                + " parts first: llama.cpp's llama-gguf-split --merge <part1>"
-                                + " <out>");
-            }
+            rejectSplit(gguf, path.getFileName().toString());
             return load.apply(fc, gguf);
         }
+    }
+
+    private static void rejectSplit(GGUF gguf, String source) {
+        // A split part carries only its own tensor slice; loading one alone silently drops weights.
+        long splitCount = metadataLong(gguf, "split.count");
+        if (splitCount > 1)
+            throw new UnsupportedOperationException(
+                    source
+                            + " is part "
+                            + (metadataLong(gguf, "split.no") + 1)
+                            + " of a "
+                            + splitCount
+                            + "-file split GGUF - split models are not supported yet; merge the"
+                            + " parts first: llama.cpp's llama-gguf-split --merge <part1> <out>");
     }
 
     // arch (or prefix) -> the Maven artifact that provides it. DIAGNOSTICS ONLY - dispatch never

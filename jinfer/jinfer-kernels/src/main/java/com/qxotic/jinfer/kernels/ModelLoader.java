@@ -99,26 +99,16 @@ public final class ModelLoader {
         if ((tensorDataOffset & (Float.BYTES - 1)) != 0)
             throw new IllegalArgumentException(
                     "GGUF tensor data offset must be 4-byte aligned, got " + tensorDataOffset);
-        long available = fileChannel.size() - tensorDataOffset;
-        long required = 0;
-        for (TensorEntry tensor : tensors) {
-            long end =
-                    checkedAdd(
-                            tensor.offset(),
-                            tensor.ggmlType().byteSizeFor(Shape.flat(tensor.shape()).size()),
-                            "tensor " + tensor.name() + " end");
-            if (end > available) {
-                throw new IllegalArgumentException(
-                        "GGUF is truncated, or holds metadata only: tensor "
-                                + tensor.name()
-                                + " needs bytes up to "
-                                + end
-                                + " of the tensor data, the file has "
-                                + Math.max(available, 0)
-                                + ". Re-download it, or convert the model again.");
-            }
-            required = Math.max(required, end);
-        }
+        long fileSize = fileChannel.size();
+        if (tensorDataOffset < 0 || tensorDataOffset > fileSize)
+            throw new IllegalArgumentException(
+                    "GGUF tensor data offset "
+                            + tensorDataOffset
+                            + " is outside a "
+                            + fileSize
+                            + "-byte file");
+        long available = fileSize - tensorDataOffset;
+        long required = requiredTensorBytes(tensors, available, "GGUF");
         MemorySegment tensorData =
                 fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset, required, arena);
         // ONE jota Memory over the whole mapping; each tensor is a byte-offset view into it
@@ -149,6 +139,47 @@ public final class ModelLoader {
         // packed tensors move into a page-aligned slab in the SAME arena and their canonical mmap
         // pages are dropped - one copy total, shared as-is with Metal via unified memory.
         return JamPack.apply(tensorViews, arena);
+    }
+
+    /** Rejects a parsed GGUF whose declared tensors do not fit within {@code byteSize}. */
+    public static void requireComplete(GGUF gguf, long byteSize, String source) {
+        long dataOffset = gguf.getTensorDataOffset();
+        if (byteSize < 0 || dataOffset < 0 || dataOffset > byteSize)
+            throw new IllegalArgumentException(
+                    source
+                            + " is truncated: tensor data starts at "
+                            + dataOffset
+                            + " of "
+                            + byteSize);
+        requiredTensorBytes(gguf.getTensors(), byteSize - dataOffset, source);
+    }
+
+    private static long requiredTensorBytes(
+            Collection<TensorEntry> tensors, long available, String source) {
+        long required = 0;
+        for (TensorEntry tensor : tensors) {
+            if (tensor.offset() < 0)
+                throw new IllegalArgumentException(
+                        source + " tensor " + tensor.name() + " has a negative offset");
+            long end =
+                    checkedAdd(
+                            tensor.offset(),
+                            tensor.ggmlType().byteSizeFor(Shape.flat(tensor.shape()).size()),
+                            "tensor " + tensor.name() + " end");
+            if (end > available) {
+                throw new IllegalArgumentException(
+                        source
+                                + " is truncated, or holds metadata only: tensor "
+                                + tensor.name()
+                                + " needs bytes up to "
+                                + end
+                                + " of the tensor data, the file has "
+                                + Math.max(available, 0)
+                                + ". Re-download it, or convert the model again.");
+            }
+            required = Math.max(required, end);
+        }
+        return required;
     }
 
     private static long checkedAdd(long left, long right, String name) {

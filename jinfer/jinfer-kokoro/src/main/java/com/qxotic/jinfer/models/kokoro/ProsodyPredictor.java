@@ -2,7 +2,6 @@ package com.qxotic.jinfer.models.kokoro;
 
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
-import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
@@ -15,54 +14,12 @@ import java.util.Map;
 /** Kokoro's duration, pitch, and noise predictor. */
 final class ProsodyPredictor {
 
-    private static final float LEAKY_RELU_SLOPE = 0.2f;
-    private static final float RESIDUAL_SCALE = (float) (1.0 / Math.sqrt(2.0));
-
     record DurationLayer(
             KokoroOps.LstmWeights forward,
             KokoroOps.LstmWeights reverse,
             KokoroLayers.AdaLayerNorm normalization) {}
 
-    record AdainResBlk1d(
-            KokoroLayers.AdaIN normalization1,
-            KokoroLayers.AdaIN normalization2,
-            KokoroLayers.DepthwiseUpsample pool,
-            KokoroLayers.Conv1d convolution1,
-            KokoroLayers.Conv1d convolution2,
-            KokoroLayers.Conv1d shortcut) {
-
-        MemoryView<MemorySegment> forward(
-                MemoryView<MemorySegment> input,
-                int time,
-                MemoryView<MemorySegment> style,
-                MemoryAllocator<MemorySegment> scratch) {
-            int outputTime = pool == null ? time : Math.multiplyExact(time, 2);
-            MemoryView<MemorySegment> residual =
-                    normalization1.forward(input, time, style, scratch);
-            Ops.leakyReluInPlace(
-                    residual, 0, Math.toIntExact(residual.logicalSize()), LEAKY_RELU_SLOPE);
-            if (pool != null) residual = pool.forward(residual, time, scratch);
-            residual = convolution1.forward(residual, outputTime, scratch);
-            residual = normalization2.forward(residual, outputTime, style, scratch);
-            Ops.leakyReluInPlace(
-                    residual, 0, Math.toIntExact(residual.logicalSize()), LEAKY_RELU_SLOPE);
-            residual = convolution2.forward(residual, outputTime, scratch);
-
-            MemoryView<MemorySegment> direct = input;
-            if (pool != null)
-                direct =
-                        KokoroLayers.nearestUpsample(
-                                direct, normalization1.channels(), time, 2, scratch);
-            if (shortcut != null) direct = shortcut.forward(direct, outputTime, scratch);
-            int elements = Math.toIntExact(residual.logicalSize());
-            require(direct.logicalSize() == elements, "residual branches have different sizes");
-            Ops.addInPlace(residual, 0, direct, 0, elements);
-            Ops.multiplyInPlace(residual, 0, elements, RESIDUAL_SCALE);
-            return residual;
-        }
-    }
-
-    record Branch(List<AdainResBlk1d> blocks, KokoroLayers.Conv1d projection) {
+    record Branch(List<KokoroLayers.AdainResBlock> blocks, KokoroLayers.Conv1d projection) {
         Branch {
             blocks = List.copyOf(blocks);
         }
@@ -102,8 +59,9 @@ final class ProsodyPredictor {
             String prefix = "pred.dur_enc." + layer;
             durationEncoder.add(
                     new DurationLayer(
-                            lstm(tensors, persistent, prefix + ".lstm", "", encoded, hidden / 2),
-                            lstm(
+                            KokoroLayers.lstm(
+                                    tensors, persistent, prefix + ".lstm", "", encoded, hidden / 2),
+                            KokoroLayers.lstm(
                                     tensors,
                                     persistent,
                                     prefix + ".lstm",
@@ -122,12 +80,14 @@ final class ProsodyPredictor {
 
         return new Weights(
                 durationEncoder,
-                lstm(tensors, persistent, "pred.lstm", "", encoded, hidden / 2),
-                lstm(tensors, persistent, "pred.lstm", "_reverse", encoded, hidden / 2),
+                KokoroLayers.lstm(tensors, persistent, "pred.lstm", "", encoded, hidden / 2),
+                KokoroLayers.lstm(
+                        tensors, persistent, "pred.lstm", "_reverse", encoded, hidden / 2),
                 KokoroLayers.linear(
                         tensors, persistent, "pred.dur_proj", hidden, config.maxDuration()),
-                lstm(tensors, persistent, "pred.shared", "", encoded, hidden / 2),
-                lstm(tensors, persistent, "pred.shared", "_reverse", encoded, hidden / 2),
+                KokoroLayers.lstm(tensors, persistent, "pred.shared", "", encoded, hidden / 2),
+                KokoroLayers.lstm(
+                        tensors, persistent, "pred.shared", "_reverse", encoded, hidden / 2),
                 branch(tensors, persistent, "pred.F0", "pred.F0_proj", hidden, style),
                 branch(tensors, persistent, "pred.N", "pred.N_proj", hidden, style),
                 hidden,
@@ -281,9 +241,11 @@ final class ProsodyPredictor {
             int style) {
         return new Branch(
                 List.of(
-                        block(tensors, allocator, prefix + ".0", hidden, hidden, style, false),
-                        block(tensors, allocator, prefix + ".1", hidden, hidden / 2, style, true),
-                        block(
+                        KokoroLayers.adainResBlock(
+                                tensors, allocator, prefix + ".0", hidden, hidden, style, false),
+                        KokoroLayers.adainResBlock(
+                                tensors, allocator, prefix + ".1", hidden, hidden / 2, style, true),
+                        KokoroLayers.adainResBlock(
                                 tensors,
                                 allocator,
                                 prefix + ".2",
@@ -292,42 +254,6 @@ final class ProsodyPredictor {
                                 style,
                                 false)),
                 KokoroLayers.conv1d(tensors, allocator, projection, 1, hidden / 2, 1));
-    }
-
-    private static AdainResBlk1d block(
-            Map<String, MemoryView<MemorySegment>> tensors,
-            MemoryAllocator<MemorySegment> allocator,
-            String prefix,
-            int inputChannels,
-            int outputChannels,
-            int style,
-            boolean upsample) {
-        return new AdainResBlk1d(
-                new KokoroLayers.AdaIN(
-                        KokoroLayers.linear(
-                                tensors, allocator, prefix + ".adain1", style, 2 * inputChannels),
-                        inputChannels),
-                new KokoroLayers.AdaIN(
-                        KokoroLayers.linear(
-                                tensors, allocator, prefix + ".adain2", style, 2 * outputChannels),
-                        outputChannels),
-                upsample
-                        ? KokoroLayers.depthwiseUpsample(
-                                tensors, allocator, prefix + ".pool", inputChannels)
-                        : null,
-                KokoroLayers.conv1d(
-                        tensors, allocator, prefix + ".conv1", 3, inputChannels, outputChannels),
-                KokoroLayers.conv1d(
-                        tensors, allocator, prefix + ".conv2", 3, outputChannels, outputChannels),
-                inputChannels == outputChannels
-                        ? null
-                        : KokoroLayers.conv1d(
-                                tensors,
-                                allocator,
-                                prefix + ".conv1x1",
-                                1,
-                                inputChannels,
-                                outputChannels));
     }
 
     private static void runBranch(
@@ -339,40 +265,13 @@ final class ProsodyPredictor {
             float[] result) {
         MemoryView<MemorySegment> current = input;
         int time = frames;
-        for (AdainResBlk1d block : branch.blocks()) {
+        for (KokoroLayers.AdainResBlock block : branch.blocks()) {
             current = block.forward(current, time, style, scratch);
             if (block.pool() != null) time = Math.multiplyExact(time, 2);
         }
         MemoryView<MemorySegment> projected = branch.projection().forward(current, time, scratch);
         require(result.length == time, "prediction output has the wrong length");
         Views.copyToArray(projected, 0, result, 0, time, "prediction");
-    }
-
-    private static KokoroOps.LstmWeights lstm(
-            Map<String, MemoryView<MemorySegment>> tensors,
-            MemoryAllocator<MemorySegment> allocator,
-            String prefix,
-            String suffix,
-            int input,
-            int hidden) {
-        int gates = Math.multiplyExact(4, hidden);
-        return new KokoroOps.LstmWeights(
-                matrix(tensors, prefix + ".weight_ih_l0" + suffix, gates, input),
-                matrix(tensors, prefix + ".weight_hh_l0" + suffix, gates, hidden),
-                KokoroLayers.vector(tensors, allocator, prefix + ".bias_ih_l0" + suffix, gates),
-                KokoroLayers.vector(tensors, allocator, prefix + ".bias_hh_l0" + suffix, gates));
-    }
-
-    private static MemoryView<MemorySegment> matrix(
-            Map<String, MemoryView<MemorySegment>> tensors, String name, int rows, int columns) {
-        MemoryView<MemorySegment> value = ModelLoader.require(tensors, name);
-        Views.requireContiguous(value, name);
-        require(value.shape().flatRank() == 2, name + " must be a matrix");
-        require(
-                value.shape().flatAt(0) == rows
-                        && value.shape().flatAt(1) * value.dataType().elementsPerBlock() == columns,
-                name + " has the wrong shape");
-        return value;
     }
 
     private static void checkMatrix(

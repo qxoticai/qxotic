@@ -15,6 +15,9 @@ import java.nio.file.Path;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.apache.commons.compress.archivers.zip.UnixStat;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,6 +51,40 @@ class SelfArchiveTest {
         try (SelfArchive archive = SelfArchive.open(archive(directory, ZipEntry.DEFLATED))) {
             assertThrows(IOException.class, () -> archive.entry("models/tiny.gguf"));
         }
+    }
+
+    @Test
+    void resolvesRelativeSymlinksFromTheirDirectory(@TempDir Path directory) throws IOException {
+        Path file = directory.resolve("links.zip");
+        try (ZipArchiveOutputStream zip = new ZipArchiveOutputStream(file)) {
+            stored(zip, "voices/heart.gguf", PAYLOAD, UnixStat.DEFAULT_FILE_PERM);
+            stored(
+                    zip,
+                    "voices/default.gguf",
+                    "heart.gguf".getBytes(StandardCharsets.UTF_8),
+                    UnixStat.LINK_FLAG | UnixStat.DEFAULT_LINK_PERM);
+        }
+
+        try (SelfArchive archive = SelfArchive.open(file);
+                var input =
+                        Channels.newInputStream(
+                                archive.channel(archive.entry("voices/default.gguf")))) {
+            assertArrayEquals(PAYLOAD, input.readAllBytes());
+        }
+    }
+
+    private static void stored(ZipArchiveOutputStream zip, String name, byte[] data, int mode)
+            throws IOException {
+        ZipArchiveEntry entry = new ZipArchiveEntry(name);
+        entry.setMethod(ZipArchiveEntry.STORED);
+        entry.setSize(data.length);
+        entry.setUnixMode(mode);
+        CRC32 crc = new CRC32();
+        crc.update(data);
+        entry.setCrc(crc.getValue());
+        zip.putArchiveEntry(entry);
+        zip.write(data);
+        zip.closeArchiveEntry();
     }
 
     private static Path archive(Path directory, int method) throws IOException {

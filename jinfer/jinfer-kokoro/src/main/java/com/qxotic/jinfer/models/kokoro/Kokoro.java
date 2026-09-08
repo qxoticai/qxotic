@@ -105,6 +105,7 @@ public final class Kokoro {
 
     private final Configuration configuration;
     private final Voice voice;
+    private final String language;
     private final Weights weights;
     private final TextEncoder.Weights textEncoder;
     private final PlBert.Weights plBert;
@@ -119,6 +120,7 @@ public final class Kokoro {
     private Kokoro(
             Configuration configuration,
             Voice voice,
+            String language,
             Weights weights,
             TextEncoder.Weights textEncoder,
             PlBert.Weights plBert,
@@ -130,6 +132,7 @@ public final class Kokoro {
             long parameterCount) {
         this.configuration = configuration;
         this.voice = voice;
+        this.language = language;
         this.weights = weights;
         this.textEncoder = textEncoder;
         this.plBert = plBert;
@@ -163,6 +166,7 @@ public final class Kokoro {
         try (FileChannel voiceChannel = FileChannel.open(voice, StandardOpenOption.READ)) {
             GGUF voiceGguf = ModelLoader.readGguf(voiceChannel, voice.toString());
             Voice voiceConfiguration = readVoice(voiceGguf);
+            String language = readVoiceLanguage(voiceGguf);
             Map<String, MemoryView<MemorySegment>> modelWeights =
                     ModelLoader.loadTensors(channel, gguf, baseOffset, arena);
             MemoryAllocator<MemorySegment> persistent = MemoryAllocators.ofArena(arena);
@@ -171,8 +175,7 @@ public final class Kokoro {
             PlBert.Weights plBert = PlBert.load(modelWeights, configuration, persistent);
             ProsodyPredictor.Weights predictor =
                     ProsodyPredictor.load(modelWeights, configuration, persistent);
-            KokoroDecoder.Weights decoder =
-                    KokoroDecoder.load(modelWeights, configuration, persistent);
+            KokoroDecoder.Weights decoder = KokoroDecoder.load(modelWeights, persistent);
             KokoroGenerator.Weights generator =
                     KokoroGenerator.load(modelWeights, configuration, persistent);
             MemoryView<MemorySegment> sourceWeightView =
@@ -191,6 +194,7 @@ public final class Kokoro {
             return new Kokoro(
                     configuration,
                     voiceConfiguration,
+                    language,
                     new Weights(modelWeights, voicePack),
                     textEncoder,
                     plBert,
@@ -287,6 +291,26 @@ public final class Kokoro {
         return new Voice(Math.toIntExact(shape[2]), Math.toIntExact(shape[0]));
     }
 
+    static String readVoiceLanguage(GGUF gguf) {
+        require(gguf.containsKey("kokoro_voice.name"), "voice is missing kokoro_voice.name");
+        String name = gguf.getString("kokoro_voice.name");
+        require(!name.isEmpty(), "voice name is empty");
+        return switch (name.charAt(0)) {
+            case 'a' -> "en-us";
+            case 'b' -> "en-gb";
+            case 'e' -> "es";
+            case 'f' -> "fr-fr";
+            case 'h' -> "hi";
+            case 'i' -> "it";
+            case 'j' -> "ja";
+            case 'p' -> "pt-br";
+            case 'z' -> "cmn";
+            default ->
+                    throw new IllegalArgumentException(
+                            "Kokoro: unsupported voice language: " + name);
+        };
+    }
+
     private static int integer(GGUF gguf, String key) {
         require(gguf.containsKey(key), "missing metadata: " + key);
         return gguf.getValue(int.class, key);
@@ -312,6 +336,10 @@ public final class Kokoro {
 
     public Voice voice() {
         return voice;
+    }
+
+    String language() {
+        return language;
     }
 
     public Weights weights() {

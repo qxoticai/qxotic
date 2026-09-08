@@ -38,6 +38,9 @@ public final class TtsCli {
         } catch (Player.Failed playerQuit) {
             System.err.println("jinfer-tts: " + playerQuit.getMessage());
             System.exit(playerQuit.status);
+        } catch (UncheckedIOException e) {
+            System.err.println("jinfer-tts: " + e.getCause().getMessage());
+            System.exit(1);
         } catch (IOException e) {
             System.err.println("jinfer-tts: " + e.getMessage());
             System.exit(1);
@@ -70,8 +73,8 @@ public final class TtsCli {
         }
 
         List<Path> extracted = new ArrayList<>();
-        try (archive) {
-            Arena arena = Arena.global();
+        try (archive;
+                Arena arena = Arena.ofShared()) {
             Map<String, Path> companions =
                     resolveCompanions(options.companions(), archive, extracted);
             String source =
@@ -85,7 +88,12 @@ public final class TtsCli {
                 }
                 model =
                         Models.loadSpeech(
-                                archive.fileChannel(), gguf, entry.offset(), arena, companions);
+                                archive.fileChannel(),
+                                gguf,
+                                entry.offset(),
+                                entry.size(),
+                                arena,
+                                companions);
             } else {
                 model = Models.loadSpeech(Path.of(source), arena, companions);
             }
@@ -202,7 +210,12 @@ public final class TtsCli {
                             Path wav;
                             try {
                                 wav = Files.createTempFile("jinfer-tts-", ".wav");
-                                Files.write(wav, AudioCodec.wav(audio));
+                                try {
+                                    Files.write(wav, AudioCodec.wav(audio));
+                                } catch (IOException e) {
+                                    Files.deleteIfExists(wav);
+                                    throw e;
+                                }
                             } catch (IOException e) {
                                 throw new UncheckedIOException(e);
                             }

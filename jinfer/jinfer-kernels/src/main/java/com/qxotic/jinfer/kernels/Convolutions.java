@@ -5,7 +5,6 @@ import static com.qxotic.jinfer.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
-import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jota.memory.MemoryView;

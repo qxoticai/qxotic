@@ -22,6 +22,7 @@ import java.lang.reflect.Proxy;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -205,6 +206,17 @@ class ModelsTest {
                         () -> Models.requireSameIdSpace(gguf, tokenizer(1)));
         assertTrue(failure.getMessage().contains("1 tokens"), failure.getMessage());
         assertTrue(failure.getMessage().contains("2"), failure.getMessage());
+    }
+
+    @Test
+    void rejectsEmbeddedSplitGgufs(@TempDir Path dir) throws Exception {
+        GGUF split = Builder.newBuilder().putLong("split.count", 2).putLong("split.no", 0).build();
+        Path file = Files.createFile(dir.resolve("archive"));
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> Models.loadSpeech(channel, split, 0, 0, Arena.global(), Map.of()));
+        }
     }
 
     private static LoadedModel<?> loadedModel(ContentKey seed) {

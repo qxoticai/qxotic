@@ -73,7 +73,16 @@ final class SelfArchive implements AutoCloseable {
                         new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
                                 .trim();
             }
-            return resolve(target, as, seen);
+            Path targetPath = Path.of(target);
+            if (targetPath.isAbsolute() && targetPath.getNameCount() == 0)
+                throw new IOException("invalid symlink target: " + name + " -> " + target);
+            Path resolved =
+                    targetPath.isAbsolute()
+                            ? targetPath.subpath(0, targetPath.getNameCount())
+                            : Path.of(name).resolveSibling(targetPath).normalize();
+            if (resolved.startsWith(".."))
+                throw new IOException("symlink escapes archive: " + name + " -> " + target);
+            return resolve(resolved.toString().replace('\\', '/'), as, seen);
         }
         if (entry.getMethod() != ZipArchiveEntry.STORED)
             throw new IOException("entry must be STORED to be mapped: " + name);

@@ -56,7 +56,7 @@ final class ProsodyPredictorTest {
         try (Arena arena = Arena.ofConfined()) {
             var allocator = MemoryAllocators.ofArena(arena);
             var block =
-                    new ProsodyPredictor.AdainResBlk1d(
+                    new KokoroLayers.AdainResBlock(
                             adain(allocator, 1),
                             adain(allocator, 2),
                             new KokoroLayers.DepthwiseUpsample(new float[] {0, 1, 0}, null, 1),

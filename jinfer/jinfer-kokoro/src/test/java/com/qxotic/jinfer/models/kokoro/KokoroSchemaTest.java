@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.TensorEntry;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 final class KokoroSchemaTest {
@@ -16,6 +17,20 @@ final class KokoroSchemaTest {
         Kokoro.Voice voice = Kokoro.readVoice(voice().build());
         assertEquals(510, voice.maxPhonemes());
         assertEquals(256, voice.styleDimensions());
+        Map.of(
+                        "af_heart", "en-us",
+                        "bf_emma", "en-gb",
+                        "ef_dora", "es",
+                        "ff_siwis", "fr-fr",
+                        "hf_alpha", "hi",
+                        "if_sara", "it",
+                        "jf_alpha", "ja",
+                        "pf_dora", "pt-br",
+                        "zf_xiaobei", "cmn")
+                .forEach(
+                        (name, language) ->
+                                assertEquals(
+                                        language, Kokoro.readVoiceLanguage(voice(name).build())));
     }
 
     @Test
@@ -42,8 +57,13 @@ final class KokoroSchemaTest {
     }
 
     private static Builder voice() {
+        return voice("af_heart");
+    }
+
+    private static Builder voice(String name) {
         return Builder.newBuilder()
                 .putString("general.architecture", "kokoro-voice")
+                .putString("kokoro_voice.name", name)
                 .putTensor(
                         TensorEntry.create(
                                 "voice.pack", new long[] {256, 1, 510}, GGMLType.F32, 0));

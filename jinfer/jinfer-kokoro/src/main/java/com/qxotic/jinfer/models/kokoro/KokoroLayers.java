@@ -20,6 +20,8 @@ import java.util.Map;
 final class KokoroLayers {
 
     private static final float ADAPTIVE_NORM_EPS = 1e-5f;
+    private static final float LEAKY_RELU_SLOPE = 0.2f;
+    private static final float RESIDUAL_SCALE = (float) (1.0 / Math.sqrt(2.0));
 
     record Linear(
             MemoryView<MemorySegment> weight,
@@ -35,6 +37,43 @@ final class KokoroLayers {
             MatMul.gemm(weight, input, inputSize, output, outputSize, outputSize, rows, inputSize);
             Ops.addRowBiasInPlace(output, 0, bias, 0, rows, outputSize);
             return output;
+        }
+    }
+
+    record AdainResBlock(
+            AdaIN normalization1,
+            AdaIN normalization2,
+            DepthwiseUpsample pool,
+            Conv1d convolution1,
+            Conv1d convolution2,
+            Conv1d shortcut) {
+
+        MemoryView<MemorySegment> forward(
+                MemoryView<MemorySegment> input,
+                int time,
+                MemoryView<MemorySegment> style,
+                MemoryAllocator<MemorySegment> scratch) {
+            int outputTime = pool == null ? time : Math.multiplyExact(time, 2);
+            MemoryView<MemorySegment> residual =
+                    normalization1.forward(input, time, style, scratch);
+            Ops.leakyReluInPlace(
+                    residual, 0, Math.toIntExact(residual.logicalSize()), LEAKY_RELU_SLOPE);
+            if (pool != null) residual = pool.forward(residual, time, scratch);
+            residual = convolution1.forward(residual, outputTime, scratch);
+            residual = normalization2.forward(residual, outputTime, style, scratch);
+            Ops.leakyReluInPlace(
+                    residual, 0, Math.toIntExact(residual.logicalSize()), LEAKY_RELU_SLOPE);
+            residual = convolution2.forward(residual, outputTime, scratch);
+
+            MemoryView<MemorySegment> direct = input;
+            if (pool != null)
+                direct = nearestUpsample(direct, normalization1.channels(), time, 2, scratch);
+            if (shortcut != null) direct = shortcut.forward(direct, outputTime, scratch);
+            int elements = Math.toIntExact(residual.logicalSize());
+            require(direct.logicalSize() == elements, "residual branches have different sizes");
+            Ops.addInPlace(residual, 0, direct, 0, elements);
+            Ops.multiplyInPlace(residual, 0, elements, RESIDUAL_SCALE);
+            return residual;
         }
     }
 
@@ -289,20 +328,44 @@ final class KokoroLayers {
 
     private KokoroLayers() {}
 
+    static AdainResBlock adainResBlock(
+            Map<String, MemoryView<MemorySegment>> tensors,
+            MemoryAllocator<MemorySegment> allocator,
+            String prefix,
+            int inputChannels,
+            int outputChannels,
+            int style,
+            boolean upsample) {
+        return new AdainResBlock(
+                new AdaIN(
+                        linear(tensors, allocator, prefix + ".adain1", style, 2 * inputChannels),
+                        inputChannels),
+                new AdaIN(
+                        linear(tensors, allocator, prefix + ".adain2", style, 2 * outputChannels),
+                        outputChannels),
+                upsample
+                        ? depthwiseUpsample(tensors, allocator, prefix + ".pool", inputChannels)
+                        : null,
+                conv1d(tensors, allocator, prefix + ".conv1", 3, inputChannels, outputChannels),
+                conv1d(tensors, allocator, prefix + ".conv2", 3, outputChannels, outputChannels),
+                inputChannels == outputChannels
+                        ? null
+                        : conv1d(
+                                tensors,
+                                allocator,
+                                prefix + ".conv1x1",
+                                1,
+                                inputChannels,
+                                outputChannels));
+    }
+
     static Linear linear(
             Map<String, MemoryView<MemorySegment>> tensors,
             MemoryAllocator<MemorySegment> allocator,
             String name,
             int inputSize,
             int outputSize) {
-        MemoryView<MemorySegment> weight = ModelLoader.require(tensors, name + ".weight");
-        Views.requireContiguous(weight, name + ".weight");
-        require(weight.shape().flatRank() == 2, name + ".weight must be a matrix");
-        require(
-                weight.shape().flatAt(0) == outputSize
-                        && weight.shape().flatAt(1) * weight.dataType().elementsPerBlock()
-                                == inputSize,
-                name + ".weight has the wrong shape");
+        MemoryView<MemorySegment> weight = matrix(tensors, name + ".weight", outputSize, inputSize);
         return new Linear(
                 weight,
                 vector(tensors, allocator, name + ".bias", outputSize),
@@ -403,6 +466,36 @@ final class KokoroLayers {
         MemoryView<MemorySegment> source = ModelLoader.require(tensors, name);
         require(source.logicalSize() == size, name + " has the wrong length");
         return dequantize(allocator, source, name);
+    }
+
+    static MemoryView<MemorySegment> matrix(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int rows, int columns) {
+        MemoryView<MemorySegment> value = ModelLoader.require(tensors, name);
+        Views.requireContiguous(value, name);
+        require(value.shape().flatRank() == 2, name + " must be a matrix");
+        require(
+                value.shape().flatAt(0) == rows
+                        && Math.multiplyExact(
+                                        value.shape().flatAt(1),
+                                        (long) value.dataType().elementsPerBlock())
+                                == columns,
+                name + " must be [" + rows + ", " + columns + "]");
+        return value;
+    }
+
+    static KokoroOps.LstmWeights lstm(
+            Map<String, MemoryView<MemorySegment>> tensors,
+            MemoryAllocator<MemorySegment> allocator,
+            String prefix,
+            String suffix,
+            int input,
+            int hidden) {
+        int gates = Math.multiplyExact(4, hidden);
+        return new KokoroOps.LstmWeights(
+                matrix(tensors, prefix + ".weight_ih_l0" + suffix, gates, input),
+                matrix(tensors, prefix + ".weight_hh_l0" + suffix, gates, hidden),
+                vector(tensors, allocator, prefix + ".bias_ih_l0" + suffix, gates),
+                vector(tensors, allocator, prefix + ".bias_hh_l0" + suffix, gates));
     }
 
     static float[] convolutionTaps(
