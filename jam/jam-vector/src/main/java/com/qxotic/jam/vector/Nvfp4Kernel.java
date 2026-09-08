@@ -130,55 +130,50 @@ public final class Nvfp4Kernel {
             ByteVector p23 =
                     ByteVector.fromMemorySegment(
                             ByteVector.SPECIES_128, w, bo + 4 + 16, ByteOrder.LITTLE_ENDIAN);
-            storeSubPair(
-                    lut,
-                    p01.and((byte) 0x0F),
-                    p01.lanewise(VectorOperators.LSHR, 4),
-                    d0,
-                    d1,
-                    shufA,
-                    shufB,
-                    dst,
-                    base);
-            storeSubPair(
-                    lut,
-                    p23.and((byte) 0x0F),
-                    p23.lanewise(VectorOperators.LSHR, 4),
-                    d2,
-                    d3,
-                    shufA,
-                    shufB,
-                    dst,
-                    base + 128);
-        }
-    }
+            // Each packed vector holds two sub-blocks: lanes 0-7 are the first sub-block's
+            // low/high nibbles, lanes 8-15 the second's. Element order per sub-block is
+            // [lo(8), hi(8)], restored by the two-source 512-bit rearranges shufA/shufB
+            // (vpermt2ps) - a 256-bit extract/store split measured ~60x slower, not intrinsified
+            // by a jvmci JIT.
+            //
+            // Written out rather than factored into a decode helper, and it must stay that way.
+            // Every value below is a vector, and a vector that crosses a call boundary cannot stay
+            // in a register: an inliner that declines the call materializes it, and then EVERY
+            // Vector API op in this loop falls back to the generic per-lane path. The helper this
+            // replaced did exactly that - 13 fallback call sites in a GraalVM CE image and 19 in
+            // an Oracle one, so both builders, not just the weaker inliner. An -H:DirectedInline
+            // pin is not the alternative: that option is single-valued, so a jam rule and a jinfer
+            // rule silently overwrite each other whenever both jars are on the image classpath.
+            FloatVector lo01 =
+                    (FloatVector)
+                            lut.rearrange(p01.and((byte) 0x0F).toShuffle())
+                                    .castShape(VectorSupport.F_SPECIES, 0);
+            FloatVector hi01 =
+                    (FloatVector)
+                            lut.rearrange(p01.lanewise(VectorOperators.LSHR, 4).toShuffle())
+                                    .castShape(VectorSupport.F_SPECIES, 0);
+            lo01.rearrange(shufA, hi01)
+                    .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d0))
+                    .intoMemorySegment(dst, base, ByteOrder.LITTLE_ENDIAN);
+            lo01.rearrange(shufB, hi01)
+                    .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d1))
+                    .intoMemorySegment(dst, base + 64, ByteOrder.LITTLE_ENDIAN);
 
-    /**
-     * Decode two adjacent sub-blocks (16 nibble bytes): {@code lo}/{@code hi} lanes 0-7 are
-     * sub-block A's low/high nibbles, lanes 8-15 sub-block B's. Element order per sub-block is
-     * [lo(8), hi(8)], restored by two-source 512-bit rearranges ({@link #SHUF_A}/{@link #SHUF_B},
-     * vpermt2ps) - a 256-bit extract/store split was ~60x slower (not intrinsified by a jvmci JIT).
-     */
-    private static void storeSubPair(
-            ByteVector lut,
-            ByteVector lo,
-            ByteVector hi,
-            float dA,
-            float dB,
-            VectorShuffle<Float> shufA,
-            VectorShuffle<Float> shufB,
-            MemorySegment dst,
-            long base) {
-        FloatVector loF =
-                (FloatVector) lut.rearrange(lo.toShuffle()).castShape(VectorSupport.F_SPECIES, 0);
-        FloatVector hiF =
-                (FloatVector) lut.rearrange(hi.toShuffle()).castShape(VectorSupport.F_SPECIES, 0);
-        loF.rearrange(shufA, hiF)
-                .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, dA))
-                .intoMemorySegment(dst, base, ByteOrder.LITTLE_ENDIAN);
-        loF.rearrange(shufB, hiF)
-                .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, dB))
-                .intoMemorySegment(dst, base + 64, ByteOrder.LITTLE_ENDIAN);
+            FloatVector lo23 =
+                    (FloatVector)
+                            lut.rearrange(p23.and((byte) 0x0F).toShuffle())
+                                    .castShape(VectorSupport.F_SPECIES, 0);
+            FloatVector hi23 =
+                    (FloatVector)
+                            lut.rearrange(p23.lanewise(VectorOperators.LSHR, 4).toShuffle())
+                                    .castShape(VectorSupport.F_SPECIES, 0);
+            lo23.rearrange(shufA, hi23)
+                    .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d2))
+                    .intoMemorySegment(dst, base + 128, ByteOrder.LITTLE_ENDIAN);
+            lo23.rearrange(shufB, hi23)
+                    .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d3))
+                    .intoMemorySegment(dst, base + 192, ByteOrder.LITTLE_ENDIAN);
+        }
     }
 
     /**
