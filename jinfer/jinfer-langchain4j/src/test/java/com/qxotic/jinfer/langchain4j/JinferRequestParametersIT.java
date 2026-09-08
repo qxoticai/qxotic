@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.testkit.TestModels;
-import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -125,22 +124,10 @@ class JinferRequestParametersIT {
     @Test
     void grammarConflictsAreLoud() {
         var grammarParams = JinferChatRequestParameters.builder().grammar("root ::= \"x\"").build();
-        assertThrows(
-                UnsupportedFeatureException.class,
-                () ->
-                        model.chat(
-                                ChatRequest.builder()
-                                        .messages(UserMessage.from("hi"))
-                                        .parameters(
-                                                JinferChatRequestParameters.builder()
-                                                        .grammar("root ::= \"x\"")
-                                                        .toolSpecifications(
-                                                                ToolSpecification.builder()
-                                                                        .name("noop")
-                                                                        .build())
-                                                        .build())
-                                        .build()),
-                "grammar + tools");
+        // grammar + tools is NO conflict: the family's reply language offers a call OR the
+        // document in one request (AbstractConstraintIT pins the acceptance per family; the
+        // engine still refuses a FORCED call against a stated format, and families without a
+        // combined language refuse the pair). What stays refused is two grammars on one reply:
         assertThrows(
                 UnsupportedFeatureException.class,
                 () ->

@@ -430,7 +430,9 @@ public final class ChatEngine implements AutoCloseable {
      * these fields. Direct, framework-free callers: {@link #of(List, Sampling)} covers the common
      * case without the 12 positional slots.
      *
-     * @param tools tools offered to the model; mutually exclusive with {@code contentGbnf}
+     * @param tools tools offered to the model; with a {@code contentGbnf} the family's reply
+     *     language offers a call OR the document (a family without a combined language refuses the
+     *     pair)
      * @param thinking the caller's intent; {@link #prepare} still applies the {@link #THINK_FLOOR}
      *     and a forced call's override, so a request cannot ask for a think span it cannot afford
      * @param maxTokens completion budget, {@link Generator.Constraints#UNLIMITED} = bounded only by
@@ -442,8 +444,9 @@ public final class ChatEngine implements AutoCloseable {
      * @param timeout wall-clock budget for the whole pass (prefill AND decode); {@link
      *     Duration#ZERO} = none
      * @param contentGbnf constrains decoding to a GBNF grammar (JSON schema, ...); null = free;
-     *     mutually exclusive with {@code tools}
-     * @param forcedTool seed the family's call marker so the reply IS a tool call
+     *     with tools offered the reply is a call or the grammar's document, see {@code tools}
+     * @param forcedTool seed the family's call marker so the reply IS a tool call; mutually
+     *     exclusive with {@code contentGbnf} - a forced call contradicts a stated format
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
      *     {@link #encode} skips the native codec when any key it does not understand is present
      */
