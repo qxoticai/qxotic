@@ -39,10 +39,13 @@
 # drift down together over a 20-minute session as the box heats, by more than the effect being measured.
 #
 # The entry list mirrors the @AlwaysInline set in jinfer-kernels, minus two deliberate exclusions:
-#   - FlashAttention.pvTile is a TILE BODY. Its entry was removed here on 2026-09-07 after measuring the
-#     2.9x/5.7x vision cliff in the table above; it keeps the annotation because that binds the AOT compiler,
-#     a different inliner, but do NOT restore the entry. (The annotation's own text still points at this file
-#     for a rationale that lives here only as this exclusion.)
+#   - FlashAttention.pvTile is the thin dispatcher that branches to pvTileF16/pvTileF32; those two, and the
+#     qkTile* family, are the TILE BODIES whose entries were removed on 2026-09-07 for the 2.9x/5.7x vision
+#     cliff in the table above, and they must not come back. The dispatcher keeps its @AlwaysInline and is
+#     left unhinted here because it measured neutral: native images built with and without that annotation,
+#     LFM2.5-VL-3B-Q8_0 + mmproj-F16 on a 519x600 image, three runs each, media cold 458.0 vs 446.1 ms and
+#     warm 111.0 vs 107.8, pp512 1190.5 vs 1176.1 t/s - differences of 1-3% with overlapping ranges, in
+#     opposite directions, and nothing resembling a cliff.
 #   - FlashAttention.srcFloat is a scalar accessor, not a vector helper, and its annotation records an
 #     AOT-specific profile. Nothing for the JIT to hold open.
 #
