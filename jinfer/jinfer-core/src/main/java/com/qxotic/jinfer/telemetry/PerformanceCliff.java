@@ -30,8 +30,9 @@ public enum PerformanceCliff {
     SLOW_JIT(
             Level.WARNING,
             "this JVM's JIT compiles the incubating Vector API kernels conservatively - correct,"
-                    + " but below their full potential for quantized decode and prefill; please"
-                    + " upgrade to the latest Oracle GraalVM's JIT for better performance"),
+                    + " but below their full potential for quantized decode and prefill; the"
+                    + " Graal JIT compiles them fully and is where these kernels run fastest"
+                    + " today"),
 
     /** No native access, so every vector access keeps its bounds/liveness checks. */
     NATIVE_ACCESS_RESTRICTED(
