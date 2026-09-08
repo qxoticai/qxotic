@@ -64,7 +64,7 @@ toknroll-fixtures: ## Download the enwik benchmark corpora into the cache (FIXTU
 
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 
-native: ## jinfer CLI native image for THIS machine (-march=native) -> jinfer/jinfer; PRELOAD_GGUF=model.gguf embeds metadata
+native: ## jinfer CLI native image for THIS machine (-march=native) -> jinfer/jinfer (a clean build, as jinfer-jar: shading has reused a stale module jar); PRELOAD_GGUF=model.gguf embeds metadata
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
@@ -74,7 +74,7 @@ native: ## jinfer CLI native image for THIS machine (-march=native) -> jinfer/ji
 		echo "ERROR: native-image $$v is too old for the jinfer kernels (need >= 25.0.3)."; \
 		exit 1; \
 	fi
-	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF) -Djinfer.image.march=native
+	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am clean package -DskipTests -Djinfer.preload=$(PRELOAD_GGUF) -Djinfer.image.march=native
 	cp jinfer/jinfer-cli/target/jinfer$(EXE) jinfer/jinfer$(EXE)
 
 ##@ Tidy
