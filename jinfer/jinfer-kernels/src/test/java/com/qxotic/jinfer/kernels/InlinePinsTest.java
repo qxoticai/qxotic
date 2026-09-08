@@ -1,159 +1,111 @@
 package com.qxotic.jinfer.kernels;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.File;
+import com.oracle.svm.shared.AlwaysInline;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import jdk.incubator.vector.Vector;
+import jdk.incubator.vector.VectorMask;
+import jdk.incubator.vector.VectorShuffle;
 import org.junit.jupiter.api.Test;
 
 /**
- * The {@code -H:DirectedInline} pins shipped in {@code native-image.properties} must name methods
- * that exist, and only one module may ship them.
+ * A kernel method that takes or returns a vector must carry {@link AlwaysInline}.
  *
- * <p>The pins hold open the calls a vector value crosses. When the AOT inliner declines one, the
- * returned vector cannot stay in a register, so it is materialized and every Vector API operation
- * in the caller de-intrinsifies into the generic per-lane path - all-or-nothing per method,
- * measured at 0.48 t/s against 27.5 t/s on LFM2.5-2.6B-Q8_0 decode with a GraalVM CE image.
+ * <p>A vector value cannot cross a call boundary in a register. While the compiler inlines the
+ * call, the value is scalar-replaced into a SIMD register and nothing is allocated; the moment an
+ * inliner declines - GraalVM's AOT inliner does, once the calling kernel's body grows past its
+ * budget - the vector is materialized, and then EVERY Vector API operation in the caller
+ * de-intrinsifies into the generic per-lane path. It is all-or-nothing per method, so the result is
+ * a cliff and not a slope: LFM2.5-2.6B-Q8_0 decode measured 0.48 t/s against 27.5 t/s on a GraalVM
+ * CE 25 image, entirely on whether MatMul's leaves were inlined.
  *
- * <p>Both ways of getting this wrong are SILENT, which is the only reason this test exists. A rule
- * whose caller or callee no longer exists is discarded with no build error and no warning, so a
- * rename costs 58x invisibly. And the option is single-valued rather than accumulating: when two
- * jars on the image classpath each set it, the last one wins and the other module's pins vanish
- * (measured - jam-vector's single rule displaced all of jinfer-kernels' and decode fell back to
- * 0.49 t/s). Neither failure shows up in a build log, a benchmark suite, or a unit test other than
- * this one.
+ * <p>native-image binds {@code com.oracle.svm.shared.AlwaysInline} by name, and
+ * jam/graalvm-annotations declares it, so the annotation costs no GraalVM dependency and HotSpot
+ * never sees the type. It is deliberately preferred over {@code -H:DirectedInline}, which names
+ * caller and callee and fails silently twice over: a rule that matches nothing is discarded without
+ * a warning, and the option is single-valued, so one module's rules displace another's.
+ *
+ * <p>The law is structural rather than a benchmark because the failure is invisible: the output
+ * stays correct, no build or test fails, and only a profile or a disassembly of the shipped binary
+ * shows it. Adding a vector-typed helper without the annotation is what regresses it, so that is
+ * exactly what this test refuses.
  *
  * @see VectorSpeciesConstantTest for the sibling law, that a species must not cross a call either
  */
 final class InlinePinsTest {
 
-    private static final String OPTION = "-H:DirectedInline=";
-    private static final String PREFIX = "META-INF/native-image/";
-    private static final String FILE = "native-image.properties";
-
     @Test
-    void everyInlinePinResolvesToARealMethod() {
-        Map<String, List<String>> pins = shippedPins();
+    void everyKernelMethodTakingOrReturningAVectorIsPinnedInline() {
+        List<Class<?>> kernels = kernelClasses();
         assertFalse(
-                pins.isEmpty(),
-                "no "
-                        + OPTION
-                        + " rules on the classpath - if the kernels genuinely need no pins, delete"
-                        + " this test rather than leaving it to pass vacuously");
+                kernels.isEmpty(),
+                "found no kernel classes to check - this law must not pass vacuously");
 
-        List<String> broken = new ArrayList<>();
-        pins.forEach(
-                (source, rules) -> {
-                    for (String rule : rules) {
-                        String[] endpoints = rule.split("->");
-                        if (endpoints.length != 2) {
-                            broken.add(rule + " is not caller->callee (from " + source + ")");
-                            continue;
-                        }
-                        for (String endpoint : endpoints)
-                            if (!resolves(endpoint.trim()))
-                                broken.add(
-                                        endpoint.trim()
-                                                + " names no such method, in "
-                                                + rule
-                                                + " (from "
-                                                + source
-                                                + ")");
-                    }
-                });
+        List<String> unpinned = new ArrayList<>();
+        for (Class<?> kernel : kernels)
+            for (Method method : kernel.getDeclaredMethods())
+                if (carriesAVector(method) && !method.isAnnotationPresent(AlwaysInline.class))
+                    unpinned.add(kernel.getSimpleName() + "." + method.getName());
+
         assertTrue(
-                broken.isEmpty(),
+                unpinned.isEmpty(),
                 () ->
-                        "native-image discards a pin that matches nothing, silently, so these ship"
-                                + " de-intrinsified: "
-                                + broken);
+                        "these methods pass a vector across a call boundary without pinning the"
+                            + " call inline, so an inliner that declines materializes the vector"
+                            + " and the whole calling kernel drops to the per-lane path: "
+                                + unpinned
+                                + ". Add @AlwaysInline(\"why\"), or restructure so no vector"
+                                + " crosses the call.");
     }
 
-    @Test
-    void onlyOneModuleShipsInlinePins() {
-        assertEquals(
-                1,
-                shippedPins().size(),
-                () ->
-                        OPTION
-                                + " is single-valued, so the last module on the image classpath"
-                                + " wins and every other module's pins are dropped without a"
-                                + " warning. Move them into one file, or drop the call the other"
-                                + " module was pinning (jam-vector writes its dequantize loop out"
-                                + " for exactly this reason). Sources: "
-                                + shippedPins().keySet());
+    /** True when any parameter or the return type carries a vector payload. */
+    private static boolean carriesAVector(Method method) {
+        if (isVector(method.getReturnType())) return true;
+        for (Class<?> parameter : method.getParameterTypes()) if (isVector(parameter)) return true;
+        return false;
+    }
+
+    private static boolean isVector(Class<?> type) {
+        return Vector.class.isAssignableFrom(type)
+                || VectorShuffle.class.isAssignableFrom(type)
+                || VectorMask.class.isAssignableFrom(type);
     }
 
     /**
-     * The pins each {@code native-image.properties} on the classpath ships, keyed by its module.
+     * Every kernel class in this package, read off the build output rather than a hand-kept list: a
+     * new kernel must be covered the day it is written, not the day someone remembers it.
      */
-    private static Map<String, List<String>> shippedPins() {
-        Map<String, List<String>> pins = new LinkedHashMap<>();
-        for (String entry : System.getProperty("java.class.path").split(File.pathSeparator))
-            readPins(Path.of(entry), pins);
-        return pins;
-    }
-
-    private static void readPins(Path entry, Map<String, List<String>> pins) {
-        try {
-            if (Files.isDirectory(entry)) {
-                Path root = entry.resolve(PREFIX);
-                if (!Files.isDirectory(root)) return;
-                try (Stream<Path> tree = Files.walk(root)) {
-                    for (Path file : tree.filter(p -> p.endsWith(FILE)).toList())
-                        try (InputStream in = Files.newInputStream(file)) {
-                            collect(entry.relativize(file).toString(), in, pins);
-                        }
-                }
-            } else if (Files.isRegularFile(entry) && entry.toString().endsWith(".jar")) {
-                try (JarFile jar = new JarFile(entry.toFile())) {
-                    for (var element : jar.stream().toList()) {
-                        String name = element.getName();
-                        if (!name.startsWith(PREFIX) || !name.endsWith(FILE)) continue;
-                        try (InputStream in = jar.getInputStream(element)) {
-                            collect(name, in, pins);
-                        }
-                    }
+    private static List<Class<?>> kernelClasses() {
+        Path root =
+                Path.of("target", "classes", "com", "qxotic", "jinfer", "kernels").toAbsolutePath();
+        if (!Files.isDirectory(root)) return List.of();
+        List<Class<?>> classes = new ArrayList<>();
+        try (Stream<Path> files = Files.list(root)) {
+            for (Path file : files.sorted().toList()) {
+                String name = file.getFileName().toString();
+                if (!name.endsWith(".class") || name.contains("$")) continue;
+                try {
+                    classes.add(
+                            Class.forName(
+                                    "com.qxotic.jinfer.kernels."
+                                            + name.substring(
+                                                    0, name.length() - ".class".length())));
+                } catch (ClassNotFoundException | NoClassDefFoundError skip) {
+                    // not on this run's classpath (a backend-gated kernel); nothing to enforce
                 }
             }
         } catch (IOException e) {
-            // An unreadable classpath entry is the build's problem, not this law's.
+            throw new UncheckedIOException(e);
         }
-    }
-
-    private static void collect(String source, InputStream in, Map<String, List<String>> pins)
-            throws IOException {
-        var parsed = new Properties();
-        parsed.load(in);
-        for (String argument : parsed.getProperty("Args", "").split("\\s+"))
-            if (argument.startsWith(OPTION))
-                pins.computeIfAbsent(source, unused -> new ArrayList<>())
-                        .addAll(Arrays.asList(argument.substring(OPTION.length()).split(",")));
-    }
-
-    /** Whether {@code com.pkg.Owner.method} names a method that is actually declared. */
-    private static boolean resolves(String qualified) {
-        int split = qualified.lastIndexOf('.');
-        if (split < 0) return false;
-        String method = qualified.substring(split + 1);
-        try {
-            return Arrays.stream(Class.forName(qualified.substring(0, split)).getDeclaredMethods())
-                    .anyMatch(declared -> declared.getName().equals(method));
-        } catch (ClassNotFoundException | NoClassDefFoundError e) {
-            return false;
-        }
+        return classes;
     }
 }

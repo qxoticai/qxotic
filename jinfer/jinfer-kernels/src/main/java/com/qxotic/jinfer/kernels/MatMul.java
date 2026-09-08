@@ -14,6 +14,7 @@ import static com.qxotic.jinfer.Segments.readLong;
 import static com.qxotic.jinfer.Segments.readShort;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeFlags;
@@ -687,6 +688,7 @@ public final class MatMul {
         return result;
     }
 
+    @AlwaysInline("hot Vector API leaf: an escaping FloatVector is materialized per call")
     private static FloatVector blockFma(
             MemorySegment w, long blockOffset, MemorySegment x, long xByte, FloatVector acc) {
         var wScale = FloatVector.broadcast(F_SPECIES, readFloat16(w, blockOffset));
@@ -758,6 +760,7 @@ public final class MatMul {
     }
 
     // 512-path helper: 16 sign-extended bytes widened to a float vector (part-0 cast).
+    @AlwaysInline("hot Vector API leaf: an escaping FloatVector is materialized per call")
     private static FloatVector bytesAt(MemorySegment w, long off) {
         return (FloatVector)
                 ByteVector.fromMemorySegment(
@@ -765,6 +768,7 @@ public final class MatMul {
                         .castShape(F_SPECIES, 0);
     }
 
+    @AlwaysInline("hot Vector API leaf: an escaping FloatVector is materialized per call")
     private static FloatVector floatsAt(MemorySegment x, long byteOff) {
         return FloatVector.fromMemorySegment(F_SPECIES, x, byteOff, ByteOrder.LITTLE_ENDIAN);
     }

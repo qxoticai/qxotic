@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
@@ -369,6 +370,7 @@ public final class KimiDeltaAttention {
                 });
     }
 
+    @AlwaysInline("takes and returns FloatVectors: out-of-line they are materialized")
     private static FloatVector update(
             Raw state,
             long stateRow,
@@ -385,11 +387,13 @@ public final class KimiDeltaAttention {
         return updated;
     }
 
+    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
     private static FloatVector load(Raw raw, long byteOffset) {
         return FloatVector.fromMemorySegment(
                 F_SPECIES, raw.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
     }
 
+    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
     private static void store(FloatVector value, Raw raw, long byteOffset) {
         value.intoMemorySegment(raw.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
     }

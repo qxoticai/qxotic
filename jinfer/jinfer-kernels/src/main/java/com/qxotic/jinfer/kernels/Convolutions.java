@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jota.memory.MemoryView;
@@ -771,11 +772,13 @@ public final class Convolutions {
         }
     }
 
+    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
     private static FloatVector load(Raw tensor, long byteOffset) {
         return FloatVector.fromMemorySegment(
                 SPECIES, tensor.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
     }
 
+    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
     private static void store(Raw tensor, long byteOffset, FloatVector value) {
         value.intoMemorySegment(tensor.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
     }

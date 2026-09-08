@@ -5,6 +5,7 @@ import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jinfer.Parallel;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
@@ -221,10 +222,12 @@ final class VectorGatedDeltaNet {
                 });
     }
 
+    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
     private static FloatVector load(Raw raw, long byteOffset) {
         return FloatVector.fromMemorySegment(F_SPECIES, raw.vseg(), byteOffset, LE);
     }
 
+    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
     private static void store(FloatVector value, Raw raw, long byteOffset) {
         value.intoMemorySegment(raw.vseg(), byteOffset, LE);
     }
