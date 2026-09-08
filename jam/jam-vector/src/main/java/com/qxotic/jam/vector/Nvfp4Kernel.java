@@ -29,6 +29,24 @@ public final class Nvfp4Kernel {
     /** Nibble code -> value, as bytes for the in-register LUT permute (vpshufb). */
     private static final byte[] NVFP4_LUT = new byte[16];
 
+    /**
+     * The two-source lane orders the sub-block pair is restored with: [loA(0-7), hiA(0-7)] = [0..7,
+     * 16..23] and [loB, hiB] = [8..15, 24..31]. Constants, so they are built once - built per call
+     * they were the only allocation left in any jam-vector kernel, and the shuffle index arrays
+     * were allocated with them.
+     */
+    private static final VectorShuffle<Float> SHUF_A =
+            VectorShuffle.fromArray(
+                    VectorSupport.F_SPECIES,
+                    new int[] {0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23},
+                    0);
+
+    private static final VectorShuffle<Float> SHUF_B =
+            VectorShuffle.fromArray(
+                    VectorSupport.F_SPECIES,
+                    new int[] {8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31},
+                    0);
+
     /** UE4M3 byte -> f32 table (index = raw unsigned byte; identical to {@link #ue4m3ToFp32}). */
     private static final float[] UE4M3 = new float[256];
 
@@ -106,17 +124,6 @@ public final class Nvfp4Kernel {
         int kblocks = dim1 / QK;
         long firstBlock = rowElemOffset / QK;
         ByteVector lut = ByteVector.fromArray(ByteVector.SPECIES_128, NVFP4_LUT, 0);
-        // Lane orders: [loA(0-7), hiA(0-7)] = [0..7, 16..23]; [loB, hiB] = [8..15, 24..31].
-        VectorShuffle<Float> shufA =
-                VectorShuffle.fromArray(
-                        VectorSupport.F_SPECIES,
-                        new int[] {0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23},
-                        0);
-        VectorShuffle<Float> shufB =
-                VectorShuffle.fromArray(
-                        VectorSupport.F_SPECIES,
-                        new int[] {8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31},
-                        0);
         for (int blk = 0; blk < kblocks; blk++) {
             long bo = (firstBlock + blk) * BYTES;
             long base = dstBase + (long) blk * QK * 4;
@@ -132,7 +139,7 @@ public final class Nvfp4Kernel {
                             ByteVector.SPECIES_128, w, bo + 4 + 16, ByteOrder.LITTLE_ENDIAN);
             // Each packed vector holds two sub-blocks: lanes 0-7 are the first sub-block's
             // low/high nibbles, lanes 8-15 the second's. Element order per sub-block is
-            // [lo(8), hi(8)], restored by the two-source 512-bit rearranges shufA/shufB
+            // [lo(8), hi(8)], restored by the two-source 512-bit rearranges SHUF_A/SHUF_B
             // (vpermt2ps) - a 256-bit extract/store split measured ~60x slower, not intrinsified
             // by a jvmci JIT.
             //
@@ -141,9 +148,14 @@ public final class Nvfp4Kernel {
             // in a register: an inliner that declines the call materializes it, and then EVERY
             // Vector API op in this loop falls back to the generic per-lane path. The helper this
             // replaced did exactly that - 13 fallback call sites in a GraalVM CE image and 19 in
-            // an Oracle one, so both builders, not just the weaker inliner. An -H:DirectedInline
-            // pin is not the alternative: that option is single-valued, so a jam rule and a jinfer
-            // rule silently overwrite each other whenever both jars are on the image classpath.
+            // an Oracle one, so both builders, not just the weaker inliner.
+            //
+            // @AlwaysInline does hold the call open (measured: the helper left no symbol at all),
+            // and it is the right tool for a small leaf shared by many callers, as MatMul's are.
+            // It is the wrong tool here. Five vector values crossed that one boundary, the helper
+            // had exactly two call sites, and an annotation is a request to a compiler rather than
+            // a property of the code. Writing it out costs two blocks and needs no compiler to
+            // agree.
             FloatVector lo01 =
                     (FloatVector)
                             lut.rearrange(p01.and((byte) 0x0F).toShuffle())
@@ -152,10 +164,10 @@ public final class Nvfp4Kernel {
                     (FloatVector)
                             lut.rearrange(p01.lanewise(VectorOperators.LSHR, 4).toShuffle())
                                     .castShape(VectorSupport.F_SPECIES, 0);
-            lo01.rearrange(shufA, hi01)
+            lo01.rearrange(SHUF_A, hi01)
                     .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d0))
                     .intoMemorySegment(dst, base, ByteOrder.LITTLE_ENDIAN);
-            lo01.rearrange(shufB, hi01)
+            lo01.rearrange(SHUF_B, hi01)
                     .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d1))
                     .intoMemorySegment(dst, base + 64, ByteOrder.LITTLE_ENDIAN);
 
@@ -167,10 +179,10 @@ public final class Nvfp4Kernel {
                     (FloatVector)
                             lut.rearrange(p23.lanewise(VectorOperators.LSHR, 4).toShuffle())
                                     .castShape(VectorSupport.F_SPECIES, 0);
-            lo23.rearrange(shufA, hi23)
+            lo23.rearrange(SHUF_A, hi23)
                     .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d2))
                     .intoMemorySegment(dst, base + 128, ByteOrder.LITTLE_ENDIAN);
-            lo23.rearrange(shufB, hi23)
+            lo23.rearrange(SHUF_B, hi23)
                     .mul(FloatVector.broadcast(VectorSupport.F_SPECIES, d3))
                     .intoMemorySegment(dst, base + 192, ByteOrder.LITTLE_ENDIAN);
         }
