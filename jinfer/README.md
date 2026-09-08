@@ -40,9 +40,12 @@ AI on the JVM, just a Maven dependency away.
 | Alibaba Qwen 3.5+ | chat, vision, MTP | `jinfer-qwen35` |
 | NVIDIA Nemotron | chat | `jinfer-nemotronh` |
 | Owen Song's Inflect | speech synthesis | `jinfer-inflect2` |
+| Kokoro 82M | speech synthesis | `jinfer-kokoro` |
 
 Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and dense `F32`, `F16`, `BF16`.  
 Jinfer recommends the `Q8_0` quant, top-quality with good performance.
+
+Kokoro also needs a voice GGUF companion and `espeak-ng` or `espeak` on `PATH`.
 
 ## Run the demos
 

@@ -30,9 +30,23 @@ class KernelSelectionTest {
                 switch (System.getProperty("jinfer.convTile", "auto")) {
                     case "4x2" -> 1;
                     case "4x4" -> 2;
+                    case "auto" -> {
+                        String architecture = System.getProperty("os.arch", "");
+                        yield architecture.equalsIgnoreCase("aarch64")
+                                        || architecture.equalsIgnoreCase("arm64")
+                                ? 2
+                                : 0;
+                    }
                     default -> 0;
                 };
         assertEquals(expected, Convolutions.tileCode(), "jinfer.convTile");
+    }
+
+    @Test
+    void automaticConvTileRecognizesArmArchitectureAliases() {
+        assertEquals(2, Convolutions.selectTileCode("auto", "aarch64"));
+        assertEquals(2, Convolutions.selectTileCode("auto", "ARM64"));
+        assertEquals(0, Convolutions.selectTileCode("auto", "amd64"));
     }
 
     @Test

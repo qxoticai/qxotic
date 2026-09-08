@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.kernels;
 
+import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static com.qxotic.jinfer.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
@@ -13,13 +14,11 @@ import java.nio.ByteOrder;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.VectorSpecies;
 
 /** Convolution kernels over dense FP32 views. */
 public final class Convolutions {
     private Convolutions() {}
 
-    private static final VectorSpecies<Float> SPECIES = Segments.F_SPECIES;
     private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
 
     /**
@@ -417,28 +416,41 @@ public final class Convolutions {
      *       4x1, and roughly half the convolution time. Deeper does NOT continue to pay: 4x6 (31
      *       live) and 6x4 (29 live) are 51-67% and 40-134% slower than 4x4 at every thread count,
      *       so the usable register ceiling is somewhere between 21 and 29 rather than at 32.
-     *   <li>JIT - 4x1 is right. 4x2 is model- and JVM-dependent (nano regresses ~5% on GraalVM
-     *       25.2.4 while micro gains ~5%), and 4x4 loses outright. Note the JIT is ~1.9x slower
-     *       than the image on the same single-threaded convolutions either way.
+     *   <li>JIT - 4x1 is right on x86. 4x2 is model- and JVM-dependent (nano regresses ~5% on
+     *       GraalVM 25.2.4 while micro gains ~5%), and 4x4 loses outright. On AArch64, 4x4 reduces
+     *       warmed Kokoro synthesis by about 8% over 4x2 once every intrinsic reads the canonical
+     *       species directly. Note the JIT is ~1.9x slower than the image on the same
+     *       single-threaded convolutions either way.
      *   <li>Forcing {@code load}/{@code store} inline via hotspot_compile_commands made the JIT
      *       10-20% SLOWER (the loop is already register-starved) and did nothing at all in the
      *       image.
      * </ul>
      *
-     * <p>So: default stays 4x1 for the JIT, and an image should be built with 4x4 - which it can
-     * only be at BUILD time. {@code com.qxotic.*} initializes at build time, so this constant
-     * freezes then and {@code -Djinfer.convTile} on a binary is silently ignored; pass it to the
-     * image build instead (the {@code jinfer.convTile} pom property). Being a true constant is also
-     * what lets the tile branch fold away entirely in the image.
+     * <p>So: the JIT defaults to 4x1 on x86 and 4x4 on AArch64, and an image should be built with
+     * 4x4 - which it can only be at BUILD time. {@code com.qxotic.*} initializes at build time, so
+     * this constant freezes then and {@code -Djinfer.convTile} on a binary is silently ignored;
+     * pass it to the image build instead (the {@code jinfer.convTile} pom property). Being a true
+     * constant is also what lets the tile branch fold away entirely in the image.
      */
     private static final int TILE_CODE =
-            switch (System.getProperty("jinfer.convTile", "auto")) {
-                case "4x2" -> 1;
-                case "4x4" -> 2;
-                default -> 0; // 4x1
-            };
+            selectTileCode(
+                    System.getProperty("jinfer.convTile", "auto"),
+                    System.getProperty("os.arch", ""));
 
-    /** The register tile in force: 0 = 4x1 (auto), 1 = 4x2, 2 = 4x4. For the selection tests. */
+    static int selectTileCode(String requested, String architecture) {
+        return switch (requested) {
+            case "4x2" -> 1;
+            case "4x4" -> 2;
+            case "auto" ->
+                    architecture.equalsIgnoreCase("aarch64")
+                                    || architecture.equalsIgnoreCase("arm64")
+                            ? 2
+                            : 0;
+            default -> 0;
+        };
+    }
+
+    /** The register tile in force: 0 = 4x1, 1 = 4x2, 2 = 4x4. For the selection tests. */
     static int tileCode() {
         return TILE_CODE;
     }
@@ -480,7 +492,7 @@ public final class Convolutions {
                         to);
             return;
         }
-        int lanes = SPECIES.length();
+        int lanes = F_SPECIES.length();
         int row0 = firstChannel * tapsPerOutput;
         int row1 = row0 + tapsPerOutput, row2 = row1 + tapsPerOutput, row3 = row2 + tapsPerOutput;
         int t = from;
@@ -503,31 +515,32 @@ public final class Convolutions {
                             t,
                             to);
         for (; t <= to - lanes; t += lanes) {
-            FloatVector acc0 = FloatVector.broadcast(SPECIES, biasOf(bias, firstChannel));
-            FloatVector acc1 = FloatVector.broadcast(SPECIES, biasOf(bias, firstChannel + 1));
-            FloatVector acc2 = FloatVector.broadcast(SPECIES, biasOf(bias, firstChannel + 2));
-            FloatVector acc3 = FloatVector.broadcast(SPECIES, biasOf(bias, firstChannel + 3));
+            FloatVector acc0 = FloatVector.broadcast(F_SPECIES, biasOf(bias, firstChannel));
+            FloatVector acc1 = FloatVector.broadcast(F_SPECIES, biasOf(bias, firstChannel + 1));
+            FloatVector acc2 = FloatVector.broadcast(F_SPECIES, biasOf(bias, firstChannel + 2));
+            FloatVector acc3 = FloatVector.broadcast(F_SPECIES, biasOf(bias, firstChannel + 3));
             for (int ic = 0; ic < inChannels; ic++) {
                 long inRow = (long) ic * time;
                 int tap = ic * kernel;
                 for (int k = 0; k < kernel; k++) {
                     FloatVector x =
-                            load(
-                                    in,
+                            FloatVector.fromMemorySegment(
+                                    F_SPECIES,
+                                    in.vseg(),
                                     in.vbase()
-                                            + (inRow + t + (long) k * dilation - pad)
-                                                    * Float.BYTES);
-                    acc0 = FloatVector.broadcast(SPECIES, taps[row0 + tap + k]).fma(x, acc0);
-                    acc1 = FloatVector.broadcast(SPECIES, taps[row1 + tap + k]).fma(x, acc1);
-                    acc2 = FloatVector.broadcast(SPECIES, taps[row2 + tap + k]).fma(x, acc2);
-                    acc3 = FloatVector.broadcast(SPECIES, taps[row3 + tap + k]).fma(x, acc3);
+                                            + (inRow + t + (long) k * dilation - pad) * Float.BYTES,
+                                    LE);
+                    acc0 = FloatVector.broadcast(F_SPECIES, taps[row0 + tap + k]).fma(x, acc0);
+                    acc1 = FloatVector.broadcast(F_SPECIES, taps[row1 + tap + k]).fma(x, acc1);
+                    acc2 = FloatVector.broadcast(F_SPECIES, taps[row2 + tap + k]).fma(x, acc2);
+                    acc3 = FloatVector.broadcast(F_SPECIES, taps[row3 + tap + k]).fma(x, acc3);
                 }
             }
             long at = out.vbase() + ((long) firstChannel * time + t) * Float.BYTES;
-            store(out, at, acc0);
-            store(out, at + (long) time * Float.BYTES, acc1);
-            store(out, at + (long) 2 * time * Float.BYTES, acc2);
-            store(out, at + (long) 3 * time * Float.BYTES, acc3);
+            acc0.intoMemorySegment(out.vseg(), at, LE);
+            acc1.intoMemorySegment(out.vseg(), at + (long) time * Float.BYTES, LE);
+            acc2.intoMemorySegment(out.vseg(), at + (long) 2 * time * Float.BYTES, LE);
+            acc3.intoMemorySegment(out.vseg(), at + (long) 3 * time * Float.BYTES, LE);
         }
         for (int oc = firstChannel; oc < firstChannel + GROUP; oc++)
             body(
@@ -565,7 +578,7 @@ public final class Convolutions {
             int firstChannel,
             int from,
             int to) {
-        int lanes = SPECIES.length();
+        int lanes = F_SPECIES.length();
         int row0 = firstChannel * tapsPerOutput;
         int row1 = row0 + tapsPerOutput, row2 = row1 + tapsPerOutput, row3 = row2 + tapsPerOutput;
         float bias0 = biasOf(bias, firstChannel), bias1 = biasOf(bias, firstChannel + 1);
@@ -575,57 +588,61 @@ public final class Convolutions {
         int t = from;
         if (TILE_CODE == 1) { // 4x2 - 11 live vectors, spill-free on a 16-register allocator
             for (int span = 2 * lanes; t <= to - span; t += span) {
-                FloatVector a00 = FloatVector.broadcast(SPECIES, bias0), a01 = a00;
-                FloatVector a10 = FloatVector.broadcast(SPECIES, bias1), a11 = a10;
-                FloatVector a20 = FloatVector.broadcast(SPECIES, bias2), a21 = a20;
-                FloatVector a30 = FloatVector.broadcast(SPECIES, bias3), a31 = a30;
+                FloatVector a00 = FloatVector.broadcast(F_SPECIES, bias0), a01 = a00;
+                FloatVector a10 = FloatVector.broadcast(F_SPECIES, bias1), a11 = a10;
+                FloatVector a20 = FloatVector.broadcast(F_SPECIES, bias2), a21 = a20;
+                FloatVector a30 = FloatVector.broadcast(F_SPECIES, bias3), a31 = a30;
                 for (int ic = 0; ic < inChannels; ic++) {
                     long inRow = (long) ic * time;
                     int tap = ic * kernel;
                     for (int k = 0; k < kernel; k++) {
                         long at =
                                 in.vbase() + (inRow + t + (long) k * dilation - pad) * Float.BYTES;
-                        FloatVector x0 = load(in, at), x1 = load(in, at + laneBytes);
-                        FloatVector w = FloatVector.broadcast(SPECIES, taps[row0 + tap + k]);
+                        FloatVector x0 =
+                                FloatVector.fromMemorySegment(F_SPECIES, in.vseg(), at, LE);
+                        FloatVector x1 =
+                                FloatVector.fromMemorySegment(
+                                        F_SPECIES, in.vseg(), at + laneBytes, LE);
+                        FloatVector w = FloatVector.broadcast(F_SPECIES, taps[row0 + tap + k]);
                         a00 = w.fma(x0, a00);
                         a01 = w.fma(x1, a01);
-                        w = FloatVector.broadcast(SPECIES, taps[row1 + tap + k]);
+                        w = FloatVector.broadcast(F_SPECIES, taps[row1 + tap + k]);
                         a10 = w.fma(x0, a10);
                         a11 = w.fma(x1, a11);
-                        w = FloatVector.broadcast(SPECIES, taps[row2 + tap + k]);
+                        w = FloatVector.broadcast(F_SPECIES, taps[row2 + tap + k]);
                         a20 = w.fma(x0, a20);
                         a21 = w.fma(x1, a21);
-                        w = FloatVector.broadcast(SPECIES, taps[row3 + tap + k]);
+                        w = FloatVector.broadcast(F_SPECIES, taps[row3 + tap + k]);
                         a30 = w.fma(x0, a30);
                         a31 = w.fma(x1, a31);
                     }
                 }
                 long at = outBase + (long) t * Float.BYTES;
-                store(out, at, a00);
-                store(out, at + laneBytes, a01);
-                store(out, at + rowBytes, a10);
-                store(out, at + rowBytes + laneBytes, a11);
-                store(out, at + 2 * rowBytes, a20);
-                store(out, at + 2 * rowBytes + laneBytes, a21);
-                store(out, at + 3 * rowBytes, a30);
-                store(out, at + 3 * rowBytes + laneBytes, a31);
+                a00.intoMemorySegment(out.vseg(), at, LE);
+                a01.intoMemorySegment(out.vseg(), at + laneBytes, LE);
+                a10.intoMemorySegment(out.vseg(), at + rowBytes, LE);
+                a11.intoMemorySegment(out.vseg(), at + rowBytes + laneBytes, LE);
+                a20.intoMemorySegment(out.vseg(), at + 2 * rowBytes, LE);
+                a21.intoMemorySegment(out.vseg(), at + 2 * rowBytes + laneBytes, LE);
+                a30.intoMemorySegment(out.vseg(), at + 3 * rowBytes, LE);
+                a31.intoMemorySegment(out.vseg(), at + 3 * rowBytes + laneBytes, LE);
             }
             return t;
         }
-        for (int span = 4 * lanes; t <= to - span; t += span) { // 4x4 - 21 live vectors, spills
-            FloatVector a00 = FloatVector.broadcast(SPECIES, bias0),
+        for (int span = 4 * lanes; t <= to - span; t += span) { // 4x4 - 21 live vectors
+            FloatVector a00 = FloatVector.broadcast(F_SPECIES, bias0),
                     a01 = a00,
                     a02 = a00,
                     a03 = a00;
-            FloatVector a10 = FloatVector.broadcast(SPECIES, bias1),
+            FloatVector a10 = FloatVector.broadcast(F_SPECIES, bias1),
                     a11 = a10,
                     a12 = a10,
                     a13 = a10;
-            FloatVector a20 = FloatVector.broadcast(SPECIES, bias2),
+            FloatVector a20 = FloatVector.broadcast(F_SPECIES, bias2),
                     a21 = a20,
                     a22 = a20,
                     a23 = a20;
-            FloatVector a30 = FloatVector.broadcast(SPECIES, bias3),
+            FloatVector a30 = FloatVector.broadcast(F_SPECIES, bias3),
                     a31 = a30,
                     a32 = a30,
                     a33 = a30;
@@ -634,25 +651,31 @@ public final class Convolutions {
                 int tap = ic * kernel;
                 for (int k = 0; k < kernel; k++) {
                     long at = in.vbase() + (inRow + t + (long) k * dilation - pad) * Float.BYTES;
-                    FloatVector x0 = load(in, at), x1 = load(in, at + laneBytes);
-                    FloatVector x2 = load(in, at + 2 * laneBytes),
-                            x3 = load(in, at + 3 * laneBytes);
-                    FloatVector w = FloatVector.broadcast(SPECIES, taps[row0 + tap + k]);
+                    FloatVector x0 = FloatVector.fromMemorySegment(F_SPECIES, in.vseg(), at, LE);
+                    FloatVector x1 =
+                            FloatVector.fromMemorySegment(F_SPECIES, in.vseg(), at + laneBytes, LE);
+                    FloatVector x2 =
+                            FloatVector.fromMemorySegment(
+                                    F_SPECIES, in.vseg(), at + 2 * laneBytes, LE);
+                    FloatVector x3 =
+                            FloatVector.fromMemorySegment(
+                                    F_SPECIES, in.vseg(), at + 3 * laneBytes, LE);
+                    FloatVector w = FloatVector.broadcast(F_SPECIES, taps[row0 + tap + k]);
                     a00 = w.fma(x0, a00);
                     a01 = w.fma(x1, a01);
                     a02 = w.fma(x2, a02);
                     a03 = w.fma(x3, a03);
-                    w = FloatVector.broadcast(SPECIES, taps[row1 + tap + k]);
+                    w = FloatVector.broadcast(F_SPECIES, taps[row1 + tap + k]);
                     a10 = w.fma(x0, a10);
                     a11 = w.fma(x1, a11);
                     a12 = w.fma(x2, a12);
                     a13 = w.fma(x3, a13);
-                    w = FloatVector.broadcast(SPECIES, taps[row2 + tap + k]);
+                    w = FloatVector.broadcast(F_SPECIES, taps[row2 + tap + k]);
                     a20 = w.fma(x0, a20);
                     a21 = w.fma(x1, a21);
                     a22 = w.fma(x2, a22);
                     a23 = w.fma(x3, a23);
-                    w = FloatVector.broadcast(SPECIES, taps[row3 + tap + k]);
+                    w = FloatVector.broadcast(F_SPECIES, taps[row3 + tap + k]);
                     a30 = w.fma(x0, a30);
                     a31 = w.fma(x1, a31);
                     a32 = w.fma(x2, a32);
@@ -660,22 +683,22 @@ public final class Convolutions {
                 }
             }
             long at = outBase + (long) t * Float.BYTES;
-            store(out, at, a00);
-            store(out, at + laneBytes, a01);
-            store(out, at + 2 * laneBytes, a02);
-            store(out, at + 3 * laneBytes, a03);
-            store(out, at + rowBytes, a10);
-            store(out, at + rowBytes + laneBytes, a11);
-            store(out, at + rowBytes + 2 * laneBytes, a12);
-            store(out, at + rowBytes + 3 * laneBytes, a13);
-            store(out, at + 2 * rowBytes, a20);
-            store(out, at + 2 * rowBytes + laneBytes, a21);
-            store(out, at + 2 * rowBytes + 2 * laneBytes, a22);
-            store(out, at + 2 * rowBytes + 3 * laneBytes, a23);
-            store(out, at + 3 * rowBytes, a30);
-            store(out, at + 3 * rowBytes + laneBytes, a31);
-            store(out, at + 3 * rowBytes + 2 * laneBytes, a32);
-            store(out, at + 3 * rowBytes + 3 * laneBytes, a33);
+            a00.intoMemorySegment(out.vseg(), at, LE);
+            a01.intoMemorySegment(out.vseg(), at + laneBytes, LE);
+            a02.intoMemorySegment(out.vseg(), at + 2 * laneBytes, LE);
+            a03.intoMemorySegment(out.vseg(), at + 3 * laneBytes, LE);
+            a10.intoMemorySegment(out.vseg(), at + rowBytes, LE);
+            a11.intoMemorySegment(out.vseg(), at + rowBytes + laneBytes, LE);
+            a12.intoMemorySegment(out.vseg(), at + rowBytes + 2 * laneBytes, LE);
+            a13.intoMemorySegment(out.vseg(), at + rowBytes + 3 * laneBytes, LE);
+            a20.intoMemorySegment(out.vseg(), at + 2 * rowBytes, LE);
+            a21.intoMemorySegment(out.vseg(), at + 2 * rowBytes + laneBytes, LE);
+            a22.intoMemorySegment(out.vseg(), at + 2 * rowBytes + 2 * laneBytes, LE);
+            a23.intoMemorySegment(out.vseg(), at + 2 * rowBytes + 3 * laneBytes, LE);
+            a30.intoMemorySegment(out.vseg(), at + 3 * rowBytes, LE);
+            a31.intoMemorySegment(out.vseg(), at + 3 * rowBytes + laneBytes, LE);
+            a32.intoMemorySegment(out.vseg(), at + 3 * rowBytes + 2 * laneBytes, LE);
+            a33.intoMemorySegment(out.vseg(), at + 3 * rowBytes + 3 * laneBytes, LE);
         }
         return t;
     }
@@ -703,55 +726,81 @@ public final class Convolutions {
             int to) {
         int t = from;
         if (Segments.USE_VECTOR_API) {
-            int lanes = SPECIES.length();
+            int lanes = F_SPECIES.length();
             // Four accumulators, not one: every tap of an output is a multiply-add into the same
             // register, so a single accumulator would serialize the whole (inChannel, tap) loop on
             // FMA latency. Four independent chains keep the units fed, and each broadcast tap is
             // reused across all four.
             int stride = 4 * lanes;
             for (; t <= to - stride; t += stride) {
-                FloatVector acc0 = FloatVector.broadcast(SPECIES, bias);
+                FloatVector acc0 = FloatVector.broadcast(F_SPECIES, bias);
                 FloatVector acc1 = acc0, acc2 = acc0, acc3 = acc0;
                 for (int ic = 0; ic < inChannels; ic++) {
                     long inRow = (long) ic * time;
                     int tap = tapRow + ic * kernel;
                     for (int k = 0; k < kernel; k++) {
-                        FloatVector weight = FloatVector.broadcast(SPECIES, taps[tap + k]);
+                        FloatVector weight = FloatVector.broadcast(F_SPECIES, taps[tap + k]);
                         long at =
                                 in.vbase() + (inRow + t + (long) k * dilation - pad) * Float.BYTES;
-                        acc0 = weight.fma(load(in, at), acc0);
-                        acc1 = weight.fma(load(in, at + (long) lanes * Float.BYTES), acc1);
-                        acc2 = weight.fma(load(in, at + (long) 2 * lanes * Float.BYTES), acc2);
-                        acc3 = weight.fma(load(in, at + (long) 3 * lanes * Float.BYTES), acc3);
+                        acc0 =
+                                weight.fma(
+                                        FloatVector.fromMemorySegment(F_SPECIES, in.vseg(), at, LE),
+                                        acc0);
+                        acc1 =
+                                weight.fma(
+                                        FloatVector.fromMemorySegment(
+                                                F_SPECIES,
+                                                in.vseg(),
+                                                at + (long) lanes * Float.BYTES,
+                                                LE),
+                                        acc1);
+                        acc2 =
+                                weight.fma(
+                                        FloatVector.fromMemorySegment(
+                                                F_SPECIES,
+                                                in.vseg(),
+                                                at + (long) 2 * lanes * Float.BYTES,
+                                                LE),
+                                        acc2);
+                        acc3 =
+                                weight.fma(
+                                        FloatVector.fromMemorySegment(
+                                                F_SPECIES,
+                                                in.vseg(),
+                                                at + (long) 3 * lanes * Float.BYTES,
+                                                LE),
+                                        acc3);
                     }
                 }
                 long at = out.vbase() + (outRow + t) * Float.BYTES;
-                store(out, at, acc0);
-                store(out, at + (long) lanes * Float.BYTES, acc1);
-                store(out, at + (long) 2 * lanes * Float.BYTES, acc2);
-                store(out, at + (long) 3 * lanes * Float.BYTES, acc3);
+                acc0.intoMemorySegment(out.vseg(), at, LE);
+                acc1.intoMemorySegment(out.vseg(), at + (long) lanes * Float.BYTES, LE);
+                acc2.intoMemorySegment(out.vseg(), at + (long) 2 * lanes * Float.BYTES, LE);
+                acc3.intoMemorySegment(out.vseg(), at + (long) 3 * lanes * Float.BYTES, LE);
             }
             for (; t <= to - lanes; t += lanes) {
-                FloatVector acc = FloatVector.broadcast(SPECIES, bias);
+                FloatVector acc = FloatVector.broadcast(F_SPECIES, bias);
                 for (int ic = 0; ic < inChannels; ic++) {
                     long inRow = (long) ic * time;
                     int tap = tapRow + ic * kernel;
                     for (int k = 0; k < kernel; k++)
                         acc =
-                                FloatVector.broadcast(SPECIES, taps[tap + k])
+                                FloatVector.broadcast(F_SPECIES, taps[tap + k])
                                         .fma(
-                                                load(
-                                                        in,
+                                                FloatVector.fromMemorySegment(
+                                                        F_SPECIES,
+                                                        in.vseg(),
                                                         in.vbase()
                                                                 + (inRow
                                                                                 + t
                                                                                 + (long) k
                                                                                         * dilation
                                                                                 - pad)
-                                                                        * Float.BYTES),
+                                                                        * Float.BYTES,
+                                                        LE),
                                                 acc);
                 }
-                store(out, out.vbase() + (outRow + t) * Float.BYTES, acc);
+                acc.intoMemorySegment(out.vseg(), out.vbase() + (outRow + t) * Float.BYTES, LE);
             }
         }
         for (; t < to; t++) {
@@ -770,17 +819,6 @@ public final class Convolutions {
             }
             writeFloat(out.vseg(), out.vbase() + (outRow + t) * Float.BYTES, acc);
         }
-    }
-
-    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
-    private static FloatVector load(Raw tensor, long byteOffset) {
-        return FloatVector.fromMemorySegment(
-                SPECIES, tensor.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
-    }
-
-    @AlwaysInline("vector leaf: out-of-line the FloatVector is materialized per call")
-    private static void store(Raw tensor, long byteOffset, FloatVector value) {
-        value.intoMemorySegment(tensor.vseg(), byteOffset, ByteOrder.LITTLE_ENDIAN);
     }
 
     /** The first and last {@code pad} samples, where some taps fall outside the sequence. */
@@ -885,28 +923,28 @@ public final class Convolutions {
             // one channel vector at a time, positions inner: the two state rows live in registers
             // across the scan and reach memory once; the scalar products are formed and added in
             // the scalar loop's order, so the two paths agree bit for bit
-            int lanes = SPECIES.length();
+            int lanes = F_SPECIES.length();
             float[] taps = new float[3 * lanes];
             for (; c0 + lanes <= c1; c0 += lanes) {
                 for (int i = 0; i < lanes; i++)
                     for (int t = 0; t < 3; t++)
                         taps[t * lanes + i] = readFloat(ks, kb + 4L * ((c0 + i) * 3L + t));
-                FloatVector k0 = FloatVector.fromArray(SPECIES, taps, 0);
-                FloatVector k1 = FloatVector.fromArray(SPECIES, taps, lanes);
-                FloatVector k2 = FloatVector.fromArray(SPECIES, taps, 2 * lanes);
-                FloatVector s0 = FloatVector.fromMemorySegment(SPECIES, cs, cb + 4L * c0, LE);
+                FloatVector k0 = FloatVector.fromArray(F_SPECIES, taps, 0);
+                FloatVector k1 = FloatVector.fromArray(F_SPECIES, taps, lanes);
+                FloatVector k2 = FloatVector.fromArray(F_SPECIES, taps, 2 * lanes);
+                FloatVector s0 = FloatVector.fromMemorySegment(F_SPECIES, cs, cb + 4L * c0, LE);
                 FloatVector s1 =
-                        FloatVector.fromMemorySegment(SPECIES, cs, cb + 4L * (dim + c0), LE);
+                        FloatVector.fromMemorySegment(F_SPECIES, cs, cb + 4L * (dim + c0), LE);
                 for (int s = 0; s < seqLen; s++) {
                     long row = tb + 4L * ((long) s * parts * dim + c0);
                     FloatVector bx =
-                            FloatVector.fromMemorySegment(SPECIES, ts, row, LE)
+                            FloatVector.fromMemorySegment(F_SPECIES, ts, row, LE)
                                     .mul(
                                             FloatVector.fromMemorySegment(
-                                                    SPECIES, ts, row + 8L * dim, LE));
+                                                    F_SPECIES, ts, row + 8L * dim, LE));
                     bx.intoMemorySegment(ts, row, LE);
                     FloatVector sum = s0.mul(k0).add(s1.mul(k1)).add(bx.mul(k2));
-                    FloatVector.fromMemorySegment(SPECIES, ts, row + 4L * dim, LE)
+                    FloatVector.fromMemorySegment(F_SPECIES, ts, row + 4L * dim, LE)
                             .mul(sum)
                             .intoMemorySegment(os, ob + 4L * ((long) s * dim + c0), LE);
                     s0 = s1;

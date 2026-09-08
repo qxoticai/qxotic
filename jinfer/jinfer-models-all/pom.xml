@@ -72,6 +72,11 @@
       <artifactId>jinfer-inflect2</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kokoro</artifactId>
+      <scope>runtime</scope>
+    </dependency>
   </dependencies>
 
   <profiles>

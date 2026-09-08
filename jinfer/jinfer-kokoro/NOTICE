@@ -1,0 +1,10 @@
+jinfer-kokoro
+Copyright 2026 Quixotic AI (https://qxotic.ai)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This module implements inference for Kokoro, whose weights are licensed under Apache-2.0.
+Kokoro is based on StyleTTS 2 and ISTFTNet. Model files are not distributed with this product.
+
+External program (not distributed with this product)
+  - espeak-ng or espeak: this module requires a compatible binary on PATH for phonemization.

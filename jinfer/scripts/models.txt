@@ -39,3 +39,5 @@ hf.co remixerdec Inflect-Nano-v2-GGUF inflect_nano_v2_q8_0.gguf
 hf.co remixerdec Inflect-Nano-v2-GGUF lexicon.bin
 hf.co remixerdec Inflect-Micro-v2-GGUF inflect_micro_v2_q8_0.gguf
 hf.co remixerdec Inflect-Micro-v2-GGUF lexicon.bin
+hf.co simonfxr kokoro.cpp-GGUF kokoro-82m-f16.gguf
+hf.co simonfxr kokoro.cpp-GGUF voices/kokoro-voice-af_heart.gguf

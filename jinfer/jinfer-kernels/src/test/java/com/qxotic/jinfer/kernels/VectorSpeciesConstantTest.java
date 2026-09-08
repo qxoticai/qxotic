@@ -3,6 +3,7 @@ package com.qxotic.jinfer.kernels;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Segments;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A vector species must reach a kernel as a build-time constant ({@link Segments#F_SPECIES}), never
- * as a method parameter.
+ * as a method parameter or a second kernel-class static.
  *
  * <p>A species that arrives as an argument is constant only while the JIT inlines the method. The
  * moment an unrelated caller makes the kernel hot enough to compile standalone, every {@code
@@ -25,7 +26,7 @@ import org.junit.jupiter.api.Test;
 final class VectorSpeciesConstantTest {
 
     @Test
-    void noKernelTakesItsSpeciesAsAParameter() {
+    void kernelsUseTheCanonicalSpeciesConstant() {
         List<String> offenders = new ArrayList<>();
         for (Class<?> kernel :
                 List.of(
@@ -43,11 +44,16 @@ final class VectorSpeciesConstantTest {
                     }
                 }
             }
+            for (Field field : kernel.getDeclaredFields()) {
+                if (VectorSpecies.class.isAssignableFrom(field.getType())) {
+                    offenders.add(kernel.getSimpleName() + "." + field.getName());
+                }
+            }
         }
         assertTrue(
                 offenders.isEmpty(),
                 () ->
-                        "these kernels take a VectorSpecies parameter, so their vector ops"
+                        "these kernels copy or take a VectorSpecies, so their vector ops"
                                 + " de-intrinsify whenever the JIT compiles them standalone - read"
                                 + " Segments.F_SPECIES in the body instead: "
                                 + offenders);

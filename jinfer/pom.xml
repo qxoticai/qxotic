@@ -34,6 +34,7 @@
     <module>jinfer-nemotronh</module>
     <module>jinfer-llama</module>
     <module>jinfer-inflect2</module>
+    <module>jinfer-kokoro</module>
     <module>jinfer-inflect2-cli</module>
     <module>jinfer-models-all</module>
     <module>jinfer-chat</module>
@@ -182,6 +183,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-inflect2</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-kokoro</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

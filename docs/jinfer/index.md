@@ -64,6 +64,7 @@ Architecture dispatch comes from providers on the classpath.
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) |
 | gpt-oss, Nemotron-H | chat |
 | Inflect | speech synthesis |
+| Kokoro 82M | speech synthesis |
 
 GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.
 
@@ -76,7 +77,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, N
 | reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker` |
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--mmproj <clip.gguf>` |
 | audio input | `jinfer-gemma4` | E2B conformer |
-| speech synthesis | `jinfer-inflect2` | Inflect TTS |
+| speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
 | hub + downloads | `jinfer-hub` | `owner/repo`, `modelscope.cn/...` |

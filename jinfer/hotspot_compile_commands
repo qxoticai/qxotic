@@ -90,7 +90,5 @@ inline com/qxotic/jinfer/kernels/MatMul.blockFma
 inline com/qxotic/jinfer/kernels/KimiDeltaAttention.load
 inline com/qxotic/jinfer/kernels/KimiDeltaAttention.store
 inline com/qxotic/jinfer/kernels/KimiDeltaAttention.update
-inline com/qxotic/jinfer/kernels/Convolutions.load
-inline com/qxotic/jinfer/kernels/Convolutions.store
 # NOT the tile bodies (qkTile, qkTile64F32, qkTileWideF32, pvTileF16, pvTileF32), nor pvTile, the dispatcher
 # in front of the last two: see the header.

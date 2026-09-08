@@ -5,7 +5,8 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 Components that include work derived from third-party projects carry their own NOTICE, which
 their jars embed: jam-native, jinfer-qwen35, jinfer-gemma4, toknroll-gguf (llama.cpp, ggml,
-llamafile) and jinfer-inflect2 (an optional external program).
+llamafile), jinfer-inflect2 (an optional external program), and jinfer-kokoro (an external
+phonemizer).
 
 Source repository only (not part of any published artifact)
   - jam/graalvm-annotations declares two annotation types whose names match GraalVM Native

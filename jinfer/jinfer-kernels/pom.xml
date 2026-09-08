@@ -80,7 +80,7 @@
         </configuration>
         <executions>
           <execution>
-            <!-- The JIT defaults: 4x1 conv tile, preferred vector width, vector recurrences. -->
+            <!-- The JIT defaults: architecture-tuned conv tile, preferred vector width, vector recurrences. -->
             <id>default-test</id>
             <goals>
               <goal>test</goal>

@@ -59,7 +59,8 @@ public final class Models {
                     "com.qxotic.jinfer.models.laguna.LagunaProvider",
                     "com.qxotic.jinfer.models.nemotronh.NemotronHProvider",
                     "com.qxotic.jinfer.models.gptoss.GptOssProvider",
-                    "com.qxotic.jinfer.models.inflect2.Inflect2Provider");
+                    "com.qxotic.jinfer.models.inflect2.Inflect2Provider",
+                    "com.qxotic.jinfer.models.kokoro.KokoroProvider");
 
     private static final List<ModelProvider> PROVIDERS = discover();
 
@@ -303,7 +304,8 @@ public final class Models {
                     Map.entry("nemotron_h", "com.qxotic:jinfer-nemotronh"),
                     Map.entry("qwen3", "com.qxotic:jinfer-qwen3"),
                     Map.entry("qwen35", "com.qxotic:jinfer-qwen35"),
-                    Map.entry("inflect", "com.qxotic:jinfer-inflect2"));
+                    Map.entry("inflect", "com.qxotic:jinfer-inflect2"),
+                    Map.entry("kokoro", "com.qxotic:jinfer-kokoro"));
 
     /**
      * The provider for {@code arch} among {@code providers}, or null: highest {@link
