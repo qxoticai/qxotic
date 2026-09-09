@@ -1,28 +1,27 @@
-# jam
+<h1 align="center"><strong>jam</strong></h1> 
 
-**Just a matmul.** The fastest one on the JVM.
+<p align="center"><strong>JVM Accelerated Math.</strong></p>
 
-[![Java 25+](https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/25/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](../LICENSE)
-[![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+<p align="center">
+  <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
+  <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
+  <a href="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey">
+</p>
+    
+A.k.a jokingly as _"Just A Matmul"_. JAM implements fast quantized matrix multiplication routines for CPUs, with APIs for Java and C.  
+A single, safe, entry point: `mm` dispatch to specialized kernels for a several instruction sets:  
+SSE3 through AVX-512-VNNI on x86, NEON, DotProd and I8MM on ARM, and Metal on Apple GPUs.
 
-JVM Accelerated Math. Fast quantized matrix multiplication for CPUs, from Java or C. One operation,
-every instruction set: SSE3 through AVX-512-VNNI on x86, NEON, DotProd and I8MM on ARM, and Metal
-on Apple GPUs. Linux, Windows and macOS.
-
-On its native paths jam is competitive with llama.cpp's CPU kernels at matched instruction set.
+The JAM native kernels are competitive with llama.cpp's CPU kernels across several instruction sets.
 
 ## Quick start
-
-`JAM.providers()` discovers the installed backends in priority order. Matmul is a bounds-checked
-call on native `MemorySegment`s.
 
 ```java
 JAM jam = JAM.providers().getFirst().create();
 int st = jam.mm(w, a, r, JAM.Q8_0, m, n, k);                 // contiguous: F32 activations + result
 
-// strided, with byte offsets (zero allocation over one large mmap'd buffer):
+// Strided, with byte offsets:
 int s2 = jam.mm(w, wOff, JAM.Q8_0, k,   // weight: segment, byte offset, dtype, row stride
                 a, aOff, JAM.F32,  k,   // activations
                 r, rOff, JAM.F32,  m,   // result   ->  R = W @ Aᵀ
@@ -41,9 +40,10 @@ jam_status st = jam_mm(NULL,             // NULL = the global context
                        m, n, k);         // R = W @ Aᵀ
 ```
 
-Supported quantizations include `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, plus
-dense `F32`, `F16` and `BF16`. Activations and result are always `F32`. The operands must be
-**native** segments, not heap arrays.
+Supported quantizations: `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
+Activations and result are always `F32`. The operands must be **native** segments, not heap arrays.
+
+`JAM.providers()` discovers the available backends from the classpath. The `mm` operation is bounds-checked `MemorySegment`s.
 
 ## Why jam
 
@@ -108,30 +108,31 @@ The scalar provider requires no launch flags.
 
 ## Backends
 
-jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or `cfg.max_isa`.
+jam automatically detects the CPU features, the number of cores, discards low-power cores and selects the best available kernels.  
+Manually control the target instruction set  with `JAM_ISA` or `cfg.max_isa`.
 
-| arch | instruction sets | Q8_0 dot |
+| Arch | Instruction Sets | Q8_0 dot |
 |---|---|---|
 | x86 | `sse3` → `ssse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (the default) picks the best available; on Apple Silicon that includes the Metal
-backend. Name a CPU rung (`JAM_ISA=i8mm`) to stay CPU-only. Backend routing, the packed weight
+`JAM_ISA=auto` (the default) selects the best available kernels; on Apple Silicon that includes the Metal 
+backend. Set a CPU instruction-set (`JAM_ISA=i8mm`) to stay CPU-only. Backend dispatch, the packed weight
 layouts and the threading contract are described in [docs/design.md](docs/design.md).
 
 ## Configuration
 
 ```sh
-JAM_ISA=avx2                         ./app   # cap every provider at AVX2
+JAM_ISA=avx2                         ./app   # pin every provider at AVX2
 JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
 JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
 
-Threads are not a jam setting: a provider runs on the host's `JAM.Parallel` (in jinfer,
-`-Djinfer.threads`); a C host without an executor gets a pool sized by `jam_config.nthreads`.
+Thread pools are configurable: a JAM backend can use the host's provided `JAM.Parallel` pool (in jinfer,
+`-Djinfer.threads`); a C host without an executor gets a native thread pool sized by `jam_config.nthreads`.
 
-For per-pool control, create a context explicitly:
+For fine-grained thread-pool control, create a JAM native context explicitly:
 
 ```c
 jam_config cfg = {.nthreads = 8, .max_isa = JAM_ISA_AVX2};
@@ -148,9 +149,3 @@ mvn -pl jam/jam-vector -am package -DskipTests   # from the repository root
 
 Toolchains, the cmake-only build, the multi-platform release set and the test suites are in
 [BUILDING.md](BUILDING.md).
-
-Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
-
-## License
-
-Apache 2.0
