@@ -20,21 +20,15 @@ final class KokoroDsp {
     private static final float VOICED_THRESHOLD = 10;
     private static final float[] HANN = hann();
 
-    /**
-     * The DFT twiddles, {@code [bin][n]}, with the exact expressions the loops used to evaluate per
-     * sample: the analysis angle is negative, the synthesis angle positive, and the two are tabled
-     * separately so that no symmetry of the libm is assumed.
-     */
-    private static final float[][] ANALYSIS_COS = twiddle(-1, true);
-
-    private static final float[][] ANALYSIS_SIN = twiddle(-1, false);
-    private static final float[][] SYNTHESIS_COS = twiddle(1, true);
-    private static final float[][] SYNTHESIS_SIN = twiddle(1, false);
+    /** The DFT twiddles, {@code [bin][n]}: analysis with the negative angle, synthesis positive. */
+    private static final Twiddles ANALYSIS = twiddles(-1), SYNTHESIS = twiddles(1);
 
     private KokoroDsp() {}
 
     /** Magnitude and phase are both channel-major {@code [11][frames]}. */
     record Spectrum(float[][] magnitude, float[][] phase) {}
+
+    private record Twiddles(float[][] cos, float[][] sin) {}
 
     /**
      * Generates Kokoro's nine-harmonic HnNSF source and returns its centered STFT. The F0 input has
@@ -66,9 +60,8 @@ final class KokoroDsp {
             }
         }
 
-        // The noise is one seeded stream, nine draws per sample in sample order: it is drawn
-        // first, serially, exactly as the loop consumed it, and the rest of the source - which is
-        // all the arithmetic - then runs in parallel over the samples.
+        // The noise is one seeded stream, nine draws per sample: drawn first, in order, so the
+        // arithmetic that follows can run over the samples in parallel.
         float[] noise =
                 KokoroWorkspace.takeFloats(scratch, Math.multiplyExact(highLength, HARMONICS));
         for (int i = 0; i < noise.length; i++) noise[i] = (float) random.nextGaussian();
@@ -104,9 +97,8 @@ final class KokoroDsp {
         int outputLength = Math.multiplyExact(frames - 1, HOP_SIZE);
         if (outputLength == 0) return new float[0];
 
-        // Frames are independent until the overlap-add, so each is one job, into its own row of
-        // values; the overlap-add then walks the output samples, each summing its at most four
-        // contributing frames in frame order - the order the serial loop accumulated them in.
+        // Each frame is one job into its own row; the overlap-add then walks the output samples,
+        // each summing its (at most four) frames in frame order, so the floats come out the same.
         float[] values = KokoroWorkspace.takeFloats(scratch, Math.multiplyExact(frames, FFT_SIZE));
         Parallel.forLoop(
                 frames,
@@ -126,8 +118,8 @@ final class KokoroDsp {
                         for (int bin = 1; bin < BINS - 1; bin++)
                             value +=
                                     2
-                                            * (real[bin] * SYNTHESIS_COS[bin][n]
-                                                    - imaginary[bin] * SYNTHESIS_SIN[bin][n]);
+                                            * (real[bin] * SYNTHESIS.cos()[bin][n]
+                                                    - imaginary[bin] * SYNTHESIS.sin()[bin][n]);
                         values[frame * FFT_SIZE + n] = value / FFT_SIZE * HANN[n];
                     }
                 });
@@ -171,8 +163,8 @@ final class KokoroDsp {
                         float imaginary = 0;
                         for (int n = 0; n < FFT_SIZE; n++) {
                             float sample = padded[frame * HOP_SIZE + n] * HANN[n];
-                            real += sample * ANALYSIS_COS[bin][n];
-                            imaginary += sample * ANALYSIS_SIN[bin][n];
+                            real += sample * ANALYSIS.cos()[bin][n];
+                            imaginary += sample * ANALYSIS.sin()[bin][n];
                         }
                         magnitude[bin][frame] =
                                 (float) Math.sqrt(real * real + imaginary * imaginary);
@@ -182,14 +174,16 @@ final class KokoroDsp {
         return new Spectrum(magnitude, phase);
     }
 
-    private static float[][] twiddle(int sign, boolean cosine) {
-        float[][] table = new float[BINS][FFT_SIZE];
+    /** Tabled with the exact expression the loops once evaluated per sample. */
+    private static Twiddles twiddles(int sign) {
+        float[][] cos = new float[BINS][FFT_SIZE], sin = new float[BINS][FFT_SIZE];
         for (int bin = 0; bin < BINS; bin++)
             for (int n = 0; n < FFT_SIZE; n++) {
                 float angle = sign * TWO_PI * bin * n / FFT_SIZE;
-                table[bin][n] = (float) (cosine ? Math.cos(angle) : Math.sin(angle));
+                cos[bin][n] = (float) Math.cos(angle);
+                sin[bin][n] = (float) Math.sin(angle);
             }
-        return table;
+        return new Twiddles(cos, sin);
     }
 
     private static float interpolate(float[] values, float index) {

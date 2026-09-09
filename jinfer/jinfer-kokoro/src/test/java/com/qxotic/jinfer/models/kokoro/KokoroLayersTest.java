@@ -11,11 +11,12 @@ import java.lang.foreign.MemorySegment;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
+/** Layers that fan out over channels run on the pool, so their fixtures use shared arenas. */
 final class KokoroLayersTest {
 
     @Test
     void scalarConvSupportsStrideAndPadding() {
-        try (Arena arena = Arena.ofShared() /* the layer runs on workers */) {
+        try (Arena arena = Arena.ofShared()) {
             var allocator = MemoryAllocators.ofArena(arena);
             var conv = new KokoroLayers.Conv1d(new float[] {1, 0, -1}, null, 3, 1, 1);
 
@@ -107,7 +108,7 @@ final class KokoroLayersTest {
 
     @Test
     void adaptiveNormsUsePopulationVarianceAndOnePlusGamma() {
-        try (Arena arena = Arena.ofShared() /* the layer runs on workers */) {
+        try (Arena arena = Arena.ofShared()) {
             var allocator = MemoryAllocators.ofArena(arena);
             var projection =
                     new KokoroLayers.Linear(
@@ -159,7 +160,7 @@ final class KokoroLayersTest {
 
     @Test
     void snakeUsesPerChannelAlpha() {
-        try (Arena arena = Arena.ofShared() /* the layer runs on workers */) {
+        try (Arena arena = Arena.ofShared()) {
             var allocator = MemoryAllocators.ofArena(arena);
             var snake = new KokoroLayers.Snake(floats(allocator, new float[] {1, 2}, 2), 2);
 
