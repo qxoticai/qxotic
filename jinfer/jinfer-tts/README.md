@@ -4,14 +4,14 @@
 ordinary files or uncompressed entries in a ZIP overlay appended to the executable.
 
 ```bash
-mvn -pl jinfer-tts -am -DskipTests package
+mvn -pl jinfer/jinfer-tts -am -DskipTests package   # from the repository root
 
 java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
-  -jar jinfer-tts/target/jinfer-tts.jar \
+  -jar jinfer/jinfer-tts/target/jinfer-tts.jar \
   kokoro.gguf --with voice=af_heart.gguf --text "Hello." --output hello.wav
 
 java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
-  -jar jinfer-tts/target/jinfer-tts.jar \
+  -jar jinfer/jinfer-tts/target/jinfer-tts.jar \
   inflect.gguf --with lexicon=lexicon.bin --play
 ```
 
@@ -22,15 +22,17 @@ a persistent raw PCM stream through `ffplay` or `aplay` elsewhere.
 Build the native executable with GraalVM 25 or later:
 
 ```bash
-mvn -pl jinfer-tts -am -Pnative -DskipTests package
+make -C jinfer/jinfer-tts native   # -> bin/jinfer-tts
 ```
 
-The executable is `target/jinfer-tts`. Build the ZIP separately, append it, and adjust its offsets;
-updating the Mach-O executable directly with `zip` is not reliable:
+When the Inflect lexicon is in the models directory beside the checkout (or `MODELS=dir` names
+another), it is bundled into the image, so an Inflect GGUF speaks without a file beside it and
+without espeak-ng. Build the ZIP separately, append it, and adjust its offsets; updating the Mach-O
+executable directly with `zip` is not reliable:
 
 ```bash
 zip -0 payload.zip models/kokoro.gguf voices/af_heart.gguf
-cp target/jinfer-tts jinfer-tts-kokoro
+cp bin/jinfer-tts jinfer-tts-kokoro
 dd if=payload.zip bs=1048576 >> jinfer-tts-kokoro
 zip -A jinfer-tts-kokoro
 
