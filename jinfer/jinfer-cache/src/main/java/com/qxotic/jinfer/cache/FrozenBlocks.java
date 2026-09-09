@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
@@ -57,6 +58,11 @@ public final class FrozenBlocks {
     private static final int COMMIT_MAGIC = 0x54494D43; // "CMIT"
     private static final int HEADER_CRC_OFFSET = 48;
     private static final int SLOT_CRC_OFFSET = 36;
+    // The seed's printable value, after the digest: u32 length + UTF-8, inside the page the
+    // header CRC already spans. Display only - the digest decides - so a v4 file written before
+    // it was recorded reads as zero length, and a reader that predates it never looks.
+    private static final int DESCRIPTION_OFFSET = HEADER_CRC_OFFSET + 4;
+    private static final int DESCRIPTION_MAX_BYTES = PAGE_BYTES - DESCRIPTION_OFFSET - 4;
 
     /**
      * One frozen block: an opaque self-contained blob plus its position in the key chain. {@code
@@ -188,11 +194,7 @@ public final class FrozenBlocks {
                     "frozen cache "
                             + file
                             + " was built under a different cache identity."
-                            + "\n  stored:    "
-                            + HexFormat.of().formatHex(stored)
-                            + " (digest only: an artifact does not carry its description)"
-                            + "\n  this load: "
-                            + modelSeed.value()
+                            + identityDiff(storedDescription(header), stored, modelSeed.value())
                             + "\nThe identity covers the model file, every attached companion,"
                             + " and - per modality the model projects - its decoder and plan."
                             + " Load the cache the way it was built, or rebuild it here."
@@ -204,6 +206,44 @@ public final class FrozenBlocks {
                                             + " cache between them."
                                     : ""));
         }
+    }
+
+    /** The printable seed the writer recorded, or null for a file written before that. */
+    private static String storedDescription(ByteBuffer header) {
+        int length = header.getInt(DESCRIPTION_OFFSET);
+        if (length <= 0 || length > DESCRIPTION_MAX_BYTES) return null;
+        byte[] bytes = new byte[length];
+        header.get(DESCRIPTION_OFFSET + 4, bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Both identities side by side, and - when both are printable - the first field that differs,
+     * so a reader is not left comparing two long lines by eye. A field is a whitespace-separated
+     * token; a quoted plan splits into several, which still points at the right one.
+     */
+    private static String identityDiff(String built, byte[] storedDigest, String load) {
+        StringBuilder out = new StringBuilder();
+        out.append("\n  built with: ")
+                .append(
+                        built != null
+                                ? built
+                                : "(not recorded; digest "
+                                        + HexFormat.of().formatHex(storedDigest)
+                                        + ")");
+        out.append("\n  this load:  ").append(load);
+        if (built != null) {
+            String[] was = built.split(" "), now = load.split(" ");
+            for (int i = 0; i < Math.max(was.length, now.length); i++) {
+                String a = i < was.length ? was[i] : "(absent)";
+                String b = i < now.length ? now[i] : "(absent)";
+                if (!a.equals(b)) {
+                    out.append("\n  differs at: ").append(a).append(" vs ").append(b);
+                    break;
+                }
+            }
+        }
+        return out.toString();
     }
 
     private static FrozenBlocks openCommit(
@@ -358,6 +398,10 @@ public final class FrozenBlocks {
                 .putInt(HEADER_BYTES)
                 .putInt(SLOT_BYTES)
                 .put(modelSeed.digestBytes());
+        byte[] description = modelSeed.value().getBytes(StandardCharsets.UTF_8);
+        int recorded = Math.min(description.length, DESCRIPTION_MAX_BYTES);
+        header.putInt(DESCRIPTION_OFFSET, recorded);
+        header.put(DESCRIPTION_OFFSET + 4, description, 0, recorded);
         header.putInt(HEADER_CRC_OFFSET, crc32cWithZero(header, HEADER_CRC_OFFSET, PAGE_BYTES));
         header.position(0).limit(HEADER_BYTES);
         return header;

@@ -215,7 +215,8 @@ base.saveCachedPrompts(Path.of("personas.jkv"));
 A `.jkv` is content-addressed twice over.
 Its blocks are keyed by the exact prompt tokens, so two programs share a cache only when they frame the prompt identically; a script that assembles its own history misses one written by the CLI and prefills from scratch, reporting nothing restored.
 The artifact itself is keyed by the model file, every attached companion, and - for a model that projects media - that modality's decoder and projector plan; opening it under a different identity fails loudly rather than serving the wrong KV.
-That identity is a printable line (`jinfer-cache/1 model=sha256:... companion:media=sha256:... imageDecoder=imageio imagePlan=...`), which the error shows for the current load so the differing component can be read off; the digest an artifact stores is the line's SHA-256, so `printf %s "<line>" | sha256sum` reproduces it.
+That identity is a printable line (`jinfer-cache/1 model=sha256:... companion:media=sha256:... imageDecoder=imageio imagePlan="..."`), recorded in the artifact; a refused open shows the artifact's line and the current load's and names the first field that differs.
+The digest an artifact stores is the line's SHA-256, so `printf %s "<line>" | sha256sum` reproduces it.
 A JVM and a native image resolve different media decoders, so a media model's cache carries between them only when one is pinned with `-Djinfer.imageDecoder` or `-Djinfer.audioDecoder`.
 Text-only and speculation-only caches carry between builds as they are.
 

@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Random;
 import java.util.zip.CRC32C;
@@ -650,30 +649,38 @@ public final class FrozenBlocksTest {
     }
 
     @Test
-    void aRefusedOpenNamesTheStoredDigestAndThisLoadsIdentity() throws Exception {
-        ContentKey seed = ContentKey.sha256(new byte[] {1});
+    void aRefusedOpenShowsBothIdentitiesAndWhereTheyDiffer() throws Exception {
+        // the writer records its printable seed in the header page, so the reader can show the
+        // artifact's own identity next to this load's and name the first field that differs
+        ContentKey builtWith =
+                new ContentKey(
+                        "jinfer-cache/1 model=sha256:ab companion:media=sha256:cd"
+                                + " imageDecoder=imageio imagePlan=\"tiles=4\"");
         Path file = Files.createTempFile("frozen", ".jkv");
         file.toFile().deleteOnExit();
-        FrozenBlocks.createEmpty(file, seed);
+        FrozenBlocks.createEmpty(file, builtWith);
+        assertEquals(0, FrozenBlocks.open(file, builtWith).blockCount(), "same identity opens");
 
-        // a printable identity: the message shows the line itself, so the differing component can
-        // be read off, and the media-decoder hint only when the line carries a decoder
-        ContentKey media =
+        ContentKey thisLoad =
                 new ContentKey(
                         "jinfer-cache/1 model=sha256:ab companion:media=sha256:cd"
                                 + " imageDecoder=ffmpeg imagePlan=\"tiles=4\"");
         String message =
-                assertThrows(IllegalStateException.class, () -> FrozenBlocks.open(file, media))
+                assertThrows(IllegalStateException.class, () -> FrozenBlocks.open(file, thisLoad))
                         .getMessage();
-        assertTrue(message.contains("stored:    " + HexFormat.of().formatHex(seed.digestBytes())));
-        assertTrue(message.contains("this load: " + media.value()), message);
+        assertTrue(message.contains("built with: " + builtWith.value()), message);
+        assertTrue(message.contains("this load:  " + thisLoad.value()), message);
+        assertTrue(
+                message.contains("differs at: imageDecoder=imageio vs imageDecoder=ffmpeg"),
+                message);
         assertTrue(message.contains("-Djinfer.imageDecoder"), message);
 
-        ContentKey text = new ContentKey("jinfer-cache/1 model=sha256:ab companion:spec=sha256:ef");
+        // a text-only load: the model line differs, and there is no decoder to pin
+        ContentKey text = new ContentKey("jinfer-cache/1 model=sha256:ef companion:spec=sha256:01");
         String plain =
                 assertThrows(IllegalStateException.class, () -> FrozenBlocks.open(file, text))
                         .getMessage();
-        assertTrue(plain.contains("this load: " + text.value()), plain);
-        assertFalse(plain.contains("Decoder"), "no decoder to pin on a text-only load: " + plain);
+        assertTrue(plain.contains("differs at: model=sha256:ab vs model=sha256:ef"), plain);
+        assertFalse(plain.contains("-Djinfer"), "no decoder to pin on a text-only load: " + plain);
     }
 }
