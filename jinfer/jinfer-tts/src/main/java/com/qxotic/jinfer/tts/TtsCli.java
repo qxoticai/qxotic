@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.tts;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
@@ -73,8 +74,10 @@ public final class TtsCli {
         }
 
         List<Path> extracted = new ArrayList<>();
-        try (archive;
-                Arena arena = Arena.ofShared()) {
+        // the runtime's best cross-thread arena: ofShared on the JVM, ofAuto in a native image,
+        // where a shared arena cannot be closed and Arenas.close is the best-effort release
+        Arena arena = Arenas.newCrossThread();
+        try (archive) {
             Map<String, Path> companions =
                     resolveCompanions(options.companions(), archive, extracted);
             String source =
@@ -99,6 +102,7 @@ public final class TtsCli {
             }
             use(model, options);
         } finally {
+            Arenas.close(arena);
             for (Path path : extracted) Files.deleteIfExists(path);
         }
     }

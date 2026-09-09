@@ -1,12 +1,13 @@
 package com.qxotic.jinfer.models.kokoro;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Phonemizer;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
+import com.qxotic.jinfer.codecs.Espeak;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryArena;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
@@ -16,24 +17,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
-/** Raw-text speech synthesis over Kokoro v1.0 and one load-time voice. */
+/** Speech synthesis over Kokoro v1.0 and one load-time voice. */
 public final class KokoroTTS
         implements SpeechSynthesisModel<Kokoro.Configuration, Kokoro.Weights, Kokoro.State> {
 
     private static final int CHUNK_LIMIT = 200;
-    private static final double MIN_SPEED = 0.5, MAX_SPEED = 2.0;
 
     private final Kokoro model;
-    private final KokoroPhonemizer phonemizer;
+    private final Phonemizer phonemizer;
 
-    private KokoroTTS(Kokoro model, KokoroPhonemizer phonemizer) {
+    private KokoroTTS(Kokoro model, Phonemizer phonemizer) {
         this.model = model;
         this.phonemizer = phonemizer;
     }
 
     public static KokoroTTS load(Path model, Path voice, Arena arena) throws IOException {
-        KokoroPhonemizer phonemizer = KokoroPhonemizer.create();
-        return new KokoroTTS(Kokoro.load(model, voice, arena), phonemizer);
+        return wrap(Kokoro.load(model, voice, arena));
     }
 
     public static KokoroTTS load(FileChannel channel, GGUF gguf, Path voice, Arena arena)
@@ -44,8 +43,27 @@ public final class KokoroTTS
     public static KokoroTTS load(
             FileChannel channel, GGUF gguf, long baseOffset, Path voice, Arena arena)
             throws IOException {
-        KokoroPhonemizer phonemizer = KokoroPhonemizer.create();
-        return new KokoroTTS(Kokoro.load(channel, gguf, baseOffset, voice, arena), phonemizer);
+        return wrap(Kokoro.load(channel, gguf, baseOffset, voice, arena));
+    }
+
+    /**
+     * The front end: espeak in the voice's language, through the symbol table the GGUF declares.
+     * Kokoro has no lexicon, so espeak is required rather than asked for.
+     */
+    private static KokoroTTS wrap(Kokoro kokoro) throws IOException {
+        Espeak espeak =
+                Espeak.find()
+                        .orElseThrow(
+                                () ->
+                                        new IOException(
+                                                "Kokoro requires espeak-ng or espeak on PATH for"
+                                                        + " phonemization"));
+        String language = kokoro.language();
+        return new KokoroTTS(
+                kokoro,
+                Phonemizer.ipa(
+                        List.of(kokoro.configuration().tokens()),
+                        run -> espeak.ipa(run, language)));
     }
 
     @Override
@@ -56,6 +74,11 @@ public final class KokoroTTS
     @Override
     public Kokoro.Weights weights() {
         return model.weights();
+    }
+
+    @Override
+    public Phonemizer phonemizer() {
+        return phonemizer;
     }
 
     @Override
@@ -74,42 +97,40 @@ public final class KokoroTTS
     }
 
     @Override
+    public Media.Audio synthesize(Kokoro.State state, int[] phonemes, SpeechOptions options) {
+        Double speed = options.speed(); // Kokoro bounds it itself
+        float[] pcm = model.synthesize(state, phonemes, speed == null ? 1 : speed, 0);
+        return new Media.Audio(pcm, sampleRate(), 1);
+    }
+
+    @Override
     public void speak(
             Kokoro.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
-        if (text == null || text.isBlank()) throw new IllegalArgumentException("text is empty");
-        double speed = speed(options);
+        if (text.isBlank()) throw new IllegalArgumentException("text is blank");
         state.exclusively(
                 () -> {
-                    try {
-                        int chunk = 0;
-                        var parts = new ArrayDeque<>(chunks(text));
-                        while (!parts.isEmpty()) {
-                            String part = parts.removeFirst();
-                            int[] phonemes =
-                                    model.symbols()
-                                            .toRaw(phonemizer.phonemize(part, model.language()));
-                            if (phonemes.length == 0) continue;
-                            if (phonemes.length > Kokoro.MAX_PHONEMES) {
-                                if (part.codePointCount(0, part.length()) < 2)
-                                    throw new IllegalArgumentException(
-                                            "phonemized chunk exceeds "
-                                                    + Kokoro.MAX_PHONEMES
-                                                    + " symbols");
-                                int split = splitAtWord(part, part.length() / 2, 1);
-                                parts.addFirst(part.substring(split).trim());
-                                parts.addFirst(part.substring(0, split).trim());
-                                continue;
-                            }
-                            float[] pcm = model.synthesize(state, phonemes, speed, chunk++);
-                            if (!sink.test(new Media.Audio(pcm, configuration().sampleRate(), 1)))
-                                return;
+                    boolean spoke = false;
+                    var parts = new ArrayDeque<>(chunks(text));
+                    while (!parts.isEmpty()) {
+                        String part = parts.removeFirst();
+                        int[] phonemes = phonemizer.phonemize(part);
+                        if (phonemes.length == 0) continue;
+                        if (phonemes.length > Kokoro.MAX_PHONEMES) {
+                            if (part.codePointCount(0, part.length()) < 2)
+                                throw new IllegalArgumentException(
+                                        "phonemized chunk exceeds "
+                                                + Kokoro.MAX_PHONEMES
+                                                + " symbols");
+                            int split = splitAtWord(part, part.length() / 2, 1);
+                            parts.addFirst(part.substring(split).trim());
+                            parts.addFirst(part.substring(0, split).trim());
+                            continue;
                         }
-                        if (chunk == 0)
-                            throw new IllegalArgumentException(
-                                    "text produced no supported phonemes");
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+                        if (!sink.test(synthesize(state, phonemes, options))) return;
+                        spoke = true;
                     }
+                    if (!spoke)
+                        throw new IllegalArgumentException("text produced no supported phonemes");
                 });
     }
 
@@ -134,14 +155,5 @@ public final class KokoroTTS
         if (Character.isHighSurrogate(text.charAt(split - 1))
                 && Character.isLowSurrogate(text.charAt(split))) split--;
         return split;
-    }
-
-    static double speed(SpeechOptions options) {
-        Double speed = options == null ? null : options.speed();
-        if (speed == null) return 1;
-        if (!Double.isFinite(speed) || speed < MIN_SPEED || speed > MAX_SPEED)
-            throw new IllegalArgumentException(
-                    "speed must be in [" + MIN_SPEED + ", " + MAX_SPEED + "]: " + speed);
-        return speed;
     }
 }

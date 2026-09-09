@@ -114,7 +114,6 @@ public final class Kokoro {
     private final KokoroGenerator.Weights generator;
     private final float[] sourceWeight;
     private final float sourceBias;
-    private final Symbols symbols;
     private final long parameterCount;
 
     private Kokoro(
@@ -141,7 +140,6 @@ public final class Kokoro {
         this.generator = generator;
         this.sourceWeight = sourceWeight;
         this.sourceBias = sourceBias;
-        this.symbols = new Symbols(configuration.tokens);
         this.parameterCount = parameterCount;
     }
 
@@ -326,6 +324,15 @@ public final class Kokoro {
         return gguf.getValue(String[].class, key);
     }
 
+    /** The trust boundary for ids from outside: in range, and on a slot this table fills. */
+    private void requireOnTheTable(int[] phonemes) {
+        String[] tokens = configuration.tokens;
+        for (int id : phonemes)
+            require(
+                    id >= 0 && id < tokens.length && !tokens[id].isEmpty(),
+                    "phoneme id " + id + " is not on this model's symbol table");
+    }
+
     private static void require(boolean condition, String message) {
         if (!condition) throw new IllegalArgumentException("Kokoro: " + message);
     }
@@ -344,10 +351,6 @@ public final class Kokoro {
 
     public Weights weights() {
         return weights;
-    }
-
-    public Symbols symbols() {
-        return symbols;
     }
 
     public long parameterCount() {
@@ -385,7 +388,13 @@ public final class Kokoro {
                 state.exclusively(
                         () -> {
                             require(rawPhonemes.length > 0, "phoneme input is empty");
-                            require(rawPhonemes.length <= MAX_PHONEMES, "too many phonemes");
+                            require(
+                                    rawPhonemes.length <= MAX_PHONEMES,
+                                    rawPhonemes.length
+                                            + " phonemes, over Kokoro's "
+                                            + MAX_PHONEMES
+                                            + " ceiling - split the text and speak the parts");
+                            requireOnTheTable(rawPhonemes);
                             require(
                                     Double.isFinite(speed) && speed >= 0.5 && speed <= 2,
                                     "speed must be in [0.5, 2.0]");

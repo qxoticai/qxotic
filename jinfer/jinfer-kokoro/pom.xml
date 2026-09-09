@@ -41,6 +41,10 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-codecs</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
     <dependency>

@@ -4,7 +4,7 @@ package com.qxotic.jinfer.models.inflect2.frontend;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.models.inflect2.Symbols;
+import com.qxotic.jinfer.models.inflect2.Inflect2;
 import org.junit.jupiter.api.Test;
 
 class LetterToSoundTest {
@@ -48,9 +48,11 @@ class LetterToSoundTest {
                     "psychology"
                 }) {
             String guess = LetterToSound.guess(word);
-            assertTrue(guess.codePoints().anyMatch(cp -> Symbols.idOf(cp) != 0), word);
+            assertTrue(!guess.isEmpty(), word);
             for (int cp : guess.codePoints().toArray())
-                assertTrue(Symbols.idOf(cp) != 0, word + " emits a symbol outside the table");
+                assertTrue(
+                        Inflect2.SYMBOLS.indexOf(Character.toString(cp)) > 0,
+                        word + " emits a symbol outside the table");
         }
     }
 

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Phonemizer;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
@@ -240,6 +241,21 @@ final class JinferSpeechModelTest {
         }
 
         @Override
+        public int sampleRate() {
+            return 24000;
+        }
+
+        @Override
+        public Phonemizer phonemizer() {
+            return text -> new int[0];
+        }
+
+        @Override
+        public Media.Audio synthesize(ToyState state, int[] phonemes, SpeechOptions options) {
+            return new Media.Audio(new float[ToyModel.SAMPLES], 24000, 1);
+        }
+
+        @Override
         public void speak(
                 ToyState state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
             entered.countDown();
@@ -349,6 +365,21 @@ final class JinferSpeechModelTest {
         @Override
         public ToyState newState(MemoryArena<MemorySegment> arena) {
             return newState();
+        }
+
+        @Override
+        public int sampleRate() {
+            return 24000;
+        }
+
+        @Override
+        public Phonemizer phonemizer() {
+            return text -> new int[0];
+        }
+
+        @Override
+        public Media.Audio synthesize(ToyState state, int[] phonemes, SpeechOptions options) {
+            return new Media.Audio(new float[ToyModel.SAMPLES], 24000, 1);
         }
 
         @Override

@@ -10,14 +10,15 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Phonemizer;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
+import com.qxotic.jinfer.codecs.Espeak;
 import com.qxotic.jinfer.media.Media;
-import com.qxotic.jinfer.models.inflect2.frontend.Phonemizer;
+import com.qxotic.jinfer.models.inflect2.frontend.Lexicon;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
 import com.qxotic.jota.memory.MemoryArena;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
@@ -26,7 +27,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 /**
  * Text-to-speech over an {@link Inflect2} checkpoint: text is normalized, phonemized, and
@@ -153,15 +156,17 @@ public final class InflectTTS
      * ~50x realtime against the lexicon's ~54x.
      */
     private static Phonemizer frontend(Path gguf, Path lexicon) throws IOException {
-        if (lexicon != null) return Phonemizer.lexicon(lexicon).withEspeakFallback();
+        Optional<Espeak> espeak = Espeak.find();
+        UnaryOperator<String> fallback =
+                espeak.map(e -> (UnaryOperator<String>) run -> e.ipa(run, "en-us")).orElse(null);
+        if (lexicon != null) return over(Lexicon.read(lexicon, fallback));
         if (gguf != null) {
             Path beside = gguf.resolveSibling("lexicon.bin");
-            if (Files.isReadable(beside)) return Phonemizer.lexicon(beside).withEspeakFallback();
+            if (Files.isReadable(beside)) return over(Lexicon.read(beside, fallback));
         }
-        Phonemizer bundled = Phonemizer.bundledLexicon();
-        if (bundled != null) return bundled.withEspeakFallback();
-        Phonemizer espeak = Phonemizer.espeak();
-        if (espeak != null) {
+        Lexicon bundled = Lexicon.bundled(fallback);
+        if (bundled != null) return over(bundled);
+        if (fallback != null) {
             System.getLogger("jinfer.inflect2")
                     .log(
                             System.Logger.Level.WARNING,
@@ -169,11 +174,15 @@ public final class InflectTTS
                                     + " punctuation-free run, and it must stay installed. Attach"
                                     + " the repository's lexicon.bin as the 'lexicon' companion, or"
                                     + " put it beside the GGUF.");
-            return espeak;
+            return Phonemizer.ipa(Inflect2.SYMBOLS, fallback);
         }
         throw new IOException(
                 "no phonemizer: attach the repository's lexicon.bin as the 'lexicon' companion,"
                         + " put it beside the model or on the classpath, or install espeak-ng");
+    }
+
+    private static Phonemizer over(Lexicon lexicon) {
+        return Phonemizer.ipa(Inflect2.SYMBOLS, lexicon::ipa);
     }
 
     // ── tuning: a re-wrap over the SAME weights, so no reload and no arena ─
@@ -188,6 +197,12 @@ public final class InflectTTS
     /** Every {@link #speak} starts here: same state, same text, same waveform. */
     public InflectTTS seed(long seed) {
         return new InflectTTS(model, phonemizer, wordOverrides, variation, seed);
+    }
+
+    /** The SAME weights with a different front end - no reload, no arena. */
+    public InflectTTS phonemizer(Phonemizer replacement) {
+        if (replacement == null) throw new IllegalArgumentException("null phonemizer");
+        return new InflectTTS(model, replacement, wordOverrides, variation, seed);
     }
 
     /**
@@ -232,24 +247,40 @@ public final class InflectTTS
     }
 
     @Override
+    public Phonemizer phonemizer() {
+        return phonemizer;
+    }
+
+    @Override
+    public Media.Audio synthesize(Inflect2.State state, int[] phonemes, SpeechOptions options) {
+        // The model takes a length scale, the reciprocal of a speaking rate. Blank-interspersing is
+        // Inflect2's encoding of a run, not a phoneme: it stays inside, so ids mean the same thing
+        // here as for every model of the family.
+        Media.Audio audio =
+                model.synthesize(
+                        state,
+                        blankIntersperse(phonemes),
+                        (float) (1.0 / speed(options)),
+                        (float) variation,
+                        seed);
+        return new Media.Audio(clamp(fadeEdges(audio.pcm())), sampleRate(), 1);
+    }
+
+    @Override
     public void speak(
             Inflect2.State state, String text, SpeechOptions options, Predicate<Media.Audio> sink) {
-        double speed = speed(options);
+        if (text.isBlank()) throw new IllegalArgumentException("text is blank");
         List<String> chunks = chunks(text, wordOverrides);
         // Hold the state for the WHOLE utterance, not per chunk: a close arriving between chunks
         // would otherwise free the arena mid-utterance. Reentrant, so the per-chunk synthesize
         // nests inside this one.
         state.exclusively(
                 () -> {
-                    try {
-                        for (int i = 0; i < chunks.size(); i++) {
-                            if (i > 0 && !sink.test(silence(pauseSamples(chunks.get(i - 1)))))
-                                return;
-                            float[] chunk = synthesizeChunk(state, chunks.get(i), speed, seed + i);
-                            if (!sink.test(new Media.Audio(chunk, sampleRate(), 1))) return;
-                        }
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+                    for (int i = 0; i < chunks.size(); i++) {
+                        if (i > 0 && !sink.test(silence(pauseSamples(chunks.get(i - 1))))) return;
+                        int[] phonemes = phonemizer.phonemize(chunks.get(i));
+                        if (phonemes.length == 0) continue;
+                        if (!sink.test(synthesize(state, phonemes, options))) return;
                     }
                 });
     }
@@ -268,14 +299,11 @@ public final class InflectTTS
         return new Media.Audio(new float[samples], sampleRate(), 1);
     }
 
-    private float[] synthesizeChunk(Inflect2.State state, String chunk, double speed, long seed)
-            throws IOException {
-        int[] tokens = phonemizer != null ? phonemizer.phonemize(chunk) : Symbols.toTokens(chunk);
-        if (tokens.length == 0) return new float[0];
-        // The model takes a length scale, which is the reciprocal of a speaking rate.
-        Media.Audio audio =
-                model.synthesize(state, tokens, (float) (1.0 / speed), (float) variation, seed);
-        return clamp(fadeEdges(audio.pcm()));
+    /** Symbol ids to the blank-interspersed sequence the network takes: {@code [0, a, 0, b, 0]}. */
+    static int[] blankIntersperse(int[] ids) {
+        int[] out = new int[ids.length * 2 + 1];
+        for (int i = 0; i < ids.length; i++) out[i * 2 + 1] = ids[i];
+        return out;
     }
 
     // ── chunking ──────────────────────────────────────────────────────────

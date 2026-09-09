@@ -15,7 +15,7 @@ final class KokoroLoadTest {
 
     @Test
     void loadsTheCanonicalModelAndVoice() throws Exception {
-        var model = TestModels.require("simonfxr/kokoro.cpp-GGUF/kokoro-82m-f16.gguf");
+        var model = TestModels.require("simonfxr/kokoro.cpp-GGUF/kokoro-82m-q8_0.gguf");
         var voice =
                 TestModels.require("simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf");
 
@@ -26,7 +26,10 @@ final class KokoroLoadTest {
             assertEquals(510, kokoro.voice().maxPhonemes());
             assertEquals(459, kokoro.weights().model().size());
             assertTrue(kokoro.parameterCount() > 81_000_000);
-            assertArrayEquals(new int[] {43, 5}, kokoro.symbols().toRaw("a!"));
+            String[] tokens = kokoro.configuration().tokens();
+            assertEquals("a", tokens[43], "the GGUF carries the StyleTTS2 table");
+            assertEquals("!", tokens[5]);
+            assertEquals("", tokens[49], "a slot Kokoro never emits is empty, not missing");
             try (Kokoro.State state = kokoro.newState()) {
                 float[] pcm = kokoro.synthesize(state, new int[] {43}, 1, 0);
                 int allocations = state.scratchAllocations();

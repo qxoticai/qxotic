@@ -38,6 +38,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
@@ -58,6 +59,29 @@ public final class Inflect2 {
      * multi-gigabyte allocation. Raising it raises the worst case a single request can cost.
      */
     private static final int MAX_FRAMES = 4000;
+
+    /**
+     * The phoneme vocabulary, in embedding-row order: the StyleTTS2 symbol table, one Unicode code
+     * point per slot, slot 0 the pad the model also uses as the blank between phonemes. Mirrors
+     * runtime/text/symbols.py; the checked-in weights were trained against exactly this order.
+     */
+    public static final List<String> SYMBOLS =
+            ("_" // 0  pad
+                            + ";:,.!?¡¿—…\"«»“” " // 1-16 punctuation
+                            + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" // 17-42 uppercase
+                            + "abcdefghijklmnopqrstuvwxyz" // 43-68 lowercase
+                            + "ɑɐɒæɓʙβɔɕçɗɖ" // 69-80
+                            + "ðʤəɘɚɛɜɝɞɟʄɡ" // 81-92
+                            + "ɠɢʛɦɧħɥʜɨɪʝɭ" // 93-104
+                            + "ɬɫɮʟɱɯɰŋɳɲɴø" // 105-116
+                            + "ɵɸθœɶʘɹɺɾɻʀʁ" // 117-128
+                            + "ɽʂʃʈʧʉʊʋⱱʌɣɤ" // 129-140
+                            + "ʍχʎʏʑʐʒʔʡʕʢǀ" // 141-152
+                            + "ǁǂǃˈˌːˑʼʴʰʱʲ" // 153-164
+                            + "ʷˠˤ˞↓↑→↗↘'̩'ᵻ") // 165-177
+                    .codePoints()
+                    .mapToObj(Character::toString)
+                    .toList();
 
     // Kernel sizes the GGUF metadata does not carry - they are part of the architecture, exactly as
     // in the reference model definition (the rest come from the config: the encoder FFN's, the
@@ -624,7 +648,7 @@ public final class Inflect2 {
         int[] rates = gguf.getValue(int[].class, "inflect.v2.upsample_rates");
         int[] upsampleKernels = gguf.getValue(int[].class, "inflect.v2.upsample_kernel_sizes");
 
-        require(symbols == Symbols.count(), "symbol table size does not match the model");
+        require(symbols == SYMBOLS.size(), "symbol table size does not match the model");
         require(
                 latent > 0
                         && (latent & 1) == 0
@@ -737,7 +761,8 @@ public final class Inflect2 {
     }
 
     /**
-     * Synthesize a waveform from blank-interspersed phoneme tokens (see {@link Symbols}).
+     * Synthesize a waveform from blank-interspersed phoneme tokens: ids into {@link #SYMBOLS}, with
+     * the pad (0) between and around every phoneme, as the network was trained.
      *
      * @param lengthScale stretches every predicted duration - 1/speed, so 1.25 speaks slower
      * @param variation scale of the latent noise (0 = deterministic, 0.667 is the reference

@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.models.inflect2;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,23 +29,31 @@ class Inflect2Test {
 
     // ── frontend (no weights) ─────────────────────────────────────────────
 
+    /** Symbol ids for IPA text, straight off the table - the test's own tiny phonemizer. */
+    static int[] ids(String ipa) {
+        return ipa.codePoints()
+                .map(cp -> Inflect2.SYMBOLS.indexOf(Character.toString(cp)))
+                .toArray();
+    }
+
     @Test
     void symbolTableMatchesTheModelVocabulary() {
-        assertEquals(178, Symbols.count(), "the embedding table has 178 rows");
-        assertEquals(0, Symbols.idOf('#'), "an unknown codepoint reads as the blank");
-        assertTrue(Symbols.idOf(' ') > 0, "the word separator is a symbol of its own");
-        assertTrue(Symbols.idOf('a') > 0, "letters are in the table");
+        assertEquals(178, Inflect2.SYMBOLS.size(), "the embedding table has 178 rows");
+        assertEquals("_", Inflect2.SYMBOLS.get(0), "slot 0 is the pad");
+        assertTrue(Inflect2.SYMBOLS.indexOf(" ") > 0, "the word separator is a symbol of its own");
+        assertTrue(Inflect2.SYMBOLS.indexOf("a") > 0, "letters are in the table");
+        assertEquals(-1, Inflect2.SYMBOLS.indexOf("#"), "not every code point is a symbol");
     }
 
     @Test
     void tokensAreBlankInterspersed() {
-        int[] tokens = Symbols.toTokens("ab");
+        int[] tokens = InflectTTS.blankIntersperse(ids("ab"));
         // blank, a, blank, b, blank
         assertEquals(5, tokens.length);
         assertEquals(0, tokens[0]);
-        assertEquals(Symbols.idOf('a'), tokens[1]);
+        assertEquals(Inflect2.SYMBOLS.indexOf("a"), tokens[1]);
         assertEquals(0, tokens[2]);
-        assertEquals(Symbols.idOf('b'), tokens[3]);
+        assertEquals(Inflect2.SYMBOLS.indexOf("b"), tokens[3]);
         assertEquals(0, tokens[4]);
     }
 
@@ -137,7 +147,7 @@ class Inflect2Test {
     // ── model ─────────────────────────────────────────────────────────────
 
     /** "həloʊ wɜːld", blank-interspersed. */
-    private static final int[] HELLO = Symbols.toTokens("həloʊ wɜːld");
+    private static final int[] HELLO = InflectTTS.blankIntersperse(ids("həloʊ wɜːld"));
 
     private static Inflect2 model() throws IOException {
         return Inflect2.load(TestModels.require(REF), Arena.ofAuto());
@@ -238,6 +248,38 @@ class Inflect2Test {
                                 IllegalArgumentException.class,
                                 () -> synthesize(model, HELLO, 1f, 1.01f, 1),
                                 "variation above one"));
+    }
+
+    /**
+     * The law: for one prepared chunk, the low-level door and the text door are the same samples.
+     */
+    @Test
+    @Tag("integration")
+    void phonemizeThenSynthesizeIsSpeak() throws IOException {
+        InflectTTS tts = InflectTTS.load(TestModels.require(REF), Arena.ofAuto());
+        String chunk = "Hello, world."; // normalized, one sentence, terminated: what speak feeds
+        int[] phonemes = tts.phonemizer().phonemize(chunk);
+        assertTrue(phonemes.length > 5, "the front end produced ids: " + phonemes.length);
+        try (Inflect2.State state = tts.newState()) {
+            // bit-stable only once the JIT has settled; a cold pass differs by an ulp
+            for (int warm = 0; warm < 4; warm++)
+                tts.synthesize(state, phonemes, SpeechOptions.NONE);
+            Media.Audio low = tts.synthesize(state, phonemes, SpeechOptions.NONE);
+            Media.Audio high = tts.speak(state, chunk, SpeechOptions.NONE);
+            assertArrayEquals(low.pcm(), high.pcm());
+
+            int[] outOfRange = {Inflect2.SYMBOLS.size()};
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> tts.synthesize(state, outOfRange, SpeechOptions.NONE));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> tts.speak(state, "  ", SpeechOptions.NONE),
+                    "blank text");
+        }
+        com.qxotic.jinfer.Phonemizer mine = text -> ids("həloʊ");
+        assertSame(
+                mine, tts.phonemizer(mine).phonemizer(), "a re-wrap is what phonemizer() returns");
     }
 
     @Test
