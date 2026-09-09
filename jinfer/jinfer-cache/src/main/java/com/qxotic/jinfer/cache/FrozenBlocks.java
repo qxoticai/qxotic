@@ -34,29 +34,30 @@ import java.util.zip.CRC32C;
  * KiB pages, then 64-aligned KV blobs and complete indexes. A commit names one index generation;
  * append writes and forces the data before publishing into the older slot, so a torn publication
  * falls back to the previous generation. Index entries are {@code {key[4], parentKey[4], from, to,
- * byteOffset, byteLen}} in BFS order (parents precede children, so the tree grafts in one pass -
- * {@link #open} enforces the ordering, so a corrupt index fails at parse, not at graft). The model
- * seed also covers the codec's blob layout: a layout change ships as a format bump, so a stale file
- * fails with a clear error instead of restoring garbage.
+ * byteOffset, byteLen, crc}} in BFS order (parents precede children, so the tree grafts in one pass
+ * - {@link #open} enforces the ordering, so a corrupt index fails at parse, not at graft). The
+ * model seed also covers the codec's blob layout: a layout change ships as a format bump, so a
+ * stale file fails with a clear error instead of restoring garbage.
  *
  * <p>The cross-process lifecycle, end to end: compile once ({@link PromptCache#define} + {@link
  * PromptCache#export}, or any {@code freeze}), {@code open(path, modelSeed)} at serve start - the
  * SAME model seed, or open throws (an artifact can never serve wrong bytes) - then every request
  * resumes through the mounting tree and ingests only its tail.
  *
- * <p>One open instance is immutable and safely shared across engines/pipelines.
+ * <p>Reads are safely shared; append serializes publication and replaces its in-memory snapshots
+ * only after the new generation is durable.
  */
 public final class FrozenBlocks {
 
-    static final int MAGIC = 0x46564B4A; // "JKVF"
-    static final int FORMAT_VERSION = 4; // v4: dual checksummed commit slots
-    static final int PAGE_BYTES = 4096;
+    private static final int MAGIC = 0x46564B4A; // "JKVF"
+    private static final int FORMAT_VERSION = 4; // v4: dual checksummed commit slots
+    private static final int PAGE_BYTES = 4096;
     static final int SLOT_A_OFFSET = PAGE_BYTES;
     static final int SLOT_B_OFFSET = 2 * PAGE_BYTES;
     static final int HEADER_BYTES = 3 * PAGE_BYTES;
     static final int SLOT_BYTES = 64;
     static final int INDEX_ENTRY_BYTES = 96; // 32+32+4+4+8+8+4(crc)+4(pad)
-    static final int ALIGN = 64;
+    private static final int ALIGN = 64;
     private static final int COMMIT_MAGIC = 0x54494D43; // "CMIT"
     private static final int HEADER_CRC_OFFSET = 48;
     private static final int SLOT_CRC_OFFSET = 36;
@@ -539,7 +540,6 @@ public final class FrozenBlocks {
 
     /** Writes a complete artifact; all format serialization lives here, not in the block tree. */
     static void write(Path file, ContentKey modelSeed, List<Entry> entries) throws IOException {
-        int indexBytes = indexBytes(entries.size());
         long[] offsets = new long[entries.size()];
         long off = HEADER_BYTES;
         for (int i = 0; i < entries.size(); i++) {
@@ -547,20 +547,20 @@ public final class FrozenBlocks {
             off = align(Math.addExact(off, entries.get(i).mem().byteSize()));
         }
         long indexOffset = off;
-        ByteBuffer index = ByteBuffer.allocate(indexBytes).order(ByteOrder.LITTLE_ENDIAN);
+        List<Entry> placed = new ArrayList<>(entries.size());
         for (int i = 0; i < entries.size(); i++) {
             Entry e = entries.get(i);
-            putEntry(
-                    index,
-                    e.key(),
-                    e.parentKey(),
-                    e.from(),
-                    e.to(),
-                    offsets[i],
-                    e.mem().byteSize(),
-                    e.crc());
+            placed.add(
+                    new Entry(
+                            e.key(),
+                            e.parentKey(),
+                            e.from(),
+                            e.to(),
+                            offsets[i],
+                            e.mem(),
+                            e.crc()));
         }
-        index.flip();
+        ByteBuffer index = encodeIndex(placed);
         Commit commit = new Commit(0, 0, entries.size(), indexOffset, crc32c(index));
         try (FileChannel ch =
                 FileChannel.open(
@@ -569,7 +569,7 @@ public final class FrozenBlocks {
                         StandardOpenOption.TRUNCATE_EXISTING,
                         StandardOpenOption.READ,
                         StandardOpenOption.WRITE)) {
-            writeFully(ch, header(modelSeed), 0);
+            writeFully(ch, encodeHeader(modelSeed), 0);
             for (int i = 0; i < entries.size(); i++) {
                 writeFully(ch, entries.get(i).mem(), offsets[i]);
             }
@@ -580,7 +580,7 @@ public final class FrozenBlocks {
         }
     }
 
-    private static ByteBuffer header(ContentKey modelSeed) {
+    private static ByteBuffer encodeHeader(ContentKey modelSeed) {
         ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN);
         header.putInt(MAGIC)
                 .putInt(FORMAT_VERSION)
@@ -621,7 +621,7 @@ public final class FrozenBlocks {
     }
 
     /** The one index-entry field order, shared by every writer ({@code open} is its reader). */
-    static void putEntry(
+    private static void putEntry(
             ByteBuffer idx,
             BlockTree.BlockKey key,
             BlockTree.BlockKey parentKey,
@@ -695,20 +695,7 @@ public final class FrozenBlocks {
             off = align(Math.addExact(off, e.mem().byteSize()));
         }
         long newIndexOffset = off;
-        ByteBuffer idx =
-                ByteBuffer.allocate(indexBytes(nextEntries.size())).order(ByteOrder.LITTLE_ENDIAN);
-        for (Entry e : nextEntries) {
-            putEntry(
-                    idx,
-                    e.key(),
-                    e.parentKey(),
-                    e.from(),
-                    e.to(),
-                    e.offset(),
-                    e.mem().byteSize(),
-                    e.crc());
-        }
-        idx.flip();
+        ByteBuffer idx = encodeIndex(nextEntries);
         Commit nextCommit =
                 new Commit(
                         1 - current.slot(),
@@ -801,6 +788,23 @@ public final class FrozenBlocks {
         return Math.toIntExact(Math.multiplyExact((long) count, INDEX_ENTRY_BYTES));
     }
 
+    private static ByteBuffer encodeIndex(List<Entry> entries) {
+        ByteBuffer index =
+                ByteBuffer.allocate(indexBytes(entries.size())).order(ByteOrder.LITTLE_ENDIAN);
+        for (Entry e : entries) {
+            putEntry(
+                    index,
+                    e.key(),
+                    e.parentKey(),
+                    e.from(),
+                    e.to(),
+                    e.offset(),
+                    e.mem().byteSize(),
+                    e.crc());
+        }
+        return index.flip();
+    }
+
     private static Set<BlockTree.BlockKey> keys(List<Entry> entries) {
         Set<BlockTree.BlockKey> keys = new HashSet<>(entries.size());
         for (Entry e : entries) keys.add(e.key());
@@ -811,15 +815,15 @@ public final class FrozenBlocks {
         return entries.size();
     }
 
-    static void putKey(ByteBuffer buf, BlockTree.BlockKey k) {
+    private static void putKey(ByteBuffer buf, BlockTree.BlockKey k) {
         buf.putLong(k.a()).putLong(k.b()).putLong(k.c()).putLong(k.d());
     }
 
-    static BlockTree.BlockKey getKey(ByteBuffer buf) {
+    private static BlockTree.BlockKey getKey(ByteBuffer buf) {
         return new BlockTree.BlockKey(buf.getLong(), buf.getLong(), buf.getLong(), buf.getLong());
     }
 
-    static long align(long offset) {
+    private static long align(long offset) {
         return Math.addExact(offset, ALIGN - 1) & -ALIGN;
     }
 
