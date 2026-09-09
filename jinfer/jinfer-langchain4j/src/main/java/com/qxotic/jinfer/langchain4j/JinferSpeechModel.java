@@ -182,7 +182,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             return this;
         }
 
-        /** Rate multiplier for every request, 1.0 = the model's natural rate. */
         /** Attaches a local companion file. This method never touches the network. */
         public Builder companionPath(String capability, Path companionPath) {
             Objects.requireNonNull(capability, "capability");
@@ -211,6 +210,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             return this;
         }
 
+        /** Rate multiplier for every request, 1.0 = the model's natural rate. */
         public Builder speed(double speed) {
             if (!(speed > 0) || Double.isInfinite(speed))
                 throw new IllegalArgumentException("speed must be > 0: " + speed);

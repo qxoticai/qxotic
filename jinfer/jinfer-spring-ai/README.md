@@ -314,8 +314,9 @@ JinferChatModel restored = JinferChatModel.builder()
 
 ## Speech synthesis
 
-`JinferSpeechModel` implements Spring AI's `TextToSpeechModel`. Blocking calls return WAV bytes;
-streaming emits PCM clips as they are synthesized:
+`JinferSpeechModel` implements Spring AI's `TextToSpeechModel`. `call` returns WAV bytes;
+`stream` emits one headerless PCM16 clip per sentence as it is synthesized, and every response
+carries the sample rate and channel count in its metadata:
 
 ```java
 try (var speech = JinferSpeechModel.builder()
@@ -324,8 +325,27 @@ try (var speech = JinferSpeechModel.builder()
         .build()) {
 
     Files.write(Path.of("hello.wav"), speech.call("Hello from local Java inference."));
+
+    speech.stream(new TextToSpeechPrompt("Streamed, sentence by sentence.")).subscribe(response -> {
+        byte[] pcm16 = response.getResult().getOutput();                       // little-endian
+        int rate = response.getMetadata().get(JinferSpeechModel.SAMPLE_RATE);  // Hz
+        int channels = response.getMetadata().get(JinferSpeechModel.CHANNELS); // 1
+        play(pcm16, rate, channels);
+    });
 }
 ```
+
+Kokoro takes its voice as a companion, the same way; `espeak-ng` must be on `PATH`:
+
+```java
+JinferSpeechModel.builder()
+        .model("simonfxr/kokoro.cpp-GGUF:Q8_0")
+        .companion("voice", "simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf")
+        .build();
+```
+
+A request that names a `voice`, `model` or `format` this instance does not have is refused, never
+silently given the default.
 
 ## Complete examples
 
@@ -338,8 +358,9 @@ try (var speech = JinferSpeechModel.builder()
 
 ## Lifetime and concurrency
 
-One adapter is one serial inference pipeline. `fork()` adds an independent state that shares the
-loaded weights. Spring closes managed adapters automatically.
+A chat, embedding or reranking adapter is one serial inference pipeline; `fork()` adds an
+independent state that shares the loaded weights. The speech adapter mints a state per request, so
+concurrent requests run in parallel. Spring closes managed adapters automatically.
 
 Shaded JARs must preserve `ServiceLoader` entries. With Maven Shade, add
 `ServicesResourceTransformer`.

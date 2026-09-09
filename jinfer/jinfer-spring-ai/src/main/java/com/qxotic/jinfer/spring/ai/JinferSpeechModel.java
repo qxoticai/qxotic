@@ -27,6 +27,7 @@ import org.springframework.ai.audio.tts.TextToSpeechModel;
 import org.springframework.ai.audio.tts.TextToSpeechOptions;
 import org.springframework.ai.audio.tts.TextToSpeechPrompt;
 import org.springframework.ai.audio.tts.TextToSpeechResponse;
+import org.springframework.ai.audio.tts.TextToSpeechResponseMetadata;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
@@ -41,6 +42,11 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     /** OpenAI's TTS limit, so a caller porting from it meets the same boundary here. */
     private static final int DEFAULT_MAX_INPUT_CHARS = 4096;
+
+    /** Metadata keys on every response: how to play the bytes. Integers, Hz and a count. */
+    public static final String SAMPLE_RATE = "sampleRate";
+
+    public static final String CHANNELS = "channels";
 
     private final SpeechSynthesisModel<?, ?, RuntimeState> model;
     private final Arena owned; // null unless this instance loaded the weights
@@ -91,7 +97,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             // worth.
             try (RuntimeState state = model.newState()) {
                 Media.Audio audio = model.speak(state, text, options);
-                return new TextToSpeechResponse(List.of(new Speech(AudioCodec.wav(audio))));
+                return response(AudioCodec.wav(audio), audio);
             }
         } finally {
             lifecycle.readLock().unlock();
@@ -125,11 +131,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                                             clip -> {
                                                 if (emitter.isCancelled()) return false;
                                                 emitter.next(
-                                                        new TextToSpeechResponse(
-                                                                List.of(
-                                                                        new Speech(
-                                                                                AudioCodec.pcm16(
-                                                                                        clip)))));
+                                                        response(AudioCodec.pcm16(clip), clip));
                                                 return true;
                                             });
                                 }
@@ -147,6 +149,17 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                 // thread, and parking one there stalls every other request on that loop. The chat
                 // side solves the same problem with the engine's own driver thread.
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * WAV from {@link #call}, PCM16 from {@link #stream}: both carry what a player needs, read off
+     * the clip itself. WAV describes itself already; the same shape from both doors costs nothing.
+     */
+    private static TextToSpeechResponse response(byte[] bytes, Media.Audio audio) {
+        var metadata = new TextToSpeechResponseMetadata();
+        metadata.put(SAMPLE_RATE, audio.sampleRate());
+        metadata.put(CHANNELS, audio.channels());
+        return new TextToSpeechResponse(List.of(new Speech(bytes)), metadata);
     }
 
     private String text(TextToSpeechPrompt prompt) {

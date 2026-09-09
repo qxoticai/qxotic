@@ -338,6 +338,17 @@ try (var speech = JinferSpeechModel.builder()
 }
 ```
 
+Kokoro takes its voice as a companion, the same way; `espeak-ng` must be on `PATH`:
+
+```java
+JinferSpeechModel.builder()
+        .model("simonfxr/kokoro.cpp-GGUF:Q8_0")
+        .companion("voice", "simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf")
+        .build();
+```
+
+A request that names a `voice` is refused rather than answered in this model's only voice.
+
 ## Cached prompts
 
 Prefill a system prompt once, then reuse it:

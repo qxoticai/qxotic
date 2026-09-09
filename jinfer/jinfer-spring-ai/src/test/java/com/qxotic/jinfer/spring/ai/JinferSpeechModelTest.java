@@ -179,6 +179,10 @@ final class JinferSpeechModelTest {
             assertEquals(ToyModel.CLIPS, clips.size());
             // headerless PCM16 per clip: they concatenate, unlike a WAV per clip would
             assertEquals(2 * ToyModel.SAMPLES, clips.get(0).getResult().getOutput().length);
+            // and so the response must say how to play them
+            assertEquals(
+                    24000, (int) clips.get(0).getMetadata().get(JinferSpeechModel.SAMPLE_RATE));
+            assertEquals(1, (int) clips.get(0).getMetadata().get(JinferSpeechModel.CHANNELS));
         }
     }
 
