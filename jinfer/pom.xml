@@ -35,7 +35,6 @@
     <module>jinfer-llama</module>
     <module>jinfer-inflect2</module>
     <module>jinfer-kokoro</module>
-    <module>jinfer-inflect2-cli</module>
     <module>jinfer-models-all</module>
     <module>jinfer-tts</module>
     <module>jinfer-chat</module>
@@ -459,7 +458,6 @@
         </plugin>
       </plugins>
     </pluginManagement>
-    <plugins />
   </build>
 
   <profiles>

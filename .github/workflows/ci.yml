@@ -45,6 +45,8 @@ jobs:
           distribution: graalvm
           java-version: '25'
           cache: maven
+      # The speech front ends probe espeak-ng and skip their real-tool tests without it.
+      - run: sudo apt-get install -y --no-install-recommends espeak-ng
       # What this runner is: the ISA level, the core count and the memory decide which kernels
       # and which test budgets are exercised, so they belong in every log.
       - name: runner facts

@@ -81,7 +81,7 @@
         <plugins>
           <!-- The Inflect lexicon is downloaded test data, not source. A single-file executable
                has no model directory beside it, so include it when present; an image built
-               without it falls back to espeak-ng. Same step as jinfer-inflect2-cli. -->
+               without it falls back to espeak-ng. -->
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-resources-plugin</artifactId>
