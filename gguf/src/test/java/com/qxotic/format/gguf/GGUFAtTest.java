@@ -64,4 +64,57 @@ public class GGUFAtTest {
         assertThrows(
                 ArithmeticException.class, () -> sample().at(Long.MAX_VALUE).getTensorDataOffset());
     }
+
+    @Test
+    public void everyTensorRelocatesByTheSameBase() {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("a", new long[] {4}, GGMLType.F32, 0))
+                        .putTensor(TensorEntry.create("b", new long[] {4}, GGMLType.F16, 32))
+                        .putTensor(TensorEntry.create("c", new long[] {64}, GGMLType.Q8_0, 64))
+                        .build();
+        GGUF moved = gguf.at(777);
+
+        for (TensorEntry tensor : gguf.getTensors()) {
+            assertEquals(gguf.absoluteOffset(tensor) + 777, moved.absoluteOffset(tensor));
+        }
+    }
+
+    @Test
+    public void metadataConveniencesReadThrough() {
+        GGUF moved =
+                Builder.newBuilder()
+                        .putString("s", "v")
+                        .putInteger("n", 5)
+                        .setAlignment(64)
+                        .build()
+                        .at(8);
+
+        assertTrue(moved.containsKey("s"));
+        assertFalse(moved.containsKey("missing"));
+        assertEquals("v", moved.getStringOrDefault("s", "d"));
+        assertEquals("d", moved.getStringOrDefault("missing", "d"));
+        assertEquals(5, moved.getValue(int.class, "n"));
+        assertEquals(9, moved.getValueOrDefault(int.class, "missing", 9));
+        assertEquals(MetadataValueType.STRING, moved.getType("s"));
+        assertEquals(64, moved.getAlignment());
+    }
+
+    @Test
+    public void relocatedViewStillDescribesItself() {
+        String text = sample().at(64).toString();
+
+        assertNotNull(text);
+        assertFalse(text.isBlank());
+    }
+
+    @Test
+    public void relocationDoesNotTouchTheOriginal() {
+        GGUF gguf = sample();
+        long before = gguf.getTensorDataOffset();
+
+        gguf.at(4096);
+
+        assertEquals(before, gguf.getTensorDataOffset());
+    }
 }

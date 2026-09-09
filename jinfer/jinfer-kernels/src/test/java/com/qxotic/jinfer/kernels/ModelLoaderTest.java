@@ -98,6 +98,47 @@ class ModelLoaderTest {
     }
 
     @Test
+    void anEmbeddedGgufWhoseFileEndsEarlyNamesTheTensor(@TempDir Path dir) throws Exception {
+        Path standalone = dir.resolve("model.gguf");
+        GGUF.write(
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("w", new long[] {2}, GGMLType.F32, 0))
+                        .build(),
+                standalone);
+        byte[] header = Files.readAllBytes(standalone);
+        int base = 4096;
+        byte[] archive = new byte[base + header.length]; // the tensor bytes never made it in
+        System.arraycopy(header, 0, archive, base, header.length);
+        Path file = Files.write(dir.resolve("archive"), archive);
+
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
+                Arena arena = Arena.ofConfined()) {
+            channel.position(base);
+            GGUF embedded = GGUF.read(channel).at(base);
+            var failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> ModelLoader.loadTensors(channel, embedded, arena));
+            assertTrue(failure.getMessage().contains("w"), failure.getMessage());
+        }
+    }
+
+    @Test
+    void anUnalignedRelocationIsRejected(@TempDir Path dir) throws Exception {
+        Path standalone = dir.resolve("model.gguf");
+        GGUF.write(Builder.newBuilder().build(), standalone);
+        GGUF gguf = GGUF.read(standalone);
+        try (FileChannel channel = FileChannel.open(standalone, StandardOpenOption.READ);
+                Arena arena = Arena.ofConfined()) {
+            var failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> ModelLoader.loadTensors(channel, gguf.at(3), arena));
+            assertTrue(failure.getMessage().contains("4-byte aligned"), failure.getMessage());
+        }
+    }
+
+    @Test
     void mapsOnlyTensorData(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("model.gguf");
         GGUF.write(

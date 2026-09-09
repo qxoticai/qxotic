@@ -83,7 +83,7 @@ public interface ModelProvider {
             Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
-        throw notA(gguf, "language");
+        throw notA(gguf, "a language");
     }
 
     /**
@@ -93,7 +93,7 @@ public interface ModelProvider {
     default LoadedEmbedder<?> loadEmbedder(
             FileChannel channel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        throw notA(gguf, "embedding");
+        throw notA(gguf, "an embedding");
     }
 
     /**
@@ -103,7 +103,7 @@ public interface ModelProvider {
     default LoadedReranker<?> loadReranker(
             FileChannel channel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
             throws IOException {
-        throw notA(gguf, "reranker");
+        throw notA(gguf, "a reranker");
     }
 
     /**
@@ -113,14 +113,14 @@ public interface ModelProvider {
     default SpeechSynthesisModel<?, ?, ?> loadSpeech(
             FileChannel channel, GGUF gguf, Path path, Arena arena, Map<String, Path> companions)
             throws IOException {
-        throw notA(gguf, "speech");
+        throw notA(gguf, "a speech");
     }
 
     private static UnsupportedOperationException notA(GGUF gguf, String kind) {
         return new UnsupportedOperationException(
                 "'"
                         + gguf.getString("general.architecture")
-                        + "' is not a "
+                        + "' is not "
                         + kind
                         + " architecture");
     }

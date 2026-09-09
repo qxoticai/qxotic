@@ -29,6 +29,7 @@ class SelfArchiveTest {
             throws IOException {
         Path file = archive(directory, ZipEntry.STORED);
         try (SelfArchive archive = SelfArchive.open(file)) {
+            assertEquals(file, archive.path());
             SelfArchive.Entry entry = archive.entry("models/tiny.gguf");
             assertTrue(entry.offset() > 0);
             byte[] read;

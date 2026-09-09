@@ -286,7 +286,7 @@ public final class Models {
                                 Channels.newChannel(
                                         new BufferedInputStream(
                                                 Channels.newInputStream(fc), 1 << 20)));
-            } catch (GGUFFormatException e) {
+            } catch (GGUFFormatException | EOFException e) {
                 throw new IllegalArgumentException(
                         path
                                 + " is not a GGUF model file ("

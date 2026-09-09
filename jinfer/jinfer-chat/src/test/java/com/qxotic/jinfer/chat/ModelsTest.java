@@ -209,7 +209,9 @@ class ModelsTest {
                         () -> speechOnly.loadSpeech(null, gguf, none, null, Map.of()))) {
             UnsupportedOperationException refused =
                     assertThrows(UnsupportedOperationException.class, load);
-            assertTrue(refused.getMessage().startsWith("'kokoro' is not a"), refused.getMessage());
+            assertTrue(
+                    refused.getMessage().matches("'kokoro' is not an? \\w+ architecture"),
+                    refused.getMessage());
         }
         assertEquals(Map.of(), speechOnly.companionFiles());
         assertEquals(0, speechOnly.priority());
