@@ -9,9 +9,9 @@
   <a href="https://bsky.app/profile/qxotic.ai"><img src="https://img.shields.io/badge/-grey?logo=bluesky&logoColor=f5f5f5" alt="Qxotic AI on Bluesky"></a>
 </p>
 
-Quixotic AI provides a complete, open stack, for local AI on the JVM Java. From tokenizers and model formats, to a full inference engine with multi-modal capabilities.
+Quixotic AI provides a complete, open stack, for local AI on the JVM. From tokenizers and model formats, to a full inference engine with multi-modal capabilities.
 
-**No Python. No ONNX. No external services. Just AI, in a jar.**
+_No Python. No ONNX. No external services. Just_ **AI, in a jar.**
 
 --- 
 
