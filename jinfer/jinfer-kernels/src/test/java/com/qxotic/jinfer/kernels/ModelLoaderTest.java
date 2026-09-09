@@ -9,6 +9,10 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,6 +60,40 @@ class ModelLoaderTest {
                             IllegalArgumentException.class,
                             () -> ModelLoader.loadTensors(channel, 1, java.util.List.of(), arena));
             assertTrue(failure.getMessage().contains("4-byte aligned"), failure.getMessage());
+        }
+    }
+
+    @Test
+    void mapsAnEmbeddedGgufThroughItsRelocatedHeader(@TempDir Path dir) throws Exception {
+        // a GGUF sitting at byte 4096 of a larger file, as an entry of a self-archive does
+        Path standalone = dir.resolve("model.gguf");
+        GGUF.write(
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("w", new long[] {2}, GGMLType.F32, 0))
+                        .build(),
+                standalone);
+        byte[] header = Files.readAllBytes(standalone);
+        long dataOffset = GGUF.read(standalone).getTensorDataOffset();
+        byte[] payload =
+                ByteBuffer.allocate(2 * Float.BYTES)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .putFloat(1.5f)
+                        .putFloat(-2.5f)
+                        .array();
+        int base = 4096;
+        byte[] archive = new byte[base + (int) dataOffset + payload.length];
+        System.arraycopy(header, 0, archive, base, header.length);
+        System.arraycopy(payload, 0, archive, base + (int) dataOffset, payload.length);
+        Path file = Files.write(dir.resolve("archive"), archive);
+
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
+                Arena arena = Arena.ofConfined()) {
+            channel.position(base);
+            GGUF embedded = GGUF.read(channel).at(base);
+            var tensors = ModelLoader.loadTensors(channel, embedded, arena);
+            MemorySegment w = tensors.get("w").memory().base();
+            assertEquals(1.5f, w.get(ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
+            assertEquals(-2.5f, w.get(ValueLayout.JAVA_FLOAT_UNALIGNED, Float.BYTES));
         }
     }
 

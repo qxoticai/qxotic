@@ -18,19 +18,15 @@ import java.util.Set;
 public final class GraniteProvider implements ModelProvider {
 
     @Override
-    public boolean supports(String architecture) {
-        return "granite".equals(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("granite");
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

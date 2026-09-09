@@ -150,6 +150,70 @@ public interface GGUF {
         return getTensorDataOffset() + tensor.offset();
     }
 
+    /**
+     * This header's view of the same GGUF bytes located at {@code base} within a larger channel,
+     * such as an entry of an archive: {@link #getTensorDataOffset()} and {@link
+     * #absoluteOffset(TensorEntry)} become absolute in that channel, everything else delegates.
+     *
+     * @param base non-negative byte offset of the GGUF's first byte in the enclosing channel
+     */
+    default GGUF at(long base) {
+        if (base < 0) throw new IllegalArgumentException("negative base offset: " + base);
+        if (base == 0) return this;
+        GGUF self = this;
+        return new GGUF() {
+            @Override
+            public int getVersion() {
+                return self.getVersion();
+            }
+
+            @Override
+            public long getTensorDataOffset() {
+                return Math.addExact(base, self.getTensorDataOffset());
+            }
+
+            @Override
+            public Set<String> getMetadataKeys() {
+                return self.getMetadataKeys();
+            }
+
+            @Override
+            public <T> T getValue(Class<T> targetClass, String key) {
+                return self.getValue(targetClass, key);
+            }
+
+            @Override
+            public MetadataValueType getType(String key) {
+                return self.getType(key);
+            }
+
+            @Override
+            public MetadataValueType getComponentType(String key) {
+                return self.getComponentType(key);
+            }
+
+            @Override
+            public Collection<TensorEntry> getTensors() {
+                return self.getTensors();
+            }
+
+            @Override
+            public TensorEntry getTensor(String tensorName) {
+                return self.getTensor(tensorName);
+            }
+
+            @Override
+            public GGUF at(long further) {
+                return self.at(Math.addExact(base, further));
+            }
+
+            @Override
+            public String toString() {
+                return toString(false, false);
+            }
+        };
+    }
+
     /** Reads GGUF metadata from a {@link ReadableByteChannel}. */
     static GGUF read(ReadableByteChannel byteChannel) throws IOException {
         return ImplAccessor.read(byteChannel);

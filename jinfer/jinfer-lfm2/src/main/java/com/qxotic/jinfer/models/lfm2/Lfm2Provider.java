@@ -22,11 +22,6 @@ import java.util.Set;
 public final class Lfm2Provider implements ModelProvider {
 
     @Override
-    public boolean supports(String architecture) {
-        return architectures().contains(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("lfm2", "lfm2moe");
     }
@@ -37,9 +32,10 @@ public final class Lfm2Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

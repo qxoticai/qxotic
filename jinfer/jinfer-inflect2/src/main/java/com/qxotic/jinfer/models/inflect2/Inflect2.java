@@ -254,20 +254,11 @@ public final class Inflect2 {
 
     /**
      * As {@link #load(Path, Arena)} but reusing an already-parsed {@code gguf} - the arch-dispatch
-     * entry, where the header has been read to decide which port to call.
+     * entry, where the header has been read to decide which port to call. A GGUF embedded in a
+     * larger file arrives as {@link GGUF#at(long)}, its tensor offsets absolute in {@code channel}.
      */
     public static Inflect2 load(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
-        return load(channel, gguf, 0, arena);
-    }
-
-    /**
-     * As {@link #load(FileChannel, GGUF, Arena)}, with the GGUF beginning at {@code baseOffset} in
-     * {@code channel}. This supports models embedded in a larger file without coupling the model to
-     * any particular container format.
-     */
-    public static Inflect2 load(FileChannel channel, GGUF gguf, long baseOffset, Arena arena)
-            throws IOException {
-        return load(gguf, ModelLoader.loadTensors(channel, gguf, baseOffset, arena), arena);
+        return load(gguf, ModelLoader.loadTensors(channel, gguf, arena), arena);
     }
 
     private static Inflect2 load(

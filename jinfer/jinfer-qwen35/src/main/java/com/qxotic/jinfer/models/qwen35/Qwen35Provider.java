@@ -20,11 +20,6 @@ public final class Qwen35Provider implements ModelProvider {
             new LoadedModel.SamplingDefaults(1.0f, 0.95f, 20, null);
 
     @Override
-    public boolean supports(String architecture) {
-        return architectures().contains(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("qwen35", "qwen35moe");
     }
@@ -35,9 +30,10 @@ public final class Qwen35Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

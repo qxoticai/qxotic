@@ -37,13 +37,7 @@ public final class KokoroTTS
 
     public static KokoroTTS load(FileChannel channel, GGUF gguf, Path voice, Arena arena)
             throws IOException {
-        return load(channel, gguf, 0, voice, arena);
-    }
-
-    public static KokoroTTS load(
-            FileChannel channel, GGUF gguf, long baseOffset, Path voice, Arena arena)
-            throws IOException {
-        return wrap(Kokoro.load(channel, gguf, baseOffset, voice, arena));
+        return wrap(Kokoro.load(channel, gguf, voice, arena));
     }
 
     /**

@@ -17,19 +17,15 @@ import java.util.Set;
 /** Service-provider entry for Poolside Laguna XS 2.1 GGUF models. */
 public final class LagunaProvider implements ModelProvider {
     @Override
-    public boolean supports(String architecture) {
-        return "laguna".equals(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("laguna");
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel channel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

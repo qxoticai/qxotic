@@ -26,9 +26,9 @@ final class Qwen35ConfigurationTest {
         assertEquals(20, Qwen35Provider.SAMPLING_DEFAULTS.topK());
 
         Qwen35Provider provider = new Qwen35Provider();
-        assertTrue(provider.supports("qwen35"));
-        assertTrue(provider.supports("qwen35moe"));
-        assertFalse(provider.supports("qwen3"));
+        assertTrue(provider.architectures().contains("qwen35"));
+        assertTrue(provider.architectures().contains("qwen35moe"));
+        assertFalse(provider.architectures().contains("qwen3"));
     }
 
     @Test

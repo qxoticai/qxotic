@@ -18,11 +18,6 @@ import java.util.Set;
 public final class Gemma4Provider implements ModelProvider {
 
     @Override
-    public boolean supports(String architecture) {
-        return "gemma4".equals(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("gemma4");
     }
@@ -33,9 +28,10 @@ public final class Gemma4Provider implements ModelProvider {
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

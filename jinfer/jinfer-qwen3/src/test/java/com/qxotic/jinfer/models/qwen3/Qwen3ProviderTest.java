@@ -20,9 +20,9 @@ class Qwen3ProviderTest {
     @Test
     void claimsOnlyTheRetrievalArchitecture() {
         Qwen3Provider provider = new Qwen3Provider();
-        assertTrue(provider.supports("qwen3"));
-        assertFalse(provider.supports("qwen35"));
-        assertFalse(provider.supports("qwen3moe"));
+        assertTrue(provider.architectures().contains("qwen3"));
+        assertFalse(provider.architectures().contains("qwen35"));
+        assertFalse(provider.architectures().contains("qwen3moe"));
     }
 
     @Test
@@ -35,9 +35,10 @@ class Qwen3ProviderTest {
                             UnsupportedOperationException.class,
                             () ->
                                     new Qwen3Provider()
-                                            .load(
+                                            .loadLanguage(
                                                     channel,
                                                     Builder.newBuilder().build(),
+                                                    file,
                                                     Arena.ofAuto(),
                                                     Map.of(),
                                                     null));

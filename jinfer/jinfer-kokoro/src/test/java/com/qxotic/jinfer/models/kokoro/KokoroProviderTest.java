@@ -15,7 +15,7 @@ final class KokoroProviderTest {
         var provider = new KokoroProvider();
         assertEquals(Set.of("kokoro"), provider.architectures());
         assertEquals(Map.of("voice", "voice"), provider.companionFiles());
-        assertTrue(provider.supports("kokoro"));
-        assertFalse(provider.supports("kokoro-voice"));
+        assertTrue(provider.architectures().contains("kokoro"));
+        assertFalse(provider.architectures().contains("kokoro-voice"));
     }
 }

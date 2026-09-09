@@ -23,10 +23,12 @@ import org.apache.commons.compress.archivers.zip.ZipFile;
 final class SelfArchive implements AutoCloseable {
     private static final int MAX_SYMLINK_DEPTH = 8;
 
+    private final Path path;
     private final ZipFile zip;
     private final FileChannel channel;
 
-    private SelfArchive(ZipFile zip, FileChannel channel) {
+    private SelfArchive(Path path, ZipFile zip, FileChannel channel) {
+        this.path = path;
         this.zip = zip;
         this.channel = channel;
     }
@@ -44,11 +46,16 @@ final class SelfArchive implements AutoCloseable {
     static SelfArchive open(Path file) throws IOException {
         FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
         try {
-            return new SelfArchive(new ZipFile.Builder().setPath(file).get(), channel);
+            return new SelfArchive(file, new ZipFile.Builder().setPath(file).get(), channel);
         } catch (IOException e) {
             channel.close();
             throw e;
         }
+    }
+
+    /** The archive file itself: the executable, or the file named on the command line. */
+    Path path() {
+        return path;
     }
 
     FileChannel fileChannel() {

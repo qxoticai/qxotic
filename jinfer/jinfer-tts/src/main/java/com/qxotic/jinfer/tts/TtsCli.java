@@ -95,6 +95,7 @@ public final class TtsCli {
                                 gguf,
                                 entry.offset(),
                                 entry.size(),
+                                archive.path(),
                                 arena,
                                 companions);
             } else {

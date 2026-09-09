@@ -17,19 +17,15 @@ import java.util.Set;
 /** Model-provider service for Maple GGUFs. */
 public final class MapleProvider implements ModelProvider {
     @Override
-    public boolean supports(String architecture) {
-        return "maple".equals(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("maple");
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

@@ -137,16 +137,15 @@ public final class Models {
         Map<String, Path> attached = Map.copyOf(companions);
         return open(
                 path,
-                (fc, gguf) -> {
-                    ModelProvider provider = provider(gguf);
-                    requireAccepted(provider, gguf, attached.keySet());
-                    if (tokenizer != null) {
-                        requireSameIdSpace(gguf, tokenizer);
-                    }
-                    return companionSeeded(
-                            sampled(provider.load(fc, gguf, arena, attached, tokenizer), gguf),
-                            attached);
-                });
+                attached,
+                tokenizer,
+                (provider, fc, gguf) ->
+                        companionSeeded(
+                                sampled(
+                                        provider.loadLanguage(
+                                                fc, gguf, path, arena, attached, tokenizer),
+                                        gguf),
+                                attached));
     }
 
     /**
@@ -165,11 +164,9 @@ public final class Models {
             throws IOException {
         return open(
                 path,
-                (fc, gguf) -> {
-                    ModelProvider provider = provider(gguf);
-                    if (tokenizer != null) requireSameIdSpace(gguf, tokenizer);
-                    return provider.loadEmbedder(fc, gguf, path, arena, tokenizer);
-                });
+                Map.of(),
+                tokenizer,
+                (provider, fc, gguf) -> provider.loadEmbedder(fc, gguf, path, arena, tokenizer));
     }
 
     /** Loads a RERANKER - the backbone plus the family's scoring recipe. */
@@ -185,11 +182,9 @@ public final class Models {
             throws IOException {
         return open(
                 path,
-                (fc, gguf) -> {
-                    ModelProvider provider = provider(gguf);
-                    if (tokenizer != null) requireSameIdSpace(gguf, tokenizer);
-                    return provider.loadReranker(fc, gguf, path, arena, tokenizer);
-                });
+                Map.of(),
+                tokenizer,
+                (provider, fc, gguf) -> provider.loadReranker(fc, gguf, path, arena, tokenizer));
     }
 
     /** Loads a SPEECH model at the port's own defaults. */
@@ -209,37 +204,27 @@ public final class Models {
         Map<String, Path> attached = Map.copyOf(companions);
         return open(
                 path,
-                (fc, gguf) -> {
-                    ModelProvider provider = provider(gguf);
-                    requireAccepted(provider, gguf, attached.keySet());
-                    return provider.loadSpeech(fc, gguf, path, arena, attached);
-                });
+                attached,
+                null,
+                (provider, fc, gguf) -> provider.loadSpeech(fc, gguf, path, arena, attached));
     }
 
-    /** Loads a speech GGUF embedded at {@code baseOffset} in an already-open channel. */
+    /**
+     * Loads a speech model whose GGUF is embedded in {@code channel} at {@code [baseOffset,
+     * baseOffset + byteSize)} - an entry of a self-archive. {@code gguf} is that entry's header as
+     * parsed from its own first byte; {@code path} is the enclosing file, which names the model and
+     * is where a port looks for a sibling file.
+     */
     public static SpeechSynthesisModel<?, ?, ?> loadSpeech(
-            FileChannel fileChannel,
-            GGUF gguf,
-            long baseOffset,
-            Arena arena,
-            Map<String, Path> companions)
-            throws IOException {
-        if (baseOffset < 0 || baseOffset > fileChannel.size())
-            throw new IllegalArgumentException("invalid base offset: " + baseOffset);
-        return loadSpeech(
-                fileChannel, gguf, baseOffset, fileChannel.size() - baseOffset, arena, companions);
-    }
-
-    /** Loads a speech GGUF whose declared tensors fit within {@code byteSize}. */
-    public static SpeechSynthesisModel<?, ?, ?> loadSpeech(
-            FileChannel fileChannel,
+            FileChannel channel,
             GGUF gguf,
             long baseOffset,
             long byteSize,
+            Path path,
             Arena arena,
             Map<String, Path> companions)
             throws IOException {
-        if (baseOffset < 0 || byteSize < 0 || baseOffset > fileChannel.size() - byteSize)
+        if (baseOffset < 0 || byteSize < 0 || baseOffset > channel.size() - byteSize)
             throw new IllegalArgumentException(
                     "invalid embedded model range: " + baseOffset + " + " + byteSize);
         rejectSplit(gguf, "embedded GGUF");
@@ -247,7 +232,7 @@ public final class Models {
         Map<String, Path> attached = Map.copyOf(companions);
         ModelProvider provider = provider(gguf);
         requireAccepted(provider, gguf, attached.keySet());
-        return provider.loadSpeech(fileChannel, gguf, baseOffset, arena, attached);
+        return provider.loadSpeech(channel, gguf.at(baseOffset), path, arena, attached);
     }
 
     /**
@@ -256,7 +241,7 @@ public final class Models {
      * architecture does not have BEFORE fetching anything for it.
      */
     public static Map<String, String> companionFiles(Path path) throws IOException {
-        return open(path, (fc, gguf) -> companionFiles(gguf));
+        return open(path, Map.of(), null, (provider, fc, gguf) -> provider.companionFiles());
     }
 
     /**
@@ -278,11 +263,17 @@ public final class Models {
     }
 
     private interface Load<T> {
-        T apply(FileChannel fc, GGUF gguf) throws IOException;
+        T apply(ModelProvider provider, FileChannel fc, GGUF gguf) throws IOException;
     }
 
-    /** Opens {@code path}, reads the GGUF header, and hands both to {@code load}. */
-    private static <T> T open(Path path, Load<T> load) throws IOException {
+    /**
+     * Opens {@code path}, reads the GGUF header, selects the provider, checks the attached
+     * companions against what it offers and the tokenizer override against the GGUF's id space,
+     * then hands everything to {@code load}.
+     */
+    private static <T> T open(
+            Path path, Map<String, Path> companions, Tokenizer tokenizer, Load<T> load)
+            throws IOException {
         if (!Files.exists(path)) {
             throw new NoSuchFileException(path.toString(), null, "model file not found");
         }
@@ -305,7 +296,10 @@ public final class Models {
                         e);
             }
             rejectSplit(gguf, path.getFileName().toString());
-            return load.apply(fc, gguf);
+            ModelProvider provider = provider(gguf);
+            requireAccepted(provider, gguf, companions.keySet());
+            if (tokenizer != null) requireSameIdSpace(gguf, tokenizer);
+            return load.apply(provider, fc, gguf);
         }
     }
 
@@ -354,7 +348,7 @@ public final class Models {
         ModelProvider best = null;
         ModelProvider contender = null; // an equal-priority rival of best, for the warning
         for (ModelProvider p : providers) {
-            if (!p.supports(arch)) continue;
+            if (!p.architectures().contains(arch)) continue;
             if (best == null) {
                 best = p;
             } else if (p.priority() > best.priority()) {

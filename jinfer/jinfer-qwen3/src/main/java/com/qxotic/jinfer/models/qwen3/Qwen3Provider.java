@@ -29,19 +29,15 @@ import java.util.Set;
 public final class Qwen3Provider implements ModelProvider {
 
     @Override
-    public boolean supports(String architecture) {
-        return "qwen3".equals(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("qwen3");
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer) {

@@ -17,19 +17,15 @@ import java.util.Set;
 /** Service-provider entry for BailingMoe3 GGUF models. */
 public final class BailingMoe3Provider implements ModelProvider {
     @Override
-    public boolean supports(String architecture) {
-        return "bailingmoe3".equals(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("bailingmoe3");
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel channel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

@@ -102,10 +102,10 @@ final class Lfm2ConfigurationTest {
     @Test
     void providerClaimsOnlyArchitecturesTheLoaderUnderstands() {
         Lfm2Provider provider = new Lfm2Provider();
-        assertTrue(provider.supports("lfm2"));
-        assertTrue(provider.supports("lfm2moe"));
-        assertFalse(provider.supports("lfm"));
-        assertFalse(provider.supports("lfm3"));
+        assertTrue(provider.architectures().contains("lfm2"));
+        assertTrue(provider.architectures().contains("lfm2moe"));
+        assertFalse(provider.architectures().contains("lfm"));
+        assertFalse(provider.architectures().contains("lfm3"));
     }
 
     @Test

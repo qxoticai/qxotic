@@ -18,19 +18,15 @@ import java.util.Set;
 public final class NemotronHProvider implements ModelProvider {
 
     @Override
-    public boolean supports(String architecture) {
-        return architectures().contains(architecture);
-    }
-
-    @Override
     public Set<String> architectures() {
         return Set.of("nemotron_h", "nemotron_h_moe");
     }
 
     @Override
-    public LoadedModel<?> load(
+    public LoadedModel<?> loadLanguage(
             FileChannel fileChannel,
             GGUF gguf,
+            Path path,
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer)

@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 
 class ModelsTest {
@@ -39,23 +40,13 @@ class ModelsTest {
         Set<String> claimed = Set.of(archs);
         return new ModelProvider() {
             @Override
-            public boolean supports(String architecture) {
-                return claimed.contains(architecture);
+            public Set<String> architectures() {
+                return claimed;
             }
 
             @Override
             public int priority() {
                 return priority;
-            }
-
-            @Override
-            public LoadedModel<?> load(
-                    FileChannel fc,
-                    GGUF gguf,
-                    Arena arena,
-                    Map<String, Path> companions,
-                    Tokenizer tokenizer) {
-                throw new UnsupportedOperationException();
             }
         };
     }
@@ -84,18 +75,8 @@ class ModelsTest {
 
     private abstract static class NamedProvider implements ModelProvider {
         @Override
-        public boolean supports(String architecture) {
-            return architecture.equals("llama");
-        }
-
-        @Override
-        public LoadedModel<?> load(
-                FileChannel fc,
-                GGUF gguf,
-                Arena arena,
-                Map<String, Path> companions,
-                Tokenizer tokenizer) {
-            throw new UnsupportedOperationException();
+        public Set<String> architectures() {
+            return Set.of("llama");
         }
     }
 
@@ -209,13 +190,61 @@ class ModelsTest {
     }
 
     @Test
+    void providerDefaultsRefuseEveryKindByArchitectureName() {
+        ModelProvider speechOnly =
+                new ModelProvider() {
+                    @Override
+                    public Set<String> architectures() {
+                        return Set.of("kokoro");
+                    }
+                };
+        GGUF gguf = Builder.newBuilder().putString("general.architecture", "kokoro").build();
+        Path none = Path.of("none");
+
+        for (Executable load :
+                List.<Executable>of(
+                        () -> speechOnly.loadLanguage(null, gguf, none, null, Map.of(), null),
+                        () -> speechOnly.loadEmbedder(null, gguf, none, null, null),
+                        () -> speechOnly.loadReranker(null, gguf, none, null, null),
+                        () -> speechOnly.loadSpeech(null, gguf, none, null, Map.of()))) {
+            UnsupportedOperationException refused =
+                    assertThrows(UnsupportedOperationException.class, load);
+            assertTrue(refused.getMessage().startsWith("'kokoro' is not a"), refused.getMessage());
+        }
+        assertEquals(Map.of(), speechOnly.companionFiles());
+        assertEquals(0, speechOnly.priority());
+    }
+
+    @Test
+    void embeddedRangeMustLieInsideTheChannel(@TempDir Path dir) throws Exception {
+        GGUF gguf = Builder.newBuilder().putString("general.architecture", "x").build();
+        Path file = dir.resolve("archive");
+        Files.write(file, new byte[64]);
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+            for (long[] range : new long[][] {{-1, 8}, {8, -1}, {60, 8}}) {
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Models.loadSpeech(
+                                        channel,
+                                        gguf,
+                                        range[0],
+                                        range[1],
+                                        file,
+                                        Arena.global(),
+                                        Map.of()));
+            }
+        }
+    }
+
+    @Test
     void rejectsEmbeddedSplitGgufs(@TempDir Path dir) throws Exception {
         GGUF split = Builder.newBuilder().putLong("split.count", 2).putLong("split.no", 0).build();
         Path file = Files.createFile(dir.resolve("archive"));
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
             assertThrows(
                     UnsupportedOperationException.class,
-                    () -> Models.loadSpeech(channel, split, 0, 0, Arena.global(), Map.of()));
+                    () -> Models.loadSpeech(channel, split, 0, 0, file, Arena.global(), Map.of()));
         }
     }
 

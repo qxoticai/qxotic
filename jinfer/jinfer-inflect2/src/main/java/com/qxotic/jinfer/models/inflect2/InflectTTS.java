@@ -97,41 +97,14 @@ public final class InflectTTS
 
     /**
      * As {@link #load(Path, Arena)} but reusing an already-parsed {@code gguf} - the arch-dispatch
-     * entry ({@code Models.loadSpeech}). {@code path} is where that GGUF lives, so the lexicon
-     * beside it is still found.
-     */
-    public static InflectTTS load(FileChannel channel, GGUF gguf, Path path, Arena arena)
-            throws IOException {
-        return wrap(Inflect2.load(channel, gguf, arena), path, null);
-    }
-
-    /**
-     * As {@link #load(FileChannel, GGUF, Path, Arena)}, with the GGUF beginning at {@code
-     * baseOffset} in {@code channel}. No adjacent lexicon is inferred because the GGUF has no
-     * standalone path; classpath lexicon and espeak fallback remain available.
-     */
-    public static InflectTTS load(FileChannel channel, GGUF gguf, long baseOffset, Arena arena)
-            throws IOException {
-        return wrap(Inflect2.load(channel, gguf, baseOffset, arena), null, null);
-    }
-
-    /** Loads an embedded GGUF with an explicit pronunciation lexicon. */
-    public static InflectTTS load(
-            FileChannel channel, GGUF gguf, long baseOffset, Arena arena, Path lexicon)
-            throws IOException {
-        if (lexicon == null) throw new IllegalArgumentException("null lexicon");
-        return wrap(Inflect2.load(channel, gguf, baseOffset, arena), null, lexicon);
-    }
-
-    /**
-     * As {@link #load(FileChannel, GGUF, Path, Arena)} with an explicit pronunciation lexicon,
-     * which REPLACES the discovery ladder rather than joining it: naming a file and silently
+     * entry ({@code Models.loadSpeech}). {@code path} is the file holding that GGUF (the model, or
+     * an archive it is embedded in), so the lexicon beside it is still found. A non-null {@code
+     * lexicon} REPLACES the discovery ladder rather than joining it: naming a file and silently
      * falling back to another would be the same lie as ignoring it. Unreadable throws.
      */
     public static InflectTTS load(
             FileChannel channel, GGUF gguf, Path path, Arena arena, Path lexicon)
             throws IOException {
-        if (lexicon == null) throw new IllegalArgumentException("null lexicon");
         return wrap(Inflect2.load(channel, gguf, arena), path, lexicon);
     }
 

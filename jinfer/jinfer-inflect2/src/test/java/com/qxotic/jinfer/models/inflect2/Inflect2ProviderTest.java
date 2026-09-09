@@ -13,8 +13,8 @@ final class Inflect2ProviderTest {
     void claimsOnlyTheArchitectureItCanLoad() {
         Inflect2Provider provider = new Inflect2Provider();
         assertEquals(Set.of("inflect-v2"), provider.architectures());
-        assertFalse(provider.supports("inflect-v3"));
-        assertFalse(provider.supports("inflection"));
+        assertFalse(provider.architectures().contains("inflect-v3"));
+        assertFalse(provider.architectures().contains("inflection"));
     }
 
     /** The one companion: the pronunciation lexicon, attached as {@code lexicon}. */
