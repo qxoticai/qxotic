@@ -11,7 +11,7 @@ JVM Accelerated Math. Fast quantized matrix multiplication for CPUs, from Java o
 every instruction set: SSE3 through AVX-512-VNNI on x86, NEON, DotProd and I8MM on ARM, and Metal
 on Apple GPUs. Linux, Windows and macOS.
 
-On its native paths jam is competitive with llama.cpp's CPU kernels at matched ISA.
+On its native paths jam is competitive with llama.cpp's CPU kernels at matched instruction set.
 
 ## Quick start
 
@@ -60,11 +60,18 @@ dense `F32`, `F16` and `BF16`. Activations and result are always `F32`. The oper
 
 ## Performance
 
-Prefill throughput (`pp512`) of jinfer on the native jam backend and of llama.cpp, at matched ISA:
+Prefill throughput (`pp512`) of jinfer on the native jam backend and of llama.cpp, at matched instruction set:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers-dark.png">
-  <img alt="jinfer (native jam) vs llama.cpp, prefill by ISA tier" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers.png">
+  <img alt="jinfer (native jam) vs llama.cpp, prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers.png">
+</picture>
+
+The same int8 kernels span the whole x86 ladder, from the pre-AVX2 floor up to AVX-512:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa-dark.png">
+  <img alt="jinfer (native jam) prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa.png">
 </picture>
 
 One machine, one model; the numbers, the method and the sweep script are in
@@ -103,7 +110,7 @@ The scalar provider requires no launch flags.
 
 jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or `cfg.max_isa`.
 
-| arch | ISA ladder | Q8_0 dot |
+| arch | instruction sets | Q8_0 dot |
 |---|---|---|
 | x86 | `sse3` → `ssse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |

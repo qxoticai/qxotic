@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate jam's README benchmark plots from the measured pp512 sweep (docs/bench_sweep.sh).
-Data: jinfer (native jam) and llama-bench, matched ISA per tier, Gemma 4 E2B (pure quants from
+Data: jinfer (native jam) and llama-bench, matched instruction set per tier, Gemma 4 E2B (pure quants from
 BF16), 16 threads, Ryzen 9 9950X3D (Zen 5). Run:  python3 docs/bench_plot.py   (writes docs/bench-*.png,
 a light and a dark variant of each, for a <picture> element)."""
 import matplotlib
@@ -111,23 +111,23 @@ for mode, th in THEMES.items():
     legend(fig, th, 0.885)
     save(fig, f"bench-avx512{suffix}.png", th)
 
-    # ---- Plot 2: jinfer (native jam) across ISA tiers ----
+    # ---- Plot 2: jinfer (native jam) across instruction sets ----
     fig, ax = plt.subplots(figsize=(8, 4.6), facecolor=th["surface"])
     style(ax, th)
     x = np.arange(len(quants)); w = 0.19
     ax.set_xlim(-0.6, len(quants) - 0.4); ax.set_ylim(0, 1600)
     ax.set_xticks(x); ax.set_xticklabels(quants, color=th["ink2"], fontsize=9.5)
-    fig.subplots_adjust(top=0.8, bottom=0.1, left=0.1, right=0.98)
+    fig.subplots_adjust(top=0.78, bottom=0.1, left=0.1, right=0.98)
     for i, t in enumerate(tiers):
         rounded_bars(ax, x + (i - 1.5) * w, jam[t], w, th["ramp"][i], 3, 2, fig)
     ax.set_ylabel("prefill, pp512 (tok/s)", color=th["muted"], fontsize=9)
-    titles(fig, th, "jinfer (native jam) prefill by ISA tier")
+    titles(fig, th, "jinfer (native jam) prefill by instruction set")
     handles = [Rectangle((0, 0), 1, 1, color=c) for c in th["ramp"]]
     fig.legend(handles, tiers, frameon=False, ncol=4, loc="upper center", bbox_to_anchor=(0.5, 0.885),
                fontsize=9, labelcolor=th["ink2"], handlelength=1.2, handleheight=0.9, columnspacing=1.6)
     save(fig, f"bench-isa{suffix}.png", th)
 
-    # ---- Plot 3: the whole sweep, one panel per ISA tier ----
+    # ---- Plot 3: the whole sweep, one panel per instruction set ----
     fig, axes = plt.subplots(2, 2, figsize=(10, 7.4), facecolor=th["surface"])
     x = np.arange(len(quants)); w = 0.3
     for ax, t in zip(axes.flat, tiers):
@@ -145,6 +145,6 @@ for mode, th in THEMES.items():
         ax.set_title(t, loc="left", fontsize=10, color=th["ink"], fontweight="semibold", pad=10)
     for ax in axes[:, 0]:
         ax.set_ylabel("pp512 (tok/s)", color=th["muted"], fontsize=9)
-    titles(fig, th, "jinfer (native jam) vs llama.cpp, prefill by ISA tier", y=0.985)
+    titles(fig, th, "jinfer (native jam) vs llama.cpp, prefill by instruction set", y=0.985)
     legend(fig, th, 0.92)
     save(fig, f"bench-tiers{suffix}.png", th)

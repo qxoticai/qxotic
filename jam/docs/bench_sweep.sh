@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pp512 sweep behind docs/bench_plot.py: jinfer (native jam) and llama-bench, matched ISA per tier.
+# pp512 sweep behind docs/bench_plot.py: jinfer (native jam) and llama-bench, matched instruction set per tier.
 # Expects pure quants <MODELS>/gemma-4-E2B-it-{Q4_0,Q8_0,Q4_K,Q5_K,Q6_K}_pure.gguf (llama-quantize --pure
 # from BF16) and llama.cpp built once per tier with GGML_NATIVE=OFF and only that tier's GGML_* flags.
 # JAVA_HOME, when set, selects the JDK. Run from the repository root after `mvn install -DskipTests` and

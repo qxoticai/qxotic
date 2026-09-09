@@ -82,7 +82,7 @@ Quantizations: `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`, plus de
 
 jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or `cfg.max_isa`.
 
-| arch | ISA ladder | Q8_0 dot |
+| arch | instruction sets | Q8_0 dot |
 |---|---|---|
 | x86 | `sse3` → `ssse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
@@ -92,7 +92,7 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 
 ## Performance
 
-On its native paths jam is competitive with llama.cpp's CPU kernels at matched ISA. The same int8 kernels span the whole x86 ladder, pre-AVX2 through AVX-512.
+On its native paths jam is competitive with llama.cpp's CPU kernels at matched instruction set. The same int8 kernels span the whole x86 ladder, pre-AVX2 through AVX-512.
 
 These are one machine / one model. Run `jam_bench` and llama.cpp's `pp512` to measure your hardware.
 

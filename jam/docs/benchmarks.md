@@ -1,13 +1,13 @@
 # jam benchmarks
 
-Prefill throughput (`pp512`) of jinfer on the native jam backend and of llama.cpp, at matched ISA
-per tier. Gemma 4 E2B, 16 threads, Ryzen 9 9950X3D (Zen 5). llama.cpp is the reference: its CPU
+Prefill throughput (`pp512`) of jinfer on the native jam backend and of llama.cpp, at matched
+instruction set per tier. Gemma 4 E2B, 16 threads, Ryzen 9 9950X3D (Zen 5). llama.cpp is the reference: its CPU
 kernels are the baseline jam is measured against, and its block formats are what jam consumes
 unchanged.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers-dark.png">
-  <img alt="jinfer (native jam) vs llama.cpp, prefill by ISA tier" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers.png">
+  <img alt="jinfer (native jam) vs llama.cpp, prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers.png">
 </picture>
 
 | pp512 t/s, jinfer (native jam) / llama.cpp | Q4_0 | Q8_0 | Q4_K | Q5_K | Q6_K |
@@ -28,7 +28,7 @@ The same int8 kernels span the whole x86 ladder, from the pre-AVX2 floor up to A
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa-dark.png">
-  <img alt="jinfer (native jam) prefill across ISA tiers" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa.png">
+  <img alt="jinfer (native jam) prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa.png">
 </picture>
 
 ## Method

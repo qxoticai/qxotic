@@ -5,7 +5,7 @@ building see [BUILDING.md](../BUILDING.md).
 
 ## Backends
 
-The ISA ladder per architecture is in the [README](../README.md#backends); this is how a context
+The instruction sets per architecture is in the [README](../README.md#backends); this is how a context
 routes between its executors.
 
 `JAM_ISA=auto` is the default and picks the best available. On Apple Silicon that includes the
