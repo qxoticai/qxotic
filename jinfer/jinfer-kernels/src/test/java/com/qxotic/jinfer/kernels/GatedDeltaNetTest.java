@@ -2,6 +2,7 @@ package com.qxotic.jinfer.kernels;
 
 import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.jota.memory.MemoryView;
@@ -68,6 +69,73 @@ class GatedDeltaNetTest {
             assertArrayEquals(floats(scalarState), floats(vectorState), 2e-5f);
             assertArrayEquals(floats(scalarSk), floats(vectorSk), 2e-5f);
             assertArrayEquals(floats(scalarDelta), floats(vectorDelta), 2e-5f);
+        }
+    }
+
+    /**
+     * Strong decays: log-gates down to -8 make a chunk's cumulative decay underflow, which is why
+     * chunked formulations of this scan were rejected (see the design note in git history,
+     * bench/DeltaNetParity). The recurrence must stay finite and the vector path must still match
+     * the scalar oracle there.
+     */
+    @Test
+    void strongDecaysStayFiniteAndInAgreement() {
+        assumeTrue(F_SPECIES != null && 128 % F_SPECIES.length() == 0);
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 64, heads = 2, dim = 128;
+            float[] q = values(rows * heads * dim, .013f, .17f);
+            float[] k = values(rows * heads * dim, .017f, -.11f);
+            float[] v = values(rows * heads * dim, .019f, .07f);
+            float[] gate = new float[rows * heads];
+            for (int i = 0; i < gate.length; i++) gate[i] = -8f * (i % 7) / 6f; // 0 .. -8
+            float[] beta = values(rows * heads, .029f, .5f);
+            float[] initialState = values(heads * dim * dim, .003f, .01f);
+
+            var qv = view(arena, q);
+            var kv = view(arena, k);
+            var vv = view(arena, v);
+            var gv = view(arena, gate);
+            var bv = view(arena, beta);
+            var scalarState = view(arena, initialState);
+            var vectorState = view(arena, initialState);
+            var scalarOut = view(arena, new float[q.length]);
+            var vectorOut = view(arena, new float[q.length]);
+            var sk = view(arena, new float[heads * dim]);
+            var delta = view(arena, new float[heads * dim]);
+
+            GatedDeltaNet.scanScalar(
+                    Raw.f32(qv, "q"),
+                    Raw.f32(kv, "k"),
+                    Raw.f32(vv, "v"),
+                    Raw.f32(gv, "gate"),
+                    Raw.f32(bv, "beta"),
+                    Raw.f32(scalarState, "state"),
+                    Raw.f32(scalarOut, "output"),
+                    Raw.f32(sk, "sk"),
+                    Raw.f32(delta, "delta"),
+                    rows,
+                    heads,
+                    dim);
+            VectorGatedDeltaNet.scan(
+                    Raw.f32(qv, "q"),
+                    Raw.f32(kv, "k"),
+                    Raw.f32(vv, "v"),
+                    Raw.f32(gv, "gate"),
+                    Raw.f32(bv, "beta"),
+                    Raw.f32(vectorState, "state"),
+                    Raw.f32(vectorOut, "output"),
+                    Raw.f32(sk, "sk"),
+                    Raw.f32(delta, "delta"),
+                    rows,
+                    heads,
+                    dim);
+
+            float[] out = floats(scalarOut);
+            float[] state = floats(scalarState);
+            for (float value : out) assertTrue(Float.isFinite(value));
+            for (float value : state) assertTrue(Float.isFinite(value));
+            assertArrayEquals(out, floats(vectorOut), 2e-5f);
+            assertArrayEquals(state, floats(vectorState), 2e-5f);
         }
     }
 
