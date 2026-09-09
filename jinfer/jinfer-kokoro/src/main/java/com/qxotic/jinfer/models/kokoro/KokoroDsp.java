@@ -66,20 +66,30 @@ final class KokoroDsp {
             }
         }
 
+        // The noise is one seeded stream, nine draws per sample in sample order: it is drawn
+        // first, serially, exactly as the loop consumed it, and the rest of the source - which is
+        // all the arithmetic - then runs in parallel over the samples.
+        float[] noise =
+                KokoroWorkspace.takeFloats(scratch, Math.multiplyExact(highLength, HARMONICS));
+        for (int i = 0; i < noise.length; i++) noise[i] = (float) random.nextGaussian();
+
         float[] source = KokoroWorkspace.takeFloats(scratch, highLength);
-        for (int t = 0; t < highLength; t++) {
-            float voiced = f0[t / UPSAMPLE] > VOICED_THRESHOLD ? 1 : 0;
-            float noiseAmplitude = voiced != 0 ? NOISE_STDDEV : SINE_AMPLITUDE / 3;
-            float mixed = linearBias;
-            float sourceIndex = (t + 0.5f) / UPSAMPLE - 0.5f;
-            for (int harmonic = 0; harmonic < HARMONICS; harmonic++) {
-                float phase = interpolate(phaseLow[harmonic], sourceIndex) * UPSAMPLE;
-                float sine = (float) Math.sin(phase) * SINE_AMPLITUDE;
-                float wave = sine * voiced + noiseAmplitude * (float) random.nextGaussian();
-                mixed += wave * linearWeight[harmonic];
-            }
-            source[t] = (float) Math.tanh(mixed);
-        }
+        Parallel.forLoop(
+                highLength,
+                t -> {
+                    float voiced = f0[t / UPSAMPLE] > VOICED_THRESHOLD ? 1 : 0;
+                    float noiseAmplitude = voiced != 0 ? NOISE_STDDEV : SINE_AMPLITUDE / 3;
+                    float mixed = linearBias;
+                    float sourceIndex = (t + 0.5f) / UPSAMPLE - 0.5f;
+                    for (int harmonic = 0; harmonic < HARMONICS; harmonic++) {
+                        float phase = interpolate(phaseLow[harmonic], sourceIndex) * UPSAMPLE;
+                        float sine = (float) Math.sin(phase) * SINE_AMPLITUDE;
+                        float wave =
+                                sine * voiced + noiseAmplitude * noise[t * HARMONICS + harmonic];
+                        mixed += wave * linearWeight[harmonic];
+                    }
+                    source[t] = (float) Math.tanh(mixed);
+                });
         return stft(source, scratch);
     }
 
