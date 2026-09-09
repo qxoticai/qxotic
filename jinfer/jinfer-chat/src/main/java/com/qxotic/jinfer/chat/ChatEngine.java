@@ -943,9 +943,11 @@ public final class ChatEngine implements AutoCloseable {
             }
         }
         if (hasMedia(conversation)) {
+            // the remedy rides the refusal: a bare load of a capable family is the common case
             throw new UnsupportedOperationException(
                     "image/audio/video input is not supported by this model"
-                            + (punted != null ? ": " + punted.getMessage() : ""));
+                            + (punted != null ? ": " + punted.getMessage() : "")
+                            + " - attach the model's mmproj as the 'media' companion");
         }
         IntSequence ids =
                 jinja.render(

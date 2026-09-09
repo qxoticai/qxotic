@@ -179,9 +179,7 @@ public final class Qwen35ChatTemplate implements ChatTemplate {
         MediaProjector<Media.Image> projector =
                 media == null ? null : media.projector(Media.Image.class).orElse(null);
         if (projector == null)
-            throw new UnsupportedConversation(
-                    "image input is not supported by this model (attach --with"
-                            + " media=<mmproj.gguf>)");
+            throw new UnsupportedConversation("image input is not supported by this model");
         out.cachedMedia(
                 image,
                 content.contentKey(),
