@@ -192,10 +192,13 @@ public interface JAM {
     }
 
     /**
-     * {@code R = W @ Aᵀ}. Each operand is a native {@link MemorySegment} + BYTE offset; {@code
-     * ldw/lda/ldr} are ELEMENT row strides; {@code wt/at/rt} the operand dtypes ({@code at}, {@code
-     * rt} are {@code F32} today). Returns a jam_status ({@link #OK} / {@link #EINVAL} / {@link
-     * #EUNSUPPORTED} / {@link #EBUSY}).
+     * {@code R = W @ Aᵀ}, laid out token-major (the ggml/llama.cpp convention): {@code R[j*ldr + i]
+     * = dot(W[i,:], A[j,:])} - row {@code j} of R holds token j's {@code m} contiguous features, so
+     * R is an {@code [n][m]} matrix row-major (equivalently, {@code W @ Aᵀ} column-major). Each
+     * operand is a native {@link MemorySegment} + BYTE offset; {@code ldw/lda/ldr} are ELEMENT row
+     * strides; {@code wt/at/rt} the operand dtypes ({@code at}, {@code rt} are {@code F32} today).
+     * Returns a jam_status ({@link #OK} / {@link #EINVAL} / {@link #EUNSUPPORTED} / {@link
+     * #EBUSY}).
      */
     int mm(
             MemorySegment w,
@@ -214,7 +217,10 @@ public interface JAM {
             int n,
             int k);
 
-    /** Contiguous shortcut - offsets 0, strides {@code k/k/m}, F32 activations + result. */
+    /**
+     * Contiguous shortcut - offsets 0, strides {@code k/k/m}, F32 activations + result. R is
+     * token-major: {@code R[j*m + i]} (see the full {@code mm}).
+     */
     default int mm(MemorySegment w, MemorySegment a, MemorySegment r, int wt, int m, int n, int k) {
         return mm(w, 0, wt, k, a, 0, F32, k, r, 0, F32, m, m, n, k);
     }
