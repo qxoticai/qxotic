@@ -251,6 +251,15 @@ public record ModelRef(
         List<String> parts = segments(rest);
         require(parts.size() >= 2, shape(ref));
 
+        String repository = parts.get(1);
+        int revisionAt = repository.indexOf('@');
+        int repositoryColon = repository.indexOf(':');
+        if (revisionAt >= 0) {
+            int revisionEnd = repositoryColon > revisionAt ? repositoryColon : repository.length();
+            require(revisionEnd > revisionAt + 1, "empty revision");
+            require(repositoryColon < 0 || revisionAt < repositoryColon, shape(ref));
+        }
+
         // the quant is a colon in the FINAL segment
         String last = parts.get(parts.size() - 1);
         String quant = null;

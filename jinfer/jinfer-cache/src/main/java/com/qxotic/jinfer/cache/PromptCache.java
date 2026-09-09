@@ -410,10 +410,13 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         // follow-up diverging after turn k still reuses turns 0..k-1
         List<List<Batch>> groups = new ArrayList<>(prompt.size());
         for (Batch b : prompt) groups.add(List.of(b));
-        // A whole final batch ends beyond the one-short resume cap and can never serve an identical
-        // prompt. Fine codecs can split it without duplicating checkpoint residue.
+        // A whole final prefill ends beyond the one-short resume cap and can never serve an
+        // identical prompt. Residue-free codecs can split it at no state-byte cost.
         Batch last = prompt.get(prompt.size() - 1);
-        if (tailPerToken && last.input() instanceof Batch.Input.Tokens t && t.ids().length > 1) {
+        if (tailPerToken
+                && last.outputs() == Batch.Outputs.LAST
+                && last.input() instanceof Batch.Input.Tokens t
+                && t.ids().length > 1) {
             int[] ids = t.ids();
             groups.set(
                     groups.size() - 1, List.of(Batch.prefill(Arrays.copyOf(ids, ids.length - 1))));

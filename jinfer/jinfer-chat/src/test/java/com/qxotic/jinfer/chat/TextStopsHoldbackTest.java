@@ -94,5 +94,6 @@ class TextStopsHoldbackTest {
     void emptyStopsPassEverythingThrough() {
         assertEquals("abc", streamed(List.of(), "a", "b", "c"));
         assertFalse(TextStops.apply("abc", List.of()).stopped());
+        assertEquals(new TextStops.Result("abc", false), TextStops.apply("abc", null));
     }
 }

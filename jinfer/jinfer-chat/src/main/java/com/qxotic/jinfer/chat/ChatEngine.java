@@ -1002,8 +1002,9 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * {@code tier} says WHICH source served the prompt, which {@code restoredTokens} alone cannot:
-     * a session hit and a block restore can reuse the same count at very different cost (one
-     * restores nothing at all). It is the difference worth tuning the hot-session count on.
+     * a session hit and a block restore can reuse the same count at very different cost (the
+     * session's state is already resident). It is the difference worth tuning the hot-session count
+     * on.
      */
     public record Outcome(
             Generator.GenerationResult result,
@@ -1055,9 +1056,10 @@ public final class ChatEngine implements AutoCloseable {
      * nothing to report, so its {@code reply} AND {@code result} are null - there is no second
      * boolean to disagree with. {@code stopped} means a stop sequence cut the content lane: the
      * reply still carries the full text (with its verbatim token ids intact), and the caller
-     * truncates its own message with {@link TextStops#apply}. {@code promptTokens} and {@code
-     * restoredTokens} count the fully rendered model input, including template scaffolding, special
-     * tokens, and implicit system text.
+     * truncates its own message with {@link TextStops#apply}. {@code promptTokens} counts prepared
+     * model-input positions, including projected media rows and any template scaffolding, special
+     * tokens, or implicit system text; {@code restoredTokens} is the prefix of those positions
+     * restored from cache rather than recomputed.
      */
     public record Completion(
             Message reply,

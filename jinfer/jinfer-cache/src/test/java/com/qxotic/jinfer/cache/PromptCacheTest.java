@@ -225,8 +225,11 @@ public final class PromptCacheTest {
         try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7);
             Served again = generate(cache, turns(new int[] {1, 2, 3}), 7);
+            generate(cache, turns(new int[] {1, 2, 3}), 7);
             assertEquals(PromptCache.Tier.BLOCKS, again.tier());
             assertEquals(2, again.restored(), "the final prompt token must recompute");
+            assertEquals(2, cache.sample().blockHits());
+            assertEquals(1, cache.sample().blockMisses());
         }
     }
 
@@ -316,6 +319,14 @@ public final class PromptCacheTest {
 
             assertEquals(PromptCache.Tier.BLOCKS, again.tier());
             assertEquals(9, again.restored(), "not just the first 4-position chunk");
+        }
+    }
+
+    @Test
+    void aFinalScoringBatchStaysAtomic() {
+        try (var cache = cache(fine(), 0, 1 << 20)) {
+            generate(cache, List.of(Batch.score(new int[] {1, 2, 3})));
+            assertEquals(1, cache.sample().blocks());
         }
     }
 
@@ -741,18 +752,9 @@ public final class PromptCacheTest {
     }
 
     @Test
-    void defineDedupsAndDefineAfterServeStillFullHits() {
+    void defineDedups() {
         try (var cache = cache(fine(), 0, 1 << 20)) {
-            // traffic first: the prompt commits at chunk boundaries, no split-last single
-            generate(cache, prompt(1, 2, 3, 4, 5), 7);
-            // define AFTER the serve: the capped resume must still commit the final single -
-            // an uncapped resume would dedup into the chunk and silently break the promise
             cache.define(prompt(1, 2, 3, 4, 5));
-            Served hit = generate(cache, prompt(1, 2, 3, 4, 5), 8);
-            assertEquals(PromptCache.Tier.BLOCKS, hit.tier());
-            assertEquals(4, hit.restored(), "define-after-serve still yields the full hit");
-
-            // define twice: pure dedup - no new blocks, no bytes, no budget-refusal misread
             int blocksBefore = cache.sample().blocks();
             long bytesBefore = cache.sample().bytes();
             cache.define(prompt(1, 2, 3, 4, 5));

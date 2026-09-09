@@ -3,7 +3,8 @@ package com.qxotic.jinfer.llm;
 /** Fully resolved sampling settings. */
 public record Sampling(float temperature, float topP, int topK, float minP, Long seed) {
     public Sampling {
-        if (!(temperature >= 0)) throw new IllegalArgumentException("temperature " + temperature);
+        if (!Float.isFinite(temperature) || temperature < 0)
+            throw new IllegalArgumentException("temperature " + temperature);
         if (!(topP > 0 && topP <= 1)) throw new IllegalArgumentException("topP " + topP);
         if (topK < 0) throw new IllegalArgumentException("topK " + topK);
         if (!(minP >= 0 && minP <= 1)) throw new IllegalArgumentException("minP " + minP);

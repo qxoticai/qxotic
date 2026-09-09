@@ -64,6 +64,13 @@ final class SamplingTest {
     }
 
     @Test
+    void positiveInfiniteTemperatureIsRejected() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new Sampling(Float.POSITIVE_INFINITY, 0.95f, 40, 0.05f, null));
+    }
+
+    @Test
     void negativeTopKAndOutOfRangeMinPAreRejected() {
         new Sampling(0.7f, 0.95f, 0, 0f, null); // 0 disables both, legitimately
         assertThrows(

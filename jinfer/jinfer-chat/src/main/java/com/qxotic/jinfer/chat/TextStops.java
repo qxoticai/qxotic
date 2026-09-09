@@ -31,8 +31,12 @@ public final class TextStops {
         return List.copyOf(stops);
     }
 
-    /** The text truncated at the earliest stop-string occurrence, flagged when one matched. */
+    /**
+     * The text truncated at the earliest stop-string occurrence, flagged when one matched. A null
+     * stop list means no stops.
+     */
     public static Result apply(String text, List<String> stops) {
+        if (stops == null) return new Result(text, false);
         int cut = -1;
         for (String stop : stops) {
             int index = text.indexOf(stop);

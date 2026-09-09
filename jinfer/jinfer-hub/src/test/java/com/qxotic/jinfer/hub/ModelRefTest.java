@@ -171,6 +171,9 @@ class ModelRefTest {
                     assertThrows(IllegalArgumentException.class, () -> ModelRef.parse(bad), bad);
             assertTrue(failure.getMessage().contains("hf.co/owner/repo"), bad);
         }
+        var emptyRevision =
+                assertThrows(IllegalArgumentException.class, () -> ModelRef.parse("owner/repo:@"));
+        assertEquals("empty revision", emptyRevision.getMessage());
     }
 
     // ---- the cache jail ----
