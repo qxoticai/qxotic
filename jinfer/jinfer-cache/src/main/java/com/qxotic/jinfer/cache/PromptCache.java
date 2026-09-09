@@ -306,7 +306,11 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         }
     }
 
-    /** Which source served a prompt; the difference worth tuning retained sessions on. */
+    /**
+     * Which source served a prompt, not an ordering of hit strength. {@link Serving#restored()} is
+     * the cache-hit signal and the number of positions reused. {@link #SESSION} means the prompt
+     * strictly extends a retained conversation; an identical repeat normally uses {@link #BLOCKS}.
+     */
     public enum Tier {
         /** A retained conversation the prompt strictly extends: zero restore, only the delta. */
         SESSION,
