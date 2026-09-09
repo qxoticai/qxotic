@@ -4,7 +4,7 @@
  * streaming()} for the twin), {@link com.qxotic.jinfer.langchain4j.JinferEmbeddingModel} covers
  * embeddings, and {@link com.qxotic.jinfer.langchain4j.JinferScoringModel} reranks retrieved
  * segments (a {@code ScoringModel}, so langchain4j's {@code ReRankingContentAggregator} takes it
- * as-is).
+ * as-is). {@link com.qxotic.jinfer.langchain4j.JinferSpeechModel} supplies speech.
  *
  * <p>Every builder takes the model as a MODEL REF - {@code .model("owner/model-GGUF:Q4_K_M")} -
  * resolved through the ambient {@code ModelStore} and downloaded into the shared model cache when
@@ -12,8 +12,10 @@
  * .modelPath(Path)} is the explicit local form and touches neither the cache nor the network; a URL
  * is not a model ref: download it first, then pass the path.
  *
- * <p>One model instance is ONE serial inference pipeline: concurrent calls queue fairly on it. For
- * parallel pipelines, load the weights once into YOUR arena and fork - every builder has a {@code
+ * <p>Each chat, embedding, or scoring model instance is ONE serial inference pipeline: concurrent
+ * calls queue fairly on it. Speech requests instead use independent synthesis states and may run
+ * concurrently; closing the speech model waits for them to finish. For parallel pipelines of the
+ * serial adapters, load the weights once into YOUR arena and fork - every builder has a {@code
  * model(loaded)} seam and every model a {@code fork()}:
  *
  * <pre>{@code

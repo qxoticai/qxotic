@@ -109,8 +109,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
      * the subscription cancels the synthesis - the sink's false return is the port's cancel signal,
      * so no further clip is computed.
      *
-     * <p>The pipeline is held for the whole emission: a state is one serial pipeline, and a second
-     * request must wait rather than interleave into the same scratch.
+     * <p>Each subscription owns an independent synthesis state and may run concurrently with other
+     * requests. Clips within one subscription remain ordered on that state's serial pipeline.
      */
     @Override
     public Flux<TextToSpeechResponse> stream(TextToSpeechPrompt prompt) {
@@ -323,8 +323,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         /**
          * Longest accepted request in UTF-16 code units ({@link String#length()}), default {@value
          * #DEFAULT_MAX_INPUT_CHARS}. Bounds chunk count, and so compute AND output, since the port
-         * caps each chunk - which is what stops one adversarial request from holding this
-         * instance's only pipeline indefinitely. Rejected before any synthesis begins.
+         * caps each chunk - which is what stops one adversarial request from consuming compute
+         * indefinitely. Rejected before any synthesis begins.
          */
         public Builder maxInputChars(int maxInputChars) {
             if (maxInputChars < 1)

@@ -5,7 +5,8 @@
  * tools, structured output and multimodal prompts; configure generation through {@link
  * com.qxotic.jinfer.spring.ai.JinferChatOptions}. {@link
  * com.qxotic.jinfer.spring.ai.JinferEmbeddingModel} supplies embeddings, and {@link
- * com.qxotic.jinfer.spring.ai.JinferDocumentPostProcessor} reranks retrieved documents.
+ * com.qxotic.jinfer.spring.ai.JinferDocumentPostProcessor} reranks retrieved documents. {@link
+ * com.qxotic.jinfer.spring.ai.JinferSpeechModel} supplies blocking and streaming speech.
  *
  * <p>THE GRAMMAR GUARANTEES THE FORM; THE PROMPT SETS THE PLAN. A mask says "not that token" at
  * each step - it never says "here is the target". The model decides WHAT to write from the prompt
@@ -47,9 +48,11 @@
  * arithmetic calculations" and called nothing; given a described {@code add(a, b)} it called the
  * tool on the first try.
  *
- * <p>Builders accept a local path, a model reference, or an already loaded model. One adapter is
- * one serial inference pipeline. Chat caching stays intentionally small: {@code retainSessions}
- * keeps recent conversations live, {@code promptCache} mounts one persisted catalog, and {@code
- * withCachedPrompt} defines a reusable prefix.
+ * <p>Builders accept a local path, a model reference, or an already loaded model. Each chat,
+ * embedding, or reranking adapter is one serial inference pipeline. Speech requests use independent
+ * synthesis states and may run concurrently; closing the speech model waits for them to finish.
+ * Chat caching stays intentionally small: {@code retainSessions} keeps recent conversations live,
+ * {@code promptCache} mounts one persisted catalog, and {@code withCachedPrompt} defines a reusable
+ * prefix.
  */
 package com.qxotic.jinfer.spring.ai;
