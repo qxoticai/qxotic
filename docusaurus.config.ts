@@ -6,7 +6,6 @@ import remarkSnippets from "./docs/_theme/remark/snippets";
 const config: Config = {
   title: "Qxotic",
   tagline: "Java libraries for LLM inference and model formats",
-  favicon: "docs/img/favicon.svg",
 
   future: {
     v4: true,
@@ -59,10 +58,6 @@ const config: Config = {
     },
     navbar: {
       title: "Qxotic",
-      logo: {
-        alt: "Qxotic",
-        src: "docs/img/logo.svg",
-      },
       items: [
         {
           to: "/safetensors",
@@ -89,7 +84,7 @@ const config: Config = {
           position: "right",
         },
         {
-          href: "https://javadoc.io/doc/com.qxotic",
+          href: "https://javadoc.io/doc/com.qxotic/jinfer-core",
           label: "Javadoc",
           position: "right",
         },
