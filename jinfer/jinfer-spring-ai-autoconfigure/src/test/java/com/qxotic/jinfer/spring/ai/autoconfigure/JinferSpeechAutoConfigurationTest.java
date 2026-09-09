@@ -112,16 +112,15 @@ class JinferSpeechAutoConfigurationTest {
                         context -> {
                             JinferSpeechProperties p =
                                     context.getBean(JinferSpeechProperties.class);
-                            // 0 is "unset", not a value: the autoconfiguration must not pass these
-                            // through and override the port's own pace and input bound
-                            assertThat(p.speed()).isZero();
+                            // Unset options must not override the port's own pace and input bound.
+                            assertThat(p.speed()).isNull();
                             assertThat(p.maxInputChars()).isZero();
                         });
     }
 
     @Test
     void invalidSpeedFailsWithThePropertyNameBeforeModelLoading() {
-        for (String speed : new String[] {"-1", "NaN", "Infinity"}) {
+        for (String speed : new String[] {"0", "-1", "NaN", "Infinity"}) {
             runner.withPropertyValues(
                             "spring.ai.jinfer.speech.model=/missing.gguf",
                             "spring.ai.jinfer.speech.speed=" + speed)

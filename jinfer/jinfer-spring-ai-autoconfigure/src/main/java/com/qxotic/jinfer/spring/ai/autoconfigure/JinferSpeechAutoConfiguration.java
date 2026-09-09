@@ -32,12 +32,10 @@ public class JinferSpeechAutoConfiguration {
                     "spring.ai.jinfer.speech.model is required: a speech GGUF as a local path or"
                             + " model ref (remixerdec/Inflect-Nano-v2-GGUF:Q8_0)");
         }
-        double speed = properties.speed();
-        if (speed != 0 && (!(speed > 0) || !Double.isFinite(speed))) {
+        Double speed = properties.speed();
+        if (speed != null && (!(speed > 0) || Double.isInfinite(speed))) {
             throw new IllegalStateException(
-                    "spring.ai.jinfer.speech.speed must be 0 (use the model default) or a positive"
-                            + " finite number, got "
-                            + speed);
+                    "spring.ai.jinfer.speech.speed must be a positive finite number, got " + speed);
         }
         int maxInputChars = properties.maxInputChars();
         if (maxInputChars < 0) {
@@ -81,9 +79,7 @@ public class JinferSpeechAutoConfiguration {
                                 }
                             });
         }
-        // 0 means "leave the model's own default alone" - passing it through would override the
-        // port's choice with a meaningless value
-        if (speed > 0) builder.speed(speed);
+        if (speed != null) builder.speed(speed);
         if (maxInputChars > 0) builder.maxInputChars(maxInputChars);
         return builder.build();
     }

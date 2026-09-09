@@ -100,7 +100,7 @@ final class JinferSpeechModelTest {
                     assertThrows(
                             IllegalArgumentException.class,
                             () -> JinferSpeechModel.builder().speed(speed));
-            assertTrue(e.getMessage().contains(String.valueOf(speed)), e.getMessage());
+            assertEquals("speed must be > 0: " + speed, e.getMessage());
         }
     }
 
