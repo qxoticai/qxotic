@@ -107,21 +107,34 @@ final class KokoroLayers {
             int outTime = (time + 2 * padding - kernel) / stride + 1;
             require(outTime >= 0, "convolution output length is negative");
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, outChannels, outTime);
-            for (int oc = 0; oc < outChannels; oc++) {
-                float b = bias == null ? 0f : Views.getFloat(bias, oc, "conv1d bias");
-                for (int t = 0; t < outTime; t++) {
-                    float sum = b;
-                    for (int ic = 0; ic < inChannels; ic++) {
-                        int tap = (oc * inChannels + ic) * kernel;
-                        for (int k = 0; k < kernel; k++) {
-                            int source = t * stride + k - padding;
-                            if (source >= 0 && source < time)
-                                sum += taps[tap + k] * get(input, (long) ic * time + source);
+            // The generator's noise convolutions run this at the full sample rate, one channel in
+            // and hundreds out: output channels are independent, so each is one job.
+            MemorySegment in = input.memory().base(), out = output.memory().base();
+            long inBase = input.byteOffset(), outBase = output.byteOffset();
+            Parallel.forLoop(
+                    outChannels,
+                    oc -> {
+                        float b = bias == null ? 0f : Views.getFloat(bias, oc, "conv1d bias");
+                        for (int t = 0; t < outTime; t++) {
+                            float sum = b;
+                            for (int ic = 0; ic < inChannels; ic++) {
+                                int tap = (oc * inChannels + ic) * kernel;
+                                long row = (long) ic * time;
+                                for (int k = 0; k < kernel; k++) {
+                                    int source = t * stride + k - padding;
+                                    if (source >= 0 && source < time)
+                                        sum +=
+                                                taps[tap + k]
+                                                        * readFloat(
+                                                                in,
+                                                                inBase
+                                                                        + (row + source)
+                                                                                * Float.BYTES);
+                                }
+                            }
+                            writeFloat(out, outBase + ((long) oc * outTime + t) * Float.BYTES, sum);
                         }
-                    }
-                    set(output, (long) oc * outTime + t, sum);
-                }
-            }
+                    });
             return output;
         }
     }
@@ -282,24 +295,34 @@ final class KokoroLayers {
             require(style.outputSize == 2 * channels, "AdaIN style projection is too narrow");
             MemoryView<MemorySegment> affine = style.forward(styleVector, 1, allocator);
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, channels, time);
-            for (int c = 0; c < channels; c++) {
-                int row = c * time;
-                double mean = 0;
-                for (int t = 0; t < time; t++) mean += get(input, row + t);
-                mean /= time;
-                double variance = 0;
-                for (int t = 0; t < time; t++) {
-                    double centered = get(input, row + t) - mean;
-                    variance += centered * centered;
-                }
-                float scale = (float) (1.0 / Math.sqrt(variance / time + ADAPTIVE_NORM_EPS));
-                for (int t = 0; t < time; t++)
-                    set(
-                            output,
-                            row + t,
-                            (get(input, row + t) - (float) mean) * scale * (1f + get(affine, c))
-                                    + get(affine, channels + c));
-            }
+            MemorySegment in = input.memory().base(), out = output.memory().base();
+            long inBase = input.byteOffset(), outBase = output.byteOffset();
+            Parallel.forLoop(
+                    channels,
+                    c -> {
+                        long row = (long) c * time * Float.BYTES;
+                        double mean = 0;
+                        for (int t = 0; t < time; t++)
+                            mean += readFloat(in, inBase + row + (long) t * Float.BYTES);
+                        mean /= time;
+                        double variance = 0;
+                        for (int t = 0; t < time; t++) {
+                            double centered =
+                                    readFloat(in, inBase + row + (long) t * Float.BYTES) - mean;
+                            variance += centered * centered;
+                        }
+                        float scale =
+                                (float) (1.0 / Math.sqrt(variance / time + ADAPTIVE_NORM_EPS));
+                        float gain = 1f + get(affine, c), shift = get(affine, channels + c);
+                        for (int t = 0; t < time; t++) {
+                            long at = row + (long) t * Float.BYTES;
+                            writeFloat(
+                                    out,
+                                    outBase + at,
+                                    (readFloat(in, inBase + at) - (float) mean) * scale * gain
+                                            + shift);
+                        }
+                    });
             return output;
         }
     }
@@ -312,16 +335,21 @@ final class KokoroLayers {
                 MemoryAllocator<MemorySegment> allocator) {
             checkChannelMajor(input, channels, time, "Snake input");
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, channels, time);
-            for (int c = 0; c < channels; c++) {
-                float a = Views.getFloat(alpha, c, "Snake alpha");
-                require(a != 0f, "Snake alpha must be non-zero");
-                for (int t = 0; t < time; t++) {
-                    int i = c * time + t;
-                    float value = get(input, i);
-                    double sine = Math.sin(a * value);
-                    set(output, i, value + (float) (sine * sine / a));
-                }
-            }
+            MemorySegment in = input.memory().base(), out = output.memory().base();
+            long inBase = input.byteOffset(), outBase = output.byteOffset();
+            Parallel.forLoop(
+                    channels,
+                    c -> {
+                        float a = Views.getFloat(alpha, c, "Snake alpha");
+                        require(a != 0f, "Snake alpha must be non-zero");
+                        long row = (long) c * time;
+                        for (int t = 0; t < time; t++) {
+                            long at = (row + t) * Float.BYTES;
+                            float value = readFloat(in, inBase + at);
+                            double sine = Math.sin(a * value);
+                            writeFloat(out, outBase + at, value + (float) (sine * sine / a));
+                        }
+                    });
             return output;
         }
     }
