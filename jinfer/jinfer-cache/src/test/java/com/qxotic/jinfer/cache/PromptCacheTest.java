@@ -220,12 +220,13 @@ public final class PromptCacheTest {
     }
 
     @Test
-    void anIdenticalPromptIsNeverAHotMatch() {
+    void anIdenticalPromptResumesFromBlocksNotTheHotSession() {
         // identical = not a STRICT extension: the logits would be stale
         try (var cache = cache(fine(), 2, 1 << 20)) {
             generate(cache, turns(new int[] {1, 2, 3}), 7);
             Served again = generate(cache, turns(new int[] {1, 2, 3}), 7);
-            assertNotEquals(PromptCache.Tier.SESSION, again.tier());
+            assertEquals(PromptCache.Tier.BLOCKS, again.tier());
+            assertEquals(2, again.restored(), "the final prompt token must recompute");
         }
     }
 
@@ -301,6 +302,20 @@ public final class PromptCacheTest {
             Served turn2 = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}));
             assertEquals(PromptCache.Tier.BLOCKS, turn2.tier());
             assertEquals(5, turn2.restored(), "prompt chunk + per-token reply all resume");
+        }
+    }
+
+    @Test
+    void anIdenticalSingleBatchRestoresPastAnIngestionChunkBoundary() {
+        FakeModel model = fine();
+        model.stateBatch = 4;
+        try (var cache = cache(model, 0, 1 << 20)) {
+            generate(cache, prompt(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+
+            Served again = generate(cache, prompt(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+
+            assertEquals(PromptCache.Tier.BLOCKS, again.tier());
+            assertEquals(9, again.restored(), "not just the first 4-position chunk");
         }
     }
 

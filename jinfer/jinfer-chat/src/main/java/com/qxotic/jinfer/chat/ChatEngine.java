@@ -1055,7 +1055,9 @@ public final class ChatEngine implements AutoCloseable {
      * nothing to report, so its {@code reply} AND {@code result} are null - there is no second
      * boolean to disagree with. {@code stopped} means a stop sequence cut the content lane: the
      * reply still carries the full text (with its verbatim token ids intact), and the caller
-     * truncates its own message with {@link TextStops#apply}.
+     * truncates its own message with {@link TextStops#apply}. {@code promptTokens} and {@code
+     * restoredTokens} count the fully rendered model input, including template scaffolding, special
+     * tokens, and implicit system text.
      */
     public record Completion(
             Message reply,
