@@ -45,7 +45,7 @@ final class MisakiTest {
     @Test
     void syllabicConsonantsGetTheSmallSchwa() {
         assertEquals("bˈʌtn", US.apply("bˈʌʔn̩")); // misaki's own ʔn̩ rule, then ʔ -> t
-        assertEquals("lˈɪɾᵊl".replace("ɾ", "T"), US.apply("lˈɪɾə^l"));
+        assertEquals("lˈɪTᵊl", US.apply("lˈɪɾə^l"));
         assertEquals("ᵊm", US.apply("m̩"));
     }
 
@@ -76,7 +76,7 @@ final class MisakiTest {
                         + " oil boy toy choice voice noise about again around banana sofa"
                         + " measure vision usual pleasure garage yes yellow beyond onion million"
                         + " GraalVM thirty six percent nineteen ninety five naïve café Zürich";
-        String ipa = US.apply(espeak.ipa(corpus, "en-us", Misaki.TIE));
+        String ipa = US.apply(espeak.tiedIpa(corpus, "en-us"));
         List<String> strangers = new ArrayList<>();
         ipa.codePoints()
                 .filter(cp -> AMERICAN_ALPHABET.indexOf(cp) < 0)

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Phonemizer;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.models.inflect2.frontend.TextNormalizer;
@@ -277,7 +278,7 @@ class Inflect2Test {
                     () -> tts.speak(state, "  ", SpeechOptions.NONE),
                     "blank text");
         }
-        com.qxotic.jinfer.Phonemizer mine = text -> ids("həloʊ");
+        Phonemizer mine = text -> ids("həloʊ");
         assertSame(
                 mine, tts.phonemizer(mine).phonemizer(), "a re-wrap is what phonemizer() returns");
     }

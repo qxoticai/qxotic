@@ -4,9 +4,8 @@ import java.util.List;
 import java.util.function.UnaryOperator;
 
 /**
- * Text to phoneme ids in ONE model's phoneme vocabulary - the speech counterpart of a tokenizer.
- * The ids mean something only to the model whose symbol table built the phonemizer, exactly as
- * token ids mean something only to the model whose vocabulary built the tokenizer.
+ * Text to phoneme ids in ONE model's phoneme vocabulary - the speech counterpart of a tokenizer,
+ * and like token ids, the ids mean something only to the model whose table built it.
  *
  * <p>Like a tokenizer, a phonemizer does not carry the model's text policy: normalization, sentence
  * chunking and a terminating mark are {@link SpeechSynthesisModel#speak}'s, applied before the text

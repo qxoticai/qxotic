@@ -52,20 +52,16 @@ public final class KokoroTTS
      * espeak is required rather than asked for.
      */
     private static KokoroTTS wrap(Kokoro kokoro) throws IOException {
-        Espeak espeak =
-                Espeak.find()
-                        .orElseThrow(
-                                () ->
-                                        new IOException(
-                                                "Kokoro requires espeak-ng or espeak on PATH for"
-                                                        + " phonemization"));
+        Espeak espeak = Espeak.find().orElse(null);
+        if (espeak == null)
+            throw new IOException("Kokoro requires espeak-ng or espeak on PATH for phonemization");
         String language = kokoro.language();
         Misaki dialect = Misaki.forLanguage(language);
         return new KokoroTTS(
                 kokoro,
                 Phonemizer.ipa(
                         List.of(kokoro.configuration().tokens()),
-                        run -> dialect.apply(espeak.ipa(run, language, Misaki.TIE))));
+                        run -> dialect.apply(espeak.tiedIpa(run, language))));
     }
 
     @Override

@@ -27,7 +27,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -156,16 +155,16 @@ public final class InflectTTS
      * ~50x realtime against the lexicon's ~54x.
      */
     private static Phonemizer frontend(Path gguf, Path lexicon) throws IOException {
-        Optional<Espeak> espeak = Espeak.find();
-        UnaryOperator<String> fallback =
-                espeak.map(e -> (UnaryOperator<String>) run -> e.ipa(run, "en-us")).orElse(null);
-        if (lexicon != null) return over(Lexicon.read(lexicon, fallback));
-        if (gguf != null) {
-            Path beside = gguf.resolveSibling("lexicon.bin");
-            if (Files.isReadable(beside)) return over(Lexicon.read(beside, fallback));
-        }
-        Lexicon bundled = Lexicon.bundled(fallback);
-        if (bundled != null) return over(bundled);
+        Espeak espeak = Espeak.find().orElse(null);
+        UnaryOperator<String> fallback = espeak == null ? null : run -> espeak.ipa(run, "en-us");
+        Path beside = gguf == null ? null : gguf.resolveSibling("lexicon.bin");
+        Lexicon found =
+                lexicon != null
+                        ? Lexicon.read(lexicon, fallback)
+                        : beside != null && Files.isReadable(beside)
+                                ? Lexicon.read(beside, fallback)
+                                : Lexicon.bundled(fallback);
+        if (found != null) return Phonemizer.ipa(Inflect2.SYMBOLS, found::ipa);
         if (fallback != null) {
             System.getLogger("jinfer.inflect2")
                     .log(
@@ -179,10 +178,6 @@ public final class InflectTTS
         throw new IOException(
                 "no phonemizer: attach the repository's lexicon.bin as the 'lexicon' companion,"
                         + " put it beside the model or on the classpath, or install espeak-ng");
-    }
-
-    private static Phonemizer over(Lexicon lexicon) {
-        return Phonemizer.ipa(Inflect2.SYMBOLS, lexicon::ipa);
     }
 
     // ── tuning: a re-wrap over the SAME weights, so no reload and no arena ─

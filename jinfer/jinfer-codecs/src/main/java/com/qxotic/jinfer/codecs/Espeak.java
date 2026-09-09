@@ -23,8 +23,8 @@ public final class Espeak {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
     private static final int MAX_OUTPUT_BYTES = 1 << 20;
 
-    /** The tie the plain form is produced with and then stripped of; never in espeak's IPA. */
-    private static final String TIE = "^";
+    /** The character {@link #tiedIpa} joins a multi-letter phoneme with; never in espeak's IPA. */
+    public static final String TIE = "^";
 
     /** espeak's language-switch markers, {@code (en)} {@code (fr-fr)}: annotation, not IPA. */
     private static final Pattern LANGUAGE_MARKER =
@@ -62,26 +62,24 @@ public final class Espeak {
      * hung process, not a condition a caller handles.
      */
     public String ipa(String run, String language) {
-        return ipa(run, language, TIE).replace(TIE, "");
+        return tiedIpa(run, language).replace(TIE, "");
     }
 
     /**
-     * As {@link #ipa(String, String)} with espeak's multi-letter phonemes joined by {@code tie}: an
-     * affricate is {@code d^ʒ} and the diphthong in "day" {@code e^ɪ}, while the {@code tʃ} of
-     * "nightshirt" stays two phonemes. For a caller that rewrites phonemes and must not merge
-     * across a boundary espeak did not draw. Stripping the tie gives the plain form exactly.
+     * As {@link #ipa} with espeak's multi-letter phonemes joined by {@link #TIE}: an affricate is
+     * {@code d^ʒ} and the diphthong in "day" {@code e^ɪ}, while the {@code tʃ} of "nightshirt"
+     * stays two phonemes. For a caller that rewrites phonemes and must not merge across a boundary
+     * espeak did not draw. Stripping the tie gives {@link #ipa}'s form exactly.
      */
-    public String ipa(String run, String language, String tie) {
+    public String tiedIpa(String run, String language) {
         Objects.requireNonNull(run, "run");
         Objects.requireNonNull(language, "language");
-        if (tie.length() != 1 || Character.isWhitespace(tie.charAt(0)))
-            throw new IllegalArgumentException("tie must be one non-blank character: " + tie);
         // The run goes in on stdin, never as an argument: one starting with '-' ("-five
         // degrees") would be parsed as an option. The trailing newline is NOT cosmetic: espeak
         // reads stdin a line at a time and phonemizes the last word of an unterminated line as a
         // word FRAGMENT - "world" came back "wˈɜːl", "five" as "fˈɪv", "hello" as "hˈɛl".
         List<String> command =
-                List.of(binary, "--ipa", "-q", "-v", language, "--tie=" + tie, "--stdin");
+                List.of(binary, "--ipa", "-q", "-v", language, "--tie=" + TIE, "--stdin");
         byte[] stdin = (run + "\n").getBytes(StandardCharsets.UTF_8);
         byte[] out;
         try {

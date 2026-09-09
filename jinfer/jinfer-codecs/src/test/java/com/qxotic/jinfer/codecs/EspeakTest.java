@@ -83,10 +83,10 @@ final class EspeakTest {
     @Test
     void tiedIpaMarksMultiLetterPhonemesAndStripsToThePlainForm() {
         Espeak espeak = installed();
-        String tied = espeak.ipa("headjoint nightshirt", "en-us", "^");
+        String tied = espeak.tiedIpa("headjoint nightshirt", "en-us");
         assertTrue(tied.contains("d^ʒ"), "the affricate is tied: " + tied);
         assertTrue(tied.contains("tʃ"), "t then ʃ across a boundary is not: " + tied);
-        assertEquals(espeak.ipa("headjoint nightshirt", "en-us"), tied.replace("^", ""));
+        assertEquals(espeak.ipa("headjoint nightshirt", "en-us"), tied.replace(Espeak.TIE, ""));
     }
 
     @Test
