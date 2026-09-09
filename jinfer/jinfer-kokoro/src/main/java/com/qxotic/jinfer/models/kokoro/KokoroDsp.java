@@ -1,8 +1,8 @@
 package com.qxotic.jinfer.models.kokoro;
 
+import com.qxotic.jinfer.Parallel;
 import com.qxotic.jota.memory.MemoryAllocator;
 import java.lang.foreign.MemorySegment;
-import java.util.Arrays;
 import java.util.Random;
 
 /** Host-side source generation and spectral transforms for Kokoro's iSTFTNet. */
@@ -19,6 +19,17 @@ final class KokoroDsp {
     private static final float NOISE_STDDEV = 0.003f;
     private static final float VOICED_THRESHOLD = 10;
     private static final float[] HANN = hann();
+
+    /**
+     * The DFT twiddles, {@code [bin][n]}, with the exact expressions the loops used to evaluate per
+     * sample: the analysis angle is negative, the synthesis angle positive, and the two are tabled
+     * separately so that no symmetry of the libm is assumed.
+     */
+    private static final float[][] ANALYSIS_COS = twiddle(-1, true);
+
+    private static final float[][] ANALYSIS_SIN = twiddle(-1, false);
+    private static final float[][] SYNTHESIS_COS = twiddle(1, true);
+    private static final float[][] SYNTHESIS_SIN = twiddle(1, false);
 
     private KokoroDsp() {}
 
@@ -83,38 +94,50 @@ final class KokoroDsp {
         int outputLength = Math.multiplyExact(frames - 1, HOP_SIZE);
         if (outputLength == 0) return new float[0];
 
-        int paddedLength = outputLength + FFT_SIZE;
-        float[] waveform = KokoroWorkspace.takeFloats(scratch, paddedLength);
-        float[] windowSum = KokoroWorkspace.takeFloats(scratch, paddedLength);
-        Arrays.fill(waveform, 0);
-        Arrays.fill(windowSum, 0);
-        for (int frame = 0; frame < frames; frame++) {
-            int offset = frame * HOP_SIZE;
-            for (int n = 0; n < FFT_SIZE; n++) {
-                float value = magnitude[0][frame] * (float) Math.cos(phase[0][frame]);
-                float nyquist =
-                        magnitude[BINS - 1][frame] * (float) Math.cos(phase[BINS - 1][frame]);
-                value += (n & 1) == 0 ? nyquist : -nyquist;
-                for (int bin = 1; bin < BINS - 1; bin++) {
-                    float angle = TWO_PI * bin * n / FFT_SIZE;
-                    float real = magnitude[bin][frame] * (float) Math.cos(phase[bin][frame]);
-                    float imaginary = magnitude[bin][frame] * (float) Math.sin(phase[bin][frame]);
-                    value +=
-                            2
-                                    * (real * (float) Math.cos(angle)
-                                            - imaginary * (float) Math.sin(angle));
-                }
-                float window = HANN[n];
-                waveform[offset + n] += value / FFT_SIZE * window;
-                windowSum[offset + n] += window * window;
-            }
-        }
+        // Frames are independent until the overlap-add, so each is one job, into its own row of
+        // values; the overlap-add then walks the output samples, each summing its at most four
+        // contributing frames in frame order - the order the serial loop accumulated them in.
+        float[] values = KokoroWorkspace.takeFloats(scratch, Math.multiplyExact(frames, FFT_SIZE));
+        Parallel.forLoop(
+                frames,
+                frame -> {
+                    float dc = magnitude[0][frame] * (float) Math.cos(phase[0][frame]);
+                    float nyquist =
+                            magnitude[BINS - 1][frame] * (float) Math.cos(phase[BINS - 1][frame]);
+                    float[] real = new float[BINS], imaginary = new float[BINS];
+                    for (int bin = 1; bin < BINS - 1; bin++) {
+                        real[bin] = magnitude[bin][frame] * (float) Math.cos(phase[bin][frame]);
+                        imaginary[bin] =
+                                magnitude[bin][frame] * (float) Math.sin(phase[bin][frame]);
+                    }
+                    for (int n = 0; n < FFT_SIZE; n++) {
+                        float value = dc;
+                        value += (n & 1) == 0 ? nyquist : -nyquist;
+                        for (int bin = 1; bin < BINS - 1; bin++)
+                            value +=
+                                    2
+                                            * (real[bin] * SYNTHESIS_COS[bin][n]
+                                                    - imaginary[bin] * SYNTHESIS_SIN[bin][n]);
+                        values[frame * FFT_SIZE + n] = value / FFT_SIZE * HANN[n];
+                    }
+                });
 
         float[] output = new float[outputLength];
-        for (int i = 0; i < outputLength; i++) {
-            float divisor = windowSum[FFT_SIZE / 2 + i];
-            output[i] = divisor > 1e-11f ? waveform[FFT_SIZE / 2 + i] / divisor : 0;
-        }
+        Parallel.forLoop(
+                outputLength,
+                i -> {
+                    int position = FFT_SIZE / 2 + i;
+                    int first = Math.max(0, Math.ceilDiv(position - FFT_SIZE + 1, HOP_SIZE));
+                    int last = Math.min(frames - 1, position / HOP_SIZE);
+                    float waveform = 0, windowSum = 0;
+                    for (int frame = first; frame <= last; frame++) {
+                        int n = position - frame * HOP_SIZE;
+                        float window = HANN[n];
+                        waveform += values[frame * FFT_SIZE + n];
+                        windowSum += window * window;
+                    }
+                    output[i] = windowSum > 1e-11f ? waveform / windowSum : 0;
+                });
         return output;
     }
 
@@ -130,21 +153,33 @@ final class KokoroDsp {
         int frames = source.length / HOP_SIZE + 1;
         float[][] magnitude = KokoroWorkspace.takeMatrix(scratch, BINS, frames);
         float[][] phase = KokoroWorkspace.takeMatrix(scratch, BINS, frames);
-        for (int frame = 0; frame < frames; frame++) {
-            for (int bin = 0; bin < BINS; bin++) {
-                float real = 0;
-                float imaginary = 0;
-                for (int n = 0; n < FFT_SIZE; n++) {
-                    float sample = padded[frame * HOP_SIZE + n] * HANN[n];
-                    float angle = -TWO_PI * bin * n / FFT_SIZE;
-                    real += sample * (float) Math.cos(angle);
-                    imaginary += sample * (float) Math.sin(angle);
-                }
-                magnitude[bin][frame] = (float) Math.sqrt(real * real + imaginary * imaginary);
-                phase[bin][frame] = (float) Math.atan2(imaginary, real);
-            }
-        }
+        Parallel.forLoop(
+                frames,
+                frame -> {
+                    for (int bin = 0; bin < BINS; bin++) {
+                        float real = 0;
+                        float imaginary = 0;
+                        for (int n = 0; n < FFT_SIZE; n++) {
+                            float sample = padded[frame * HOP_SIZE + n] * HANN[n];
+                            real += sample * ANALYSIS_COS[bin][n];
+                            imaginary += sample * ANALYSIS_SIN[bin][n];
+                        }
+                        magnitude[bin][frame] =
+                                (float) Math.sqrt(real * real + imaginary * imaginary);
+                        phase[bin][frame] = (float) Math.atan2(imaginary, real);
+                    }
+                });
         return new Spectrum(magnitude, phase);
+    }
+
+    private static float[][] twiddle(int sign, boolean cosine) {
+        float[][] table = new float[BINS][FFT_SIZE];
+        for (int bin = 0; bin < BINS; bin++)
+            for (int n = 0; n < FFT_SIZE; n++) {
+                float angle = sign * TWO_PI * bin * n / FFT_SIZE;
+                table[bin][n] = (float) (cosine ? Math.cos(angle) : Math.sin(angle));
+            }
+        return table;
     }
 
     private static float interpolate(float[] values, float index) {
