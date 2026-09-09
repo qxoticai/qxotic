@@ -13,9 +13,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.zip.CRC32C;
 
@@ -206,6 +208,193 @@ public final class FrozenBlocks {
                                             + " cache between them."
                                     : ""));
         }
+    }
+
+    /**
+     * Everything the file says about itself, for a reader with no model in hand: format, the
+     * recorded identity and whether it matches the stored digest, both commit slots and which one
+     * serves, the index, and every block - all checksums verified, since a report that skipped them
+     * would be a guess. Never throws on a bad file: what could not be read is said in place.
+     */
+    public static String describe(Path file) throws IOException {
+        StringBuilder out = new StringBuilder();
+        try (var ch = FileChannel.open(file, StandardOpenOption.READ)) {
+            long size = ch.size();
+            out.append("frozen prompt cache ").append(file).append('\n');
+            out.append(row("file", bytes(size)));
+            if (size < HEADER_BYTES) {
+                return out.append(row("format", "not a frozen prompt cache (truncated header)"))
+                        .toString();
+            }
+            ByteBuffer header = ByteBuffer.allocate(PAGE_BYTES).order(ByteOrder.LITTLE_ENDIAN);
+            readFully(ch, header, 0);
+            header.flip();
+            if (header.getInt(0) != MAGIC) {
+                return out.append(row("format", "not a frozen prompt cache (bad magic)"))
+                        .toString();
+            }
+            out.append(
+                    row(
+                            "format",
+                            "JKVF v"
+                                    + header.getInt(4)
+                                    + (header.getInt(4) == FORMAT_VERSION
+                                            ? ""
+                                            : " (this build reads v" + FORMAT_VERSION + ")")
+                                    + ", header "
+                                    + header.getInt(8)
+                                    + " bytes, commit slots "
+                                    + header.getInt(12)
+                                    + " bytes"));
+            boolean headerOk =
+                    header.getInt(HEADER_CRC_OFFSET) == crc32cWithZero(header, HEADER_CRC_OFFSET);
+            out.append(row("header crc", headerOk ? "ok" : "MISMATCH - header is corrupt"));
+            byte[] stored = new byte[32];
+            header.get(16, stored);
+            String identity = storedDescription(header);
+            out.append(row("identity", identity != null ? identity : "(not recorded)"));
+            String digest = HexFormat.of().formatHex(stored);
+            String check = "";
+            if (identity != null) {
+                boolean matches = Arrays.equals(new ContentKey(identity).digestBytes(), stored);
+                check =
+                        identity.startsWith("sha256:")
+                                ? matches
+                                        ? " (the identity's own digest)"
+                                        : " (does NOT match the identity)"
+                                : matches
+                                        ? " (sha256 of the identity line: verified)"
+                                        : " (does NOT match the identity line)";
+            }
+            out.append(row("digest", digest + check));
+            out.append('\n');
+
+            Commit a = readCommit(ch, 0, size), b = readCommit(ch, 1, size);
+            Commit live = newer(a, b);
+            out.append(commitRow("commit A", a, live));
+            out.append(commitRow("commit B", b, live));
+            if (live == null) {
+                return out.append(row("blocks", "none - no valid commit slot")).toString();
+            }
+            long committed = live.committedLength();
+            out.append(
+                    row(
+                            "committed",
+                            bytes(committed)
+                                    + (size > committed
+                                            ? "; "
+                                                    + bytes(size - committed)
+                                                    + " past the commit (unreached or in flight)"
+                                            : "")));
+            out.append('\n');
+            describeBlocks(out, file, ch, live, stored);
+        }
+        return out.toString();
+    }
+
+    private static void describeBlocks(
+            StringBuilder out, Path file, FileChannel ch, Commit live, byte[] storedDigest)
+            throws IOException {
+        MemorySegment map;
+        try (Arena arena = Arena.ofConfined()) {
+            map = ch.map(FileChannel.MapMode.READ_ONLY, 0, live.committedLength(), arena);
+            boolean indexOk =
+                    crc32c(map.asSlice(live.indexOffset(), live.indexBytes())) == live.indexCrc();
+            out.append(row("index crc", indexOk ? "ok" : "MISMATCH - index is corrupt"));
+            List<Entry> entries;
+            try {
+                // the chain root hangs from the digest, which is all a file carries
+                ContentKey seed =
+                        new ContentKey("sha256:" + HexFormat.of().formatHex(storedDigest));
+                entries = parseEntries(file, seed, map, live);
+            } catch (IllegalStateException e) {
+                out.append(row("blocks", "unreadable: " + e.getMessage()));
+                return;
+            }
+            long kvBytes = 0;
+            int chains = 0, deepest = 0, badBlobs = 0, coveredTo = 0;
+            Map<BlockTree.BlockKey, Integer> index = new HashMap<>();
+            Map<BlockTree.BlockKey, Integer> depth = new HashMap<>();
+            BlockTree.BlockKey root =
+                    BlockTree.chainRoot(
+                            new ContentKey("sha256:" + HexFormat.of().formatHex(storedDigest)));
+            StringBuilder table = new StringBuilder();
+            for (int i = 0; i < entries.size(); i++) {
+                Entry e = entries.get(i);
+                index.put(e.key(), i);
+                boolean head = e.parentKey().equals(root);
+                int d = head ? 1 : depth.getOrDefault(e.parentKey(), 0) + 1;
+                depth.put(e.key(), d);
+                if (head) chains++;
+                deepest = Math.max(deepest, d);
+                coveredTo = Math.max(coveredTo, e.to());
+                kvBytes += e.mem().byteSize();
+                boolean ok = crc32c(e.mem()) == e.crc();
+                if (!ok) badBlobs++;
+                table.append(
+                        String.format(
+                                "  %4d  %-14s %,14d  %-7s %s%n",
+                                i,
+                                "[" + e.from() + "," + e.to() + ")",
+                                e.mem().byteSize(),
+                                head ? "root" : "#" + index.get(e.parentKey()),
+                                ok ? "crc ok" : "CRC MISMATCH"));
+            }
+            out.append(
+                    row(
+                            "blocks",
+                            entries.size()
+                                    + " ("
+                                    + chains
+                                    + (chains == 1 ? " chain" : " chains")
+                                    + ", deepest "
+                                    + deepest
+                                    + "), positions [0,"
+                                    + coveredTo
+                                    + "), KV "
+                                    + bytes(kvBytes)));
+            out.append(
+                    row(
+                            "blob crcs",
+                            badBlobs == 0
+                                    ? "all " + entries.size() + " ok"
+                                    : badBlobs + " MISMATCH"));
+            if (!entries.isEmpty()) {
+                out.append("\n     #  span                    bytes  parent  integrity\n")
+                        .append(table);
+            }
+        }
+    }
+
+    private static String commitRow(String label, Commit c, Commit live) {
+        if (c == null) return row(label, "empty or invalid");
+        return row(
+                label,
+                "generation "
+                        + c.generation()
+                        + ", "
+                        + c.blockCount()
+                        + (c.blockCount() == 1 ? " block" : " blocks")
+                        + ", index at "
+                        + c.indexOffset()
+                        + (c == live ? "   <- serves" : ""));
+    }
+
+    private static String row(String label, String value) {
+        return String.format("  %-11s %s%n", label, value);
+    }
+
+    private static String bytes(long n) {
+        String exact = String.format("%,d bytes", n);
+        if (n < 1024) return exact;
+        double v = n;
+        String[] units = {"KiB", "MiB", "GiB", "TiB"};
+        int u = -1;
+        while (v >= 1024 && u < units.length - 1) {
+            v /= 1024;
+            u++;
+        }
+        return String.format("%s (%.1f %s)", exact, v, units[u]);
     }
 
     /** The printable seed the writer recorded, or null for a file written before that. */

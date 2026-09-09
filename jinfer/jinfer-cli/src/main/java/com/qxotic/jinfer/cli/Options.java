@@ -661,6 +661,8 @@ public record Options(
                         + " paths");
         out.println(
                 "        java -jar jinfer.jar list                     cached models and sizes");
+        out.println(
+                "        java -jar jinfer.jar cache-info <file.jkv>    what a prompt cache holds");
         out.println();
         out.println(
                 "A remote model is a URL without the scheme: "

@@ -11,6 +11,7 @@
 package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.RuntimeFlags;
+import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
@@ -23,6 +24,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -50,9 +52,16 @@ public class Main {
                     pull(Arrays.copyOfRange(args, 1, args.length));
                     return;
                 }
+                case "cache-info" -> {
+                    Options.require(args.length == 2, "cache-info takes one <file.jkv>");
+                    System.out.print(FrozenBlocks.describe(Path.of(args[1])));
+                    return;
+                }
                 default -> {
                     System.err.println(
-                            "ERROR unknown command: " + args[0] + " (commands: pull, list)");
+                            "ERROR unknown command: "
+                                    + args[0]
+                                    + " (commands: pull, list, cache-info)");
                     System.err.println();
                     Options.printUsage(System.err);
                     System.exit(2);

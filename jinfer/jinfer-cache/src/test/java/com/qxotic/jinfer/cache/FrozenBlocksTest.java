@@ -58,6 +58,17 @@ public final class FrozenBlocksTest {
         file.toFile().deleteOnExit();
         build.freeze(file);
 
+        // what the file says about itself, with no model in hand
+        String report = FrozenBlocks.describe(file);
+        assertTrue(report.contains("identity    " + seed.value()), report);
+        assertTrue(report.contains("(the identity's own digest)"), report);
+        assertTrue(report.contains("header crc  ok"), report);
+        assertTrue(report.contains("<- serves"), report);
+        assertTrue(report.contains("blocks      3 (1 chain, deepest 2)"), report);
+        assertTrue(report.contains("blob crcs   all 3 ok"), report);
+        assertTrue(report.contains("  root  "), report);
+        assertTrue(report.contains("  #0  "), report);
+
         // serve time: wrong seed rejected, right seed opens
         assertThrows(
                 IllegalStateException.class,
@@ -682,5 +693,24 @@ public final class FrozenBlocksTest {
                         .getMessage();
         assertTrue(plain.contains("differs at: model=sha256:ab vs model=sha256:ef"), plain);
         assertFalse(plain.contains("-Djinfer"), "no decoder to pin on a text-only load: " + plain);
+    }
+
+    @Test
+    void describeSaysWhatIsWrongInsteadOfThrowing() throws Exception {
+        Path stub = Files.createTempFile("frozen", ".jkv");
+        stub.toFile().deleteOnExit();
+        Files.write(stub, new byte[] {1, 2, 3});
+        assertTrue(FrozenBlocks.describe(stub).contains("truncated header"));
+
+        Files.write(stub, new byte[FrozenBlocks.HEADER_BYTES]);
+        assertTrue(FrozenBlocks.describe(stub).contains("bad magic"));
+
+        Path empty = Files.createTempFile("frozen", ".jkv");
+        empty.toFile().deleteOnExit();
+        FrozenBlocks.createEmpty(empty, new ContentKey("jinfer-cache/1 model=sha256:ab"));
+        String report = FrozenBlocks.describe(empty);
+        assertTrue(report.contains("identity    jinfer-cache/1 model=sha256:ab"), report);
+        assertTrue(report.contains("(sha256 of the identity line: verified)"), report);
+        assertTrue(report.contains("blocks      0 (0 chains, deepest 0)"), report);
     }
 }

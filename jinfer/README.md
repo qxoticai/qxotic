@@ -217,6 +217,7 @@ Its blocks are keyed by the exact prompt tokens, so two programs share a cache o
 The artifact itself is keyed by the model file, every attached companion, and - for a model that projects media - that modality's decoder and projector plan; opening it under a different identity fails loudly rather than serving the wrong KV.
 That identity is a printable line (`jinfer-cache/1 model=sha256:... companion:media=sha256:... imageDecoder=imageio imagePlan="..."`), recorded in the artifact; a refused open shows the artifact's line and the current load's and names the first field that differs.
 The digest an artifact stores is the line's SHA-256, so `printf %s "<line>" | sha256sum` reproduces it.
+`jinfer cache-info file.jkv` prints everything the file says about itself with no model in hand: format, identity and digest, both commit slots and which one serves, and every block with its span, size, parent and checksum - all checksums verified.
 A JVM and a native image resolve different media decoders, so a media model's cache carries between them only when one is pinned with `-Djinfer.imageDecoder` or `-Djinfer.audioDecoder`.
 Text-only and speculation-only caches carry between builds as they are.
 
