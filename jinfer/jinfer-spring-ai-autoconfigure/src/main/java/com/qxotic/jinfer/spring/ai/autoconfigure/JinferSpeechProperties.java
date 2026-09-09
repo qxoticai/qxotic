@@ -13,9 +13,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param companions capability to file: {@code lexicon} for an Inflect model's pronunciation
  *     lexicon; values take the same path-or-ref form as {@code model}
  * @param speed playback rate multiplier; unset leaves the model's own pace alone
- * @param maxInputChars refuses an utterance longer than this before synthesis starts. Speech cost
- *     is driven by input length, so an unbounded request is a denial-of-service shape rather than a
- *     slow one; {@code 0} keeps the model's own bound
+ * @param maxInputChars refuses an utterance longer than this many UTF-16 code units ({@link
+ *     String#length()}) before synthesis starts. Speech cost is driven by input length, so an
+ *     unbounded request is a denial-of-service shape rather than a slow one; {@code 0} keeps the
+ *     model's own bound
  */
 @ConfigurationProperties("spring.ai.jinfer.speech")
 public record JinferSpeechProperties(

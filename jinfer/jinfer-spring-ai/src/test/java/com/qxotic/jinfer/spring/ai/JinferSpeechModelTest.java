@@ -204,12 +204,15 @@ final class JinferSpeechModelTest {
     @Test
     void anOversizedRequestIsRejectedBeforeAnySynthesis() {
         ToyModel model = new ToyModel();
-        try (var speech = JinferSpeechModel.builder().model(model).maxInputChars(4).build()) {
+        try (var speech = JinferSpeechModel.builder().model(model).maxInputChars(1).build()) {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,
-                            () -> speech.call(new TextToSpeechPrompt("far too long")));
-            assertTrue(e.getMessage().contains("over the 4"), e.getMessage());
+                            () -> speech.call(new TextToSpeechPrompt("\uD83D\uDE00")));
+            assertEquals(
+                    "text is 2 UTF-16 code units, over the 1 limit - raise maxInputChars(...) or"
+                            + " split it",
+                    e.getMessage());
             assertEquals(0, model.clipsProduced, "nothing was synthesized");
         }
     }

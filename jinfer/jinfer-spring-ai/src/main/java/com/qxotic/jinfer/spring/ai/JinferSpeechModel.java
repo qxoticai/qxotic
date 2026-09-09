@@ -174,7 +174,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             throw new IllegalArgumentException(
                     "text is "
                             + text.length()
-                            + " characters, over the "
+                            + " UTF-16 code units, over the "
                             + maxInputChars
                             + " limit - raise maxInputChars(...) or split it");
         return text;
@@ -321,10 +321,10 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         }
 
         /**
-         * Longest accepted request, default {@value #DEFAULT_MAX_INPUT_CHARS}. Bounds chunk count,
-         * and so compute AND output, since the port caps each chunk - which is what stops one
-         * adversarial request from holding this instance's only pipeline indefinitely. Rejected
-         * before any synthesis begins.
+         * Longest accepted request in UTF-16 code units ({@link String#length()}), default {@value
+         * #DEFAULT_MAX_INPUT_CHARS}. Bounds chunk count, and so compute AND output, since the port
+         * caps each chunk - which is what stops one adversarial request from holding this
+         * instance's only pipeline indefinitely. Rejected before any synthesis begins.
          */
         public Builder maxInputChars(int maxInputChars) {
             if (maxInputChars < 1)
