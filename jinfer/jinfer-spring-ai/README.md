@@ -326,14 +326,21 @@ try (var speech = JinferSpeechModel.builder()
 
     Files.write(Path.of("hello.wav"), speech.call("Hello from local Java inference."));
 
-    speech.stream(new TextToSpeechPrompt("Streamed, sentence by sentence.")).subscribe(response -> {
-        byte[] pcm16 = response.getResult().getOutput();                       // little-endian
-        int rate = response.getMetadata().get(JinferSpeechModel.SAMPLE_RATE);  // Hz
-        int channels = response.getMetadata().get(JinferSpeechModel.CHANNELS); // 1
-        play(pcm16, rate, channels);
-    });
+    speech.stream(new TextToSpeechPrompt("Streamed, sentence by sentence."))
+            .doOnNext(response -> {
+                byte[] pcm16 = response.getResult().getOutput();                       // little-endian
+                int rate = response.getMetadata().get(JinferSpeechModel.SAMPLE_RATE);  // Hz
+                int channels = response.getMetadata().get(JinferSpeechModel.CHANNELS); // 1
+                play(pcm16, rate, channels);
+            })
+            .then()
+            .block(); // keep the manually owned model alive until the stream terminates
 }
 ```
+
+In a Spring-managed application, inject the `TextToSpeechModel` bean and return its `Flux` instead;
+Spring owns the model lifetime and WebFlux owns subscription and cancellation. Block only at an
+imperative boundary such as this standalone example, never on a WebFlux event-loop thread.
 
 Kokoro takes its voice as a companion, the same way; `espeak-ng` must be on `PATH`:
 
