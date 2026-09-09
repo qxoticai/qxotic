@@ -63,15 +63,12 @@ Prefill (`pp512`) of jinfer using the native jam backend vs. llama.cpp, for diff
   <img alt="jinfer (native jam) vs llama.cpp, prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers.png">
 </picture>
 
-The same int8 kernels span the whole x86 ladder, from the pre-AVX2 floor up to AVX-512:
-
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa-dark.png">
   <img alt="jinfer (native jam) prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa.png">
 </picture>
 
-One machine, one model; the numbers, the method and the sweep script are in
-[docs/benchmarks.md](docs/benchmarks.md).
+Reproducible steps and the benchmark script are in [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Modules and launch flags
 
