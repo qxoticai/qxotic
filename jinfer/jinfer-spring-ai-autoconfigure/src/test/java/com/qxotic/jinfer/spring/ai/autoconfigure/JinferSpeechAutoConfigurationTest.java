@@ -46,6 +46,23 @@ class JinferSpeechAutoConfigurationTest {
     }
 
     @Test
+    void blankModelFailsBeforeFilesystemAccess() {
+        for (String model : new String[] {"", "   "}) {
+            runner.withPropertyValues("spring.ai.jinfer.speech.model=" + model)
+                    .run(
+                            context -> {
+                                assertThat(context).hasFailed();
+                                assertThat(context.getStartupFailure())
+                                        .hasRootCauseInstanceOf(IllegalStateException.class)
+                                        .hasStackTraceContaining("spring.ai.jinfer.speech.model")
+                                        .hasStackTraceContaining("is required")
+                                        .hasStackTraceContaining("local path")
+                                        .hasStackTraceContaining("model ref");
+                            });
+        }
+    }
+
+    @Test
     void modelUrlIsRejectedBeforeResolution() {
         runner.withPropertyValues("spring.ai.jinfer.speech.model=https://example.org/model.gguf")
                 .run(
@@ -99,6 +116,41 @@ class JinferSpeechAutoConfigurationTest {
                             // through and override the port's own pace and input bound
                             assertThat(p.speed()).isZero();
                             assertThat(p.maxInputChars()).isZero();
+                        });
+    }
+
+    @Test
+    void invalidSpeedFailsWithThePropertyNameBeforeModelLoading() {
+        for (String speed : new String[] {"-1", "NaN", "Infinity"}) {
+            runner.withPropertyValues(
+                            "spring.ai.jinfer.speech.model=/missing.gguf",
+                            "spring.ai.jinfer.speech.speed=" + speed)
+                    .run(
+                            context -> {
+                                assertThat(context).hasFailed();
+                                assertThat(context.getStartupFailure())
+                                        .hasRootCauseInstanceOf(IllegalStateException.class)
+                                        .hasStackTraceContaining("spring.ai.jinfer.speech.speed")
+                                        .hasStackTraceContaining("positive finite number")
+                                        .hasStackTraceContaining(speed);
+                            });
+        }
+    }
+
+    @Test
+    void negativeMaxInputCharsFailsWithThePropertyNameBeforeModelLoading() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.speech.model=/missing.gguf",
+                        "spring.ai.jinfer.speech.max-input-chars=-1")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasRootCauseInstanceOf(IllegalStateException.class)
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.speech.max-input-chars")
+                                    .hasStackTraceContaining("at least 1")
+                                    .hasStackTraceContaining("-1");
                         });
     }
 

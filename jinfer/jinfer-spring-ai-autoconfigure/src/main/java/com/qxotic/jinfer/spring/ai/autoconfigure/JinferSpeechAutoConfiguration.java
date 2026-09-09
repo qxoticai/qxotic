@@ -27,6 +27,25 @@ public class JinferSpeechAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public JinferSpeechModel jinferSpeechModel(JinferSpeechProperties properties) {
+        if (!StringUtils.hasText(properties.model())) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.speech.model is required: a speech GGUF as a local path or"
+                            + " model ref (remixerdec/Inflect-Nano-v2-GGUF:Q8_0)");
+        }
+        double speed = properties.speed();
+        if (speed != 0 && (!(speed > 0) || !Double.isFinite(speed))) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.speech.speed must be 0 (use the model default) or a positive"
+                            + " finite number, got "
+                            + speed);
+        }
+        int maxInputChars = properties.maxInputChars();
+        if (maxInputChars < 0) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.speech.max-input-chars must be 0 (use the adapter default) or"
+                            + " at least 1, got "
+                            + maxInputChars);
+        }
         JinferSpeechModel.Builder builder = JinferSpeechModel.builder();
         if (properties.model().contains("://")) {
             throw new IllegalStateException(
@@ -64,8 +83,8 @@ public class JinferSpeechAutoConfiguration {
         }
         // 0 means "leave the model's own default alone" - passing it through would override the
         // port's choice with a meaningless value
-        if (properties.speed() > 0) builder.speed(properties.speed());
-        if (properties.maxInputChars() > 0) builder.maxInputChars(properties.maxInputChars());
+        if (speed > 0) builder.speed(speed);
+        if (maxInputChars > 0) builder.maxInputChars(maxInputChars);
         return builder.build();
     }
 }

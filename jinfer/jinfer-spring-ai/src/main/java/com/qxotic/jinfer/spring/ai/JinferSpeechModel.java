@@ -308,6 +308,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         }
 
         public Builder speed(double speed) {
+            if (!(speed > 0) || !Double.isFinite(speed))
+                throw new IllegalArgumentException(
+                        "speed must be a positive finite number, got " + speed);
             this.speed = speed;
             return this;
         }

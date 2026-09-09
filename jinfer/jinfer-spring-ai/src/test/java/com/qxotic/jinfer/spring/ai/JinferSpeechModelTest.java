@@ -92,6 +92,17 @@ final class JinferSpeechModelTest {
                 .close();
     }
 
+    @Test
+    void speedMustBePositiveAndFinite() {
+        for (double speed : new double[] {0, -1, Double.NaN, Double.POSITIVE_INFINITY}) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> JinferSpeechModel.builder().speed(speed));
+            assertTrue(e.getMessage().contains(String.valueOf(speed)), e.getMessage());
+        }
+    }
+
     // ── call ──────────────────────────────────────────────────────────────
 
     @Test
