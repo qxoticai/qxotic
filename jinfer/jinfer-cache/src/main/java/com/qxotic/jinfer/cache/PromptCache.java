@@ -223,6 +223,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
     public static <S extends ContextState> PromptCache<S> of(
             LanguageModel<?, ?, S> model, ContentKey seed, Options o) {
         if (seed == null) throw new IllegalArgumentException("null seed");
+        if (o == null) throw new IllegalArgumentException("null options");
         int modelCapacity = model.configuration().contextLength();
         int requested = o.contextCapacity;
         int capacity;
@@ -309,7 +310,9 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
     /**
      * Which source served a prompt, not an ordering of hit strength. {@link Serving#restored()} is
      * the cache-hit signal and the number of positions reused. {@link #SESSION} means the prompt
-     * strictly extends a retained conversation; an identical repeat normally uses {@link #BLOCKS}.
+     * strictly extends a retained conversation; an identical token-prefill repeat normally uses
+     * {@link #BLOCKS}, restoring all but its final position with a residue-free codec but only to
+     * the previous committed prefill boundary with a residue-carrying codec.
      */
     public enum Tier {
         /** A retained conversation the prompt strictly extends: zero restore, only the delta. */

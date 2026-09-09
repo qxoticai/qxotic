@@ -796,6 +796,10 @@ public final class PromptCacheTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PromptCache.of(new FakeModel(null), null, options(0, 0)));
+        var nullOptions =
+                assertThrows(
+                        IllegalArgumentException.class, () -> PromptCache.of(fine(), SEED, null));
+        assertEquals("null options", nullOptions.getMessage());
     }
 
     @Test
