@@ -35,10 +35,20 @@ Model<C, W, S extends RuntimeState>
 ├── ContextModel             incremental bounded ingestion
 │   ├── LanguageModel        logits projection
 │   └── EmbeddingModel       pooled embedding projection
-└── SpeechSynthesisModel     text-to-audio generation
+└── SpeechSynthesisModel     phonemes-to-waveform synthesis; speak(text) is the text door
 
 Reranker<S extends ContextState>   relevance projection - a sibling of Model, not a subtype
+Phonemizer                         text to phoneme ids in one model's vocabulary - the speech tokenizer
 ```
+
+A speech model mirrors a language model: `synthesize` takes phoneme ids the way a forward pass takes tokens, and `speak` is the family's text policy over it.
+
+```text
+speak:   normalize  ->  chunk  ->  phonemize   ->  synthesize  ->  join
+         port           port        Phonemizer      model           port
+```
+
+`Phonemizer.ipa(symbols, g2p)` builds the front end of the IPA code-point family from a model's symbol table and a run-level grapheme-to-phoneme function; `jinfer-codecs` provides `Espeak` as that function, beside its ffmpeg codecs.
 
 Configuration and weights are immutable. Runtime state owns mutable inference memory and admits one
 serial operation at a time. A caller-supplied arena remains caller-owned; a state-created arena is

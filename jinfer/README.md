@@ -46,6 +46,8 @@ Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and den
 Jinfer recommends the `Q8_0` quant, top-quality with good performance.
 
 Kokoro also needs a voice GGUF companion and `espeak-ng` or `espeak` on `PATH`.
+Inflect models pronounce from their `lexicon.bin`, with `espeak-ng` covering unknown words when it is installed.
+Both expose their front end as `phonemizer()`, and `synthesize` takes the phoneme ids directly, the way a language model takes tokens.
 
 ## Run the demos
 

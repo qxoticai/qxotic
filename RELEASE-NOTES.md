@@ -15,6 +15,8 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Batch embeddings.** A packed embedding group larger than the state's batch capacity is ingested in chunks; earlier builds failed the request.
 - **Grammars with thinking off.** A completed grammar ends the turn cleanly on every family, and Qwen 3.5's thinking-off prefix no longer swallows a raw grammar.
 - **Speech companions.** The pronunciation lexicon of Inflect models is the `lexicon` companion, attachable on both speech builders and as `spring.ai.jinfer.speech.companions.lexicon`.
+- **Speech at the phoneme level.** `SpeechSynthesisModel.synthesize` takes phoneme ids and `phonemizer()` exposes the model's front end, a `Phonemizer` in `jinfer-core` that is to speech what a tokenizer is to text; `speak(text)` remains the text door.
+  `Espeak` in `jinfer-codecs` drives espeak-ng for both speech families; the per-family symbol tables and espeak drivers are gone.
 - **Spring Boot examples.** `mvn spring-boot:run` runs with full tiered compilation; its default `optimizedLaunch` pinned C1 and slowed the Vector API about a hundredfold.
 - **CLI errors.** A bad `--cache` file, a read-only cache root and other wrapped IO failures print one `ERROR` line.
 
