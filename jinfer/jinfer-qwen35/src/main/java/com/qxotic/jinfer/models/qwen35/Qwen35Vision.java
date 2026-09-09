@@ -33,7 +33,7 @@ import java.util.function.Consumer;
  * <p>Ported from llama.cpp's {@code clip_graph_qwen3vl}. The tower emits tokens in the 2x2-block
  * major order its mrope position table implies, so the merger is a plain contiguous copy.
  */
-public final class Qwen35Vision implements MediaProjector<Media.Image> {
+final class Qwen35Vision implements MediaProjector<Media.Image> {
     private final int patchSize,
             patchVector,
             visionDim,

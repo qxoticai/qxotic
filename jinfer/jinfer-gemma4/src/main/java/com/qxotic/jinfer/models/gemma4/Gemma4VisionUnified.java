@@ -26,7 +26,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 unified vision projector ({@code projector_type=gemma4uv}). */
-public final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
+final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
     static final float LAYER_NORM_EPS = 1e-5f;
 
     private final int patchSize, visionDim, modelDim, positionSize, patchVector;

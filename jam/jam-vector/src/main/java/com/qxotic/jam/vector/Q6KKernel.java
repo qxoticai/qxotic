@@ -19,7 +19,7 @@ import jdk.incubator.vector.VectorSpecies;
  * qh), value {@code d·sc·(q6−32)}. Dequantizes a {@link BandGemm#MR}-row band into an F32 scratch,
  * then {@link BandGemm} sweeps the columns.
  */
-public final class Q6KKernel {
+final class Q6KKernel {
 
     private Q6KKernel() {}
 

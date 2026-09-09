@@ -34,7 +34,7 @@ import java.util.function.Consumer;
  * (turn-stable blocks, the cached-prompt law); tool-bearing ones render the whole flow
  * (declarations + instructions in the system turn, call turns, folded tool responses).
  */
-public final class NemotronHChatTemplate implements ChatTemplate {
+final class NemotronHChatTemplate implements ChatTemplate {
 
     public static final String DEFAULT_SYSTEM =
             "You are a helpful and harmless assistant.\n\nYou are not allowed to use any tools.";

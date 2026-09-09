@@ -31,7 +31,7 @@ import java.util.function.Consumer;
  * rendered by the GGUF's Jinja, but their bare-JSON replies are parsed and, when forced,
  * constrained here.
  */
-public final class Llama32ChatTemplate implements ChatTemplate {
+final class Llama32ChatTemplate implements ChatTemplate {
     public static final String DEFAULT_DATE = "26 Jul 2024";
 
     private final Tokenizer tokenizer;

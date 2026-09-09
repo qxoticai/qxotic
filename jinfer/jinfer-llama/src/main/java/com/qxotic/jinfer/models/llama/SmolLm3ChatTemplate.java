@@ -20,7 +20,7 @@ import java.util.function.Consumer;
  * envelopes interleaved, terminated by {@code <|im_end|>} - so the fallback keeps the family's call
  * parsing, constrained decoding and forced calls.
  */
-public final class SmolLm3ChatTemplate implements ChatTemplate {
+final class SmolLm3ChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
 

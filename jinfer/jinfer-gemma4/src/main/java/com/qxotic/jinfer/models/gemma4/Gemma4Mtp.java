@@ -35,7 +35,7 @@ import java.util.Map;
  * forward and the speculative loop are {@link Gemma4MtpDecoder} and {@link Gemma4Speculative},
  * driven directly (a core MTP seam waits for a second family to shape it).
  */
-public final class Gemma4Mtp {
+final class Gemma4Mtp {
 
     /** Draft-transformer geometry, read from the {@code gemma4-assistant.*} sidecar metadata. */
     public record Configuration(

@@ -19,7 +19,7 @@ import jdk.incubator.vector.VectorOperators;
  * strides; {@code wOff} is the weight ELEMENT offset (the byte offset is block-derived). Behaviour
  * is identical to jinfer's {@code Q4_0FloatTensor.vectorGemm512} - jinfer now delegates here.
  */
-public final class Q4Kernel {
+final class Q4Kernel {
 
     private Q4Kernel() {}
 

@@ -36,7 +36,7 @@ import java.util.function.DoubleConsumer;
  * in native scratch; document rows are projected once and dotted against it immediately. No
  * per-token heap arrays sit on the scoring path.
  */
-public final class Lfm2Colbert implements Reranker<Lfm2.State> {
+final class Lfm2Colbert implements Reranker<Lfm2.State> {
 
     private static final String QUERY_MARKER = "[Q] ";
     private static final String DOCUMENT_MARKER = "[D] ";

@@ -22,7 +22,7 @@ import java.util.function.Consumer;
  * forced calls. Granite 4.1 carries JSON call envelopes and {@code <|end_of_text|>}; Granite 4.2
  * carries function/parameter XML and {@code <|im_end|>}.
  */
-public final class GraniteChatTemplate implements ChatTemplate {
+final class GraniteChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
     private final boolean functionXml;

@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** PCM conversion shared by Gemma 4 audio projectors. */
-public final class AudioPreprocess {
+final class AudioPreprocess {
     public static final int SAMPLE_RATE = 16_000;
     public static final int N_FFT = 512;
     public static final int WINDOW = 320;

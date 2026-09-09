@@ -27,7 +27,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /** Gemma 4 chat framing with structural image, audio and video input and the tool round-trip. */
-public final class Gemma4ChatTemplate implements ChatTemplate {
+final class Gemma4ChatTemplate implements ChatTemplate {
     private static final String CHANNEL_OPEN = "<|channel>";
     private static final String CHANNEL_CLOSE = "<channel|>";
     private static final String THINK_SEED = "<|think|>";

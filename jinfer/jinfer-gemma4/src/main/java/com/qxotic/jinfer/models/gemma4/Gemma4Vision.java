@@ -34,7 +34,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 SigLIP-style vision tower ({@code projector_type=gemma4v}). */
-public final class Gemma4Vision implements MediaProjector<Media.Image> {
+final class Gemma4Vision implements MediaProjector<Media.Image> {
     private static final float ROPE_THETA = 100f;
 
     private final int imageSize,

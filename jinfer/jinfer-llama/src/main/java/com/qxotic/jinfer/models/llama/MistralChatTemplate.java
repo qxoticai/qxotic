@@ -26,7 +26,7 @@ import java.util.function.Consumer;
  * args as free holes around the interior mark, close-LESS: the region exits when the next call
  * opens, the reply ends, or the payload's balance completes.
  */
-public final class MistralChatTemplate implements ChatTemplate {
+final class MistralChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
     private final IntSequence promptStart;

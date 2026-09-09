@@ -20,7 +20,7 @@ import java.util.function.Consumer;
  * the payload, and a marker-pair call span claims interior control tokens AS THEIR SPELLINGS -
  * exactly the decoded text {@link MiniCpmToolSyntax#parsePayload} expects.
  */
-public final class MiniCpm5ChatTemplate implements ChatTemplate {
+final class MiniCpm5ChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
 

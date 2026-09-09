@@ -25,7 +25,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 raw-waveform audio projector ({@code projector_type=gemma4ua}). */
-public final class Gemma4Audio implements MediaProjector<Media.Audio> {
+final class Gemma4Audio implements MediaProjector<Media.Audio> {
     private final int modelDim, frameSize;
     private final float eps;
     private final MemoryView<MemorySegment> inputProjection;

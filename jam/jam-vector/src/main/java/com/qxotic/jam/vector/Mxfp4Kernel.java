@@ -16,7 +16,7 @@ import jdk.incubator.vector.VectorOperators;
  * decode-free F32 band sweeps the columns. Identical to jinfer's {@code
  * MXFP4FloatTensor.vectorGemmMxfp4}.
  */
-public final class Mxfp4Kernel {
+final class Mxfp4Kernel {
 
     private Mxfp4Kernel() {}
 

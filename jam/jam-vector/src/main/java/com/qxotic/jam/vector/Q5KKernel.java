@@ -19,7 +19,7 @@ import jdk.incubator.vector.VectorSpecies;
  * BandGemm#MR}-row band into an F32 scratch, then {@link BandGemm} sweeps the columns. Reuses
  * {@link Q4KKernel#getScaleMinK4}.
  */
-public final class Q5KKernel {
+final class Q5KKernel {
 
     private Q5KKernel() {}
 

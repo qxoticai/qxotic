@@ -25,7 +25,7 @@ import jdk.incubator.vector.VectorSpecies;
  * play ({@link VectorSupport#TILE_CODE}); override with {@code -Djam.vector.tile}. Behaviour is
  * identical to jinfer's {@code Q8_0FloatTensor.vectorGemm512F32} - jinfer now delegates here.
  */
-public final class Q8Kernel {
+final class Q8Kernel {
 
     private Q8Kernel() {}
 

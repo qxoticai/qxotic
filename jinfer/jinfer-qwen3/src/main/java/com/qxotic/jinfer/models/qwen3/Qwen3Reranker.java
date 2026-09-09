@@ -36,7 +36,7 @@ import java.util.function.DoubleConsumer;
  * {@code output.weight}) via {@link Qwen3#logit}, so a pair costs two dot products, not a
  * full-vocabulary matmul.
  */
-public final class Qwen3Reranker implements Reranker<Qwen3.State> {
+final class Qwen3Reranker implements Reranker<Qwen3.State> {
 
     // the trusted scaffold stretches, cut at every special spelling (see the class javadoc)
     private static final String SYSTEM_RUN =

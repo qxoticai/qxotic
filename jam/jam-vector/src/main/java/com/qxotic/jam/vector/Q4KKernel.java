@@ -21,7 +21,7 @@ import jdk.incubator.vector.VectorSpecies;
  * sweeps the columns - so the 6-bit super-block scale unpack is amortized once per row, not per
  * column tile.
  */
-public final class Q4KKernel {
+final class Q4KKernel {
 
     private Q4KKernel() {}
 

@@ -31,7 +31,7 @@ import java.lang.foreign.MemorySegment;
  * -> 1536} chains depth&gt;1. The embedding gather is a span dequant-copy ({@link
  * Convert#copyToF32}) plus a vectorized scale - not the old per-element virtual reads.
  */
-public final class Gemma4MtpDecoder {
+final class Gemma4MtpDecoder {
 
     private final Gemma4Mtp.Configuration cfg;
     private final Gemma4Mtp.Weights w;

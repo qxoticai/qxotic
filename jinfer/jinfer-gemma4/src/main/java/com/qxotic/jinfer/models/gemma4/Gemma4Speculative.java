@@ -36,7 +36,7 @@ import java.util.Set;
  * <p>Single-threaded, like the decoder it drives. The caller has already ingested the prompt (the
  * row->token map {@code state.lastTokens} seeds the first draft).
  */
-public final class Gemma4Speculative {
+final class Gemma4Speculative {
 
     private Gemma4Speculative() {}
 

@@ -37,7 +37,7 @@ import java.util.function.Consumer;
  * folded into a single {@code user} turn of {@code <tool_response>} blocks, and reasoning kept only
  * on assistant turns after the last real user query.
  */
-public final class Qwen35ChatTemplate implements ChatTemplate {
+final class Qwen35ChatTemplate implements ChatTemplate {
 
     /**
      * The format-instructions block after the declarations - ONE constant, exactly the template's

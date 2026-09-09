@@ -27,7 +27,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /** Token-exact native codec for the LFM 2.5 ChatML template. */
-public final class Lfm2ChatTemplate implements ChatTemplate {
+final class Lfm2ChatTemplate implements ChatTemplate {
     private static final String THINK_OPEN = "<think>";
     private static final String THINK_CLOSE = "</think>";
     private static final String CALL_OPEN = "<|tool_call_start|>";

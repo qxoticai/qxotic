@@ -23,7 +23,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /** Native encoder and reply codec for Ling's Bailing V3 chat format. */
-public final class BailingMoe3ChatTemplate implements ChatTemplate {
+final class BailingMoe3ChatTemplate implements ChatTemplate {
     private static final String THINK_OPEN = "<think>";
     private static final String THINK_CLOSE = "</think>";
     private static final String CALL_OPEN = "<tool_call>";

@@ -23,7 +23,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /** Token-exact native codec for Laguna XS 2.1's system/user/assistant XML format. */
-public final class LagunaChatTemplate implements ChatTemplate {
+final class LagunaChatTemplate implements ChatTemplate {
     static final String DEFAULT_SYSTEM =
             "You are a helpful, conversationally-fluent assistant made by Poolside. You are here"
                     + " to be helpful to users through natural language conversations.";

@@ -25,7 +25,7 @@ import jdk.incubator.vector.VectorSpecies;
  * rows) re-runs on every column sweep, while the scratch is written once per band and re-read from
  * L1. Do not re-attempt without changing that math.
  */
-public final class Q1Kernel {
+final class Q1Kernel {
 
     private Q1Kernel() {}
 

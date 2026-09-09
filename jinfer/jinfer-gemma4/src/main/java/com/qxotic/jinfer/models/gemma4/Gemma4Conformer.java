@@ -31,7 +31,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 Conformer audio tower ({@code projector_type=gemma4a}). */
-public final class Gemma4Conformer implements MediaProjector<Media.Audio> {
+final class Gemma4Conformer implements MediaProjector<Media.Audio> {
     static final int CHUNK = 12;
     static final int PAST = 12;
     static final int CONTEXT = CHUNK + PAST;

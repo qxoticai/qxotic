@@ -32,7 +32,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** LFM2.5 SigLIP2-NaFlex vision tower and pixel-unshuffle projector. */
-public final class Lfm2Vision implements MediaProjector<Media.Image> {
+final class Lfm2Vision implements MediaProjector<Media.Image> {
     private final int patchSize,
             visionDim,
             headCount,

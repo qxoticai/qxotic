@@ -16,7 +16,7 @@ import jdk.incubator.vector.VectorShuffle;
  * BandGemm#MR}-row band is dequantized into an F32 scratch, then {@link BandGemm}'s 3x3 F32 band
  * sweeps the columns. Identical to jinfer's {@code NVFP4FloatTensor.vectorGemm512}.
  */
-public final class Nvfp4Kernel {
+final class Nvfp4Kernel {
 
     private Nvfp4Kernel() {}
 

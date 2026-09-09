@@ -27,7 +27,7 @@ import java.util.function.Function;
  * level. Argument bodies are FREE holes whose parser drops a malformed payload without ending the
  * reply.
  */
-public final class GptOssChatTemplate implements ChatTemplate {
+final class GptOssChatTemplate implements ChatTemplate {
 
     private static final String NAME_GBNF = "root ::= [a-zA-Z0-9_.-]+";
 

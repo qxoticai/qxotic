@@ -4,7 +4,7 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jota.DataType;
 
 /** Conversion between GGUF storage types and their Jota views. */
-public final class GGMLDataTypes {
+final class GGMLDataTypes {
 
     private static final Pair[] SUPPORTED = {
         new Pair(GGMLType.F32, DataType.FP32),
