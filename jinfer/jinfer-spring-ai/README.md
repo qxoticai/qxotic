@@ -314,9 +314,10 @@ JinferChatModel restored = JinferChatModel.builder()
 
 ## Speech synthesis
 
-`JinferSpeechModel` implements Spring AI's `TextToSpeechModel`. `call` returns WAV bytes;
-`stream` emits one headerless PCM16 clip per sentence as it is synthesized, and every response
-carries the sample rate and channel count in its metadata:
+`JinferSpeechModel` implements Spring AI's `TextToSpeechModel`. `call` returns a complete WAV file.
+`stream` emits ordered, headerless little-endian PCM16 chunks as the selected speech model produces
+them. Chunk boundaries are model-specific, may include silence, and are not sentence boundaries.
+Every response carries the sample rate and channel count required for playback:
 
 ```java
 try (var speech = JinferSpeechModel.builder()
@@ -326,7 +327,7 @@ try (var speech = JinferSpeechModel.builder()
 
     Files.write(Path.of("hello.wav"), speech.call("Hello from local Java inference."));
 
-    speech.stream(new TextToSpeechPrompt("Streamed, sentence by sentence."))
+    speech.stream(new TextToSpeechPrompt("Streamed as ordered PCM chunks."))
             .doOnNext(response -> {
                 byte[] pcm16 = response.getResult().getOutput();                       // little-endian
                 int rate = response.getMetadata().get(JinferSpeechModel.SAMPLE_RATE);  // Hz
