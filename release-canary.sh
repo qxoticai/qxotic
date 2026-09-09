@@ -2,7 +2,8 @@
 # Release canary: prove the artifacts a consumer would actually GET are usable.
 #
 #   1. install the release build into a throwaway local repository
-#   2. compile isolated LangChain4j, Spring AI, and Spring Boot consumers against it
+#   2. compile isolated LangChain4j, Spring AI, and Spring Boot consumers against it - chat and
+#      speech (Kokoro, with its voice companion) through both frameworks' own model types
 #   3. compile the same entry points with explicit versions and no imported BOMs
 #
 # A green reactor can still ship a broken BOM or flattened pom; this catches broken
@@ -120,6 +121,10 @@ cat > "$WORK/consumer/langchain4j-core/pom.xml" <<'EOF'
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-lfm2</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kokoro</artifactId>
+    </dependency>
   </dependencies>
 </project>
 EOF
@@ -127,12 +132,18 @@ cat > "$WORK/consumer/langchain4j-core/src/main/java/canary/Canary.java" <<'EOF'
 package canary;
 
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
+import com.qxotic.jinfer.langchain4j.JinferSpeechModel;
+import dev.langchain4j.model.audio.TextToSpeechModel;
 import java.nio.file.Path;
 
 final class Canary {
 
     static JinferChatModel create(Path model) {
         return JinferChatModel.builder().modelPath(model).build();
+    }
+
+    static TextToSpeechModel speech(Path model, Path voice) {
+        return JinferSpeechModel.builder().modelPath(model).companionPath("voice", voice).build();
     }
 }
 EOF
@@ -190,6 +201,10 @@ cat > "$WORK/consumer/spring-ai-core/pom.xml" <<'EOF'
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kokoro</artifactId>
+    </dependency>
   </dependencies>
 </project>
 EOF
@@ -197,13 +212,19 @@ cat > "$WORK/consumer/spring-ai-core/src/main/java/canary/Canary.java" <<'EOF'
 package canary;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
+import com.qxotic.jinfer.spring.ai.JinferSpeechModel;
 import java.nio.file.Path;
+import org.springframework.ai.audio.tts.TextToSpeechModel;
 import org.springframework.ai.chat.model.ChatModel;
 
 final class Canary {
 
     static ChatModel create(Path model) {
         return JinferChatModel.builder().modelPath(model).build();
+    }
+
+    static TextToSpeechModel speech(Path model, Path voice) {
+        return JinferSpeechModel.builder().modelPath(model).companionPath("voice", voice).build();
     }
 }
 EOF
@@ -281,6 +302,11 @@ cat > "$WORK/no-bom-providers/pom.xml" <<EOF
       <artifactId>jinfer-spring-ai</artifactId>
       <version>$VERSION</version>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-kokoro</artifactId>
+      <version>$VERSION</version>
+    </dependency>
   </dependencies>
 </project>
 EOF
@@ -297,6 +323,16 @@ final class Canary {
 
     static org.springframework.ai.chat.model.ChatModel springAi(Path model) {
         return com.qxotic.jinfer.spring.ai.JinferChatModel.builder().modelPath(model).build();
+    }
+
+    static dev.langchain4j.model.audio.TextToSpeechModel langChain4jSpeech(Path model, Path voice) {
+        return com.qxotic.jinfer.langchain4j.JinferSpeechModel.builder()
+                .modelPath(model).companionPath("voice", voice).build();
+    }
+
+    static org.springframework.ai.audio.tts.TextToSpeechModel springAiSpeech(Path model, Path voice) {
+        return com.qxotic.jinfer.spring.ai.JinferSpeechModel.builder()
+                .modelPath(model).companionPath("voice", voice).build();
     }
 }
 EOF
