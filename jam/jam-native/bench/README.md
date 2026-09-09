@@ -50,12 +50,12 @@ jam vs tinyBLAS   m=2048 n=2048 k=2048   threads=16   jam isa=avx512_vnni
 - **tinyBLAS threading.** `llamafile_sgemm`'s own multithreading goes through ggml's threadpool
   (chunk-stealing), which isn't available standalone, so the harness drives a *single-threaded*
   `llamafile_sgemm` per worker over a disjoint slice of output rows. With `JAM_NATIVE_THREADS=1` this *is*
-  tinyBLAS's native single-call path, and there jam is already ~3× faster (the repacked-weight kernel);
-  the gap actually **narrows** to ~2.4× at 16 threads as both approach memory bandwidth. So the
-  row-partition isn't handicapping tinyBLAS: if anything it helps it scale.
+  tinyBLAS's native single-call path; the jam/tinyBLAS ratio narrows from 1 to 16 threads as both
+  approach memory bandwidth, so the row-partition isn't handicapping tinyBLAS: if anything it helps
+  it scale.
 - **jam's weight repack is real.** jam repacks each weight once and caches it; the warm-up pays the
   repack, timed calls reuse it, the realistic per-token inference case. tinyBLAS reads the raw blocks
-  every call. That's a genuine jam design advantage, not a measurement artifact.
+  every call, so the two are not doing the same work per call. Read the ratio with that in mind.
 - The `k` argument to `llamafile_sgemm` is in **blocks** (`k/32`), not elements, and the CPU backend
   must be initialized (`ggml_cpu_init()`) before the first call. Both are handled; noted here because
   neither is obvious and either one silently corrupts results.

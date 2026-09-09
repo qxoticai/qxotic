@@ -92,7 +92,7 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 
 ## Performance
 
-On its native AVX-512-VNNI path, jam beats llama.cpp's CPU kernels at matched ISA for four of five weight types (Q5_K by 2.2×, Q6_K by 1.4×). The same int8 kernels span the whole x86 ladder, pre-AVX2 through AVX-512.
+On its native paths jam is competitive with llama.cpp's CPU kernels at matched ISA. The same int8 kernels span the whole x86 ladder, pre-AVX2 through AVX-512.
 
 These are one machine / one model. Run `jam_bench` and llama.cpp's `pp512` to measure your hardware.
 
