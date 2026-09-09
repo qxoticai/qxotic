@@ -15,12 +15,12 @@ Quixotic AI provides a complete, open stack, for local AI on the JVM Java. From 
 
 --- 
 
-## Features
+## Highlights
 
 - **Designed from first-principles for the JVM.** AI runs end-to-end on the JVM. No sidecar servers, no ONNX, no IPC, no Python.
 - **Write once, accelerate everywhere.** A common tensor API for CPUs and GPUs.
 - **Optional native acceleration.** Fast matrix multiplication routines, competitive with `llama.cpp`.
-- **GraalVM's Native Image.** First-class support for GraalVM Native Image: small footprint, millisecond startup, self-contained binaries.
+- **GraalVM's Native Image.** First-class support for GraalVM Native Image: self-contained binaries, with small footprint and millisecond startup.
 
 ---
 
@@ -28,7 +28,7 @@ Quixotic AI provides a complete, open stack, for local AI on the JVM Java. From 
 
 | Module | What it is | One-liner |
 |--------|------------|-----------|
-| [`jinfer`](./jinfer) | Inference engine | **Local AI inference for the JVM.** Chat, vision, audio, embeddings, reranking, text-to-speech 
+| [`jinfer`](./jinfer) | AI inference engine | **Local AI inference for the JVM.** Chat, vision, audio, embeddings, reranking, text-to-speech 
 | [`toknroll`](./toknroll) | LLM tokenization | **Token-perfect.** Fast tokenizers for LLMs, pure Java, zero dependencies |
 | [`jam`](./jam) | Quantized matrix multiplication | **Just a matmul.** Native implementations for several CPU ISAs |
 | [`jota`](./jota) | Tensor engine | **Write once, accelerate everywhere.** Java, C, CUDA, HIP, Metal, OpenCL, Mojo |
@@ -37,7 +37,7 @@ Quixotic AI provides a complete, open stack, for local AI on the JVM Java. From 
 
 ## Build and test
 
-JDK 25 and Maven 3.9 build everything; cmake and a C compiler build the native jam kernels.
+Requires a JDK 25 and Maven 3.9; cmake and a C compiler to build the native jam kernels.
 
 ```bash
 make test-fixtures   # once after cloning: the tokenizer vocabularies and the enwik8 corpus
@@ -46,6 +46,6 @@ make ci              # what a pull request runs: formatting, the suite, the corp
 ```
 
 `make help` lists the rest.
-The suites that need models or hardware are opt-in; each module's README says how to run them.
+The suites that need models or hardware are opt-in; each module's README describe how to run them.  
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
