@@ -49,10 +49,24 @@ public interface SpeechSynthesisModel<C, W, S extends RuntimeState> extends Mode
      */
     void speak(S state, String text, SpeechOptions options, Predicate<Media.Audio> sink);
 
+    /** Streams clips using a fresh state that is closed when synthesis finishes. */
+    default void speak(String text, SpeechOptions options, Predicate<Media.Audio> sink) {
+        try (S state = newState()) {
+            speak(state, text, options, sink);
+        }
+    }
+
     /** Synthesizes and concatenates the complete waveform. */
     default Media.Audio speak(S state, String text, SpeechOptions options) {
         var clips = new ArrayList<Media.Audio>();
         speak(state, text, options, clips::add);
         return Media.Audio.concat(clips);
+    }
+
+    /** Synthesizes using a fresh state that is closed before the complete waveform is returned. */
+    default Media.Audio speak(String text, SpeechOptions options) {
+        try (S state = newState()) {
+            return speak(state, text, options);
+        }
     }
 }

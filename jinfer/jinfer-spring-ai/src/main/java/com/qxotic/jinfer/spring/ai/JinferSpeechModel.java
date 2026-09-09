@@ -4,7 +4,6 @@
 package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.chat.Models;
@@ -48,7 +47,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     public static final String CHANNELS = "channels";
 
-    private final SpeechSynthesisModel<?, ?, RuntimeState> model;
+    private final SpeechSynthesisModel<?, ?, ?> model;
     private final Arena owned; // null unless this instance loaded the weights
     // Requests take the READ lock and run in PARALLEL - a state is per-call, so there is nothing
     // to serialize. close() takes the WRITE lock, which is what makes it wait for every in-flight
@@ -58,7 +57,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private final int maxInputChars;
     private volatile boolean closed;
 
-    @SuppressWarnings("unchecked") // the state below comes from this very model, so it IS S
     private JinferSpeechModel(Builder b) {
         this.defaultOptions = TextToSpeechOptions.builder().speed(b.speed).build();
         this.maxInputChars = b.maxInputChars;
@@ -67,10 +65,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         Arena created = b.model == null ? Arenas.newCrossThread() : null;
         try {
             this.model =
-                    (SpeechSynthesisModel<?, ?, RuntimeState>)
-                            (b.model != null
-                                    ? b.model
-                                    : Models.loadSpeech(b.modelPath, created, b.companionPaths));
+                    b.model != null
+                            ? b.model
+                            : Models.loadSpeech(b.modelPath, created, b.companionPaths);
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
@@ -95,10 +92,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             // ONE STATE PER CALL - a jinfer speech state cannot be shared, so this does not share
             // one. Measured at +3.5% against reusing a state, which is what a thread-safe bean is
             // worth.
-            try (RuntimeState state = model.newState()) {
-                Media.Audio audio = model.speak(state, text, options);
-                return response(AudioCodec.wav(audio), audio);
-            }
+            Media.Audio audio = model.speak(text, options);
+            return response(AudioCodec.wav(audio), audio);
         } finally {
             lifecycle.readLock().unlock();
         }
@@ -123,18 +118,14 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                             lifecycle.readLock().lock();
                             try {
                                 checkOpen();
-                                try (RuntimeState state = model.newState()) {
-                                    model.speak(
-                                            state,
-                                            text,
-                                            options,
-                                            clip -> {
-                                                if (emitter.isCancelled()) return false;
-                                                emitter.next(
-                                                        response(AudioCodec.pcm16(clip), clip));
-                                                return true;
-                                            });
-                                }
+                                model.speak(
+                                        text,
+                                        options,
+                                        clip -> {
+                                            if (emitter.isCancelled()) return false;
+                                            emitter.next(response(AudioCodec.pcm16(clip), clip));
+                                            return true;
+                                        });
                                 emitter.complete();
                             } catch (RuntimeException | Error e) {
                                 // Errors too: a swallowed Error on the elastic thread would leave

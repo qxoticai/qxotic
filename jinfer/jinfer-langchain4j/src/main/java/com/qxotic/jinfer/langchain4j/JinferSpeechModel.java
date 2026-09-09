@@ -4,7 +4,6 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.chat.Models;
@@ -40,7 +39,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     /** OpenAI's TTS limit, so a caller porting from it meets the same boundary here. */
     private static final int DEFAULT_MAX_INPUT_CHARS = 4096;
 
-    private final SpeechSynthesisModel<?, ?, RuntimeState> model;
+    private final SpeechSynthesisModel<?, ?, ?> model;
     private final Arena owned; // null unless this instance loaded the weights
     // Requests take the READ lock and run in PARALLEL - a state is per-call, so there is nothing
     // to serialize. close() takes the WRITE lock, which is what makes it wait for every in-flight
@@ -50,7 +49,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private final int maxInputChars;
     private volatile boolean closed;
 
-    @SuppressWarnings("unchecked") // the state below comes from this very model, so it IS S
     private JinferSpeechModel(Builder b) {
         this.defaults = b.speed == null ? SpeechOptions.NONE : SpeechOptions.speed(b.speed);
         this.maxInputChars = b.maxInputChars;
@@ -59,10 +57,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         Arena created = b.model == null ? Arenas.newCrossThread() : null;
         try {
             this.model =
-                    (SpeechSynthesisModel<?, ?, RuntimeState>)
-                            (b.model != null
-                                    ? b.model
-                                    : Models.loadSpeech(b.modelPath, created, b.companionPaths));
+                    b.model != null
+                            ? b.model
+                            : Models.loadSpeech(b.modelPath, created, b.companionPaths);
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
             throw new UncheckedIOException("failed to load " + b.modelPath, e);
@@ -100,14 +97,12 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             // port's, and the honest way to meet it is not to share one. Measured cost of minting
             // per call rather than reusing: +3.5% (about 1 ms on a short utterance), which buys
             // a bean that is thread-safe the way every other TextToSpeechModel is.
-            try (RuntimeState state = model.newState()) {
-                Media.Audio audio = model.speak(state, text, defaults);
-                return TextToSpeechResponse.from(
-                        Audio.builder()
-                                .binaryData(AudioCodec.wav(audio))
-                                .mimeType("audio/wav")
-                                .build());
-            }
+            Media.Audio audio = model.speak(text, defaults);
+            return TextToSpeechResponse.from(
+                    Audio.builder()
+                            .binaryData(AudioCodec.wav(audio))
+                            .mimeType("audio/wav")
+                            .build());
         } finally {
             lifecycle.readLock().unlock();
         }
