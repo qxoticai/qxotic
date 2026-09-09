@@ -19,6 +19,9 @@
 hs_err_pid*
 replay_pid*
 
+# Built executables and the CLI jar (make jar, make native, make -C jinfer/<module> native)
+/bin/
+
 # === Maven ===
 target/
 !**/src/**/target/

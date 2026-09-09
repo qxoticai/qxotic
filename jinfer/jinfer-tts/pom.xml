@@ -74,7 +74,7 @@
       <properties>
         <!-- Where the model fixtures live, same resolution as the testkit's TestModels:
              -Djinfer.models, else the models directory beside the checkout. -->
-        <jinfer.models>${maven.multiModuleProjectDirectory}/../../models</jinfer.models>
+        <jinfer.models>${maven.multiModuleProjectDirectory}/../models</jinfer.models>
         <jinfer.lexicon.dir>${jinfer.models}/hf.co/remixerdec/Inflect-Nano-v2-GGUF</jinfer.lexicon.dir>
       </properties>
       <build>

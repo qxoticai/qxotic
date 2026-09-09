@@ -260,7 +260,7 @@ mvn -pl jinfer/jinfer-lfm2 test -Dsurefire.excludedGroups= -Dgroups=integration
 
 ```bash
 make -C jinfer native
-./jinfer/jinfer --model ./model.gguf --chat
+./bin/jinfer --model ./model.gguf --chat
 ```
 
 One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.3+.
