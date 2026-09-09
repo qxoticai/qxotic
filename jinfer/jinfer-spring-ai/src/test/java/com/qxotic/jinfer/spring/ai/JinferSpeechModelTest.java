@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.audio.tts.TextToSpeechMessage;
 import org.springframework.ai.audio.tts.TextToSpeechOptions;
 import org.springframework.ai.audio.tts.TextToSpeechPrompt;
 import org.springframework.ai.audio.tts.TextToSpeechResponse;
@@ -115,6 +116,39 @@ final class JinferSpeechModelTest {
 
             byte[] viaPrompt = speech.call(new TextToSpeechPrompt("hello")).getResult().getOutput();
             assertEquals(wav.length, viaPrompt.length);
+        }
+    }
+
+    @Test
+    void invalidPromptInputIsRejectedClearly() {
+        try (var speech = JinferSpeechModel.builder().model(new ToyModel()).build()) {
+            assertEquals(
+                    "prompt must not be null",
+                    assertThrows(
+                                    NullPointerException.class,
+                                    () -> speech.call((TextToSpeechPrompt) null))
+                            .getMessage());
+            assertEquals(
+                    "prompt must not be null",
+                    assertThrows(
+                                    NullPointerException.class,
+                                    () -> speech.stream((TextToSpeechPrompt) null))
+                            .getMessage());
+            assertEquals(
+                    "prompt instructions must not be null",
+                    assertThrows(
+                                    NullPointerException.class,
+                                    () ->
+                                            speech.call(
+                                                    new TextToSpeechPrompt(
+                                                            (TextToSpeechMessage) null)))
+                            .getMessage());
+            for (String text : new String[] {null, "", "   "}) {
+                assertEquals(
+                        "text cannot be null or blank",
+                        assertThrows(IllegalArgumentException.class, () -> speech.call(text))
+                                .getMessage());
+            }
         }
     }
 

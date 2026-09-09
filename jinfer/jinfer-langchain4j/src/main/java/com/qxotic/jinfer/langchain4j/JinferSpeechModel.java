@@ -79,6 +79,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     @Override
     public TextToSpeechResponse synthesize(TextToSpeechRequest request) {
+        Objects.requireNonNull(request, "request must not be null");
         // langchain4j's voice is free text with no validation upstream; a caller who asks for one
         // and silently gets this model's only voice has been lied to
         if (request.voice() != null && !request.voice().isBlank())

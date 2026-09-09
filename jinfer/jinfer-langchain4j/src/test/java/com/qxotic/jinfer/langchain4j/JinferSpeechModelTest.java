@@ -92,6 +92,17 @@ final class JinferSpeechModelTest {
     }
 
     @Test
+    void aNullRequestIsRejectedClearly() {
+        try (var speech = JinferSpeechModel.builder().model(new ToyModel()).build()) {
+            NullPointerException e =
+                    assertThrows(
+                            NullPointerException.class,
+                            () -> speech.synthesize((TextToSpeechRequest) null));
+            assertEquals("request must not be null", e.getMessage());
+        }
+    }
+
+    @Test
     void aVoiceThisModelDoesNotHaveIsRefusedRatherThanIgnored() {
         try (var speech = JinferSpeechModel.builder().model(new ToyModel()).build()) {
             UnsupportedFeatureException e =

@@ -163,7 +163,13 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     }
 
     private String text(TextToSpeechPrompt prompt) {
-        String text = prompt.getInstructions().getText();
+        Objects.requireNonNull(prompt, "prompt must not be null");
+        var instructions =
+                Objects.requireNonNull(
+                        prompt.getInstructions(), "prompt instructions must not be null");
+        String text = instructions.getText();
+        if (text == null || text.isBlank())
+            throw new IllegalArgumentException("text cannot be null or blank");
         if (text.length() > maxInputChars)
             throw new IllegalArgumentException(
                     "text is "
