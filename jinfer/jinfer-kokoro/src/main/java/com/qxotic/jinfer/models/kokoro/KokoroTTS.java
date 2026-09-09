@@ -47,8 +47,9 @@ public final class KokoroTTS
     }
 
     /**
-     * The front end: espeak in the voice's language, through the symbol table the GGUF declares.
-     * Kokoro has no lexicon, so espeak is required rather than asked for.
+     * The front end: espeak in the voice's language, rewritten into misaki's dialect (the one
+     * Kokoro was trained on), through the symbol table the GGUF declares. Kokoro has no lexicon, so
+     * espeak is required rather than asked for.
      */
     private static KokoroTTS wrap(Kokoro kokoro) throws IOException {
         Espeak espeak =
@@ -59,11 +60,12 @@ public final class KokoroTTS
                                                 "Kokoro requires espeak-ng or espeak on PATH for"
                                                         + " phonemization"));
         String language = kokoro.language();
+        Misaki dialect = Misaki.forLanguage(language);
         return new KokoroTTS(
                 kokoro,
                 Phonemizer.ipa(
                         List.of(kokoro.configuration().tokens()),
-                        run -> espeak.ipa(run, language)));
+                        run -> dialect.apply(espeak.ipa(run, language, Misaki.TIE))));
     }
 
     @Override

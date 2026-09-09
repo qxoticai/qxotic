@@ -81,6 +81,15 @@ final class EspeakTest {
     }
 
     @Test
+    void tiedIpaMarksMultiLetterPhonemesAndStripsToThePlainForm() {
+        Espeak espeak = installed();
+        String tied = espeak.ipa("headjoint nightshirt", "en-us", "^");
+        assertTrue(tied.contains("d^ʒ"), "the affricate is tied: " + tied);
+        assertTrue(tied.contains("tʃ"), "t then ʃ across a boundary is not: " + tied);
+        assertEquals(espeak.ipa("headjoint nightshirt", "en-us"), tied.replace("^", ""));
+    }
+
+    @Test
     void theWritersCaseReachesEspeak() {
         Espeak espeak = installed();
         // espeak reads capitals as information; the two must not come back the same
