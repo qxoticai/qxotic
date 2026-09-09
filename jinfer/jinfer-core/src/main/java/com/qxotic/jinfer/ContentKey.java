@@ -1,13 +1,16 @@
 package com.qxotic.jinfer;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * Stable identity of source content, for caching anything derived from it. Opaque: compared for
- * equality, never parsed. Canonical form is {@code "sha256:<hex>"} of the SOURCE bytes (decoded
- * data drifts, the source does not); caller-assigned ids are equally valid.
+ * Stable identity of source content, for caching anything derived from it. Compared for equality
+ * and never PARSED, but printable on purpose: a key may be {@code "sha256:<hex>"} of the source
+ * bytes (decoded data drifts, the source does not), a caller-assigned id, or a canonical
+ * description of what the identity is made of - which is what a cache seed uses, so a mismatch can
+ * say what differs instead of showing a bare digest.
  */
 public record ContentKey(String value) {
 
@@ -32,13 +35,15 @@ public record ContentKey(String value) {
     }
 
     /**
-     * The raw 32 digest bytes of a {@link #sha256(byte[])} key - the one place the canonical form
-     * is read back, so machinery that needs the digest itself (cache key chains, file headers)
-     * never parses the string. Caller-assigned ids have no digest and fail loudly.
+     * The 32 digest bytes this key stands for, for machinery that needs a fixed-width identity
+     * (cache key chains, file headers) without parsing the string: the hex a {@link
+     * #sha256(byte[])} key already carries, and SHA-256 of the value itself for any other key. A
+     * printable key therefore verifies by hand - {@code printf %s "<value>" | sha256sum} is the
+     * digest a cache artifact stores.
      */
     public byte[] digestBytes() {
         if (!value.startsWith(SHA256_PREFIX)) {
-            throw new IllegalStateException("not a sha256 content key: " + value);
+            return sha256(value.getBytes(StandardCharsets.UTF_8)).digestBytes();
         }
         return HexFormat.of().parseHex(value.substring(SHA256_PREFIX.length()));
     }

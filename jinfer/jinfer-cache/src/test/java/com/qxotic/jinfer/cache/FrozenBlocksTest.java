@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.cache;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Random;
 import java.util.zip.CRC32C;
@@ -645,5 +647,33 @@ public final class FrozenBlocksTest {
         assertTrue(
                 e.getMessage().contains("not a valid frozen prompt cache"),
                 "the stable corrupt-artifact error, got: " + e.getMessage());
+    }
+
+    @Test
+    void aRefusedOpenNamesTheStoredDigestAndThisLoadsIdentity() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {1});
+        Path file = Files.createTempFile("frozen", ".jkv");
+        file.toFile().deleteOnExit();
+        FrozenBlocks.createEmpty(file, seed);
+
+        // a printable identity: the message shows the line itself, so the differing component can
+        // be read off, and the media-decoder hint only when the line carries a decoder
+        ContentKey media =
+                new ContentKey(
+                        "jinfer-cache/1 model=sha256:ab companion:media=sha256:cd"
+                                + " imageDecoder=ffmpeg imagePlan=\"tiles=4\"");
+        String message =
+                assertThrows(IllegalStateException.class, () -> FrozenBlocks.open(file, media))
+                        .getMessage();
+        assertTrue(message.contains("stored:    " + HexFormat.of().formatHex(seed.digestBytes())));
+        assertTrue(message.contains("this load: " + media.value()), message);
+        assertTrue(message.contains("-Djinfer.imageDecoder"), message);
+
+        ContentKey text = new ContentKey("jinfer-cache/1 model=sha256:ab companion:spec=sha256:ef");
+        String plain =
+                assertThrows(IllegalStateException.class, () -> FrozenBlocks.open(file, text))
+                        .getMessage();
+        assertTrue(plain.contains("this load: " + text.value()), plain);
+        assertFalse(plain.contains("Decoder"), "no decoder to pin on a text-only load: " + plain);
     }
 }

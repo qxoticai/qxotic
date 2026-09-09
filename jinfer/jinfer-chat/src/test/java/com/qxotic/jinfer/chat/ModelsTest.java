@@ -1,7 +1,9 @@
 package com.qxotic.jinfer.chat;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -14,6 +16,11 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
+import com.qxotic.jinfer.media.Multimodal;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
@@ -25,14 +32,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -107,19 +112,44 @@ class ModelsTest {
         assertNotEquals(base.seed(), ab.seed()); // companions change the key space
         assertSame(base, Models.companionSeeded(base, Map.of())); // no companions, no re-root
 
-        // A load that projects no media folds in the companions and NOTHING else - in particular
-        // no media decoder, whose identity differs between a JVM and a native image. Folding one
-        // in here would partition a text-only artifact by the build that wrote it.
-        MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        sha.update(base.seed().value().getBytes(StandardCharsets.UTF_8));
-        for (var companion : new TreeMap<>(Map.of("media", media, "spec", spec)).entrySet()) {
-            sha.update(companion.getKey().getBytes(StandardCharsets.UTF_8));
-            sha.update(
-                    Models.modelSeed(companion.getValue())
-                            .value()
-                            .getBytes(StandardCharsets.UTF_8));
-        }
-        assertEquals(new ContentKey("sha256:" + HexFormat.of().formatHex(sha.digest())), ab.seed());
+        // The seed is PRINTABLE: the components in canonical order, not a digest of them, so a
+        // cache that refuses to open can say what this load is made of. A load that projects no
+        // media names the model and the companions and NOTHING else - in particular no media
+        // decoder, whose identity differs between a JVM and a native image; folding one in here
+        // would partition a text-only artifact by the build that wrote it.
+        assertEquals(
+                "jinfer-cache/1 model="
+                        + base.seed()
+                        + " companion:media="
+                        + Models.modelSeed(media)
+                        + " companion:spec="
+                        + Models.modelSeed(spec),
+                ab.seed().value());
+        // and the digest an artifact stores is the line's SHA-256, reproducible by hand
+        assertArrayEquals(
+                MessageDigest.getInstance("SHA-256")
+                        .digest(ab.seed().value().getBytes(StandardCharsets.UTF_8)),
+                ab.seed().digestBytes());
+    }
+
+    @Test
+    void aMediaLoadNamesTheDecoderAndPlanOfEachModalityItProjects(@TempDir Path dir)
+            throws Exception {
+        Path media = dir.resolve("mmproj.gguf");
+        Files.write(media, new byte[] {1, 2, 3});
+        LoadedModel<?> base = multimodalModel(ContentKey.sha256(new byte[] {0}), "tiles=4 pos=16");
+
+        String identity = Models.companionSeeded(base, Map.of("media", media)).seed().value();
+
+        // the image decoder this JVM resolved, and the plan quoted as ONE field despite its spaces
+        assertTrue(
+                identity.endsWith(
+                        " imageDecoder="
+                                + ImageCodec.decoder().name()
+                                + " imagePlan=\"tiles=4 pos=16\""),
+                identity);
+        // no audio projector: no audio decoder in the key space
+        assertFalse(identity.contains("audioDecoder"), identity);
     }
 
     @Test
@@ -270,6 +300,49 @@ class ModelsTest {
 
     private static LoadedModel<?> loadedModel(ContentKey seed) {
         return loadedModel(seed, Set.of());
+    }
+
+    /** A model that projects images under {@code imagePlan} and nothing else. */
+    private static LoadedModel<?> multimodalModel(ContentKey seed, String imagePlan) {
+        MediaProjector<Media.Image> images =
+                new MediaProjector<>() {
+                    @Override
+                    public int positions(Media.Image media) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public void project(
+                            Media.Image media, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public String planId() {
+                        return imagePlan;
+                    }
+                };
+        LanguageModel<?, ?, ?> model =
+                (LanguageModel<?, ?, ?>)
+                        Proxy.newProxyInstance(
+                                ModelsTest.class.getClassLoader(),
+                                new Class<?>[] {LanguageModel.class, Multimodal.class},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("projector")) {
+                                        return args[0] == Media.Image.class
+                                                ? Optional.of(images)
+                                                : Optional.empty();
+                                    }
+                                    throw new UnsupportedOperationException(method.getName());
+                                });
+        return new LoadedModel<>(
+                model,
+                tokenizer(0),
+                "",
+                Set.of(),
+                seed,
+                Optional.empty(),
+                LoadedModel.SamplingDefaults.NONE);
     }
 
     private static LoadedModel<?> loadedModel(ContentKey seed, Set<Integer> stopTokens) {

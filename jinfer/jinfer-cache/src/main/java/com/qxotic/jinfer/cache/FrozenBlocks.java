@@ -187,16 +187,22 @@ public final class FrozenBlocks {
             throw new IllegalStateException(
                     "frozen cache "
                             + file
-                            + " was built under a different cache identity (stored "
-                            + HexFormat.of().formatHex(stored, 0, 8)
-                            + "..., this load "
-                            + HexFormat.of().formatHex(seed, 0, 8)
-                            + "...). The identity covers the model file, every attached companion,"
-                            + " and - for a model that projects media - that modality's decoder and"
-                            + " projector plan. Load it the way it was built, or rebuild it here."
-                            + " A JVM and a native image resolve different media decoders, so a"
-                            + " media model's cache carries between them only when one is pinned"
-                            + " with -Djinfer.imageDecoder / -Djinfer.audioDecoder.");
+                            + " was built under a different cache identity."
+                            + "\n  stored:    "
+                            + HexFormat.of().formatHex(stored)
+                            + " (digest only: an artifact does not carry its description)"
+                            + "\n  this load: "
+                            + modelSeed.value()
+                            + "\nThe identity covers the model file, every attached companion,"
+                            + " and - per modality the model projects - its decoder and plan."
+                            + " Load the cache the way it was built, or rebuild it here."
+                            // only a load that projects media has a decoder to pin
+                            + (modelSeed.value().contains("Decoder=")
+                                    ? " A JVM and a native image resolve different media"
+                                            + " decoders; pin one with -Djinfer.imageDecoder /"
+                                            + " -Djinfer.audioDecoder to share a media model's"
+                                            + " cache between them."
+                                    : ""));
         }
     }
 

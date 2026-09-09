@@ -19,7 +19,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -481,6 +480,9 @@ public final class Models {
                         .withFallback(loaded.samplingDefaults()));
     }
 
+    /** Leads every composed cache identity, so the shape of one is greppable and versioned. */
+    private static final String CACHE_IDENTITY_VERSION = "jinfer-cache/1";
+
     /**
      * Re-roots the cache seed with EVERY ATTACHED COMPANION, and - per modality the model actually
      * projects - that modality's decoder and preprocessing plan. Media blocks are content-keyed by
@@ -498,39 +500,41 @@ public final class Models {
         if (companions.isEmpty()) {
             return loaded;
         }
-        MessageDigest sha = sha256();
-        sha.update(loaded.seed().value().getBytes(StandardCharsets.UTF_8));
-        // sorted, so the seed does not depend on the order a caller listed them in
+        // sorted, so the identity does not depend on the order a caller listed them in
+        StringBuilder identity =
+                new StringBuilder(CACHE_IDENTITY_VERSION)
+                        .append(" model=")
+                        .append(loaded.seed().value());
         for (var companion : new TreeMap<>(companions).entrySet()) {
-            sha.update(companion.getKey().getBytes(StandardCharsets.UTF_8));
-            sha.update(modelSeed(companion.getValue()).value().getBytes(StandardCharsets.UTF_8));
+            identity.append(" companion:")
+                    .append(companion.getKey())
+                    .append('=')
+                    .append(modelSeed(companion.getValue()).value());
         }
         if (loaded.model() instanceof Multimodal mm) {
             mm.projector(Media.Image.class)
                     .ifPresent(
-                            projector -> {
-                                sha.update(
-                                        ImageCodec.decoder()
-                                                .name()
-                                                .getBytes(StandardCharsets.UTF_8));
-                                sha.update(projector.planId().getBytes(StandardCharsets.UTF_8));
-                            });
+                            projector ->
+                                    identity.append(" imageDecoder=")
+                                            .append(ImageCodec.decoder().name())
+                                            .append(" imagePlan=\"")
+                                            .append(projector.planId())
+                                            .append('"'));
             mm.projector(Media.Audio.class)
                     .ifPresent(
-                            projector -> {
-                                sha.update(
-                                        AudioCodec.decoder()
-                                                .name()
-                                                .getBytes(StandardCharsets.UTF_8));
-                                sha.update(projector.planId().getBytes(StandardCharsets.UTF_8));
-                            });
+                            projector ->
+                                    identity.append(" audioDecoder=")
+                                            .append(AudioCodec.decoder().name())
+                                            .append(" audioPlan=\"")
+                                            .append(projector.planId())
+                                            .append('"'));
         }
         return new LoadedModel<>(
                 loaded.model(),
                 loaded.tokenizer(),
                 loaded.chatTemplateSource(),
                 loaded.stopTokens(),
-                new ContentKey("sha256:" + HexFormat.of().formatHex(sha.digest())),
+                new ContentKey(identity.toString()),
                 loaded.template(),
                 loaded.samplingDefaults());
     }

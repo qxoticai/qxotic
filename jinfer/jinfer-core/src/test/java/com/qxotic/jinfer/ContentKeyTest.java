@@ -26,8 +26,11 @@ class ContentKeyTest {
         assertArrayEquals(
                 MessageDigest.getInstance("SHA-256").digest(source),
                 ContentKey.sha256(source).digestBytes());
-        assertThrows(
-                IllegalStateException.class, () -> new ContentKey("my-model-v1").digestBytes());
+        // any other key digests to the SHA-256 of its value: a printable key verifies by hand
+        assertArrayEquals(
+                MessageDigest.getInstance("SHA-256")
+                        .digest("my-model-v1".getBytes(StandardCharsets.UTF_8)),
+                new ContentKey("my-model-v1").digestBytes());
     }
 
     @Test
