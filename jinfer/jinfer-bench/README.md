@@ -5,7 +5,7 @@
 [![GraalVM Native Image](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
 Benchmark harness for the [Jinfer](../README.md) inference engine. This page documents the workloads
-and commands used for [`BENCHMARKS.md`](../../BENCHMARKS.md).
+and commands behind every throughput number Jinfer reports.
 
 ## Build
 
@@ -126,7 +126,7 @@ Run them by name: `mvn test -pl jinfer-gemma4 -Dtest=MtpBench -Dsurefire.exclude
 
 ## Reproducing results
 
-The rules behind `BENCHMARKS.md`:
+The rules behind a reported number:
 
 - **Match the worker counts.** Pass the same physical-core count to pp and tg with `-t N`. This
   configures Jinfer and JAM together. A provider-specific `JAM_<PROVIDER>_THREADS` setting still

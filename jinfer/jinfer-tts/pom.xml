@@ -71,8 +71,41 @@
   <profiles>
     <profile>
       <id>native</id>
+      <properties>
+        <!-- Where the model fixtures live, same resolution as the testkit's TestModels:
+             -Djinfer.models, else the models directory beside the checkout. -->
+        <jinfer.models>${maven.multiModuleProjectDirectory}/../../models</jinfer.models>
+        <jinfer.lexicon.dir>${jinfer.models}/hf.co/remixerdec/Inflect-Nano-v2-GGUF</jinfer.lexicon.dir>
+      </properties>
       <build>
         <plugins>
+          <!-- The Inflect lexicon is downloaded test data, not source. A single-file executable
+               has no model directory beside it, so include it when present; an image built
+               without it falls back to espeak-ng. Same step as jinfer-inflect2-cli. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>embed-lexicon</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>process-classes</phase>
+                <configuration>
+                  <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${jinfer.lexicon.dir}</directory>
+                      <includes>
+                        <include>lexicon.bin</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
           <plugin>
             <groupId>org.graalvm.buildtools</groupId>
             <artifactId>native-maven-plugin</artifactId>
