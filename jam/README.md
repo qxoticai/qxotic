@@ -33,34 +33,30 @@ From C:
 ```c
 #include <jam.h>
 
-jam_status st = jam_mm(NULL,             // NULL = the global context
-                       W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
-                       X, JAM_F32,  k,   // activations [n x k]
-                       Y, JAM_F32,  m,   // result      [m x n]  (token-major, stride m)
-                       m, n, k);         // R = W @ Aᵀ
+jam_status st = jam_mm(
+     NULL,             // NULL = global context
+     W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
+     X, JAM_F32,  k,   // activations [n x k]
+     Y, JAM_F32,  m,   // result      [m x n]  (token-major, stride m)
+     m, n, k);         // R = W @ A^T
 ```
 
 Supported quantizations: `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
 Activations and result are always `F32`. The operands must be **native** segments, not heap arrays.
 
-`JAM.providers()` discovers the available backends from the classpath. The `mm` operation is bounds-checked `MemorySegment`s.
+`JAM.providers()` discovers the available backends from the classpath. The `mm` operation is meticulously bounds-checked.
 
-## Why jam
-
-- **A single op.** `jam_mm` computes `R = W @ Aᵀ`. Matrix-vector products (gemv) are supported
-  implicitly at `n == 1`.
-- **Picks the fastest kernel.** jam detects the supported CPU features once and selects the best
-  kernels, with no further per-call dispatch.
-- **Parallel.** Every call runs across multiple threads.
-- **No conversions.** Weights stay in their quantized format, byte-compatible with llama.cpp's
-  `mul_mat`, so a `.gguf` tensor can be passed directly.
-- **No third-party runtime dependencies.** `jam-native` bundles and loads the native library for
-  the current OS and arch. Override its location with `-Djam.native.library.path` or
-  `JAM_NATIVE_LIBRARY_PATH`. The available native toolchains determine which builds ship.
+## Why JAM
+- **Single entry point.** `jam_mm` computes `R = W @ A^T` (following llama.cpp's `mul_mat` convention). Fast matrix-vector multiplication (gemv) is supported implicitly for `n == 1`.
+- **Auto-selects the fastest kernel.** Detects the CPU features once, and selects the fastest kernels; no further per-call dispatch.
+- **Parallel by design.** Configurable multi-threaded execution.
+- **No conversions required.** Weights stay in their quantized format.
+- **Zero dependencies.** `jam-native` bundles and loads the native library for the current OS and arch. Override its location with `-Djam.native.library.path` or
+  `JAM_NATIVE_LIBRARY_PATH`.
 
 ## Performance
 
-Prefill throughput (`pp512`) of jinfer on the native jam backend and of llama.cpp, at matched instruction set:
+Prefill (`pp512`) of jinfer using the native jam backend vs. llama.cpp, for different instruction sets:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-tiers-dark.png">
@@ -83,33 +79,27 @@ One machine, one model; the numbers, the method and the sweep script are in
 `com.qxotic.jam.libjam` (`jam-native`, the default), `com.qxotic.jam.vector` (`jam-vector`), and
 `com.qxotic.jam.scalar` (`jam-scalar`). Implement `JAM.Provider` to add another backend.
 
-On the classpath, the Vector API backend requires:
+On the classpath, the vector jam (Vector API) backend requires:
 
 ```sh
 java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED ...
 ```
 
-On the module path, require only the API. Providers are discovered from their module descriptors:
+JPMS is not recommended, but supported for use cases where strict isolation (native access) is required e.g. the native jam backend.
 
-```java
-module app {
-    requires com.qxotic.jam;
-}
-```
-
-Grant native access to the providers that use it:
+Provide native access for backends that require it:
 
 ```sh
 java --enable-native-access=com.qxotic.jam.libjam,com.qxotic.jam.vector \
   --module-path ... --module app/com.example.Main
 ```
 
-The scalar provider requires no launch flags.
+The scalar jam provider requires no additional flags or permission.
 
 ## Backends
 
-jam automatically detects the CPU features, the number of cores, discards low-power cores and selects the best available kernels.  
-Manually control the target instruction set  with `JAM_ISA` or `cfg.max_isa`.
+jam automatically detects the current CPU features and/or JVM configuration, the number of cores, discards low-power cores and selects the best available kernels.  
+Set the target instruction set manually  with `JAM_ISA` or `cfg.max_isa`.
 
 | Arch | Instruction Sets | Q8_0 dot |
 |---|---|---|
@@ -117,16 +107,15 @@ Manually control the target instruction set  with `JAM_ISA` or `cfg.max_isa`.
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (the default) selects the best available kernels; on Apple Silicon that includes the Metal 
-backend. Set a CPU instruction-set (`JAM_ISA=i8mm`) to stay CPU-only. Backend dispatch, the packed weight
-layouts and the threading contract are described in [docs/design.md](docs/design.md).
+`JAM_ISA=auto` (the default) auto-selects the fastest  kernels; on Apple Silicon that includes Metal kernels.  
+Set a CPU instruction-set (`JAM_ISA=i8mm`) to stay CPU-only. Backend dispatch, re-packing and the multi-threading contract are described in [docs/design.md](docs/design.md).
 
 ## Configuration
 
 ```sh
-JAM_ISA=avx2                         ./app   # pin every provider at AVX2
-JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
-JAM_DEBUG=1                          ./app   # print detected features + bound kernels
+JAM_ISA=avx2  ./app   # pin native jam at AVX2
+JAM_ISA=i8mm  ./app   # CPU-only on Apple Silicon (Metal is on by default)
+JAM_DEBUG=1   ./app   # print detected features + selected kernels
 ```
 
 Thread pools are configurable: a JAM backend can use the host's provided `JAM.Parallel` pool (in jinfer,
