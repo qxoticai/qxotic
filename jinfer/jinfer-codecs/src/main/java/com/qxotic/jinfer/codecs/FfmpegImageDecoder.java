@@ -19,12 +19,12 @@ public final class FfmpegImageDecoder implements ImageDecoder {
 
     @Override
     public Media.Image load(Path path) throws IOException {
-        return parsePpm(Ffmpeg.run(ffmpegArgs(path.toString()), null));
+        return parsePpm(Subprocess.run(ffmpegArgs(path.toString()), null));
     }
 
     @Override
     public Media.Image decode(byte[] encoded) throws IOException {
-        return parsePpm(Ffmpeg.run(ffmpegArgs("pipe:0"), encoded));
+        return parsePpm(Subprocess.run(ffmpegArgs("pipe:0"), encoded));
     }
 
     private static List<String> ffmpegArgs(String input) {

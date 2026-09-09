@@ -11,17 +11,17 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class FfmpegTest {
+class SubprocessTest {
 
     @Test
     void returnsBoundedProcessOutput() throws Exception {
         assertArrayEquals(
                 "ok".getBytes(StandardCharsets.UTF_8),
-                Ffmpeg.run(command("small"), null, Duration.ofSeconds(2), 16));
+                Subprocess.run(command("small"), null, Duration.ofSeconds(2), 16));
         IOException failure =
                 assertThrows(
                         IOException.class,
-                        () -> Ffmpeg.run(command("large"), null, Duration.ofSeconds(2), 1024));
+                        () -> Subprocess.run(command("large"), null, Duration.ofSeconds(2), 1024));
         assertTrue(failure.getMessage().contains("exceeds"), failure.getMessage());
     }
 
@@ -31,7 +31,7 @@ class FfmpegTest {
         IOException failure =
                 assertThrows(
                         IOException.class,
-                        () -> Ffmpeg.run(command("sleep"), null, Duration.ofMillis(50), 1024));
+                        () -> Subprocess.run(command("sleep"), null, Duration.ofMillis(50), 1024));
         assertTrue(failure.getMessage().contains("timed out"), failure.getMessage());
         assertTrue(Duration.ofNanos(System.nanoTime() - start).toSeconds() < 3);
     }

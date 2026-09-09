@@ -5,23 +5,24 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * The one ffmpeg process runner: streams any {@code stdin} on a daemon thread and drains stderr
+ * The one external-tool runner: streams any {@code stdin} on a daemon thread and drains stderr
  * concurrently so the child never blocks on a full pipe, bounds time and captured output, and
- * reports a non-zero exit with the captured stderr. Shared by the audio, image and video codecs.
+ * reports a non-zero exit with the captured stderr. Shared by the ffmpeg codecs and {@link Espeak}.
  */
-final class Ffmpeg {
+final class Subprocess {
 
     private static final Duration TIMEOUT = Duration.ofMinutes(2);
     private static final int MAX_OUTPUT_BYTES = 256 << 20;
     private static final int MAX_ERROR_BYTES = 64 << 10;
 
-    private Ffmpeg() {}
+    private Subprocess() {}
 
     static byte[] run(List<String> cmd, byte[] stdin) throws IOException {
         return run(cmd, stdin, TIMEOUT, MAX_OUTPUT_BYTES);
@@ -35,20 +36,22 @@ final class Ffmpeg {
         if (maxOutputBytes < 1) {
             throw new IllegalArgumentException("maxOutputBytes " + maxOutputBytes);
         }
+        String tool = Path.of(cmd.getFirst()).getFileName().toString();
         Process p;
         try {
             p = new ProcessBuilder(cmd).start();
         } catch (IOException e) {
-            throw new IOException("failed to launch ffmpeg (is it on PATH?): " + e.getMessage(), e);
+            throw new IOException(
+                    "failed to launch " + tool + " (is it on PATH?): " + e.getMessage(), e);
         }
         if (stdin != null) {
             daemon(
-                    "ffmpeg-stdin",
+                    tool + "-stdin",
                     () -> {
                         try (OutputStream os = p.getOutputStream()) {
                             os.write(stdin);
                         } catch (IOException ignored) {
-                            // Broken pipe if ffmpeg rejects the input; its exit code reports it.
+                            // Broken pipe if the tool rejects the input; its exit code reports it.
                         }
                     });
         } else {
@@ -58,10 +61,10 @@ final class Ffmpeg {
         AtomicReference<IOException> outFailure = new AtomicReference<>();
         Thread outDrain =
                 daemon(
-                        "ffmpeg-stdout",
+                        tool + "-stdout",
                         () -> {
                             try (InputStream is = p.getInputStream()) {
-                                out.set(readLimited(is, maxOutputBytes));
+                                out.set(readLimited(tool, is, maxOutputBytes));
                             } catch (IOException e) {
                                 outFailure.set(e);
                             }
@@ -69,7 +72,7 @@ final class Ffmpeg {
         ByteArrayOutputStream err = new ByteArrayOutputStream(Math.min(8192, MAX_ERROR_BYTES));
         Thread errDrain =
                 daemon(
-                        "ffmpeg-stderr",
+                        tool + "-stderr",
                         () -> {
                             try (InputStream es = p.getErrorStream()) {
                                 drainCapped(es, err, MAX_ERROR_BYTES);
@@ -84,7 +87,7 @@ final class Ffmpeg {
                 p.waitFor();
                 outDrain.join();
                 errDrain.join();
-                throw new IOException("ffmpeg timed out after " + timeout);
+                throw new IOException(tool + " timed out after " + timeout);
             }
             code = p.exitValue();
             outDrain.join();
@@ -92,12 +95,12 @@ final class Ffmpeg {
         } catch (InterruptedException e) {
             p.destroyForcibly();
             Thread.currentThread().interrupt();
-            throw new IOException("interrupted waiting for ffmpeg", e);
+            throw new IOException("interrupted waiting for " + tool, e);
         }
         if (outFailure.get() != null) throw outFailure.get();
         if (code != 0) {
             throw new IOException(
-                    "ffmpeg exited " + code + ": " + err.toString(StandardCharsets.UTF_8).strip());
+                    tool + " exited " + code + ": " + err.toString(StandardCharsets.UTF_8).strip());
         }
         return out.get();
     }
@@ -109,13 +112,13 @@ final class Ffmpeg {
         return thread;
     }
 
-    private static byte[] readLimited(InputStream in, int limit) throws IOException {
+    private static byte[] readLimited(String tool, InputStream in, int limit) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(8192, limit));
         byte[] buffer = new byte[8192];
         for (int read; (read = in.read(buffer)) >= 0; ) {
             int keep = Math.min(read, limit - out.size());
             out.write(buffer, 0, keep);
-            if (keep != read) throw new IOException("ffmpeg output exceeds " + limit + " bytes");
+            if (keep != read) throw new IOException(tool + " output exceeds " + limit + " bytes");
         }
         return out.toByteArray();
     }

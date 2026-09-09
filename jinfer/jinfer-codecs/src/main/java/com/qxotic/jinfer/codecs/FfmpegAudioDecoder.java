@@ -32,7 +32,7 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
     }
 
     private static byte[] run(String input, byte[] data) throws IOException {
-        return Ffmpeg.run(
+        return Subprocess.run(
                 ffmpegArgs(input), data, Duration.ofMinutes(2), Math.multiplyExact(MAX_SAMPLES, 4));
     }
 

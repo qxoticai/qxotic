@@ -93,7 +93,7 @@ public final class FfmpegVideoCodec implements VideoCodec {
                         "-pix_fmt",
                         "rgb24",
                         "-"));
-        byte[] ppms = Ffmpeg.run(cmd, null);
+        byte[] ppms = Subprocess.run(cmd, null);
 
         // Frames pair with timestamps by ORDER, so a short stream must throw, never mis-pair:
         // a timestamp past the final frame yields an empty segment and fewer than n frames.
@@ -129,7 +129,7 @@ public final class FfmpegVideoCodec implements VideoCodec {
         // US_ASCII, not the platform default: csv=p=0 output is digits and dots, and the default
         // charset differs across Linux/macOS/Windows.
         return new String(
-                        Ffmpeg.run(cmd, null, Duration.ofSeconds(30), 64 << 10),
+                        Subprocess.run(cmd, null, Duration.ofSeconds(30), 64 << 10),
                         StandardCharsets.US_ASCII)
                 .strip();
     }

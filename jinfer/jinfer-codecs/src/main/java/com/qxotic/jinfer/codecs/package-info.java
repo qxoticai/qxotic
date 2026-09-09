@@ -5,7 +5,9 @@
  * com.qxotic.jinfer.codecs.AudioCodec} produces 16 kHz mono PCM. On a JVM they use the platform
  * image and sound APIs; native images fall back to ffmpeg. Either backend can be selected
  * explicitly with {@code jinfer.imageDecoder} or {@code jinfer.audioDecoder}. {@link
- * com.qxotic.jinfer.codecs.VideoCodec} decodes sampled video frames through ffmpeg.
+ * com.qxotic.jinfer.codecs.VideoCodec} decodes sampled video frames through ffmpeg. {@link
+ * com.qxotic.jinfer.codecs.Espeak} is the other external tool: espeak-ng as grapheme-to-phoneme,
+ * probed on demand, over which the speech ports build their phonemizers.
  *
  * <p>Decoding is separate from model projection: codecs know files and bytes, while a model's
  * {@link com.qxotic.jinfer.media.MediaProjector} turns decoded media into borrowed embedding rows.

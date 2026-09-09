@@ -12,7 +12,7 @@
   <packaging>jar</packaging>
 
   <name>Jinfer Codecs</name>
-  <description>Media decoding for Jinfer image, audio, and video inputs on the JVM and in native images.</description>
+  <description>Media decoding for Jinfer image, audio, and video inputs, and espeak-ng grapheme-to-phoneme, on the JVM and in native images.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
