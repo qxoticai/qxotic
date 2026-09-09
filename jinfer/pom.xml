@@ -371,6 +371,7 @@
                            restricted-method warnings that only the native-access flag silences,
                            and a user reading them cannot tell them from a real problem. -->
                       <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                      <Implementation-Version>${project.version}</Implementation-Version>
                     </manifestEntries>
                   </transformer>
                   <!-- merge META-INF/services across modules (ModelProvider arch dispatch) -->

@@ -1,10 +1,12 @@
 package com.qxotic.jinfer.bench;
 
+import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.RuntimeFlags;
+import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
@@ -30,6 +32,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * A llama-bench-parity harness driving every model through the generic loader ({@link Models#load}
@@ -131,9 +134,7 @@ public final class JinferBench {
         // -t sets the engine's one thread budget (BEFORE RuntimeFlags initializes); without it
         // the run measures the engine's own default - one thread per physical core.
         if (threads > 0) System.setProperty("jinfer.threads", Integer.toString(threads));
-        System.err.printf(
-                "threads: %d (%s)%n",
-                RuntimeFlags.THREADS, threads > 0 ? "requested" : "engine default");
+        System.out.println(header(threads > 0));
         if (threads <= 0) threads = RuntimeFlags.THREADS;
 
         List<Row> rows = new ArrayList<>();
@@ -620,6 +621,30 @@ public final class JinferBench {
     private static String name(String path) {
         String f = Path.of(path).getFileName().toString();
         return f.endsWith(".gguf") ? f.substring(0, f.length() - 5) : f;
+    }
+
+    /**
+     * What decided the numbers, on one line to paste with them: the compiler (a native image, the
+     * Graal JIT, or C2 - which runs the Vector API kernels largely de-intrinsified), the jam
+     * backends that loaded in the order the matmuls try them, and the thread budget.
+     */
+    static String header(boolean threadsRequested) {
+        String version = JinferBench.class.getPackage().getImplementationVersion();
+        String runtime =
+                System.getProperty("org.graalvm.nativeimage.imagecode") != null
+                        ? "native image"
+                        : Segments.FAST_VECTOR_JIT
+                                ? "GraalVM JIT"
+                                : "C2 (Vector API kernels de-intrinsified)";
+        String jam =
+                JAM.providers().stream().map(JAM.Provider::id).collect(Collectors.joining(", "));
+        return String.format(
+                "jinfer-bench %s | runtime: %s | jam: %s | threads: %d (%s)",
+                version == null ? "dev" : version,
+                runtime,
+                jam.isEmpty() ? "none (pure-Java floor)" : jam,
+                RuntimeFlags.THREADS,
+                threadsRequested ? "requested" : "engine default");
     }
 
     private static void usage(PrintStream out) {
