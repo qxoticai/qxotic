@@ -4,14 +4,11 @@ import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import java.io.IOException;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -358,51 +355,19 @@ public final class BlockTree<S extends ContextState> {
             }
             queue.addAll(b.children);
         }
-        long[] offsets = new long[order.size()];
-        long off = FrozenBlocks.HEADER_BYTES;
-        for (int i = 0; i < order.size(); i++) {
-            offsets[i] = off;
-            off = FrozenBlocks.align(off + order.get(i).mem.byteSize());
+        List<FrozenBlocks.Entry> entries = new ArrayList<>(order.size());
+        for (Block b : order) {
+            entries.add(
+                    new FrozenBlocks.Entry(
+                            b.key,
+                            b.parent.key,
+                            b.from,
+                            b.to,
+                            -1,
+                            b.mem,
+                            FrozenBlocks.crc32c(b.mem)));
         }
-        long indexOffset = off;
-        long total = indexOffset + (long) order.size() * FrozenBlocks.INDEX_ENTRY_BYTES;
-        try (FileChannel ch =
-                        FileChannel.open(
-                                out,
-                                StandardOpenOption.CREATE,
-                                StandardOpenOption.TRUNCATE_EXISTING,
-                                StandardOpenOption.READ,
-                                StandardOpenOption.WRITE);
-                Arena arena = Arena.ofConfined()) {
-            MemorySegment map = ch.map(FileChannel.MapMode.READ_WRITE, 0, total, arena);
-            ByteBuffer h =
-                    map.asSlice(0, FrozenBlocks.HEADER_BYTES)
-                            .asByteBuffer()
-                            .order(ByteOrder.LITTLE_ENDIAN);
-            h.putInt(FrozenBlocks.MAGIC)
-                    .putInt(FrozenBlocks.FORMAT_VERSION)
-                    .put(modelSeed.digestBytes())
-                    .putInt(order.size())
-                    .putLong(indexOffset);
-            ByteBuffer idx =
-                    map.asSlice(indexOffset, total - indexOffset)
-                            .asByteBuffer()
-                            .order(ByteOrder.LITTLE_ENDIAN);
-            for (int i = 0; i < order.size(); i++) {
-                Block b = order.get(i);
-                MemorySegment.copy(b.mem, 0, map, offsets[i], b.mem.byteSize());
-                FrozenBlocks.putEntry(
-                        idx,
-                        b.key,
-                        b.parent.key,
-                        b.from,
-                        b.to,
-                        offsets[i],
-                        b.mem.byteSize(),
-                        FrozenBlocks.crc32c(map.asSlice(offsets[i], b.mem.byteSize())));
-            }
-            map.force();
-        }
+        FrozenBlocks.write(out, modelSeed, entries);
     }
 
     /**

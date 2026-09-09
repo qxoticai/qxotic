@@ -16,6 +16,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.zip.CRC32C;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -236,6 +237,7 @@ public final class FrozenBlocksTest {
         st.ingestTo(13);
         stale.commit(sTip, d, 12, 1, st);
         // another writer grows the file after `stale` mounted
+        byte[] beforeRival = Files.readAllBytes(file);
         BlockTree<BlockResumeTest.FakeState> rival =
                 new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
@@ -255,20 +257,37 @@ public final class FrozenBlocksTest {
                 FrozenBlocks.open(file, seed).blockCount(),
                 "the rival's append survives untouched");
 
-        // crash simulation: old header + torn tail (append written, header flip lost)
-        Path torn = Files.createTempFile("append-torn", ".jkv");
-        torn.toFile().deleteOnExit();
-        Files.copy(file, torn, StandardCopyOption.REPLACE_EXISTING);
-        try (FileChannel ch = FileChannel.open(torn, StandardOpenOption.WRITE)) {
-            // restore the PRE-append header (count=1, indexOffset as after the first appendTo)
-            ByteBuffer flip = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN);
-            long firstIndexOffset =
-                    FrozenBlocks.align(FrozenBlocks.HEADER_BYTES + codec.byteSize(12));
-            flip.putInt(1).putLong(firstIndexOffset).flip();
-            ch.write(flip, FrozenBlocks.COUNT_OFFSET);
+        // Every torn prefix of the newly published slot opens as one complete generation, never a
+        // mixed count/offset pair. Once every checksummed field is present, the new generation is
+        // already a valid publication even if unwritten reserved bytes remain.
+        byte[] afterRival = Files.readAllBytes(file);
+        int publishedSlot = activeSlot(afterRival);
+        int slotOffset = slotOffset(publishedSlot);
+        for (int cut = 0; cut < FrozenBlocks.SLOT_BYTES; cut++) {
+            byte[] crash = afterRival.clone();
+            System.arraycopy(beforeRival, slotOffset, crash, slotOffset, FrozenBlocks.SLOT_BYTES);
+            System.arraycopy(afterRival, slotOffset, crash, slotOffset, cut);
+            FrozenBlocks recovered = FrozenBlocks.open(writeTemp(crash), seed);
+            assertEquals(
+                    cut < 40 ? 3 : 4, recovered.blockCount(), "slot tear after " + cut + " bytes");
         }
-        FrozenBlocks recovered = FrozenBlocks.open(torn, seed);
-        assertEquals(1, recovered.blockCount(), "torn append: the old catalog is intact");
+
+        // A complete new slot with a damaged index also rolls back to the old complete index.
+        byte[] damagedIndex = afterRival.clone();
+        damagedIndex[(int) indexOffset(damagedIndex)] ^= 1;
+        FrozenBlocks recovered = FrozenBlocks.open(writeTemp(damagedIndex), seed);
+        assertEquals(3, recovered.blockCount(), "damaged newest index rolls back");
+
+        byte[] malformedIndex = afterRival.clone();
+        int newestIndex = (int) indexOffset(malformedIndex);
+        ByteBuffer.wrap(malformedIndex).order(ByteOrder.LITTLE_ENDIAN).putInt(newestIndex + 64, -1);
+        recovered = FrozenBlocks.open(writeTemp(repairIndexCrc(malformedIndex)), seed);
+        assertEquals(3, recovered.blockCount(), "invalid newest index rolls back");
+
+        byte[] damagedSlots = afterRival.clone();
+        damagedSlots[FrozenBlocks.SLOT_A_OFFSET + 8] ^= 1;
+        damagedSlots[FrozenBlocks.SLOT_B_OFFSET + 8] ^= 1;
+        assertCorrupt(damagedSlots, seed);
         BlockTree<BlockResumeTest.FakeState> serve =
                 new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, recovered);
         BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
@@ -467,26 +486,39 @@ public final class FrozenBlocksTest {
         byte[] pristine = Files.readAllBytes(file);
         int index = (int) indexOffset(pristine);
 
-        // header: negative count, absurd count (index past EOF), index offset out of range
-        assertCorrupt(mutateInt(pristine, FrozenBlocks.COUNT_OFFSET, -1), seed);
-        assertCorrupt(mutateInt(pristine, FrozenBlocks.COUNT_OFFSET, 1 << 20), seed);
-        assertCorrupt(mutateLong(pristine, FrozenBlocks.COUNT_OFFSET + 4, -1), seed);
-        assertCorrupt(mutateLong(pristine, FrozenBlocks.COUNT_OFFSET + 4, 8), seed);
+        byte[] oldVersion = pristine.clone();
+        ByteBuffer.wrap(oldVersion).order(ByteOrder.LITTLE_ENDIAN).putInt(4, 3);
+        IllegalStateException old =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> FrozenBlocks.open(writeTemp(oldVersion), seed));
+        assertTrue(old.getMessage().contains("format v3"));
+        assertTrue(old.getMessage().contains("rebuild"));
+
+        // sole commit: negative generation/count, absurd count, index offset out of range
+        int commit = FrozenBlocks.SLOT_A_OFFSET;
+        assertCorrupt(repairSlotCrc(mutateLong(pristine, commit + 8, -1), 0), seed);
+        assertCorrupt(repairSlotCrc(mutateInt(pristine, commit + 16, -1), 0), seed);
+        assertCorrupt(repairSlotCrc(mutateInt(pristine, commit + 16, 1 << 20), 0), seed);
+        assertCorrupt(repairSlotCrc(mutateLong(pristine, commit + 24, -1), 0), seed);
+        assertCorrupt(repairSlotCrc(mutateLong(pristine, commit + 24, 8), 0), seed);
         assertCorrupt(
-                mutateLong(pristine, FrozenBlocks.COUNT_OFFSET + 4, pristine.length + 64), seed);
+                repairSlotCrc(mutateLong(pristine, commit + 24, pristine.length + 64), 0), seed);
 
         // entry 0: inverted span, negative from
-        assertCorrupt(mutateInt(pristine, index + 64, -4), seed); // from
-        assertCorrupt(mutateInt(pristine, index + 68, -1), seed); // to < from
+        assertCorrupt(repairIndexCrc(mutateInt(pristine, index + 64, -4)), seed); // from
+        assertCorrupt(repairIndexCrc(mutateInt(pristine, index + 68, -1)), seed); // to < from
         // entry 0: blob below the KV region, negative length, length past the index
-        assertCorrupt(mutateLong(pristine, index + 72, 0), seed);
-        assertCorrupt(mutateLong(pristine, index + 80, -8), seed);
+        assertCorrupt(repairIndexCrc(mutateLong(pristine, index + 72, 0)), seed);
+        assertCorrupt(repairIndexCrc(mutateLong(pristine, index + 80, -8)), seed);
         assertCorrupt(
-                mutateLong(pristine, index + 80, index - FrozenBlocks.HEADER_BYTES + 1), seed);
+                repairIndexCrc(
+                        mutateLong(pristine, index + 80, index - FrozenBlocks.HEADER_BYTES + 1)),
+                seed);
         // entry 0: wrong parent (the seed-derived root zeroed out)
         byte[] wrongRoot = pristine.clone();
         for (int i = 32; i < 64; i++) wrongRoot[index + i] = 0;
-        assertCorrupt(wrongRoot, seed);
+        assertCorrupt(repairIndexCrc(wrongRoot), seed);
         // entry 1 before its parent: swap the two 96-byte records (parents-first violated)
         byte[] swapped = pristine.clone();
         for (int i = 0; i < FrozenBlocks.INDEX_ENTRY_BYTES; i++) {
@@ -494,11 +526,11 @@ public final class FrozenBlocksTest {
             swapped[index + i] = swapped[index + FrozenBlocks.INDEX_ENTRY_BYTES + i];
             swapped[index + FrozenBlocks.INDEX_ENTRY_BYTES + i] = t;
         }
-        assertCorrupt(swapped, seed);
+        assertCorrupt(repairIndexCrc(swapped), seed);
         // duplicate key: entry 1's key overwritten with entry 0's
         byte[] dup = pristine.clone();
         System.arraycopy(pristine, index, dup, index + 96, 32);
-        assertCorrupt(dup, seed);
+        assertCorrupt(repairIndexCrc(dup), seed);
     }
 
     @Test
@@ -548,7 +580,47 @@ public final class FrozenBlocksTest {
     private static long indexOffset(byte[] artifact) {
         return ByteBuffer.wrap(artifact)
                 .order(ByteOrder.LITTLE_ENDIAN)
-                .getLong(FrozenBlocks.COUNT_OFFSET + 4);
+                .getLong(slotOffset(activeSlot(artifact)) + 24);
+    }
+
+    private static int activeSlot(byte[] artifact) {
+        ByteBuffer bytes = ByteBuffer.wrap(artifact).order(ByteOrder.LITTLE_ENDIAN);
+        long a = bytes.getLong(FrozenBlocks.SLOT_A_OFFSET + 8);
+        long b = bytes.getLong(FrozenBlocks.SLOT_B_OFFSET + 8);
+        return b > a ? 1 : 0;
+    }
+
+    private static int slotOffset(int slot) {
+        return slot == 0 ? FrozenBlocks.SLOT_A_OFFSET : FrozenBlocks.SLOT_B_OFFSET;
+    }
+
+    private static Path writeTemp(byte[] bytes) throws IOException {
+        Path tmp = Files.createTempFile("frozen-crash", ".jkv");
+        tmp.toFile().deleteOnExit();
+        Files.write(tmp, bytes);
+        return tmp;
+    }
+
+    private static byte[] repairIndexCrc(byte[] artifact) {
+        int slot = activeSlot(artifact);
+        int slotOffset = slotOffset(slot);
+        ByteBuffer bytes = ByteBuffer.wrap(artifact).order(ByteOrder.LITTLE_ENDIAN);
+        int count = bytes.getInt(slotOffset + 16);
+        int index = Math.toIntExact(bytes.getLong(slotOffset + 24));
+        CRC32C crc = new CRC32C();
+        crc.update(ByteBuffer.wrap(artifact, index, count * FrozenBlocks.INDEX_ENTRY_BYTES));
+        bytes.putInt(slotOffset + 32, (int) crc.getValue());
+        return repairSlotCrc(artifact, slot);
+    }
+
+    private static byte[] repairSlotCrc(byte[] artifact, int slot) {
+        int offset = slotOffset(slot);
+        ByteBuffer bytes = ByteBuffer.wrap(artifact).order(ByteOrder.LITTLE_ENDIAN);
+        bytes.putInt(offset + 36, 0);
+        CRC32C crc = new CRC32C();
+        crc.update(ByteBuffer.wrap(artifact, offset, FrozenBlocks.SLOT_BYTES));
+        bytes.putInt(offset + 36, (int) crc.getValue());
+        return artifact;
     }
 
     /** The artifact with one little-endian int overwritten, in a fresh temp file. */
