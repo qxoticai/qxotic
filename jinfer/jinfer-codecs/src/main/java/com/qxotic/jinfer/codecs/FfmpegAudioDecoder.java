@@ -22,6 +22,11 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
     static final int MAX_SAMPLES = SAMPLE_RATE * 60 * 10;
 
     @Override
+    public String name() {
+        return "ffmpeg";
+    }
+
+    @Override
     public Media.Audio load(Path path) throws IOException {
         return toAudio(run(path.toString(), null));
     }

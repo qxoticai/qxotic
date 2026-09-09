@@ -212,6 +212,12 @@ support.chat("How do I reset my password?");   // the instructions are already i
 base.saveCachedPrompts(Path.of("personas.jkv"));
 ```
 
+A `.jkv` is content-addressed twice over.
+Its blocks are keyed by the exact prompt tokens, so two programs share a cache only when they frame the prompt identically; a script that assembles its own history misses one written by the CLI and prefills from scratch, reporting nothing restored.
+The artifact itself is keyed by the model file, every attached companion, and - for a model that projects media - that modality's decoder and projector plan; opening it under a different identity fails loudly rather than serving the wrong KV.
+A JVM and a native image resolve different media decoders, so a media model's cache carries between them only when one is pinned with `-Djinfer.imageDecoder` or `-Djinfer.audioDecoder`.
+Text-only and speculation-only caches carry between builds as they are.
+
 
 **Text-to-Speech.**
 

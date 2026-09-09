@@ -20,15 +20,19 @@ import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Proxy;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -102,6 +106,20 @@ class ModelsTest {
         assertEquals(ab.seed(), ba.seed()); // sorted: listing order is irrelevant
         assertNotEquals(base.seed(), ab.seed()); // companions change the key space
         assertSame(base, Models.companionSeeded(base, Map.of())); // no companions, no re-root
+
+        // A load that projects no media folds in the companions and NOTHING else - in particular
+        // no media decoder, whose identity differs between a JVM and a native image. Folding one
+        // in here would partition a text-only artifact by the build that wrote it.
+        MessageDigest sha = MessageDigest.getInstance("SHA-256");
+        sha.update(base.seed().value().getBytes(StandardCharsets.UTF_8));
+        for (var companion : new TreeMap<>(Map.of("media", media, "spec", spec)).entrySet()) {
+            sha.update(companion.getKey().getBytes(StandardCharsets.UTF_8));
+            sha.update(
+                    Models.modelSeed(companion.getValue())
+                            .value()
+                            .getBytes(StandardCharsets.UTF_8));
+        }
+        assertEquals(new ContentKey("sha256:" + HexFormat.of().formatHex(sha.digest())), ab.seed());
     }
 
     @Test

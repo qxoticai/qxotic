@@ -5,6 +5,7 @@ import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.SpeechSynthesisModel;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.media.Media;
@@ -481,11 +482,16 @@ public final class Models {
     }
 
     /**
-     * Re-roots the cache seed with EVERY ATTACHED COMPANION, plus the image decoder and the model's
-     * preprocessing plan. Media blocks are content-keyed by their SOURCE bytes, so everything
-     * standing between those bytes and the stored KV must be part of the key space: a different
-     * projector producing different rows for the same image must never be served blocks cached
-     * under the old one.
+     * Re-roots the cache seed with EVERY ATTACHED COMPANION, and - per modality the model actually
+     * projects - that modality's decoder and preprocessing plan. Media blocks are content-keyed by
+     * their SOURCE bytes, so everything standing between those bytes and the stored KV belongs in
+     * the key space: a different projector, or a decoder that turns the same JPEG into different
+     * pixels, must never be served blocks cached under the old one.
+     *
+     * <p>A load that projects no media folds NO decoder in, deliberately. A JVM resolves the
+     * platform decoders and a native image resolves ffmpeg, so folding one in unconditionally would
+     * partition a text-only artifact by the build that wrote it - a cache built with jbang could
+     * never be read by the shipped binary, for a difference that cannot reach its blocks.
      */
     static <S extends ContextState> LoadedModel<S> companionSeeded(
             LoadedModel<S> loaded, Map<String, Path> companions) {
@@ -499,18 +505,25 @@ public final class Models {
             sha.update(companion.getKey().getBytes(StandardCharsets.UTF_8));
             sha.update(modelSeed(companion.getValue()).value().getBytes(StandardCharsets.UTF_8));
         }
-        sha.update(ImageCodec.decoder().name().getBytes(StandardCharsets.UTF_8));
         if (loaded.model() instanceof Multimodal mm) {
             mm.projector(Media.Image.class)
                     .ifPresent(
-                            projector ->
-                                    sha.update(
-                                            projector.planId().getBytes(StandardCharsets.UTF_8)));
+                            projector -> {
+                                sha.update(
+                                        ImageCodec.decoder()
+                                                .name()
+                                                .getBytes(StandardCharsets.UTF_8));
+                                sha.update(projector.planId().getBytes(StandardCharsets.UTF_8));
+                            });
             mm.projector(Media.Audio.class)
                     .ifPresent(
-                            projector ->
-                                    sha.update(
-                                            projector.planId().getBytes(StandardCharsets.UTF_8)));
+                            projector -> {
+                                sha.update(
+                                        AudioCodec.decoder()
+                                                .name()
+                                                .getBytes(StandardCharsets.UTF_8));
+                                sha.update(projector.planId().getBytes(StandardCharsets.UTF_8));
+                            });
         }
         return new LoadedModel<>(
                 loaded.model(),

@@ -187,12 +187,16 @@ public final class FrozenBlocks {
             throw new IllegalStateException(
                     "frozen cache "
                             + file
-                            + " (model seed "
+                            + " was built under a different cache identity (stored "
                             + HexFormat.of().formatHex(stored, 0, 8)
-                            + "...) was built for a different model than the one loaded (seed "
+                            + "..., this load "
                             + HexFormat.of().formatHex(seed, 0, 8)
-                            + "...); the cache is model-specific - rebuild it or load the matching"
-                            + " GGUF");
+                            + "...). The identity covers the model file, every attached companion,"
+                            + " and - for a model that projects media - that modality's decoder and"
+                            + " projector plan. Load it the way it was built, or rebuild it here."
+                            + " A JVM and a native image resolve different media decoders, so a"
+                            + " media model's cache carries between them only when one is pinned"
+                            + " with -Djinfer.imageDecoder / -Djinfer.audioDecoder.");
         }
     }
 
