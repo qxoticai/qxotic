@@ -109,30 +109,21 @@ final class KokoroLayers {
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, outChannels, outTime);
             // The generator's noise convolutions run this at the full sample rate, one channel in
             // and hundreds out: output channels are independent, so each is one job.
-            MemorySegment in = input.memory().base(), out = output.memory().base();
-            long inBase = input.byteOffset(), outBase = output.byteOffset();
             Parallel.forLoop(
                     outChannels,
                     oc -> {
                         float b = bias == null ? 0f : Views.getFloat(bias, oc, "conv1d bias");
                         for (int t = 0; t < outTime; t++) {
+                            int start = t * stride - padding; // the input index under tap 0
+                            int from = Math.max(0, -start), to = Math.min(kernel, time - start);
                             float sum = b;
                             for (int ic = 0; ic < inChannels; ic++) {
                                 int tap = (oc * inChannels + ic) * kernel;
-                                long row = (long) ic * time;
-                                for (int k = 0; k < kernel; k++) {
-                                    int source = t * stride + k - padding;
-                                    if (source >= 0 && source < time)
-                                        sum +=
-                                                taps[tap + k]
-                                                        * readFloat(
-                                                                in,
-                                                                inBase
-                                                                        + (row + source)
-                                                                                * Float.BYTES);
-                                }
+                                long row = (long) ic * time + start;
+                                for (int k = from; k < to; k++)
+                                    sum += taps[tap + k] * get(input, row + k);
                             }
-                            writeFloat(out, outBase + ((long) oc * outTime + t) * Float.BYTES, sum);
+                            set(output, (long) oc * outTime + t, sum);
                         }
                     });
             return output;
@@ -295,33 +286,26 @@ final class KokoroLayers {
             require(style.outputSize == 2 * channels, "AdaIN style projection is too narrow");
             MemoryView<MemorySegment> affine = style.forward(styleVector, 1, allocator);
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, channels, time);
-            MemorySegment in = input.memory().base(), out = output.memory().base();
-            long inBase = input.byteOffset(), outBase = output.byteOffset();
             Parallel.forLoop(
                     channels,
                     c -> {
-                        long row = (long) c * time * Float.BYTES;
+                        long row = (long) c * time;
                         double mean = 0;
-                        for (int t = 0; t < time; t++)
-                            mean += readFloat(in, inBase + row + (long) t * Float.BYTES);
+                        for (int t = 0; t < time; t++) mean += get(input, row + t);
                         mean /= time;
                         double variance = 0;
                         for (int t = 0; t < time; t++) {
-                            double centered =
-                                    readFloat(in, inBase + row + (long) t * Float.BYTES) - mean;
+                            double centered = get(input, row + t) - mean;
                             variance += centered * centered;
                         }
                         float scale =
                                 (float) (1.0 / Math.sqrt(variance / time + ADAPTIVE_NORM_EPS));
                         float gain = 1f + get(affine, c), shift = get(affine, channels + c);
-                        for (int t = 0; t < time; t++) {
-                            long at = row + (long) t * Float.BYTES;
-                            writeFloat(
-                                    out,
-                                    outBase + at,
-                                    (readFloat(in, inBase + at) - (float) mean) * scale * gain
-                                            + shift);
-                        }
+                        for (int t = 0; t < time; t++)
+                            set(
+                                    output,
+                                    row + t,
+                                    (get(input, row + t) - (float) mean) * scale * gain + shift);
                     });
             return output;
         }
@@ -335,8 +319,6 @@ final class KokoroLayers {
                 MemoryAllocator<MemorySegment> allocator) {
             checkChannelMajor(input, channels, time, "Snake input");
             MemoryView<MemorySegment> output = Views.allocateF32(allocator, channels, time);
-            MemorySegment in = input.memory().base(), out = output.memory().base();
-            long inBase = input.byteOffset(), outBase = output.byteOffset();
             Parallel.forLoop(
                     channels,
                     c -> {
@@ -344,10 +326,9 @@ final class KokoroLayers {
                         require(a != 0f, "Snake alpha must be non-zero");
                         long row = (long) c * time;
                         for (int t = 0; t < time; t++) {
-                            long at = (row + t) * Float.BYTES;
-                            float value = readFloat(in, inBase + at);
+                            float value = get(input, row + t);
                             double sine = Math.sin(a * value);
-                            writeFloat(out, outBase + at, value + (float) (sine * sine / a));
+                            set(output, row + t, value + (float) (sine * sine / a));
                         }
                     });
             return output;
