@@ -323,7 +323,7 @@ final class ReaderImpl {
         while (byteBuffer.position() < byteBuffer.limit()) {
             int bytesRead = byteChannel.read(byteBuffer);
             if (bytesRead < 0) {
-                throw new EOFException();
+                throw new EOFException("Unexpected end of stream: the file is truncated");
             } else if (bytesRead > 0) {
                 totalBytesRead += bytesRead;
             }
