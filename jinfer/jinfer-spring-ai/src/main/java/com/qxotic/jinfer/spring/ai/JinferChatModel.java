@@ -647,8 +647,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             Long speculatedAccepted,
             Long speculatedForwards) {}
 
-    private static String toFinishReason(
-            Generator.FinishReason jinferReason, boolean hasToolCalls) {
+    static String toFinishReason(Generator.FinishReason jinferReason, boolean hasToolCalls) {
         if (hasToolCalls) return "tool_calls";
         return switch (jinferReason) {
             case STOP -> "stop";

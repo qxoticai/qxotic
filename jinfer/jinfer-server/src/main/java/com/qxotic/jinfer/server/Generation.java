@@ -14,6 +14,7 @@ import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
+import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -145,6 +146,20 @@ final class Generation {
         }
     }
 
+    /**
+     * OpenAI's {@code finish_reason}. A deadline or a cancel is "other": neither the model nor the
+     * token budget ended the reply, and "stop" would claim the model did - the providers say OTHER.
+     */
+    static String finishReason(Generator.FinishReason reason, boolean hasCalls, boolean stopped) {
+        if (hasCalls) return "tool_calls";
+        if (stopped) return "stop";
+        return switch (reason) {
+            case STOP -> "stop";
+            case LENGTH -> "length";
+            default -> "other";
+        };
+    }
+
     private Reply finish(
             ChatEngine.Completion completion, List<String> stops, boolean inlineReasoning) {
         Message message = completion.reply();
@@ -157,17 +172,11 @@ final class Generation {
                         ? "<think>" + reasoning + "</think>" + text
                         : text.toString();
         TextStops.Result visible = TextStops.apply(content, stops);
-        String finish =
-                !calls.isEmpty()
-                        ? "tool_calls"
-                        : completion.result().stopToken().isPresent()
-                                        || completion.stopped()
-                                        || visible.stopped()
-                                ? "stop"
-                                : switch (completion.result().finishReason()) {
-                                    case LENGTH -> "length";
-                                    default -> "stop";
-                                };
+        boolean stopped =
+                completion.result().stopToken().isPresent()
+                        || completion.stopped()
+                        || visible.stopped();
+        String finish = finishReason(completion.result().finishReason(), !calls.isEmpty(), stopped);
         metrics.recordPromptCache(completion.tier(), completion.restoredTokens());
         return new Reply(
                 completion.result(),

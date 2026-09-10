@@ -214,6 +214,9 @@ class MappingsTest {
                 FinishReason.LENGTH, Mappings.toFinishReason(Generator.FinishReason.LENGTH, false));
         assertEquals(
                 FinishReason.OTHER, Mappings.toFinishReason(Generator.FinishReason.ABORT, false));
+        // a deadline is neither the model's end nor the token budget: OTHER, never LENGTH
+        assertEquals(
+                FinishReason.OTHER, Mappings.toFinishReason(Generator.FinishReason.TIMEOUT, false));
     }
 
     @Test

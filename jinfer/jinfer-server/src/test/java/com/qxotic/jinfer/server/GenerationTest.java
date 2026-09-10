@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -55,5 +56,19 @@ class GenerationTest {
                         true),
                 "the explicit kwarg wins");
         assertEquals(true, Generation.thinking(Map.of(), true));
+    }
+
+    @Test
+    void finishReasonSaysWhatEndedTheReply() {
+        assertEquals(
+                "tool_calls", Generation.finishReason(Generator.FinishReason.STOP, true, false));
+        assertEquals("stop", Generation.finishReason(Generator.FinishReason.LENGTH, false, true));
+        assertEquals("stop", Generation.finishReason(Generator.FinishReason.STOP, false, false));
+        assertEquals(
+                "length", Generation.finishReason(Generator.FinishReason.LENGTH, false, false));
+        // a deadline is neither the model's end nor the token budget: "other", never "stop"
+        assertEquals(
+                "other", Generation.finishReason(Generator.FinishReason.TIMEOUT, false, false));
+        assertEquals("other", Generation.finishReason(Generator.FinishReason.ABORT, false, false));
     }
 }

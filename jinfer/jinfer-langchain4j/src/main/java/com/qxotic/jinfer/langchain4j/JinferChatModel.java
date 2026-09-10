@@ -851,7 +851,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** Wall-clock deadline per request; unset = none. Exceeding it finishes with OTHER. */
+        /**
+         * Wall-clock deadline per request; unset = none. Exceeding it finishes with OTHER: the
+         * reply is what the deadline allowed, ended by neither the model nor the token budget.
+         */
         public Builder timeout(Duration timeout) {
             if (timeout == null || timeout.isNegative())
                 throw new IllegalArgumentException("timeout must be >= 0: " + timeout);

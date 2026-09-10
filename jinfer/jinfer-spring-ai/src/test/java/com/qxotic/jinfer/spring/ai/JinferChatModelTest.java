@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.llm.Generator;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -29,6 +30,19 @@ class JinferChatModelTest {
                                         .build());
         assertTrue(missing.getMessage().contains("prompt cache does not exist"));
         assertThrows(NullPointerException.class, () -> JinferChatModel.builder().promptCache(null));
+    }
+
+    @Test
+    void finishReasonsSayWhatEndedTheReply() {
+        assertEquals("stop", JinferChatModel.toFinishReason(Generator.FinishReason.STOP, false));
+        assertEquals(
+                "tool_calls", JinferChatModel.toFinishReason(Generator.FinishReason.STOP, true));
+        assertEquals(
+                "length", JinferChatModel.toFinishReason(Generator.FinishReason.LENGTH, false));
+        // a deadline is neither the model's end nor the token budget: "other", never "length"
+        assertEquals(
+                "other", JinferChatModel.toFinishReason(Generator.FinishReason.TIMEOUT, false));
+        assertEquals("other", JinferChatModel.toFinishReason(Generator.FinishReason.ABORT, false));
     }
 
     @Test
