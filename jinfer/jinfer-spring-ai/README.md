@@ -1,6 +1,6 @@
 <h1 align="center">jinfer for Spring AI</h1>
 
-<p align="center"><strong>AI in a jar, wired into Spring Boot with one property.</strong></p>
+<p align="center"><strong>Fast local LLM inference for Spring AI.</strong></p>
 
 <p align="center">
   <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
@@ -8,42 +8,27 @@
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
 </p>
 
-## The mission
-
-**AI sovereignty for the JVM.**
-
-An existing `ChatClient` keeps its code. The model moves into the same JVM as the service, so
-there is no inference server to run, no Python runtime, no external process and no API key. This is
-a Spring AI provider backed by the [jinfer](../README.md) engine. The weights load during
-application startup and live in the heap alongside the beans, so the inference runs end-to-end
-within the JVM.
-
-**Fast local LLM inference for the JVM. Just a jar.**
+AI runs on the same JVM as the service, so there is no external server to run, no Python runtime, no external process and no API keys.  
+This is a Spring AI provider backed by the [jinfer](../README.md) AI engine.
 
 ## What it does
-
-- **One property.** `spring.ai.model.chat=jinfer` plus a model reference, and `ChatClient` is
-  autoconfigured. Embeddings, reranking and speech are configured the same way.
-- **Provider-native structured output.** `.entity(Incident.class, …useProviderStructuredOutput)`
-  constrains sampling to Spring's derived schema, so the response cannot violate it.
-- **Tools.** `@Tool` methods run through Spring AI's automatic tool-calling loop.
-- **Multimodal.** Spring `Media` values for images, audio and video, decoded locally.
-- **Retrieval in one process.** `EmbeddingModel` plus a `DocumentPostProcessor` reranker, with no
-  vector service and no reranking endpoint.
-- **Offline after the first run.** Model sources resolve at application startup from a local path
-  or the cache, so nothing reaches the network in the request path.
-- **Managed lifecycle.** Spring closes the adapters; `fork()` shares loaded weights across pipelines.
+- **Spring Boot auto-configuration.** Pick Jinfer with `spring.ai.model.chat=jinfer` and configure a model to use it through Spring AI's APIs.
+- **Constrained generation.** Strictly sample tokens following the JSON schema Spring AI derives from your Java types.
+- **Automatic tool calling.** Expose `@Tool` methods and let Spring AI manage tool execution and follow-up model calls.
+- **Multimodal support.** Pass images, audio and video as Spring Media. Media is decoded locally.
+- **Local embeddings and reranking.** Generate embeddings through `EmbeddingModel` and rerank retrieved documents with `DocumentPostProcessor`.
+- **100% local inference.** Models are loaded in the JVM. No network access required.
 
 ## Spring Boot quick start
 
-Java 25 is required. Add these options to the application JVM:
+Java 25+ is required. Add these options to the application JVM:
 
 ```text
 --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 ```
 
-With `mvn spring-boot:run`, also set `<optimizedLaunch>false</optimizedLaunch>` on the plugin.
-Its default pins the JIT to C1, which never compiles the Vector API, and inference runs about 100x slower.
+**With `mvn spring-boot:run`, also set `<optimizedLaunch>false</optimizedLaunch>` on the plugin.  
+The default pins the JIT to C1, which never compiles the Vector API properly, and inference runs about 100x slower.**
 
 Point a property at a model reference or a local model path:
 
@@ -56,7 +41,7 @@ spring:
       chat:
         model: LiquidAI/LFM2.5-350M-GGUF:Q8_0
         context-capacity: 4096
-        max-tokens: 256
+        max-tokens: 512
 ```
 
 Then inject Spring AI's `ChatClient`:
@@ -88,9 +73,6 @@ The starter creates beans from these properties:
 Chat is the default when no other chat provider is selected. Model sources may be remote references
 or local paths and resolve during application startup. Add companions under
 `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
-
-Using the LangChain4j provider too?
-[The same knob at each face](../README.md#the-same-knob-at-each-face) maps one to the other, and to the CLI, the server and the Java API.
 
 ## Add the provider
 
@@ -211,12 +193,12 @@ Keep the BOM and model provider shown above and replace the starter with the cor
 
 ```java
 try (var model = JinferChatModel.builder()
-        .model("LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
+        .model("LiquidAI/LFM2.5-350M-GGUF:Q8_0")
         .contextCapacity(8192)   // 0 = the model maximum
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
-                .reasoningBudget(256)   // 8B-A1B always reasons: cap the span; thinking(false) is refused
+                .reasoningBudget(256)
                 .build())
         .build()) {
 
@@ -224,21 +206,9 @@ try (var model = JinferChatModel.builder()
 }
 ```
 
-`thinkingPolicy()` says how a checkpoint reasons.
-`NONE` has no think span, `OPTIONAL` honours `thinking(false)`, and `ALWAYS` (LFM2.5-8B-A1B) has no non-thinking turn, so `thinking(false)` is refused with an `IllegalArgumentException` naming the remedy.
-`reasoningBudget` caps the span on every policy (a budget of 0 makes the model answer first, which costs accuracy even on simple questions: prefer a small positive budget), as an option or as `spring.ai.jinfer.chat.reasoning-budget`.
-Reasoning costs latency before it costs anything else.
-Hidden tokens decode at the same rate as visible ones, so a one-line question that spends 130 tokens thinking before a 9-token answer takes fifteen times longer than the answer alone - 10 seconds on a laptop that decodes at 13 tokens per second.
-That is the model's own default: LFM2.5-2.6B opens its think span in the generation prompt itself, so every client pays those tokens, and `thinking(false)` closes a span the template opened.
-`JinferUsage.reasoningTokens()` on the response usage reports the hidden part of every reply, so a slow call explains itself.
-For a call that needs no reasoning - summarising a tool result, classifying, extracting - set `reasoningBudget(0)` in that call's options and keep the model's default for the rest.
+Use `model("...")` for a model reference and `modelPath(Path.of("model.gguf"))` for a local file. Companions follow the same pattern with `companion(...)` and `companionPath(...)`.
 
-Use `model("...")` for a model reference and `modelPath(Path.of("model.gguf"))` for a local
-file. Companions follow the same pattern with `companion(...)` and `companionPath(...)`.
-
-A reference is `owner/repo[:quant]`, which Hugging Face carries. Name a host to reach another
-source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`. Examples pin `Q8_0`; a reference with no
-quant follows llama.cpp and selects `Q4_K_M`.
+A model reference can be described as `owner/repo[:quant]`, models are downloaded once from Hugging Face  and cached. Name a host to reach another source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.
 
 `stream(Prompt)` returns a cancellable stream of text deltas and a final response.
 
@@ -371,16 +341,3 @@ silently given the default.
   grammar-constrained judge to reject bad answers and drive Spring AI's self-refine loop.
 - [`Narrate.java`](../examples/scripts/Narrate.java) runs two models from one Java file and writes a
   spoken description of an image.
-
-## Lifetime and concurrency
-
-A chat, embedding or reranking adapter is one serial inference pipeline; `fork()` adds an
-independent state that shares the loaded weights. The speech adapter mints a state per request, so
-concurrent requests run in parallel. Spring closes managed adapters automatically.
-
-Shaded JARs must preserve `ServiceLoader` entries. With Maven Shade, add
-`ServicesResourceTransformer`.
-
-## License
-
-Apache 2.0
