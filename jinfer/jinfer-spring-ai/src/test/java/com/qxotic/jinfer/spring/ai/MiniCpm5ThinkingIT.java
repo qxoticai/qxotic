@@ -33,7 +33,7 @@ class MiniCpm5ThinkingIT {
 
     @BeforeAll
     static void load() {
-        model = JinferChatModel.builder().modelPath(MODEL).contextLength(4096).build();
+        model = JinferChatModel.builder().modelPath(MODEL).contextCapacity(4096).build();
     }
 
     @AfterAll

@@ -48,7 +48,7 @@ class JinferChatModelListenerIT extends AbstractChatModelListenerIT {
         JinferChatModel m =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         // the kit's own defaults, set explicitly so defaultRequestParameters()
                         // echoes them: thinking OFF because the kit's 7-token budget must buy
                         // answer tokens, not analysis
@@ -73,7 +73,7 @@ class JinferChatModelListenerIT extends AbstractChatModelListenerIT {
         JinferChatModel m =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(512)
+                        .contextCapacity(512)
                         .listeners(List.of(listener))
                         .build();
         m.close(); // use-after-close is jinfer's honest call-time failure (a missing GGUF fails

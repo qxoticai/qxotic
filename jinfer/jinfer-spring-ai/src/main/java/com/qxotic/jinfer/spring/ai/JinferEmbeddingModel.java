@@ -73,9 +73,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             this.modelName = loaded.name();
             int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =
-                    b.contextLength == 0
+                    b.contextCapacity == 0
                             ? maxContextLength
-                            : Math.min(b.contextLength, maxContextLength);
+                            : Math.min(b.contextCapacity, maxContextLength);
             this.state = newState(loaded, contextCapacity, arena);
             this.observationRegistry =
                     b.observationRegistry == null
@@ -103,7 +103,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
         return builder()
                 .model(loaded)
-                .contextLength(state.contextCapacity())
+                .contextCapacity(state.contextCapacity())
                 .observationRegistry(observationRegistry)
                 .observationConvention(observationConvention)
                 .build();
@@ -255,7 +255,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private Object source; // Path | model-ref String | LoadedEmbedder: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedEmbedder<?> loaded; // derived from source at build()
-        private int contextLength = 2048;
+        private int contextCapacity = 2048;
         private ObservationRegistry observationRegistry;
         private EmbeddingModelObservationConvention observationConvention;
 
@@ -295,17 +295,18 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         /**
          * Upper bound on the packing window and on each embedded sequence, in tokens. The default
          * is 2048. A larger value admits longer sequences and can pack more sequences into one
-         * forward pass, at the cost of a larger resident state. {@code 0} uses the model's declared
-         * context length; otherwise the effective capacity is the smaller of this value and that
-         * length.
+         * forward pass, at the cost of a larger resident state. {@code 0} uses the model's {@code
+         * maxContextLength}; otherwise the effective capacity is the smaller of this value and that
+         * maximum.
          *
-         * @throws IllegalArgumentException if {@code contextLength < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < 0}
          */
-        public Builder contextLength(int contextLength) {
-            if (contextLength < 0)
+        public Builder contextCapacity(int contextCapacity) {
+            if (contextCapacity < 0)
                 throw new IllegalArgumentException(
-                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
-            this.contextLength = contextLength;
+                        "contextCapacity must be >= 0 (0 uses the model maximum): "
+                                + contextCapacity);
+            this.contextCapacity = contextCapacity;
             return this;
         }
 

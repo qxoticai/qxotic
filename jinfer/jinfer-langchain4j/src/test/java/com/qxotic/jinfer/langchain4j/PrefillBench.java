@@ -34,7 +34,7 @@ class PrefillBench {
         try (JinferChatModel m =
                 JinferChatModel.builder()
                         .modelPath(model)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(1)
                         .build()) {
             m.chat(UserMessage.from(prompt)); // warmup

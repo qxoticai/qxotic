@@ -33,7 +33,7 @@ class LocalRagIT {
                                 .modelPath(
                                         TestModels.require(
                                                 "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0"))
-                                .contextLength(4096)
+                                .contextCapacity(4096)
                                 .options(JinferChatOptions.builder().maxTokens(256).build())
                                 .build()) {
 

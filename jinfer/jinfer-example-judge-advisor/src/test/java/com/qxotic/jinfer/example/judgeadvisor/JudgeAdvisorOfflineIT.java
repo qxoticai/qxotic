@@ -24,7 +24,7 @@ class JudgeAdvisorOfflineIT {
         try (JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0"))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .options(JinferChatOptions.builder().maxTokens(512).build())
                         .build()) {
             String answer = JudgeAdvisorApplication.run(base, base);

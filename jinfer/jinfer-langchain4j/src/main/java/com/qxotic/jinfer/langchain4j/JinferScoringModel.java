@@ -57,9 +57,9 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
             }
             int maxContextLength = loaded.model().configuration().maxContextLength();
             this.contextCapacity =
-                    b.contextLength == 0
+                    b.contextCapacity == 0
                             ? maxContextLength
-                            : Math.min(b.contextLength, maxContextLength);
+                            : Math.min(b.contextCapacity, maxContextLength);
             this.state = newState(loaded, contextCapacity, arena);
             // the card's own wording is only knowable once the port is loaded
             if (b.instruction != null && !loaded.reranker().hasInstructionSlot())
@@ -87,7 +87,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
                             + " Load once into YOUR arena instead: Models.loadReranker(path,"
                             + " arena), build with model(loaded), then fork freely");
         }
-        Builder b = builder().model(loaded).contextLength(contextCapacity);
+        Builder b = builder().model(loaded).contextCapacity(contextCapacity);
         if (loaded.reranker().hasInstructionSlot()) b.instruction(instruction);
         return b.build();
     }
@@ -137,7 +137,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         private Object source; // Path | model-ref String | LoadedReranker: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedReranker<?> loaded; // derived from source at build()
-        private int contextLength = 2048;
+        private int contextCapacity = 2048;
         private String instruction;
 
         /** The reranker GGUF to load. Required. */
@@ -176,16 +176,17 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
         /**
          * Upper bound on the encoded query-and-document context, in tokens. The default is 2048.
-         * {@code 0} uses the model's declared context length; otherwise the effective capacity is
+         * {@code 0} uses the model's {@code maxContextLength}; otherwise the effective capacity is
          * the smaller of this value and that length.
          *
-         * @throws IllegalArgumentException if {@code contextLength < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < 0}
          */
-        public Builder contextLength(int contextLength) {
-            if (contextLength < 0)
+        public Builder contextCapacity(int contextCapacity) {
+            if (contextCapacity < 0)
                 throw new IllegalArgumentException(
-                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
-            this.contextLength = contextLength;
+                        "contextCapacity must be >= 0 (0 uses the model maximum): "
+                                + contextCapacity);
+            this.contextCapacity = contextCapacity;
             return this;
         }
 

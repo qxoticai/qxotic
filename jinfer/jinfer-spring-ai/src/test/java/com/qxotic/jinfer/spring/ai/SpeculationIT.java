@@ -32,7 +32,7 @@ class SpeculationIT {
         return JinferChatModel.builder()
                 .modelPath(MODEL)
                 .companionPath("speculation", MTP)
-                .contextLength(4096)
+                .contextCapacity(4096)
                 .options(JinferChatOptions.builder().maxTokens(64).temperature(0.0).build())
                 .speculationDepth(depth)
                 .build();

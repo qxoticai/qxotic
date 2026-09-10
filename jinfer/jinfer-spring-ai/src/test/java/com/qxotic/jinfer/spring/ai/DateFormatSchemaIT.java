@@ -42,7 +42,7 @@ class DateFormatSchemaIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .options(
                                 JinferChatOptions.builder().maxTokens(256).temperature(0.0).build())
                         .build();

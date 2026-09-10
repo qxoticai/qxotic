@@ -43,7 +43,7 @@ class JinferRequestParametersIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .maxOutputTokens(48)
                         .build();
     }
@@ -104,7 +104,7 @@ class JinferRequestParametersIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .defaultRequestParameters(
                                 JinferChatRequestParameters.builder()
                                         .grammar("root ::= \"positive\" | \"negative\"")

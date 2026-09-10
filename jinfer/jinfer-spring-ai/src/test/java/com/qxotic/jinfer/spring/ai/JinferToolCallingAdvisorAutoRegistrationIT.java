@@ -32,7 +32,7 @@ class JinferToolCallingAdvisorAutoRegistrationIT
         model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferToolCallingAdvisorIT.REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .options(
                                 JinferChatOptions.builder().maxTokens(512).temperature(0.0).build())
                         .build();

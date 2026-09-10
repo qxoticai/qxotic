@@ -38,7 +38,7 @@ class GptOssStructuredOutputIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .options(JinferChatOptions.builder().maxTokens(384).build())
                         .build();
     }

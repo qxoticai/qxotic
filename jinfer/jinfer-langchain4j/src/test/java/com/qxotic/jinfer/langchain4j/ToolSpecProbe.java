@@ -31,7 +31,7 @@ class ToolSpecProbe {
         try (JinferChatModel model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferChatModelTckIT.REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .maxOutputTokens(512)
                         .temperature(0.0)
                         .thinking(JinferChatModelTckIT.tckThinking())
@@ -93,7 +93,7 @@ class ToolSpecProbe {
         try (JinferChatModel model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferChatModelTckIT.REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .maxOutputTokens(512)
                         .temperature(0.0)
                         .thinking(JinferChatModelTckIT.tckThinking())

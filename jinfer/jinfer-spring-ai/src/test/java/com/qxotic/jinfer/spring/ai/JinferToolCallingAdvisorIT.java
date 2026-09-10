@@ -34,7 +34,7 @@ class JinferToolCallingAdvisorIT extends AbstractToolCallingAdvisorIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         // the advisor loop re-sends the whole exchange per round; greedy keeps a
                         // multi-round tool battery from flaking on near-ties
                         .options(

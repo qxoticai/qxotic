@@ -30,7 +30,7 @@ class JinferLifecycleIT {
     private static JinferChatModel load() {
         return JinferChatModel.builder()
                 .modelPath(SMALL)
-                .contextLength(2048)
+                .contextCapacity(2048)
                 .options(JinferChatOptions.builder().maxTokens(8).build())
                 .build();
     }

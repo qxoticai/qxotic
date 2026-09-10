@@ -57,7 +57,7 @@ public class Detect {
         try (var model = JinferChatModel.builder()
                 .model(modelRef)
                 .companion("media", mediaRef)
-                .contextLength(4096)
+                .contextCapacity(4096)
                 .maxOutputTokens(512)
                 .thinking(false)
                 .build()) {

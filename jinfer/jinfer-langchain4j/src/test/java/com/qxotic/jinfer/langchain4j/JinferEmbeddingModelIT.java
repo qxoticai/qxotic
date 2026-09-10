@@ -57,7 +57,7 @@ class JinferEmbeddingModelIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
-                        .contextLength(1024)
+                        .contextCapacity(1024)
                         .build();
         // vectors are bit-stable only once the JIT settles (cold passes drift ~1 LSB); the
         // identity assertions below compare across calls, so warm up first
@@ -176,7 +176,7 @@ class JinferEmbeddingModelIT {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class, () -> model.embed(TextSegment.from(words)));
-        assertTrue(e.getMessage().contains("contextLength"), e.getMessage());
+        assertTrue(e.getMessage().contains("contextCapacity"), e.getMessage());
     }
 
     @Test
@@ -351,7 +351,7 @@ class JinferEmbeddingModelIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF/LFM2.5-Embedding-350M-Q8_0.gguf"))
-                        .contextLength(256)
+                        .contextCapacity(256)
                         .build()) {
             assertEquals(
                     Set.of(EmbeddingRequestParameters.INPUT_TYPE), fixed.supportedParameters());
@@ -375,7 +375,7 @@ class JinferEmbeddingModelIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
-                        .contextLength(512)
+                        .contextCapacity(512)
                         .build();
         var err = new ByteArrayOutputStream();
         PrintStream real = System.err;
@@ -433,7 +433,7 @@ class JinferEmbeddingModelIT {
                                     "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"),
                             arena);
             JinferEmbeddingModel a =
-                    JinferEmbeddingModel.builder().model(loaded).contextLength(1024).build();
+                    JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
             JinferEmbeddingModel b = a.fork();
             try {
                 // borrowed == owned: same vectors as the path-built class-level model
@@ -475,7 +475,7 @@ class JinferEmbeddingModelIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
-                        .contextLength(256)
+                        .contextCapacity(256)
                         .build();
         closed.close();
         assertThrows(IllegalStateException.class, () -> closed.embed("hello"));
@@ -493,7 +493,7 @@ class JinferEmbeddingModelIT {
                             TestModels.require(
                                     "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"),
                             arena);
-            borrowed = JinferEmbeddingModel.builder().model(loaded).contextLength(512).build();
+            borrowed = JinferEmbeddingModel.builder().model(loaded).contextCapacity(512).build();
         } catch (Throwable t) {
             arena.close();
             throw t;

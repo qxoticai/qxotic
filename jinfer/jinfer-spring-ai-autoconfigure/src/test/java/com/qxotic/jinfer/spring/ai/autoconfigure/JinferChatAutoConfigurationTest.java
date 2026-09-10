@@ -51,12 +51,12 @@ class JinferChatAutoConfigurationTest {
     void negativeContextLengthFailsBeforeModelResolution() {
         runner.withPropertyValues(
                         "spring.ai.jinfer.chat.model=/missing.gguf",
-                        "spring.ai.jinfer.chat.context-length=-1")
+                        "spring.ai.jinfer.chat.context-capacity=-1")
                 .run(
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("contextLength must be >= 0");
+                                    .hasStackTraceContaining("contextCapacity must be >= 0");
                         });
     }
 
@@ -111,7 +111,7 @@ class JinferChatAutoConfigurationTest {
                         "spring.ai.jinfer.chat.companions.media=/mmproj.gguf",
                         "spring.ai.jinfer.chat.prompt-cache=/personas.jkv",
                         "spring.ai.jinfer.chat.retained-sessions=0",
-                        "spring.ai.jinfer.chat.context-length=8192",
+                        "spring.ai.jinfer.chat.context-capacity=8192",
                         "spring.ai.jinfer.chat.temperature=0.7",
                         "spring.ai.jinfer.chat.top-p=0.9",
                         "spring.ai.jinfer.chat.max-tokens=512",
@@ -128,7 +128,7 @@ class JinferChatAutoConfigurationTest {
                             assertThat(p.companions()).containsEntry("media", "/mmproj.gguf");
                             assertThat(p.promptCache()).isEqualTo("/personas.jkv");
                             assertThat(p.retainedSessions()).isZero();
-                            assertThat(p.contextLength()).isEqualTo(8192);
+                            assertThat(p.contextCapacity()).isEqualTo(8192);
                             assertThat(p.temperature()).isEqualTo(0.7);
                             assertThat(p.topP()).isEqualTo(0.9);
                             assertThat(p.maxTokens()).isEqualTo(512);

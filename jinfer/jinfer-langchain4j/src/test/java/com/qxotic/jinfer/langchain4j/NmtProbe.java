@@ -73,7 +73,7 @@ class NmtProbe {
                 try (JinferChatModel m =
                         JinferChatModel.builder()
                                 .modelPath(c.path())
-                                .contextLength(4096)
+                                .contextCapacity(4096)
                                 .maxOutputTokens(16)
                                 .build()) {
                     m.chat(UserMessage.from("Say hi in one word."));
@@ -111,7 +111,7 @@ class NmtProbe {
             try (JinferChatModel m =
                     JinferChatModel.builder()
                             .modelPath(c.path())
-                            .contextLength(4096)
+                            .contextCapacity(4096)
                             .maxOutputTokens(16)
                             .build()) {
                 m.chat(UserMessage.from("Say hi in one word."));

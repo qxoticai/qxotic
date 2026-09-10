@@ -48,7 +48,7 @@ class CachedPromptIT {
         base =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .options(JinferChatOptions.builder().maxTokens(128).build())
                         .build();
     }
@@ -72,7 +72,7 @@ class CachedPromptIT {
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .options(
                                 JinferChatOptions.builder()
                                         .maxTokens(128)
@@ -83,7 +83,7 @@ class CachedPromptIT {
         JinferChatModel twin =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .options(
                                 JinferChatOptions.builder()
                                         .maxTokens(128)
@@ -125,7 +125,7 @@ class CachedPromptIT {
         JinferChatModel warm =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .retainSessions(1)
                         .options(JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
@@ -158,7 +158,7 @@ class CachedPromptIT {
         JinferChatModel fresh =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .options(JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
         try {
@@ -229,7 +229,7 @@ class CachedPromptIT {
         JinferChatModel base2 =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .options(JinferChatOptions.builder().maxTokens(64).build())
                         .promptCache(artifact)
                         .build();
@@ -281,7 +281,7 @@ class CachedPromptIT {
                 () ->
                         JinferChatModel.builder()
                                 .modelPath(other)
-                                .contextLength(2048)
+                                .contextCapacity(2048)
                                 .promptCache(artifact)
                                 .build());
     }

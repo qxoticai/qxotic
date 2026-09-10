@@ -87,7 +87,7 @@ class Qwen3RerankerContractTest {
                                                 List.of("a small one", "lattice tower ".repeat(64)),
                                                 d -> {}));
                 assertTrue(e.getMessage().contains("document 1"), e.getMessage());
-                assertTrue(e.getMessage().contains("contextLength"), e.getMessage());
+                assertTrue(e.getMessage().contains("contextCapacity"), e.getMessage());
             }
         }
     }

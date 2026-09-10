@@ -105,17 +105,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * application did not ask it to write.
      */
     private static PromptCache.Options cacheOptions(
-            Path promptCache, int retainedSessions, Integer contextLength) {
+            Path promptCache, int retainedSessions, Integer contextCapacity) {
         var options = PromptCache.Options.DEFAULTS.withRetainedSessions(retainedSessions);
         // unset stays the engine's bounded default (min(4096, model)); an explicit value above
-        // the model's context length is refused at build
-        if (contextLength != null) options = options.withContextCapacity(contextLength);
+        // the model's {@code maxContextLength} is refused at build
+        if (contextCapacity != null) options = options.withContextCapacity(contextCapacity);
         return options.withCatalog(promptCache, true);
     }
 
     private JinferChatModel(Builder b) {
         PromptCache.Options requestedCacheOptions =
-                cacheOptions(b.promptCache, b.retainedSessions, b.contextLength);
+                cacheOptions(b.promptCache, b.retainedSessions, b.contextCapacity);
         this.ownsWeights = b.loaded == null;
         this.engine =
                 b.loaded == null
@@ -673,7 +673,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private Path promptCache;
         private int retainedSessions = 1;
         private Integer
-                contextLength; // null = unset -> min(4096, model); the loaded path rejects sets
+                contextCapacity; // null = unset -> min(4096, model); the loaded path rejects sets
         private JinferChatOptions options;
         private Integer speculationDepth;
         private ObservationRegistry observationRegistry;
@@ -786,18 +786,20 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Upper bound on the context available to each conversation, in tokens. The default is
-         * min(4096, the model's context length), deliberately bounded because a full-context state
-         * can consume substantial memory. A value above the model's context length is refused at
-         * build; {@code 0} uses the model's declared context length; otherwise the effective
-         * capacity is the smaller of this value and that length.
+         * min(4096, the model's {@code maxContextLength}), deliberately bounded because a
+         * full-context state can consume substantial memory. A value above the model's {@code
+         * maxContextLength} is refused at build; {@code 0} uses the model's {@code
+         * maxContextLength}; otherwise the effective capacity is the smaller of this value and that
+         * length.
          *
-         * @throws IllegalArgumentException if {@code contextLength < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < 0}
          */
-        public Builder contextLength(int contextLength) {
-            if (contextLength < 0)
+        public Builder contextCapacity(int contextCapacity) {
+            if (contextCapacity < 0)
                 throw new IllegalArgumentException(
-                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
-            this.contextLength = contextLength;
+                        "contextCapacity must be >= 0 (0 uses the model maximum): "
+                                + contextCapacity);
+            this.contextCapacity = contextCapacity;
             return this;
         }
 
@@ -845,7 +847,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 throw new IllegalArgumentException("prompt cache does not exist: " + promptCache);
             }
             if (source instanceof LoadedModel<?> l) {
-                // contextLength stays legal here: state capacity is an ENGINE setting resolved
+                // contextCapacity stays legal here: state capacity is an ENGINE setting resolved
                 // from cacheOptions, not a load-time one - a forked 32k pipeline needs it
                 if (!companionRefs.isEmpty() || !localCompanions.isEmpty())
                     throw new IllegalArgumentException(

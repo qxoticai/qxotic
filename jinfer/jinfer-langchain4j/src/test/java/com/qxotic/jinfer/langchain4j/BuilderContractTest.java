@@ -44,17 +44,18 @@ final class BuilderContractTest {
 
     @Test
     void contextLengthHasOneSentinelAtEveryBuilder() {
-        JinferChatModel.builder().contextLength(0);
-        JinferEmbeddingModel.builder().contextLength(0);
-        JinferScoringModel.builder().contextLength(0);
-        assertThrows(
-                IllegalArgumentException.class, () -> JinferChatModel.builder().contextLength(-1));
+        JinferChatModel.builder().contextCapacity(0);
+        JinferEmbeddingModel.builder().contextCapacity(0);
+        JinferScoringModel.builder().contextCapacity(0);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JinferEmbeddingModel.builder().contextLength(-1));
+                () -> JinferChatModel.builder().contextCapacity(-1));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JinferScoringModel.builder().contextLength(-1));
+                () -> JinferEmbeddingModel.builder().contextCapacity(-1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferScoringModel.builder().contextCapacity(-1));
     }
 
     @Test
@@ -186,7 +187,7 @@ final class BuilderContractTest {
     @Test
     @Tag("integration")
     void aLoadedModelStillTakesTheContextKnob() throws IOException {
-        // contextLength sizes the STATE, which the engine allocates - it is not a load-time
+        // contextCapacity sizes the STATE, which the engine allocates - it is not a load-time
         // setting, and LoadedModel has no knob to carry it. Refusing it here used to pin every
         // forked pipeline to the 4096 default with advice that could not be followed. Both
         // directions are pinned: a larger window is accepted, and the value demonstrably
@@ -198,7 +199,7 @@ final class BuilderContractTest {
                                     "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"),
                             weights);
             try (JinferChatModel model =
-                    JinferChatModel.builder().model(loaded).contextLength(8192).build()) {
+                    JinferChatModel.builder().model(loaded).contextCapacity(8192).build()) {
                 assertTrue(model.chat("Say hi.").length() > 0);
             }
             IllegalArgumentException tooLarge =
@@ -207,13 +208,13 @@ final class BuilderContractTest {
                             () ->
                                     JinferChatModel.builder()
                                             .model(loaded)
-                                            .contextLength(1 << 24)
+                                            .contextCapacity(1 << 24)
                                             .build());
             assertTrue(
                     tooLarge.getMessage().contains("exceeds the model's context length"),
                     "refused at build, not at the first long prompt: " + tooLarge.getMessage());
             try (JinferChatModel model =
-                    JinferChatModel.builder().model(loaded).contextLength(64).build()) {
+                    JinferChatModel.builder().model(loaded).contextCapacity(64).build()) {
                 IllegalArgumentException e =
                         assertThrows(
                                 IllegalArgumentException.class,

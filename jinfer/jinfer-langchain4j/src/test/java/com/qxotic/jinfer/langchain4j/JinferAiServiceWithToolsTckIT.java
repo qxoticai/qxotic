@@ -46,7 +46,7 @@ class JinferAiServiceWithToolsTckIT extends AbstractAiServiceWithToolsIT {
             model =
                     JinferChatModel.builder()
                             .modelPath(TestModels.require(REF))
-                            .contextLength(8192)
+                            .contextCapacity(8192)
                             .maxOutputTokens(512)
                             .temperature(0.0)
                             // thinking ON, as the kit's models run it; the one

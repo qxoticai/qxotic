@@ -30,9 +30,9 @@ class ConfigurationMetadataTest {
                         "\"spring.ai.jinfer.rerank\"",
                         "\"spring.ai.jinfer.speech\"",
                         "\"spring.ai.jinfer.chat.model\"",
-                        "\"spring.ai.jinfer.chat.context-length\"",
+                        "\"spring.ai.jinfer.chat.context-capacity\"",
                         "\"spring.ai.jinfer.embedding.model\"",
-                        "\"spring.ai.jinfer.embedding.context-length\"",
+                        "\"spring.ai.jinfer.embedding.context-capacity\"",
                         "\"spring.ai.jinfer.rerank.instruction\"",
                         "\"spring.ai.jinfer.speech.max-input-chars\"");
     }

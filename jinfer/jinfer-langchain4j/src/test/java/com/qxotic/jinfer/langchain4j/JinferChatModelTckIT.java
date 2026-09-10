@@ -75,7 +75,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
             var builder =
                     JinferChatModel.builder()
                             .modelPath(TestModels.require(REF))
-                            .contextLength(8192)
+                            .contextCapacity(8192)
                             .maxOutputTokens(512) // bound unconstrained TCK requests
                             // pinned GREEDY: a compliance suite must not flake. A seed alone is
                             // not enough - block-cache state drifts an ulp across suite orders
@@ -197,7 +197,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
         var builder =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .defaultRequestParameters(parameters)
                         // same reason as models(); the kit's own parameters override where set
                         .temperature(0.0)

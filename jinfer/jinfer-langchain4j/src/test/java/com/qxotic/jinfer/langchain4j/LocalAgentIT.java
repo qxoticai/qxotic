@@ -130,7 +130,7 @@ class LocalAgentIT {
         brain =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(BRAIN_REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .maxOutputTokens(512)
                         .temperature(0.0)
                         .seed(7L)
@@ -139,7 +139,7 @@ class LocalAgentIT {
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(EYES_REF))
                         .companionPath("media", TestModels.require(EYES_MMPROJ_REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(256)
                         .temperature(0.0)
                         .seed(7L)

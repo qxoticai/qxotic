@@ -259,8 +259,8 @@ This table is the translation.
 
 | concept | Java API | CLI | server | LangChain4j | Spring AI |
 |---|---|---|---|---|---|
-| context capacity: the tokens a conversation's state can hold | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextLength` on the builder | `contextLength` on the builder, `spring.ai.jinfer.chat.context-length` |
-| trained context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.contextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextLength(0)` selects it | same |
+| context capacity: the usable context of this model or state, what you set | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.chat.context-capacity` |
+| max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextCapacity(0)` selects it | same |
 | max output tokens | `Request.maxTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
 | temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
 | thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
@@ -269,9 +269,6 @@ This table is the translation.
 | speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
 | prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
 | structured output | `Request.contentGbnf` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
-
-The one collision: the providers' `contextLength` sets the **capacity**, under the name the Java API uses for the trained length.
-`0` there means "the trained length", and a value above it is refused at build.
 
 ## CLI and server
 

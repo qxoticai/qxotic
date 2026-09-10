@@ -53,7 +53,7 @@ class JinferChatModelIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(MODEL_REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(512)
                         .build();
     }
@@ -246,7 +246,7 @@ class JinferChatModelIT {
                         () ->
                                 JinferChatModel.builder()
                                         .modelPath(TestModels.require(MODEL_REF))
-                                        .contextLength(2048)
+                                        .contextCapacity(2048)
                                         .maxOutputTokens(128)
                                         .thinking(false)
                                         .build());
@@ -267,7 +267,7 @@ class JinferChatModelIT {
         try (JinferChatModel listened =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(TINY_MODEL_REF))
-                        .contextLength(1024)
+                        .contextCapacity(1024)
                         .maxOutputTokens(32)
                         .listeners(List.of(listener))
                         .build()) {
@@ -286,7 +286,7 @@ class JinferChatModelIT {
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(TINY_MODEL_REF))
-                        .contextLength(1024)
+                        .contextCapacity(1024)
                         .maxOutputTokens(8)
                         .build();
         JinferChatModel view =

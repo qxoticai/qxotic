@@ -82,7 +82,7 @@ class LocalRagStackIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .temperature(0.0)
                         .maxOutputTokens(160)
                         .build();

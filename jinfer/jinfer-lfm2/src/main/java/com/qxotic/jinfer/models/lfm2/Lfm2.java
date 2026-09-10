@@ -825,7 +825,7 @@ public final class Lfm2
                                 + " tokens and bidirectional attention forwards a sequence"
                                 + " whole (the cap here is "
                                 + cap
-                                + ") - raise -Djinfer.batchCapacity/contextLength above it,"
+                                + ") - raise -Djinfer.batchCapacity/contextCapacity above it,"
                                 + " or chunk the text smaller");
             total += tokens;
             state.reset();

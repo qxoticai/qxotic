@@ -33,7 +33,7 @@ class JinferLifecycleIT {
     private static JinferChatModel load() {
         return JinferChatModel.builder()
                 .modelPath(TestModels.require(REF))
-                .contextLength(2048)
+                .contextCapacity(2048)
                 .maxOutputTokens(8)
                 // GREEDY, which the state-independence assertion below states but the builder
                 // does not otherwise give: unset means the model's recommended temperature, and
@@ -141,7 +141,7 @@ class JinferLifecycleIT {
         try (JinferChatModel model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .maxOutputTokens(1)
                         .temperature(0.0)
                         .retainSessions(0)

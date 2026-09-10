@@ -150,7 +150,7 @@ LangChain4j conventions.
 ```java
 try (var model = JinferChatModel.builder()
         .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
-        .contextLength(8192)      // 0 = the model's full context
+        .contextCapacity(8192)      // 0 = the model's full context
         .temperature(0.7)
         .maxOutputTokens(1024)
         .reasoningBudget(256)     // cap the think span; 8B-A1B always reasons, so thinking(false) is refused
@@ -289,7 +289,7 @@ Use embeddings in the same JVM as chat:
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextLength(2048)          // packing upper bound; 0 = the model's maximum
+        .contextCapacity(2048)          // packing upper bound; 0 = the model's maximum
         .build();
 ```
 
@@ -387,7 +387,7 @@ One instance is one serial pipeline. Fork for parallel generation over shared we
 try (Arena arena = Arena.ofShared()) {
     var path = ModelStore.standard().resolve("LiquidAI/LFM2.5-350M-GGUF:Q8_0");
     var loaded = Models.load(path, arena);
-    try (var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
+    try (var a = JinferChatModel.builder().model(loaded).contextCapacity(8192).build();
             var b = a.fork()) {     // second pipeline, shared weights, separate context
         // Run concurrent requests through a and b.
     }

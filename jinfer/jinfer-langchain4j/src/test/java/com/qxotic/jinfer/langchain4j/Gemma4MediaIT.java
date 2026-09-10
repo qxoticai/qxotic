@@ -77,7 +77,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
                         .modelPath(modelPath())
                         .companionPath("media", mediaCompanion())
                         .videoSampler(ignored -> clip)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(64)
                         .temperature(0.0)
                         .thinking(false)
@@ -108,7 +108,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(AUDIO_MODEL_REF))
                         .companionPath("media", TestModels.require(AUDIO_MMPROJ_REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(512)
                         // greedy and seeded: sampled, the 12B asks for the file ~1 draw in 6
                         .temperature(0.0)

@@ -35,7 +35,7 @@ class JinferScoringModelIT {
         scorer =
                 JinferScoringModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .build();
     }
 
@@ -59,7 +59,7 @@ class JinferScoringModelIT {
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.loadReranker(TestModels.require(REF), arena);
             JinferScoringModel a =
-                    JinferScoringModel.builder().model(loaded).contextLength(2048).build();
+                    JinferScoringModel.builder().model(loaded).contextCapacity(2048).build();
             JinferScoringModel b = a.fork();
             try {
                 var docs =
@@ -195,7 +195,7 @@ class JinferScoringModelIT {
                         IllegalArgumentException.class,
                         () -> scorer.scoreAll(List.of(small, huge), "Where is the Eiffel Tower?"));
         assertTrue(e.getMessage().contains("document 1"), e.getMessage());
-        assertTrue(e.getMessage().contains("contextLength"), e.getMessage());
+        assertTrue(e.getMessage().contains("contextCapacity"), e.getMessage());
     }
 
     @Test
@@ -221,7 +221,7 @@ class JinferScoringModelIT {
         JinferScoringModel closed =
                 JinferScoringModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(512)
+                        .contextCapacity(512)
                         .build();
         closed.close();
         assertThrows(

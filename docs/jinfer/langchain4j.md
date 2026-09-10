@@ -52,7 +52,7 @@ Builder values are model defaults. `ChatRequest` values override per request.
 ```java
 ChatModel model = JinferChatModel.builder()
         .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
-        .contextLength(8192)      // 0 = the model's full context
+        .contextCapacity(8192)      // 0 = the model's full context
         .temperature(0.7)
         .topP(0.95)
         .maxOutputTokens(1024)
@@ -216,7 +216,7 @@ Segments are packed into context-sized ragged batches: one forward pass embeds m
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextLength(2048)          // packing upper bound; 0 = the model's maximum
+        .contextCapacity(2048)          // packing upper bound; 0 = the model's maximum
         .build();
 ```
 
@@ -301,7 +301,7 @@ One instance is one serial pipeline; concurrent calls queue. For parallel infere
 ```java
 try (Arena arena = Arena.ofShared()) {
     var loaded = Models.load(ModelStore.standard().resolve("...:Q4_K_M"), arena);
-    var a = JinferChatModel.builder().model(loaded).contextLength(8192).build();
+    var a = JinferChatModel.builder().model(loaded).contextCapacity(8192).build();
     var b = a.fork();               // second pipeline, same weights
     // ... concurrent chat on a and b ...
     a.close(); b.close();

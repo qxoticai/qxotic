@@ -36,7 +36,7 @@ abstract class AbstractCoarseCacheIT {
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(model)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(48)
                         .thinking(false) // 48 tokens is an ANSWER budget, not a reasoning one
                         // byte-identity is a law only under DETERMINISTIC decode: the builder

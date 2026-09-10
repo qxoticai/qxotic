@@ -63,7 +63,7 @@ class JinferDocumentPostProcessorIT {
         processor =
                 JinferDocumentPostProcessor.builder()
                         .modelPath(TestModels.require(RERANKER_REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .build();
     }
 
@@ -97,7 +97,7 @@ class JinferDocumentPostProcessorIT {
         List<Document> ranked =
                 JinferDocumentPostProcessor.builder()
                         .modelPath(TestModels.require(RERANKER_REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .topK(1)
                         .build()
                         .process(QUESTION, retrieved());
@@ -110,7 +110,7 @@ class JinferDocumentPostProcessorIT {
         JinferDocumentPostProcessor gated =
                 JinferDocumentPostProcessor.builder()
                         .modelPath(TestModels.require(RERANKER_REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .minScore(0.5) // the verdict IS a probability: gate on it
                         .build();
         assertTrue(

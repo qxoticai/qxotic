@@ -55,7 +55,7 @@ abstract class AbstractConstraintIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(modelPath())
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(512)
                         .temperature(0.0) // greedy and seeded: a red run is a fact, not a draw
                         .seed(7L)

@@ -52,7 +52,7 @@ class JinferEmbeddingModelIT {
         model =
                 JinferEmbeddingModel.builder()
                         .modelPath(TestModels.require(EMBED_REF))
-                        .contextLength(1024)
+                        .contextCapacity(1024)
                         .observationRegistry(observations)
                         .build();
         // vectors are bit-stable only once the JIT settles (cold passes drift ~1 LSB); the
@@ -221,7 +221,7 @@ class JinferEmbeddingModelIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF/LFM2.5-Embedding-350M-Q8_0.gguf"))
-                        .contextLength(256)
+                        .contextCapacity(256)
                         .build()) {
             assertEquals(
                     1024,
@@ -353,7 +353,7 @@ class JinferEmbeddingModelIT {
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.loadEmbedder(TestModels.require(EMBED_REF), arena);
             JinferEmbeddingModel a =
-                    JinferEmbeddingModel.builder().model(loaded).contextLength(1024).build();
+                    JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
             JinferEmbeddingModel b = a.fork();
             try {
                 float[] shared = a.embed(new Document("hello world"));

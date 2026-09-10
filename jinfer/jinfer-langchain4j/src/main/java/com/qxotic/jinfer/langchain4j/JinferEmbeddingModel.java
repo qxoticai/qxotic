@@ -69,9 +69,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             }
             int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =
-                    b.contextLength == 0
+                    b.contextCapacity == 0
                             ? maxContextLength
-                            : Math.min(b.contextLength, maxContextLength);
+                            : Math.min(b.contextCapacity, maxContextLength);
             this.state = newState(loaded, contextCapacity, arena);
             this.listeners = b.listeners == null ? List.of() : List.copyOf(b.listeners);
         } catch (RuntimeException | Error e) {
@@ -97,7 +97,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + " Load once into YOUR arena instead: Models.loadEmbedder(path,"
                             + " arena), build with model(loaded), then fork freely");
         }
-        return builder().model(loaded).contextLength(state.contextCapacity()).build();
+        return builder().model(loaded).contextCapacity(state.contextCapacity()).build();
     }
 
     /**
@@ -118,7 +118,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     /**
      * Token counting over THIS model's tokenizer: exact on text - for sizing splitter chunks
-     * against {@code contextLength}. The embedder adds its framing tokens per embedded segment
+     * against {@code contextCapacity}. The embedder adds its framing tokens per embedded segment
      * (prefixTokens + suffixTokens: one trailing EOS on Qwen3, one leading BOS on LFM2.5-Embedding)
      * on top of the text count.
      */
@@ -236,7 +236,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private Object source; // Path | model-ref String | LoadedEmbedder: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedEmbedder<?> loaded; // derived from source at build()
-        private int contextLength = 2048;
+        private int contextCapacity = 2048;
         private List<EmbeddingModelListener> listeners;
 
         /** langchain4j listeners; dispatched around every {@code embed(EmbeddingRequest)}. */
@@ -282,17 +282,18 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         /**
          * Upper bound on the packing window and on each embedded sequence, in tokens. The default
          * is 2048. A larger value admits longer sequences and can pack more sequences into one
-         * forward pass, at the cost of a larger resident state. {@code 0} uses the model's declared
-         * context length; otherwise the effective capacity is the smaller of this value and that
-         * length.
+         * forward pass, at the cost of a larger resident state. {@code 0} uses the model's {@code
+         * maxContextLength}; otherwise the effective capacity is the smaller of this value and that
+         * maximum.
          *
-         * @throws IllegalArgumentException if {@code contextLength < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < 0}
          */
-        public Builder contextLength(int contextLength) {
-            if (contextLength < 0)
+        public Builder contextCapacity(int contextCapacity) {
+            if (contextCapacity < 0)
                 throw new IllegalArgumentException(
-                        "contextLength must be >= 0 (0 uses the model maximum): " + contextLength);
-            this.contextLength = contextLength;
+                        "contextCapacity must be >= 0 (0 uses the model maximum): "
+                                + contextCapacity);
+            this.contextCapacity = contextCapacity;
             return this;
         }
 

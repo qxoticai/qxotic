@@ -49,7 +49,7 @@ class JinferEmbeddingModelTckIT extends AbstractEmbeddingModelIT {
     private static JinferEmbeddingModel build(EmbeddingModelListener listener) {
         return JinferEmbeddingModel.builder()
                 .modelPath(TestModels.require(REF))
-                .contextLength(1024)
+                .contextCapacity(1024)
                 .listeners(listener == null ? List.of() : List.of(listener))
                 .build();
     }

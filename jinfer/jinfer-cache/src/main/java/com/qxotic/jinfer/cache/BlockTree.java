@@ -249,8 +249,9 @@ public final class BlockTree<S extends ContextState> {
 
     /**
      * Removes a block and its whole subtree and frees their blobs - a failed blob verification
-     * degrades to a miss, never a wrong answer. Iterative, parent-first: chains run context-length
-     * deep, and recursion would stack-overflow on exactly the catalogs that need recovery.
+     * degrades to a miss, never a wrong answer. Iterative, parent-first: chains run
+     * context-capacity deep, and recursion would stack-overflow on exactly the catalogs that need
+     * recovery.
      */
     /**
      * A frozen block's artifact-carried CRC is checked once, on first use; own blocks are trusted.

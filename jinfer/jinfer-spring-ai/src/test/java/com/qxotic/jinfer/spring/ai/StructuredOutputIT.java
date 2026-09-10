@@ -55,7 +55,7 @@ class StructuredOutputIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .options(JinferChatOptions.builder().maxTokens(512).build())
                         .build();
     }

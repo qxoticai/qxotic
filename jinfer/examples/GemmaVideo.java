@@ -38,7 +38,7 @@ public class GemmaVideo {
                 .model(modelRef)
                 .companion("media", mediaRef)
                 .videoSampler(path -> VideoCodec.ffmpeg().uniform(path, frames))
-                .contextLength(8192)
+                .contextCapacity(8192)
                 .maxOutputTokens(400)
                 .thinking(false)
                 .build()) {

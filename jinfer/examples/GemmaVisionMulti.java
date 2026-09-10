@@ -43,7 +43,7 @@ public class GemmaVisionMulti {
         try (var model = JinferChatModel.builder()
                 .model(DEFAULT_MODEL)
                 .companion("media", DEFAULT_MEDIA)
-                .contextLength(8192)
+                .contextCapacity(8192)
                 .maxOutputTokens(400)
                 .thinking(false)
                 .build()) {

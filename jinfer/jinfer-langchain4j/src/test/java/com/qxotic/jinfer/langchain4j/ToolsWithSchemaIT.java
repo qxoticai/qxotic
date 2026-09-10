@@ -38,7 +38,7 @@ class ToolsWithSchemaIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf"))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(512)
                         .temperature(0.0)
                         .seed(7L)

@@ -32,7 +32,7 @@ abstract class AbstractCoarseCacheIT {
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(modelRef()))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         // pinned decode like the langchain4j twin: greedy, seeded, no think span -
                         // the model's recommended sampled temperature would make "contains Paris"
                         // a coin toss, and a think span eats the 48-token budget before the answer

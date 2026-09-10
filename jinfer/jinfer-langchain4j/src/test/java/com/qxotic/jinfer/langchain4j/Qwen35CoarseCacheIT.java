@@ -38,7 +38,7 @@ class Qwen35CoarseCacheIT extends AbstractCoarseCacheIT {
     private static JinferChatModel.Builder deterministic() {
         return JinferChatModel.builder()
                 .modelPath(TestModels.require(REF))
-                .contextLength(4096)
+                .contextCapacity(4096)
                 .maxOutputTokens(32)
                 .temperature(0.0)
                 .seed(7L);

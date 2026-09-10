@@ -49,7 +49,8 @@ public class JinferChatAutoConfiguration {
                         .retainSessions(properties.retainedSessions())
                         .options(properties.toOptions())
                         .speculationDepth(properties.speculationDepth());
-        if (properties.contextLength() != null) builder.contextLength(properties.contextLength());
+        if (properties.contextCapacity() != null)
+            builder.contextCapacity(properties.contextCapacity());
         if (properties.model().contains("://")) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.chat.model is a URL; download it first and configure its"

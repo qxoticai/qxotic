@@ -27,7 +27,7 @@ class ContextWallContractTest {
     void load() {
         model =
                 ChatFixtures.builder()
-                        .contextLength(64) // small enough that walls are a few dozen tokens away
+                        .contextCapacity(64) // small enough that walls are a few dozen tokens away
                         .temperature(0.0)
                         .build();
     }

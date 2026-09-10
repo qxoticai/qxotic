@@ -71,7 +71,7 @@ abstract class AbstractMediaIT {
         var builder =
                 JinferChatModel.builder()
                         .modelPath(modelPath())
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(512);
         if (mediaCompanion() != null) {
             Assumptions.assumeTrue(

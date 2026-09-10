@@ -52,7 +52,7 @@ class JinferStreamingChatModelListenerIT extends AbstractStreamingChatModelListe
         JinferChatModel m =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferChatModelListenerIT.REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         // the kit's defaults, explicit: thinking OFF so the 7-token budget buys
                         // answer tokens, not analysis
                         .temperature(0.7)
@@ -76,7 +76,7 @@ class JinferStreamingChatModelListenerIT extends AbstractStreamingChatModelListe
         JinferChatModel m =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferChatModelListenerIT.REF))
-                        .contextLength(512)
+                        .contextCapacity(512)
                         .listeners(List.of(listener))
                         .build();
         m.close(); // use-after-close: jinfer's honest call-time failure

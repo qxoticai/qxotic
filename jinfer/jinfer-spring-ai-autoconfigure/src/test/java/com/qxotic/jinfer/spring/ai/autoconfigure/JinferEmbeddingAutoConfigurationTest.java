@@ -68,13 +68,13 @@ class JinferEmbeddingAutoConfigurationTest {
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
                         "spring.ai.jinfer.embedding.model=/emb.gguf",
-                        "spring.ai.jinfer.embedding.context-length=1024")
+                        "spring.ai.jinfer.embedding.context-capacity=1024")
                 .run(
                         context -> {
                             JinferEmbeddingProperties p =
                                     context.getBean(JinferEmbeddingProperties.class);
                             assertThat(p.model()).isEqualTo("/emb.gguf");
-                            assertThat(p.contextLength()).isEqualTo(1024);
+                            assertThat(p.contextCapacity()).isEqualTo(1024);
                         });
     }
 

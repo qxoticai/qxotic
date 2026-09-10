@@ -33,17 +33,18 @@ class JinferChatModelTest {
 
     @Test
     void contextLengthHasOneSentinelAtEveryBuilder() {
-        JinferChatModel.builder().contextLength(0);
-        JinferEmbeddingModel.builder().contextLength(0);
-        JinferDocumentPostProcessor.builder().contextLength(0);
-        assertThrows(
-                IllegalArgumentException.class, () -> JinferChatModel.builder().contextLength(-1));
+        JinferChatModel.builder().contextCapacity(0);
+        JinferEmbeddingModel.builder().contextCapacity(0);
+        JinferDocumentPostProcessor.builder().contextCapacity(0);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JinferEmbeddingModel.builder().contextLength(-1));
+                () -> JinferChatModel.builder().contextCapacity(-1));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JinferDocumentPostProcessor.builder().contextLength(-1));
+                () -> JinferEmbeddingModel.builder().contextCapacity(-1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferDocumentPostProcessor.builder().contextCapacity(-1));
     }
 
     @Test

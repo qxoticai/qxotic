@@ -46,7 +46,7 @@ class JinferAiServiceTckIT extends AbstractAiServiceIT {
             model =
                     JinferChatModel.builder()
                             .modelPath(TestModels.require(REF))
-                            .contextLength(8192)
+                            .contextCapacity(8192)
                             .maxOutputTokens(512)
                             // pinned greedy, same reason as the low-level TCK: the kit tests the
                             // CONTRACT, not sampling quality, and must not flake

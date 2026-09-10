@@ -27,7 +27,7 @@ Run with:
 ```java
 try (var model = JinferChatModel.builder()
         .model("LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
-        .contextLength(8192) // 0 = the model maximum; negative values are rejected
+        .contextCapacity(8192) // 0 = the model maximum; negative values are rejected
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
@@ -114,14 +114,14 @@ The catalog is model-identity checked. An edited prompt reuses only its matching
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextLength(2048)
+        .contextCapacity(2048)
         .build();
 
 float[] vector = embeddings.embed("search query");
 
 DocumentPostProcessor reranker = JinferDocumentPostProcessor.builder()
         .modelPath(Path.of("reranker.gguf"))
-        .contextLength(2048)
+        .contextCapacity(2048)
         .topK(5)
         .build();
 ```
@@ -148,7 +148,7 @@ spring:
     jinfer:
       chat:
         model: LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
-        context-length: 8192
+        context-capacity: 8192
         max-tokens: 512
 ```
 

@@ -31,7 +31,7 @@ public final class ScoringBench {
         try (JinferScoringModel model =
                 JinferScoringModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .build()) {
             for (int count : DOCUMENT_COUNTS) {
                 List<TextSegment> documents = corpus(count);

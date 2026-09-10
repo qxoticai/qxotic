@@ -33,7 +33,7 @@ class GptOssStructuredOutputIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf"))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(384)
                         .build();
     }

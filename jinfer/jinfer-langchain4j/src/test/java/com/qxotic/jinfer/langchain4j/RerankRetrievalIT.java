@@ -95,14 +95,14 @@ class RerankRetrievalIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf"))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .build();
         chat =
                 JinferChatModel.builder()
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .temperature(0.0)
                         .maxOutputTokens(160)
                         .build();

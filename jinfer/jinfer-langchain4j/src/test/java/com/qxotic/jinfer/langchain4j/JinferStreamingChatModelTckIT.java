@@ -154,7 +154,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
         var builder =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferChatModelTckIT.REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .defaultRequestParameters(parameters)
                         // same greedy pinning as models(); kit parameters override
                         .temperature(0.0)
@@ -175,7 +175,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
         var builder =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(JinferChatModelTckIT.REF))
-                        .contextLength(8192)
+                        .contextCapacity(8192)
                         .maxOutputTokens(512)
                         // pinned GREEDY like the blocking TCK's models(): a compliance suite must
                         // not flake, and a temperature draw at a near-tie flips with cache-state

@@ -57,7 +57,7 @@ class AiServicesPatternsIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(MODEL_REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(256)
                         .thinking(false)
                         .temperature(0.0)
@@ -359,7 +359,7 @@ class AiServicesPatternsIT {
         JinferChatModel closed =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(MODEL_REF))
-                        .contextLength(512)
+                        .contextCapacity(512)
                         .build();
         closed.close();
         Chat chat = AiServices.builder(Chat.class).chatModel(closed).build();

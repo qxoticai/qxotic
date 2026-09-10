@@ -34,7 +34,7 @@ public class JinferRerankAutoConfiguration {
             JinferRerankProperties properties) {
         JinferDocumentPostProcessor.Builder builder =
                 JinferDocumentPostProcessor.builder()
-                        .contextLength(properties.contextLength())
+                        .contextCapacity(properties.contextCapacity())
                         .topK(properties.topK());
         // unset keeps the builder's no-threshold default (ColBERT MaxSim sums can be negative;
         // a 0 here silently dropped them)

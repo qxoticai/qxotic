@@ -66,7 +66,7 @@ abstract class AbstractThinkingIT {
         model =
                 JinferChatModel.builder()
                         .modelPath(modelPath())
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         // reasoning families spend tokens on analysis before any answer; a tight
                         // budget would die inside the thinking lane (the TCK's gpt-oss lesson)
                         .maxOutputTokens(1024)

@@ -56,7 +56,7 @@ class CachedPromptIT {
         base =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(128)
                         .build();
     }
@@ -79,7 +79,7 @@ class CachedPromptIT {
         JinferChatModel warm =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(128)
                         .retainSessions(1)
                         .seed(7L)
@@ -113,7 +113,7 @@ class CachedPromptIT {
         JinferChatModel fresh =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(128)
                         .seed(7L)
                         .build();
@@ -162,7 +162,7 @@ class CachedPromptIT {
         JinferChatModel base2 =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(4096)
+                        .contextCapacity(4096)
                         .maxOutputTokens(64)
                         .promptCache(artifact)
                         .build();
@@ -182,7 +182,7 @@ class CachedPromptIT {
         // context. The arena's block structure IS the ownership story: weights die at the brace.
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.load(TestModels.require(REF), arena);
-            // contextLength is a load-time setting on the LoadedModel path - the builder
+            // contextCapacity is a load-time setting on the LoadedModel path - the builder
             // refuses it here by design; a generous budget keeps the echo assertion off luck
             JinferChatModel a =
                     JinferChatModel.builder()
@@ -276,7 +276,7 @@ class CachedPromptIT {
         JinferChatModel twin =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(REF))
-                        .contextLength(2048)
+                        .contextCapacity(2048)
                         .build();
         var pool = Executors.newFixedThreadPool(2);
         try {
@@ -446,7 +446,7 @@ class CachedPromptIT {
                 () ->
                         JinferChatModel.builder()
                                 .modelPath(other)
-                                .contextLength(2048)
+                                .contextCapacity(2048)
                                 .promptCache(artifact)
                                 .build());
     }

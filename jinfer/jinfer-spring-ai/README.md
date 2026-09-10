@@ -55,7 +55,7 @@ spring:
     jinfer:
       chat:
         model: LiquidAI/LFM2.5-350M-GGUF:Q8_0
-        context-length: 4096
+        context-capacity: 4096
         max-tokens: 256
 ```
 
@@ -212,7 +212,7 @@ Keep the BOM and model provider shown above and replace the starter with the cor
 ```java
 try (var model = JinferChatModel.builder()
         .model("LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
-        .contextLength(8192)   // 0 = the model maximum
+        .contextCapacity(8192)   // 0 = the model maximum
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
@@ -279,7 +279,7 @@ Spring AI BOM:
 ```java
 try (var embeddings = JinferEmbeddingModel.builder()
                 .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-                .contextLength(2048)
+                .contextCapacity(2048)
                 .build();
         var reranker = JinferDocumentPostProcessor.builder()
                 .model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")

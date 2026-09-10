@@ -104,7 +104,7 @@ class WeightsCanaryIT {
                 JinferEmbeddingModel embed =
                         JinferEmbeddingModel.builder()
                                 .model(Models.loadEmbedder(embedPath.get(), arena))
-                                .contextLength(256)
+                                .contextCapacity(256)
                                 .build();
                 embed.close();
                 assertThrows(IllegalStateException.class, () -> embed.embed("hi"), "embed");
@@ -118,7 +118,7 @@ class WeightsCanaryIT {
                 JinferScoringModel score =
                         JinferScoringModel.builder()
                                 .model(Models.loadReranker(rerankPath.get(), arena))
-                                .contextLength(512)
+                                .contextCapacity(512)
                                 .build();
                 score.close();
                 assertThrows(
@@ -166,7 +166,8 @@ class WeightsCanaryIT {
             JinferEmbeddingModel borrowed;
             try {
                 var loaded = Models.loadEmbedder(familyPath.get(), arena);
-                borrowed = JinferEmbeddingModel.builder().model(loaded).contextLength(256).build();
+                borrowed =
+                        JinferEmbeddingModel.builder().model(loaded).contextCapacity(256).build();
             } catch (Throwable t) {
                 arena.close();
                 throw new AssertionError(family + ": failed to load", t);
@@ -198,7 +199,7 @@ class WeightsCanaryIT {
             JinferScoringModel borrowed;
             try {
                 var loaded = Models.loadReranker(familyPath.get(), arena);
-                borrowed = JinferScoringModel.builder().model(loaded).contextLength(512).build();
+                borrowed = JinferScoringModel.builder().model(loaded).contextCapacity(512).build();
             } catch (Throwable t) {
                 arena.close();
                 throw new AssertionError(family + ": failed to load", t);

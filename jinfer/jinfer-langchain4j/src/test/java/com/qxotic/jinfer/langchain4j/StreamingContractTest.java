@@ -138,7 +138,7 @@ class StreamingContractTest {
     void hittingTheContextWallMidStreamKeepsThePartialsAndFinishesLength() throws Exception {
         // Context exhaustion preserves partials and completes with LENGTH, not an error.
         try (JinferChatModel tiny =
-                ChatFixtures.builder().contextLength(64).maxOutputTokens(128).build()) {
+                ChatFixtures.builder().contextCapacity(64).maxOutputTokens(128).build()) {
             Recorder r = new Recorder();
             tiny.streaming().chat("hello", r);
             r.awaitCompletion();
