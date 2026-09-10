@@ -571,10 +571,10 @@ public final class JinjaRenderer {
                 String fmt = args.isEmpty() ? "%Y-%m-%d" : expectStr(requireArg(args, 0));
                 yield new Val.Str(strftime(LocalDateTime.now(), fmt));
             }
-            // chat templates call raise_exception(...) to reject malformed conversations; surface
-            // it as a distinct error (not an "unsupported feature") so the message is the real one.
+            // chat templates call raise_exception(...) to reject malformed conversations: the
+            // caller's argument is at fault, so the type says so and the message is the real one
             case "raise_exception" ->
-                    throw new RuntimeException(
+                    throw new IllegalArgumentException(
                             "[jinja:raise] "
                                     + (args.isEmpty()
                                             ? "template raised an exception"

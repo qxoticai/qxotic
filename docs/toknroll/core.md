@@ -38,7 +38,7 @@ int count = tokenizer.countTokens("How many tokens?");
 int byteCount = tokenizer.countBytes(tokens);
 
 // Preallocation hint. Estimate tokens per input char to size your builder
-int expected = tokenizer.expectedTokensPerChar();
+float expected = tokenizer.expectedTokensPerChar();
 ```
 
 ### Zero-allocation encoding
@@ -68,9 +68,9 @@ Static factory for building tokenizer components. Every tokenizer starts here.
 
 ```java
 // Lookups
-int id = vocab.id("<|endoftext|>");       // -1 if not found
-String token = vocab.token(50256);         // null if not found
 boolean has = vocab.contains("<|endoftext|>");
+int id = vocab.id("<|endoftext|>");       // NoSuchElementException if absent: check contains first
+String token = vocab.token(50256);         // likewise
 int size = vocab.size();
 ```
 
@@ -203,6 +203,6 @@ The encoding is reversible: `ByteLevel.decode(ByteLevel.encode(bytes))` always p
 boolean valid = ByteLevel.isValidEncoding(symbols);
 
 // Single byte/char convenience
-String sym = ByteLevel.encodeSingle((byte) 65);  // "A"
+char sym = ByteLevel.encodeSingle((byte) 65);    // 'A'
 byte b = ByteLevel.decodeSingle('A');              // 65
 ```

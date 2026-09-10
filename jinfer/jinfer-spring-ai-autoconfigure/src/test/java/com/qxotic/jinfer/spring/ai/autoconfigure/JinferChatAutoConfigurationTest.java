@@ -114,6 +114,8 @@ class JinferChatAutoConfigurationTest {
                         "spring.ai.jinfer.chat.context-capacity=8192",
                         "spring.ai.jinfer.chat.temperature=0.7",
                         "spring.ai.jinfer.chat.top-p=0.9",
+                        "spring.ai.jinfer.chat.top-k=40",
+                        "spring.ai.jinfer.chat.min-p=0.05",
                         "spring.ai.jinfer.chat.max-tokens=512",
                         "spring.ai.jinfer.chat.seed=7",
                         "spring.ai.jinfer.chat.thinking=false",
@@ -131,6 +133,8 @@ class JinferChatAutoConfigurationTest {
                             assertThat(p.contextCapacity()).isEqualTo(8192);
                             assertThat(p.temperature()).isEqualTo(0.7);
                             assertThat(p.topP()).isEqualTo(0.9);
+                            assertThat(p.topK()).isEqualTo(40);
+                            assertThat(p.minP()).isEqualTo(0.05);
                             assertThat(p.maxTokens()).isEqualTo(512);
                             assertThat(p.seed()).isEqualTo(7L);
                             assertThat(p.thinking()).isFalse();

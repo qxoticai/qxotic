@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,10 +32,10 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * The entry point, and only that: console setup, the verb dispatch ({@code pull}, {@code list}),
- * the model load, and the handoff to one of the two modes - {@link Instruct}, {@link Chat}. Flags
- * live in {@link Options}; the per-turn terminal rendering they share lives in {@link Turn}; the
- * generation machinery itself is {@link ChatEngine}'s.
+ * The entry point, and only that: console setup, the verb dispatch ({@code pull}, {@code list},
+ * {@code cache-info}), the model load, and the handoff to one of the two modes - {@link Instruct},
+ * {@link Chat}. Flags live in {@link Options}; the per-turn terminal rendering they share lives in
+ * {@link Turn}; the generation machinery itself is {@link ChatEngine}'s.
  */
 public class Main {
 
@@ -43,18 +44,14 @@ public class Main {
         oneLineLogs();
         if (args.length > 0 && !args[0].startsWith("-")) {
             switch (args[0]) {
-                case "list" -> {
-                    Options.require(args.length == 1, "list takes no arguments");
-                    list();
-                    return;
-                }
-                case "pull" -> {
-                    pull(Arrays.copyOfRange(args, 1, args.length));
-                    return;
-                }
-                case "cache-info" -> {
-                    Options.require(args.length == 2, "cache-info takes one <file.jkv>");
-                    System.out.print(FrozenBlocks.describe(Path.of(args[1])));
+                case "list", "pull", "cache-info" -> {
+                    try {
+                        command(args);
+                    } catch (IllegalArgumentException | IOException | UncheckedIOException e) {
+                        // a bad argument or an unreadable file: the message, not a stack trace
+                        System.err.println("ERROR " + Options.rootMessage(e));
+                        System.exit(2);
+                    }
                     return;
                 }
                 default -> {
@@ -176,6 +173,24 @@ public class Main {
      * only thing {@code -m <ref>} does not already do implicitly - it exists to warm a CI image or
      * a laptop before a flight.
      */
+    /** The verbs that do not load a model: list, pull, cache-info. */
+    private static void command(String[] args) throws IOException {
+        switch (args[0]) {
+            case "list" -> {
+                Options.require(args.length == 1, "list takes no arguments");
+                list();
+            }
+            case "pull" -> pull(Arrays.copyOfRange(args, 1, args.length));
+            case "cache-info" -> {
+                Options.require(args.length == 2, "cache-info takes one <file.jkv>");
+                Path file = Path.of(args[1]);
+                Options.require(Files.isRegularFile(file), "no such file: " + file);
+                System.out.print(FrozenBlocks.describe(file));
+            }
+            default -> throw new IllegalArgumentException("unknown command " + args[0]);
+        }
+    }
+
     private static void pull(String[] args) {
         boolean force = false;
         List<String> refs = new ArrayList<>();

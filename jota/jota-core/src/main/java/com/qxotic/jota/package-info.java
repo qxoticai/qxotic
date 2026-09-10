@@ -10,6 +10,6 @@
  *   <li>{@link com.qxotic.jota.Layout} - Shape and stride composition
  * </ul>
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 package com.qxotic.jota;

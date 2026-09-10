@@ -108,8 +108,17 @@ public class GGMLTypeTest {
         assertEquals(GGMLType.F16, GGMLType.fromId(1));
         assertEquals(GGMLType.Q4_0, GGMLType.fromId(2));
 
-        assertThrows(ArrayIndexOutOfBoundsException.class, () -> GGMLType.fromId(-1));
-        assertThrows(ArrayIndexOutOfBoundsException.class, () -> GGMLType.fromId(1000));
+        assertThrows(IllegalArgumentException.class, () -> GGMLType.fromId(-1));
+        assertThrows(IllegalArgumentException.class, () -> GGMLType.fromId(1000));
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testRemovedTypesRefuseSizing() {
+        assertThrows(UnsupportedOperationException.class, () -> GGMLType.Q4_2.byteSizeFor(32));
+        assertThrows(
+                UnsupportedOperationException.class, () -> GGMLType.Q4_2.elementsForByteSize(0));
+        assertThrows(UnsupportedOperationException.class, GGMLType.Q4_0_4_4::getBitsPerWeight);
     }
 
     @Test

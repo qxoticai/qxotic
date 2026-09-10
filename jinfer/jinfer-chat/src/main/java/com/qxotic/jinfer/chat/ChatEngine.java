@@ -77,7 +77,8 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * The smallest completion budget a think span fits: below it, thinking is disabled per request
      * regardless of the model default - silently spending a tiny budget on reasoning scaffold would
-     * return empty visible text.
+     * return empty visible text. A model that cannot render a non-thinking turn keeps its span open
+     * and the reasoning cap (half the budget) bounds it instead.
      */
     public static final int THINK_FLOOR = 16;
 
@@ -400,7 +401,7 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * The encoded prompt, the reply parser seeded with the prompt-owned reply prefix (null = raw
-     * completions: no scaffold exists, so call {@link #prepare}'s raw lane), and that prefix itself
+     * completions: no scaffold exists, so call {@link #prepareRaw} instead), and that prefix itself
      * - the trailing ids grammatically part of the reply, co-produced with the prompt so parser
      * state can never disagree with the tail. {@code replyPrefix} is informational: it already
      * rides the prompt's last batch and the parser already consumed it.
@@ -437,6 +438,8 @@ public final class ChatEngine implements AutoCloseable {
      * these fields. Direct, framework-free callers: {@link #of(List, Sampling)} covers the common
      * case without the 12 positional slots.
      *
+     * @param messages the conversation so far, tool results matched to their calls (see {@link
+     *     Conversation})
      * @param tools tools offered to the model; with a {@code contentGbnf} the family's reply
      *     language offers a call OR the document (a family without a combined language refuses the
      *     pair)
@@ -450,10 +453,14 @@ public final class ChatEngine implements AutoCloseable {
      *     the close marker; null or blank = a bare paragraph break
      * @param timeout wall-clock budget for the whole pass (prefill AND decode); {@link
      *     Duration#ZERO} = none
+     * @param sampling temperature, top-p, top-k, min-p and seed; see {@link
+     *     LoadedModel.SamplingDefaults#resolve} for the model-recommended values
      * @param contentGbnf constrains decoding to a GBNF grammar (JSON schema, ...); null = free;
      *     with tools offered the reply is a call or the grammar's document, see {@code tools}
      * @param forcedTool seed the family's call marker so the reply IS a tool call; mutually
      *     exclusive with {@code contentGbnf} - a forced call contradicts a stated format
+     * @param stops extra stop strings on the content lane; the reply keeps the full text and the
+     *     caller truncates with {@link TextStops#apply}; empty strings are refused
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
      *     {@link #encode} skips the native codec when any key it does not understand is present
      */
@@ -718,7 +725,8 @@ public final class ChatEngine implements AutoCloseable {
      * <ul>
      *   <li>the THINK FLOOR: a think span cannot fit a tiny completion budget, so below it (or on a
      *       forced call, whose reply is seeded into the call block) reasoning is disabled in the
-     *       scaffold AND the sampler, and the budget buys visible text
+     *       scaffold AND the sampler, and the budget buys visible text; a model that always reasons
+     *       keeps the span and is bounded by the reasoning cap instead
      *   <li>encoding: the native codec, falling back to the hardened Jinja whole-render
      *   <li>the sampling stack, with the request's grammar layered on under the same think gating
      *   <li>a forced call's unsplittable recipe: marker seeded into the prompt, names
@@ -785,8 +793,7 @@ public final class ChatEngine implements AutoCloseable {
                         && (request.maxTokens() < 0
                                 || request.maxTokens() >= THINK_FLOOR
                                 || alwaysReasons());
-        Conversation conversation =
-                new Conversation(request.messages(), request.tools(), think, "");
+        Conversation conversation = new Conversation(request.messages(), request.tools(), think);
         Encoded encoded =
                 encode(conversation, request.templateKwargs(), MemoryAllocators.ofArena(memory));
         if (request.tools().isEmpty()) encoded.parser().disableToolCalls();
@@ -1099,7 +1106,7 @@ public final class ChatEngine implements AutoCloseable {
             PromptCache.Tier tier,
             SpeculativeDecoding.SpeculationResult speculation) {
 
-        /** Non-null when the pass ran self-speculation - carries the acceptance counters. */
+        /** Present when the pass ran self-speculation - carries the acceptance counters. */
         public Optional<SpeculativeDecoding.SpeculationResult> speculated() {
             return Optional.ofNullable(speculation);
         }
@@ -1139,14 +1146,15 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * A finished generation in jinfer terms. {@link #cancelled} is derived: a cancelled pass has
-     * nothing to report, so its {@code reply} AND {@code result} are null - there is no second
-     * boolean to disagree with. {@code stopped} means a stop sequence cut the content lane: the
-     * reply still carries the full text (with its verbatim token ids intact), and the caller
-     * truncates its own message with {@link TextStops#apply}. {@code promptTokens} counts prepared
-     * model-input positions, including projected media rows and any template scaffolding, special
-     * tokens, or implicit system text; {@code restoredTokens} is the prefix of those positions
-     * restored from cache rather than recomputed.
+     * A finished generation in jinfer terms. {@link #cancelled} is derived: a cancelled pass has no
+     * {@code reply} - there is no second boolean to disagree with; its {@code result} is null when
+     * the cancel landed during prefill and the generator's own (aborted) result otherwise. {@code
+     * stopped} means a stop sequence cut the content lane: the reply still carries the full text
+     * (with its verbatim token ids intact), and the caller truncates its own message with {@link
+     * TextStops#apply}. {@code promptTokens} counts prepared model-input positions, including
+     * projected media rows and any template scaffolding, special tokens, or implicit system text;
+     * {@code restoredTokens} is the prefix of those positions restored from cache rather than
+     * recomputed.
      */
     public record Completion(
             Message reply,
@@ -1179,7 +1187,7 @@ public final class ChatEngine implements AutoCloseable {
             return total;
         }
 
-        /** Non-null when the pass ran self-speculation - carries the acceptance counters. */
+        /** Present when the pass ran self-speculation - carries the acceptance counters. */
         public Optional<SpeculativeDecoding.SpeculationResult> speculated() {
             return Optional.ofNullable(speculation);
         }

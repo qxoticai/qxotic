@@ -776,10 +776,10 @@ public final class JinjaRendererTest {
     @Test
     void templateFunctions() {
         // raise_exception(msg) aborts rendering with the given message (chat templates use it to
-        // reject malformed conversations)
-        RuntimeException failure =
+        // reject malformed conversations, so the type blames the caller's argument)
+        IllegalArgumentException failure =
                 assertThrows(
-                        RuntimeException.class,
+                        IllegalArgumentException.class,
                         () ->
                                 JinjaRenderer.render(
                                         "{% if true_flag %}{{ raise_exception('bad input') }}{%"

@@ -75,7 +75,7 @@ final class LlamaIntegrationTest {
                                     Message.user("One"),
                                     Message.assistant("Two"),
                                     Message.user("Three")))) {
-                Conversation conversation = new Conversation(messages, List.of(), false, "");
+                Conversation conversation = new Conversation(messages, List.of(), false);
                 int[] nativeIds = Batch.tokenIds(engine.encode(conversation, null).prompt());
                 int[] jinjaIds =
                         Batch.tokenIds(

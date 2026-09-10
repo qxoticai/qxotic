@@ -326,9 +326,9 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
     /** What a pass may do and know - nothing else escapes the cache. */
     public interface Serving {
         /**
-         * Wire as the generator's {@code afterIngest}: records each decode token the moment the
-         * state's frontier includes it. With blocks on, a residue-free codec commits it as its own
-         * per-position block (token-exact echo resume, free - a single stores just its row); a
+         * Wire as the generator's {@code onIngested} listener: records each decode token the moment
+         * the state's frontier includes it. With blocks on, a residue-free codec commits it as its
+         * own per-position block (token-exact echo resume, free - a single stores just its row); a
          * residue-carrying codec buffers the reply and commits it as ONE block when the pass ends
          * (one residue per reply, checkpoints at turn boundaries). A no-op lane when blocks are
          * off, but ALWAYS keeps the retained stream in lockstep, so wiring it is not optional.

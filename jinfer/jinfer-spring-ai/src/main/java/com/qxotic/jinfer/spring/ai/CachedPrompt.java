@@ -38,7 +38,7 @@ record CachedPrompt(List<Message> messages, List<Tool> tools) {
 
     /** This prefix as a conversation to define into the block tree. */
     Conversation conversation(boolean thinking) {
-        return new Conversation(messages, tools, thinking, "");
+        return new Conversation(messages, tools, thinking);
     }
 
     /**

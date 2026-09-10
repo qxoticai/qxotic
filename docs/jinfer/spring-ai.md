@@ -14,7 +14,15 @@ sidebar_position: 3
   <artifactId>jinfer-spring-ai</artifactId>
   <version>0.2.0</version>
 </dependency>
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>jinfer-lfm2</artifactId>
+  <version>0.2.0</version>
+</dependency>
 ```
+
+The provider loads nothing by itself: add one model family (`jinfer-lfm2` here), or `jinfer-models-all` for every family.
+Spring Boot applications use `jinfer-spring-ai-spring-boot-starter` instead of `jinfer-spring-ai`, see the [module README](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-spring-ai/README.md).
 
 Run with:
 
@@ -31,7 +39,7 @@ try (var model = JinferChatModel.builder()
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
-                .thinking(false)
+                .reasoningBudget(256) // this model always reasons: cap the span
                 .build())
         .build()) {
 

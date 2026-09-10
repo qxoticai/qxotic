@@ -360,17 +360,20 @@ public enum GGMLType {
      * </ul>
      */
     public double getBitsPerWeight() {
+        if (elementsPerBlock == 0) {
+            throw new UnsupportedOperationException(name() + " was removed from GGML");
+        }
         return (blockByteSize * 8.0) / elementsPerBlock;
     }
 
     /**
      * Returns the GGMLType for the given type ID.
      *
-     * @throws ArrayIndexOutOfBoundsException if the ID is invalid
+     * @throws IllegalArgumentException if the ID is unknown
      */
     public static GGMLType fromId(int id) {
         if (id < 0 || id >= VALUES.length) {
-            throw new ArrayIndexOutOfBoundsException("Unknown GGML type ID: " + id);
+            throw new IllegalArgumentException("Unknown GGML type ID: " + id);
         }
         return VALUES[id];
     }
@@ -380,8 +383,12 @@ public enum GGMLType {
      *
      * @throws ArithmeticException if the result overflows
      * @throws IllegalArgumentException if element count is not a multiple of elements per block
+     * @throws UnsupportedOperationException for a type GGML has removed
      */
     public long byteSizeFor(long numberOfElements) {
+        if (elementsPerBlock == 0) {
+            throw new UnsupportedOperationException(name() + " was removed from GGML");
+        }
         if (numberOfElements % elementsPerBlock != 0) {
             throw new IllegalArgumentException(
                     "Number of elements ("
@@ -400,6 +407,9 @@ public enum GGMLType {
      * @throws IllegalArgumentException if byte size is not a multiple of block byte size
      */
     public long elementsForByteSize(long byteSize) {
+        if (elementsPerBlock == 0) {
+            throw new UnsupportedOperationException(name() + " was removed from GGML");
+        }
         if (byteSize % blockByteSize != 0) {
             throw new IllegalArgumentException(
                     "Byte size ("

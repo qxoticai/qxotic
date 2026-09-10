@@ -62,7 +62,6 @@ Every kernel, every model port and every jam backend runs its parallel regions o
 A region body gets `(index, slot)`; the slot indexes per-participant scratch and is unique within one loop.
 Regions of one pool are serialized, a loop from inside a region runs inline, a body that throws ends the loop early, and `MatMul.mm` refuses a call from inside a region.
 Around the pool: one fair engine lock per `ChatEngine` serializes generations while prepares run beside them on a read lock (so a stream can be enqueued without waiting for the reply in flight); the server has one generation worker and an admission gate; the streaming driver is one lazy thread.
-The audit and the refactor record live in `THREADING.md` at the repository root.
 
 ## Chat flow
 

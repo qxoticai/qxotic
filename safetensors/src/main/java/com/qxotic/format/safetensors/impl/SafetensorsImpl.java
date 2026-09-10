@@ -4,6 +4,7 @@ import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 final class SafetensorsImpl implements Safetensors {
@@ -15,8 +16,9 @@ final class SafetensorsImpl implements Safetensors {
     SafetensorsImpl(
             long tensorDataOffset, Map<String, String> metadata, Map<String, TensorEntry> tensors) {
         this.tensorDataOffset = tensorDataOffset;
-        this.metadata = Collections.unmodifiableMap(metadata);
-        this.tensors = Collections.unmodifiableMap(tensors);
+        // copies: a builder keeps mutating its own maps after build()
+        this.metadata = Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        this.tensors = Collections.unmodifiableMap(new LinkedHashMap<>(tensors));
     }
 
     @Override

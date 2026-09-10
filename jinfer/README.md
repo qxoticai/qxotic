@@ -103,7 +103,7 @@ try (var model = JinferChatModel.builder()
 }
 ```
 
-A model reference is defined as `[provider.com/]owner/repository[/path][@revision][:quant]`, downloaded once from Hugging Face and cached.  
+A model reference is defined as `[provider.com/]owner/repository[@revision][/path][:quant]`, downloaded once from Hugging Face and cached.  
 Other providers and hosts are supported, for example `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.
 Use `.modelPath(Path modelPath)` to specify a model file already on disk.
 
@@ -114,6 +114,7 @@ If native libraries cannot be used/loaded, use `jam-vector` instead to accelerat
 ## Examples
 
 The snippets below use the [LangChain4j](jinfer-langchain4j) integration. The [Spring AI](jinfer-spring-ai/README.md) integration covers the same features.
+For the `AiServices` examples, also add `dev.langchain4j:langchain4j:1.19.0` to your dependencies.
 
 **Streaming.**
 
@@ -226,6 +227,7 @@ Measured on Gemma 4 E2B Q8_0 on a 16-core CPU: lists 2.0x, code 1.7x, prose 0.9x
 ```java
 try (var speech = JinferSpeechModel.builder()
         .model("remixerdec/Inflect-Nano-v2-GGUF:Q8_0")
+        .companion("lexicon", "remixerdec/Inflect-Nano-v2-GGUF/lexicon.bin")
         .build()) {
 
     var audio = speech.synthesize("Hello from local Java inference.").audio();
@@ -236,7 +238,7 @@ try (var speech = JinferSpeechModel.builder()
 
 ## Chat CLI
 
-To test different models, a simple CLI is bundled, can chat will all the supported models. 
+To test different models, a simple CLI is bundled, can chat with all the supported models. 
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
@@ -251,9 +253,9 @@ java \
 ## OpenAI-compatible server
 
 A simple OpenAI-compatible server is also provided.  
-Multimodal models can attach their audio/image projector with`--mmproj <clip.gguf>`. Pass `--help` for more details.
+Multimodal models can attach their audio/image projector with `--mmproj <clip.gguf>`. Pass `--help` for more details.
 
-```java
+```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
 java \

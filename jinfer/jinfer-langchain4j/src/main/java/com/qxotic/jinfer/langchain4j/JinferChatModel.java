@@ -390,7 +390,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 : Mappings.toTools(p.toolSpecifications());
     }
 
-    /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
+    // Framework types mapped away; every policy below this line lives in ChatEngine.
+
     /** The tools this request offers, after the cached prefix's precedence rule. */
     List<Tool> offeredTools(ChatRequest request) {
         return prefix.resolveTools(statedTools(request.parameters()));
@@ -408,11 +409,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             LOG.warn(prefix.toolsOverrideWarning(tools));
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
-        // The schema constrains the SHAPE through the grammar below and is NOT restated in the
-        // prompt: the caller owns their prompt, and a provider that appends to it spends the
-        // caller's tokens invisibly (measured on LFM2.5: 119 for a two-field record, 358 for a
-        // nine-field one, against a 22-token question). A model that must be TOLD the shape in
-        // words should be told by whoever wrote the request.
+        // The schema constrains the SHAPE through the grammar below; one line naming the fields
+        // is also appended to the prompt unless describeSchema(false), because a grammar alone
+        // lets the model produce the shortest valid object rather than the whole one.
         Map<String, Object> schema = schemaOf(p);
         messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
         if (schema != null && describeSchema && (tools.isEmpty() || afterAToolRound(messages))) {
@@ -453,17 +452,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return framed(() -> engine.prepare(lowered));
     }
 
-    /** The request's JSON schema as a plain map, or null when it carries none. */
+    static boolean afterAToolRound(List<Message> messages) {
+        return messages.stream().anyMatch(m -> m.role() == Role.TOOL);
+    }
+
     /**
      * The one line the grammar cannot convey: which fields exist. Appended to the last user
      * message, the way langchain4j's own fallback describes the format to providers without a
      * schema capability, so the model produces the whole object instead of the shortest valid one.
      * {@link Builder#describeSchema describeSchema(false)} leaves the prompt untouched.
      */
-    static boolean afterAToolRound(List<Message> messages) {
-        return messages.stream().anyMatch(m -> m.role() == Role.TOOL);
-    }
-
     static void describeSchemaOnTheLastUserMessage(
             List<Message> messages, Map<String, Object> schema) {
         for (int i = messages.size() - 1; i >= 0; i--) {
@@ -792,14 +790,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Caps the reasoning span at {@code tokens} generated tokens: when it runs out, a paragraph
-         * break, the {@link #reasoningBudgetMessage} and the close marker are forced, and the
-         * answer follows. The lever for checkpoints that {@link ChatTemplate.ThinkingPolicy#ALWAYS
-         * always reason}. Default: the family's own policy (half of maxOutputTokens, else
-         * uncapped); {@code -1} uncaps; a per-request {@link
-         * JinferChatRequestParameters#reasoningBudget} wins over this.
-         */
-        /**
          * Drafts per verify block for a model with a draft head (the {@code speculation}
          * companion), 1..8; 0 disables. Default: the engine's, 4. A speed-up on code, lists and
          * JSON, a cost on prose - see the README.
@@ -811,6 +801,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
+        /**
+         * Caps the reasoning span at {@code tokens} generated tokens: when it runs out, a paragraph
+         * break, the {@link #reasoningBudgetMessage} and the close marker are forced, and the
+         * answer follows. The lever for checkpoints that {@link ChatTemplate.ThinkingPolicy#ALWAYS
+         * always reason}. Default: the family's own policy (half of maxOutputTokens, else
+         * uncapped); {@code -1} uncaps; a per-request {@link
+         * JinferChatRequestParameters#reasoningBudget} wins over this.
+         */
         public Builder reasoningBudget(int tokens) {
             if (tokens < -1) throw new IllegalArgumentException("reasoningBudget " + tokens);
             this.reasoningBudget = tokens;
@@ -849,7 +847,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             return this;
         }
 
-        /** Wall-clock deadline per request; unset = none. Exceeding it finishes with LENGTH. */
+        /** Wall-clock deadline per request; unset = none. Exceeding it finishes with OTHER. */
         public Builder timeout(Duration timeout) {
             if (timeout == null || timeout.isNegative())
                 throw new IllegalArgumentException("timeout must be >= 0: " + timeout);

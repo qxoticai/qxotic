@@ -124,8 +124,7 @@ final class ChatEngineModelTest {
                                     Message.system("Answer in one word."),
                                     Message.user("Name one animal.")),
                             List.of(),
-                            false,
-                            "");
+                            false);
             engine.definePrompt(prefix);
             ChatEngine.Completion fromBlocks =
                     engine.complete(request(prefix.messages()), ChatEngine.ReplySink.NONE);

@@ -286,8 +286,7 @@ class JinjaChatTemplateTest {
                                 new Message(
                                         Role.TOOL, List.of(new Content.ToolResult("c1", "busy")))),
                         List.of(new Tool("dial", Map.of("name", "dial"))),
-                        false,
-                        "");
+                        false);
         List<Object> messages = RenderMaps.messages(conversation);
         assertEquals(4, messages.size());
         @SuppressWarnings("unchecked")

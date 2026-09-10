@@ -94,7 +94,7 @@ final class Lfm2ChatTemplateTest {
     @Test
     void ggufFactoryDerivesWhetherThePromptOpensThinking() {
         Conversation conversation =
-                new Conversation(List.of(Message.user("reason")), List.of(), true, "");
+                new Conversation(List.of(Message.user("reason")), List.of(), true);
         GGUF thinking =
                 Builder.newBuilder().putString("tokenizer.chat_template", chatTemplate).build();
         GGUF direct =
@@ -120,8 +120,8 @@ final class Lfm2ChatTemplateTest {
         // span keeps the bare header in both modes
         Lfm2ChatTemplate opens = new Lfm2ChatTemplate(tokenizer, true);
         Lfm2ChatTemplate bare = new Lfm2ChatTemplate(tokenizer, false);
-        Conversation on = new Conversation(List.of(Message.user("reason")), List.of(), true, "");
-        Conversation off = new Conversation(List.of(Message.user("reason")), List.of(), false, "");
+        Conversation on = new Conversation(List.of(Message.user("reason")), List.of(), true);
+        Conversation off = new Conversation(List.of(Message.user("reason")), List.of(), false);
         int open = special("<think>"), close = special("</think>");
         int[] header = specials("<|im_start|>assistant\n");
 
@@ -165,7 +165,7 @@ final class Lfm2ChatTemplateTest {
         // Models.load is the ServiceLoader path every frontend uses; it must derive the same
         // template as fromGguf (they had drifted: the served 2.6B never opened its span)
         Conversation conversation =
-                new Conversation(List.of(Message.user("reason")), List.of(), true, "");
+                new Conversation(List.of(Message.user("reason")), List.of(), true);
         try (Arena arena = Arena.ofShared()) {
             var loaded =
                     Models.load(TestModels.require("hf.co/LiquidAI/LFM2.5-2.6B-GGUF:Q8_0"), arena);
@@ -182,7 +182,7 @@ final class Lfm2ChatTemplateTest {
         try (FileChannel file = FileChannel.open(path)) {
             GGUF gguf = ModelLoader.readGguf(file, path.toString());
             Conversation conversation =
-                    new Conversation(List.of(Message.user("reason")), List.of(), true, "");
+                    new Conversation(List.of(Message.user("reason")), List.of(), true);
 
             assertTrue(
                     state(Lfm2ChatTemplate.fromGguf(tokenizer, gguf), conversation)
@@ -198,10 +198,7 @@ final class Lfm2ChatTemplateTest {
                 new Lfm2ChatTemplate(tokenizer, true)
                         .encode(
                                 new Conversation(
-                                        List.of(Message.user("answer directly")),
-                                        List.of(),
-                                        false,
-                                        ""),
+                                        List.of(Message.user("answer directly")), List.of(), false),
                                 64,
                                 batches::add);
 
@@ -237,10 +234,7 @@ final class Lfm2ChatTemplateTest {
                 new Message(Role.TOOL, List.of(new Content.ToolResult("ignored", "18C, sunny")));
         Conversation conversation =
                 new Conversation(
-                        List.of(Message.user("Weather?"), call, result),
-                        List.of(weather),
-                        false,
-                        "");
+                        List.of(Message.user("Weather?"), call, result), List.of(weather), false);
 
         String expected =
                 "<|startoftext|><|im_start|>system\nList of tools: "
@@ -276,8 +270,7 @@ final class Lfm2ChatTemplateTest {
                         new Conversation(
                                 List.of(Message.user("weather"), assistant),
                                 List.of(weather()),
-                                false,
-                                ""));
+                                false));
         // minus the generation prompt's own empty span (thinking off on a pre-opening checkpoint)
         int[] activeHistory = Arrays.copyOf(active, active.length - 2);
         assertEquals(1, count(activeHistory, special("<think>")));
@@ -293,8 +286,7 @@ final class Lfm2ChatTemplateTest {
                                         new Message(Role.TOOL, "sunny"),
                                         Message.user("thanks")),
                                 List.of(weather()),
-                                false,
-                                ""));
+                                false));
         int[] historicalHistory = Arrays.copyOf(historical, historical.length - 2);
         assertEquals(0, count(historicalHistory, special("<think>")));
         assertEquals(0, count(historicalHistory, special("</think>")));
@@ -316,7 +308,7 @@ final class Lfm2ChatTemplateTest {
         assertRoundTrip(template, plain, visible, generated);
 
         Conversation withTools =
-                new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true, "");
+                new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true);
         ChatTemplate.ReplyState toolState = state(template, withTools);
         Message structured = ReplyParser.parse(toolState.parser(), generated);
         Content.ToolCall call =
@@ -333,7 +325,7 @@ final class Lfm2ChatTemplateTest {
                         .concat(tokenizer.encode("[get_weather(city='Paris')]"))
                         .concat(IntSequence.of(special("<|tool_call_end|>"), special("</think>")));
         Conversation conversation =
-                new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true, "");
+                new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true);
 
         Message reply = ReplyParser.parse(state(template, conversation).parser(), generated);
         Content.Reasoning reasoning =

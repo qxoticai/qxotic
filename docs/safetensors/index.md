@@ -168,7 +168,7 @@ try (FileChannel channel = FileChannel.open(Path.of("output.safetensors"),
 
 ### Alignment
 
-Tensor data starts at aligned byte boundaries (default: 64 bytes, must be a power of 2). Padding is added automatically.
+Tensor data starts at aligned byte boundaries (default: 1, the upstream layout; set a power of 2 for aligned tensor data). Padding is added automatically.
 
 ```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="builder-alignment"
 ```

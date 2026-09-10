@@ -11,8 +11,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     required. A remote ref resolves at context startup
  * @param contextCapacity upper bound on the packing window and each embedded sequence (default
  *     2048): larger packs more sequences per forward pass and admits longer sequences, at the cost
- *     of a bigger resident state; {@code 0} uses the model's {@code maxContextLength}; negative
- *     values are rejected
+ *     of a bigger resident state; 0 uses the model's maxContextLength; negative values are rejected
  */
 @ConfigurationProperties("spring.ai.jinfer.embedding")
 public record JinferEmbeddingProperties(String model, @DefaultValue("2048") int contextCapacity) {}

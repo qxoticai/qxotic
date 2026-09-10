@@ -61,7 +61,7 @@ final class Qwen35ChatTemplateTest {
             for (List<Message> messages : cases) {
                 int[] expected = render(messages, List.of(), thinking);
                 for (int capacity : new int[] {1, 7, 512}) {
-                    Conversation conversation = new Conversation(messages, List.of(), thinking, "");
+                    Conversation conversation = new Conversation(messages, List.of(), thinking);
                     assertArrayEquals(
                             expected,
                             encode(new Qwen35ChatTemplate(tokenizer), conversation, capacity));
@@ -83,7 +83,7 @@ final class Qwen35ChatTemplateTest {
                         List.of(new Content.ToolCall("", "get_weather", Map.of("city", "Paris"))));
         Message result = new Message(Role.TOOL, List.of(new Content.ToolResult("", "18C, sunny")));
         List<Message> messages = List.of(Message.user("Weather?"), call, result);
-        Conversation conversation = new Conversation(messages, List.of(weather), false, "");
+        Conversation conversation = new Conversation(messages, List.of(weather), false);
 
         List<Map<String, Object>> mapped = new ArrayList<>();
         mapped.add(Map.of("role", "user", "content", "Weather?"));
@@ -156,10 +156,7 @@ final class Qwen35ChatTemplateTest {
                         encode(
                                 template,
                                 new Conversation(
-                                        List.of(Message.system("system")),
-                                        List.of(tool),
-                                        false,
-                                        ""),
+                                        List.of(Message.system("system")), List.of(tool), false),
                                 32));
     }
 

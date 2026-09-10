@@ -70,8 +70,7 @@ final class Gemma4ChatTemplateTest {
                     IntSequence.of(SpecialTokens.require(tokenizer, "<bos>")),
                     template.promptStart());
             List<Batch> batches = new ArrayList<>();
-            template.encode(
-                    new Conversation(List.of(message), List.of(), false, ""), 4, batches::add);
+            template.encode(new Conversation(List.of(message), List.of(), false), 4, batches::add);
 
             List<Batch.Input.Embeddings> embeddings =
                     batches.stream()
@@ -129,8 +128,7 @@ final class Gemma4ChatTemplateTest {
             Gemma4ChatTemplate template =
                     new Gemma4ChatTemplate(tokenizer, new TestMedia(arena), false);
             List<Batch> batches = new ArrayList<>();
-            template.encode(
-                    new Conversation(List.of(message), List.of(), false, ""), 4, batches::add);
+            template.encode(new Conversation(List.of(message), List.of(), false), 4, batches::add);
 
             List<Batch.Input.Embeddings> embeddings =
                     batches.stream()
@@ -191,7 +189,7 @@ final class Gemma4ChatTemplateTest {
     void nonThinkingReplyStartsInContentChannel() throws Exception {
         Tokenizer tokenizer = tokenizer();
         Message message = Message.user("answer directly");
-        Conversation conversation = new Conversation(List.of(message), List.of(), false, "");
+        Conversation conversation = new Conversation(List.of(message), List.of(), false);
         ChatTemplate.ReplyState reply =
                 new Gemma4ChatTemplate(tokenizer, null, true)
                         .encode(conversation, 32, ignored -> {});
@@ -219,7 +217,7 @@ final class Gemma4ChatTemplateTest {
         List<Batch> batches = new ArrayList<>();
         new Gemma4ChatTemplate(tokenizer, null, true)
                 .encode(
-                        new Conversation(List.of(Message.user("hi")), List.of(), true, ""),
+                        new Conversation(List.of(Message.user("hi")), List.of(), true),
                         32,
                         batches::add);
         int[] ids = tokenIds(batches);
@@ -247,8 +245,7 @@ final class Gemma4ChatTemplateTest {
                         new Conversation(
                                 List.of(Message.system("be terse"), Message.user("hi")),
                                 List.of(),
-                                true,
-                                ""),
+                                true),
                         32,
                         batches::add);
         int[] ids = tokenIds(batches);
@@ -268,8 +265,7 @@ final class Gemma4ChatTemplateTest {
                         new Conversation(
                                 List.of(Message.system("be terse"), Message.user("hi")),
                                 List.of(),
-                                false,
-                                ""),
+                                false),
                         32,
                         batches::add);
         int[] ids = tokenIds(batches);
@@ -283,10 +279,7 @@ final class Gemma4ChatTemplateTest {
                 new Gemma4ChatTemplate(tokenizer, null, true)
                         .encode(
                                 new Conversation(
-                                        List.of(Message.user("think about it")),
-                                        List.of(),
-                                        true,
-                                        ""),
+                                        List.of(Message.user("think about it")), List.of(), true),
                                 32,
                                 ignored -> {});
         // a seeded model opens <|channel>thought itself: no scaffolded prefix (contrast with the

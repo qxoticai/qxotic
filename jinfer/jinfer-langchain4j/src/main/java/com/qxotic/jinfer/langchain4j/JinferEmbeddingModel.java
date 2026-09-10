@@ -256,7 +256,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
          * {@link #build()}.
          *
          * <pre>{@code
-         * model("unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+         * model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0");
          * }</pre>
          *
          * <p>The full grammar - the default quant, pinned revisions, a file inside a repository,

@@ -59,12 +59,13 @@ final class WriterImpl {
         for (TensorEntry entry : tensorEntries) {
             long start = entry.byteOffset();
             long end = start + entry.byteSize();
-            json.put(
-                    entry.name(),
-                    Map.of(
-                            "dtype", entry.dtype().toString(),
-                            "shape", box(entry.shape()),
-                            "data_offsets", Arrays.asList(start, end)));
+            // insertion-ordered: Map.of iterates in a per-JVM random order, and the header bytes
+            // must not change from one run to the next
+            Map<String, Object> header = new LinkedHashMap<>();
+            header.put("dtype", entry.dtype().toString());
+            header.put("shape", box(entry.shape()));
+            header.put("data_offsets", Arrays.asList(start, end));
+            json.put(entry.name(), header);
         }
         return Json.stringify(json, false).getBytes(StandardCharsets.UTF_8);
     }

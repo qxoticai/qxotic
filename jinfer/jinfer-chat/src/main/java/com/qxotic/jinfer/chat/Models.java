@@ -410,6 +410,9 @@ public final class Models {
     /** The port claiming the GGUF's architecture; throws a REMEDY-naming error when none does. */
     private static ModelProvider provider(GGUF gguf) {
         String arch = gguf.getString("general.architecture");
+        if (arch == null)
+            throw new IllegalArgumentException(
+                    "the GGUF has no general.architecture, so it is not a model file");
         ModelProvider selected = select(PROVIDERS, arch);
         if (selected != null) return selected;
         String artifact = artifactFor(arch);

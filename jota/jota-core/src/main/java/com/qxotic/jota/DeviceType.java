@@ -12,6 +12,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public record DeviceType(String id) {
     private static final Map<String, DeviceType> KNOWN = new ConcurrentHashMap<>();
 
+    public DeviceType {
+        id = normalizeId(id); // so new DeviceType("Java") equals JAVA
+    }
+
     public static final DeviceType JAVA =
             of("java"); // Java arrays allocated on the Java managed heap.
 

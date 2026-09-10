@@ -151,7 +151,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
          * {@link #build()}.
          *
          * <pre>{@code
-         * model("unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+         * model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0");
          * }</pre>
          *
          * <p>The full grammar - the default quant, pinned revisions, a file inside a repository,

@@ -820,6 +820,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * acceptance counters ride {@link JinferUsage}.
          */
         public Builder speculationDepth(Integer speculationDepth) {
+            if (speculationDepth != null && (speculationDepth < 0 || speculationDepth > 8))
+                throw new IllegalArgumentException(
+                        "speculationDepth must be in [0, 8]: " + speculationDepth);
             this.speculationDepth = speculationDepth;
             return this;
         }

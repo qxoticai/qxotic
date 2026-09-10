@@ -57,8 +57,7 @@ class NemotronHChatTemplateTest {
                                                             Map.of("city", "Zurich")))),
                                     new Message(Role.TOOL, List.of(result))),
                             List.of(tool),
-                            false,
-                            "");
+                            false);
             ArrayList<Batch> batches = new ArrayList<>();
             template.encode(conversation, 512, batches::add);
             String prompt = tokenizer.decode(Batch.tokenIds(batches));

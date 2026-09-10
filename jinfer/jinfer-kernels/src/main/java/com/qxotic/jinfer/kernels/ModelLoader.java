@@ -122,8 +122,15 @@ public final class ModelLoader {
             }
             Shape physical = dtype.physicalShape(Shape.flat(dims));
             long elements = Shape.flat(dims).size();
-            assert dtype.byteSizeFor(physical) == tensor.ggmlType().byteSizeFor(elements)
-                    : tensor.name() + ": view byte size disagrees with GGUF";
+            if (dtype.byteSizeFor(physical) != tensor.ggmlType().byteSizeFor(elements))
+                throw new IllegalStateException(
+                        tensor.name()
+                                + ": "
+                                + dtype
+                                + " view is "
+                                + dtype.byteSizeFor(physical)
+                                + " bytes, the GGUF tensor "
+                                + tensor.ggmlType().byteSizeFor(elements));
             tensorViews.put(
                     tensor.name(),
                     MemoryView.of(memory, tensor.offset(), dtype, Layout.rowMajor(physical)));

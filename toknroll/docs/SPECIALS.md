@@ -16,7 +16,8 @@
 ## Usage
 
 ```java
-Tokenizer tokenizer = Tokenizers.fastBpe(mergeableRanks, specialTokens, splitPatternRegex);
+Vocabulary vocab = Toknroll.vocabulary(specialTokens, rankedTokens);
+Tokenizer tokenizer = Toknroll.pipeline(splitter, Toknroll.tiktokenModel(vocab, mergeRules));
 
 // Compile once and reuse.
 Specials specials = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());

@@ -15,12 +15,10 @@ import java.util.Set;
  * id-less results (families without call ids) require only that some call preceded them. Unanswered
  * calls are legal - that is the live hand-off to the caller's tool executor.
  */
-public record Conversation(
-        List<Message> messages, List<Tool> tools, boolean thinking, String reasoningEffort) {
+public record Conversation(List<Message> messages, List<Tool> tools, boolean thinking) {
     public Conversation {
         messages = List.copyOf(messages);
         tools = List.copyOf(tools);
-        reasoningEffort = reasoningEffort == null ? "" : reasoningEffort;
         requireMatchedResults(messages);
     }
 
@@ -58,12 +56,12 @@ public record Conversation(
     }
 
     public Conversation(List<Message> messages) {
-        this(messages, List.of(), true, "");
+        this(messages, List.of(), true);
     }
 
     public Conversation append(Message message) {
         ArrayList<Message> copy = new ArrayList<>(messages);
         copy.add(message);
-        return new Conversation(copy, tools, thinking, reasoningEffort);
+        return new Conversation(copy, tools, thinking);
     }
 }

@@ -28,8 +28,8 @@ import java.util.regex.Pattern;
  * a named revision joins the repository directory as {@code repo@revision}. The mapping is
  * injective and reversible, so a path tells you where it came from and a ref tells you where it
  * will land. It is also exactly the tree {@code scripts/download-models.sh} populates and the test
- * {@code ModelFixture} reads, so a checkout that has downloaded its fixtures is already a warm
- * cache. Flat and obvious on purpose: {@code ls} and {@code rm -rf} are the management commands.
+ * {@code TestModels} reads, so a checkout that has downloaded its fixtures is already a warm cache.
+ * Flat and obvious on purpose: {@code ls} and {@code rm -rf} are the management commands.
  *
  * <p>A store is an INSTANCE: {@link #standard()} for the ambient root ({@code -Djinfer.models} &gt;
  * {@code $JINFER_MODELS} &gt; the platform's cache directory) with the two shipped sources, {@link

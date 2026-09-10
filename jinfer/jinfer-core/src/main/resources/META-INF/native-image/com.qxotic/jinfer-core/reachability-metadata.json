@@ -4,7 +4,7 @@
     "downcalls": [
       {
         "returnType": "jint",
-        "parameterTypes": ["jlong", "jlong", "jlong", "jlong", "jlong"]
+        "parameterTypes": ["void*", "void*", "void*", "void*", "jlong"]
       }
     ]
   }

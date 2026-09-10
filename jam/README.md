@@ -51,7 +51,7 @@ Activations and result are always `F32`. The operands must be **native** segment
 - **Auto-selects the fastest kernel.** Detects the CPU features once, and selects the fastest kernels; no further per-call dispatch.
 - **Parallel by design.** Configurable multi-threaded execution.
 - **No conversions required.** Weights stay in their quantized format.
-- **Zero dependencies.** `jam-native` bundles and loads the native library for the current OS and arch. Override its location with `-Djam.native.library.path` or
+- **No third-party dependencies.** `jam-native` bundles and loads the native library for the current OS and arch. Override its location with `-Djam.native.library.path` or
   `JAM_NATIVE_LIBRARY_PATH`.
 
 ## Performance

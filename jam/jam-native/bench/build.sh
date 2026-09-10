@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build the jam-vs-tinyBLAS benchmark. Requires both projects already built:
-#   - jam:        qxotic/jam/build/libjam.so            (cmake --build jam/build, or mvn -pl jam package)
+#   - jam:        qxotic/jam/jam-native/build/libjam.so (cmake --build build here, or mvn from the repository root)
 #   - llama.cpp:  llama.cpp/build/bin/lib{ggml-cpu,ggml-base}.so
 #                 (cmake -B build -DGGML_NATIVE=ON && cmake --build build --target ggml-cpu -j)
 # Override the checkout locations with JAM=... LLAMA=... if they live elsewhere;

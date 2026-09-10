@@ -266,31 +266,28 @@ class JsonStringTest {
         assertEquals("\uFFFF", Json.unescapeString("\\uFFFF"));
         assertEquals("\uE000", Json.unescapeString("\\uE000"));
         // High surrogate alone at end of string
-        IllegalArgumentException ex1 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "uD800"));
+        Json.ParseException ex1 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "uD800"));
         assertTrue(ex1.getMessage().contains("Lone surrogate"));
         // Low surrogate alone
-        IllegalArgumentException ex2 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "uDC00"));
+        Json.ParseException ex2 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "uDC00"));
         assertTrue(ex2.getMessage().contains("Lone surrogate"));
         // High surrogate followed by non-backslash-u
-        IllegalArgumentException ex3 =
+        Json.ParseException ex3 =
                 assertThrows(
-                        IllegalArgumentException.class,
-                        () -> Json.unescapeString("\\" + "uD800\\n"));
+                        Json.ParseException.class, () -> Json.unescapeString("\\" + "uD800\\n"));
         assertTrue(ex3.getMessage().contains("Lone surrogate"));
         // High surrogate followed by backslash-u but non-low-surrogate
-        IllegalArgumentException ex4 =
+        Json.ParseException ex4 =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        Json.ParseException.class,
                         () -> Json.unescapeString("\\" + "uD83D\\u0041"));
         assertTrue(ex4.getMessage().contains("Unexpected character after high surrogate"));
         // High surrogate followed by backslash-u with invalid hex in low
-        IllegalArgumentException ex5 =
+        Json.ParseException ex5 =
                 assertThrows(
-                        IllegalArgumentException.class,
+                        Json.ParseException.class,
                         () -> Json.unescapeString("\\" + "uD83D" + "\\" + "uGGGG"));
         assertTrue(ex5.getMessage().contains("Invalid hex digit"));
     }
@@ -298,25 +295,23 @@ class JsonStringTest {
     @Test
     void testUnescapeStringInvalidEscapes() {
         // Trailing backslash
-        IllegalArgumentException e1 =
-                assertThrows(IllegalArgumentException.class, () -> Json.unescapeString("\\"));
+        Json.ParseException e1 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\"));
         assertTrue(e1.getMessage().contains("Invalid escape"));
         // Unknown escape character
-        IllegalArgumentException e2 =
-                assertThrows(IllegalArgumentException.class, () -> Json.unescapeString("\\z"));
+        Json.ParseException e2 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\z"));
         assertTrue(e2.getMessage().contains("Invalid escape"));
-        IllegalArgumentException e3 =
-                assertThrows(IllegalArgumentException.class, () -> Json.unescapeString("\\x"));
+        Json.ParseException e3 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\x"));
         assertTrue(e3.getMessage().contains("Invalid escape"));
         // Incomplete Unicode (too short)
-        IllegalArgumentException e4 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "u00"));
+        Json.ParseException e4 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "u00"));
         assertTrue(e4.getMessage().contains("Incomplete Unicode"));
         // Invalid hex digit
-        IllegalArgumentException e5 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "u00GH"));
+        Json.ParseException e5 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "u00GH"));
         assertTrue(e5.getMessage().contains("Invalid hex digit"));
     }
 
@@ -426,23 +421,20 @@ class JsonStringTest {
     @Test
     void testUnescapeStringIncompleteUnicodeVariants() {
         // 0 digits after backslash-u
-        IllegalArgumentException e1 =
-                assertThrows(IllegalArgumentException.class, () -> Json.unescapeString("\\" + "u"));
+        Json.ParseException e1 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "u"));
         assertTrue(e1.getMessage().contains("Incomplete Unicode"));
         // 1 hex digit
-        IllegalArgumentException e2 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "u0"));
+        Json.ParseException e2 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "u0"));
         assertTrue(e2.getMessage().contains("Incomplete Unicode"));
         // 2 hex digits
-        IllegalArgumentException e3 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "u00"));
+        Json.ParseException e3 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "u00"));
         assertTrue(e3.getMessage().contains("Incomplete Unicode"));
         // 3 hex digits
-        IllegalArgumentException e4 =
-                assertThrows(
-                        IllegalArgumentException.class, () -> Json.unescapeString("\\" + "u000"));
+        Json.ParseException e4 =
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "u000"));
         assertTrue(e4.getMessage().contains("Incomplete Unicode"));
     }
 

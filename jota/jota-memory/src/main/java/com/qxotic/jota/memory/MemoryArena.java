@@ -12,8 +12,8 @@ public interface MemoryArena<B> extends MemoryAllocator<B>, AutoCloseable {
 
     /**
      * True while memory previously allocated from this arena remains valid; false once {@link
-     * #close()} has invalidated it. Arenas whose buffers are GC-managed, or whose {@code close()}
-     * is a no-op, always report true.
+     * #close()} has invalidated it. Arenas whose buffers are GC-managed always report true; an
+     * arena borrowed from a {@code java.lang.foreign.Arena} reports that arena's own liveness.
      */
     boolean isAlive();
 }

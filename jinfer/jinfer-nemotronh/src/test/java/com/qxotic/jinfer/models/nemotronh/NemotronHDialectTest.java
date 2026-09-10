@@ -65,7 +65,7 @@ final class NemotronHDialectTest {
                 List<Tool> tools,
                 boolean thinking) {
             List<Batch> batches = new ArrayList<>();
-            codec.encode(new Conversation(messages, tools, thinking, ""), 512, batches::add);
+            codec.encode(new Conversation(messages, tools, thinking), 512, batches::add);
             return Batch.tokenIds(batches);
         }
 

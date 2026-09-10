@@ -163,7 +163,11 @@ public final class Json {
         return sb.toString();
     }
 
-    /** Unescape a JSON-escaped string back to raw Java text. Does not remove surrounding quotes. */
+    /**
+     * Unescape a JSON-escaped string back to raw Java text. Does not remove surrounding quotes.
+     *
+     * @throws ParseException on a malformed escape, as {@link #parse} would
+     */
     public static String unescapeString(CharSequence s) {
         Objects.requireNonNull(s, "s");
         int backslash = (s instanceof String) ? ((String) s).indexOf('\\') : indexOfBackslash(s);
@@ -182,7 +186,7 @@ public final class Json {
                 continue;
             }
             if (pos >= s.length()) {
-                throw new IllegalArgumentException("Invalid escape sequence");
+                throw new ParseException("Invalid escape sequence");
             }
             switch (s.charAt(pos++)) {
                 case '"':
@@ -216,24 +220,23 @@ public final class Json {
                         if (pos + 6 > s.length()
                                 || s.charAt(pos) != '\\'
                                 || s.charAt(pos + 1) != 'u') {
-                            throw new IllegalArgumentException("Lone surrogate");
+                            throw new ParseException("Lone surrogate");
                         }
                         pos += 2;
                         int low = parseHex4(s, pos);
                         pos += 4;
                         if (!Character.isLowSurrogate((char) low)) {
-                            throw new IllegalArgumentException(
-                                    "Unexpected character after high surrogate");
+                            throw new ParseException("Unexpected character after high surrogate");
                         }
                         sb.appendCodePoint(Character.toCodePoint((char) code, (char) low));
                     } else if (Character.isLowSurrogate((char) code)) {
-                        throw new IllegalArgumentException("Lone surrogate");
+                        throw new ParseException("Lone surrogate");
                     } else {
                         sb.append((char) code);
                     }
                     break;
                 default:
-                    throw new IllegalArgumentException("Invalid escape sequence");
+                    throw new ParseException("Invalid escape sequence");
             }
         }
 
@@ -251,13 +254,13 @@ public final class Json {
 
     private static int parseHex4(CharSequence s, int pos) {
         if (pos + 4 > s.length()) {
-            throw new IllegalArgumentException("Incomplete Unicode escape");
+            throw new ParseException("Incomplete Unicode escape");
         }
         int result = 0;
         for (int i = 0; i < 4; i++) {
             int digit = Character.digit(s.charAt(pos + i), 16);
             if (digit < 0) {
-                throw new IllegalArgumentException("Invalid hex digit");
+                throw new ParseException("Invalid hex digit");
             }
             result = (result << 4) | digit;
         }
@@ -937,8 +940,10 @@ public final class Json {
             if (Double.isNaN(d) || Double.isInfinite(d)) {
                 throw new IllegalArgumentException("Cannot serialize NaN/Infinity");
             }
-            if (d == (long) d) {
-                sb.append((long) d);
+            if (d == Math.rint(d) && Math.abs(d) < 0x1p53) {
+                sb.append((long) d); // integral and exactly representable: the cast is exact
+            } else if (num instanceof Float) {
+                sb.append(num.floatValue()); // Float.toString: 0.1f prints 0.1, not 0.1000000015
             } else {
                 sb.append(d);
             }

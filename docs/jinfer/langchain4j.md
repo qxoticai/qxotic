@@ -16,7 +16,14 @@ Ports use jinfer's hand-written, oracle-validated chat-template codecs; unported
   <artifactId>jinfer-langchain4j</artifactId>
   <version>0.2.0</version>
 </dependency>
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>jinfer-lfm2</artifactId>
+  <version>0.2.0</version>
+</dependency>
 ```
+
+The provider loads nothing by itself: add one model family (`jinfer-lfm2` here), or `jinfer-models-all` for every family.
 
 Run the JVM with:
 
@@ -56,8 +63,8 @@ ChatModel model = JinferChatModel.builder()
         .temperature(0.7)
         .topP(0.95)
         .maxOutputTokens(1024)
-        .thinking(false)          // reasoning off; models without it ignore it
-        .seed(42)                 // deterministic sampling
+        .reasoningBudget(256)     // this model always reasons: cap the span instead of switching it off
+        .seed(42L)                // deterministic sampling
         .build();
 
 ChatResponse response = model.chat(ChatRequest.builder()

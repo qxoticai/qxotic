@@ -69,9 +69,9 @@ implementation 'com.qxotic:toknroll-gguf:0.2.0'
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic::toknroll-core:0.2.0"
-mvn"com.qxotic::toknroll-hf:0.2.0"
-mvn"com.qxotic::toknroll-gguf:0.2.0"
+mvn"com.qxotic:toknroll-core:0.2.0"
+mvn"com.qxotic:toknroll-hf:0.2.0"
+mvn"com.qxotic:toknroll-gguf:0.2.0"
 ```
 
   </TabItem>
@@ -127,7 +127,7 @@ IntSequence.Builder out = IntSequence.newBuilder(128);
 t.encodeInto("Hello, world!", out);
 
 ByteBuffer bytes = ByteBuffer.allocate(256);
-int consumed = t.decodeBytesInto(tokens, 0, bytes); // no partial-token writes
+int consumed = t.decodeBytesInto(IntSequence.wrap(tokens), 0, bytes); // no partial-token writes
 ```
 
 ### Build from scratch

@@ -10,8 +10,9 @@ import java.util.Objects;
  * <ul>
  *   <li>{@code grammar}: a raw GBNF grammar constraining the WHOLE reply (think-span gated, like
  *       the JSON response format it generalizes) - the sampler cannot emit anything outside it.
- *       Mutually exclusive with tools and with a JSON response format (a grammar cannot admit
- *       call/format syntax); both rejections are loud.
+ *       Mutually exclusive with a JSON response format (a grammar cannot admit the format's
+ *       syntax); the rejection is loud. Tools may ride along: the grammar takes over once the tool
+ *       round is done.
  *   <li>{@code seed}: this request's sampler seed - byte-identical replay of a specific call, or
  *       deliberate variation across calls; null = the model builder's seed.
  * </ul>
@@ -148,6 +149,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         }
 
         public Builder minP(Double minP) {
+            if (minP != null && !(minP >= 0 && minP <= 1))
+                throw new IllegalArgumentException("minP must be within [0, 1]: " + minP);
             this.minP = minP;
             return this;
         }

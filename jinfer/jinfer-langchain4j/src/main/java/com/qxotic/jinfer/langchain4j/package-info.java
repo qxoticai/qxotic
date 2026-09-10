@@ -91,10 +91,11 @@
  *
  * <p>This does NOT improve with model size. On the langchain4j POJO battery, stating the schema in
  * the prompt is worth 36 vs 32 of 39 on LFM2.5-2.6B and 34 vs 28 on gemma-4-26B: the larger model
- * loses MORE, because it has stronger ideas of its own for the mask to fight. So state the shape
- * you are about to enforce - this provider will not do it for you, and neither will langchain4j
- * once a provider declares {@code RESPONSE_FORMAT_JSON_SCHEMA}, as this one must to get grammars at
- * all.
+ * loses MORE, because it has stronger ideas of its own for the mask to fight. So the provider
+ * appends one line naming the schema's fields to the last user message (langchain4j itself stops
+ * doing that once a provider declares {@code RESPONSE_FORMAT_JSON_SCHEMA}, as this one must to get
+ * grammars at all); {@code describeSchema(false)} on the builder leaves the prompt untouched, and
+ * then the shape is yours to state.
  *
  * <p>SAY IT IN PLAIN WORDS, not schema jargon. "Write dates as YYYY-MM-DD" fixed the case above;
  * the same schema carrying {@code "format": "date"} did not, reliably - that spelling asks the

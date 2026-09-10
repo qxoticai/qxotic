@@ -89,7 +89,7 @@ implementation 'com.qxotic:gguf:0.2.0'
   <TabItem value="mill" label="Mill">
 
 ```scala
-ivy"com.qxotic::gguf:0.2.0"
+mvn"com.qxotic:gguf:0.2.0"
 ```
 
   </TabItem>

@@ -62,7 +62,15 @@ public final class RoPE {
      * floats in the last bit, so the order is load-bearing rather than incidental.
      */
     public static Schedule withFreqFactors(int headSize, double theta, float[] freqFactors) {
-        assert freqFactors.length == headSize / 2;
+        if (freqFactors.length != headSize / 2)
+            throw new IllegalArgumentException(
+                    "rope_freqs.weight has "
+                            + freqFactors.length
+                            + " factors for a head size of "
+                            + headSize
+                            + " (expected "
+                            + headSize / 2
+                            + ")");
         float[] freq = baseFrequencies(headSize, theta);
         return (position, out) -> {
             for (int j = 0; j < out.length; j++) {
@@ -86,7 +94,8 @@ public final class RoPE {
             float betaSlow,
             float extFactor,
             float attnFactor) {
-        assert headSize % 2 == 0;
+        if (headSize % 2 != 0)
+            throw new IllegalArgumentException("head size " + headSize + " is not even");
         int lanes = headSize / 2;
         float freqScale = scalingFactor == 0f ? 1f : 1f / scalingFactor;
         double fast = yarnCorrDim(headSize, originalContextLength, betaFast, (float) theta);

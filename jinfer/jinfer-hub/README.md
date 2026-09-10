@@ -168,4 +168,4 @@ first, then pass its local path.
 
 - [Models from a hub](https://qxotic.ai/jinfer#models-from-a-hub): how the framework builders accept refs and
   companions
-- [CLI](../README.md#cli-and-server): `jinfer pull` and `jinfer list` on the same store
+- [CLI](../README.md#chat-cli): `jinfer pull` and `jinfer list` on the same store

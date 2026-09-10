@@ -57,7 +57,8 @@ Architecture dispatch comes from providers on the classpath.
 | Family | Capabilities |
 |--------|--------------|
 | Gemma 4 | chat, E2B/E4B vision, E2B conformer audio, MTP |
-| Qwen 3 / 3.5 | chat, embeddings, reranking, Qwen 3.5 MTP |
+| Qwen 3 | embeddings, reranking |
+| Qwen 3.5 | chat, vision, MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
 | Laguna XS 2.1 | chat |
 | Ling 3 | chat |
@@ -154,7 +155,7 @@ Inference paths never fetch content. Media codecs decode only caller-provided lo
 > **This requirement is NOT enforced in normal execution. Do not expect a Java exception to protect you.**
 
 Jinfer is multi-threaded by design.
-Even when configured to use a single worker, execution may run on a different thread from the arena's owner—for example, a worker in a custom pool or a native pthread.
+Even when configured to use a single worker, execution may run on a different thread from the arena's owner - for example, a worker in a custom pool or a native pthread.
 A confined arena permits access only from its owning Java thread; reducing the worker count or serializing calls does not satisfy that requirement.
 Raw-address and native kernels bypass the JDK's confinement checks, so unsupported access may proceed without a `WrongThreadException`.
 A successful load or generation does **not** establish safety.

@@ -28,7 +28,7 @@ _No Python. No ONNX. No external services. Just_ **AI, in a jar.**
 
 | Module | What it is | One-liner |
 |--------|------------|-----------|
-| [`jinfer`](./jinfer) | AI inference engine | **Local AI inference for the JVM.** Chat, vision, audio, embeddings, reranking, text-to-speech 
+| [`jinfer`](./jinfer) | AI inference engine | **Local AI inference for the JVM.** Chat, vision, audio, embeddings, reranking, text-to-speech |
 | [`toknroll`](./toknroll) | LLM tokenization | **Token-perfect.** Fast tokenizers for LLMs, pure Java, zero dependencies |
 | [`jam`](./jam) | Quantized matrix multiplication | **Just a matmul.** Native implementations for several CPU ISAs |
 | [`jota`](./jota) | Tensor engine | **Write once, accelerate everywhere.** Java, C, CUDA, HIP, Metal, OpenCL, Mojo |
@@ -46,6 +46,6 @@ make ci              # what a pull request runs: formatting, the suite, the corp
 ```
 
 `make help` lists the rest.
-The suites that need models or hardware are opt-in; each module's README describe how to run them.  
+The suites that need models or hardware are opt-in; each module's README describes how to run them.  
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 

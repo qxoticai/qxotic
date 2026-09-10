@@ -696,7 +696,7 @@ public final class Ops {
      * FloatTensor.argmax}).
      */
     public static int argmax(MemoryView<MemorySegment> view, long thisOffset, int size) {
-        assert size > 0;
+        if (size <= 0) throw new IllegalArgumentException("argmax over " + size + " elements");
         Raw r = Raw.f32(view, "view");
         long maxIndex = thisOffset;
         float maxValue = readFloat(r.vseg(), r.vbase() + maxIndex * Float.BYTES);

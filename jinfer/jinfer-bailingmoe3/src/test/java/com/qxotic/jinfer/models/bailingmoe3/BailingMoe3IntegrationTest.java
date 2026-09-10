@@ -175,7 +175,7 @@ class BailingMoe3IntegrationTest {
                                         List.of(
                                                 new Content.ToolResult(
                                                         "call-1", "18 C and sunny"))));
-                Conversation conversation = new Conversation(history, List.of(WEATHER), false, "");
+                Conversation conversation = new Conversation(history, List.of(WEATHER), false);
                 ChatEngine.Encoded encoded = engine.encode(conversation, null);
                 ChatEngine.Encoded jinja =
                         engine.encode(conversation, Map.of("parity_check", true));
@@ -184,7 +184,7 @@ class BailingMoe3IntegrationTest {
                 assertEquals(
                         loaded.tokenizer().decode(jinjaIds), loaded.tokenizer().decode(nativeIds));
                 assertArrayEquals(jinjaIds, nativeIds);
-                Conversation thinking = new Conversation(history, List.of(WEATHER), true, "");
+                Conversation thinking = new Conversation(history, List.of(WEATHER), true);
                 assertArrayEquals(
                         Batch.tokenIds(
                                 engine.encode(thinking, Map.of("parity_check", true)).prompt()),

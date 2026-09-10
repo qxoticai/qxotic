@@ -36,9 +36,10 @@ final class LayoutImpl implements Layout {
                             + ")");
         }
 
-        // Note: We allow different nesting structures as long as flatRank matches,
-        // following CuTe's design. Use isCongruent() to check structural equivalence.
-        assert shape.isCongruentWith(stride);
+        if (!shape.isCongruentWith(stride)) {
+            throw new IllegalArgumentException(
+                    "shape " + shape + " is not congruent with stride " + stride);
+        }
         this.shape = shape;
         this.stride = stride;
     }

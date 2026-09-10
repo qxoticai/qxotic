@@ -66,7 +66,11 @@ final class ReaderImpl {
 
     private GGMLType readGGMLType(ReadableByteChannel byteChannel) throws IOException {
         int ggmlTypeId = readInt(byteChannel); // ggml_type type;
-        return GGMLType.fromId(ggmlTypeId);
+        try {
+            return GGMLType.fromId(ggmlTypeId);
+        } catch (IllegalArgumentException e) {
+            throw new GGUFFormatException("Unknown GGML type ID: " + ggmlTypeId, e);
+        }
     }
 
     private TensorEntry readTensorEntry(ReadableByteChannel byteChannel) throws IOException {

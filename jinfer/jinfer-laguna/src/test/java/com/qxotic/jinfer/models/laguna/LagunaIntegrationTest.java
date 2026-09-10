@@ -104,8 +104,7 @@ final class LagunaIntegrationTest {
         int[] plainDirect =
                 encode(
                         nativeTemplate,
-                        new Conversation(
-                                List.of(Message.user("Who are you?")), List.of(), false, ""));
+                        new Conversation(List.of(Message.user("Who are you?")), List.of(), false));
         assertEquals(19, plainDirect[plainDirect.length - 1], "</think> scaffold token");
         assertArrayEquals(
                 java.util.Arrays.copyOf(plainThinking, plainThinking.length - 1),
@@ -127,7 +126,7 @@ final class LagunaIntegrationTest {
                                 Role.TOOL,
                                 List.of(new Content.ToolResult("call-1", "18 C and sunny"))));
         for (boolean thinking : new boolean[] {false, true}) {
-            Conversation conversation = new Conversation(messages, List.of(WEATHER), thinking, "");
+            Conversation conversation = new Conversation(messages, List.of(WEATHER), thinking);
             int[] expected = render(checkpoint, messages, thinking);
             int[] actual = encode(nativeTemplate, conversation);
             assertEquals(

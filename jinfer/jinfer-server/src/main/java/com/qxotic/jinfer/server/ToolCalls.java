@@ -18,12 +18,18 @@ final class ToolCalls {
             function.put("name", call.name());
             function.put("arguments", JsonCodec.stringify(call.arguments()));
             Map<String, Object> wire = new LinkedHashMap<>();
-            wire.put("id", call.id().isEmpty() ? "call_" + UUID.randomUUID() : call.id());
+            // ids are opaque to clients; nine alphanumerics is what Mistral's template accepts
+            // when the client echoes them back in the history
+            wire.put("id", call.id().isEmpty() ? mintId() : call.id());
             wire.put("type", "function");
             wire.put("function", function);
             out.add(wire);
         }
         return out;
+    }
+
+    static String mintId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 9);
     }
 
     static List<Map<String, Object>> toolCallDeltas(List<Map<String, Object>> calls) {

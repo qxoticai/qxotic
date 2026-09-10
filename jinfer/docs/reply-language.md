@@ -1,6 +1,6 @@
 # The Reply Language
 
-Design document, 2026-08-09.
+Design document, 2026-08-09. Historical: since 2026-09-02 a request may offer tools together with a schema or a grammar, so the "mutually exclusive" rule below no longer holds; the parsing model is unchanged.
 Status: ALL NINE families parse through the walk (MiniCPM5 and Gemma4 joined via the claimed-span rule); gpt-oss/SmolLM3/Granite/Mistral force through schema-bound selections (Mistral gained forcing it NEVER had); the reply lifecycle laws landed (`beginReply` - prompt bytes are not reply bytes; `ended` - generation stops when the language says the reply is over).
 GBNF-opening regions support grammar-shaped content replies, driven by `Walk.sampler`.
 Tool calls keep each family's native parser and wire format: JSON, Python arguments, tagged XML, or MiniCPM5 XML/CDATA.

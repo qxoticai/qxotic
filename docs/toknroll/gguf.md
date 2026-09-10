@@ -111,8 +111,8 @@ builder.registerNormalizer(name, (Function<GGUF, Normalizer>) factory);
 
 | GGUF key | Model family |
 |----------|-------------|
-| `gpt2` | GPT-2, GPT-3.5, GPT-4 (tiktoken) |
-| `llama` | Meta Llama 3+, Mistral, DeepSeek, Qwen, Gemma 4 (SentencePiece) |
+| `gpt2` | Byte-level BPE: GPT-2, Llama 3+, Qwen, DeepSeek, gpt-oss |
+| `llama` | SentencePiece BPE: Llama 2, Mistral |
 | `gemma4` | Google Gemma 4 (SentencePiece) |
 
 ## Caching

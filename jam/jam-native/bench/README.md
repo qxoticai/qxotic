@@ -5,7 +5,7 @@ Side-by-side benchmark of jam's quantized matmul against llama.cpp's tinyBLAS
 
 ## Prerequisites
 
-- jam built: `qxotic/jam/build/libjam.so` (`cmake --build jam/build`, or `mvn -pl jam package`)
+- jam built: `qxotic/jam/jam-native/build/libjam.so` (`cmake -B build && cmake --build build` in `jam/jam-native`, or `mvn -pl jam/jam-vector -am package -DskipTests` from the repository root)
 - llama.cpp built with the CPU backend: `llama.cpp/build/bin/lib{ggml-cpu,ggml-base}.so`
   (`cmake -B build -DGGML_NATIVE=ON && cmake --build build --target ggml-cpu -j`)
 

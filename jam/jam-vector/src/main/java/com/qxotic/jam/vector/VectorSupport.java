@@ -40,7 +40,12 @@ final class VectorSupport {
     /** Integer {@link #jamProp}. */
     static int jamPropInt(String name, int def) {
         String v = jamProp(name, null);
-        return v != null ? Integer.parseInt(v.trim()) : def;
+        if (v == null) return def;
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(name + "=" + v + " is not an integer", e);
+        }
     }
 
     /**
@@ -141,16 +146,9 @@ final class VectorSupport {
 
     static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
 
-    // ---- Register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT
-    // (relocated from
-    //      jinfer's VectorJAM). The Q8_0 kernel reads TILE_CODE; wide tiles need spill-free
-    // zmm16-zmm31. ----
-    static final String TILE =
-            jamProp(
-                    "jam.vector.tile",
-                    System.getProperty(
-                            "jinfer.Q8_0GemmTile",
-                            "auto")); // legacy -D name still honored as the default
+    // ---- Register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT.
+    // The Q8_0 kernel reads TILE_CODE; wide tiles need spill-free zmm16-zmm31. ----
+    static final String TILE = jamProp("jam.vector.tile", "auto");
 
     /**
      * Constant-foldable codes:

@@ -58,6 +58,10 @@ class JsonPrinterTest {
                 Arguments.of(1.5f, "1.5"),
                 Arguments.of(2.0f, "2"),
                 Arguments.of(Float.valueOf(1.25f), "1.25"),
+                Arguments.of(0.1f, "0.1"), // not widened to 0.10000000149011612
+                Arguments.of(0x1p63, "9.223372036854776E18"), // (long) would saturate
+                Arguments.of(-0x1p63, "-9.223372036854776E18"),
+                Arguments.of(0x1p53 - 1, "9007199254740991"),
                 Arguments.of(Double.valueOf(2.5d), "2.5"),
                 Arguments.of(Integer.valueOf(7), "7"),
                 Arguments.of(Long.valueOf(9L), "9"));

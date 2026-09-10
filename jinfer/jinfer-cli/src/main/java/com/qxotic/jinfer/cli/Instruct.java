@@ -64,7 +64,7 @@ final class Instruct {
             turns.add(Message.system(options.systemPrompt()));
         }
         turns.add(Message.user(options.prompt()));
-        Conversation conversation = new Conversation(turns, List.of(), options.think(), "");
+        Conversation conversation = new Conversation(turns, List.of(), options.think());
 
         // --cache: pin the prompt BEFORE generating - the artifact is the point of --cache, and a
         // generation failure must not lose it. The engine's cache then serves the longest cached

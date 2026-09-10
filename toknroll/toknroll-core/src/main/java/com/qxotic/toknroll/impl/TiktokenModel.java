@@ -36,7 +36,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private static final int NO_TOKEN = -1;
     private static final int NO_INDEX = -1;
     private static final Method THREAD_IS_VIRTUAL_METHOD = resolveThreadIsVirtualMethod();
-    private static final boolean VIRTUAL_THREADS_SUPPORTED = THREAD_IS_VIRTUAL_METHOD != null;
 
     private final LongLongMap merges;
     private final int[] singleByteTokenId;
@@ -71,9 +70,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         this.tinyChunkThreshold = Math.max(1, Math.min(3, tinyChunkThreshold));
         this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
         this.scratchReuseEnabled =
-                VIRTUAL_THREADS_SUPPORTED
-                        && Boolean.parseBoolean(
-                                System.getProperty(SCRATCH_REUSE_ENABLED_PROPERTY, "true"));
+                Boolean.parseBoolean(System.getProperty(SCRATCH_REUSE_ENABLED_PROPERTY, "true"));
         this.scratchMaxRetainedElements =
                 Math.max(
                         8,
