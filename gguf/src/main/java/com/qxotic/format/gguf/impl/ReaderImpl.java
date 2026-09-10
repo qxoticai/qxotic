@@ -64,12 +64,14 @@ final class ReaderImpl {
                 this.version, tensorDataOffset, this.metadata, this.metadataTypes, tensorInfos);
     }
 
-    private GGMLType readGGMLType(ReadableByteChannel byteChannel) throws IOException {
+    private GGMLType readGGMLType(ReadableByteChannel byteChannel, String tensorName)
+            throws IOException {
         int ggmlTypeId = readInt(byteChannel); // ggml_type type;
         try {
             return GGMLType.fromId(ggmlTypeId);
         } catch (IllegalArgumentException e) {
-            throw new GGUFFormatException("Unknown GGML type ID: " + ggmlTypeId, e);
+            throw new GGUFFormatException(
+                    "Tensor " + tensorName + " has unknown GGML type ID " + ggmlTypeId, e);
         }
     }
 
@@ -92,7 +94,7 @@ final class ReaderImpl {
             dimensions[i] = readLong(byteChannel);
         }
         // The type of the tensor.
-        GGMLType ggmlType = readGGMLType(byteChannel); // ggml_type type;
+        GGMLType ggmlType = readGGMLType(byteChannel, name); // ggml_type type;
         // The offset of the tensor's data in this file in bytes.
         // This offset is relative to `tensor_data`, not to the start
         // of the file, to make it easier for writers to write the file.

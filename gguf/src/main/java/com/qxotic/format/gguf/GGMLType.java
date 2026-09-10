@@ -346,6 +346,13 @@ public enum GGMLType {
         return elementsPerBlock > 1;
     }
 
+    /** The placeholders for types GGML has removed carry no block geometry to size with. */
+    private void requireSizable() {
+        if (elementsPerBlock == 0) {
+            throw new UnsupportedOperationException(name() + " was removed from GGML");
+        }
+    }
+
     /**
      * Returns the effective bits per weight (BPW) for this type.
      *
@@ -358,11 +365,11 @@ public enum GGMLType {
      *   <li>Q4_0: 4.5 bpw
      *   <li>IQ2_XXS: 2.0625 bpw
      * </ul>
+     *
+     * @throws UnsupportedOperationException for a type GGML has removed
      */
     public double getBitsPerWeight() {
-        if (elementsPerBlock == 0) {
-            throw new UnsupportedOperationException(name() + " was removed from GGML");
-        }
+        requireSizable();
         return (blockByteSize * 8.0) / elementsPerBlock;
     }
 
@@ -386,9 +393,7 @@ public enum GGMLType {
      * @throws UnsupportedOperationException for a type GGML has removed
      */
     public long byteSizeFor(long numberOfElements) {
-        if (elementsPerBlock == 0) {
-            throw new UnsupportedOperationException(name() + " was removed from GGML");
-        }
+        requireSizable();
         if (numberOfElements % elementsPerBlock != 0) {
             throw new IllegalArgumentException(
                     "Number of elements ("
@@ -405,11 +410,10 @@ public enum GGMLType {
      * Calculates the number of elements that can be stored in the given byte size.
      *
      * @throws IllegalArgumentException if byte size is not a multiple of block byte size
+     * @throws UnsupportedOperationException for a type GGML has removed
      */
     public long elementsForByteSize(long byteSize) {
-        if (elementsPerBlock == 0) {
-            throw new UnsupportedOperationException(name() + " was removed from GGML");
-        }
+        requireSizable();
         if (byteSize % blockByteSize != 0) {
             throw new IllegalArgumentException(
                     "Byte size ("

@@ -25,7 +25,7 @@ public final class NativeJAMProvider implements JAM.Provider {
         } catch (Throwable t) {
             // no library for this platform: the expected, silent fallback. A library the user
             // pointed at explicitly is different: failing to load it is their error, not a hint.
-            if (!NativeLoader.config("jam.native.library.path", "").isEmpty()) throw t;
+            if (!NativeLoader.override().isEmpty()) throw t;
             return false;
         }
         try {

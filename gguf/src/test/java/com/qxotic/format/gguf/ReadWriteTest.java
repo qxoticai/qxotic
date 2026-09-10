@@ -257,6 +257,17 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
+    public void testUnknownTensorTypeIdIsAFormatError() {
+        byte[] info = tensorInfo("w", new long[] {1}, GGMLType.F32, 0);
+        // the type id sits right before the trailing 8-byte offset; 999 is no ggml type
+        ByteBuffer.wrap(info).order(ByteOrder.nativeOrder()).putInt(info.length - 12, 999);
+        byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {info});
+        GGUFFormatException e =
+                assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+        assertTrue(e.getMessage().contains("w") && e.getMessage().contains("999"));
+    }
+
+    @Test
     public void testInvalidBooleanEncodingTreatsNonZeroAsTrue() throws IOException {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataBoolRaw("flag", (byte) 2)});
         GGUF gguf = readFromBytes(ggufBytes);

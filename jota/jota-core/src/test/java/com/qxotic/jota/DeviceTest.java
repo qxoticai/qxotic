@@ -17,6 +17,8 @@ class DeviceTest {
     void testDeviceTypeEquality() {
         assertEquals(DeviceType.CUDA, DeviceType.CUDA);
         assertNotEquals(DeviceType.CUDA, DeviceType.HIP);
+        // the record constructor normalizes too, so no spelling escapes the interned constants
+        assertEquals(DeviceType.JAVA, new DeviceType(" Java "));
     }
 
     @Test

@@ -47,6 +47,14 @@ class LayoutCongruenceTest {
     }
 
     @Test
+    void testLayoutOfRefusesANonCongruentPair() {
+        // a flat stride under a nested shape: modeAt/coalesce would fail later, so of() refuses
+        Shape nested = Shape.of(2, Shape.of(3L, 4L));
+        assertThrows(
+                IllegalArgumentException.class, () -> Layout.of(nested, Stride.flat(12, 4, 1)));
+    }
+
+    @Test
     void testFlatLayoutsCongruent() {
         Layout layout1 = Layout.of(Shape.flat(2, 3, 4), Stride.flat(12, 4, 1));
         Layout layout2 = Layout.of(Shape.flat(5, 6, 7), Stride.flat(42, 7, 1));

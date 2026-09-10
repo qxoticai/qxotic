@@ -412,7 +412,8 @@ public final class Models {
         String arch = gguf.getString("general.architecture");
         if (arch == null)
             throw new IllegalArgumentException(
-                    "the GGUF has no general.architecture, so it is not a model file");
+                    "the GGUF carries no general.architecture, so it is not a model (a projector,"
+                            + " voice or tokenizer file?)");
         ModelProvider selected = select(PROVIDERS, arch);
         if (selected != null) return selected;
         String artifact = artifactFor(arch);

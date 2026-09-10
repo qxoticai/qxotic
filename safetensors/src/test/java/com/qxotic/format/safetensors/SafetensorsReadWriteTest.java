@@ -64,6 +64,37 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
     }
 
     @Test
+    public void testBuiltObjectIsDetachedFromTheBuilder() throws IOException {
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("w", DType.F32, new long[] {2}, 0));
+        Safetensors st = builder.build();
+        long headerBefore = st.getTensorDataOffset();
+        builder.putMetadataKey("late", "value");
+        builder.putTensor(TensorEntry.create("extra", DType.F32, new long[] {2}, 8));
+        assertFalse(st.getMetadata().containsKey("late"));
+        assertEquals(1, st.getTensors().size());
+        assertEquals(headerBefore, st.getTensorDataOffset());
+        // the recorded offset still matches the header the writer produces
+        Safetensors.write(st, Channels.newChannel(new ByteArrayOutputStream()));
+    }
+
+    @Test
+    public void testHeaderFieldOrderIsFixed() throws IOException {
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("w", DType.F32, new long[] {2}, 0))
+                        .build();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        Safetensors.write(st, Channels.newChannel(out));
+        String header = new String(out.toByteArray(), StandardCharsets.UTF_8);
+        // upstream order, so the same object serialises to the same bytes on every JVM
+        assertTrue(
+                header.contains("\"w\":{\"dtype\":\"F32\",\"shape\":[2],\"data_offsets\":[0,8]}"),
+                header);
+    }
+
+    @Test
     public void testTensors() {
         Safetensors st =
                 Builder.newBuilder()

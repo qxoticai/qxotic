@@ -31,10 +31,15 @@ final class NativeLoader {
 
     private static boolean loaded;
 
+    /** The library the user named explicitly, or "" to look for the bundled one. */
+    static String override() {
+        return config("jam.native.library.path", "");
+    }
+
     static synchronized void load() {
         if (loaded) return;
 
-        String override = config("jam.native.library.path", "");
+        String override = override();
         if (!override.isEmpty()) {
             System.load(override);
             loaded = true;

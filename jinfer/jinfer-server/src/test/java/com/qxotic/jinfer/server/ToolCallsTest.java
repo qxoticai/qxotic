@@ -24,4 +24,12 @@ class ToolCallsTest {
         assertEquals("weather", function.get("name"));
         assertTrue(((String) function.get("arguments")).contains("Paris"));
     }
+
+    @Test
+    void anIdlessCallGetsNineAlphanumerics() {
+        // what Mistral's template accepts when the client echoes the id back in the history
+        var wire =
+                ToolCalls.toWire(List.of(new Content.ToolCall("", "weather", Map.of()))).getFirst();
+        assertTrue(((String) wire.get("id")).matches("[a-z0-9]{9}"), wire.get("id").toString());
+    }
 }
