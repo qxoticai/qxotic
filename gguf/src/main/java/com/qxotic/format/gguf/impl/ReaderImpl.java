@@ -82,12 +82,14 @@ final class ReaderImpl {
         if (name.length() > 64) {
             throw new GGUFFormatException("Tensor name too long (>64): " + name.length());
         }
-        // The number of shape in the tensor.
-        // Currently at most 4, but this may change in the future.
-        int n_dimensions = readInt(byteChannel); // uint32_t n_dimensions;
-        if (n_dimensions > 4) {
-            throw new GGUFFormatException("Tensor has too many dimensions: " + n_dimensions);
-        }
+        // The number of shape in the tensor. Currently at most 4, but this may change in the
+        // future. Unsigned: read as signed, a corrupt high bit is negative and would size the
+        // array.
+        int n_dimensions =
+                plausible(
+                        Integer.toUnsignedLong(readInt(byteChannel)), // uint32_t n_dimensions;
+                        4,
+                        "Tensor " + name + " dimension count");
         // The shape of the tensor.
         long[] dimensions = new long[n_dimensions]; // uint64_t shape[n_dimensions];
         for (int i = 0; i < n_dimensions; ++i) {
@@ -106,7 +108,11 @@ final class ReaderImpl {
             throw new GGUFFormatException(
                     "Tensor offset " + offset + " is not aligned to " + getAlignment());
         }
-        return TensorEntry.create(name, dimensions, ggmlType, offset);
+        try {
+            return TensorEntry.create(name, dimensions, ggmlType, offset);
+        } catch (IllegalArgumentException e) { // a non-positive or overflowing shape
+            throw new GGUFFormatException(e.getMessage(), e);
+        }
     }
 
     // a truncated or corrupt header reads garbage into a length field; refusing it here keeps

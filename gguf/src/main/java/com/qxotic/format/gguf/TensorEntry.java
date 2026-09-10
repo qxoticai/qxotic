@@ -27,13 +27,33 @@ public final class TensorEntry {
     private final long offset;
 
     private TensorEntry(String name, long[] shape, GGMLType ggmlType, long offset) {
-        this.name = name;
+        this.name = Objects.requireNonNull(name, "name");
         this.shape = shape.clone();
-        this.ggmlType = ggmlType;
+        this.ggmlType = Objects.requireNonNull(ggmlType, "ggmlType");
         this.offset = offset;
+        long elements = 1;
+        for (int i = 0; i < this.shape.length; i++) {
+            if (this.shape[i] <= 0) {
+                throw new IllegalArgumentException(
+                        "Tensor " + name + " dimension " + i + " is not positive: " + shape[i]);
+            }
+            try {
+                elements = Math.multiplyExact(elements, this.shape[i]);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(
+                        "Tensor " + name + " has more elements than a long can count", e);
+            }
+        }
     }
 
-    /** Creates an entry; {@code offset} is relative to {@link GGUF#getTensorDataOffset()}. */
+    /**
+     * Creates an entry; {@code offset} is relative to {@link GGUF#getTensorDataOffset()}. Every
+     * dimension is at least 1 (ggml pads unused dimensions with 1) and their product fits a long,
+     * so the reader and the writer agree on what a tensor is.
+     *
+     * @throws IllegalArgumentException for a dimension that is not positive, or a shape with more
+     *     elements than a long can count
+     */
     public static TensorEntry create(String name, long[] shape, GGMLType ggmlType, long offset) {
         return new TensorEntry(name, shape, ggmlType, offset);
     }
@@ -66,15 +86,11 @@ public final class TensorEntry {
         return this.ggmlType.byteSizeFor(totalNumberOfElements());
     }
 
-    /**
-     * Product of all shape dimensions (1 for an empty shape).
-     *
-     * @throws ArithmeticException if the result overflows
-     */
+    /** Product of all shape dimensions (1 for an empty shape); it fits, the constructor checked. */
     public long totalNumberOfElements() {
         long total = 1;
         for (long dim : this.shape) {
-            total = Math.multiplyExact(total, dim);
+            total *= dim;
         }
         return total;
     }

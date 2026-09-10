@@ -117,15 +117,6 @@ final class WriterImpl {
         // The shape of the tensor.
         long[] dimensions = tensorEntry.shape(); // uint64_t shape[n_dimensions];
         for (int i = 0; i < n_dimensions; ++i) {
-            if (dimensions[i] <= 0) {
-                throw new IllegalArgumentException(
-                        "Tensor dimension must be > 0 at index "
-                                + i
-                                + " for tensor '"
-                                + name
-                                + "' but was "
-                                + dimensions[i]);
-            }
             writeLong(byteChannel, dimensions[i]);
         }
         // The type of the tensor.

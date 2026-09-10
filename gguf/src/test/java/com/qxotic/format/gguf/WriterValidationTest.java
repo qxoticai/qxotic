@@ -46,21 +46,6 @@ class WriterValidationTest extends GGUFTest {
     }
 
     @Test
-    void testWriteFailsOnNonPositiveTensorDimension() {
-        GGUF gguf =
-                fakeGGUF(
-                        3,
-                        32,
-                        0,
-                        new LinkedHashMap<>(),
-                        new LinkedHashMap<>(),
-                        new LinkedHashMap<>(),
-                        List.of(TensorEntry.create("t", new long[] {1, 0}, GGMLType.F32, 0)));
-
-        assertThrows(IllegalArgumentException.class, () -> writeToBytes(gguf));
-    }
-
-    @Test
     void testWriteFailsOnMisalignedTensorOffset() {
         GGUF gguf =
                 fakeGGUF(

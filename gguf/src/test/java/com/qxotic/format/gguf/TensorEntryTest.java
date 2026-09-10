@@ -61,13 +61,6 @@ public class TensorEntryTest {
     }
 
     @Test
-    public void testTotalNumberOfElementsOverflow() {
-        TensorEntry entry =
-                TensorEntry.create("w", new long[] {Long.MAX_VALUE, 2}, GGMLType.F32, 0);
-        assertThrows(ArithmeticException.class, entry::totalNumberOfElements);
-    }
-
-    @Test
     public void testTypeAlias() {
         TensorEntry entry = TensorEntry.create("w", new long[] {10}, GGMLType.F16, 0);
         assertEquals(entry.ggmlType(), entry.type());
@@ -142,5 +135,26 @@ public class TensorEntryTest {
         assertEquals(largeOffset, entry.offset());
         String str = entry.toString();
         assertTrue(str.contains("offset=0x"));
+    }
+
+    @Test
+    public void testDimensionsMustBePositive() {
+        // what the reader refuses, the writer must not produce: same rule at construction
+        for (long bad : new long[] {0, -1, Long.MIN_VALUE}) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> TensorEntry.create("w", new long[] {2, bad}, GGMLType.F32, 0));
+            assertTrue(e.getMessage().contains("dimension 1"), e.getMessage());
+        }
+        assertEquals(1, TensorEntry.create("scalar", new long[0], GGMLType.F32, 0).byteSize() / 4);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TensorEntry.create("w", new long[] {1L << 40, 1L << 40}, GGMLType.F32, 0));
+        assertThrows(
+                NullPointerException.class,
+                () -> TensorEntry.create(null, new long[] {1}, GGMLType.F32, 0));
+        assertThrows(
+                NullPointerException.class, () -> TensorEntry.create("w", new long[] {1}, null, 0));
     }
 }

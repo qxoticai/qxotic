@@ -268,6 +268,45 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
+    public void testTensorRankWithTheHighBitSetIsAFormatError() {
+        byte[] info = tensorInfo("w", new long[] {1}, GGMLType.F32, 0);
+        // uint32 n_dimensions sits right after the 8-byte length + 1-byte name
+        ByteBuffer.wrap(info).order(ByteOrder.nativeOrder()).putInt(9, 0x80000001);
+        byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {info});
+        GGUFFormatException e =
+                assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+        assertTrue(e.getMessage().contains("dimension count"), e.getMessage());
+    }
+
+    @Test
+    public void testNonPositiveTensorDimensionsAreFormatErrors() {
+        for (long bad : new long[] {0, -1, Long.MIN_VALUE}) {
+            byte[] ggufBytes =
+                    rawGguf(
+                            1,
+                            new byte[0][],
+                            new byte[][] {tensorInfo("w", new long[] {2, bad}, GGMLType.F32, 0)});
+            GGUFFormatException e =
+                    assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+            assertTrue(e.getMessage().contains("dimension 1 is not positive"), e.getMessage());
+        }
+    }
+
+    @Test
+    public void testTensorElementCountOverflowIsAFormatError() {
+        byte[] ggufBytes =
+                rawGguf(
+                        1,
+                        new byte[0][],
+                        new byte[][] {
+                            tensorInfo("w", new long[] {1L << 40, 1L << 40}, GGMLType.F32, 0)
+                        });
+        GGUFFormatException e =
+                assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+        assertTrue(e.getMessage().contains("more elements"), e.getMessage());
+    }
+
+    @Test
     public void testInvalidBooleanEncodingTreatsNonZeroAsTrue() throws IOException {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataBoolRaw("flag", (byte) 2)});
         GGUF gguf = readFromBytes(ggufBytes);
