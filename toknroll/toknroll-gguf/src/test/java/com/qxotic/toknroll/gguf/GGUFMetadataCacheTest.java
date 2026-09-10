@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.Builder;
@@ -16,7 +17,13 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -329,14 +336,73 @@ class GGUFMetadataCacheTest {
         GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
         String url = serverUrl("/cleanup.gguf");
         Path target = tempDir.resolve("cleanup.gguf.metadata");
-        Path partial = tempDir.resolve("cleanup.gguf.metadata.partial");
-
         assertThrows(
                 IOException.class,
                 () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
 
-        assertFalse(Files.exists(partial), ".partial file should be cleaned up");
+        assertNoPartials();
         assertFalse(Files.exists(target), ".metadata file should not be created on failure");
+    }
+
+    @Test
+    void fetchPartialMetadata_concurrentDownloadsDoNotSharePartialFile() throws Exception {
+        byte[] ggufBytes = minimalGguf();
+        CountDownLatch requests = new CountDownLatch(2);
+        startServer(
+                "/concurrent.gguf",
+                exchange -> {
+                    requests.countDown();
+                    await(requests);
+                    writeBytes(exchange, ggufBytes, 200, null);
+                });
+
+        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
+        String url = serverUrl("/concurrent.gguf");
+        Path target = tempDir.resolve("concurrent.gguf.metadata");
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            Future<Path> first =
+                    callers.submit(
+                            () ->
+                                    cache.fetchPartialMetadata(
+                                            "test", url, target, null, false, true));
+            Future<Path> second =
+                    callers.submit(
+                            () ->
+                                    cache.fetchPartialMetadata(
+                                            "test", url, target, null, false, true));
+
+            assertEquals(first.get(2, TimeUnit.SECONDS), second.get(2, TimeUnit.SECONDS));
+            assertEquals("test-value", GGUF.read(first.get()).getString("test.key"));
+        } finally {
+            callers.shutdownNow();
+        }
+        assertNoPartials();
+    }
+
+    @Test
+    void fetchPartialMetadata_timesOutStalledBody() throws Exception {
+        startServer(
+                "/stalled.gguf",
+                exchange -> {
+                    exchange.sendResponseHeaders(200, minimalGguf().length);
+                    await(new CountDownLatch(1));
+                });
+
+        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir, Duration.ofMillis(100));
+        String url = serverUrl("/stalled.gguf");
+        Path target = tempDir.resolve("stalled.gguf.metadata");
+
+        assertTimeoutPreemptively(
+                Duration.ofSeconds(2),
+                () ->
+                        assertThrows(
+                                IOException.class,
+                                () ->
+                                        cache.fetchPartialMetadata(
+                                                "test", url, target, null, false, false)));
+        assertNoPartials();
+        assertFalse(Files.exists(target));
     }
 
     @Test
@@ -382,6 +448,13 @@ class GGUFMetadataCacheTest {
 
     private void startServer(String path, ThrowingHandler handler) throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.setExecutor(
+                Executors.newCachedThreadPool(
+                        task -> {
+                            Thread thread = new Thread(task);
+                            thread.setDaemon(true);
+                            return thread;
+                        }));
         server.createContext(
                 path,
                 exchange -> {
@@ -392,6 +465,23 @@ class GGUFMetadataCacheTest {
                     }
                 });
         server.start();
+    }
+
+    private void assertNoPartials() throws IOException {
+        try (var files = Files.walk(tempDir)) {
+            assertTrue(files.noneMatch(path -> path.getFileName().toString().endsWith(".partial")));
+        }
+    }
+
+    private static void await(CountDownLatch latch) throws IOException {
+        try {
+            if (!latch.await(2, TimeUnit.SECONDS)) {
+                throw new IOException("Timed out waiting for test peer");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
     }
 
     private static void writeText(HttpExchange exchange, String text, int status)

@@ -31,12 +31,20 @@ final class RepositoryArtifactCache {
 
     private static final long CONNECT_TIMEOUT_SECONDS =
             Long.getLong("toknroll.gguf.connectTimeoutSeconds", 120);
+    private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
+            Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
 
     private final Path cacheRoot;
+    private final Duration downloadTimeout;
     private volatile HttpClient httpClient;
 
     private RepositoryArtifactCache(Path cacheRoot) {
+        this(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT);
+    }
+
+    private RepositoryArtifactCache(Path cacheRoot, Duration downloadTimeout) {
         this.cacheRoot = cacheRoot;
+        this.downloadTimeout = downloadTimeout;
     }
 
     static RepositoryArtifactCache create() {
@@ -45,6 +53,10 @@ final class RepositoryArtifactCache {
 
     static RepositoryArtifactCache create(Path cacheRoot) {
         return new RepositoryArtifactCache(cacheRoot.toAbsolutePath().normalize());
+    }
+
+    static RepositoryArtifactCache create(Path cacheRoot, Duration downloadTimeout) {
+        return new RepositoryArtifactCache(cacheRoot.toAbsolutePath().normalize(), downloadTimeout);
     }
 
     Path fetchUrl(
@@ -165,7 +177,8 @@ final class RepositoryArtifactCache {
         }
 
         Files.createDirectories(normalizedTarget.getParent());
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+        HttpRequest.Builder builder =
+                HttpRequest.newBuilder(URI.create(url)).timeout(downloadTimeout).GET();
         if (headers != null) {
             for (Map.Entry<String, List<String>> e : headers.entrySet()) {
                 if (e.getValue() == null) {
@@ -179,44 +192,43 @@ final class RepositoryArtifactCache {
             }
         }
 
-        HttpResponse<byte[]> response;
+        Path partial =
+                Files.createTempFile(
+                        normalizedTarget.getParent(),
+                        normalizedTarget.getFileName().toString() + ".",
+                        ".partial");
         try {
-            response =
+            HttpResponse<Path> response =
                     getOrCreateHttpClient()
-                            .send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+                            .send(builder.build(), HttpResponse.BodyHandlers.ofFile(partial));
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                if (response.statusCode() == 404) {
+                    Files.write(notFoundMarker, new byte[0]);
+                }
+                throw new IOException(
+                        "["
+                                + source
+                                + "] Failed to download "
+                                + url
+                                + " (HTTP "
+                                + response.statusCode()
+                                + ")");
+            }
+
+            Files.deleteIfExists(notFoundMarker);
+            Files.move(
+                    partial,
+                    normalizedTarget,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+            return normalizedTarget;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("[" + source + "] Interrupted while downloading " + url, e);
+        } finally {
+            Files.deleteIfExists(partial);
         }
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            if (response.statusCode() == 404) {
-                Files.createDirectories(notFoundMarker.getParent());
-                if (!Files.exists(notFoundMarker)) {
-                    Files.createFile(notFoundMarker);
-                }
-            }
-            throw new IOException(
-                    "["
-                            + source
-                            + "] Failed to download "
-                            + url
-                            + " (HTTP "
-                            + response.statusCode()
-                            + ")");
-        }
-
-        Path partial =
-                normalizedTarget.resolveSibling(
-                        normalizedTarget.getFileName().toString() + ".partial");
-        Files.write(partial, response.body());
-        Files.deleteIfExists(notFoundMarker);
-        Files.move(
-                partial,
-                normalizedTarget,
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE);
-        return normalizedTarget;
     }
 
     private HttpClient getOrCreateHttpClient() {

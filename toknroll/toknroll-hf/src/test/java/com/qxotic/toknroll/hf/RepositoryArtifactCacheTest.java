@@ -3,6 +3,7 @@ package com.qxotic.toknroll.hf;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -13,8 +14,14 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -120,6 +127,65 @@ class RepositoryArtifactCacheTest {
     }
 
     @Test
+    void fetchUrl_cleansUpPartialOnFailure() throws Exception {
+        startServer("/error", exchange -> writeResponse(exchange, "error", 500));
+
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        String url = "http://localhost:" + server.getAddress().getPort() + "/error";
+
+        assertThrows(IOException.class, () -> cache.fetchUrl(url, Map.of(), false, false));
+        assertNoPartials();
+    }
+
+    @Test
+    void fetchUrl_concurrentDownloadsDoNotSharePartialFile() throws Exception {
+        CountDownLatch requests = new CountDownLatch(2);
+        startServer(
+                "/concurrent",
+                exchange -> {
+                    requests.countDown();
+                    await(requests);
+                    writeResponse(exchange, "complete", 200);
+                });
+
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        String url = "http://localhost:" + server.getAddress().getPort() + "/concurrent";
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            Future<Path> first = callers.submit(() -> cache.fetchUrl(url, Map.of(), false, true));
+            Future<Path> second = callers.submit(() -> cache.fetchUrl(url, Map.of(), false, true));
+
+            assertEquals(first.get(2, TimeUnit.SECONDS), second.get(2, TimeUnit.SECONDS));
+            assertEquals("complete", Files.readString(first.get(), StandardCharsets.UTF_8));
+        } finally {
+            callers.shutdownNow();
+        }
+        assertNoPartials();
+    }
+
+    @Test
+    void fetchUrl_timesOutStalledBody() throws Exception {
+        startServer(
+                "/stalled",
+                exchange -> {
+                    exchange.sendResponseHeaders(200, 1);
+                    await(new CountDownLatch(1));
+                });
+
+        RepositoryArtifactCache cache =
+                RepositoryArtifactCache.create(tempDir, Duration.ofMillis(100));
+        String url = "http://localhost:" + server.getAddress().getPort() + "/stalled";
+
+        assertTimeoutPreemptively(
+                Duration.ofSeconds(2),
+                () ->
+                        assertThrows(
+                                IOException.class,
+                                () -> cache.fetchUrl(url, Map.of(), false, false)));
+        assertNoPartials();
+    }
+
+    @Test
     void fetchHuggingFace_blankRevisionRejected() {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         assertThrows(
@@ -137,6 +203,13 @@ class RepositoryArtifactCacheTest {
 
     private void startServer(String route, ThrowingHandler handler) throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.setExecutor(
+                Executors.newCachedThreadPool(
+                        task -> {
+                            Thread thread = new Thread(task);
+                            thread.setDaemon(true);
+                            return thread;
+                        }));
         server.createContext(
                 route,
                 exchange -> {
@@ -147,6 +220,23 @@ class RepositoryArtifactCacheTest {
                     }
                 });
         server.start();
+    }
+
+    private void assertNoPartials() throws IOException {
+        try (var files = Files.walk(tempDir)) {
+            assertTrue(files.noneMatch(path -> path.getFileName().toString().endsWith(".partial")));
+        }
+    }
+
+    private static void await(CountDownLatch latch) throws IOException {
+        try {
+            if (!latch.await(2, TimeUnit.SECONDS)) {
+                throw new IOException("Timed out waiting for test peer");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+        }
     }
 
     private static void writeResponse(HttpExchange exchange, Object body, int status)

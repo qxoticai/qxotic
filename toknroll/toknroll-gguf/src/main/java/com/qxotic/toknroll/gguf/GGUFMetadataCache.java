@@ -17,6 +17,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 final class GGUFMetadataCache {
     private static final String ROOT_PROPERTY = "toknroll.cache.root";
@@ -33,12 +36,21 @@ final class GGUFMetadataCache {
 
     private static final long CONNECT_TIMEOUT_SECONDS =
             Long.getLong("toknroll.gguf.connectTimeoutSeconds", 120);
+    private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
+            Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
+    private static final ScheduledThreadPoolExecutor READ_TIMEOUTS = createReadTimeouts();
 
     private final Path cacheRoot;
+    private final Duration downloadTimeout;
     private volatile HttpClient httpClient;
 
     private GGUFMetadataCache(Path cacheRoot) {
+        this(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT);
+    }
+
+    private GGUFMetadataCache(Path cacheRoot, Duration downloadTimeout) {
         this.cacheRoot = cacheRoot;
+        this.downloadTimeout = downloadTimeout;
     }
 
     static GGUFMetadataCache create() {
@@ -47,6 +59,10 @@ final class GGUFMetadataCache {
 
     static GGUFMetadataCache create(Path cacheRoot) {
         return new GGUFMetadataCache(cacheRoot.toAbsolutePath().normalize());
+    }
+
+    static GGUFMetadataCache create(Path cacheRoot, Duration downloadTimeout) {
+        return new GGUFMetadataCache(cacheRoot.toAbsolutePath().normalize(), downloadTimeout);
     }
 
     Path fetchHuggingFace(
@@ -130,7 +146,8 @@ final class GGUFMetadataCache {
 
         Files.createDirectories(normalizedTarget.getParent());
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+        HttpRequest.Builder builder =
+                HttpRequest.newBuilder(URI.create(url)).timeout(downloadTimeout).GET();
         if (bearerToken != null && !bearerToken.isBlank()) {
             builder.header("Authorization", "Bearer " + bearerToken);
         }
@@ -145,48 +162,68 @@ final class GGUFMetadataCache {
             throw new IOException("[" + source + "] Interrupted while downloading " + url, e);
         }
 
-        Path partial =
-                normalizedTarget.resolveSibling(
-                        normalizedTarget.getFileName().toString() + ".partial");
-
-        try (InputStream rawBody = response.body()) {
+        InputStream rawBody = response.body();
+        try (rawBody) {
             int status = response.statusCode();
             if (status < 200 || status >= 300) {
                 throw new IOException(
                         "[" + source + "] Failed to download " + url + " (HTTP " + status + ")");
             }
 
-            InputStream body = new BufferedInputStream(rawBody, 1 << 16);
-            OutputStream tap = new BufferedOutputStream(Files.newOutputStream(partial), 1 << 16);
-
+            Path partial =
+                    Files.createTempFile(
+                            normalizedTarget.getParent(),
+                            normalizedTarget.getFileName().toString() + ".",
+                            ".partial");
+            ScheduledFuture<?> readTimeout =
+                    READ_TIMEOUTS.schedule(
+                            () -> {
+                                try {
+                                    rawBody.close();
+                                } catch (IOException ignored) {
+                                    // The read already failed or completed.
+                                }
+                            },
+                            downloadTimeout.toNanos(),
+                            TimeUnit.NANOSECONDS);
             try {
-                ReadableByteChannel sourceChannel = Channels.newChannel(body);
-                TeeReadableByteChannel teeChannel =
-                        new TeeReadableByteChannel(sourceChannel, tap, MAX_RANGE_BYTES);
+                InputStream body = new BufferedInputStream(rawBody, 1 << 16);
+                try (OutputStream tap =
+                        new BufferedOutputStream(Files.newOutputStream(partial), 1 << 16)) {
+                    ReadableByteChannel sourceChannel = Channels.newChannel(body);
+                    TeeReadableByteChannel teeChannel =
+                            new TeeReadableByteChannel(sourceChannel, tap, MAX_RANGE_BYTES);
 
-                GGUF.read(teeChannel);
-                tap.flush();
-            } finally {
-                tap.close();
-            }
+                    GGUF.read(teeChannel);
+                }
 
-            try {
                 Files.move(
                         partial,
                         normalizedTarget,
                         StandardCopyOption.REPLACE_EXISTING,
                         StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicMoveFailure) {
-                Files.move(partial, normalizedTarget, StandardCopyOption.REPLACE_EXISTING);
+                return normalizedTarget;
+            } catch (RuntimeException e) {
+                throw new IOException(
+                        "[" + source + "] Failed to parse GGUF metadata from " + url, e);
+            } finally {
+                readTimeout.cancel(false);
+                Files.deleteIfExists(partial);
             }
-            return normalizedTarget;
-        } catch (IOException e) {
-            Files.deleteIfExists(partial);
-            throw e;
-        } catch (RuntimeException e) {
-            Files.deleteIfExists(partial);
-            throw new IOException("[" + source + "] Failed to parse GGUF metadata from " + url, e);
         }
+    }
+
+    private static ScheduledThreadPoolExecutor createReadTimeouts() {
+        ScheduledThreadPoolExecutor executor =
+                new ScheduledThreadPoolExecutor(
+                        1,
+                        task -> {
+                            Thread thread = new Thread(task, "toknroll-download-timeout");
+                            thread.setDaemon(true);
+                            return thread;
+                        });
+        executor.setRemoveOnCancelPolicy(true);
+        return executor;
     }
 
     private HttpClient getOrCreateHttpClient() {

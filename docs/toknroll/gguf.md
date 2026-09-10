@@ -126,3 +126,4 @@ Only GGUF header and metadata is downloaded (not tensor data). Cache location is
 | `toknroll.modelscope.token` / `MODELSCOPE_TOKEN` | ModelScope auth token |
 | `toknroll.gguf.maxMetadataBytes` | Max metadata bytes to read (default 1 GiB) |
 | `toknroll.gguf.connectTimeoutSeconds` | HTTP connect timeout (default 120) |
+| `toknroll.downloadTimeoutSeconds` | Artifact download deadline (default 300) |
