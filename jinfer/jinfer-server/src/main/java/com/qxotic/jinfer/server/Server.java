@@ -430,7 +430,7 @@ public final class Server {
             validator.accept(request);
         } catch (RuntimeException e) {
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
-            Http.sendError(exchange, 400, Http.errorMessage(e));
+            Http.sendError(exchange, clientStatus(e), Http.errorMessage(e)); // unknown model: 404
             return;
         }
         String id = idPrefix + Long.toUnsignedString(System.nanoTime(), 36);
