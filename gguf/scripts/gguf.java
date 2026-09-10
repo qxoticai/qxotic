@@ -3,7 +3,7 @@
 //DEPS info.picocli:picocli:4.7.7
 //DEPS info.picocli:picocli-codegen:4.7.7
 //JAVAC_OPTIONS -proc:full
-//NATIVE_OPTIONS --no-fallback -H:+ReportExceptionStackTraces
+//NATIVE_OPTIONS -H:+ReportExceptionStackTraces
 
 import com.qxotic.format.gguf.GGUF;
 import java.io.BufferedInputStream;
