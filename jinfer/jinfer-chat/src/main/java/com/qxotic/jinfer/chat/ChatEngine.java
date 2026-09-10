@@ -434,31 +434,30 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * One request in jinfer terms - what every integration means once its own option types are
      * mapped away. The framework-specific parts stay in the adapters: validating their own knobs,
-     * compiling a {@code contentGbnf} from their schema type, and resolving their defaults into
-     * these fields. Direct, framework-free callers: {@link #of(List, Sampling)} covers the common
-     * case without the 12 positional slots.
+     * compiling a {@code grammar} from their schema type, and resolving their defaults into these
+     * fields. Direct, framework-free callers: {@link #of(List, Sampling)} covers the common case
+     * without the 12 positional slots.
      *
      * @param messages the conversation so far, tool results matched to their calls (see {@link
      *     Conversation})
-     * @param tools tools offered to the model; with a {@code contentGbnf} the family's reply
-     *     language offers a call OR the document (a family without a combined language refuses the
-     *     pair)
+     * @param tools tools offered to the model; with a {@code grammar} the family's reply language
+     *     offers a call OR the document (a family without a combined language refuses the pair)
      * @param thinking the caller's intent; {@link #prepare} still applies the {@link #THINK_FLOOR}
      *     and a forced call's override, so a request cannot ask for a think span it cannot afford
-     * @param maxTokens completion budget, {@link Generator.Constraints#UNLIMITED} = bounded only by
-     *     the context
-     * @param reasoningMaxTokens think-span cap override: null = the model family's default policy,
-     *     -1 = uncapped, else the cap
-     * @param reasoningMessage forced as the model's own words when the think-span cap fires, before
-     *     the close marker; null or blank = a bare paragraph break
+     * @param maxOutputTokens completion budget, {@link Generator.Constraints#UNLIMITED} = bounded
+     *     only by the context
+     * @param reasoningBudget think-span cap override: null = the model family's default policy, -1
+     *     = uncapped, else the cap
+     * @param reasoningBudgetMessage forced as the model's own words when the think-span cap fires,
+     *     before the close marker; null or blank = a bare paragraph break
      * @param timeout wall-clock budget for the whole pass (prefill AND decode); {@link
      *     Duration#ZERO} = none
      * @param sampling temperature, top-p, top-k, min-p and seed; see {@link
      *     LoadedModel.SamplingDefaults#resolve} for the model-recommended values
-     * @param contentGbnf constrains decoding to a GBNF grammar (JSON schema, ...); null = free;
-     *     with tools offered the reply is a call or the grammar's document, see {@code tools}
+     * @param grammar constrains decoding to a GBNF grammar (JSON schema, ...); null = free; with
+     *     tools offered the reply is a call or the grammar's document, see {@code tools}
      * @param forcedTool seed the family's call marker so the reply IS a tool call; mutually
-     *     exclusive with {@code contentGbnf} - a forced call contradicts a stated format
+     *     exclusive with {@code grammar} - a forced call contradicts a stated format
      * @param stops extra stop strings on the content lane; the reply keeps the full text and the
      *     caller truncates with {@link TextStops#apply}; empty strings are refused
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
@@ -468,12 +467,12 @@ public final class ChatEngine implements AutoCloseable {
             List<Message> messages,
             List<Tool> tools,
             boolean thinking,
-            int maxTokens,
-            Integer reasoningMaxTokens,
-            String reasoningMessage,
+            int maxOutputTokens,
+            Integer reasoningBudget,
+            String reasoningBudgetMessage,
             Duration timeout,
             Sampling sampling,
-            String contentGbnf,
+            String grammar,
             ForcedTool forcedTool,
             List<String> stops,
             Map<String, Object> templateKwargs) {
@@ -485,11 +484,11 @@ public final class ChatEngine implements AutoCloseable {
                 throw new IllegalArgumentException("a request needs at least one message");
             }
             if (sampling == null) throw new IllegalArgumentException("sampling is required");
-            if (maxTokens < Generator.Constraints.UNLIMITED) {
-                throw new IllegalArgumentException("maxTokens " + maxTokens);
+            if (maxOutputTokens < Generator.Constraints.UNLIMITED) {
+                throw new IllegalArgumentException("maxOutputTokens " + maxOutputTokens);
             }
-            if (reasoningMaxTokens != null && reasoningMaxTokens < -1) {
-                throw new IllegalArgumentException("reasoningMaxTokens " + reasoningMaxTokens);
+            if (reasoningBudget != null && reasoningBudget < -1) {
+                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
             }
             if (timeout == null || timeout.isNegative()) {
                 throw new IllegalArgumentException("timeout " + timeout);
@@ -498,7 +497,7 @@ public final class ChatEngine implements AutoCloseable {
             tools = tools == null ? List.of() : List.copyOf(tools);
             stops = TextStops.checked(stops);
             forcedTool = forcedTool == null ? ForcedTool.NONE : forcedTool;
-            if (contentGbnf != null && forcedTool != ForcedTool.NONE) {
+            if (grammar != null && forcedTool != ForcedTool.NONE) {
                 // offered tools may share a request with constrained output (the family's
                 // language then offers a call OR the document); a FORCED call contradicts it
                 throw new IllegalArgumentException(
@@ -545,11 +544,11 @@ public final class ChatEngine implements AutoCloseable {
             private final Sampling sampling;
             private List<Tool> tools = List.of();
             private boolean thinking;
-            private int maxTokens = Generator.Constraints.UNLIMITED;
-            private Integer reasoningMaxTokens;
-            private String reasoningMessage;
+            private int maxOutputTokens = Generator.Constraints.UNLIMITED;
+            private Integer reasoningBudget;
+            private String reasoningBudgetMessage;
             private Duration timeout = Duration.ZERO;
-            private String contentGbnf;
+            private String grammar;
             private ForcedTool forcedTool = ForcedTool.NONE;
             private List<String> stops = List.of();
             private Map<String, Object> templateKwargs;
@@ -569,18 +568,18 @@ public final class ChatEngine implements AutoCloseable {
                 return this;
             }
 
-            public Builder maxTokens(int maxTokens) {
-                this.maxTokens = maxTokens;
+            public Builder maxOutputTokens(int maxOutputTokens) {
+                this.maxOutputTokens = maxOutputTokens;
                 return this;
             }
 
-            public Builder reasoningMaxTokens(Integer reasoningMaxTokens) {
-                this.reasoningMaxTokens = reasoningMaxTokens;
+            public Builder reasoningBudget(Integer reasoningBudget) {
+                this.reasoningBudget = reasoningBudget;
                 return this;
             }
 
-            public Builder reasoningMessage(String reasoningMessage) {
-                this.reasoningMessage = reasoningMessage;
+            public Builder reasoningBudgetMessage(String reasoningBudgetMessage) {
+                this.reasoningBudgetMessage = reasoningBudgetMessage;
                 return this;
             }
 
@@ -589,8 +588,8 @@ public final class ChatEngine implements AutoCloseable {
                 return this;
             }
 
-            public Builder contentGbnf(String contentGbnf) {
-                this.contentGbnf = contentGbnf;
+            public Builder grammar(String grammar) {
+                this.grammar = grammar;
                 return this;
             }
 
@@ -614,12 +613,12 @@ public final class ChatEngine implements AutoCloseable {
                         messages,
                         tools,
                         thinking,
-                        maxTokens,
-                        reasoningMaxTokens,
-                        reasoningMessage,
+                        maxOutputTokens,
+                        reasoningBudget,
+                        reasoningBudgetMessage,
                         timeout,
                         sampling,
-                        contentGbnf,
+                        grammar,
                         forcedTool,
                         stops,
                         templateKwargs);
@@ -641,9 +640,9 @@ public final class ChatEngine implements AutoCloseable {
     public Prepared prepareRaw(
             int[] promptTokens,
             Sampling sampling,
-            int maxTokens,
+            int maxOutputTokens,
             Duration timeout,
-            String contentGbnf,
+            String grammar,
             List<String> stops) {
         lifecycle.readLock().lock();
         try {
@@ -655,16 +654,16 @@ public final class ChatEngine implements AutoCloseable {
                     loaded.template().map(ChatTemplate::promptStart).orElse(IntSequence.empty());
             promptTokens = withPromptStart(promptTokens, promptStart);
             Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
-            if (contentGbnf != null) {
+            if (grammar != null) {
                 ReplyLanguage.Walk walk =
                         ReplyLanguage.Selection.of(
-                                        ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf)),
+                                        ReplyLanguage.content(ReplyLanguage.gbnf(grammar)),
                                         loaded.tokenizer())
                                 .walk();
                 sampler = walk.sampler(sampler, endTurn());
             }
             return Prepared.raw(
-                    promptTokens, sampler, maxTokens, timeout, TextStops.checked(stops));
+                    promptTokens, sampler, maxOutputTokens, timeout, TextStops.checked(stops));
         } finally {
             lifecycle.readLock().unlock();
         }
@@ -684,7 +683,7 @@ public final class ChatEngine implements AutoCloseable {
     public record Prepared(
             Encoded encoded,
             Sampler sampler,
-            int maxTokens,
+            int maxOutputTokens,
             Duration timeout,
             int promptTokens,
             List<String> stops,
@@ -699,13 +698,13 @@ public final class ChatEngine implements AutoCloseable {
         public static Prepared raw(
                 int[] promptTokens,
                 Sampler sampler,
-                int maxTokens,
+                int maxOutputTokens,
                 Duration timeout,
                 List<String> stops) {
             return new Prepared(
                     new Encoded(List.of(Batch.prefill(promptTokens)), null, IntSequence.empty()),
                     sampler,
-                    maxTokens,
+                    maxOutputTokens,
                     timeout,
                     promptTokens.length,
                     stops,
@@ -790,8 +789,8 @@ public final class ChatEngine implements AutoCloseable {
         boolean think =
                 request.thinking()
                         && request.forcedTool() == ForcedTool.NONE
-                        && (request.maxTokens() < 0
-                                || request.maxTokens() >= THINK_FLOOR
+                        && (request.maxOutputTokens() < 0
+                                || request.maxOutputTokens() >= THINK_FLOOR
                                 || alwaysReasons());
         Conversation conversation = new Conversation(request.messages(), request.tools(), think);
         Encoded encoded =
@@ -801,14 +800,14 @@ public final class ChatEngine implements AutoCloseable {
                 sampler(
                         request.sampling(),
                         think,
-                        request.maxTokens(),
-                        request.reasoningMaxTokens(),
-                        request.reasoningMessage(),
+                        request.maxOutputTokens(),
+                        request.reasoningBudget(),
+                        request.reasoningBudgetMessage(),
                         encoded.replyPrefix());
-        if (request.contentGbnf() != null) {
+        if (request.grammar() != null) {
             sampler =
                     constrained(
-                            request.contentGbnf(),
+                            request.grammar(),
                             !request.tools().isEmpty(),
                             sampler,
                             encoded.replyPrefix());
@@ -850,7 +849,7 @@ public final class ChatEngine implements AutoCloseable {
         return new Prepared(
                 encoded,
                 sampler,
-                request.maxTokens(),
+                request.maxOutputTokens(),
                 request.timeout(),
                 Batch.positions(encoded.prompt()),
                 request.stops(),
@@ -878,15 +877,15 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
      * thinking on applies the family default or caller override ({@code reasoningOverride}: null =
-     * the family policy, -1 = uncapped; {@code reasoningMessage}: what the model "decides" when the
-     * cap fires); thinking off masks the think markers outright.
+     * the family policy, -1 = uncapped; {@code reasoningBudgetMessage}: what the model "decides"
+     * when the cap fires); thinking off masks the think markers outright.
      */
     private Sampler sampler(
             Sampling sampling,
             boolean think,
-            int maxTokens,
+            int maxOutputTokens,
             Integer reasoningOverride,
-            String reasoningMessage,
+            String reasoningBudgetMessage,
             IntSequence replyPrefix) {
         Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
         ChatTemplate.ThinkMarkers markers = thinkMarkers();
@@ -896,15 +895,21 @@ public final class ChatEngine implements AutoCloseable {
         }
         // under THINK_FLOOR only an always-reasoning model still thinks (off cannot be rendered):
         // a zero budget closes its span at once, so the few tokens left buy answer, not analysis
-        boolean underFloor = maxTokens >= 0 && maxTokens < THINK_FLOOR;
+        boolean underFloor = maxOutputTokens >= 0 && maxOutputTokens < THINK_FLOOR;
         int budget =
                 reasoningOverride != null
                         ? reasoningOverride
                         : underFloor
                                 ? 0
                                 : loaded.template()
-                                        .map(template -> template.defaultReasoningBudget(maxTokens))
-                                        .orElse(maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
+                                        .map(
+                                                template ->
+                                                        template.defaultReasoningBudget(
+                                                                maxOutputTokens))
+                                        .orElse(
+                                                maxOutputTokens >= 0
+                                                        ? Math.max(1, maxOutputTokens / 2)
+                                                        : -1);
         // prompt-opened spans (replyPrefix carries the open id): the cap must start ARMED - the
         // open token never passes through the sampler on those families
         boolean startInThink = false;
@@ -923,7 +928,7 @@ public final class ChatEngine implements AutoCloseable {
                 loaded.tokenizer(),
                 budget,
                 startInThink,
-                reasoningMessage,
+                reasoningBudgetMessage,
                 markers.open(),
                 markers.close());
     }
@@ -946,9 +951,9 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     private Sampler constrained(
-            String contentGbnf, boolean calls, Sampler base, IntSequence replyPrefix) {
+            String grammar, boolean calls, Sampler base, IntSequence replyPrefix) {
         Optional<ReplyLanguage.Selection> family =
-                loaded.template().flatMap(t -> t.constrainedReply(contentGbnf, calls));
+                loaded.template().flatMap(t -> t.constrainedReply(grammar, calls));
         if (calls && family.isEmpty()) {
             throw new UnsupportedOperationException(
                     modelName
@@ -967,7 +972,7 @@ public final class ChatEngine implements AutoCloseable {
                                                             ReplyLanguage.mark(markers.open()),
                                                             ReplyLanguage.free(),
                                                             ReplyLanguage.mark(markers.close()))),
-                                            ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf))),
+                                            ReplyLanguage.content(ReplyLanguage.gbnf(grammar))),
                                     loaded.tokenizer());
                         });
         ReplyLanguage.Walk walk = selection.walk();
@@ -1318,7 +1323,7 @@ public final class ChatEngine implements AutoCloseable {
                 generate(
                         prepared.encoded().prompt(),
                         prepared.sampler(),
-                        prepared.maxTokens(),
+                        prepared.maxOutputTokens(),
                         prepared.timeout(),
                         listener,
                         out::cancelled);
@@ -1378,24 +1383,24 @@ public final class ChatEngine implements AutoCloseable {
     public Outcome generate(
             List<Batch> prompt,
             Sampler sampler,
-            int maxTokens,
+            int maxOutputTokens,
             Duration timeout,
             Generator.GenerationListener listener) {
-        return generate(prompt, sampler, maxTokens, timeout, listener, () -> false);
+        return generate(prompt, sampler, maxOutputTokens, timeout, listener, () -> false);
     }
 
     /** As the public form, with the sink's cancellation consulted between prefill chunks. */
     Outcome generate(
             List<Batch> prompt,
             Sampler sampler,
-            int maxTokens,
+            int maxOutputTokens,
             Duration timeout,
             Generator.GenerationListener listener,
             BooleanSupplier cancelled) {
         lock.lock();
         try {
             checkOpen();
-            Outcome outcome = run(prompt, sampler, maxTokens, timeout, listener, cancelled);
+            Outcome outcome = run(prompt, sampler, maxOutputTokens, timeout, listener, cancelled);
             // sampled here, on the owning thread, while the lock still excludes other generations
             cacheSnapshot = cache.sample();
             return outcome;
@@ -1416,7 +1421,7 @@ public final class ChatEngine implements AutoCloseable {
     private <S extends ContextState> Outcome run(
             List<Batch> prompt,
             Sampler sampler,
-            int maxTokens,
+            int maxOutputTokens,
             Duration timeout,
             Generator.GenerationListener listener,
             BooleanSupplier cancelled) {
@@ -1450,7 +1455,8 @@ public final class ChatEngine implements AutoCloseable {
                         }
                     }
                     Generator.Constraints constraints =
-                            new Generator.Constraints(maxTokens, remaining, loaded.stopTokens());
+                            new Generator.Constraints(
+                                    maxOutputTokens, remaining, loaded.stopTokens());
                     Generator.GenerationListener hook =
                             new Generator.GenerationListener() {
                                 @Override

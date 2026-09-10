@@ -39,13 +39,13 @@ final class MiniCpm5ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
-        return Optional.of(spans().constrained(contentGbnf));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
+        return Optional.of(spans().constrained(grammar));
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
-        return Optional.of(spans().constrained(contentGbnf, calls));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar, boolean calls) {
+        return Optional.of(spans().constrained(grammar, calls));
     }
 
     /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */

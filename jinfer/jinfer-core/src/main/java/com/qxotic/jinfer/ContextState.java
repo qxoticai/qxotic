@@ -31,7 +31,7 @@ public abstract class ContextState extends RuntimeState {
         if (contextCapacity <= 0) throw new IllegalArgumentException("contextCapacity must be > 0");
         if (batchCapacity <= 0) throw new IllegalArgumentException("batchCapacity must be > 0");
         if (arena == null) throw new IllegalArgumentException("null arena");
-        Arenas.assertCrossThread(arena);
+        Arenas.requireCrossThread(arena);
         this.contextCapacity = contextCapacity;
         this.batchCapacity = batchCapacity;
         this.memoryArena = arena;

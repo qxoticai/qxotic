@@ -44,15 +44,15 @@ public record ServerConfig(
             int maxOutputTokens,
             boolean think,
             boolean rawPrompt,
-            Integer reasoningMaxTokens,
-            String reasoningMessage) {
+            Integer reasoningBudget,
+            String reasoningBudgetMessage) {
         public static final Defaults DEFAULTS = new Defaults(null, -1, true, false, null, null);
 
         public Defaults {
             if (maxOutputTokens < -1)
                 throw new IllegalArgumentException("maxOutputTokens " + maxOutputTokens);
-            if (reasoningMaxTokens != null && reasoningMaxTokens < -1)
-                throw new IllegalArgumentException("reasoningMaxTokens " + reasoningMaxTokens);
+            if (reasoningBudget != null && reasoningBudget < -1)
+                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
         }
     }
 

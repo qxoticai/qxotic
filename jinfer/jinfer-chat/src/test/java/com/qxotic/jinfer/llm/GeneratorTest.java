@@ -102,8 +102,8 @@ class GeneratorTest {
     }
 
     private static Generator.Constraints constraints(
-            int maxTokens, Duration timeout, Set<Integer> stops) {
-        return new Generator.Constraints(maxTokens, timeout, stops);
+            int maxOutputTokens, Duration timeout, Set<Integer> stops) {
+        return new Generator.Constraints(maxOutputTokens, timeout, stops);
     }
 
     private static Generator.GenerationListener recording(

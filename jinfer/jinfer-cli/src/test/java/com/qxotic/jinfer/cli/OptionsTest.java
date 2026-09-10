@@ -154,8 +154,8 @@ final class OptionsTest {
         var request =
                 Requests.of(
                         List.of(Message.user("hi")), new Sampling(0f, 1f, 0, 0f, null), options);
-        assertEquals(128, request.reasoningMaxTokens());
-        assertEquals("... Let me wrap up.", request.reasoningMessage());
+        assertEquals(128, request.reasoningBudget());
+        assertEquals("... Let me wrap up.", request.reasoningBudgetMessage());
     }
 
     @Test

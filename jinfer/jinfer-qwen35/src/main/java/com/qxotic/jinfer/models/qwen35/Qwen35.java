@@ -649,9 +649,9 @@ public final class Qwen35
                 () -> {
                     int remaining = state.contextCapacity() - state.position();
                     int budget =
-                            constraints.maxTokens() == Constraints.UNLIMITED
+                            constraints.maxOutputTokens() == Constraints.UNLIMITED
                                     ? remaining
-                                    : Math.min(constraints.maxTokens(), remaining);
+                                    : Math.min(constraints.maxOutputTokens(), remaining);
                     return Qwen35Speculative.generate(
                             this,
                             state,

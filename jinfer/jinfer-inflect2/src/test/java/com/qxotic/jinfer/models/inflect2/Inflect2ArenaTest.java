@@ -9,11 +9,11 @@ import org.junit.jupiter.api.Test;
 
 class Inflect2ArenaTest {
     @Test
-    void speechStateDiagnosesConfinedMemoryWithoutClosingIt() {
+    void speechStateRefusesConfinedMemoryWithoutClosingIt() {
         try (Arena arena = Arena.ofConfined()) {
             var failure =
                     assertThrows(
-                            AssertionError.class,
+                            IllegalArgumentException.class,
                             () -> new Inflect2.State(MemoryAllocators.ofArena(arena), null));
             assertTrue(failure.getMessage().contains("Confined arenas"));
             assertTrue(arena.scope().isAlive());

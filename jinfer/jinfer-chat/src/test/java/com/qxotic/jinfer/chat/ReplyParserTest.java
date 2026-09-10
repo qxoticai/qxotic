@@ -386,7 +386,7 @@ public final class ReplyParserTest {
     @Test
     void anUnterminatedUnclaimedSpanKeepsItsTextAndIds() {
         // no tools offered: a call span is visible text by contract, and a span cut by
-        // maxTokens is still the model's text with the ids the cache already ingested
+        // maxOutputTokens is still the model's text with the ids the cache already ingested
         ReplyParser p =
                 ReplyParser.spans(
                         TOK,

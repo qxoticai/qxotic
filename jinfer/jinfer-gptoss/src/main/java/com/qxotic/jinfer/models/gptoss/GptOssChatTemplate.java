@@ -61,15 +61,15 @@ final class GptOssChatTemplate implements ChatTemplate {
 
     /** The FINAL channel takes the hole; analysis and preamble stay free (channel-scoping). */
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
-        return constrainedReply(contentGbnf, false);
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
+        return constrainedReply(grammar, false);
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar, boolean calls) {
         return Optional.of(
                 ReplyLanguage.Selection.of(
-                        harmonyLanguage(ReplyLanguage.gbnf(contentGbnf), calls), tokenizer));
+                        harmonyLanguage(ReplyLanguage.gbnf(grammar), calls), tokenizer));
     }
 
     private ReplyLanguage.Node harmonyLanguage(ReplyLanguage.Node contentHole) {

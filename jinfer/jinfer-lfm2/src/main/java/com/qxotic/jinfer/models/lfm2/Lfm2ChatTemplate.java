@@ -242,13 +242,13 @@ final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
-        return Optional.of(replyLanguage.constrained(contentGbnf));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
+        return Optional.of(replyLanguage.constrained(grammar));
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
-        return Optional.of(replyLanguage.constrained(contentGbnf, calls));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar, boolean calls) {
+        return Optional.of(replyLanguage.constrained(grammar, calls));
     }
 
     @Override

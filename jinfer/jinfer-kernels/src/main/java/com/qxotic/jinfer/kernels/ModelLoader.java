@@ -26,11 +26,9 @@ import java.util.Optional;
  * Shared GGUF loading support: parses metadata, memory-maps tensor data read-only, and exposes each
  * tensor as a {@code MemoryView<MemorySegment>}. Unsupported data types fail during loading.
  *
- * <p><b>WARNING: confined arenas MUST NOT be used, even with one worker thread. This precondition
- * is NOT enforced without assertions; misuse can corrupt memory or crash the JVM.</b> Even one
- * worker may execute on a custom pool's thread or native pthread other than the arena's owner.
- * Raw-address kernels bypass JDK confinement checks, so loading or running without an exception
- * does not imply safe memory access. See {@link Arenas}.
+ * <p><b>A confined arena is refused at load, even with one worker thread.</b> Even one worker may
+ * execute on a custom pool's thread or native pthread other than the arena's owner, and raw-address
+ * kernels bypass JDK confinement checks. See {@link Arenas}.
  */
 public final class ModelLoader {
 
@@ -69,7 +67,9 @@ public final class ModelLoader {
      * arenas are unsupported, even with one worker thread. {@code ofShared} permits deterministic
      * unmapping, {@code ofAuto} is GC-managed and {@code global} lasts for the process. The arena
      * must outlive every model and operation borrowing these weights: raw-address kernels bypass
-     * the JDK's access checks. <b>Arena confinement is NOT enforced without assertions.</b>
+     * the JDK's access checks.
+     *
+     * @throws IllegalArgumentException for a confined arena
      */
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
             FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
@@ -88,7 +88,7 @@ public final class ModelLoader {
             Arena arena)
             throws IOException {
         requireVectorApi();
-        Arenas.assertCrossThread(arena);
+        Arenas.requireCrossThread(arena);
         if ((tensorDataOffset & (Float.BYTES - 1)) != 0)
             throw new IllegalArgumentException(
                     "GGUF tensor data offset must be 4-byte aligned, got " + tensorDataOffset);

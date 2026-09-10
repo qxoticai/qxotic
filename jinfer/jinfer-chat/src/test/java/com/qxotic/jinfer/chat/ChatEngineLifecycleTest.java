@@ -338,12 +338,13 @@ final class ChatEngineLifecycleTest {
         return new ChatEngine(loaded, "test", PromptCache.Options.DEFAULTS.withBlockBudget(0));
     }
 
-    private static ChatEngine.Request request(boolean thinking, int maxTokens, Integer budget) {
+    private static ChatEngine.Request request(
+            boolean thinking, int maxOutputTokens, Integer budget) {
         return new ChatEngine.Request(
                 List.of(Message.user("hello")),
                 List.of(),
                 thinking,
-                maxTokens,
+                maxOutputTokens,
                 budget,
                 null,
                 Duration.ZERO,

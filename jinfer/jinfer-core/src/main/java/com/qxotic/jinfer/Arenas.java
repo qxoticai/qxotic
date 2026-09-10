@@ -6,20 +6,15 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 /**
- * <b>WARNING: NEVER supply confined arenas for jinfer weights or state. Misuse can corrupt memory
- * or crash the JVM. This requirement is NOT enforced in normal execution.</b> Jinfer is
- * multi-threaded by design: even with one worker, execution may run on a custom pool's thread or a
- * native pthread other than the arena's owning Java thread. Reducing the worker count or
- * serializing calls does not make confined arenas supported. Raw-address and native kernels bypass
- * JDK confinement checks, so misuse may proceed without {@link WrongThreadException}. A successful
- * load or generation does not establish safety.
- *
- * <p>Enable {@code -ea:com.qxotic.jinfer...} (or {@code -ea}) for an assertion-only diagnostic at
- * weight-mapping and state-construction boundaries, once per mapping or state, never per token or
- * kernel call. It probes a zero-byte allocation against a private, never-started thread. The probe
- * and thread are created only with assertions enabled. This is a diagnostic, NOT a safety
- * guarantee: custom allocators may handle zero-byte allocations differently from real buffers, and
- * assertions may be disabled.
+ * <b>Confined arenas are refused for jinfer weights and state.</b> Jinfer is multi-threaded by
+ * design: even with one worker, execution may run on a custom pool's thread or a native pthread
+ * other than the arena's owning Java thread, and raw-address and native kernels bypass JDK
+ * confinement checks, so a confined arena would corrupt memory or crash the JVM without a {@link
+ * WrongThreadException}. The check runs at weight-mapping and state-construction boundaries, once
+ * per mapping or state, never per token or kernel call: a zero-byte allocation probed against a
+ * private, never-started thread (local to the call - a native image must not retain a {@code
+ * Thread} in a static field). Custom allocators must return cross-thread memory for EVERY
+ * allocation; the zero-byte probe cannot certify their other buffers.
  *
  * <p>Use {@link #newCrossThread()}, {@link Arena#ofShared()}, {@link Arena#ofAuto()}, or {@link
  * Arena#global()}, and keep the arena alive until all borrowing operations have finished. Closing
@@ -47,23 +42,31 @@ public final class Arenas {
                 + " Arenas.newCrossThread(), Arena.ofShared(), Arena.ofAuto(), or Arena.global(). A"
                 + " custom pool or native pthread may access the memory and crash the JVM.";
 
-    /** Assertion-only buffer-access diagnostic; see this class's memory-safety warning. */
-    public static void assertCrossThread(Arena arena) {
-        assert probeCrossThreadBufferAccess(MemoryAllocators.ofArena(arena)) : CONFINED_MESSAGE;
+    /**
+     * Refuses a confined arena; see this class's memory-safety contract.
+     *
+     * @throws IllegalArgumentException when a buffer from {@code arena} is not accessible from
+     *     another thread
+     */
+    public static void requireCrossThread(Arena arena) {
+        requireCrossThread(MemoryAllocators.ofArena(arena));
     }
 
     /**
      * Probes whether an allocated buffer permits cross-thread access, not whether allocation is
      * thread-safe. A zero-byte probe cannot certify a custom allocator's other buffers.
+     *
+     * @throws IllegalArgumentException when the probe buffer is confined to this thread
      */
-    public static void assertCrossThread(MemoryArena<MemorySegment> arena) {
-        assert probeCrossThreadBufferAccess(arena) : CONFINED_MESSAGE;
+    public static void requireCrossThread(MemoryArena<MemorySegment> arena) {
+        if (!probeCrossThreadBufferAccess(arena))
+            throw new IllegalArgumentException(CONFINED_MESSAGE);
     }
 
     private static boolean probeCrossThreadBufferAccess(MemoryArena<MemorySegment> arena) {
         try {
             MemorySegment buffer = arena.allocateMemory(0, 1).base();
-            // Local to the assertion: native images must not retain a Thread in a static field.
+            // Local to the probe: native images must not retain a Thread in a static field.
             Thread other =
                     Thread.ofPlatform().inheritInheritableThreadLocals(false).unstarted(() -> {});
             return buffer.isAccessibleBy(other);

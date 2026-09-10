@@ -10,16 +10,14 @@
  * operation fails fast, while {@code close()} waits for an active operation and then releases owned
  * resources exactly once. Same-thread nesting is allowed for model composition.
  *
- * <p><b>WARNING: NEVER supply confined arenas for weights or state. Misuse can corrupt memory or
- * crash the JVM. This requirement is NOT enforced without assertions.</b> Jinfer is multi-threaded
- * by design: even with one worker, execution may run on a custom pool's thread or a native pthread
- * other than the arena's owning Java thread. Raw-address kernels bypass JDK confinement checks;
- * absence of {@link java.lang.WrongThreadException} does not establish safety. Use {@link
+ * <p><b>Confined arenas are refused for weights and state.</b> Jinfer is multi-threaded by design:
+ * even with one worker, execution may run on a custom pool's thread or a native pthread other than
+ * the arena's owning Java thread, and raw-address kernels bypass JDK confinement checks, so a
+ * confined arena would corrupt memory without a {@link java.lang.WrongThreadException}. Use {@link
  * com.qxotic.jinfer.Arenas#newCrossThread()}, {@code Arena.ofShared()}, {@code Arena.ofAuto()}, or
  * {@code Arena.global()}. Custom state allocators must return cross-thread memory for every
- * allocation. This does not permit concurrent operations on the same state. Enable {@code
- * -ea:com.qxotic.jinfer...} for the optional assertion diagnostic described in {@link
- * com.qxotic.jinfer.Arenas}; it is not a safety guarantee.
+ * allocation; the check on {@link com.qxotic.jinfer.Arenas} probes one buffer at load and state
+ * construction. This does not permit concurrent operations on the same state.
  *
  * <p>Memory follows one rule: whoever supplies an arena owns it. A state created without an arena
  * owns and closes its internal arena. A state created with a {@link

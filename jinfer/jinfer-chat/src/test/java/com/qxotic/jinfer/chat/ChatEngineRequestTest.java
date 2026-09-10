@@ -32,11 +32,11 @@ final class ChatEngineRequestTest {
         assertEquals(SAMPLING, r.sampling());
         assertTrue(r.tools().isEmpty());
         assertFalse(r.thinking());
-        assertEquals(Generator.Constraints.UNLIMITED, r.maxTokens());
-        assertNull(r.reasoningMaxTokens());
-        assertNull(r.reasoningMessage());
+        assertEquals(Generator.Constraints.UNLIMITED, r.maxOutputTokens());
+        assertNull(r.reasoningBudget());
+        assertNull(r.reasoningBudgetMessage());
         assertEquals(Duration.ZERO, r.timeout());
-        assertNull(r.contentGbnf());
+        assertNull(r.grammar());
         assertEquals(ChatEngine.ForcedTool.NONE, r.forcedTool());
         assertTrue(r.stops().isEmpty());
         assertNull(r.templateKwargs());
@@ -50,11 +50,11 @@ final class ChatEngineRequestTest {
                 ChatEngine.Request.builder(ONE_TURN, SAMPLING)
                         .tools(ONE_TOOL)
                         .thinking(true)
-                        .maxTokens(128)
-                        .reasoningMaxTokens(32)
-                        .reasoningMessage("Enough.")
+                        .maxOutputTokens(128)
+                        .reasoningBudget(32)
+                        .reasoningBudgetMessage("Enough.")
                         .timeout(timeout)
-                        .contentGbnf("root ::= \"ok\"")
+                        .grammar("root ::= \"ok\"")
                         .stops(List.of("STOP"))
                         .templateKwargs(kwargs)
                         .build();
@@ -62,12 +62,12 @@ final class ChatEngineRequestTest {
         assertEquals(ONE_TURN, request.messages());
         assertEquals(ONE_TOOL, request.tools());
         assertTrue(request.thinking());
-        assertEquals(128, request.maxTokens());
-        assertEquals(32, request.reasoningMaxTokens());
-        assertEquals("Enough.", request.reasoningMessage());
+        assertEquals(128, request.maxOutputTokens());
+        assertEquals(32, request.reasoningBudget());
+        assertEquals("Enough.", request.reasoningBudgetMessage());
         assertEquals(timeout, request.timeout());
         assertEquals(SAMPLING, request.sampling());
-        assertEquals("root ::= \"ok\"", request.contentGbnf());
+        assertEquals("root ::= \"ok\"", request.grammar());
         assertEquals(ChatEngine.ForcedTool.NONE, request.forcedTool());
         assertEquals(List.of("STOP"), request.stops());
         assertEquals(kwargs, request.templateKwargs());
@@ -77,7 +77,7 @@ final class ChatEngineRequestTest {
     void builderUsesTheCanonicalValidation() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ChatEngine.Request.builder(ONE_TURN, SAMPLING).maxTokens(-2).build());
+                () -> ChatEngine.Request.builder(ONE_TURN, SAMPLING).maxOutputTokens(-2).build());
         assertThrows(
                 IllegalArgumentException.class,
                 () ->

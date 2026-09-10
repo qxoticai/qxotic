@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 /** Bounded per-engine LRU of encoder-projected media batches. */
@@ -76,6 +77,7 @@ public final class MediaEncodingCache {
     }
 
     private final long budgetBytes;
+    private final ReentrantLock lock = new ReentrantLock(); // private: this object is exposed
     private final LinkedHashMap<Key, List<CachedBatch>> entries =
             new LinkedHashMap<>(16, 0.75f, true);
     private long usedBytes;
@@ -98,7 +100,7 @@ public final class MediaEncodingCache {
     // the monitor covers the whole projection, so concurrent misses for DIFFERENT
     // content serialize (same-content misses dedupe into one projection, which is the point).
     // Upgrade to a per-key in-flight future if multimodal concurrency ever shows in a profile.
-    synchronized void replayOrRecord(
+    void replayOrRecord(
             ContentKey contentKey,
             int batchCapacity,
             Consumer<Consumer<Batch>> projection,
@@ -107,6 +109,19 @@ public final class MediaEncodingCache {
             projection.accept(sink);
             return;
         }
+        lock.lock();
+        try {
+            replayOrRecordLocked(contentKey, batchCapacity, projection, sink);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void replayOrRecordLocked(
+            ContentKey contentKey,
+            int batchCapacity,
+            Consumer<Consumer<Batch>> projection,
+            Consumer<Batch> sink) {
         Key key = new Key(contentKey, batchCapacity);
         List<CachedBatch> hit = entries.get(key);
         if (hit != null) {
@@ -142,13 +157,23 @@ public final class MediaEncodingCache {
     }
 
     /** A consistent snapshot of the counters and the resident footprint. */
-    public synchronized Sample sample() {
-        return new Sample(entries.size(), usedBytes, budgetBytes, hits, misses, refusals);
+    public Sample sample() {
+        lock.lock();
+        try {
+            return new Sample(entries.size(), usedBytes, budgetBytes, hits, misses, refusals);
+        } finally {
+            lock.unlock();
+        }
     }
 
-    synchronized void clear() {
-        entries.clear();
-        usedBytes = 0;
+    void clear() {
+        lock.lock();
+        try {
+            entries.clear();
+            usedBytes = 0;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private static CachedBatch copy(Batch batch) {

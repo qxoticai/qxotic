@@ -42,11 +42,11 @@ import java.util.TreeSet;
  * {@link ModelProvider} services - the ports on the classpath define what is loadable. The one
  * "path to model" entry every consumer (server, CLI, benches) shares.
  *
- * <p><b>WARNING: every loading method requires a cross-thread-accessible arena. Confined arenas are
- * unsupported and can corrupt memory or crash the JVM, even with one worker thread.</b> This is a
- * caller precondition, NOT enforced without assertions. A custom pool or native pthread may execute
- * on a thread other than the arena's owner. Raw-address kernels bypass JDK confinement checks and
- * can run without an exception. See {@link Arenas} for supported choices and lifetime requirements.
+ * <p><b>Every loading method requires a cross-thread-accessible arena; a confined arena is refused
+ * with {@link IllegalArgumentException} at load.</b> Even with one worker thread a custom pool or
+ * native pthread may execute on a thread other than the arena's owner, and raw-address kernels
+ * bypass JDK confinement checks. See {@link Arenas} for supported choices and lifetime
+ * requirements.
  */
 public final class Models {
 
@@ -121,8 +121,8 @@ public final class Models {
      * lifetime ({@code ofAuto} = GC-managed, {@code global} = process, {@code ofShared} =
      * deterministic - it must outlive every model sharing the weights).
      *
-     * <p><b>Confined arenas MUST NOT be supplied, even with one worker thread. This is NOT enforced
-     * without assertions.</b> See the memory-safety warning and diagnostic on {@link Arenas}.
+     * <p><b>A confined arena is refused, even with one worker thread.</b> See the memory-safety
+     * contract on {@link Arenas}.
      */
     public static LoadedModel<?> load(Path path, Arena arena) throws IOException {
         return load(path, arena, Map.of(), null);

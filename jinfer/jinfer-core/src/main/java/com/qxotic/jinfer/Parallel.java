@@ -66,6 +66,7 @@ public final class Parallel implements AutoCloseable {
     private volatile Region current;
 
     private volatile Worker[] workers;
+    private final ReentrantLock poolLock = new ReentrantLock(); // start/stop of the workers
     private volatile boolean closed;
 
     private Parallel(int width, String name) {
@@ -232,18 +233,21 @@ public final class Parallel implements AutoCloseable {
     /** Stops the workers; a closed pool runs every later loop inline. */
     @Override
     public void close() {
-        synchronized (
-                this) { // with pool(): a worker started before `workers` is set is unparked too
+        poolLock.lock(); // with pool(): a worker started before `workers` is set is unparked too
+        try {
             closed = true;
             Worker[] pool = workers;
             if (pool != null) for (Worker w : pool) LockSupport.unpark(w);
+        } finally {
+            poolLock.unlock();
         }
     }
 
     private Worker[] pool() {
         Worker[] p = workers;
         if (p == null) {
-            synchronized (this) {
+            poolLock.lock();
+            try {
                 p = workers;
                 if (p == null) {
                     p = new Worker[closed ? 0 : width - 1];
@@ -253,6 +257,8 @@ public final class Parallel implements AutoCloseable {
                     }
                     workers = p;
                 }
+            } finally {
+                poolLock.unlock();
             }
         }
         return p;

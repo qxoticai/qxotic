@@ -254,16 +254,15 @@ class JinferChatOptionsTest {
                 gbnf,
                 JinferChatOptions.builder().combineWith(g.mutate()).build().getGrammar(),
                 "combineWith");
-        assertEquals(gbnf, JinferChatModel.contentGbnf(g), "a raw grammar is the constraint");
+        assertEquals(gbnf, JinferChatModel.grammar(g), "a raw grammar is the constraint");
         assertEquals(
                 null,
-                JinferChatModel.contentGbnf(JinferChatOptions.builder().build()),
+                JinferChatModel.grammar(JinferChatOptions.builder().build()),
                 "no constraint");
         // a schema compiles to a grammar; both at once is a contradiction, refused where it is read
         JinferChatOptions both = g.mutate().outputSchema("{\"type\":\"object\"}").build();
         IllegalArgumentException e =
-                assertThrows(
-                        IllegalArgumentException.class, () -> JinferChatModel.contentGbnf(both));
+                assertThrows(IllegalArgumentException.class, () -> JinferChatModel.grammar(both));
         assertTrue(e.getMessage().contains("choose one"), e.getMessage());
     }
 }

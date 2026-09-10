@@ -421,19 +421,19 @@ final class Generation {
      * What the model "decides" when the think-span cap fires (llama.cpp's {@code
      * --reasoning-budget-message}); absent = a bare paragraph break.
      */
-    static String reasoningMessage(Map<String, Object> request) {
+    static String reasoningBudgetMessage(Map<String, Object> request) {
         return Values.stringValue(request.get("reasoning_message"), null);
     }
 
     /** The request's value, else the server's configured default - as {@code think} does. */
     private Integer reasoningMaxOrDefault(Map<String, Object> request) {
         Integer value = reasoningMax(request);
-        return value != null ? value : config.defaults().reasoningMaxTokens();
+        return value != null ? value : config.defaults().reasoningBudget();
     }
 
     private String reasoningMessageOrDefault(Map<String, Object> request) {
-        String value = reasoningMessage(request);
-        return value != null ? value : config.defaults().reasoningMessage();
+        String value = reasoningBudgetMessage(request);
+        return value != null ? value : config.defaults().reasoningBudgetMessage();
     }
 
     private boolean thinking(Map<String, Object> request) {

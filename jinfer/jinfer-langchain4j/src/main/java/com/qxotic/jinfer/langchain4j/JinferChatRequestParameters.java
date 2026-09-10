@@ -2,6 +2,7 @@ package com.qxotic.jinfer.langchain4j;
 
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
+import java.time.Duration;
 import java.util.Objects;
 
 /**
@@ -47,6 +48,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     private final Long seed;
     private final Double minP;
     private final Integer reasoningBudget;
+    private final Boolean thinking;
+    private final String reasoningBudgetMessage;
+    private final Duration timeout;
 
     protected JinferChatRequestParameters(Builder builder) {
         super(builder);
@@ -54,6 +58,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         this.seed = builder.seed;
         this.minP = builder.minP;
         this.reasoningBudget = builder.reasoningBudget;
+        this.thinking = builder.thinking;
+        this.reasoningBudgetMessage = builder.reasoningBudgetMessage;
+        this.timeout = builder.timeout;
     }
 
     /** Raw GBNF constraining the reply, or null. */
@@ -80,6 +87,21 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return reasoningBudget;
     }
 
+    /** The reasoning scaffold for this request; null = the model's builder default. */
+    public Boolean thinking() {
+        return thinking;
+    }
+
+    /** What the model "decides" when the budget runs out; null = the model's builder default. */
+    public String reasoningBudgetMessage() {
+        return reasoningBudgetMessage;
+    }
+
+    /** Wall-clock deadline for this request; null = the model's builder default. */
+    public Duration timeout() {
+        return timeout;
+    }
+
     @Override
     public JinferChatRequestParameters overrideWith(ChatRequestParameters that) {
         return builder().overrideWith(this).overrideWith(that).build();
@@ -92,12 +114,23 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 && Objects.equals(grammar, that.grammar)
                 && Objects.equals(seed, that.seed)
                 && Objects.equals(minP, that.minP)
-                && Objects.equals(reasoningBudget, that.reasoningBudget);
+                && Objects.equals(reasoningBudget, that.reasoningBudget)
+                && Objects.equals(thinking, that.thinking)
+                && Objects.equals(reasoningBudgetMessage, that.reasoningBudgetMessage)
+                && Objects.equals(timeout, that.timeout);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), grammar, seed, minP, reasoningBudget);
+        return Objects.hash(
+                super.hashCode(),
+                grammar,
+                seed,
+                minP,
+                reasoningBudget,
+                thinking,
+                reasoningBudgetMessage,
+                timeout);
     }
 
     @Override
@@ -110,6 +143,12 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 + minP
                 + ", reasoningBudget="
                 + reasoningBudget
+                + ", thinking="
+                + thinking
+                + ", reasoningBudgetMessage="
+                + (reasoningBudgetMessage == null ? "null" : "'" + reasoningBudgetMessage + "'")
+                + ", timeout="
+                + timeout
                 + ", "
                 + super.toString()
                 + "}";
@@ -125,6 +164,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         private Long seed;
         private Double minP;
         private Integer reasoningBudget;
+        private Boolean thinking;
+        private String reasoningBudgetMessage;
+        private Duration timeout;
 
         @Override
         public Builder overrideWith(ChatRequestParameters parameters) {
@@ -134,6 +176,10 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 if (j.seed() != null) seed(j.seed());
                 if (j.minP() != null) minP(j.minP());
                 if (j.reasoningBudget() != null) reasoningBudget(j.reasoningBudget());
+                if (j.thinking() != null) thinking(j.thinking());
+                if (j.reasoningBudgetMessage() != null)
+                    reasoningBudgetMessage(j.reasoningBudgetMessage());
+                if (j.timeout() != null) timeout(j.timeout());
             }
             return this;
         }
@@ -160,6 +206,26 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
             if (reasoningBudget != null && reasoningBudget < -1)
                 throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
             this.reasoningBudget = reasoningBudget;
+            return this;
+        }
+
+        /** The reasoning scaffold for this request; a model that always reasons refuses false. */
+        public Builder thinking(Boolean thinking) {
+            this.thinking = thinking;
+            return this;
+        }
+
+        /** The model's own words when the reasoning budget runs out; null leaves the default. */
+        public Builder reasoningBudgetMessage(String message) {
+            this.reasoningBudgetMessage = message;
+            return this;
+        }
+
+        /** Wall-clock deadline for this request; null leaves the default. */
+        public Builder timeout(Duration timeout) {
+            if (timeout != null && timeout.isNegative())
+                throw new IllegalArgumentException("timeout must be >= 0: " + timeout);
+            this.timeout = timeout;
             return this;
         }
 

@@ -420,17 +420,21 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             describeSchemaOnTheLastUserMessage(messages, schema);
         }
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
+        boolean think = j != null && j.thinking() != null ? j.thinking() : thinking;
+        if (think != thinking) framed(() -> engine.requireThinkingRenderable(think));
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         messages,
                         tools,
-                        thinking,
+                        think,
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
                         j != null && j.reasoningBudget() != null
                                 ? j.reasoningBudget()
                                 : reasoningBudget,
-                        reasoningBudgetMessage,
-                        timeout,
+                        j != null && j.reasoningBudgetMessage() != null
+                                ? j.reasoningBudgetMessage()
+                                : reasoningBudgetMessage,
+                        j != null && j.timeout() != null ? j.timeout() : timeout,
                         engine.loaded()
                                 .samplingDefaults()
                                 .resolve(
@@ -443,7 +447,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : j.minP().floatValue(),
                                         j == null ? null : j.seed()),
-                        contentGbnf(p, j, schema),
+                        grammar(p, j, schema),
                         p.toolChoice() == ToolChoice.REQUIRED
                                 ? ChatEngine.ForcedTool.ANY
                                 : ChatEngine.ForcedTool.NONE,
@@ -487,7 +491,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * compiles it into the family's constrained selection; specs cache per (source, vocab), so
      * repeated schemas reuse the compiled masks.
      */
-    private static String contentGbnf(
+    private static String grammar(
             ChatRequestParameters p, JinferChatRequestParameters j, Map<String, Object> schema) {
         if (schema != null) return Grammar.schemaGbnf(schema);
         ResponseFormat rf = p.responseFormat();

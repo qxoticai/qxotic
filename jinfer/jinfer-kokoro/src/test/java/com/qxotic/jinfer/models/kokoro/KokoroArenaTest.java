@@ -21,14 +21,14 @@ class KokoroArenaTest {
     }
 
     @Test
-    void speechStateDiagnosesConfinedMemoryWithoutClosingIt() throws Exception {
+    void speechStateRefusesConfinedMemoryWithoutClosingIt() throws Exception {
         var constructor = constructor();
         try (Arena arena = Arena.ofConfined()) {
             var failure =
                     assertThrows(
                             InvocationTargetException.class,
                             () -> constructor.newInstance(MemoryAllocators.ofArena(arena), null));
-            var cause = assertInstanceOf(AssertionError.class, failure.getCause());
+            var cause = assertInstanceOf(IllegalArgumentException.class, failure.getCause());
             assertTrue(cause.getMessage().contains("Confined arenas"));
             assertTrue(arena.scope().isAlive());
         }

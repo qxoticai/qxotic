@@ -57,10 +57,10 @@ final class MistralChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
         ReplyLanguage.Node tree =
                 ReplyLanguage.seq(
-                        ReplyLanguage.content(ReplyLanguage.gbnf(contentGbnf)),
+                        ReplyLanguage.content(ReplyLanguage.gbnf(grammar)),
                         ReplyLanguage.opt(ReplyLanguage.mark("</s>")));
         return Optional.of(ReplyLanguage.Selection.of(tree, tokenizer));
     }

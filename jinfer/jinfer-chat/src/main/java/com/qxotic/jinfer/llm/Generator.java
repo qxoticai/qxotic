@@ -38,23 +38,23 @@ public final class Generator {
     }
 
     /**
-     * The stopping policy. {@code maxTokens} is the completion budget: {@link #UNLIMITED} means
-     * bounded only by the state's remaining context, and 0 is meaningful (prefill without decode).
-     * {@code timeout} is the wall-clock budget for the WHOLE pass - prompt ingestion AND decode (a
-     * long prefill is exactly the cost a deadline exists to bound); {@link Duration#ZERO} for none.
-     * The deadline is cooperative: it is checked BETWEEN steps (a prefill chunk, a decode token), a
-     * step in flight always completes, and no new step starts past the deadline - so an expired
-     * pass emits nothing it has not already emitted, and no token is ever sampled after it. {@code
-     * stopTokens} is the family's terminator set, possibly empty.
+     * The stopping policy. {@code maxOutputTokens} is the completion budget: {@link #UNLIMITED}
+     * means bounded only by the state's remaining context, and 0 is meaningful (prefill without
+     * decode). {@code timeout} is the wall-clock budget for the WHOLE pass - prompt ingestion AND
+     * decode (a long prefill is exactly the cost a deadline exists to bound); {@link Duration#ZERO}
+     * for none. The deadline is cooperative: it is checked BETWEEN steps (a prefill chunk, a decode
+     * token), a step in flight always completes, and no new step starts past the deadline - so an
+     * expired pass emits nothing it has not already emitted, and no token is ever sampled after it.
+     * {@code stopTokens} is the family's terminator set, possibly empty.
      */
-    public record Constraints(int maxTokens, Duration timeout, Set<Integer> stopTokens) {
+    public record Constraints(int maxOutputTokens, Duration timeout, Set<Integer> stopTokens) {
 
-        /** The {@code maxTokens} value for "as much as the context allows". */
+        /** The {@code maxOutputTokens} value for "as much as the context allows". */
         public static final int UNLIMITED = -1;
 
         public Constraints {
-            if (maxTokens < UNLIMITED) {
-                throw new IllegalArgumentException("maxTokens " + maxTokens);
+            if (maxOutputTokens < UNLIMITED) {
+                throw new IllegalArgumentException("maxOutputTokens " + maxOutputTokens);
             }
             if (timeout == null || timeout.isNegative()) {
                 throw new IllegalArgumentException("timeout " + timeout);
@@ -168,9 +168,9 @@ public final class Generator {
         // input + output <= capacity depends on it)
         int room = capacity - promptPositions;
         int max =
-                constraints.maxTokens() == Constraints.UNLIMITED
+                constraints.maxOutputTokens() == Constraints.UNLIMITED
                         ? room
-                        : Math.min(constraints.maxTokens(), room);
+                        : Math.min(constraints.maxOutputTokens(), room);
         long startNanos = System.nanoTime();
         long deadlineNanos =
                 constraints.timeout().isZero()
@@ -191,7 +191,7 @@ public final class Generator {
         Set<Integer> stops = constraints.stopTokens();
         int[] generated = new int[max];
         int n = 0;
-        // budget/context, or maxTokens=0 prefill-only; a deadline hit during the prompt is a
+        // budget/context, or maxOutputTokens=0 prefill-only; a deadline hit during the prompt is a
         // TIMEOUT even when no decode step runs (the caller must know the prompt is partial)
         FinishReason finish = timedOut ? FinishReason.TIMEOUT : FinishReason.LENGTH;
         // resolved ONCE, not per token: allocating a per-token event only to find it disabled

@@ -329,7 +329,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : options.getMinP().floatValue(),
                                         options.getSeed()),
-                        contentGbnf(options),
+                        grammar(options),
                         ChatEngine.ForcedTool.NONE, // Spring AI has no forced-tool-call knob
                         options.getStopSequences(),
                         null); // Spring AI has no chat_template_kwargs equivalent
@@ -352,7 +352,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * <p>The constraint as GBNF source - a schema compiled to one, or a raw grammar as given; the
      * engine compiles the family's constrained selection. Both at once is a contradiction, refused.
      */
-    static String contentGbnf(JinferChatOptions options) {
+    static String grammar(JinferChatOptions options) {
         String schema = options.getOutputSchema(), grammar = options.getGrammar();
         if (schema != null && grammar != null) {
             throw new IllegalArgumentException(

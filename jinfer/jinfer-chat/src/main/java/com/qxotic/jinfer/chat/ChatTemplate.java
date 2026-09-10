@@ -51,7 +51,7 @@ public interface ChatTemplate {
     }
 
     /** The family's grammar-constrained content reply. */
-    default Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
+    default Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
         return Optional.empty();
     }
 
@@ -60,8 +60,8 @@ public interface ChatTemplate {
      * instead of writing the document. Empty when the family has no combined language: the engine
      * then refuses tools together with constrained output.
      */
-    default Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
-        return calls ? Optional.empty() : constrainedReply(contentGbnf);
+    default Optional<ReplyLanguage.Selection> constrainedReply(String grammar, boolean calls) {
+        return calls ? Optional.empty() : constrainedReply(grammar);
     }
 
     /**
@@ -97,8 +97,8 @@ public interface ChatTemplate {
      * Default generated-token budget for a reasoning span. Negative leaves it uncapped. Families
      * may override this when their published generation policy expects unrestricted reasoning.
      */
-    default int defaultReasoningBudget(int maxTokens) {
-        return maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1;
+    default int defaultReasoningBudget(int maxOutputTokens) {
+        return maxOutputTokens >= 0 ? Math.max(1, maxOutputTokens / 2) : -1;
     }
 
     /** One family's think-span marker spellings. */

@@ -5,6 +5,7 @@ import com.qxotic.jinfer.Segments;
 import java.lang.ref.WeakReference;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import jdk.jfr.FlightRecorder;
 
@@ -33,6 +34,7 @@ import jdk.jfr.FlightRecorder;
 public final class Telemetry {
 
     private static volatile boolean installed;
+    private static final ReentrantLock INSTALL = new ReentrantLock();
 
     /**
      * Queue wait handed from whoever owns a queue to whoever emits the event. A thread-local
@@ -178,9 +180,19 @@ public final class Telemetry {
     }
 
     /** Registers the periodic events. Idempotent and cheap; safe to call per model load. */
-    public static synchronized void install() {
+    public static void install() {
         if (installed) return;
-        installed = true;
+        INSTALL.lock();
+        try {
+            if (installed) return;
+            installLocked();
+            installed = true;
+        } finally {
+            INSTALL.unlock();
+        }
+    }
+
+    private static void installLocked() {
         FlightRecorder.addPeriodicEvent(
                 RuntimeEvent.class,
                 () -> {

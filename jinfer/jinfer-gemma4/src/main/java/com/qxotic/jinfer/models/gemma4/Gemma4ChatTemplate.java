@@ -481,13 +481,13 @@ final class Gemma4ChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf) {
-        return Optional.of(spans().constrained(contentGbnf));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
+        return Optional.of(spans().constrained(grammar));
     }
 
     @Override
-    public Optional<ReplyLanguage.Selection> constrainedReply(String contentGbnf, boolean calls) {
-        return Optional.of(spans().constrained(contentGbnf, calls));
+    public Optional<ReplyLanguage.Selection> constrainedReply(String grammar, boolean calls) {
+        return Optional.of(spans().constrained(grammar, calls));
     }
 
     @Override

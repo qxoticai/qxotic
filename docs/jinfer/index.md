@@ -149,24 +149,19 @@ java -jar jinfer-cli/target/jinfer.jar list
 
 Inference paths never fetch content. Media codecs decode only caller-provided local files or bytes.
 
-## Memory safety: confined arenas are unsupported
+## Memory safety: confined arenas are refused
 
-> **WARNING: NEVER pass `Arena.ofConfined()` for jinfer weights or state. This can corrupt memory or crash your JVM.**
-> **This requirement is NOT enforced in normal execution. Do not expect a Java exception to protect you.**
+`Arena.ofConfined()` is refused for jinfer weights and state: loading a model or creating a state with one throws `IllegalArgumentException`.
 
 Jinfer is multi-threaded by design.
 Even when configured to use a single worker, execution may run on a different thread from the arena's owner - for example, a worker in a custom pool or a native pthread.
 A confined arena permits access only from its owning Java thread; reducing the worker count or serializing calls does not satisfy that requirement.
-Raw-address and native kernels bypass the JDK's confinement checks, so unsupported access may proceed without a `WrongThreadException`.
-A successful load or generation does **not** establish safety.
+Raw-address and native kernels bypass the JDK's confinement checks, so a confined arena would corrupt memory without a `WrongThreadException`.
 
-For diagnosis, enable `-ea:com.qxotic.jinfer...` (or `-ea`).
-The diagnostic runs once per weight mapping or state construction, never per generated token or kernel call.
+The check runs once per weight mapping or state construction, never per generated token or kernel call.
 It allocates a zero-byte buffer on the calling thread, then checks whether that buffer is accessible from another thread; it does not test concurrent allocation.
-A confined buffer causes an `AssertionError`.
-The temporary, never-started diagnostic thread is local to the check; no `Thread` is retained in a static field.
-With assertions disabled, no probe buffer or diagnostic thread is created.
-This is a diagnostic aid, **not a safety guarantee**: custom allocators may treat zero-byte allocations differently from real buffers, and assertions may be disabled.
+The temporary, never-started probe thread is local to the check; no `Thread` is retained in a static field.
+Custom allocators may treat zero-byte allocations differently from real buffers, so the probe certifies the arena, not every buffer a custom allocator hands out.
 
 Use `Arenas.newCrossThread()` for the runtime default, or `Arena.ofShared()`, `Arena.ofAuto()` or `Arena.global()`.
 Custom state allocators must return cross-thread-accessible memory for **every** allocation.
@@ -195,14 +190,14 @@ This table is the translation.
 |---|---|---|---|---|---|
 | context capacity: the usable context of this model or state, what you set | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.chat.context-capacity` |
 | max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextCapacity(0)` selects it | same |
-| max output tokens | `Request.maxTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
+| max output tokens | `Request.maxOutputTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
 | temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
 | thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
-| reasoning budget | `Request.reasoningMaxTokens` | `--reasoning-budget` | `reasoning_max_tokens` | `reasoningBudget` | `reasoningBudget` |
-| grammar (raw GBNF) | `Request.contentGbnf` | - | `grammar` | `JinferChatRequestParameters.grammar` | `JinferChatOptions.grammar` |
+| reasoning budget | `Request.reasoningBudget` | `--reasoning-budget` | `reasoning_max_tokens` | `reasoningBudget` | `reasoningBudget` |
+| grammar (raw GBNF) | `Request.grammar` | - | `grammar` | `JinferChatRequestParameters.grammar` | `JinferChatOptions.grammar` |
 | speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
 | prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
-| structured output | `Request.contentGbnf` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
+| structured output | `Request.grammar` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
 
 ## Performance and observability
 

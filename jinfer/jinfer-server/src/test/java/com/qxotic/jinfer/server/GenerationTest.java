@@ -21,11 +21,12 @@ class GenerationTest {
     @Test
     void reasoningKnobsAreNullUnlessGiven() {
         assertNull(Generation.reasoningMax(Map.of()));
-        assertNull(Generation.reasoningMessage(Map.of()));
+        assertNull(Generation.reasoningBudgetMessage(Map.of()));
         assertEquals(64, Generation.reasoningMax(Map.of("reasoning_max_tokens", 64)));
         assertEquals(
                 "... Let me wrap up.",
-                Generation.reasoningMessage(Map.of("reasoning_message", "... Let me wrap up.")));
+                Generation.reasoningBudgetMessage(
+                        Map.of("reasoning_message", "... Let me wrap up.")));
     }
 
     @Test

@@ -29,7 +29,7 @@ class ModelLoaderTest {
                 Arena arena = Arena.ofConfined()) {
             var failure =
                     assertThrows(
-                            AssertionError.class,
+                            IllegalArgumentException.class,
                             () -> ModelLoader.loadTensors(channel, 0, java.util.List.of(), arena));
             assertTrue(failure.getMessage().contains("Confined arenas"));
             assertTrue(arena.scope().isAlive());

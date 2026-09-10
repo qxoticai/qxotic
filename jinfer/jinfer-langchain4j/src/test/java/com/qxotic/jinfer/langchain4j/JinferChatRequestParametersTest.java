@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -63,6 +64,35 @@ class JinferChatRequestParametersTest {
         JinferChatRequestParameters pinned =
                 JinferChatRequestParameters.builder().minP(0.0).build();
         assertEquals(0.0, ((JinferChatRequestParameters) defaults.overrideWith(pinned)).minP());
+    }
+
+    @Test
+    void thinkingTimeoutAndBudgetMessageRideTheMergeToo() {
+        JinferChatRequestParameters defaults =
+                JinferChatRequestParameters.builder()
+                        .thinking(true)
+                        .timeout(Duration.ofSeconds(30))
+                        .reasoningBudgetMessage("Enough.")
+                        .build();
+        ChatRequestParameters plain = DefaultChatRequestParameters.builder().build();
+        JinferChatRequestParameters kept =
+                (JinferChatRequestParameters) defaults.overrideWith(plain);
+        assertEquals(true, kept.thinking());
+        assertEquals(Duration.ofSeconds(30), kept.timeout());
+        assertEquals("Enough.", kept.reasoningBudgetMessage());
+        JinferChatRequestParameters pinned =
+                JinferChatRequestParameters.builder()
+                        .thinking(false)
+                        .timeout(Duration.ofSeconds(5))
+                        .build();
+        JinferChatRequestParameters merged =
+                (JinferChatRequestParameters) defaults.overrideWith(pinned);
+        assertEquals(false, merged.thinking());
+        assertEquals(Duration.ofSeconds(5), merged.timeout());
+        assertEquals("Enough.", merged.reasoningBudgetMessage(), "unset inherits");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JinferChatRequestParameters.builder().timeout(Duration.ofSeconds(-1)));
     }
 
     @Test

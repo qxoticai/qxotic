@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 /**
@@ -218,6 +219,7 @@ public final class ReplyLanguage {
         private final Node terminator;
         private final Tokenizer tokenizer;
         private Selection auto; // memoized: tools-independent, built once
+        private final ReentrantLock memo = new ReentrantLock();
 
         public Spans(
                 String thinkOpen,
@@ -237,14 +239,19 @@ public final class ReplyLanguage {
         }
 
         /** The family's memoized AUTO walk. */
-        public synchronized Walk parser() {
-            if (auto == null) auto = Selection.of(language(), tokenizer);
-            return auto.walk();
+        public Walk parser() {
+            memo.lock();
+            try {
+                if (auto == null) auto = Selection.of(language(), tokenizer);
+                return auto.walk();
+            } finally {
+                memo.unlock();
+            }
         }
 
         /** A required grammar-shaped content reply, no tools offered. */
-        public Selection constrained(String contentGbnf) {
-            return constrained(contentGbnf, false);
+        public Selection constrained(String grammar) {
+            return constrained(grammar, false);
         }
 
         /**
@@ -252,8 +259,8 @@ public final class ReplyLanguage {
          * more offered tools - the tool-round-then-structured-answer loop, where every request
          * carries both the tools and the schema and the model decides which it is doing.
          */
-        public Selection constrained(String contentGbnf, boolean calls) {
-            Node document = content(gbnf(contentGbnf));
+        public Selection constrained(String grammar, boolean calls) {
+            Node document = content(gbnf(grammar));
             Node body =
                     calls
                             ? alt(
@@ -319,6 +326,7 @@ public final class ReplyLanguage {
         final List<CRegion> regions;
         final Set<Integer> controlIds; // every resolved mark: pinned ids are control too
         private long[] controlMask; // every id the walk's control rule fires on, computed once
+        private final ReentrantLock memo = new ReentrantLock();
         final int entry;
         // per region: the entry-admissible token set of a GBNF-opening first segment (null for
         // mark- and free-opening regions) - structure masking's plain-dispatch union
@@ -372,20 +380,25 @@ public final class ReplyLanguage {
         /**
          * Every control id of this vocabulary, one bit per id: specials, empty-byte tokens, marks.
          */
-        synchronized long[] controlMask() {
-            if (controlMask == null) {
-                int n = tokenizer.vocabulary().size();
-                long[] m = new long[(n + 63) >> 6];
-                for (int t = 0; t < n; t++) {
-                    if (SpecialTokens.isSpecial(tokenizer, t)
-                            || controlIds.contains(t)
-                            || tokenizer.decodeBytes(new int[] {t}).length == 0) {
-                        m[t >> 6] |= 1L << (t & 63);
+        long[] controlMask() {
+            memo.lock();
+            try {
+                if (controlMask == null) {
+                    int n = tokenizer.vocabulary().size();
+                    long[] m = new long[(n + 63) >> 6];
+                    for (int t = 0; t < n; t++) {
+                        if (SpecialTokens.isSpecial(tokenizer, t)
+                                || controlIds.contains(t)
+                                || tokenizer.decodeBytes(new int[] {t}).length == 0) {
+                            m[t >> 6] |= 1L << (t & 63);
+                        }
                     }
+                    controlMask = m;
                 }
-                controlMask = m;
+                return controlMask;
+            } finally {
+                memo.unlock();
             }
-            return controlMask;
         }
 
         /** Every op is a reachable walk position: ambiguity anywhere must throw NOW. */
