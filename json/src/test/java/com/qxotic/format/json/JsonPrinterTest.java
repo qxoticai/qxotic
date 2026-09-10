@@ -61,7 +61,8 @@ class JsonPrinterTest {
                 Arguments.of(0.1f, "0.1"), // not widened to 0.10000000149011612
                 Arguments.of(0x1p63, "9.223372036854776E18"), // (long) would saturate
                 Arguments.of(-0x1p63, "-9.223372036854776E18"),
-                Arguments.of(0x1p53 - 1, "9007199254740991"),
+                Arguments.of(0x1p53 - 1, "9007199254740991"), // the last exactly-held integer
+                Arguments.of(0x1p53, "9.007199254740992E15"), // above it, a double, printed as one
                 Arguments.of(Double.valueOf(2.5d), "2.5"),
                 Arguments.of(Integer.valueOf(7), "7"),
                 Arguments.of(Long.valueOf(9L), "9"));

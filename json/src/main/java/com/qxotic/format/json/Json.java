@@ -941,7 +941,10 @@ public final class Json {
                 throw new IllegalArgumentException("Cannot serialize NaN/Infinity");
             }
             if (d == Math.rint(d) && Math.abs(d) < 0x1p53) {
-                sb.append((long) d); // integral and exactly representable: the cast is exact
+                // integral and below 2^53, where a double still holds every integer: printed as
+                // digits it reads back exactly; above that the digits would claim a precision
+                // the value never had (and the cast to long saturates past 2^63)
+                sb.append((long) d);
             } else if (num instanceof Float) {
                 sb.append(num.floatValue()); // Float.toString: 0.1f prints 0.1, not 0.1000000015
             } else {
