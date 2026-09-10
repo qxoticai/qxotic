@@ -110,13 +110,17 @@ class Gemma4MediaIT extends AbstractMediaIT {
                         .companionPath("media", TestModels.require(AUDIO_MMPROJ_REF))
                         .contextLength(4096)
                         .maxOutputTokens(512)
+                        // greedy and seeded: sampled, the 12B asks for the file on about one
+                        // draw in six even for a clip it plainly hears - a red run must be a fact
+                        .temperature(0.0)
+                        .seed(7L)
                         .build()) {
             Assumptions.assumeTrue(
                     engineModel(audioModel) instanceof Multimodal mm
                             && mm.projector(Media.Audio.class).isPresent(),
                     "mmproj carries no audio adapter");
-            // five seconds: one second of a flat tone the 12B reports as no audio at all
-            byte[] wav = toneWav(440, 5.0, 16000);
+            // eight seconds: the 12B hears four or more as music, three or less as no audio at all
+            byte[] wav = toneWav(440, 8.0, 16000);
             ChatResponse r =
                     audioModel.chat(
                             ChatRequest.builder()
@@ -135,10 +139,12 @@ class Gemma4MediaIT extends AbstractMediaIT {
             // the model must have HEARD something: "please provide the audio file" is non-blank
             // too, and passed here for as long as the clip was one second
             assertFalse(
-                    heard.toLowerCase().contains("provide"),
+                    heard.matches("(?is).*\\b(provide|upload|attach|share)\\b.*"),
                     "asked for the file instead: " + heard);
             assertTrue(
-                    heard.matches("(?is).*(tone|music|sound|beep|pitch|note|synth|hum|beat).*"),
+                    heard.matches(
+                            "(?is).*\\b(tone|music|musical|sound|sounds|beep|pitch|note|synth|hum"
+                                    + "|beat|melody|electronic)\\b.*"),
                     "no sound described: " + heard);
         }
     }
