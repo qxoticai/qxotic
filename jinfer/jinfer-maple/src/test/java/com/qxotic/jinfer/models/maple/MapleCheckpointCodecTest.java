@@ -12,6 +12,16 @@ import org.junit.jupiter.api.Test;
 final class MapleCheckpointCodecTest {
 
     @Test
+    void requiresPositiveMaxContextLength() {
+        for (int length : new int[] {Integer.MIN_VALUE, -1, 0}) {
+            IllegalArgumentException error =
+                    assertThrows(IllegalArgumentException.class, () -> config(length));
+            assertEquals("model dimensions must be positive", error.getMessage());
+        }
+        assertEquals(1, config(1).maxContextLength());
+    }
+
+    @Test
     void restoresMixedRingAndDenseCacheByteExactly() {
         Maple.Configuration config = config();
         MapleCheckpointCodec codec = new MapleCheckpointCodec(config);
@@ -61,6 +71,10 @@ final class MapleCheckpointCodecTest {
     }
 
     private static Maple.Configuration config() {
+        return config(16);
+    }
+
+    private static Maple.Configuration config(int maxContextLength) {
         return new Maple.Configuration(
                 4,
                 2,
@@ -69,7 +83,7 @@ final class MapleCheckpointCodecTest {
                 2,
                 2,
                 8,
-                16,
+                maxContextLength,
                 1e-6f,
                 10_000,
                 4,

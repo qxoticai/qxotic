@@ -357,7 +357,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     || numberOfKeyValueHeads <= 0
                     || headSize <= 0
                     || vocabularySize <= 0
-                    || contextLength <= 0
+                    || maxContextLength <= 0
                     || expertCount <= 0
                     || expertFeedForwardLength <= 0)
                 throw new IllegalArgumentException("model dimensions must be positive");

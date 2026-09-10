@@ -111,11 +111,11 @@ NO_MODELS := HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-
 
 ci: test-fixtures ci-format ci-test ci-corpus ci-release ## What the pull-request CI runs, as one local sequence
 
-ci-format: ## CI gate 1: formatting
-	$(MAVEN) $(MAVEN_FLAGS) -B spotless:check
+ci-format: ## CI gate 1: formatting, including opt-in Maple and jinfer examples
+	$(MAVEN) $(MAVEN_FLAGS) -B -Pmaple,examples spotless:check
 
-ci-test: ## CI gate 2: the default suite, no models
-	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test -Djinfer.test.noModels=true
+ci-test: ## CI gate 2: model-free suite, including opt-in Maple and jinfer examples
+	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B -Pmaple,examples test -Djinfer.test.noModels=true
 
 ci-corpus: ## CI gate 3: the tests that read the enwik8 corpus (toknroll-core and what it builds on)
 	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B -pl toknroll/toknroll-core -am test -Dgroups=corpus -Dsurefire.excludedGroups=
