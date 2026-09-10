@@ -168,16 +168,18 @@ public final class ChatEngine implements AutoCloseable {
                             : Models.load(modelPath, weights, companions),
                     weights);
         } catch (IOException e) {
-            weights.close(); // a leaked shared arena has no Cleaner: free before failing
+            Arenas.close(weights);
             throw new UncheckedIOException("failed to load " + modelPath, e);
         } catch (RuntimeException | Error e) {
-            weights.close();
+            Arenas.close(weights);
             throw e;
         }
     }
 
     public ChatEngine(
             Path modelPath, Map<String, Path> companions, PromptCache.Options cacheOptions) {
+        // Refuse invalid options before allocating owned weights.
+        if (cacheOptions == null) throw new IllegalArgumentException("null cache options");
         this(
                 // null = none, as everywhere else companions are accepted: "no companions" and
                 // "an empty map" must not be two states, and this threw NullPointerException
