@@ -426,9 +426,8 @@
           <configuration>
             <imageName>${jinfer.image.name}</imageName>
             <mainClass>${jinfer.image.mainClass}</mainClass>
-            <!-- GraalVM for JDK 25 has no fallback images, and the plugin's default (false) passes
-                 the now-deprecated no-fallback flag, which the builder warns about on every build.
-                 true passes nothing: with Java 25 the floor, there is no fallback to allow. -->
+            <!-- Counterintuitively, the plugin maps false to the deprecated --no-fallback flag and
+                 true to no flag. This does not enable fallback images; GraalVM 25 has none. -->
             <fallback>true</fallback>
             <buildArgs>
               <buildArg>-O3</buildArg>
