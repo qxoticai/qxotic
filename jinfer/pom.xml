@@ -315,6 +315,16 @@
               <arg>jdk.incubator.vector,jdk.httpserver</arg>
             </compilerArgs>
           </configuration>
+          <executions>
+            <execution>
+              <id>default-testCompile</id>
+              <configuration>
+                <!-- Reflection-based test fixtures need source parameter names; published APIs
+                     deliberately remain unchanged. -->
+                <parameters>true</parameters>
+              </configuration>
+            </execution>
+          </executions>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
