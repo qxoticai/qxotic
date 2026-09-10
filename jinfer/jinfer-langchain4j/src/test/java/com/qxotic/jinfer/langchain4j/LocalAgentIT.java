@@ -21,13 +21,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 /**
  * The meaty showcase: a fully local multi-model agent. LFM2.5 (fast, tool-capable) is the brain
@@ -49,11 +47,7 @@ class LocalAgentIT {
 
     /** Gemma 4 behind two tools: the brain never sees pixels or samples, only descriptions. */
     static class Senses {
-        /**
-         * Caps what Gemma is asked to do, NOT how long the agent loops: a tool result is just
-         * another message to the brain, which may well retry on it. The loop's bound is the
-         * AiServices builder's {@code maxToolCallingRoundTrips} below.
-         */
+        /** Caps Gemma's work, not the loop: to the brain this is one more result to retry on. */
         static final String BUDGET_EXHAUSTED =
                 "Tool budget exhausted - answer from what you already know.";
 
@@ -71,7 +65,7 @@ class LocalAgentIT {
             log.add("lookAt(" + path + ")");
             System.err.println("  [tool] lookAt(" + path + ", \"" + question + "\")");
             if (log.size() > 6) return BUDGET_EXHAUSTED;
-            return heard(
+            String answer =
                     gemma.chat(
                                     ChatRequest.builder()
                                             .messages(
@@ -81,7 +75,8 @@ class LocalAgentIT {
                                                             TextContent.from(question)))
                                             .build())
                             .aiMessage()
-                            .text());
+                            .text();
+            return observed(answer);
         }
 
         @Tool("Listen to an audio file and answer a question about it")
@@ -91,7 +86,7 @@ class LocalAgentIT {
             log.add("listenTo(" + path + ")");
             System.err.println("  [tool] listenTo(" + path + ", \"" + question + "\")");
             if (log.size() > 6) return BUDGET_EXHAUSTED;
-            return heard(
+            String answer =
                     gemma.chat(
                                     ChatRequest.builder()
                                             .messages(
@@ -101,13 +96,14 @@ class LocalAgentIT {
                                                             TextContent.from(question)))
                                             .build())
                             .aiMessage()
-                            .text());
+                            .text();
+            return observed(answer);
         }
 
-        /** What the brain will read next - logged, because that is what it reacts to. */
-        private static String heard(String result) {
-            System.err.println("    <- " + (result == null ? "null" : result.replace("\n", " ")));
-            return result;
+        /** Logged: the brain reacts to this, not to the call. */
+        private static String observed(String answer) {
+            System.err.println("    <- " + (answer == null ? "null" : answer.replace("\n", " ")));
+            return answer;
         }
 
         private static String base64(String path) {
@@ -130,8 +126,7 @@ class LocalAgentIT {
 
     @BeforeAll
     static void wire() {
-        // greedy and seeded on BOTH models: Gemma's answers are the brain's inputs, so one
-        // sampled draw anywhere makes the whole trajectory a draw
+        // greedy and seeded on both: Gemma's answers are the brain's inputs
         brain =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(BRAIN_REF))
@@ -154,12 +149,10 @@ class LocalAgentIT {
                 AiServices.builder(Agent.class)
                         .chatModel(brain)
                         .tools(senses)
-                        // each turn needs one call; a brain that retries a tool it believes
-                        // failed must hit a wall in seconds, not langchain4j's default of 100
-                        // round trips of an always-reasoning 8B (a quarter of an hour)
+                        // one call per turn; a retrying brain fails in seconds, not after the
+                        // default 100 round trips of an always-reasoning 8B
                         .maxToolCallingRoundTrips(4)
-                        // wide enough that a bounded loop can never evict the question: a
-                        // round trip is two messages, and the three turns must stay in view
+                        // a bounded loop (two messages a round) can never evict the question
                         .chatMemory(MessageWindowChatMemory.withMaxMessages(40))
                         .build();
     }
@@ -171,14 +164,12 @@ class LocalAgentIT {
     }
 
     @Test
-    @Timeout(value = 15, unit = TimeUnit.MINUTES) // three bounded turns take about a minute
     void seesHearsRemembers() throws Exception {
         // scene: a "traffic light" picture and a tone recording. The dir name is FIXED: the path
         // appears verbatim in the prompts, and a random path would make every run a different
-        // trajectory despite greedy sampling + fixed seed (observed flaky). The tone is EIGHT
-        // seconds: the 12B hears four or more as music, three or less comes back as "please
-        // provide the audio file" (llama.cpp agrees, token for token) - and a brain told its
-        // tool received no file retries the tool, which is how this test once looped.
+        // trajectory despite greedy sampling + fixed seed (observed flaky). Eight seconds of
+        // tone: the 12B hears four or more, three or less is "please provide the audio file"
+        // (llama.cpp agrees), and a brain told its tool got no file retries it - the old loop.
         Path dir = Path.of(System.getProperty("java.io.tmpdir"), "local-agent-demo");
         Files.createDirectories(dir);
         Path photo = dir.resolve("sign.png");

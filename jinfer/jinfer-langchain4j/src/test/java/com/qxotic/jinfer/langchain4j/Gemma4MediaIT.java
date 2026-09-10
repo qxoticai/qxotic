@@ -110,8 +110,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
                         .companionPath("media", TestModels.require(AUDIO_MMPROJ_REF))
                         .contextLength(4096)
                         .maxOutputTokens(512)
-                        // greedy and seeded: sampled, the 12B asks for the file on about one
-                        // draw in six even for a clip it plainly hears - a red run must be a fact
+                        // greedy and seeded: sampled, the 12B asks for the file ~1 draw in 6
                         .temperature(0.0)
                         .seed(7L)
                         .build()) {
@@ -119,7 +118,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
                     engineModel(audioModel) instanceof Multimodal mm
                             && mm.projector(Media.Audio.class).isPresent(),
                     "mmproj carries no audio adapter");
-            // eight seconds: the 12B hears four or more as music, three or less as no audio at all
+            // eight seconds: the 12B hears four or more, three or less reads as no audio
             byte[] wav = toneWav(440, 8.0, 16000);
             ChatResponse r =
                     audioModel.chat(
@@ -136,8 +135,7 @@ class Gemma4MediaIT extends AbstractMediaIT {
             String heard = r.aiMessage().text();
             assertNotNull(heard);
             assertTrue(!heard.isBlank());
-            // the model must have HEARD something: "please provide the audio file" is non-blank
-            // too, and passed here for as long as the clip was one second
+            // heard, not merely said: "please provide the audio file" is non-blank too
             assertFalse(
                     heard.matches("(?is).*\\b(provide|upload|attach|share)\\b.*"),
                     "asked for the file instead: " + heard);
