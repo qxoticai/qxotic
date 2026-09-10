@@ -17,11 +17,9 @@ public final class JsonCodec {
     private JsonCodec() {}
 
     /**
-     * Parses JSON into the engine's value model: objects are {@code Map<String, Object>} in
-     * document order, arrays {@code List<Object>}, integers {@link Long} (every one - an {@code
-     * Integer} cast throws, by design: a type that depended on the value would be worse), decimals
-     * {@link Double}, and JSON {@code null} is Java {@code null}. Containers are deeply
-     * unmodifiable, the same frozen form the records hold, so a parsed value is safe to keep.
+     * Parses JSON into deeply unmodifiable maps (in document order) and lists, with Java {@code
+     * null} for JSON null. Integers are {@link Long} when they fit the signed 64-bit range,
+     * otherwise {@link java.math.BigInteger}; decimals are {@link Double}.
      */
     public static Object parse(String text) {
         return JsonValues.freeze(fromLibrary(Json.parse(text, OPTIONS)));
