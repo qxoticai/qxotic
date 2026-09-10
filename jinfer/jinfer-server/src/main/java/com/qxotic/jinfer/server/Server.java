@@ -427,10 +427,23 @@ public final class Server {
         Map<String, Object> request;
         try {
             request = Values.asObject(JsonCodec.parse(body), "request");
-            validator.accept(request);
         } catch (RuntimeException e) {
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
-            Http.sendError(exchange, clientStatus(e), Http.errorMessage(e)); // unknown model: 404
+            Http.sendError(exchange, 400, Http.errorMessage(e)); // not JSON, or not an object
+            return;
+        }
+        try {
+            validator.accept(request);
+        } catch (IllegalArgumentException | UnsupportedOperationException e) {
+            // the same rule as the queued path below: a validator's two types are the client's
+            // fault (an unknown model a 404, the rest 400); anything else is our defect
+            metrics.record(Metrics.Outcome.INVALID_REQUEST);
+            Http.sendError(exchange, clientStatus(e), Http.errorMessage(e));
+            return;
+        } catch (RuntimeException e) {
+            metrics.record(Metrics.Outcome.FAILED);
+            Log.LOG.log(System.Logger.Level.ERROR, "validating a " + path + " request failed", e);
+            Http.sendErrorQuietly(exchange, 500, "Internal server error");
             return;
         }
         String id = idPrefix + Long.toUnsignedString(System.nanoTime(), 36);
