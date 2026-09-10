@@ -55,6 +55,7 @@ public final class EmbedBench {
                 }
             }
         }
+        if (reps < 1) throw new IllegalArgumentException("repetitions must be >= 1, got: " + reps);
         if (modelPath == null) {
             usage(System.err);
             System.exit(2);
@@ -208,7 +209,7 @@ public final class EmbedBench {
                       --minlen <N>        min sequence length (default 8)
                       --maxlen <N>        max sequence length (default 64)
                   -b, --batch <N>         per-chunk forward width / batchCapacity (default 512)
-                  -r, --repetitions <N>   timed reps (default 5)
+                  -r, --repetitions <N>   timed reps, >= 1 (default 5)
                   -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 3)\
                   -t, --threads <N>       compute threads (default available processors)\
                 """);

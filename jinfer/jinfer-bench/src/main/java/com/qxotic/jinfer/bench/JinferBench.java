@@ -125,6 +125,7 @@ public final class JinferBench {
                 }
             }
         }
+        if (reps < 1) throw new IllegalArgumentException("repetitions must be >= 1, got: " + reps);
         if (models.isEmpty()) {
             usage(System.err);
             System.exit(2);
@@ -657,7 +658,7 @@ public final class JinferBench {
                   -p, --n-prompt <N>      prefill tokens (default 512; 0 to skip pp)
                   -n, --n-gen <N>         decode tokens  (default 128; 0 to skip tg)
                   -d, --n-depth <N>       resident prefix tokens, prepared outside timing (default 0)
-                  -r, --repetitions <N>   timed reps     (default 5)
+                  -r, --repetitions <N>   timed reps, >= 1 (default 5)
                   -w, --warmup <N>        min warmup passes; warms adaptively until throughput settles (default 2)
                       --no-warmup         skip warmup runs before benchmarking
                       --no-capabilities   skip engine capability benchmarks
