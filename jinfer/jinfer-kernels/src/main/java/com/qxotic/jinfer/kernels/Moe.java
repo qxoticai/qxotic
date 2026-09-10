@@ -25,40 +25,23 @@ public final class Moe {
     public static final class Routing {
         final int[] rowTopE, counts, offsets, cursor, rowByExpert;
         final float[] rowTopP, probByExpert;
-        public int seqLen, topK, numExperts; // per-call scalars; the scratch arrays are wired once
+        final int topK; // routes per row; the expert count is counts.length
 
         /**
          * The caller supplies only the arrays its gating fills ({@code rowTopE}/{@code rowTopP}
-         * sized rows*topK, {@code counts} sized numExperts); the dispatch-internal CSR scratch
-         * (offsets/cursor/gather order) is allocated here, once per State - {@link #dispatch} needs
-         * no per-call allocation.
+         * sized rows*topK, {@code counts} sized numExperts) and {@code topK}, the routes per row;
+         * the dispatch-internal CSR scratch (offsets/cursor/gather order) is allocated here, once
+         * per State - {@link #dispatch} needs no per-call allocation.
          */
-        public Routing(int[] rowTopE, float[] rowTopP, int[] counts) {
-            this(
-                    rowTopE,
-                    rowTopP,
-                    counts,
-                    new int[counts.length + 1],
-                    new int[counts.length],
-                    new int[rowTopE.length],
-                    new float[rowTopE.length]);
-        }
-
-        private Routing(
-                int[] rowTopE,
-                float[] rowTopP,
-                int[] counts,
-                int[] offsets,
-                int[] cursor,
-                int[] rowByExpert,
-                float[] probByExpert) {
+        public Routing(int[] rowTopE, float[] rowTopP, int[] counts, int topK) {
             this.rowTopE = rowTopE;
             this.rowTopP = rowTopP;
             this.counts = counts;
-            this.offsets = offsets;
-            this.cursor = cursor;
-            this.rowByExpert = rowByExpert;
-            this.probByExpert = probByExpert;
+            this.topK = topK;
+            this.offsets = new int[counts.length + 1];
+            this.cursor = new int[counts.length];
+            this.rowByExpert = new int[rowTopE.length];
+            this.probByExpert = new float[rowTopE.length];
         }
     }
 
@@ -266,6 +249,7 @@ public final class Moe {
      */
     public static void dispatch(
             Routing r,
+            int rows,
             int dim,
             MemoryView<MemorySegment> input,
             MemoryView<MemorySegment> gather,
@@ -273,11 +257,11 @@ public final class Moe {
             MemoryView<MemorySegment> out,
             MemoryView<MemorySegment> expertScale,
             ExpertKernel kernel) {
-        buildCsr(r, expertScale);
+        buildCsr(r, rows, expertScale);
         int[] off = r.offsets;
 
-        Ops.fillInPlace(out, 0, r.seqLen * dim, 0f);
-        for (int e = 0; e < r.numExperts; e++) {
+        Ops.fillInPlace(out, 0, rows * dim, 0f);
+        for (int e = 0; e < r.counts.length; e++) {
             int start = off[e], n = off[e + 1] - start;
             if (n == 0) continue;
             Parallel.forLoop(
@@ -304,13 +288,13 @@ public final class Moe {
     }
 
     /** CSR grouping for dispatch; folds expertScale into the combine weights. */
-    private static void buildCsr(Routing r, MemoryView<MemorySegment> expertScale) {
+    private static void buildCsr(Routing r, int rows, MemoryView<MemorySegment> expertScale) {
         Raw scaleRaw = expertScale != null ? Raw.f32(expertScale, "expertScale") : null;
         int[] off = r.offsets;
         off[0] = 0;
-        for (int e = 0; e < r.numExperts; e++) off[e + 1] = off[e] + r.counts[e];
-        System.arraycopy(off, 0, r.cursor, 0, r.numExperts);
-        for (int s = 0; s < r.seqLen; s++) {
+        for (int e = 0; e < r.counts.length; e++) off[e + 1] = off[e] + r.counts[e];
+        System.arraycopy(off, 0, r.cursor, 0, r.counts.length);
+        for (int s = 0; s < rows; s++) {
             for (int k = 0; k < r.topK; k++) {
                 int e = r.rowTopE[s * r.topK + k];
                 int pos = r.cursor[e]++;

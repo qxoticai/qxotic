@@ -279,9 +279,9 @@ public final class GptOss
         Ops.addRowBiasInPlace(state.moeRouter, 0, moe.routerBias, 0, seqLen, experts);
         selectExperts(state, seqLen);
 
-        state.moeRouting.seqLen = seqLen;
         Moe.dispatch(
                 state.moeRouting,
+                seqLen,
                 dim,
                 state.normed,
                 state.moeGather,
@@ -587,9 +587,8 @@ public final class GptOss
             moeExpertCounts = new int[c.expertCount];
             moeRowTopE = new int[rows * c.expertUsedCount];
             moeRowTopP = new float[rows * c.expertUsedCount];
-            moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
-            moeRouting.topK = c.expertUsedCount;
-            moeRouting.numExperts = c.expertCount;
+            moeRouting =
+                    new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, c.expertUsedCount);
             keyCache = new MemoryView[c.numberOfLayers];
             valueCache = new MemoryView[c.numberOfLayers];
             batchK = new MemoryView[c.numberOfLayers];

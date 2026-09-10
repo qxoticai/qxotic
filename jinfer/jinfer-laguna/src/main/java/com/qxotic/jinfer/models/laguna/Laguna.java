@@ -291,9 +291,9 @@ public final class Laguna
         for (int route = 0; route < routes; route++)
             state.moeRowTopP[route] *= c.expertWeightsScale;
         Moe.Routing routing = state.moeRouting;
-        routing.seqLen = rows;
         Moe.dispatch(
                 routing,
+                rows,
                 c.embeddingLength,
                 state.normed,
                 state.moeGather,
@@ -492,9 +492,8 @@ public final class Laguna
             moeExpertCounts = new int[c.expertCount];
             moeRowTopE = new int[rows * c.expertUsedCount];
             moeRowTopP = new float[rows * c.expertUsedCount];
-            moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
-            moeRouting.topK = c.expertUsedCount;
-            moeRouting.numExperts = c.expertCount;
+            moeRouting =
+                    new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, c.expertUsedCount);
             keyCache = new MemoryView[c.numberOfLayers];
             valueCache = new MemoryView[c.numberOfLayers];
             batchK = Views.allocateF32(memoryArena(), rows, kvDim);

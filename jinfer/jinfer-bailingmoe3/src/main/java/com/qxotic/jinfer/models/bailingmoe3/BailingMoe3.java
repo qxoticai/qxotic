@@ -425,11 +425,9 @@ public final class BailingMoe3
         if (c.normalizeExpertWeights) Moe.normalizeTopP(s.moeRowTopP, rows, c.expertUsedCount);
         for (int i = 0; i < rows * c.expertUsedCount; i++) s.moeRowTopP[i] *= c.expertWeightsScale;
         Moe.Routing routing = s.moeRouting;
-        routing.seqLen = rows;
-        routing.topK = c.expertUsedCount;
-        routing.numExperts = c.expertCount;
         Moe.dispatch(
                 routing,
+                rows,
                 c.embeddingLength,
                 s.normed,
                 s.moeGather,
@@ -792,7 +790,8 @@ public final class BailingMoe3
             moeRowTopP = new float[b * c.expertUsedCount];
             moeGroupScores = new float[c.expertGroupCount];
             moeGroupMask = new boolean[c.expertGroupCount];
-            moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
+            moeRouting =
+                    new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, c.expertUsedCount);
             clearHistory();
         }
 

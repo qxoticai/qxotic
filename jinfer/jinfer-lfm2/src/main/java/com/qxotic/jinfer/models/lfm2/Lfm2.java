@@ -530,11 +530,9 @@ public final class Lfm2
         Moe.normalizeTopP(state.moeRowTopP, seqLen, topK);
 
         Moe.Routing r = state.moeRouting;
-        r.seqLen = seqLen;
-        r.topK = topK;
-        r.numExperts = nExperts;
         Moe.dispatch(
                 r,
+                seqLen,
                 dim,
                 state.normed,
                 state.moeGather,
@@ -1129,7 +1127,7 @@ public final class Lfm2
                 this.moeExpertCounts = new int[e];
                 this.moeRowTopE = new int[c * tk];
                 this.moeRowTopP = new float[c * tk];
-                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, tk);
             } else {
                 this.moeRouterB =
                         this.moeSelectionB = this.moeGather = this.moeDownB = this.moeOutB = null;

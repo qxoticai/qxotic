@@ -282,9 +282,9 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             for (int k = 0; k < topK; k++) state.topWeights[row * topK + k] *= scale;
         }
 
-        state.routing.seqLen = rows;
         Moe.dispatch(
                 state.routing,
+                rows,
                 dim,
                 state.normed,
                 state.gather,
@@ -462,9 +462,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             expertCounts = new int[c.expertCount];
             topExperts = new int[rows * c.expertUsedCount];
             topWeights = new float[rows * c.expertUsedCount];
-            routing = new Moe.Routing(topExperts, topWeights, expertCounts);
-            routing.topK = c.expertUsedCount;
-            routing.numExperts = c.expertCount;
+            routing = new Moe.Routing(topExperts, topWeights, expertCounts, c.expertUsedCount);
             keyCache = new MemoryView[c.numberOfLayers];
             valueCache = new MemoryView[c.numberOfLayers];
             batchK = new MemoryView[c.numberOfLayers];

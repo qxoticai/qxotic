@@ -535,11 +535,9 @@ public final class Qwen35
         Moe.softmaxSelectTopK(
                 s.moeRouter, rows, experts, topK, s.moeRowTopE, s.moeRowTopP, s.moeExpertCounts);
         Moe.Routing routing = s.moeRouting;
-        routing.seqLen = rows;
-        routing.topK = topK;
-        routing.numExperts = experts;
         Moe.dispatch(
                 routing,
+                rows,
                 dim,
                 s.normed,
                 s.moeGather,
@@ -878,7 +876,7 @@ public final class Qwen35
                 moeRowTopE = new int[b * topK];
                 moeRowTopP = new float[b * topK];
                 sharedScales = new float[b];
-                moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
+                moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, topK);
             } else {
                 moeRouter = moeGather = moeDown = null;
                 moeHidden = moeHidden2 = null;

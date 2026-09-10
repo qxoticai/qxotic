@@ -553,9 +553,9 @@ public final class Gemma4
                 state.moeRowTopP,
                 state.moeExpertCounts);
         Moe.Routing routing = state.moeRouting;
-        routing.seqLen = seqLen;
         Moe.dispatch(
                 routing,
+                seqLen,
                 dim,
                 state.moeInput,
                 state.moeGather,
@@ -799,9 +799,8 @@ public final class Gemma4
                 moeExpertCounts = new int[c.expertCount];
                 moeRowTopE = new int[rows * c.expertUsedCount];
                 moeRowTopP = new float[rows * c.expertUsedCount];
-                moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
-                moeRouting.topK = c.expertUsedCount;
-                moeRouting.numExperts = c.expertCount;
+                moeRouting =
+                        new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, c.expertUsedCount);
             } else {
                 moeShared = moeInput = moeRouterInput = moeRouter = null;
                 moeOut = moeGather = moeExpertOut = null;

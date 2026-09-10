@@ -284,11 +284,9 @@ public final class NemotronH
             }
         }
         Moe.Routing routing = s.moeRouting;
-        routing.seqLen = rows;
-        routing.topK = topK;
-        routing.numExperts = experts;
         Moe.dispatch(
                 routing,
+                rows,
                 dim,
                 s.normed,
                 s.moeGather,
@@ -477,7 +475,7 @@ public final class NemotronH
             moeRowTopE = new int[b * topK];
             moeRowTopP = new float[b * topK];
             moeExpertCounts = new int[experts];
-            moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts);
+            moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, topK);
             keyCache = new MemoryView[c.numberOfLayers];
             valueCache = new MemoryView[c.numberOfLayers];
             convState = new MemoryView[c.numberOfLayers];
