@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +29,18 @@ class RenderMapsTest {
         Map<String, Object> response =
                 (Map<String, Object>) RenderMaps.messages(conversation).get(2);
         assertEquals("tool", response.get("role"));
-        assertEquals("c1", response.get("tool_call_id"));
+        assertEquals(RenderMaps.promptId("c1"), response.get("tool_call_id"));
         assertEquals("calc", response.get("name"));
+    }
+
+    @Test
+    void promptIdsAreNineAlphanumericsAndStable() {
+        // Mistral's templates raise on anything else; the wire id is untouched (Conversation)
+        assertEquals("abcdefghi", RenderMaps.promptId("abcdefghi"));
+        for (String id : List.of("", "call_0", "call_9f2b1c7e-1234-4b1a-9f3e-abcdef012345")) {
+            assertTrue(RenderMaps.promptId(id).matches("[a-f0-9]{9}"), id);
+            assertEquals(RenderMaps.promptId(id), RenderMaps.promptId(id));
+        }
+        assertNotEquals(RenderMaps.promptId("call_0"), RenderMaps.promptId("call_1"));
     }
 }

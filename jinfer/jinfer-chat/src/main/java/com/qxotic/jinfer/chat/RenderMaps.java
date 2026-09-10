@@ -1,7 +1,12 @@
 package com.qxotic.jinfer.chat;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,7 +104,7 @@ final class RenderMaps {
      */
     private static Map<String, Object> toolCall(String id, String name, String argumentsJson) {
         var call = new LinkedHashMap<String, Object>();
-        call.put("id", id == null ? "" : id);
+        call.put("id", promptId(id));
         call.put("type", "function");
         var fn = new LinkedHashMap<String, Object>();
         fn.put("name", name);
@@ -113,8 +118,26 @@ final class RenderMaps {
         var tool = new LinkedHashMap<String, Object>();
         tool.put("role", "tool");
         tool.put("content", content);
-        tool.put("tool_call_id", callId);
+        tool.put("tool_call_id", promptId(callId));
         tool.put("name", name != null ? name : callId);
         return tool;
+    }
+
+    /**
+     * A call id as the prompt sees it. Ids are matched on the wire, never in the prompt, so their
+     * rendered form is free - and one family is picky about it: Mistral's templates raise unless an
+     * id is exactly nine alphanumerics. Conforming ids pass through; any other (OpenAI's {@code
+     * call_...}, a bare number, the empty id of id-less families) becomes nine hex digits of its
+     * SHA-256, so a call and its result still render the same id.
+     */
+    static String promptId(String id) {
+        if (id == null) id = "";
+        if (id.matches("[A-Za-z0-9]{9}")) return id;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(id.getBytes(UTF_8));
+            return HexFormat.of().formatHex(digest, 0, 5).substring(0, 9);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e); // SHA-256 is mandatory in every JRE
+        }
     }
 }

@@ -294,7 +294,8 @@ class JinjaChatTemplateTest {
         assertEquals("calling", assistant.get("content"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> calls = (List<Map<String, Object>>) assistant.get("tool_calls");
-        assertEquals("c1", calls.get(0).get("id"));
+        String promptId = RenderMaps.promptId("c1"); // the prompt form; the wire keeps c1
+        assertEquals(promptId, calls.get(0).get("id"));
         @SuppressWarnings("unchecked")
         Map<String, Object> fn = (Map<String, Object>) calls.get(0).get("function");
         assertEquals("dial", fn.get("name"));
@@ -303,7 +304,7 @@ class JinjaChatTemplateTest {
         Map<String, Object> toolResult = (Map<String, Object>) messages.get(3);
         assertEquals("tool", toolResult.get("role"));
         assertEquals("busy", toolResult.get("content"));
-        assertEquals("c1", toolResult.get("tool_call_id"));
+        assertEquals(promptId, toolResult.get("tool_call_id"));
 
         List<Object> tools = RenderMaps.tools(conversation.tools());
         @SuppressWarnings("unchecked")
