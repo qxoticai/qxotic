@@ -30,7 +30,7 @@ final class Qwen35MtpMediaRowsTest {
     void embeddingRowsFeedTheDraftHeadLikeTokens() throws Exception {
         Path path = TestModels.require("hf.co/unsloth/Qwen3.5-9B-MTP-GGUF:Q4_0");
         Path mmproj = TestModels.require("hf.co/unsloth/Qwen3.5-9B-MTP-GGUF/mmproj-F16.gguf");
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Qwen35 model = Qwen35.loadModel(path, arena).withMedia(mmproj, arena);
             int dim = model.configuration().embeddingLength();
             int vocab = model.configuration().vocabularySize();

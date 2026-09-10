@@ -34,7 +34,7 @@ final class BailingMoe3CheckpointCodecTest {
     @Test
     void ingestFailsFastWhenTheWeightArenaWasClosed() {
         MemoryView<MemorySegment> dead;
-        try (Arena weightArena = Arena.ofConfined()) {
+        try (Arena weightArena = Arena.ofShared()) {
             dead = Views.allocateF32(MemoryAllocators.ofArena(weightArena), 1);
         }
         BailingMoe3.Configuration config = config(false);
@@ -53,7 +53,7 @@ final class BailingMoe3CheckpointCodecTest {
                         RoPE.plain(2, 10_000f),
                         1);
         BailingMoe3 model = new BailingMoe3(config, null, weights);
-        try (Arena stateArena = Arena.ofConfined()) {
+        try (Arena stateArena = Arena.ofShared()) {
             BailingMoe3.State state =
                     new BailingMoe3.State(
                             config, 8, 1, MemoryAllocators.ofArena(stateArena), false);
@@ -68,7 +68,7 @@ final class BailingMoe3CheckpointCodecTest {
         assertEquals(128, codec.byteSize(0));
         assertEquals(144, codec.byteSize(2));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             BailingMoe3.State state =
                     new BailingMoe3.State(config, 8, 2, MemoryAllocators.ofArena(arena), false);
             MemorySegment expected = patterned(arena, codec.byteSize(2), 23);
@@ -92,7 +92,7 @@ final class BailingMoe3CheckpointCodecTest {
         assertEquals(144, codec.byteSize(0));
         assertEquals(176, codec.byteSize(2));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             BailingMoe3.State state =
                     new BailingMoe3.State(config, 8, 2, MemoryAllocators.ofArena(arena), false);
             MemorySegment expected = patterned(arena, codec.byteSize(2), 51);
@@ -107,7 +107,7 @@ final class BailingMoe3CheckpointCodecTest {
     @Test
     void rejectsInvalidSpanSizeAndEndpoint() {
         BailingMoe3CheckpointCodec codec = new BailingMoe3CheckpointCodec(config(false));
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             BailingMoe3.State state =
                     new BailingMoe3.State(
                             config(false), 8, 2, MemoryAllocators.ofArena(arena), false);

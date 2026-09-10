@@ -19,7 +19,7 @@ final class GptOssCheckpointCodecTest {
         assertEquals(32, codec.byteSize(2));
         assertEquals(64, codec.byteSize(4));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(2), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
@@ -49,7 +49,7 @@ final class GptOssCheckpointCodecTest {
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
         GptOssCheckpointCodec codec = new GptOssCheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             GptOss.State state =
                     new GptOss.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);

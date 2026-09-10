@@ -22,7 +22,7 @@ final class Lfm2CheckpointCodecTest {
         assertEquals(64, codec.byteSize(0));
         assertEquals(104, codec.byteSize(5));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(3), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
@@ -52,7 +52,7 @@ final class Lfm2CheckpointCodecTest {
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
         Lfm2CheckpointCodec codec = new Lfm2CheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Lfm2.State state =
                     new Lfm2.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
@@ -71,7 +71,7 @@ final class Lfm2CheckpointCodecTest {
         Lfm2 model = new Lfm2(config, null, new Lfm2.Weights(null, null, null, null, null, null));
         assertTrue(model.checkpointCodec().isEmpty());
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Lfm2.State state = new Lfm2.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
             assertNull(state.shortConvState[0]);
             assertNull(state.keyCache[1]);
@@ -97,7 +97,7 @@ final class Lfm2CheckpointCodecTest {
     @Test
     void invalidTokenIdsAreRejectedBeforeEmbeddingLookup() {
         Lfm2 model = new Lfm2(config(), null, new Lfm2.Weights(null, null, null, null, null, null));
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Lfm2.State state =
                     new Lfm2.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             assertThrows(

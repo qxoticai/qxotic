@@ -32,7 +32,14 @@ public interface SpeechSynthesisModel<C, W, S extends RuntimeState> extends Mode
     /** Creates state that owns its memory. */
     S newState();
 
-    /** Creates state that borrows caller-owned memory. */
+    /**
+     * Creates state that borrows caller-owned, cross-thread-accessible memory.
+     *
+     * <p><b>WARNING: confined arenas MUST NOT be supplied. Misuse can corrupt memory or crash the
+     * JVM; confinement is NOT enforced without assertions.</b> Even one worker may be a custom
+     * pool's thread or a native pthread other than the arena's owner. See {@link Arenas} for the
+     * memory contract.
+     */
     S newState(MemoryArena<MemorySegment> arena);
 
     /**

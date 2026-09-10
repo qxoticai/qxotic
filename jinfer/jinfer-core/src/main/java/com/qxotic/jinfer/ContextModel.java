@@ -22,6 +22,11 @@ public interface ContextModel<C extends ContextConfiguration, W, S extends Conte
      * activations where device kernels can reach them. Pinned to {@code MemorySegment} -
      * host-addressable memory only; device-private memory is a different engine's job.
      *
+     * <p><b>WARNING: confined arenas MUST NOT be supplied. Misuse can corrupt memory or crash the
+     * JVM; confinement is NOT enforced without assertions.</b> Even one worker may be a custom
+     * pool's thread or a native pthread other than the arena's owner. See {@link Arenas} for the
+     * memory contract.
+     *
      * @param contextCapacity positive positions allocated for the state; configuration sentinels
      *     such as {@code 0} must be resolved before this call
      */
@@ -31,6 +36,10 @@ public interface ContextModel<C extends ContextConfiguration, W, S extends Conte
         return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY);
     }
 
+    /**
+     * Borrows caller-owned memory with the default batch capacity. <b>Confined arenas are
+     * unsupported and can crash the JVM, even with one worker.</b> See {@link Arenas}.
+     */
     default S newState(int contextCapacity, MemoryArena<MemorySegment> arena) {
         return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY, arena);
     }

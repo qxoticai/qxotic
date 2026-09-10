@@ -21,7 +21,7 @@ final class NemotronHCheckpointCodecTest {
         assertEquals(112, codec.byteSize(2));
         assertEquals(136, codec.byteSize(5));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(3), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
@@ -57,7 +57,7 @@ final class NemotronHCheckpointCodecTest {
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
         NemotronHCheckpointCodec codec = new NemotronHCheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             NemotronH.State state =
                     new NemotronH.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);

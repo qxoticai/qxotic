@@ -67,7 +67,7 @@ class Gemma4MtpLoadTest {
         Path text = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0");
         Path sidecar = TestModels.require(SIDECAR_REF);
         Path mmproj = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Gemma4 mtpFirst = Gemma4.loadWithMtp(text, sidecar, arena).withMedia(mmproj, arena);
             Gemma4 mediaFirst =
                     Gemma4.loadModel(text, arena)

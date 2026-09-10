@@ -17,7 +17,7 @@ final class MapleCheckpointCodecTest {
         MapleCheckpointCodec codec = new MapleCheckpointCodec(config);
         assertEquals(32, codec.byteSize(2));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(2), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
@@ -45,7 +45,7 @@ final class MapleCheckpointCodecTest {
     @Test
     void rejectsInvalidCheckpoint() {
         MapleCheckpointCodec codec = new MapleCheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Maple.State state =
                     new Maple.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);

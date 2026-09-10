@@ -2,6 +2,7 @@ package com.qxotic.jinfer.kernels;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
@@ -24,6 +25,12 @@ import java.util.Optional;
 /**
  * Shared GGUF loading support: parses metadata, memory-maps tensor data read-only, and exposes each
  * tensor as a {@code MemoryView<MemorySegment>}. Unsupported data types fail during loading.
+ *
+ * <p><b>WARNING: confined arenas MUST NOT be used, even with one worker thread. This precondition
+ * is NOT enforced without assertions; misuse can corrupt memory or crash the JVM.</b> Even one
+ * worker may execute on a custom pool's thread or native pthread other than the arena's owner.
+ * Raw-address kernels bypass JDK confinement checks, so loading or running without an exception
+ * does not imply safe memory access. See {@link Arenas}.
  */
 public final class ModelLoader {
 
@@ -44,15 +51,6 @@ public final class ModelLoader {
     }
 
     /**
-     * Memory-maps the tensor data in one READ_ONLY mapping (shared by every tensor view) into the
-     * caller's {@code arena} - who provides the arena owns the weights' lifetime ({@code ofAuto} =
-     * unmapped by GC once the model graph drops; {@code global} = process lifetime; a scoped arena
-     * = deterministic unmap, which must outlive every model sharing these weights). File-backed
-     * READ_ONLY pages are kernel-reclaimable under memory pressure regardless of arena choice.
-     * (Kernels read via raw addresses ({@code Segments.GLOBAL_SEGMENT}) that bypass liveness
-     * checks; ports run {@code Views.checkAlive} once per forward on the weight/KV views.)
-     */
-    /**
      * The one-line remedy for a JVM started without the incubating Vector API, which every kernel
      * needs: a library user otherwise meets a NoClassDefFoundError deep in the packer. Every loader
      * passes through here; a native image has the module compiled in.
@@ -66,6 +64,13 @@ public final class ModelLoader {
         }
     }
 
+    /**
+     * Memory-maps tensor data read-only into the caller's cross-thread-accessible arena. Confined
+     * arenas are unsupported, even with one worker thread. {@code ofShared} permits deterministic
+     * unmapping, {@code ofAuto} is GC-managed and {@code global} lasts for the process. The arena
+     * must outlive every model and operation borrowing these weights: raw-address kernels bypass
+     * the JDK's access checks. <b>Arena confinement is NOT enforced without assertions.</b>
+     */
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
             FileChannel fileChannel, GGUF gguf, Arena arena) throws IOException {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors(), arena);
@@ -73,7 +78,8 @@ public final class ModelLoader {
 
     /**
      * Maps the tensors described by {@code tensors}, whose data starts at {@code tensorDataOffset}
-     * in the channel. The mappings remain valid for the lifetime of {@code arena}.
+     * in the channel. The mappings remain valid for the lifetime of {@code arena}, which must
+     * support cross-thread access as in {@link #loadTensors(FileChannel, GGUF, Arena)}.
      */
     public static Map<String, MemoryView<MemorySegment>> loadTensors(
             FileChannel fileChannel,
@@ -82,6 +88,7 @@ public final class ModelLoader {
             Arena arena)
             throws IOException {
         requireVectorApi();
+        Arenas.assertCrossThread(arena);
         if ((tensorDataOffset & (Float.BYTES - 1)) != 0)
             throw new IllegalArgumentException(
                     "GGUF tensor data offset must be 4-byte aligned, got " + tensorDataOffset);

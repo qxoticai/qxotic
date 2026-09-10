@@ -25,6 +25,11 @@ import java.util.Set;
  * owns the weights' lifetime; it must outlive every model sharing them). Nothing here is sized by
  * context: a state's size is chosen at {@code newState}, and the model's own context length comes
  * from the GGUF.
+ *
+ * <p><b>WARNING: confined arenas MUST NOT be supplied to any loading method. Misuse can corrupt
+ * memory or crash the JVM; confinement is NOT enforced without assertions.</b> Even one worker may
+ * run on a custom pool's thread or native pthread other than the arena's owner. Raw-address kernels
+ * bypass JDK confinement checks. See {@link com.qxotic.jinfer.Arenas} for the memory contract.
  */
 public interface ModelProvider {
 

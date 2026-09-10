@@ -20,7 +20,7 @@ final class Qwen3CheckpointCodecTest {
         assertEquals(16, codec.byteSize(2));
         assertEquals(40, codec.byteSize(5));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(3), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
@@ -45,7 +45,7 @@ final class Qwen3CheckpointCodecTest {
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
         Qwen3CheckpointCodec codec = new Qwen3CheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Qwen3.State state =
                     new Qwen3.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
@@ -61,7 +61,7 @@ final class Qwen3CheckpointCodecTest {
     @Test
     void rejectsInvalidBatchInputsBeforeRunningKernels() {
         Qwen3.Configuration config = config();
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             var memory = MemoryAllocators.ofArena(arena);
             Qwen3 model = new Qwen3(config, null, new Qwen3.Weights(null, null, null, null, null));
             Qwen3.State state = new Qwen3.State(config, 8, 4, memory, false);

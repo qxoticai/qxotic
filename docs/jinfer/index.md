@@ -148,6 +148,30 @@ java -jar jinfer-cli/target/jinfer.jar list
 
 Inference paths never fetch content. Media codecs decode only caller-provided local files or bytes.
 
+## Memory safety: confined arenas are unsupported
+
+> **WARNING: NEVER pass `Arena.ofConfined()` for jinfer weights or state. This can corrupt memory or crash your JVM.**
+> **This requirement is NOT enforced in normal execution. Do not expect a Java exception to protect you.**
+
+Jinfer is multi-threaded by design.
+Even when configured to use a single worker, execution may run on a different thread from the arena's owner—for example, a worker in a custom pool or a native pthread.
+A confined arena permits access only from its owning Java thread; reducing the worker count or serializing calls does not satisfy that requirement.
+Raw-address and native kernels bypass the JDK's confinement checks, so unsupported access may proceed without a `WrongThreadException`.
+A successful load or generation does **not** establish safety.
+
+For diagnosis, enable `-ea:com.qxotic.jinfer...` (or `-ea`).
+The diagnostic runs once per weight mapping or state construction, never per generated token or kernel call.
+It allocates a zero-byte buffer on the calling thread, then checks whether that buffer is accessible from another thread; it does not test concurrent allocation.
+A confined buffer causes an `AssertionError`.
+The temporary, never-started diagnostic thread is local to the check; no `Thread` is retained in a static field.
+With assertions disabled, no probe buffer or diagnostic thread is created.
+This is a diagnostic aid, **not a safety guarantee**: custom allocators may treat zero-byte allocations differently from real buffers, and assertions may be disabled.
+
+Use `Arenas.newCrossThread()` for the runtime default, or `Arena.ofShared()`, `Arena.ofAuto()` or `Arena.global()`.
+Custom state allocators must return cross-thread-accessible memory for **every** allocation.
+Keep caller-owned arenas alive until all models, states and operations borrowing them have finished; closing borrowed memory during inference is also unsafe.
+A state still permits only one operation at a time.
+
 ## Prompt caching
 
 `PromptCache` combines:

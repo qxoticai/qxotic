@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.GGUFFormatException;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.SpeechSynthesisModel;
@@ -39,6 +40,12 @@ import java.util.TreeSet;
  * Loads any generative model, dispatching on {@code general.architecture} to the matching port via
  * {@link ModelProvider} services - the ports on the classpath define what is loadable. The one
  * "path to model" entry every consumer (server, CLI, benches) shares.
+ *
+ * <p><b>WARNING: every loading method requires a cross-thread-accessible arena. Confined arenas are
+ * unsupported and can corrupt memory or crash the JVM, even with one worker thread.</b> This is a
+ * caller precondition, NOT enforced without assertions. A custom pool or native pthread may execute
+ * on a thread other than the arena's owner. Raw-address kernels bypass JDK confinement checks and
+ * can run without an exception. See {@link Arenas} for supported choices and lifetime requirements.
  */
 public final class Models {
 
@@ -106,8 +113,11 @@ public final class Models {
 
     /**
      * Loads {@code path}. Weights map into {@code arena}: who provides the arena owns the weights'
-     * lifetime ({@code ofAuto} = GC-managed, {@code global} = process, a scoped arena =
+     * lifetime ({@code ofAuto} = GC-managed, {@code global} = process, {@code ofShared} =
      * deterministic - it must outlive every model sharing the weights).
+     *
+     * <p><b>Confined arenas MUST NOT be supplied, even with one worker thread. This is NOT enforced
+     * without assertions.</b> See the memory-safety warning and diagnostic on {@link Arenas}.
      */
     public static LoadedModel<?> load(Path path, Arena arena) throws IOException {
         return load(path, arena, Map.of(), null);

@@ -22,6 +22,20 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ModelLoaderTest {
 
+    @Test
+    void diagnosesConfinedWeightsBeforeMapping(@TempDir Path dir) throws Exception {
+        Path file = Files.write(dir.resolve("weights.bin"), new byte[Float.BYTES]);
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
+                Arena arena = Arena.ofConfined()) {
+            var failure =
+                    assertThrows(
+                            AssertionError.class,
+                            () -> ModelLoader.loadTensors(channel, 0, java.util.List.of(), arena));
+            assertTrue(failure.getMessage().contains("Confined arenas"));
+            assertTrue(arena.scope().isAlive());
+        }
+    }
+
     /**
      * A GGUF whose tensor table promises more bytes than the file holds fails by name, not deep in
      * a view.
@@ -37,7 +51,7 @@ class ModelLoaderTest {
                         .build(),
                 file);
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
-                Arena arena = Arena.ofConfined()) {
+                Arena arena = Arena.ofShared()) {
             GGUF gguf = GGUF.read(file);
             var failure =
                     assertThrows(
@@ -54,7 +68,7 @@ class ModelLoaderTest {
         Path file = dir.resolve("model.gguf");
         GGUF.write(Builder.newBuilder().build(), file);
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
-                Arena arena = Arena.ofConfined()) {
+                Arena arena = Arena.ofShared()) {
             var failure =
                     assertThrows(
                             IllegalArgumentException.class,
@@ -87,7 +101,7 @@ class ModelLoaderTest {
         Path file = Files.write(dir.resolve("archive"), archive);
 
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
-                Arena arena = Arena.ofConfined()) {
+                Arena arena = Arena.ofShared()) {
             channel.position(base);
             GGUF embedded = GGUF.read(channel).at(base);
             var tensors = ModelLoader.loadTensors(channel, embedded, arena);
@@ -112,7 +126,7 @@ class ModelLoaderTest {
         Path file = Files.write(dir.resolve("archive"), archive);
 
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
-                Arena arena = Arena.ofConfined()) {
+                Arena arena = Arena.ofShared()) {
             channel.position(base);
             GGUF embedded = GGUF.read(channel).at(base);
             var failure =
@@ -129,7 +143,7 @@ class ModelLoaderTest {
         GGUF.write(Builder.newBuilder().build(), standalone);
         GGUF gguf = GGUF.read(standalone);
         try (FileChannel channel = FileChannel.open(standalone, StandardOpenOption.READ);
-                Arena arena = Arena.ofConfined()) {
+                Arena arena = Arena.ofShared()) {
             var failure =
                     assertThrows(
                             IllegalArgumentException.class,
@@ -150,7 +164,7 @@ class ModelLoaderTest {
         Files.write(file, new byte[68], StandardOpenOption.APPEND);
 
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ);
-                Arena arena = Arena.ofConfined()) {
+                Arena arena = Arena.ofShared()) {
             var tensors = ModelLoader.loadTensors(channel, gguf, arena);
             assertEquals(Float.BYTES, tensors.get("test").memory().base().byteSize());
         }

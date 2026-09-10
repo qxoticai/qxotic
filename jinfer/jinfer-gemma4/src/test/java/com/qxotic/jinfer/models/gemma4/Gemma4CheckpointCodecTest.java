@@ -19,7 +19,7 @@ final class Gemma4CheckpointCodecTest {
         assertEquals(48, codec.byteSize(2));
         assertEquals(96, codec.byteSize(4));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(2), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(4), 64);
@@ -50,7 +50,7 @@ final class Gemma4CheckpointCodecTest {
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
         Gemma4CheckpointCodec codec = new Gemma4CheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Gemma4.State state =
                     new Gemma4.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);

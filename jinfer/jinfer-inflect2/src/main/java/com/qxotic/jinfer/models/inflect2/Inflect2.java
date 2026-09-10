@@ -1390,6 +1390,7 @@ public final class Inflect2 {
         private final Runnable disarm;
 
         State(MemoryArena<MemorySegment> arena, MemoryArena<MemorySegment> owned) {
+            Arenas.assertCrossThread(arena);
             this.owned = owned;
             this.allocator = arena;
             // armed last: nothing above can throw, and a ctor throw must not read as a leak

@@ -21,7 +21,7 @@ final class Qwen35CheckpointCodecTest {
         assertEquals(116, codec.byteSize(2));
         assertEquals(140, codec.byteSize(5));
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             MemorySegment first = patterned(arena, codec.byteSize(2), 11);
             MemorySegment second = patterned(arena, codec.byteSize(3), 71);
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
@@ -58,7 +58,7 @@ final class Qwen35CheckpointCodecTest {
     @Test
     void rejectsInvalidSpansSizesAndSaveEndpoints() {
         Qwen35CheckpointCodec codec = new Qwen35CheckpointCodec(config());
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Qwen35.State state =
                     new Qwen35.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
@@ -78,7 +78,7 @@ final class Qwen35CheckpointCodecTest {
         assertEquals(116, codec.byteSize(0), "recurrent residue, pending hidden and RoPE offset");
         assertEquals(148, codec.byteSize(2), "two full-attention layers");
 
-        try (Arena arena = Arena.ofConfined()) {
+        try (Arena arena = Arena.ofShared()) {
             Qwen35.State state =
                     new Qwen35.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
             MemorySegment expected = patterned(arena, codec.byteSize(2), 37);

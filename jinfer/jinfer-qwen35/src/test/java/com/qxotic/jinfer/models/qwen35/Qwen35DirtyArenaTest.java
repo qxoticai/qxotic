@@ -67,7 +67,7 @@ final class Qwen35DirtyArenaTest {
                         Arena.ofAuto());
         int vocab = model.configuration().vocabularySize();
         int[] prompt = model.tokenizer().encodeToArray("The capital of France is");
-        try (Arena arena = Arena.ofConfined();
+        try (Arena arena = Arena.ofShared();
                 Qwen35.State clean = model.newState(64, 8);
                 Qwen35.State dirty =
                         model.newState(64, 8, new DirtyArena(MemoryAllocators.ofArena(arena)))) {

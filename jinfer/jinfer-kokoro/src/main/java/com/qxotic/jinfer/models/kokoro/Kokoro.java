@@ -455,6 +455,7 @@ public final class Kokoro {
         private final Random random = new Random();
 
         private State(MemoryArena<MemorySegment> allocator, MemoryArena<MemorySegment> owned) {
+            Arenas.assertCrossThread(allocator);
             this.owned = owned;
             this.allocator = allocator;
             this.scratch = new KokoroWorkspace(allocator);
