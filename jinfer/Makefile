@@ -49,9 +49,9 @@ MODEL ?= $(ROOT)/../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf
 test-golden: jar ## Determinism check: two greedy runs, byte-identical (MODEL=...)
 	@test -f $(MODEL) || { echo "test-golden: ERROR: model not found ($(MODEL)); set MODEL=..." >&2; exit 1; }
 	@$(JAVA) $(JAVA_RUNTIME_OPTIONS) -jar $(JAR_FILE) \
-		--model $(MODEL) --prompt "List the planets." --temperature 0 --max-output-tokens 64 2>/dev/null > /tmp/jinfer-golden-1.txt
+		--model $(MODEL) --prompt "List the planets." --temp 0 --max-output-tokens 64 2>/dev/null > /tmp/jinfer-golden-1.txt
 	@$(JAVA) $(JAVA_RUNTIME_OPTIONS) -jar $(JAR_FILE) \
-		--model $(MODEL) --prompt "List the planets." --temperature 0 --max-output-tokens 64 2>/dev/null > /tmp/jinfer-golden-2.txt
+		--model $(MODEL) --prompt "List the planets." --temp 0 --max-output-tokens 64 2>/dev/null > /tmp/jinfer-golden-2.txt
 	@diff /tmp/jinfer-golden-1.txt /tmp/jinfer-golden-2.txt && echo "test-golden: deterministic"
 
 help: ## Show this help

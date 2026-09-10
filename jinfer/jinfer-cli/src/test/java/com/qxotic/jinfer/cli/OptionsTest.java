@@ -14,6 +14,7 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -481,5 +482,39 @@ final class OptionsTest {
         }
         assertTrue(documented.size() > 20, "the usage text lists the value options: " + documented);
         assertEquals(documented, new java.util.TreeSet<>(Options.VALUE_OPTIONS));
+    }
+
+    /**
+     * The Makefile's CLI invocations parse: {@code test-golden} shipped {@code --temperature} after
+     * the flag became {@code --temp}, and a target nobody runs in CI rots silently. The real parser
+     * is the check - no second flag table to drift.
+     */
+    @Test
+    void theMakefileInvocationsParse(@TempDir Path dir) throws IOException {
+        Path makefile = Path.of("..", "Makefile");
+        Assumptions.assumeTrue(Files.exists(makefile), "run from the module directory");
+        Path model = Files.createFile(dir.resolve("m.gguf"));
+        int invocations = 0;
+        for (String line : Files.readAllLines(makefile)) {
+            // recipe lines start with a tab; a target's help text may show flags too
+            if (!line.startsWith("\t") || !line.contains("--model")) continue;
+            String argv =
+                    line.strip()
+                            .replace("\\", "")
+                            .replace("$(MODEL)", model.toString())
+                            .replaceAll("\\s*2>/dev/null.*$", "");
+            // the flags start at the first --model; what precedes is the java launch line
+            Options.parse(shellSplit(argv.substring(argv.indexOf("--model"))));
+            invocations++;
+        }
+        assertTrue(invocations >= 2, "the golden target's two runs were found: " + invocations);
+    }
+
+    /** Whitespace split honouring double quotes - the Makefile's prompts are quoted. */
+    private static String[] shellSplit(String s) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        var m = java.util.regex.Pattern.compile("\"([^\"]*)\"|(\\S+)").matcher(s);
+        while (m.find()) out.add(m.group(1) != null ? m.group(1) : m.group(2));
+        return out.toArray(String[]::new);
     }
 }
