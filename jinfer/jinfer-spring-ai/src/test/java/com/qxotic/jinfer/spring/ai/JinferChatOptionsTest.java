@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.List;
@@ -241,5 +242,28 @@ class JinferChatOptionsTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> JinferChatOptions.builder().reasoningBudget(-2));
+    }
+
+    @Test
+    void grammarRidesEverySeamAndExcludesASchema() {
+        String gbnf = "root ::= \"yes\" | \"no\"";
+        JinferChatOptions g = JinferChatOptions.builder().grammar(gbnf).build();
+        assertEquals(gbnf, g.mutate().build().getGrammar(), "mutate");
+        assertEquals(gbnf, JinferChatOptions.from(g).getGrammar(), "from");
+        assertEquals(
+                gbnf,
+                JinferChatOptions.builder().combineWith(g.mutate()).build().getGrammar(),
+                "combineWith");
+        assertEquals(gbnf, JinferChatModel.contentGbnf(g), "a raw grammar is the constraint");
+        assertEquals(
+                null,
+                JinferChatModel.contentGbnf(JinferChatOptions.builder().build()),
+                "no constraint");
+        // a schema compiles to a grammar; both at once is a contradiction, refused where it is read
+        JinferChatOptions both = g.mutate().outputSchema("{\"type\":\"object\"}").build();
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class, () -> JinferChatModel.contentGbnf(both));
+        assertTrue(e.getMessage().contains("choose one"), e.getMessage());
     }
 }

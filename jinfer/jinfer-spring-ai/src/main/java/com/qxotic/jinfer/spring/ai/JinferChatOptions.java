@@ -26,6 +26,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     private final String reasoningBudgetMessage;
     private final Duration timeout;
     private final String outputSchema;
+    private final String grammar;
 
     private JinferChatOptions(
             Builder b,
@@ -57,6 +58,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         this.reasoningBudgetMessage = b.reasoningBudgetMessage;
         this.timeout = b.timeout;
         this.outputSchema = b.outputSchema;
+        this.grammar = b.grammar;
     }
 
     /** Sampling seed; null = a fresh random seed per request (set one to pin sampling). */
@@ -99,6 +101,15 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         return outputSchema;
     }
 
+    /**
+     * A raw GBNF grammar the reply must conform to - the generalization of {@link
+     * #getOutputSchema()}, which compiles a schema to one; null = none. Not combined with an output
+     * schema: a request carrying both is refused.
+     */
+    public String getGrammar() {
+        return grammar;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -122,7 +133,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 .reasoningBudget(reasoningBudget)
                 .reasoningBudgetMessage(reasoningBudgetMessage)
                 .timeout(timeout)
-                .outputSchema(outputSchema);
+                .outputSchema(outputSchema)
+                .grammar(grammar);
     }
 
     /** Adapts portable Spring options without inventing a second defaults-merge policy. */
@@ -144,6 +156,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         if (o instanceof StructuredOutputChatOptions s && s.getOutputSchema() != null) {
             b.outputSchema(s.getOutputSchema());
         }
+        if (o instanceof JinferChatOptions j && j.grammar != null) b.grammar(j.grammar);
         return b.build();
     }
 
@@ -156,6 +169,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         private String reasoningBudgetMessage;
         private Duration timeout;
         private String outputSchema;
+        private String grammar;
 
         private Builder() {}
 
@@ -197,6 +211,12 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
             return this;
         }
 
+        /** Raw GBNF for the reply; see {@link JinferChatOptions#getGrammar()}. */
+        public Builder grammar(String grammar) {
+            this.grammar = grammar;
+            return this;
+        }
+
         /**
          * Spring ChatClient's precedence seam: values from {@code other} override this builder;
          * inherited fields and tools are handled by Spring, Jinfer fields here.
@@ -213,6 +233,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                     reasoningBudgetMessage = j.reasoningBudgetMessage;
                 if (j.timeout != null) timeout = j.timeout;
                 if (j.outputSchema != null) outputSchema = j.outputSchema;
+                if (j.grammar != null) grammar = j.grammar;
             }
             return this;
         }

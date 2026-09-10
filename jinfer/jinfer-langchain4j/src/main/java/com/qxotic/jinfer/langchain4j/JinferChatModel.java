@@ -132,6 +132,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // the engine above is live (weights mapped) - anything that throws from here on must
         // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
         try {
+            if (b.speculationDepth != null) engine.speculationDepth(b.speculationDepth);
             this.thinking = b.thinking;
             this.reasoningBudget = b.reasoningBudget;
             this.describeSchema = b.describeSchema;
@@ -219,6 +220,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         JinferChatModel forked =
                 new JinferChatModel(
                         this, new ChatEngine(engine.loaded(), engine.modelName(), cacheOptions));
+        forked.engine.speculationDepth(engine.speculationDepth());
         if (prefix.isEmpty()) return forked;
         try {
             return forked.withPrefix(prefix);
@@ -569,6 +571,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private ChatRequestParameters defaultParameters;
         private List<ChatModelListener> listeners = List.of();
         private boolean thinking = true;
+        private Integer speculationDepth;
         private Integer reasoningBudget;
         private String reasoningBudgetMessage;
         private boolean describeSchema = true;
@@ -794,6 +797,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * uncapped); {@code -1} uncaps; a per-request {@link
          * JinferChatRequestParameters#reasoningBudget} wins over this.
          */
+        /**
+         * Drafts per verify block for a model with a draft head (the {@code speculation}
+         * companion), 1..8; 0 disables. Default: the engine's, 4. A speed-up on code, lists and
+         * JSON, a cost on prose - see the README.
+         */
+        public Builder speculationDepth(int depth) {
+            if (depth < 0 || depth > 8)
+                throw new IllegalArgumentException("speculationDepth must be in [0, 8]: " + depth);
+            this.speculationDepth = depth;
+            return this;
+        }
+
         public Builder reasoningBudget(int tokens) {
             if (tokens < -1) throw new IllegalArgumentException("reasoningBudget " + tokens);
             this.reasoningBudget = tokens;

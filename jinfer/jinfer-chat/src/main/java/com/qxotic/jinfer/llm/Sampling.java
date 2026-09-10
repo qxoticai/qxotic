@@ -1,6 +1,10 @@
 package com.qxotic.jinfer.llm;
 
-/** Fully resolved sampling settings. */
+/**
+ * Fully resolved sampling settings. Floats, because the logits they act on are floats: a
+ * framework's {@code Double} narrows once at this boundary, deterministically, and {@code 0.7}
+ * arrives as {@code 0.7f} - compare through the float, not against the double you set.
+ */
 public record Sampling(float temperature, float topP, int topK, float minP, Long seed) {
     public Sampling {
         if (!Float.isFinite(temperature) || temperature < 0)

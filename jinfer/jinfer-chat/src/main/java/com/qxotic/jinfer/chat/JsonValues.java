@@ -18,7 +18,7 @@ final class JsonValues {
         return Collections.unmodifiableMap(copy);
     }
 
-    private static Object freeze(Object value) {
+    static Object freeze(Object value) {
         if (value == null
                 || value instanceof String
                 || value instanceof Number

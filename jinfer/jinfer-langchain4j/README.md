@@ -52,6 +52,9 @@ detections onto a PNG. Models download on first use. `Detect.java` uses a 12B vi
 for a 16 GB heap; the rest are small. The [full gallery](../examples/scripts/README.md) also covers
 speech, semantic search, reranking and prompt caching.
 
+Using the Spring AI provider too?
+[The same knob in each framework](../README.md#the-same-knob-in-each-framework) maps one to the other.
+
 ## Add the provider
 
 ```xml

@@ -27,12 +27,14 @@ class BuilderRangesTest {
         refused("-1", () -> JinferChatModel.builder().maxOutputTokens(-5));
         refused(">= 0", () -> JinferChatModel.builder().timeout(Duration.ofSeconds(-1)));
         refused(">= 0", () -> JinferChatModel.builder().contextLength(-1));
+        refused("[0, 8]", () -> JinferChatModel.builder().speculationDepth(9));
         JinferChatModel.builder()
                 .temperature(0.0)
                 .topP(1.0)
                 .topK(0)
                 .minP(0.0)
                 .maxOutputTokens(-1)
+                .speculationDepth(0)
                 .timeout(Duration.ZERO);
     }
 

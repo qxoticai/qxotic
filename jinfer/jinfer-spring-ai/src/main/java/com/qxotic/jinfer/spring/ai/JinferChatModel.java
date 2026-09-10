@@ -329,7 +329,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                 ? null
                                                 : options.getMinP().floatValue(),
                                         options.getSeed()),
-                        contentGbnf(options.getOutputSchema()),
+                        contentGbnf(options),
                         ChatEngine.ForcedTool.NONE, // Spring AI has no forced-tool-call knob
                         options.getStopSequences(),
                         null); // Spring AI has no chat_template_kwargs equivalent
@@ -343,16 +343,24 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * the think gating and the dead-end stop token are the engine's. Specs are cached per (schema,
      * vocab), so repeated schemas reuse the compiled masks.
      *
-     * <p>Grammar ONLY: neither adapter restates the schema in the prompt. Spring AI's own {@code
+     * <p>Grammar ONLY: this adapter never restates the schema in the prompt. Spring AI's own {@code
      * BeanOutputConverter} appends it as format instructions on the paths that use it, and where it
      * does not ({@code useProviderStructuredOutput}, or a caller setting {@code outputSchema}),
-     * saying it is the caller's to do - see the package docs.
+     * saying it is the caller's to do - see the package docs. (The langchain4j adapter is the other
+     * way round: AiServices says nothing, so it appends one line, {@code describeSchema}.)
      *
-     * <p>The output schema as GBNF source - the engine compiles the family's constrained selection.
+     * <p>The constraint as GBNF source - a schema compiled to one, or a raw grammar as given; the
+     * engine compiles the family's constrained selection. Both at once is a contradiction, refused.
      */
-    private static String contentGbnf(String outputSchema) {
-        if (outputSchema == null) return null;
-        return Grammar.schemaGbnf(JinferMappings.jsonMap(outputSchema));
+    static String contentGbnf(JinferChatOptions options) {
+        String schema = options.getOutputSchema(), grammar = options.getGrammar();
+        if (schema != null && grammar != null) {
+            throw new IllegalArgumentException(
+                    "outputSchema and grammar both set: a schema compiles to a grammar, choose"
+                            + " one");
+        }
+        if (grammar != null) return grammar;
+        return schema == null ? null : Grammar.schemaGbnf(JinferMappings.jsonMap(schema));
     }
 
     @Override

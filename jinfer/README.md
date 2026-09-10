@@ -251,6 +251,17 @@ try (var speech = JinferSpeechModel.builder()
 }
 ```
 
+## The same knob in each framework
+
+Each provider speaks its framework's dialect: a knob the framework defines keeps the framework's name and place, and a knob jinfer adds is named the same in both.
+
+| knob | LangChain4j | Spring AI |
+|---|---|---|
+| model, companions, context length, prompt cache, retained sessions, speculation depth | builder | builder, same names |
+| temperature, top-p, top-k, max tokens, stop sequences | builder and `ChatRequestParameters` (`maxOutputTokens`) | `JinferChatOptions`, as `ChatOptions` names them (`maxTokens`) |
+| seed, min-p, thinking, reasoning budget and message, timeout, grammar | builder; per request `JinferChatRequestParameters` | `JinferChatOptions`, as the model default or per call |
+| structured output | `AiServices` return type, a schema described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
+
 ## CLI and server
 
 ```bash
