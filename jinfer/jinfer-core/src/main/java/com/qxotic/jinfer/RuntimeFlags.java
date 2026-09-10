@@ -71,6 +71,10 @@ public final class RuntimeFlags {
                 || !System.getProperty("os.arch", "").contains("aarch64")) return 0;
         try {
             Linker linker = Linker.nativeLinker();
+            // a native image builds this stub only for the EXACT layout registered in
+            // META-INF/native-image/com.qxotic/jinfer-core/reachability-metadata.json (four
+            // void*, one jlong): change the two together, or the image silently sizes from
+            // every core
             var sysctl =
                     linker.downcallHandle(
                             linker.defaultLookup().find("sysctlbyname").orElseThrow(),
