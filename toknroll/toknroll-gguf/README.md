@@ -88,12 +88,14 @@ Use `createEmptyBuilder()` to start with an empty registry and register only wha
 
 ## Tested Models
 
-Token-perfect tested against 15 model families:
+Token-perfect tested against 19 model families:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google** - Gemma 4
 - **Alibaba** - Qwen 3.5+
-- **Moonshot AI** - Kimi 2.5+
+- **Liquid AI** - LFM 2.5
+- **OpenBMB** - MiniCPM5
+- **Moonshot AI** - Kimi 2.5+, Kimi K3
 - **DeepSeek** - DeepSeek 3.2, DeepSeek 4
 - **Mistral AI** - Tekken
 - **IBM** - Granite 4+
@@ -102,8 +104,8 @@ Token-perfect tested against 15 model families:
 - **HuggingFace** - SmolLM3
 - **NVIDIA** - Nemotron 3
 - **Z.ai** - GLM 5.1
-- **MiniMax** - M2.7
+- **MiniMax** - M2.7, M3
 - **Xiaomi** - MiMo V2
 - **Poolside** - Laguna XS 2.1
 
-Other models are likely to work but are not tested against reference Python tokenizers.
+Other models are likely to work but are not tested against the Hugging Face or llama.cpp reference tokenizers.

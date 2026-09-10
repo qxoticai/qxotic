@@ -5,6 +5,10 @@ This script writes files compatible with TokenizerParityHarness:
   - chunks.json (when generated locally)
   - llamacpp_<family>_ground_truth.json
 
+Pass --gguf-py with GGUF metadata-prefix files downloaded by Tok'n'Roll's test
+cache. The script rewrites each prefix as a vocabulary-only GGUF, so neither
+model weights nor the remaining shards are needed.
+
 Example:
   python toknroll-benchmarks/generate_llamacpp_enwik8_ground_truth.py \
     --llama-tokenize /path/to/llama.cpp/build/bin/llama-tokenize \
@@ -15,10 +19,14 @@ Example:
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
+import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 
 from generate_enwik8_ground_truth import (
     compute_chunk_hash,
@@ -65,6 +73,70 @@ def load_or_generate_chunks(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return rows
+
+
+@contextmanager
+def vocabulary_only_gguf(
+    metadata_path: Path, gguf_py_path: Path | None
+) -> Iterator[Path]:
+    """Turn a downloaded GGUF metadata prefix into a tiny llama.cpp-loadable GGUF."""
+    if metadata_path.suffix != ".metadata":
+        yield metadata_path
+        return
+    if gguf_py_path is None:
+        raise RuntimeError("--gguf-py is required for .metadata inputs")
+
+    if not gguf_py_path.is_dir():
+        raise RuntimeError(f"llama.cpp gguf-py directory not found: {gguf_py_path}")
+    sys.path.insert(0, str(gguf_py_path))
+    try:
+        import gguf
+    except ImportError as exc:
+        raise RuntimeError(f"Cannot import gguf from {gguf_py_path}") from exc
+    finally:
+        sys.path.pop(0)
+
+    with tempfile.TemporaryDirectory(prefix="toknroll-vocab-gguf-") as temp_dir:
+        tensorless_input = Path(temp_dir) / "metadata.gguf"
+        shutil.copyfile(metadata_path, tensorless_input)
+        with tensorless_input.open("r+b") as output:
+            if output.read(4) != b"GGUF":
+                raise RuntimeError(f"Not a GGUF file: {metadata_path}")
+            output.seek(8)
+            output.write(b"\0" * 8)
+
+        reader = gguf.GGUFReader(tensorless_input, "r")
+        architecture = reader.get_field(gguf.Keys.General.ARCHITECTURE).contents()
+        model_path = Path(temp_dir) / "vocabulary.gguf"
+        writer = gguf.GGUFWriter(
+            model_path, arch=architecture, endianess=reader.endianess
+        )
+        alignment = reader.get_field(gguf.Keys.General.ALIGNMENT)
+        if alignment is not None:
+            writer.data_alignment = alignment.contents()
+
+        for field in reader.fields.values():
+            if (
+                field.name == gguf.Keys.General.ARCHITECTURE
+                or field.name.startswith("GGUF.")
+                or field.name.startswith("split.")
+            ):
+                continue
+            value_type = field.types[0]
+            sub_type = (
+                field.types[-1]
+                if value_type == gguf.GGUFValueType.ARRAY
+                else None
+            )
+            writer.add_key_value(
+                field.name, field.contents(), value_type, sub_type=sub_type
+            )
+
+        writer.write_header_to_file()
+        writer.write_kv_data_to_file()
+        writer.write_ti_data_to_file()
+        writer.close()
+        yield model_path
 
 
 def tokenize_with_llamacpp(
@@ -130,7 +202,15 @@ def main() -> None:
     parser.add_argument(
         "--gguf-paths",
         required=True,
-        help="Comma-separated local GGUF model file paths",
+        help="Comma-separated local GGUF or metadata-prefix file paths",
+    )
+    parser.add_argument(
+        "--gguf-py",
+        default="",
+        help=(
+            "Path to llama.cpp/gguf-py; converts metadata prefixes into "
+            "vocabulary-only GGUFs"
+        ),
     )
     parser.add_argument(
         "--chunk-sizes",
@@ -156,6 +236,9 @@ def main() -> None:
 
     families = parse_csv(args.families)
     gguf_paths = [Path(p).expanduser().resolve() for p in parse_csv(args.gguf_paths)]
+    gguf_py_path = (
+        Path(args.gguf_py).expanduser().resolve() if args.gguf_py.strip() else None
+    )
     if len(families) != len(gguf_paths):
         raise RuntimeError("--families and --gguf-paths must have the same item count")
 
@@ -186,20 +269,21 @@ def main() -> None:
             f"Generating llama.cpp ground truth for {family_id} ({gguf_path.name})..."
         )
         results = []
-        for idx, chunk in enumerate(chunks):
-            text = chunk.get("text", "")
-            chunk_hash = chunk.get("hash")
-            if not isinstance(chunk_hash, str) or not chunk_hash:
-                raise RuntimeError(f"Invalid chunk hash at index {idx}")
+        with vocabulary_only_gguf(gguf_path, gguf_py_path) as model_path:
+            for idx, chunk in enumerate(chunks):
+                text = chunk.get("text", "")
+                chunk_hash = chunk.get("hash")
+                if not isinstance(chunk_hash, str) or not chunk_hash:
+                    raise RuntimeError(f"Invalid chunk hash at index {idx}")
 
-            tokens = tokenize_with_llamacpp(llama_tokenize, gguf_path, text)
-            results.append(
-                {
-                    "chunk_hash": chunk_hash,
-                    "tokens": tokens,
-                    "token_count": len(tokens),
-                }
-            )
+                tokens = tokenize_with_llamacpp(llama_tokenize, model_path, text)
+                results.append(
+                    {
+                        "chunk_hash": chunk_hash,
+                        "tokens": tokens,
+                        "token_count": len(tokens),
+                    }
+                )
 
         out_file = output_dir / f"llamacpp_{family_id}_ground_truth.json"
         out_file.write_text(

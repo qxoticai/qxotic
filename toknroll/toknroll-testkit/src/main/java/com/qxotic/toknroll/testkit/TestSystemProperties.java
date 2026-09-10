@@ -12,6 +12,7 @@ public final class TestSystemProperties {
     public static final String CHUNK_SIZE = "toknroll.test.chunk.size";
     public static final String HF_MAX_CHUNKS = "toknroll.test.hf.maxChunks";
     public static final String GGUF_MAX_CHUNKS = "toknroll.test.gguf.maxChunks";
+    public static final String GGUF_FAMILIES = "toknroll.test.gguf.families";
     public static final String GGUF_GROUND_TRUTH_SOURCE = "toknroll.test.gguf.groundTruthSource";
     public static final String HF_SOURCE_COMPARISON_VERBOSE =
             "toknroll.test.hf.sourceComparison.verbose";

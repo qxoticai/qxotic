@@ -63,4 +63,19 @@ class GGUFTokenizerComponentsTest {
         String rebuilt = tokens.stream().map(CharSequence::toString).collect(Collectors.joining());
         assertEquals(input, rebuilt);
     }
+
+    @Test
+    void kimiPatternSplitsCombiningMarksLikeLlamaCpp() {
+        Splitter splitter =
+                Splitter.regex(
+                        Pattern.compile(
+                                GGUFTokenizerDefaults.KIMI_K2_PATTERN,
+                                Pattern.UNICODE_CHARACTER_CLASS));
+
+        assertEquals(
+                List.of("ร", "์"),
+                splitter.splitAllToListEagerly("ร์").stream()
+                        .map(CharSequence::toString)
+                        .collect(Collectors.toList()));
+    }
 }

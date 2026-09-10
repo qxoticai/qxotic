@@ -69,12 +69,14 @@ final class GGUFTokenizerDefaults {
     private static final String LAGUNA_NEWLINES_PATTERN =
             "(?:\\r?\\n)+(?:[^\\r\\n]|\\r(?!\\n))*|(?:[^\\r\\n]|\\r(?!\\n))+";
 
-    private static final String KIMI_K2_PATTERN =
+    // llama.cpp's kimi-k2 custom splitter excludes combining marks from letter runs, despite the
+    // historical regex comment.
+    static final String KIMI_K2_PATTERN =
             "[\\p{IsHan}]+|[^\\r"
                 + "\\n"
-                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
                 + "\\n"
-                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}|"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}|"
                 + " ?[^\\s\\p{L}\\p{N}]+[\\r"
                 + "\\n"
                 + "]*|\\s*[\\r"

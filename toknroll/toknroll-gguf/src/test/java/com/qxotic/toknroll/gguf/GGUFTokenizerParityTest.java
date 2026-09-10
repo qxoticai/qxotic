@@ -11,10 +11,14 @@ import com.qxotic.toknroll.testkit.TokenizerParityHarness;
 import com.qxotic.toknroll.testkit.corpus.Enwik8Corpus;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("network")
 @Tag("local-external")
 class GGUFTokenizerParityTest {
 
@@ -22,7 +26,7 @@ class GGUFTokenizerParityTest {
     private static final int MAX_CHUNKS =
             Integer.getInteger(
                     TestSystemProperties.MAX_CHUNKS,
-                    Integer.getInteger(TestSystemProperties.GGUF_MAX_CHUNKS, 20));
+                    Integer.getInteger(TestSystemProperties.GGUF_MAX_CHUNKS, 80));
     private static final int CHUNK_SIZE =
             Integer.getInteger(TestSystemProperties.CHUNK_SIZE, Integer.MAX_VALUE);
     private static final String CORPUS_PATH_PROPERTY = TestSystemProperties.CORPUS_PATH;
@@ -30,6 +34,11 @@ class GGUFTokenizerParityTest {
             TestSystemProperties.GGUF_GROUND_TRUTH_SOURCE;
     private static final String GROUND_TRUTH_SOURCE =
             System.getProperty(GROUND_TRUTH_SOURCE_PROPERTY, "hf").trim().toLowerCase();
+    private static final Set<String> SELECTED_FAMILIES =
+            Arrays.stream(System.getProperty(TestSystemProperties.GGUF_FAMILIES, "").split(","))
+                    .map(String::trim)
+                    .filter(value -> !value.isEmpty())
+                    .collect(Collectors.toSet());
     private static final List<String> INVARIANT_SMOKE_TEXTS =
             List.of(
                     "",
@@ -106,23 +115,69 @@ class GGUFTokenizerParityTest {
                             "mistral_mistral7b_v0_3",
                             "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
                             "Mistral-7B-Instruct-v0.3-Q8_0.gguf",
-                            "hf_mistral_mistral7b_v0_3_ground_truth.json"));
+                            "hf_mistral_mistral7b_v0_3_ground_truth.json"),
+                    ModelSpec.llamaCppOnly(
+                            "liquid_lfm2_5_2_6b",
+                            "LiquidAI/LFM2.5-2.6B-GGUF",
+                            "84022ce711b28455e8c4fc364ce68c00cf995875",
+                            "LFM2.5-2.6B-Q4_K_M.gguf"),
+                    ModelSpec.llamaCppOnly(
+                            "openbmb_minicpm5_2b",
+                            "openbmb/MiniCPM5-2B-GGUF",
+                            "c451f4d674096e6e6f1cc5d0abb6794bda638304",
+                            "MiniCPM5-2B-Q4_K_M.gguf"),
+                    ModelSpec.llamaCppOnly(
+                            "moonshot_kimi_k3",
+                            "unsloth/Kimi-K3-GGUF",
+                            "a0836360ce58dfec088d966a97f2ddc8a606279b",
+                            "UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00015.gguf"),
+                    ModelSpec.llamaCppOnly(
+                            "minimax_m3",
+                            "unsloth/MiniMax-M3-GGUF",
+                            "a31ac6425155f773fdde697421c3b8cf42083ecf",
+                            "UD-IQ1_M/MiniMax-M3-UD-IQ1_M-00001-of-00004.gguf"));
 
     @Test
     void parityOnGgufModels() throws Exception {
         assertTrue(
                 Files.isDirectory(GOLDEN_ENWIK8_DIR), "Missing golden dir: " + GOLDEN_ENWIK8_DIR);
+        assertTrue(
+                Set.of("hf", "llamacpp").contains(GROUND_TRUTH_SOURCE),
+                "Unsupported "
+                        + GROUND_TRUTH_SOURCE_PROPERTY
+                        + ": "
+                        + GROUND_TRUTH_SOURCE
+                        + " (expected hf or llamacpp)");
+        Set<String> knownFamilies =
+                MODELS.stream().map(model -> model.familyId).collect(Collectors.toSet());
+        assertTrue(
+                knownFamilies.containsAll(SELECTED_FAMILIES),
+                "Unknown "
+                        + TestSystemProperties.GGUF_FAMILIES
+                        + " value(s): "
+                        + SELECTED_FAMILIES.stream()
+                                .filter(family -> !knownFamilies.contains(family))
+                                .sorted()
+                                .collect(Collectors.joining(", ")));
         byte[] corpusBytes = loadCorpusBytes();
 
         GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         for (ModelSpec modelSpec : MODELS) {
+            if (!SELECTED_FAMILIES.isEmpty() && !SELECTED_FAMILIES.contains(modelSpec.familyId)) {
+                continue;
+            }
             if ("llamacpp".equals(GROUND_TRUTH_SOURCE)
                     && "google_gemma4".equals(modelSpec.familyId)) {
                 continue;
             }
             Tokenizer tokenizer =
                     loader.fromHuggingFace(
-                            modelSpec.user, modelSpec.repository, modelSpec.ggufPath);
+                            modelSpec.user,
+                            modelSpec.repository,
+                            modelSpec.revision,
+                            modelSpec.ggufPath,
+                            false,
+                            false);
             assertSmokeInvariants(modelSpec.modelRef, tokenizer);
 
             Path goldenPath =
@@ -205,11 +260,26 @@ class GGUFTokenizerParityTest {
         private final String modelRef;
         private final String user;
         private final String repository;
+        private final String revision;
         private final String ggufPath;
-        private final String groundTruthFileName;
+        private final String hfGroundTruthFileName;
+
+        private static ModelSpec llamaCppOnly(
+                String familyId, String modelRef, String revision, String ggufPath) {
+            return new ModelSpec(familyId, modelRef, revision, ggufPath, null);
+        }
 
         private ModelSpec(
                 String familyId, String modelRef, String ggufPath, String hfGroundTruthFileName) {
+            this(familyId, modelRef, "main", ggufPath, hfGroundTruthFileName);
+        }
+
+        private ModelSpec(
+                String familyId,
+                String modelRef,
+                String revision,
+                String ggufPath,
+                String hfGroundTruthFileName) {
             this.familyId = familyId;
             this.modelRef = modelRef;
             String[] parts = modelRef.split("/", 2);
@@ -219,15 +289,16 @@ class GGUFTokenizerParityTest {
             }
             this.user = parts[0];
             this.repository = parts[1];
+            this.revision = revision;
             this.ggufPath = ggufPath;
-            this.groundTruthFileName = hfGroundTruthFileName;
+            this.hfGroundTruthFileName = hfGroundTruthFileName;
         }
 
         private String groundTruthFileName(String source) {
-            if ("llamacpp".equals(source)) {
+            if ("llamacpp".equals(source) || hfGroundTruthFileName == null) {
                 return "llamacpp_" + familyId + "_ground_truth.json";
             }
-            return groundTruthFileName;
+            return hfGroundTruthFileName;
         }
     }
 }

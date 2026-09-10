@@ -35,7 +35,7 @@ echo "Hello\!" | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
 ## Why Tok'n'Roll
 
 - **Token-perfect.** Byte-exact parity with the reference tokenizers for
-  [15 model families](#tested-implementations), not "close enough".
+  [19 model families](#tested-implementations), not "close enough".
 - **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model family,
   and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
 - **Loads existing files.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
@@ -68,12 +68,14 @@ Tokenizer tokenizer = Toknroll.pipeline(splitter, model);
 
 ## Tested implementations
 
-Token-perfect, backed by parity tests against the reference Python tokenizers:
+Token-perfect, backed by parity tests against the Hugging Face and llama.cpp reference tokenizers:
 
 - **OpenAI**: tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google**: Gemma 4
 - **Alibaba**: Qwen 3.5+
-- **Moonshot AI**: Kimi 2.5+
+- **Liquid AI**: LFM 2.5
+- **OpenBMB**: MiniCPM5
+- **Moonshot AI**: Kimi 2.5+, Kimi K3
 - **DeepSeek**: DeepSeek 3.2, DeepSeek 4
 - **Mistral AI**: Tekken
 - **IBM**: Granite 4+
@@ -82,7 +84,7 @@ Token-perfect, backed by parity tests against the reference Python tokenizers:
 - **HuggingFace**: SmolLM3
 - **NVIDIA**: Nemotron 3
 - **Z.ai**: GLM 5.1
-- **MiniMax**: M2.7
+- **MiniMax**: M2.7, M3
 - **Xiaomi**: MiMo V2
 - **Poolside**: Laguna XS 2.1
 

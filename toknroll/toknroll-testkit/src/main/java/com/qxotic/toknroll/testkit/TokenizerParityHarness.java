@@ -49,7 +49,16 @@ public final class TokenizerParityHarness {
             throw new RuntimeException("Failed to load golden file: " + goldenPath, e);
         }
 
-        List<Chunk> chunks = buildChunks(corpusBytes, chunkSize);
+        Path chunksPath = goldenPath.resolveSibling("chunks.json");
+        List<Chunk> chunks;
+        try {
+            chunks =
+                    Files.exists(chunksPath)
+                            ? loadFixtureChunks(chunksPath, corpusBytes, chunkSize)
+                            : buildChunks(corpusBytes, chunkSize);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load chunks file: " + chunksPath, e);
+        }
         int checked = 0;
         for (int i = 0; i < chunks.size() && checked < maxChunks; i++) {
             Chunk chunk = chunks.get(i);
@@ -61,9 +70,14 @@ public final class TokenizerParityHarness {
             assertChunk(tokenizerLabel, chunk, expected, encode, countTokens, decode, tokenSurface);
         }
 
-        if (checked == 0) {
+        int expectedChecks = Math.min(maxChunks, chunks.size());
+        if (checked != expectedChecks) {
             throw new AssertionError(
-                    "No matching chunks between generated corpus chunks and golden file "
+                    "Checked "
+                            + checked
+                            + " of "
+                            + expectedChecks
+                            + " expected chunks from "
                             + goldenPath
                             + " for "
                             + tokenizerLabel
@@ -129,6 +143,77 @@ public final class TokenizerParityHarness {
             offset = end;
         }
         return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Chunk> loadFixtureChunks(Path chunksPath, byte[] corpusBytes, int chunkSize)
+            throws IOException {
+        Object parsed =
+                Json.parse(
+                        Files.readString(
+                                chunksPath.toAbsolutePath().normalize(), StandardCharsets.UTF_8));
+        if (!(parsed instanceof List<?>)) {
+            throw new IOException("Chunks file must be a JSON list: " + chunksPath);
+        }
+
+        List<Object> rows = (List<Object>) parsed;
+        List<Chunk> chunks = new ArrayList<>(rows.size());
+        for (int index = 0; index < rows.size(); index++) {
+            Object rowObj = rows.get(index);
+            if (!(rowObj instanceof Map<?, ?>)) {
+                throw new IOException("Invalid chunks row at index " + index + " in " + chunksPath);
+            }
+            Map<String, Object> row = (Map<String, Object>) rowObj;
+            int offset = requiredInt(row, "offset", index, chunksPath);
+            int size = requiredInt(row, "size", index, chunksPath);
+            if (offset < 0 || size <= 0 || offset > corpusBytes.length - size) {
+                throw new IOException(
+                        "Invalid chunk range at index "
+                                + index
+                                + " in "
+                                + chunksPath
+                                + ": offset="
+                                + offset
+                                + ", size="
+                                + size
+                                + ", corpusBytes="
+                                + corpusBytes.length);
+            }
+            // Generated chunks may grow by up to three bytes to end on a UTF-8 boundary.
+            if (chunkSize != Integer.MAX_VALUE && (size < chunkSize || size - chunkSize > 3)) {
+                continue;
+            }
+
+            String expectedHash = computeChunkHash(offset, size);
+            Object hashObj = row.get("hash");
+            if (!(hashObj instanceof String) || !expectedHash.equals(hashObj)) {
+                throw new IOException(
+                        "Invalid chunk hash at index "
+                                + index
+                                + " in "
+                                + chunksPath
+                                + ": expected="
+                                + expectedHash
+                                + ", actual="
+                                + hashObj);
+            }
+            String text =
+                    new String(
+                            Arrays.copyOfRange(corpusBytes, offset, offset + size),
+                            StandardCharsets.UTF_8);
+            chunks.add(new Chunk(index, offset, size, text, expectedHash));
+        }
+        return chunks;
+    }
+
+    private static int requiredInt(Map<String, Object> row, String name, int index, Path chunksPath)
+            throws IOException {
+        Object value = row.get(name);
+        if (!(value instanceof Number)) {
+            throw new IOException(
+                    "Chunk row " + index + " is missing numeric " + name + " in " + chunksPath);
+        }
+        return ((Number) value).intValue();
     }
 
     private static void assertChunk(
