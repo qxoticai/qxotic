@@ -71,6 +71,11 @@ abstract class AbstractThinkingIT {
                         // budget would die inside the thinking lane (the TCK's gpt-oss lesson)
                         .maxOutputTokens(1024)
                         .thinking(true)
+                        // greedy and seeded, as the tool battery: the engine samples at 0.8 with
+                        // a fresh seed when nothing is set, and a reasoning turn that sometimes
+                        // leaves its answer inside the think lane read as a flaky test
+                        .temperature(0.0)
+                        .seed(7L)
                         .build();
     }
 
