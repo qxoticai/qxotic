@@ -222,6 +222,22 @@ A JVM and a native image resolve different media decoders, so a media model's ca
 Text-only and speculation-only caches carry between builds as they are.
 
 
+**Speculative decoding.** A model that ships a draft head (Gemma 4, Qwen 3.5) attaches it as the
+`speculation` companion and then verifies several drafted tokens per forward pass:
+
+```java
+try (var gemma = JinferChatModel.builder()
+        .model("unsloth/gemma-4-E2B-it-GGUF:Q8_0")
+        .companion("speculation", "unsloth/gemma-4-E2B-it-GGUF/MTP/mtp-gemma-4-E2B-it-Q8_0.gguf")
+        .build()) { ... }
+```
+
+This is a speed-up only when the draft head guesses well, and that depends on the text, not the model.
+Measured on Gemma 4 E2B Q8_0 on a 16-core CPU: lists 2.0x, code 1.7x, prose 0.9x; chat prose on a Q4_K_M checkpoint fell to 0.4x.
+Every draft costs a full forward pass to verify, so below roughly one accepted draft in three the head is pure overhead.
+Attach it for code, JSON, lists and grammar-constrained output; leave it off for conversation.
+The accepted-draft ratio is reported per response (the `jinfer.Speculation` JFR event, the `mtp` cell of `jinfer-bench`), so the decision can be measured rather than guessed.
+
 **Text-to-Speech.**
 
 ```java

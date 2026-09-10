@@ -737,8 +737,9 @@ public record Options(
                         + " on (default: one per physical core; same as -Djinfer.threads)");
         out.println(
                 "  --speculation-depth <int>     drafts per verify block for a model with a"
-                        + " draft head (gemma4's MTP sidecar, attached with --with"
-                        + " speculation=<file>); 0 disables, default 4");
+                        + " draft head (attached with --with speculation=<mtp.gguf>); 0"
+                        + " disables, default 4. Pays on code, lists and JSON (up to 2x),"
+                        + " costs on prose (0.9x, worse on k-quants): leave it off for chat");
         out.println(
                 "  --cache <file>                persistent prompt cache (instruct/server) -"
                         + " serves matching prefixes, appends new prompts");
