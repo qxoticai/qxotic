@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Download OpenAI tiktoken fixture files used by tests.
+"""Download the tiktoken fixtures the tests read: OpenAI's vocabularies, and the golden truth
+(text -> tokens for r50k, cl100k and o200k, generated from tiktoken by
+toknroll-benchmarks/generate_ground_truth.py and published in the qxoticai/assets repository).
 
 Writes files to test-fixtures/tiktoken by default.
 """
@@ -10,7 +12,9 @@ import urllib.error
 import urllib.request
 
 BASE_URL = "https://openaipublic.blob.core.windows.net/encodings"
+ASSETS_URL = "https://raw.githubusercontent.com/qxoticai/assets/main/toknroll"
 FILES = ("r50k_base.tiktoken", "p50k_base.tiktoken", "cl100k_base.tiktoken", "o200k_base.tiktoken")
+GOLDEN = "ground_truth_tokens.json"
 
 
 def download_one(target_dir: pathlib.Path, name: str) -> None:
@@ -20,7 +24,7 @@ def download_one(target_dir: pathlib.Path, name: str) -> None:
         print(f"present {name}")
         return
     tmp = target.with_suffix(target.suffix + ".part")
-    url = f"{BASE_URL}/{name}"
+    url = f"{ASSETS_URL if name == GOLDEN else BASE_URL}/{name}"
     try:
         with urllib.request.urlopen(url, timeout=60) as response:
             data = response.read()
@@ -45,10 +49,10 @@ def main() -> None:
     args = parser.parse_args()
 
     out = pathlib.Path(args.output_dir)
-    for name in FILES:
+    for name in FILES + (GOLDEN,):
         download_one(out, name)
 
-    missing = [name for name in FILES if not (out / name).is_file()]
+    missing = [name for name in FILES + (GOLDEN,) if not (out / name).is_file()]
     if missing:
         raise SystemExit(f"ERROR: missing downloaded fixtures: {missing}")
 

@@ -102,7 +102,7 @@ jota-clean: ## Wipe just the jota subtree's output
 
 ##@ CI
 
-test-fixtures: ## Fetch the tiktoken vocabularies and the enwik8 corpus the suites read (idempotent, ~107MB once)
+test-fixtures: ## Fetch the tiktoken vocabularies, their golden truth and the enwik8 corpus the suites read (idempotent, ~107MB once)
 	python3 toknroll/scripts/download_tiktoken_fixtures.py
 	python3 toknroll/scripts/download_enwik8.py
 

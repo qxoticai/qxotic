@@ -9,6 +9,8 @@ import com.qxotic.toknroll.testkit.TiktokenGoldenFixture.CaseData;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -17,18 +19,26 @@ class TokenizerGoldenTest {
 
     private static final List<String> ENCODINGS = List.of("r50k_base", "cl100k_base", "o200k_base");
 
+    /**
+     * Null when not fetched: like the vocabularies it pairs with, the truth is fetched, not
+     * tracked.
+     */
     private static TiktokenGoldenFixture fixture() {
         try {
             return TiktokenGoldenFixture.load();
         } catch (IllegalStateException e) {
-            throw new IllegalStateException(
-                    "Golden fixture is missing. Generate it with: python3"
-                            + " toknroll-benchmarks/generate_ground_truth.py --skip-model-families",
-                    e);
+            return null;
         }
     }
 
-    @ParameterizedTest(name = "golden {0}/{1}")
+    /** The one case that shows up as SKIPPED with the remedy when the truth was not fetched. */
+    @Test
+    void goldenTruthIsFetched() {
+        Assumptions.assumeTrue(
+                fixture() != null, "golden fixture not fetched - run `make test-fixtures`");
+    }
+
+    @ParameterizedTest(name = "golden {0}/{1}", allowZeroInvocations = true)
     @MethodSource("goldenCases")
     void goldenEncodingMatchesExpected(
             String encoding,
@@ -57,6 +67,7 @@ class TokenizerGoldenTest {
 
     static Stream<Arguments> goldenCases() {
         TiktokenGoldenFixture fixture = fixture();
+        if (fixture == null) return Stream.empty(); // goldenTruthIsFetched says why
         List<Arguments> args = new ArrayList<>();
         for (String encoding : ENCODINGS) {
             for (CaseData c : fixture.getCases(encoding)) {

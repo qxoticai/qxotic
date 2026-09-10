@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.testkit;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -7,10 +8,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Typed reader for {@code ground_truth_tokens.json}.
- *
- * <p>If the fixture is not available on the test classpath, regenerate it with {@code python
- * toknroll-benchmarks/generate_ground_truth.py}.
+ * Typed reader for {@code ground_truth_tokens.json}: tiktoken's own {@code text -> tokens} for
+ * r50k, cl100k and o200k, fetched by {@code make test-fixtures} into {@code test-fixtures/tiktoken}
+ * from the qxoticai/assets repository. The file carries text and tokens only; the decoded text is
+ * the text (tiktoken round-trips), its bytes are its UTF-8 and the count is the token count - a
+ * test that wants those asserts the tokenizer reproduces them. Regenerate with {@code python3
+ * toknroll-benchmarks/generate_ground_truth.py --skip-model-families}.
  */
 public final class TiktokenGoldenFixture {
 
@@ -37,27 +40,19 @@ public final class TiktokenGoldenFixture {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> c = (Map<String, Object>) caseEntry.getValue();
                 String text = asString(c.get("text"));
-                String decoded = asString(c.get("decoded"));
                 List<Object> tokenValues = asList(c.get("tokens"));
-                List<Object> decodedByteValues = asList(c.get("decoded_bytes"));
-                if (decoded == null || tokenValues == null || decodedByteValues == null) {
+                if (text == null || tokenValues == null) {
                     continue;
                 }
                 int[] tokens = toIntArray(tokenValues);
-                byte[] decodedBytes = toByteArray(decodedByteValues);
-                int tokenCount =
-                        c.get("token_count") instanceof Number
-                                ? ((Number) c.get("token_count")).intValue()
-                                : tokens.length;
-                String inputText = chooseInputText(text, decoded);
                 cases.add(
                         new CaseData(
                                 caseEntry.getKey(),
-                                inputText,
-                                decoded,
+                                text,
+                                text,
                                 tokens,
-                                decodedBytes,
-                                tokenCount));
+                                text.getBytes(StandardCharsets.UTF_8),
+                                tokens.length));
             }
             parsed.put(encodingEntry.getKey(), Collections.unmodifiableList(cases));
         }
@@ -100,39 +95,9 @@ public final class TiktokenGoldenFixture {
         return arr;
     }
 
-    private static byte[] toByteArray(List<Object> values) {
-        byte[] arr = new byte[values.size()];
-        for (int i = 0; i < values.size(); i++) {
-            arr[i] = ((Number) values.get(i)).byteValue();
-        }
-        return arr;
-    }
-
-    private static String chooseInputText(String text, String decoded) {
-        if (text == null) {
-            return decoded;
-        }
-        if (isAllQuestionMarks(text) && !isAllQuestionMarks(decoded)) {
-            return decoded;
-        }
-        return text;
-    }
-
-    private static boolean isAllQuestionMarks(String value) {
-        if (value == null || value.isEmpty()) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            if (value.charAt(i) != '?') {
-                return false;
-            }
-        }
-        return true;
-    }
-
     @SuppressWarnings("unchecked")
     private static Map<String, Object> loadRawJson() {
         return FixtureJsonLoader.loadMap(
-                TiktokenGoldenFixture.class, "ground_truth_tokens.json", "golden fixture");
+                TiktokenGoldenFixture.class, "tiktoken/ground_truth_tokens.json", "golden fixture");
     }
 }

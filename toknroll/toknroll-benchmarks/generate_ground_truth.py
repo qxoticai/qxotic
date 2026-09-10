@@ -540,13 +540,9 @@ def generate_test_cases(encoding_name, max_cases=100):
 
             # Create case
             case_id = f"case_{len(cases):03d}"
-            cases[case_id] = {
-                "text": safe_text,
-                "decoded": decoded,
-                "tokens": tokens,
-                "decoded_bytes": byte_list,
-                "token_count": len(tokens),
-            }
+            # text and tokens are the whole truth: the decoded text is the text (the tokenizer
+            # round-trips), its bytes are its UTF-8, the count is len(tokens)
+            cases[case_id] = {"text": decoded, "tokens": tokens}
         except Exception as e:
             print(f"  Warning: Failed to process case {i}: {e}")
 
@@ -565,16 +561,8 @@ def generate_cases_with_adapter(adapter, max_cases=100):
             tokens = adapter.encode(safe_text)
             decoded = adapter.decode(tokens)
             decoded_bytes = adapter.decode_bytes(tokens)
-            case = {
-                "text": safe_text,
-                "decoded": decoded,
-                "tokens": tokens,
-                "token_count": len(tokens),
-            }
-            if decoded_bytes is not None:
-                case["decoded_bytes"] = decoded_bytes
             case_id = f"case_{len(cases):03d}"
-            cases[case_id] = case
+            cases[case_id] = {"text": decoded, "tokens": tokens}
         except Exception as e:
             print(f"  Warning: Failed to process case {i}: {e}")
     return cases
@@ -841,14 +829,16 @@ def main():
         else:
             print(f"  ✗ Failed to generate cases")
 
-    # Write output
-    output_path = Path("toknroll-core/src/test/resources/ground_truth_tokens.json")
+    # Write output: compact, where `make test-fixtures` downloads it. The published copy lives in
+    # the qxoticai/assets repository as toknroll/ground_truth_tokens.json - push it there after
+    # regenerating, so every clone fetches the same truth.
+    output_path = Path("../test-fixtures/tiktoken/ground_truth_tokens.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print()
     print(f"Writing to {output_path}...")
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(ground_truth, f, indent=2, ensure_ascii=False)
+        json.dump(ground_truth, f, separators=(",", ":"), ensure_ascii=False)
 
     # Print stats
     total_cases = sum(len(cases) for cases in ground_truth.values())
