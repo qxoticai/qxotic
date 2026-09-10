@@ -8,7 +8,7 @@
 
 package scripts;
 
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.io.BufferedInputStream;
@@ -381,7 +381,7 @@ class safetensors implements Callable<Integer> {
     }
 
     private static Map<String, Object> readJsonObject(URL url) throws Exception {
-        return JSON.parseMap(readUtf8(url));
+        return Json.parseMap(readUtf8(url));
     }
 
     private static Map<String, String> parseWeightMap(Object value) {
@@ -484,7 +484,7 @@ class safetensors implements Callable<Integer> {
     }
 
     private static void printJson(Object value) {
-        String pretty = JSON.stringify(value, true);
+        String pretty = Json.stringify(value, true);
         System.out.println(compactTensors(pretty));
     }
 
