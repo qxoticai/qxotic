@@ -32,6 +32,19 @@ class JinferChatModelTest {
     }
 
     @Test
+    void speculationDepthIsRefusedAtTheSetterAsOnLangChain4j() {
+        // out of [0, 8] fails before any weights load, with the range in the message
+        for (int depth : new int[] {-1, 9}) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> JinferChatModel.builder().speculationDepth(depth));
+            assertTrue(e.getMessage().contains("[0, 8]"), e.getMessage());
+        }
+        JinferChatModel.builder().speculationDepth(0).speculationDepth(8).speculationDepth(null);
+    }
+
+    @Test
     void contextLengthHasOneSentinelAtEveryBuilder() {
         JinferChatModel.builder().contextCapacity(0);
         JinferEmbeddingModel.builder().contextCapacity(0);
