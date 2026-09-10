@@ -373,6 +373,21 @@
               <configuration>
                 <createDependencyReducedPom>false</createDependencyReducedPom>
                 <transformers>
+                  <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                    <resource>META-INF/LICENSE</resource>
+                    <file>${maven.multiModuleProjectDirectory}/LICENSE</file>
+                  </transformer>
+                  <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                    <resource>META-INF/jpms.args</resource>
+                    <file>${project.build.outputDirectory}/META-INF/jpms.args</file>
+                  </transformer>
+                  <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                    <!-- the transformer always writes "includes software developed at <org>";
+                         its default org is the ASF, so the org is set to the truth -->
+                    <addHeader>false</addHeader>
+                    <organizationName>Quixotic AI</organizationName>
+                    <organizationURL>https://qxotic.ai</organizationURL>
+                  </transformer>
                   <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                     <mainClass>${jinfer.image.mainClass}</mainClass>
                     <manifestEntries>
@@ -403,6 +418,16 @@
                     <resource>META-INF/NOTICE.md</resource>
                   </transformer>
                 </transformers>
+                <!-- A shaded jar is one classpath jar. The JPMS descriptors of the modules it
+                     swallows (jota, jam, toknroll, gguf, json, jinfer-hub) would each declare a
+                     module that no longer exists, so they stay out; so do the manifests the
+                     transformer below regenerates. Every jar of ours embeds the same LICENSE and
+                     the same jpms.args, so every copy stays out and each comes in once from its
+                     canonical file - the reactor's LICENSE, this module's generated jpms.args. NOTICE
+                     is the exception: six modules
+                     carry attributions of their own (llama.cpp, ggml, llamafile, espeak, Kokoro),
+                     and a fat jar must carry every one of them - merged paragraph by paragraph (the
+                     Apache NOTICE transformer keeps identical text once), never picked. -->
                 <filters>
                   <filter>
                     <artifact>*:*</artifact>
@@ -410,6 +435,16 @@
                       <exclude>META-INF/*.SF</exclude>
                       <exclude>META-INF/*.DSA</exclude>
                       <exclude>META-INF/*.RSA</exclude>
+                      <exclude>module-info.class</exclude>
+                      <exclude>META-INF/versions/*/module-info.class</exclude>
+                      <exclude>META-INF/MANIFEST.MF</exclude>
+                    </excludes>
+                  </filter>
+                  <filter>
+                    <artifact>com.qxotic:*</artifact>
+                    <excludes>
+                      <exclude>META-INF/LICENSE</exclude>
+                      <exclude>META-INF/jpms.args</exclude>
                     </excludes>
                   </filter>
                 </filters>
