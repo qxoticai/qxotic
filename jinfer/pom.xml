@@ -426,7 +426,7 @@
           <configuration>
             <imageName>${jinfer.image.name}</imageName>
             <mainClass>${jinfer.image.mainClass}</mainClass>
-            <!-- Counterintuitively, the plugin maps false to the deprecated --no-fallback flag and
+            <!-- Counterintuitively, the plugin maps false to the deprecated no-fallback flag and
                  true to no flag. This does not enable fallback images; GraalVM 25 has none. -->
             <fallback>true</fallback>
             <buildArgs>
