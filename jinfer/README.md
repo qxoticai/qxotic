@@ -2,57 +2,53 @@
 
 <p align="center"><strong>AI, in a jar</strong></p>
 
-<p align="center">
+<div align="center">
   <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache" alt="License: Apache 2.0"></a>
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
-</p>
 
-`jinfer` stands for "**J**VM **Infer**ence": a low-level AI engine for the JVM.  
-No sidecar process, Docker container, Python, ONNX or HTTP requests involved.  
+`jinfer` stands for "**J**VM **Infer**ence": a low-level AI inference engine for the JVM.  
+No sidecar process, Docker containers, Python, ONNX or HTTP requests involved.  
 AI on the JVM, just a Maven dependency away.
+
+</div>
 
 ## Highlights
 
 - **Multi-modal support.** Vision, audio, video, embeddings for RAG, text-to-speech.
 - **Supports popular Java AI frameworks.** [LangChain4j](jinfer-langchain4j/README.md) and
-  [Spring AI](jinfer-spring-ai/README.md) providers and an OpenAI-compatible server.
+  [Spring AI](jinfer-spring-ai/README.md) providers and an [OpenAI-compatible server](./jinfer-server).
 - **Top performance.** Efficient prompt caching, speculative decoding, Matryoshka embeddings and optional hand-tuned native kernels from [JAM](../jam), with a performant Vector API fallback.
-- **Constrained generation.** Models can only generate tokens that follow the schema.
+- **Constrained generation.** Models can only emit tokens that follow the specified schema.
 - **First-class support for GraalVM's Native Image.** Self-contained binaries with millisecond startup.
 
 
-## Supported models
+## Supported architectures
 
 | Family | Capabilities | Artifact |
 |--------|--------------|----------|
 | Google Gemma 4 | chat, vision, audio, MTP | `jinfer-gemma4` |
 | Liquid AI LFM 2.5 | chat, vision, embeddings, reranking | `jinfer-lfm2` |
-| OpenAI gpt-oss  Nemotron-H | chat | `jinfer-gptoss` |
+| OpenAI gpt-oss | chat | `jinfer-gptoss` |
 | Poolside Laguna XS 2.1 | chat | `jinfer-laguna` |
 | Meta Llama 3+ | chat | `jinfer-llama` |
 | IBM Granite 4.1+ | chat | `jinfer-llama` |
 | Mistral Ministral 3 | chat | `jinfer-llama` |
-| Hugging Face SmolLM 3 | SmolLM | `jinfer-llama` |
+| Hugging Face SmolLM 3 | chat | `jinfer-llama` |
+| OpenBMB MiniCPM 5 | chat | `jinfer-llama` |
 | inflectionAI Ling 3 | chat | `jinfer-bailingmoe3` |
-| MiniCPM 5 | chat | `jinfer-llama` |
 | Alibaba Qwen 3 | embeddings, reranking | `jinfer-qwen3` |
 | Alibaba Qwen 3.5+ | chat, vision, MTP | `jinfer-qwen35` |
 | NVIDIA Nemotron | chat | `jinfer-nemotronh` |
 | Owen Song's Inflect | speech synthesis | `jinfer-inflect2` |
-| Kokoro 82M | speech synthesis | `jinfer-kokoro` |
+| Kokoro | speech synthesis | `jinfer-kokoro` |
 
-Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and dense `F32`, `F16`, `BF16`.  
-Jinfer recommends the `Q8_0` quant, top-quality with good performance.
-
-Kokoro also needs a voice GGUF companion and `espeak-ng` or `espeak` on `PATH`.
-Inflect models pronounce from their `lexicon.bin`, with `espeak-ng` covering unknown words when it is installed.
-Both expose their front end as `phonemizer()`, and `synthesize` takes the phoneme ids directly, the way a language model takes tokens.
+Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
+The "recommended" quantization for small models is `Q8_0`, it provides a good balance between quality and performance.
 
 ## Run the demos
 
-Install [JBang](https://www.jbang.dev/). It resolves the dependencies, so there is nothing to
-build first:
+The demos and examples use [JBang](https://www.jbang.dev/).
 
 ```bash
 cd jinfer/examples/scripts
@@ -98,7 +94,7 @@ Add one API binding and one model family (`jinfer-models-all` for all model arch
 </dependency>
 ```
 
-Then generate:
+To spawn and use a model:
 
 ```java
 try (var model = JinferChatModel.builder()
@@ -113,7 +109,8 @@ Supports other model providers/hosts e.g. `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8
 Use `.modelPath(Path modelPath)` to specify a model file already on disk.
 
 Run with `--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED`, and add
-`jam-native` at runtime scope to accelerate matrix multiplications.
+`jam-native` at runtime scope to accelerate matrix multiplications.  
+If native libraries cannot be used/loaded, use `jam-vector` instead to accelerate matrix multiplications, this provides a pure Java execution, end-to-end.
 
 ## Examples
 
@@ -144,7 +141,7 @@ Person p = AiServices.create(PersonExtractor.class, model)
         .extract("Johann is 42 and lives in Munich."); // Person[name=Johann, age=42, city=Munich]
 ```
 
-To constrain the output to a specific shape instead of a POJO, pass a GBNF grammar:
+To constrain the output to a specific shape instead of a POJO, pass a [GBNF grammar](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md):
 
 ```java
 var response = model.chat(ChatRequest.builder()
@@ -212,18 +209,8 @@ support.chat("How do I reset my password?");   // the instructions are already i
 base.saveCachedPrompts(Path.of("personas.jkv"));
 ```
 
-A `.jkv` is content-addressed twice over.
-Its blocks are keyed by the exact prompt tokens, so two programs share a cache only when they frame the prompt identically; a script that assembles its own history misses one written by the CLI and prefills from scratch, reporting nothing restored.
-The artifact itself is keyed by the model file, every attached companion, and - for a model that projects media - that modality's decoder and projector plan; opening it under a different identity fails loudly rather than serving the wrong KV.
-That identity is a printable line (`jinfer-cache/1 model=sha256:... companion:media=sha256:... imageDecoder=imageio imagePlan="..."`), recorded in the artifact; a refused open shows the artifact's line and the current load's and names the first field that differs.
-The digest an artifact stores is the line's SHA-256, so `printf %s "<line>" | sha256sum` reproduces it.
-`jinfer cache-info file.jkv` prints everything the file says about itself with no model in hand: format, identity and digest, both commit slots and which one serves, and every block with its span, size, parent and checksum - all checksums verified.
-A JVM and a native image resolve different media decoders, so a media model's cache carries between them only when one is pinned with `-Djinfer.imageDecoder` or `-Djinfer.audioDecoder`.
-Text-only and speculation-only caches carry between builds as they are.
-
-
-**Speculative decoding.** A model that ships a draft head (Gemma 4, Qwen 3.5) attaches it as the
-`speculation` companion and then verifies several drafted tokens per forward pass:
+**Speculative decoding.** Models that ship a draft head (e.g. Gemma 4, Qwen 3.5) can attach it as the
+`speculation` companion:
 
 ```java
 try (var gemma = JinferChatModel.builder()
@@ -232,11 +219,8 @@ try (var gemma = JinferChatModel.builder()
         .build()) { ... }
 ```
 
-This is a speed-up only when the draft head guesses well, and that depends on the text, not the model.
+This provides a speed-up only when the draft head guesses well, and that depends on the text, not the model.
 Measured on Gemma 4 E2B Q8_0 on a 16-core CPU: lists 2.0x, code 1.7x, prose 0.9x; chat prose on a Q4_K_M checkpoint fell to 0.4x.
-Every draft costs a full forward pass to verify, so below roughly one accepted draft in three the head is pure overhead.
-Attach it for code, JSON, lists and grammar-constrained output; leave it off for conversation.
-The accepted-draft ratio is reported per response (the `jinfer.Speculation` JFR event, the `mtp` cell of `jinfer-bench`), so the decision can be measured rather than guessed.
 
 **Text-to-Speech.**
 
@@ -251,26 +235,9 @@ try (var speech = JinferSpeechModel.builder()
 }
 ```
 
-## The same knob at each face
+## Chat CLI
 
-One engine, four faces: the Java API, the CLI, the OpenAI-compatible server and the two framework providers.
-A knob a face inherits keeps that face's name - `max_tokens` is OpenAI's, `maxOutputTokens` LangChain4j's, `maxTokens` Spring AI's `ChatOptions` - and a knob jinfer adds is named the same on every face.
-This table is the translation.
-
-| concept | Java API | CLI | server | LangChain4j | Spring AI |
-|---|---|---|---|---|---|
-| context capacity: the usable context of this model or state, what you set | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.chat.context-capacity` |
-| max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextCapacity(0)` selects it | same |
-| max output tokens | `Request.maxTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
-| temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
-| thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
-| reasoning budget | `Request.reasoningMaxTokens` | `--reasoning-budget` | `reasoning_max_tokens` | `reasoningBudget` | `reasoningBudget` |
-| grammar (raw GBNF) | `Request.contentGbnf` | - | `grammar` | `JinferChatRequestParameters.grammar` | `JinferChatOptions.grammar` |
-| speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
-| prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
-| structured output | `Request.contentGbnf` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
-
-## CLI and server
+To test different models, a simple CLI is bundled, can chat will all the supported models. 
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
@@ -282,37 +249,27 @@ java \
   --chat
 ```
 
-Swap `--chat` for `--prompt "..."` (one-shot) or `--server --port 54154`. The server implements
-`/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`,
-`/v1/detokenize`, `/health` and Prometheus `/metrics`, so any OpenAI client can use it. Loopback is the default;
-non-loopback binding requires `--api-key`. Multimodal models attach their projector with
-`--mmproj <clip.gguf>`. Run `--help` for the complete contract.
+## OpenAI-compatible server
 
-## Testing
+A simple OpenAI-compatible server is also provided.  
+Multimodal models can attach their audio/image projector with`--mmproj <clip.gguf>`. Pass `--help` for more details.
 
-`mvn test` runs the default suite; it needs no model files and no network.
-The model-backed suites are tagged `integration` and skip unless the model is in a local cache:
+```java
+mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
-```bash
-mvn -pl jinfer/jinfer-lfm2 test -Dsurefire.excludedGroups= -Dgroups=integration
+java \
+  --add-modules jdk.incubator.vector \
+  -jar jinfer/jinfer-cli/target/jinfer.jar \
+  --model LiquidAI/LFM2.5-2.6B-GGUF:Q8_0 \
+  --context-capacity 65536 \
+  --server
 ```
 
-`scripts/download-models.sh` fetches them into `../models` next to the checkout, where the suites look by default.
-`JINFER_MODELS` points them at another cache, and `TestModels` in the testkit names the file each suite wants when it skips.
-
-CI passes `-Djinfer.test.noModels=true` to reject accidental model lookups in the default suite, even on a machine with cached checkpoints.
-The separate model-contract job downloads LFM2.5-350M Q8_0 and passes `-Djinfer.test.requireModels=true`, so a missing required fixture fails rather than skips.
-To run that gate locally from the repository root:
-
-```bash
-jinfer/scripts/download-models.sh --only LFM2.5-350M-Q8_0.gguf
-mvn -pl jinfer/jinfer-cli,jinfer/jinfer-langchain4j -am test \
-  -Dtest=CliIT,ChatEngineModelTest,ChatEngineWeightsOwnershipTest \
-  -Dsurefire.failIfNoSpecifiedTests=false -Dsurefire.excludedGroups= \
-  -Djinfer.test.requireModels=true
+The server runs by default at `localhost:54154`, to verify it works:
+```shell
+curl -s http://127.0.0.1:54154/v1/chat/completions \
+    -d '{"messages": [{"role": "user", "content": "What is the capital of France?"}]}'
 ```
-
-Kernel variants write separate reports under `jinfer/jinfer-kernels/target/surefire-reports/`.
 
 ## GraalVM Native image
 
