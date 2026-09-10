@@ -426,6 +426,10 @@
           <configuration>
             <imageName>${jinfer.image.name}</imageName>
             <mainClass>${jinfer.image.mainClass}</mainClass>
+            <!-- GraalVM for JDK 25 has no fallback images, and the plugin's default (false) passes
+                 the now-deprecated no-fallback flag, which the builder warns about on every build.
+                 true passes nothing: with Java 25 the floor, there is no fallback to allow. -->
+            <fallback>true</fallback>
             <buildArgs>
               <buildArg>-O3</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
@@ -440,7 +444,6 @@
                    runs with Arenas' ofAuto degrade (GC-eventual frees). When GraalVM lifts the
                    restriction, re-enable real shared arenas with -H:+SharedArenaSupport and
                    -Djinfer.sharedArenas=true (the Arenas hook already honors it). -->
-              <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
               <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
               <buildArg>-Djinfer.preload=${jinfer.preload}</buildArg>
               <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>
