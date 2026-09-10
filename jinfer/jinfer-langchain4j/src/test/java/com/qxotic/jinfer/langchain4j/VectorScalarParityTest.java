@@ -15,11 +15,14 @@ import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The scalar kernels must produce the SAME TOKENS as the vector ones. A fallback that runs but
@@ -33,18 +36,20 @@ import org.junit.jupiter.api.Test;
  * <p>Runs each mode in a FORKED JVM: {@code VECTOR_BIT_SIZE} is a {@code static final} read once
  * per process, so one JVM cannot exercise both.
  */
+@Tag("integration")
 final class VectorScalarParityTest {
 
     private static final String PROMPT = "The capital of France is";
     private static final int STEPS = 16;
 
     @Test
-    void scalarKernelsAgreeWithVectorKernelsTokenForToken() throws Exception {
+    void scalarKernelsAgreeWithVectorKernelsTokenForToken(@TempDir Path directory)
+            throws Exception {
         Path gguf =
                 TestModels.require(
                         "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf");
-        String vector = walk(gguf, null);
-        String scalar = walk(gguf, "-Djinfer.vectorBitSize=0");
+        String vector = walk(gguf, null, directory.resolve("vector.log"));
+        String scalar = walk(gguf, "-Djinfer.vectorBitSize=0", directory.resolve("scalar.log"));
 
         assertTrue(vector.split(" ").length == STEPS, "vector run produced: " + vector);
         assertEquals(
@@ -55,7 +60,7 @@ final class VectorScalarParityTest {
     }
 
     /** Runs {@link #main} in a fresh JVM and returns the greedy token walk it printed. */
-    private static String walk(Path gguf, String extraFlag) throws Exception {
+    private static String walk(Path gguf, String extraFlag, Path output) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         cmd.add("--add-modules");
@@ -67,12 +72,20 @@ final class VectorScalarParityTest {
         cmd.add(VectorScalarParityTest.class.getName());
         cmd.add(gguf.toString());
 
-        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-        String out;
-        try (var in = p.getInputStream()) {
-            out = new String(in.readAllBytes());
+        Process p =
+                new ProcessBuilder(cmd)
+                        .redirectErrorStream(true)
+                        .redirectOutput(output.toFile())
+                        .start();
+        try {
+            assertTrue(p.waitFor(10, TimeUnit.MINUTES), "forked JVM timed out: " + output);
+        } finally {
+            if (p.isAlive()) {
+                p.destroyForcibly();
+                p.waitFor();
+            }
         }
-        assertTrue(p.waitFor(10, TimeUnit.MINUTES), "forked JVM timed out");
+        String out = Files.readString(output);
         assertEquals(0, p.exitValue(), "forked JVM failed:\n" + out);
         return out.lines()
                 .filter(l -> l.startsWith("WALK "))

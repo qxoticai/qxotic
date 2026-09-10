@@ -95,15 +95,12 @@ class CachedPromptIT {
                                 UserMessage.from("What was the codeword? Answer with one word."))
                         .build();
         ChatResponse hit = warm.chat(secondTurn); // strictly extends the pooled turn-1 state
-        String stats = warm.engine.sessionStats();
-        assertTrue(stats.contains("hits=1"), "turn 2 must reuse turn 1's live state: " + stats);
+        assertEquals(1, warm.engine.cacheSample().sessionHits(), "turn 2 reuses the live state");
 
         ChatResponse cold = warm.chat(secondTurn); // pool grew past this prompt: full prefill
         assertEquals(cold.aiMessage().text(), hit.aiMessage().text());
         assertTrue(hit.aiMessage().text().contains("PELICAN"), hit.aiMessage().text());
-        assertTrue(
-                warm.engine.sessionStats().contains("hits=1"),
-                "the repeat is NOT an extension and must miss: " + warm.engine.sessionStats());
+        assertEquals(1, warm.engine.cacheSample().sessionHits(), "the repeat is not an extension");
         warm.close();
     }
 
@@ -141,8 +138,7 @@ class CachedPromptIT {
     void treeIsConsultedAndBaseStaysCold() {
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
         support.chat(UserMessage.from("Hello?"));
-        String stats = base.engine.promptStats();
-        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+        assertTrue(base.engine.cacheSample().blockHits() > 0);
     }
 
     @Test
@@ -174,8 +170,7 @@ class CachedPromptIT {
                 base2.withCachedPrompt(
                         List.of(SystemMessage.from(common + "You handle SUPPORT tickets.")),
                         List.of());
-        String stats = base2.engine.promptStats();
-        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+        assertTrue(base2.engine.cacheSample().blockHits() > 0);
         ChatResponse r = a2.chat(UserMessage.from("One word: ok?"));
         assertTrue(!r.aiMessage().text().isBlank());
         base2.close();

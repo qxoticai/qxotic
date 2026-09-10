@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.SystemMessage;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -19,10 +18,7 @@ class CacheHealthTest {
 
     @Test
     void theReadingExistsBeforeAnyTrafficAndDefineRefreshesIt() {
-        var gguf =
-                TestModels.require(
-                        "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf");
-        try (var model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(4).build()) {
+        try (var model = ChatFixtures.builder().maxOutputTokens(4).build()) {
             var fresh = model.engine.cacheSample();
             assertNotNull(fresh, "a codec model has a reading from construction");
             assertEquals(0, fresh.blocks(), "an empty cache reads as zero, not null");

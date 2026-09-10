@@ -23,9 +23,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** LFM2.5-Embedding parity against llama.cpp on the same Q8_0 checkpoint. */
+@Tag("integration")
 final class Lfm2EmbeddingTest {
 
     private static final List<String> TEXTS =

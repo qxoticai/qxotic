@@ -115,7 +115,7 @@ ci-format: ## CI gate 1: formatting
 	$(MAVEN) $(MAVEN_FLAGS) -B spotless:check
 
 ci-test: ## CI gate 2: the default suite, no models
-	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test
+	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B test -Djinfer.test.noModels=true
 
 ci-corpus: ## CI gate 3: the tests that read the enwik8 corpus (toknroll-core and what it builds on)
 	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B -pl toknroll/toknroll-core -am test -Dgroups=corpus -Dsurefire.excludedGroups=

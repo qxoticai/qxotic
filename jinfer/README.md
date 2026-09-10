@@ -281,6 +281,20 @@ mvn -pl jinfer/jinfer-lfm2 test -Dsurefire.excludedGroups= -Dgroups=integration
 `scripts/download-models.sh` fetches them into `../models` next to the checkout, where the suites look by default.
 `JINFER_MODELS` points them at another cache, and `TestModels` in the testkit names the file each suite wants when it skips.
 
+CI passes `-Djinfer.test.noModels=true` to reject accidental model lookups in the default suite, even on a machine with cached checkpoints.
+The separate model-contract job downloads LFM2.5-350M Q8_0 and passes `-Djinfer.test.requireModels=true`, so a missing required fixture fails rather than skips.
+To run that gate locally from the repository root:
+
+```bash
+jinfer/scripts/download-models.sh --only LFM2.5-350M-Q8_0.gguf
+mvn -pl jinfer/jinfer-cli,jinfer/jinfer-langchain4j -am test \
+  -Dtest=CliIT,ChatEngineModelTest,ChatEngineWeightsOwnershipTest \
+  -Dsurefire.failIfNoSpecifiedTests=false -Dsurefire.excludedGroups= \
+  -Djinfer.test.requireModels=true
+```
+
+Kernel variants write separate reports under `jinfer/jinfer-kernels/target/surefire-reports/`.
+
 ## GraalVM Native image
 
 ```bash

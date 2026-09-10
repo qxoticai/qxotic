@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** The adapter's own behaviour, over a toy model: no GGUF, no weights, no kernels. */
@@ -163,6 +164,7 @@ final class JinferSpeechModelTest {
     }
 
     @Test
+    @Tag("integration")
     void closeIsIdempotentEvenWhenItOwnsTheArena() {
         // no arena given, so the adapter creates and OWNS one. Arena.close() is one-shot, so
         // without the closed flag the second call throws - and a container is not the only caller
@@ -177,6 +179,7 @@ final class JinferSpeechModelTest {
     }
 
     @Test
+    @Tag("integration")
     void aCallersArenaOutlivesTheAdapter() throws Exception {
         try (Arena weights = Arenas.newCrossThread()) {
             JinferSpeechModel.builder()
@@ -338,6 +341,7 @@ final class JinferSpeechModelTest {
     }
 
     @Test
+    @Tag("integration")
     void loadsARealModelThroughArchitectureDispatch() {
         Path gguf =
                 TestModels.require(

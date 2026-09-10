@@ -139,8 +139,8 @@ class CachedPromptIT {
                             w1.getResult().getOutput(),
                             new UserMessage("What was the codeword? Answer with one word."));
             ChatResponse hit = warm.call(secondTurn); // strictly extends the pooled turn-1 state
-            String stats = warm.engine.sessionStats();
-            assertTrue(stats.contains("hits=1"), "turn 2 must reuse turn 1's live state: " + stats);
+            assertEquals(
+                    1, warm.engine.cacheSample().sessionHits(), "turn 2 reuses the live state");
             assertTrue(
                     hit.getResult().getOutput().getText().contains("PELICAN"),
                     hit.getResult().getOutput().getText());
@@ -185,8 +185,7 @@ class CachedPromptIT {
     void treeIsConsultedAndBaseStaysCold() {
         JinferChatModel support = base.withCachedPrompt(SUPPORT, List.of());
         support.call(new Prompt(new UserMessage("Hello?")));
-        String stats = base.engine.promptStats();
-        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+        assertTrue(base.engine.cacheSample().blockHits() > 0);
     }
 
     @Test
@@ -238,8 +237,7 @@ class CachedPromptIT {
                 base2.withCachedPrompt(
                         List.of(new SystemMessage(common + "You handle SUPPORT tickets.")),
                         List.of());
-        String stats = base2.engine.promptStats();
-        assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+        assertTrue(base2.engine.cacheSample().blockHits() > 0);
         ChatResponse r = a2.call(new Prompt(new UserMessage("One word: ok?")));
         assertTrue(!r.getResult().getOutput().getText().isBlank());
         base2.close();

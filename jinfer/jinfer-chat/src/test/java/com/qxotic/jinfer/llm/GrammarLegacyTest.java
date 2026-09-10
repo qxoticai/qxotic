@@ -73,8 +73,6 @@ public final class GrammarLegacyTest {
         }
     }
 
-    static int failures;
-
     // ---- vocab mock: single-byte tokens (47 entries) ----
 
     static final class MockV implements Grammar.Vocab {
@@ -188,98 +186,15 @@ public final class GrammarLegacyTest {
     }
 
     static void check(String what, boolean ok) {
-        if (!ok) {
-            failures++;
-            System.err.println("FAIL: " + what);
-        } else System.out.println("ok: " + what);
-    }
-
-    @Test
-    void grammar() {
-        testParser();
-        testCursor();
-        testPrefixPin();
-        testBoundedRepetition();
-        testUnboundedRepetitionScales();
-        testTailPositionRefs();
-        testMaskCacheRepeats();
-        testExactAllowedSetAtDepth();
-        testRepetitionSemantics();
-        testMultiByteTokenInLoop();
-        testSchemaDocumentWalk();
-        testSchemaScalars();
-        testSchemaObjects();
-        testSchemaArrays();
-        testSchemaConstEnum();
-        testSchemaUnions();
-        testSchemaKeysAndEscapes();
-        testSchemaWhitespaceBound();
-        testSchemaAnyValue();
-        testSchemaPinnedLimitations();
-        testParserCornerCases();
-        testMaskBitBoundaries();
-        testEmptyByteTokens();
-        testStraddlingTokens();
-        testAmbiguousGrammars();
-        testTcoUnderNonTailFrames();
-        testCursorEdgeSemantics();
-        testBuiltinCacheKeys();
-        testGbnfDeterminism();
-        testPerformanceBounds();
-        testComplexityGuards();
-        testChoice();
-        testSpecCacheEviction();
-        testMaskCacheCapOverflow();
-        testEscapingUnitChecks();
-        testSchemaNodeShapes();
-        testParserEdgePins();
-        testConcurrentCursors();
-        testJsonDFA();
-        testGbnfCharClass();
-        testGbnfDot();
-        testGbnfAlternation();
-        testGbnfRepetition();
-        testGbnfGroup();
-        testGbnfRecursive();
-        testGbnfJsonParity();
-        testGbnfCache();
-        testGbnfEmpty();
-        testJsonGbnfCompiles();
-        testMultiByteTokens();
-        testJsonStringEscapes();
-        testNumberFormats();
-        testEnableDisable();
-        testDisabledCursor();
-        testAdvanceDeadState();
-        testRepetitionAfterCharDot();
-        testDfaStateCounts();
-        testFuzzRandomWalk();
-        testDeepNesting();
-        testHexEscapeInCharClass();
-        testCommentInString();
-        testEpsilonOnlyGrammar();
-        testResetRewalk();
-        testLastTokenEdgeCase();
-        testMaxDfaStatesGuard();
-        testZeroVocab();
-        testMultiByteMaskConsistency();
-        testEmptyCharClass();
-        testSpecDisabledEdgeCases();
-        testCachePerVocab();
-        testStringLiteralEscapes();
-        testStripCommentEdgeCases();
-
-        if (failures > 0) {
-            throw new AssertionError("GrammarTest: " + failures + " failures");
-        }
-        System.out.println("\nGrammarTest: 0 failures");
+        org.junit.jupiter.api.Assertions.assertTrue(ok, what);
     }
 
     // ========================================================================
     // parser-only tests
     // ========================================================================
 
-    static void testBoundedRepetition() {
+    @Test
+    void testBoundedRepetition() {
         // {m,n}: epsilon-reachable below min... (min 0), hard cutoff at max - the anti-stall
         // bound behind ws{0,8} (unbounded ws let a reluctant model spin forever)
         Grammar.Vocab v = new MockV();
@@ -297,7 +212,8 @@ public final class GrammarLegacyTest {
         check("rep{2}: two exactly", exact.exhausted());
     }
 
-    static void testUnboundedRepetitionScales() {
+    @Test
+    void testUnboundedRepetitionScales() {
         // E* / E+ must loop at O(1) stack depth (call-site tail loop, see compileRep). Pre-fix,
         // each char pushed a fresh return frame: stacks grew with the repetition length, states
         // never repeated (no mask-cache hits), masks went quadratic, and past CLOSURE_CAP the
@@ -336,8 +252,8 @@ public final class GrammarLegacyTest {
         check("nested reps accepts", nested.exhausted());
     }
 
-    static void testTailPositionRefs() {
-        System.out.println("-- tail-position refs (TCO) --");
+    @Test
+    void testTailPositionRefs() {
         MockV v = new MockV();
 
         // a named rule referenced in tail position (its continuation is the caller's END)
@@ -382,7 +298,8 @@ public final class GrammarLegacyTest {
         check("mutual tail recursion done", c.exhausted());
     }
 
-    static void testMaskCacheRepeats() {
+    @Test
+    void testMaskCacheRepeats() {
         // the fix's mechanism: a repetition's automaton state REPEATS, so the per-Spec mask
         // cache stays bounded no matter how long the loop runs (pre-fix every prefix length
         // was a fresh state: the cache grew linearly and never hit)
@@ -399,7 +316,8 @@ public final class GrammarLegacyTest {
                 s.maskCache.size() < 20);
     }
 
-    static void testExactAllowedSetAtDepth() {
+    @Test
+    void testExactAllowedSetAtDepth() {
         // CLOSURE_CAP truncation guard: pre-fix, past 16384 frames the closure silently dropped
         // valid stacks (wrong masks). Exact-set equality also catches phantom tokens.
         MockV v = new MockV();
@@ -411,8 +329,8 @@ public final class GrammarLegacyTest {
         check("nothing valid after end", !anyValid(cur, v));
     }
 
-    static void testRepetitionSemantics() {
-        System.out.println("-- repetition semantics --");
+    @Test
+    void testRepetitionSemantics() {
         MockV v = new MockV();
 
         Grammar.Cursor c = Grammar.of("root ::= [x]*", v).cursor();
@@ -464,7 +382,8 @@ public final class GrammarLegacyTest {
         check("two stars done", c.exhausted());
     }
 
-    static void testMultiByteTokenInLoop() {
+    @Test
+    void testMultiByteTokenInLoop() {
         // a star whose alternative is a MULTI-BYTE token must loop with the same bounded state
         MockV2 v = new MockV2();
         Grammar.Cursor c = Grammar.of("root ::= (\"a\" | \"\\\"key\\\"\")* \"}\"", v).cursor();
@@ -478,7 +397,8 @@ public final class GrammarLegacyTest {
         check("multi-byte loop done", c.exhausted());
     }
 
-    static void testSchemaDocumentWalk() {
+    @Test
+    void testSchemaDocumentWalk() {
         // the production path: a nested JSON-Schema grammar consuming a whole document, then
         // rejecting a schema violation at the exact position
         Map<String, Object> schema =
@@ -542,8 +462,8 @@ public final class GrammarLegacyTest {
         return !acceptsDoc(s, v, doc);
     }
 
-    static void testSchemaScalars() {
-        System.out.println("-- schema scalars --");
+    @Test
+    void testSchemaScalars() {
         MockV v = new MockV();
 
         Grammar.Spec i = Grammar.fromSchema(Map.of("type", "integer"), v);
@@ -577,8 +497,8 @@ public final class GrammarLegacyTest {
         check("string no int", rejectsDoc(s, v, "1"));
     }
 
-    static void testSchemaObjects() {
-        System.out.println("-- schema objects --");
+    @Test
+    void testSchemaObjects() {
         MockV v = new MockV();
 
         // required keys first, in the required list's order, then the optional ones as an
@@ -639,8 +559,8 @@ public final class GrammarLegacyTest {
         check("obj closed rejects props", rejectsDoc(closed, v, "{\"a\":1}"));
     }
 
-    static void testSchemaArrays() {
-        System.out.println("-- schema arrays --");
+    @Test
+    void testSchemaArrays() {
         MockV v = new MockV();
 
         Grammar.Spec ints =
@@ -668,8 +588,8 @@ public final class GrammarLegacyTest {
         check("nested arrays reject flat", rejectsDoc(nested, v, "[1]"));
     }
 
-    static void testSchemaConstEnum() {
-        System.out.println("-- schema const/enum --");
+    @Test
+    void testSchemaConstEnum() {
         MockV v = new MockV();
 
         check(
@@ -705,8 +625,8 @@ public final class GrammarLegacyTest {
         check("enum empty = any", acceptsDoc(emptyEnum, v, "{\"a\":[1]}"));
     }
 
-    static void testSchemaUnions() {
-        System.out.println("-- schema unions --");
+    @Test
+    void testSchemaUnions() {
         MockV v = new MockV();
 
         for (String kw : new String[] {"anyOf", "oneOf"}) {
@@ -729,8 +649,8 @@ public final class GrammarLegacyTest {
         check("anyOf empty = any", acceptsDoc(emptyUnion, v, "[1]"));
     }
 
-    static void testSchemaKeysAndEscapes() {
-        System.out.println("-- schema keys/escapes --");
+    @Test
+    void testSchemaKeysAndEscapes() {
         MockV v = new MockV();
 
         // property names with spaces, quotes and backslashes survive literal escaping
@@ -766,8 +686,8 @@ public final class GrammarLegacyTest {
         check("const with newline", acceptsDoc(esc, v, "\"a\\nb\""));
     }
 
-    static void testSchemaWhitespaceBound() {
-        System.out.println("-- schema ws bound --");
+    @Test
+    void testSchemaWhitespaceBound() {
         MockV v = new MockV();
         Grammar.Spec s =
                 Grammar.fromSchema(
@@ -784,8 +704,8 @@ public final class GrammarLegacyTest {
         check("ws beyond 8 rejected", rejectsDoc(s, v, "{\"a\":" + "         " + "1}"));
     }
 
-    static void testSchemaAnyValue() {
-        System.out.println("-- schema any-value fallbacks --");
+    @Test
+    void testSchemaAnyValue() {
         MockV v = new MockV();
 
         // no type at all
@@ -818,8 +738,8 @@ public final class GrammarLegacyTest {
         check("untyped property scalar", acceptsDoc(deep, v, "{\"a\":2}"));
     }
 
-    static void testSchemaPinnedLimitations() {
-        System.out.println("-- schema pinned limitations (documented, not bugs) --");
+    @Test
+    void testSchemaPinnedLimitations() {
         MockV v = new MockV();
 
         // minItems/maxItems are HONOURED: exactly two items here, so [1] and [1,2,3,4] are out
@@ -887,8 +807,8 @@ public final class GrammarLegacyTest {
         check("null schema = any", acceptsDoc(Grammar.fromSchema(null, v), v, "[1,{\"a\":2}]"));
     }
 
-    static void testParserCornerCases() {
-        System.out.println("-- parser corner cases --");
+    @Test
+    void testParserCornerCases() {
         MockV v = new MockV();
 
         // llama.cpp-style multi-line rules: continuation lines join the rule above
@@ -1001,8 +921,8 @@ public final class GrammarLegacyTest {
         check("rep last atom loops", allows(c, v, "b"));
     }
 
-    static void testMaskBitBoundaries() {
-        System.out.println("-- mask bit boundaries --");
+    @Test
+    void testMaskBitBoundaries() {
         MockV64 v = new MockV64();
         // grammar needs "a" (token 64, first bit of the second long) then "b" (token 65)
         Grammar.Cursor c = Grammar.of("root ::= \"a\" \"b\"", v).cursor();
@@ -1018,8 +938,8 @@ public final class GrammarLegacyTest {
         check("boundary bits all offered", allowedSet(c, v).equals(Set.of("q", "a", "b")));
     }
 
-    static void testEmptyByteTokens() {
-        System.out.println("-- empty-byte (special) tokens --");
+    @Test
+    void testEmptyByteTokens() {
         MockVE v = new MockVE();
         Grammar.Cursor c = Grammar.of("root ::= \"a\" \"b\"", v).cursor();
         // the special token is CONTROL, not content: unsamplable mid-grammar...
@@ -1034,8 +954,8 @@ public final class GrammarLegacyTest {
         check("special advance is a no-op", c.exhausted());
     }
 
-    static void testStraddlingTokens() {
-        System.out.println("-- straddling tokens --");
+    @Test
+    void testStraddlingTokens() {
         MockVS v = new MockVS();
 
         // one token spanning THREE separate literals
@@ -1053,8 +973,8 @@ public final class GrammarLegacyTest {
         check("full straddle done", c.exhausted());
     }
 
-    static void testAmbiguousGrammars() {
-        System.out.println("-- ambiguous grammars --");
+    @Test
+    void testAmbiguousGrammars() {
         MockV v = new MockV();
 
         // shared prefix: after "a" BOTH alternatives live
@@ -1079,8 +999,8 @@ public final class GrammarLegacyTest {
         check("diamond recursion done", c.exhausted());
     }
 
-    static void testTcoUnderNonTailFrames() {
-        System.out.println("-- TCO under non-tail frames --");
+    @Test
+    void testTcoUnderNonTailFrames() {
         MockV v = new MockV();
 
         // tail is a tail-ref INSIDE mid, and mid itself is called NON-tail (frames below):
@@ -1107,8 +1027,8 @@ public final class GrammarLegacyTest {
         check("looping tails done", c.exhausted());
     }
 
-    static void testCursorEdgeSemantics() {
-        System.out.println("-- cursor edge semantics --");
+    @Test
+    void testCursorEdgeSemantics() {
         MockV v = new MockV();
 
         // a dead cursor stays dead
@@ -1153,8 +1073,8 @@ public final class GrammarLegacyTest {
         check("disabled advance no-op", !off.exhausted());
     }
 
-    static void testBuiltinCacheKeys() {
-        System.out.println("-- builtin cache keys --");
+    @Test
+    void testBuiltinCacheKeys() {
         MockV v = new MockV();
         // a user grammar string that collides with a builtin's RESERVED name builds the user's
         // text ("__json__" is not valid GBNF: no ::=, so it is refused), never the builtin
@@ -1173,8 +1093,8 @@ public final class GrammarLegacyTest {
                 Grammar.of("root ::= \"a\"", v) == Grammar.of("root ::= \"a\"", v));
     }
 
-    static void testGbnfDeterminism() {
-        System.out.println("-- schema determinism --");
+    @Test
+    void testGbnfDeterminism() {
         // same schema (LinkedHashMap order) -> identical GBNF, byte for byte
         var schema =
                 linked(
@@ -1197,8 +1117,8 @@ public final class GrammarLegacyTest {
         check("fromSchema cached", Grammar.fromSchema(schema, v) == Grammar.fromSchema(schema, v));
     }
 
-    static void testPerformanceBounds() {
-        System.out.println("-- performance bounds --");
+    @Test
+    void testPerformanceBounds() {
         MockV v = new MockV();
 
         // 1M single-char advances through a repetition: per-step cost must stay O(1)
@@ -1250,8 +1170,8 @@ public final class GrammarLegacyTest {
         check("10k mask hits < 1s (" + hitMs + "ms)", hitMs < 1_000);
     }
 
-    static void testComplexityGuards() {
-        System.out.println("-- complexity guards (no degenerate blowups) --");
+    @Test
+    void testComplexityGuards() {
         MockV v = new MockV();
 
         // SUSTAINED AMBIGUITY: every position admits several parses. Stack dedup must keep the
@@ -1377,8 +1297,8 @@ public final class GrammarLegacyTest {
         check("5k-vocab doc masks < 10s (" + wide5kMs + "ms)", wide5kMs < 10_000);
     }
 
-    static void testChoice() {
-        System.out.println("-- choice --");
+    @Test
+    void testChoice() {
         MockV v = new MockV();
 
         Grammar.Spec yes = Grammar.choice(v, "yes", "no");
@@ -1410,8 +1330,8 @@ public final class GrammarLegacyTest {
         check("choice cached", Grammar.choice(v, "yes") == Grammar.choice(v, "yes"));
     }
 
-    static void testSpecCacheEviction() {
-        System.out.println("-- spec cache eviction --");
+    @Test
+    void testSpecCacheEviction() {
         MockV v = new MockV();
         // the per-vocab spec cache is an LRU of 32: the eldest entry is evicted
         String first = "root ::= " + "\"x\"".repeat(1);
@@ -1422,8 +1342,8 @@ public final class GrammarLegacyTest {
         check("rebuilt now cached", Grammar.of(first, v) == rebuilt);
     }
 
-    static void testMaskCacheCapOverflow() {
-        System.out.println("-- mask cache cap overflow --");
+    @Test
+    void testMaskCacheCapOverflow() {
         MockV v = new MockV();
         // > MASK_CACHE_CAP distinct states: the cache stops growing but matching stays correct
         Grammar.Spec chain = Grammar.of("root ::= " + "\"a\" ".repeat(9_000), v);
@@ -1438,8 +1358,8 @@ public final class GrammarLegacyTest {
         check("correct past cap", c.exhausted());
     }
 
-    static void testEscapingUnitChecks() {
-        System.out.println("-- escaping unit checks --");
+    @Test
+    void testEscapingUnitChecks() {
         check("gbnfLiteral quote", Grammar.gbnfLiteral("a\"b").equals("\"a\\\"b\""));
         check("gbnfLiteral backslash", Grammar.gbnfLiteral("a\\b").equals("\"a\\\\b\""));
         check("gbnfLiteral newline", Grammar.gbnfLiteral("a\nb").equals("\"a\\nb\""));
@@ -1468,8 +1388,8 @@ public final class GrammarLegacyTest {
                         .equals("\"weird\""));
     }
 
-    static void testSchemaNodeShapes() {
-        System.out.println("-- schema node shapes --");
+    @Test
+    void testSchemaNodeShapes() {
         MockV v = new MockV();
 
         // properties that is not a Map: unusable = nothing DECLARED, so the object is free-form,
@@ -1498,8 +1418,8 @@ public final class GrammarLegacyTest {
                 Grammar.fromSchema(Map.of("const", Double.NaN), v).isValid());
     }
 
-    static void testParserEdgePins() {
-        System.out.println("-- parser edge pins --");
+    @Test
+    void testParserEdgePins() {
         MockV v = new MockV();
 
         // escaped backslash as the last class member
@@ -1542,8 +1462,8 @@ public final class GrammarLegacyTest {
         check("{2,} above min loops", allows(two, v, "x") && allows(two, v, "b"));
     }
 
-    static void testConcurrentCursors() {
-        System.out.println("-- concurrent cursors --");
+    @Test
+    void testConcurrentCursors() {
         // one Spec, many threads: the shared mask cache and per-cursor state are thread-safe
         MockV v = new MockV();
         Grammar.Spec json = Grammar.json(v);
@@ -1582,7 +1502,8 @@ public final class GrammarLegacyTest {
         check("concurrent cursors clean", !failed[0]);
     }
 
-    static void testPrefixPin() {
+    @Test
+    void testPrefixPin() {
         // prefix-pin: "a" ("bc" | "de") "{" - constrains the pin, exhausts, then releases
         Grammar.Vocab v = new MockV();
         Grammar.Spec spec = Grammar.of("root ::= \"a\" (\"bc\" | \"dm\") \"{\"", v);
@@ -1607,8 +1528,8 @@ public final class GrammarLegacyTest {
         return new String(Grammar.literalBytes(source), StandardCharsets.UTF_8);
     }
 
-    static void testParser() {
-        System.out.println("-- parser --");
+    @Test
+    void testParser() {
 
         check("literal \\n", lit("a\\nb").equals("a\nb"));
         check("literal \\t", lit("a\\tb").equals("a\tb"));
@@ -1629,8 +1550,8 @@ public final class GrammarLegacyTest {
     // cursor/mask basics
     // ========================================================================
 
-    static void testCursor() {
-        System.out.println("-- cursor --");
+    @Test
+    void testCursor() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"hello\"", v);
@@ -1661,8 +1582,8 @@ public final class GrammarLegacyTest {
     // json DFA walks
     // ========================================================================
 
-    static void testJsonDFA() {
-        System.out.println("-- json dfa --");
+    @Test
+    void testJsonDFA() {
         MockV v = new MockV();
 
         Grammar.Spec json = Grammar.json(v);
@@ -1724,8 +1645,8 @@ public final class GrammarLegacyTest {
     // GBNF char class
     // ========================================================================
 
-    static void testGbnfCharClass() {
-        System.out.println("-- gbnf char-class --");
+    @Test
+    void testGbnfCharClass() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= [a-z]", v);
@@ -1767,8 +1688,8 @@ public final class GrammarLegacyTest {
     // GBNF dot wildcard
     // ========================================================================
 
-    static void testGbnfDot() {
-        System.out.println("-- gbnf dot --");
+    @Test
+    void testGbnfDot() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= .", v);
@@ -1792,8 +1713,8 @@ public final class GrammarLegacyTest {
     // GBNF alternation
     // ========================================================================
 
-    static void testGbnfAlternation() {
-        System.out.println("-- gbnf alternation --");
+    @Test
+    void testGbnfAlternation() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"a\" | \"b\" | \"c\"", v);
@@ -1822,8 +1743,8 @@ public final class GrammarLegacyTest {
     // GBNF repetition
     // ========================================================================
 
-    static void testGbnfRepetition() {
-        System.out.println("-- gbnf repetition --");
+    @Test
+    void testGbnfRepetition() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"a\"*", v);
@@ -1865,8 +1786,8 @@ public final class GrammarLegacyTest {
     // GBNF groups
     // ========================================================================
 
-    static void testGbnfGroup() {
-        System.out.println("-- gbnf groups --");
+    @Test
+    void testGbnfGroup() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"a\" (\"b\" (\"c\" | \"d\"))", v);
@@ -1894,8 +1815,8 @@ public final class GrammarLegacyTest {
     // GBNF recursion
     // ========================================================================
 
-    static void testGbnfRecursive() {
-        System.out.println("-- gbnf recursive --");
+    @Test
+    void testGbnfRecursive() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"a\" root | \"b\"", v);
@@ -1941,8 +1862,8 @@ public final class GrammarLegacyTest {
     // GBNF JSON parity
     // ========================================================================
 
-    static void testGbnfJsonParity() {
-        System.out.println("-- gbnf json parity --");
+    @Test
+    void testGbnfJsonParity() {
         MockV v = new MockV();
 
         Grammar.Spec gbnfJson = Grammar.of(Grammar.JSON_GRAMMAR, v);
@@ -1973,8 +1894,8 @@ public final class GrammarLegacyTest {
     // cache
     // ========================================================================
 
-    static void testGbnfCache() {
-        System.out.println("-- gbnf cache --");
+    @Test
+    void testGbnfCache() {
         MockV v = new MockV();
 
         Grammar.Spec a1 = Grammar.of("root ::= \"hello\"", v);
@@ -1993,8 +1914,8 @@ public final class GrammarLegacyTest {
     // empty grammar
     // ========================================================================
 
-    static void testGbnfEmpty() {
-        System.out.println("-- gbnf empty/edge --");
+    @Test
+    void testGbnfEmpty() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"\"", v);
@@ -2009,8 +1930,8 @@ public final class GrammarLegacyTest {
         check("ws reject 'a'", rejects(c, v, "a"));
     }
 
-    static void testJsonGbnfCompiles() {
-        System.out.println("-- json gbnf compiles --");
+    @Test
+    void testJsonGbnfCompiles() {
         MockV v = new MockV();
         Grammar.Spec s = Grammar.of(Grammar.JSON_GRAMMAR, v);
         check("json-grammar compiles", s.isValid());
@@ -2020,8 +1941,8 @@ public final class GrammarLegacyTest {
     // MULTI-BYTE TOKEN TESTS (MockV2 - realistic tokenizer simulation)
     // ========================================================================
 
-    static void testMultiByteTokens() {
-        System.out.println("-- multi-byte tokens --");
+    @Test
+    void testMultiByteTokens() {
         MockV2 v = new MockV2();
 
         Grammar.Spec json = Grammar.json(v);
@@ -2102,8 +2023,8 @@ public final class GrammarLegacyTest {
     // JSON string escape sequences
     // ========================================================================
 
-    static void testJsonStringEscapes() {
-        System.out.println("-- json string escapes --");
+    @Test
+    void testJsonStringEscapes() {
         MockV v = new MockV();
 
         // The hardcoded DFA handles string escapes via states 5→6→5/7
@@ -2170,8 +2091,8 @@ public final class GrammarLegacyTest {
     // number format tests
     // ========================================================================
 
-    static void testNumberFormats() {
-        System.out.println("-- number formats --");
+    @Test
+    void testNumberFormats() {
         MockV v = new MockV();
 
         Grammar.Spec json = Grammar.json(v);
@@ -2244,8 +2165,8 @@ public final class GrammarLegacyTest {
     // enable / disable
     // ========================================================================
 
-    static void testEnableDisable() {
-        System.out.println("-- enable/disable --");
+    @Test
+    void testEnableDisable() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"a\"", v);
@@ -2273,8 +2194,8 @@ public final class GrammarLegacyTest {
         check("disabled leaves logits unchanged", allUnmodified);
     }
 
-    static void testDisabledCursor() {
-        System.out.println("-- disabled cursor --");
+    @Test
+    void testDisabledCursor() {
         MockV v = new MockV();
         Grammar.Spec disabled = Grammar.Spec.DISABLED;
         Grammar.Cursor dc = disabled.cursor();
@@ -2301,8 +2222,8 @@ public final class GrammarLegacyTest {
     // advanWith → dead state behavior
     // ========================================================================
 
-    static void testAdvanceDeadState() {
-        System.out.println("-- advance dead state --");
+    @Test
+    void testAdvanceDeadState() {
         MockV v = new MockV();
 
         // simple literal: only 'a' is valid, 'b' leads to dead state
@@ -2344,8 +2265,8 @@ public final class GrammarLegacyTest {
     // repetition after char classes and dot (parser fix verification)
     // ========================================================================
 
-    static void testRepetitionAfterCharDot() {
-        System.out.println("-- repetition after char/dot --");
+    @Test
+    void testRepetitionAfterCharDot() {
         MockV v = new MockV();
 
         // char class star: [0-9]*
@@ -2401,8 +2322,8 @@ public final class GrammarLegacyTest {
     // DFA state count sanity checks
     // ========================================================================
 
-    static void testDfaStateCounts() {
-        System.out.println("-- compile sanity --");
+    @Test
+    void testDfaStateCounts() {
         MockV v = new MockV();
 
         // The engine is a pushdown matcher (no DFA table); assert each grammar compiles and
@@ -2437,8 +2358,8 @@ public final class GrammarLegacyTest {
     // fuzzy random walk
     // ========================================================================
 
-    static void testFuzzRandomWalk() {
-        System.out.println("-- fuzz random walk --");
+    @Test
+    void testFuzzRandomWalk() {
         RandomGenerator rng = RandomGeneratorFactory.getDefault().create(42);
         MockV2 v = new MockV2();
 
@@ -2467,8 +2388,8 @@ public final class GrammarLegacyTest {
     // deep nesting stress (JSON strings mainly)
     // ========================================================================
 
-    static void testDeepNesting() {
-        System.out.println("-- deep nesting --");
+    @Test
+    void testDeepNesting() {
         MockV v = new MockV();
 
         // 50 levels of nested arrays: [[[[ ... ]]]]
@@ -2496,8 +2417,8 @@ public final class GrammarLegacyTest {
     // hex escapes in char classes (\\xNN)
     // ========================================================================
 
-    static void testHexEscapeInCharClass() {
-        System.out.println("-- hex escape in char class --");
+    @Test
+    void testHexEscapeInCharClass() {
         MockV v = new MockV();
 
         // [\x41] should match 'A' (0x41 = 65 = 'A')
@@ -2539,8 +2460,8 @@ public final class GrammarLegacyTest {
     // # comment inside string should not cut the string
     // ========================================================================
 
-    static void testCommentInString() {
-        System.out.println("-- comment in string --");
+    @Test
+    void testCommentInString() {
 
         // The # inside a GBNF string literal should be part of the string,
         // not a comment start. E.g., root ::= "!" should match '!'
@@ -2569,8 +2490,8 @@ public final class GrammarLegacyTest {
     // epsilon-only grammar (always accepts)
     // ========================================================================
 
-    static void testEpsilonOnlyGrammar() {
-        System.out.println("-- epsilon-only --");
+    @Test
+    void testEpsilonOnlyGrammar() {
         MockV v = new MockV();
 
         // Empty body: root ::= ""
@@ -2596,8 +2517,8 @@ public final class GrammarLegacyTest {
     // reset + rewalk must produce identical results
     // ========================================================================
 
-    static void testResetRewalk() {
-        System.out.println("-- reset rewalk --");
+    @Test
+    void testResetRewalk() {
         MockV v = new MockV();
 
         Grammar.Spec s = Grammar.of("root ::= \"a\" \"b\" \"c\"", v);
@@ -2628,8 +2549,8 @@ public final class GrammarLegacyTest {
     // last token index edge case
     // ========================================================================
 
-    static void testLastTokenEdgeCase() {
-        System.out.println("-- last token edge --");
+    @Test
+    void testLastTokenEdgeCase() {
         MockV v = new MockV();
         int last = v.size() - 1; // token "!" at highest index
 
@@ -2653,8 +2574,8 @@ public final class GrammarLegacyTest {
     // MAX_DFA_STATES overflow guard
     // ========================================================================
 
-    static void testMaxDfaStatesGuard() {
-        System.out.println("-- max dfa states --");
+    @Test
+    void testMaxDfaStatesGuard() {
         MockV v = new MockV();
 
         // Build a grammar with many rules that generates many DFA states
@@ -2677,8 +2598,8 @@ public final class GrammarLegacyTest {
     // zero-vocab edge case
     // ========================================================================
 
-    static void testZeroVocab() {
-        System.out.println("-- zero vocab --");
+    @Test
+    void testZeroVocab() {
         Grammar.Vocab zv =
                 new Grammar.Vocab() {
                     @Override
@@ -2708,8 +2629,8 @@ public final class GrammarLegacyTest {
     // multi-byte token mask consistency
     // ========================================================================
 
-    static void testMultiByteMaskConsistency() {
-        System.out.println("-- multi-byte mask consistency --");
+    @Test
+    void testMultiByteMaskConsistency() {
         MockV2 v2 = new MockV2();
         MockV v1 = new MockV();
 
@@ -2732,8 +2653,8 @@ public final class GrammarLegacyTest {
     // empty char class edge cases
     // ========================================================================
 
-    static void testEmptyCharClass() {
-        System.out.println("-- empty char class --");
+    @Test
+    void testEmptyCharClass() {
         MockV v = new MockV();
 
         // [^] - negated empty: matches any byte (since negated nothing == everything)
@@ -2760,8 +2681,8 @@ public final class GrammarLegacyTest {
     // Spec.DISABLED edge cases
     // ========================================================================
 
-    static void testSpecDisabledEdgeCases() {
-        System.out.println("-- disabled edge cases --");
+    @Test
+    void testSpecDisabledEdgeCases() {
         Grammar.Spec d = Grammar.Spec.DISABLED;
 
         check("disabled cursor non-null", d.cursor() != null);
@@ -2795,8 +2716,8 @@ public final class GrammarLegacyTest {
     // cache per-vocab isolation
     // ========================================================================
 
-    static void testCachePerVocab() {
-        System.out.println("-- cache per vocab --");
+    @Test
+    void testCachePerVocab() {
         MockV v1 = new MockV();
         MockV2 v2 = new MockV2();
 
@@ -2823,8 +2744,8 @@ public final class GrammarLegacyTest {
     // string literal escape edge cases
     // ========================================================================
 
-    static void testStringLiteralEscapes() {
-        System.out.println("-- string literal escapes --");
+    @Test
+    void testStringLiteralEscapes() {
 
         // incomplete \x (llama.cpp: "expecting 2 hex chars") is an error, not a silent 'x'
         for (String bad : new String[] {"\\x", "\\x5"}) {
@@ -2857,8 +2778,8 @@ public final class GrammarLegacyTest {
     // stripComment edge cases
     // ========================================================================
 
-    static void testStripCommentEdgeCases() {
-        System.out.println("-- stripComment edge --");
+    @Test
+    void testStripCommentEdgeCases() {
         MockV v = new MockV();
 
         // # inside string is NOT a comment

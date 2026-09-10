@@ -17,12 +17,14 @@ import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 import jdk.jfr.consumer.RecordingStream;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * Telemetry that drifts from the API it describes is worse than none, so these assert the event
  * against the same run's own numbers rather than against constants.
  */
+@Tag("integration")
 class TelemetryEmissionTest {
 
     private static final String PROMPT = "Name one colour.";

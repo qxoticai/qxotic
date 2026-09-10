@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.Test;
  * reports no reply, a follow-up turn rides the session cache, and a defined prompt is served from
  * blocks. Skipped when the model cache has no LFM2.5-350M (see {@link TestModels}).
  */
+@Tag("integration")
 final class ChatEngineModelTest {
 
     private static final String REF = "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0";

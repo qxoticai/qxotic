@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.audio.tts.TextToSpeechMessage;
 import org.springframework.ai.audio.tts.TextToSpeechOptions;
@@ -296,6 +297,7 @@ final class JinferSpeechModelTest {
     }
 
     @Test
+    @Tag("integration")
     void closeIsIdempotentEvenWhenItOwnsTheArena() {
         // no arena given, so the adapter creates and OWNS one. Arena.close() is one-shot, so
         // without the closed flag the second call throws - and the container is not the only caller
@@ -310,6 +312,7 @@ final class JinferSpeechModelTest {
     }
 
     @Test
+    @Tag("integration")
     void aCallersArenaOutlivesTheAdapter() throws Exception {
         try (Arena weights = Arenas.newCrossThread()) {
             JinferSpeechModel.builder()
@@ -418,6 +421,7 @@ final class JinferSpeechModelTest {
     // ── the real thing ────────────────────────────────────────────────────
 
     @Test
+    @Tag("integration")
     void loadsARealModelThroughArchitectureDispatch() {
         Path gguf =
                 TestModels.require(

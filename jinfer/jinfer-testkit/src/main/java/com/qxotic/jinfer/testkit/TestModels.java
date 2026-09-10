@@ -26,6 +26,10 @@ import org.opentest4j.TestAbortedException;
  * its colon segment: {@code -Djinfer.testModel.stories15M_MOE:Q8_0=...}). The knob is derived, not
  * per-suite: nothing to invent, nothing to document per test. A stale override FAILS loudly - an
  * explicit pointer that resolves to nothing is a tester error, never a silent skip.
+ *
+ * <p>CI uses {@code -Djinfer.test.noModels=true} for the model-free suite and {@code
+ * -Djinfer.test.requireModels=true} for the fixture-backed gate, where missing models fail instead
+ * of skipping.
  */
 public final class TestModels {
 
@@ -42,20 +46,25 @@ public final class TestModels {
             String ref, Function<String, Optional<Path>> store, Function<String, String> props) {
         return resolve(ref, store, props)
                 .orElseThrow(
-                        () ->
-                                new TestAbortedException(
-                                        "model not cached: "
-                                                + ref
-                                                + " - fetch it with scripts/download-models.sh"
-                                                + " (adding a line to scripts/models.txt if it's"
-                                                + " missing) into ../models next to the checkout,"
-                                                + " with any HuggingFace client into the hub"
-                                                + " cache, or point -Djinfer.models /"
-                                                + " JINFER_MODELS at a cache that has it"));
+                        () -> {
+                            String message =
+                                    "model not cached: "
+                                            + ref
+                                            + " - fetch it with scripts/download-models.sh"
+                                            + " (adding a line to scripts/models.txt if"
+                                            + " it's missing) into ../models next to the"
+                                            + " checkout, with any HuggingFace client into"
+                                            + " the hub cache, or point -Djinfer.models /"
+                                            + " JINFER_MODELS at a cache that has it";
+                            if (Boolean.parseBoolean(props.apply("jinfer.test.requireModels")))
+                                throw new AssertionError(message);
+                            return new TestAbortedException(message);
+                        });
     }
 
     /** The cached path for {@code ref}, or empty - the non-aborting form, for presence probes. */
     public static Optional<Path> find(String ref) {
+        if (Boolean.getBoolean("jinfer.test.requireModels")) return Optional.of(require(ref));
         return resolve(ref);
     }
 
@@ -99,6 +108,8 @@ public final class TestModels {
     // unit tests run in-memory, without mutating process-global state.
     static Optional<Path> resolve(
             String ref, Function<String, Optional<Path>> store, Function<String, String> props) {
+        if (Boolean.parseBoolean(props.apply("jinfer.test.noModels")))
+            throw new AssertionError("model lookup in the model-free suite: " + ref);
         requirePinned(ref);
         String name = ref.substring(ref.lastIndexOf('/') + 1);
         String override = props.apply(OVERRIDE_PREFIX + name);

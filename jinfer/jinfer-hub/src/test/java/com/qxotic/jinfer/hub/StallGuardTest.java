@@ -10,6 +10,8 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,18 +29,17 @@ import org.junit.jupiter.api.io.TempDir;
 class StallGuardTest {
 
     private static HttpServer server;
-    private static volatile boolean stop;
+    private static ExecutorService executor;
+    private static CountDownLatch stop;
 
     @BeforeAll
     static void start() throws IOException {
+        stop = new CountDownLatch(1);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.setExecutor(
+        executor =
                 Executors.newCachedThreadPool(
-                        r -> {
-                            Thread t = new Thread(r, "stall-test-server");
-                            t.setDaemon(true);
-                            return t;
-                        }));
+                        Thread.ofPlatform().name("stall-test-server-", 0).daemon(true).factory());
+        server.setExecutor(executor);
         server.createContext(
                 "/stall.bin",
                 exchange -> {
@@ -46,12 +47,10 @@ class StallGuardTest {
                     try (OutputStream out = exchange.getResponseBody()) {
                         out.write(new byte[1000]);
                         out.flush();
-                        while (!stop) { // never send the rest
-                            try {
-                                Thread.sleep(100);
-                            } catch (InterruptedException e) {
-                                return;
-                            }
+                        try {
+                            stop.await(); // keep the response open without sending the rest
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
                         }
                     }
                 });
@@ -60,13 +59,15 @@ class StallGuardTest {
 
     @AfterAll
     static void shutdown() {
-        stop = true;
+        stop.countDown();
         server.stop(0);
+        executor.shutdownNow();
     }
 
     @Test
-    void aSilentServerIsAbandonedInSecondsNotMinutes(@TempDir Path dir) {
-        System.setProperty("jinfer.downloadStallSeconds", "1");
+    void aSilentServerIsAbandonedInSecondsNotMinutes(@TempDir Path dir)
+            throws InterruptedException {
+        String previous = System.setProperty("jinfer.downloadStallSeconds", "1");
         try {
             String url = "http://127.0.0.1" + ":" + server.getAddress().getPort() + "/stall.bin";
             Path dest = dir.resolve("stall.bin");
@@ -82,10 +83,11 @@ class StallGuardTest {
             // watched, and the next transfer starts a fresh one
             long deadline = System.nanoTime() + 5_000_000_000L;
             while (helperAlive("jinfer-stall-guard") && System.nanoTime() < deadline)
-                Thread.onSpinWait();
+                Thread.sleep(10);
             assertTrue(!helperAlive("jinfer-stall-guard"), "the stall guard outlived its work");
         } finally {
-            System.clearProperty("jinfer.downloadStallSeconds");
+            if (previous == null) System.clearProperty("jinfer.downloadStallSeconds");
+            else System.setProperty("jinfer.downloadStallSeconds", previous);
         }
     }
 

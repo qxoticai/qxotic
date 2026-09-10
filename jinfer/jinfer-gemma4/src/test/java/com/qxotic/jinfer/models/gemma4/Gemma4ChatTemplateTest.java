@@ -38,9 +38,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("integration")
 final class Gemma4ChatTemplateTest {
+    private static Tokenizer tokenizer;
 
     @Test
     void imageAndAudioStayStructuralAndOrdered() throws Exception {
@@ -325,11 +329,16 @@ final class Gemma4ChatTemplateTest {
         return out.build().toArray();
     }
 
-    private static Tokenizer tokenizer() throws Exception {
+    private static Tokenizer tokenizer() {
+        return tokenizer;
+    }
+
+    @BeforeAll
+    static void loadTokenizer() throws Exception {
         Path path = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0");
         try (FileChannel file = FileChannel.open(path, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(file, path.toString());
-            return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+            tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         }
     }
 

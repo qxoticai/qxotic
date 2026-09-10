@@ -22,6 +22,10 @@
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
     <!-- The MediaProjector contract uses Jinfer and Jota types directly. -->
     <dependency>
       <groupId>com.qxotic</groupId>

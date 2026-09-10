@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.llm;
 
+import static com.qxotic.jinfer.llm.GrammarMembership.*;
 import static com.qxotic.jinfer.llm.TestLogits.*;
 
 import com.qxotic.jota.memory.MemoryView;
@@ -13,6 +14,8 @@ import java.util.Map;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Comprehensive, dependency-free tests for the pushdown grammar engine ({@link Grammar}).
@@ -28,22 +31,7 @@ import org.junit.jupiter.api.Test;
  */
 public final class GrammarSpecTest {
 
-    static int failures, checks;
-
     // ---- mock vocabs -------------------------------------------------------
-
-    /** 256 single-byte tokens (id == byte) + an EOS token (id 256, empty bytes). */
-    static final class ByteVocab implements Grammar.Vocab {
-        @Override
-        public int size() {
-            return 257;
-        }
-
-        @Override
-        public byte[] bytes(int t) {
-            return t == 256 ? new byte[0] : new byte[] {(byte) t};
-        }
-    }
 
     /** A tokenizer-like vocab whose tokens are multi-byte JSON pieces, plus EOS. */
     static final class MultiVocab implements Grammar.Vocab {
@@ -62,59 +50,6 @@ public final class GrammarSpecTest {
         public byte[] bytes(int t) {
             return t == W.length ? new byte[0] : W[t].getBytes(StandardCharsets.UTF_8);
         }
-    }
-
-    static final ByteVocab BV = new ByteVocab();
-
-    // ---- membership probe (the oracle) -------------------------------------
-
-    static int eosId(Grammar.Vocab v) {
-        for (int i = 0; i < v.size(); i++) if (v.bytes(i).length == 0) return i;
-        return -1;
-    }
-
-    /**
-     * {rejectAt, acceptFlag}: rejectAt = index of first disallowed byte (-1 if none); acceptFlag =
-     * 1 if EOS is permitted after consuming all bytes (i.e. the string is a complete sentence).
-     */
-    static int[] probe(Grammar.Spec spec, Grammar.Vocab v, byte[] bytes) {
-        Grammar.Cursor c = spec.cursor();
-        MemoryView<?> logits = view(v.size());
-        int eos = eosId(v);
-        for (int i = 0; i < bytes.length; i++) {
-            mask(c, logits, v.size());
-            int b = bytes[i] & 0xFF;
-            if (!allowed(logits, b)) return new int[] {i, 0};
-            c.advanceWith(b);
-        }
-        mask(c, logits, v.size());
-        return new int[] {-1, allowed(logits, eos) ? 1 : 0};
-    }
-
-    static void mask(Grammar.Cursor c, MemoryView<?> logits, int n) {
-        for (int i = 0; i < n; i++) set(logits, i, 0f);
-        c.maskLogits(logits);
-    }
-
-    static boolean allowed(MemoryView<?> logits, int id) {
-        return id >= 0 && get(logits, id) > -1e30f;
-    }
-
-    static boolean accepts(Grammar.Spec spec, Grammar.Vocab v, String s) {
-        int[] r = probe(spec, v, s.getBytes(StandardCharsets.UTF_8));
-        return r[0] == -1 && r[1] == 1;
-    }
-
-    static boolean notMember(Grammar.Spec spec, Grammar.Vocab v, String s) {
-        return !accepts(spec, v, s);
-    }
-
-    static int rejectAt(Grammar.Spec spec, Grammar.Vocab v, String s) {
-        return probe(spec, v, s.getBytes(StandardCharsets.UTF_8))[0];
-    }
-
-    static boolean validPrefix(Grammar.Spec spec, Grammar.Vocab v, String s) {
-        return rejectAt(spec, v, s) == -1;
     }
 
     // byte-vocab convenience (the common case)
@@ -141,45 +76,7 @@ public final class GrammarSpecTest {
     // ---- harness -----------------------------------------------------------
 
     static void check(String what, boolean ok) {
-        checks++;
-        if (!ok) {
-            failures++;
-            System.err.println("FAIL: " + what);
-        }
-    }
-
-    @Test
-    void grammarSpecs() {
-        testJsonValid();
-        testJsonInvalid();
-        testJsonPreciseRejection();
-        testJsonWhitespace();
-        testJsonCompact();
-        testJsonStrings();
-        testJsonNumbers();
-        testJsonUnicodeBytes();
-        testGbnfLiterals();
-        testGbnfCharClasses();
-        testGbnfDot();
-        testGbnfAlternation();
-        testGbnfGroups();
-        testGbnfRepetition();
-        testGbnfReferences();
-        testGbnfRecursion();
-        testGbnfEscapes();
-        testGbnfEpsilon();
-        testMatcherInvariants();
-        testDeadAndReset();
-        testDisabledAndEdge();
-        testMultiByteVocab();
-        testDeepNesting();
-        testChoice();
-        testSchema();
-        testRootIsTheStartSymbol();
-        testFuzzRoundtrip();
-
-        System.out.println("\nGrammarSpecTest: " + checks + " checks, " + failures + " failures");
-        if (failures > 0) throw new AssertionError("GrammarSpecTest: " + failures + " failures");
+        org.junit.jupiter.api.Assertions.assertTrue(ok, what);
     }
 
     /**
@@ -188,7 +85,8 @@ public final class GrammarSpecTest {
      * of declaring helpers above root silently produced a DIFFERENT LANGUAGE: this exact pair
      * matched "apple" instead of "[apple]", with no error at compile or generation time.
      */
-    static void testRootIsTheStartSymbol() {
+    @Test
+    void testRootIsTheStartSymbol() {
         String rootFirst =
                 """
                 root ::= "[" value "]"
@@ -282,9 +180,14 @@ public final class GrammarSpecTest {
         "\"\\n\\r\\t\\b\\f\"",
     };
 
-    static void testJsonValid() {
-        Grammar.Spec j = Grammar.json(BV);
-        for (String s : VALID_JSON) acc("json", j, s);
+    static String[] validJson() {
+        return VALID_JSON;
+    }
+
+    @ParameterizedTest
+    @MethodSource("validJson")
+    void testJsonValid(String text) {
+        acc("json", Grammar.json(BV), text);
     }
 
     // ========================================================================
@@ -339,16 +242,22 @@ public final class GrammarSpecTest {
         ",",
     };
 
-    static void testJsonInvalid() {
-        Grammar.Spec j = Grammar.json(BV);
-        for (String s : INVALID_JSON) rej("json", j, s);
+    static String[] invalidJson() {
+        return INVALID_JSON;
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidJson")
+    void testJsonInvalid(String text) {
+        rej("json", Grammar.json(BV), text);
     }
 
     // ========================================================================
     // JSON - precise rejection point (the original bug class: missing ':')
     // ========================================================================
 
-    static void testJsonPreciseRejection() {
+    @Test
+    void testJsonPreciseRejection() {
         Grammar.Spec j = Grammar.json(BV);
         rejAt("json missing-colon", j, "{\"a\"1}", 4); // ...the '1' where ':' was due
         rejAt("json missing-comma", j, "[1 2]", 3); // the second number
@@ -366,7 +275,8 @@ public final class GrammarSpecTest {
     // JSON - whitespace is optional and allowed between structural tokens
     // ========================================================================
 
-    static void testJsonWhitespace() {
+    @Test
+    void testJsonWhitespace() {
         Grammar.Spec j = Grammar.json(BV);
         acc("ws", j, "{ }");
         acc("ws", j, "[ ]");
@@ -388,7 +298,8 @@ public final class GrammarSpecTest {
     // compact (minified) JSON - no whitespace permitted anywhere
     // ========================================================================
 
-    static void testJsonCompact() {
+    @Test
+    void testJsonCompact() {
         Grammar.Spec j = Grammar.jsonCompact(BV);
         // accepts the same structures as JSON, minified
         for (String s :
@@ -436,7 +347,8 @@ public final class GrammarSpecTest {
     // JSON - strings & escapes
     // ========================================================================
 
-    static void testJsonStrings() {
+    @Test
+    void testJsonStrings() {
         Grammar.Spec j = Grammar.json(BV);
         acc("str", j, "\"\"");
         acc("str", j, "\"a b c\"");
@@ -466,7 +378,8 @@ public final class GrammarSpecTest {
     // JSON - numbers
     // ========================================================================
 
-    static void testJsonNumbers() {
+    @Test
+    void testJsonNumbers() {
         Grammar.Spec j = Grammar.json(BV);
         for (String n :
                 new String[] {
@@ -499,7 +412,8 @@ public final class GrammarSpecTest {
     // JSON - multi-byte UTF-8 passes through inside strings
     // ========================================================================
 
-    static void testJsonUnicodeBytes() {
+    @Test
+    void testJsonUnicodeBytes() {
         Grammar.Spec j = Grammar.json(BV);
         acc("utf8", j, "\"café\""); // é (2 bytes)
         acc("utf8", j, "\"€\""); // € (3 bytes)
@@ -511,7 +425,8 @@ public final class GrammarSpecTest {
     // GBNF - literals
     // ========================================================================
 
-    static void testGbnfLiterals() {
+    @Test
+    void testGbnfLiterals() {
         Grammar.Spec s = g("root ::= \"abc\"");
         acc("lit", s, "abc");
         rej("lit", s, "ab");
@@ -535,7 +450,8 @@ public final class GrammarSpecTest {
     // GBNF - character classes
     // ========================================================================
 
-    static void testGbnfCharClasses() {
+    @Test
+    void testGbnfCharClasses() {
         Grammar.Spec lower = g("root ::= [a-z]");
         acc("cc", lower, "a");
         acc("cc", lower, "m");
@@ -593,7 +509,8 @@ public final class GrammarSpecTest {
     // GBNF - dot
     // ========================================================================
 
-    static void testGbnfDot() {
+    @Test
+    void testGbnfDot() {
         Grammar.Spec dot = g("root ::= .");
         acc("dot", dot, "a");
         acc("dot", dot, "{");
@@ -613,7 +530,8 @@ public final class GrammarSpecTest {
     // GBNF - alternation
     // ========================================================================
 
-    static void testGbnfAlternation() {
+    @Test
+    void testGbnfAlternation() {
         Grammar.Spec alt = g("root ::= \"a\" | \"b\" | \"c\"");
         acc("alt", alt, "a");
         acc("alt", alt, "b");
@@ -641,7 +559,8 @@ public final class GrammarSpecTest {
     // GBNF - groups
     // ========================================================================
 
-    static void testGbnfGroups() {
+    @Test
+    void testGbnfGroups() {
         Grammar.Spec nested = g("root ::= \"a\" (\"b\" (\"c\" | \"d\"))");
         acc("grp", nested, "abc");
         acc("grp", nested, "abd");
@@ -660,7 +579,8 @@ public final class GrammarSpecTest {
     // GBNF - repetition  *  +  ?
     // ========================================================================
 
-    static void testGbnfRepetition() {
+    @Test
+    void testGbnfRepetition() {
         Grammar.Spec star = g("root ::= \"a\"*");
         acc("star", star, "");
         acc("star", star, "a");
@@ -703,7 +623,8 @@ public final class GrammarSpecTest {
     // GBNF - references / rule chains
     // ========================================================================
 
-    static void testGbnfReferences() {
+    @Test
+    void testGbnfReferences() {
         Grammar.Spec chain =
                 g(
                         """
@@ -744,7 +665,8 @@ public final class GrammarSpecTest {
     // GBNF - recursion (right-recursive: fully supported)
     // ========================================================================
 
-    static void testGbnfRecursion() {
+    @Test
+    void testGbnfRecursion() {
         Grammar.Spec parens = g("root ::= \"(\" root \")\" | \"\"");
         acc("rec", parens, "");
         acc("rec", parens, "()");
@@ -793,7 +715,8 @@ public final class GrammarSpecTest {
     // GBNF - escapes in literals
     // ========================================================================
 
-    static void testGbnfEscapes() {
+    @Test
+    void testGbnfEscapes() {
         Grammar.Spec nl = g("root ::= \"a\\nb\"");
         acc("escnl", nl, "a\nb");
         rej("escnl", nl, "ab");
@@ -842,7 +765,8 @@ public final class GrammarSpecTest {
     // GBNF - epsilon / empty
     // ========================================================================
 
-    static void testGbnfEpsilon() {
+    @Test
+    void testGbnfEpsilon() {
         Grammar.Spec empty = g("root ::= \"\"");
         acc("eps", empty, "");
         rej("eps", empty, "a");
@@ -867,7 +791,8 @@ public final class GrammarSpecTest {
     // matcher invariants
     // ========================================================================
 
-    static void testMatcherInvariants() {
+    @Test
+    void testMatcherInvariants() {
         Grammar.Spec j = Grammar.json(BV);
 
         // determinism: two independent cursors give identical allowed sets along the same walk
@@ -930,7 +855,8 @@ public final class GrammarSpecTest {
     // dead state & reset
     // ========================================================================
 
-    static void testDeadAndReset() {
+    @Test
+    void testDeadAndReset() {
         Grammar.Spec s = g("root ::= \"abc\"");
         Grammar.Cursor c = s.cursor();
         c.advanceWith('a');
@@ -962,7 +888,8 @@ public final class GrammarSpecTest {
     // disabled spec & degenerate vocabs
     // ========================================================================
 
-    static void testDisabledAndEdge() {
+    @Test
+    void testDisabledAndEdge() {
         Grammar.Spec d = Grammar.Spec.DISABLED;
         check("disabled invalid", !d.isValid());
         Grammar.Cursor dc = d.cursor();
@@ -1012,7 +939,8 @@ public final class GrammarSpecTest {
     // multi-byte tokenizer vocab (tokens spanning grammar boundaries)
     // ========================================================================
 
-    static void testMultiByteVocab() {
+    @Test
+    void testMultiByteVocab() {
         MultiVocab v = new MultiVocab();
         Grammar.Spec j = Grammar.json(v);
         check("mb json compiles", j.isValid());
@@ -1070,7 +998,8 @@ public final class GrammarSpecTest {
     // deep nesting (stack depth, no overflow / cliff)
     // ========================================================================
 
-    static void testDeepNesting() {
+    @Test
+    void testDeepNesting() {
         Grammar.Spec j = Grammar.json(BV);
         for (int depth : new int[] {8, 64, 256}) {
             String s = "[".repeat(depth) + "]".repeat(depth);
@@ -1093,7 +1022,8 @@ public final class GrammarSpecTest {
     // enum / choice
     // ========================================================================
 
-    static void testChoice() {
+    @Test
+    void testChoice() {
         Grammar.Spec yn = Grammar.choice(BV, "yes", "no");
         acc("choice", yn, "yes");
         acc("choice", yn, "no");
@@ -1123,7 +1053,8 @@ public final class GrammarSpecTest {
         return Grammar.fromSchema(schema, BV);
     }
 
-    static void testSchema() {
+    @Test
+    void testSchema() {
         // A FREE-FORM object - "type": "object" with no properties declared - is OPEN by JSON
         // Schema's own default: any keys, any values. Compiling it to the empty object alone was
         // silent until calls became grammar-bound, and then it forced {"amounts":{}} onto every
@@ -1450,7 +1381,8 @@ public final class GrammarSpecTest {
     // (catches mask/advance divergence - the failure mode of the old impl)
     // ========================================================================
 
-    static void testFuzzRoundtrip() {
+    @Test
+    void testFuzzRoundtrip() {
         roundtrip("json", Grammar.json(BV), 64, 11L);
         roundtrip("parens", g("root ::= \"(\" root \")\" | \"x\""), 64, 22L);
         roundtrip(

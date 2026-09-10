@@ -13,6 +13,7 @@ import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** What build() promises: rejection order, no leak on a rejected build, loaded-model knobs. */
@@ -154,6 +155,7 @@ final class BuilderContractTest {
     }
 
     @Test
+    @Tag("integration")
     void aRejectedBuildFreesTheEngineItAlreadyBuilt() throws IOException {
         // a defaults modelName is checkable only against the LIVE engine, so this rejection
         // exercises the close-on-failure guard around the constructor tail. The freeing itself
@@ -182,6 +184,7 @@ final class BuilderContractTest {
     }
 
     @Test
+    @Tag("integration")
     void aLoadedModelStillTakesTheContextKnob() throws IOException {
         // contextLength sizes the STATE, which the engine allocates - it is not a load-time
         // setting, and LoadedModel has no knob to carry it. Refusing it here used to pin every
@@ -221,6 +224,7 @@ final class BuilderContractTest {
     }
 
     @Test
+    @Tag("integration")
     void companionsStillBelongToTheLoad() throws IOException {
         try (Arena weights = Arenas.newCrossThread()) {
             LoadedModel<?> loaded =

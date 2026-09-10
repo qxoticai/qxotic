@@ -2,9 +2,9 @@ package com.qxotic.jinfer.chat;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.ContextModel;
-import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.Reranker;
 import com.qxotic.jinfer.SpeechSynthesisModel;
+import com.qxotic.jinfer.testkit.TestLanguageModel;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
@@ -17,7 +17,7 @@ import java.util.Set;
 
 /**
  * A {@link ModelProvider} on the test classpath (META-INF/services) for the {@code fake}
- * architecture: it records what {@link Models} hands it and answers with inert proxies, so the
+ * architecture: it records what {@link Models} hands it and answers without learned weights, so the
  * dispatch can be exercised end to end without weights. Language, reranker and speech are
  * implemented; embedding is left to the default, to observe a refused kind.
  */
@@ -63,8 +63,8 @@ public final class RecordingProvider implements ModelProvider {
             Tokenizer tokenizer) {
         last = new Call("language", channel, gguf, path, arena, companions, tokenizer);
         return new LoadedModel<>(
-                proxy(LanguageModel.class),
-                tokenizer != null ? tokenizer : tokenizer(0),
+                new TestLanguageModel(),
+                tokenizer != null ? tokenizer : TestLanguageModel.TOKENIZER,
                 gguf.getStringOrDefault("tokenizer.chat_template", ""),
                 Set.of(),
                 Models.modelSeed(channel),

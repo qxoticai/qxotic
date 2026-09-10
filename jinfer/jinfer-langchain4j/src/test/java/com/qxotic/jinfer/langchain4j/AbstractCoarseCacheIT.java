@@ -30,7 +30,7 @@ abstract class AbstractCoarseCacheIT {
 
     @Test
     @Tag("integration")
-    void cachedPromptWorksByteIdenticallyAndCoarsely() {
+    void definedPrefixIsReusedWithoutGrowingTheBlockTree() {
         Path model = modelPath();
         Assumptions.assumeTrue(Files.exists(model), "model not found: " + model);
         JinferChatModel base =
@@ -68,12 +68,12 @@ abstract class AbstractCoarseCacheIT {
 
             // the view request restored the prefix from the tree (no cache-read usage field in
             // langchain4j's TokenUsage - the engine stats are the observable)
-            String stats = base.engine.promptStats();
-            assertTrue(stats.contains("hits=") && !stats.contains("hits=0 "), stats);
+            var stats = base.engine.cacheSample();
+            assertTrue(stats.blockHits() > 0, stats.toString());
 
             // coarse: exactly ONE block per defined prompt (one residue, not one per turn),
             // and a served turn must never add another
-            assertTrue(stats.startsWith("blocks=1 "), stats);
+            org.junit.jupiter.api.Assertions.assertEquals(1, stats.blocks());
         } finally {
             base.close();
         }

@@ -163,6 +163,7 @@ class Inflect2Test {
     }
 
     @Test
+    @Tag("integration")
     void synthesizesPlausibleAudio() throws IOException {
         Inflect2 model = model();
         var audio = synthesize(model, HELLO, 1f, 0f, 1234);
@@ -179,6 +180,7 @@ class Inflect2Test {
     }
 
     @Test
+    @Tag("integration")
     void lengthScaleStretchesTheWaveform() throws IOException {
         Inflect2 model = model();
         int fast = synthesize(model, HELLO, 1f, 0f, 1234).pcm().length;
@@ -193,6 +195,7 @@ class Inflect2Test {
      * would be bit-exact.
      */
     @Test
+    @Tag("integration")
     void repeatedSynthesisAgrees() throws IOException {
         Inflect2 model = model();
         float[] first = synthesize(model, HELLO, 1f, 0f, 1234).pcm();
@@ -205,6 +208,7 @@ class Inflect2Test {
     }
 
     @Test
+    @Tag("integration")
     void seedChangesTheNoiseRealization() throws IOException {
         Inflect2 model = model();
         float[] one = synthesize(model, HELLO, 1f, 0.667f, 1).pcm();
@@ -216,6 +220,7 @@ class Inflect2Test {
     }
 
     @Test
+    @Tag("integration")
     void rejectsUnusableArguments() throws IOException {
         Inflect2 model = model();
         assertAll(

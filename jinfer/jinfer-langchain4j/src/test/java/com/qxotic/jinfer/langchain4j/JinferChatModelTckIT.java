@@ -4,10 +4,8 @@ import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.common.AbstractChatModelIT;
-import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
-import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -90,24 +88,7 @@ class JinferChatModelTckIT extends AbstractChatModelIT {
             if (mediaAvailable()) builder.companionPath("media", Path.of(MEDIA));
             model = builder.build();
         }
-        JinferChatModel m = model;
-        return List.of(
-                new ChatModel() {
-                    @Override
-                    public ChatResponse chat(ChatRequest request) {
-                        return m.chat(request);
-                    }
-
-                    @Override
-                    public ChatResponse doChat(ChatRequest request) {
-                        return m.chat(request);
-                    }
-
-                    @Override
-                    public ChatRequestParameters defaultRequestParameters() {
-                        return m.defaultRequestParameters();
-                    }
-                });
+        return List.of(TckShield.chat(model));
     }
 
     /**

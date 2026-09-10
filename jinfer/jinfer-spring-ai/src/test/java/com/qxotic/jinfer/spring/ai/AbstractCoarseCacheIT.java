@@ -28,7 +28,7 @@ abstract class AbstractCoarseCacheIT {
 
     @Test
     @Tag("integration")
-    void cachedPromptWorksByteIdenticallyAndCoarsely() {
+    void definedPrefixIsReusedWithoutGrowingTheBlockTree() {
         JinferChatModel base =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(modelRef()))
@@ -72,8 +72,7 @@ abstract class AbstractCoarseCacheIT {
             assertTrue(cacheRead > 0, "restored nothing: " + cacheRead);
 
             // coarse: exactly ONE block per defined prompt (one residue, not one per turn)
-            String stats = base.engine.promptStats();
-            assertTrue(stats.startsWith("blocks=1 "), stats);
+            org.junit.jupiter.api.Assertions.assertEquals(1, base.engine.cacheSample().blocks());
         } finally {
             base.close();
         }

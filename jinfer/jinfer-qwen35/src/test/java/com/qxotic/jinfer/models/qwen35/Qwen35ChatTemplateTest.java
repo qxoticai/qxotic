@@ -29,8 +29,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("integration")
 final class Qwen35ChatTemplateTest {
     private static Tokenizer tokenizer;
     private static String jinja;

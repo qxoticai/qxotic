@@ -80,6 +80,32 @@ class TestModelsTest {
     }
 
     @Test
+    void theModelFreeSuiteRefusesEvenACacheHit() {
+        var failure =
+                assertThrows(
+                        AssertionError.class,
+                        () ->
+                                TestModels.require(
+                                        REF,
+                                        ref -> Optional.of(Path.of("cached.gguf")),
+                                        props("jinfer.test.noModels", "true")));
+        assertTrue(failure.getMessage().contains("model-free suite"));
+    }
+
+    @Test
+    void aRequiredMissingModelFailsRatherThanSkipping() {
+        var failure =
+                assertThrows(
+                        AssertionError.class,
+                        () ->
+                                TestModels.require(
+                                        REF,
+                                        TestModelsTest::miss,
+                                        props("jinfer.test.requireModels", "true")));
+        assertTrue(failure.getMessage().contains(REF));
+    }
+
+    @Test
     void aBareRepoIsRefused() {
         var failure =
                 assertThrows(

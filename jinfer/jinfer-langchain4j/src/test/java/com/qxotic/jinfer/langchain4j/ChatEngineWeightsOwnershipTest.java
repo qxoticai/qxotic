@@ -13,6 +13,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
  * the ports depend on jinfer-chat, so that module has no architecture-dispatch provider to load
  * with.
  */
+@Tag("integration")
 final class ChatEngineWeightsOwnershipTest {
 
     /** No block layer and no catalog: these tests are about the WEIGHTS arena. */

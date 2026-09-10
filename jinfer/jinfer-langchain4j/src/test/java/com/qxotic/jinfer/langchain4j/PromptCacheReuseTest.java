@@ -2,11 +2,10 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.qxotic.jinfer.testkit.TestModels;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import jdk.jfr.Recording;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * ChatEngine used to RESUME from the block tree but never commit to it - only withCachedPrompt
@@ -16,12 +15,9 @@ import org.junit.jupiter.api.Test;
  */
 class PromptCacheReuseTest {
     @Test
-    void aSecondTurnReusesTheFirst() throws Exception {
-        Path gguf =
-                TestModels.require(
-                        "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf");
-        Path jfr = Files.createTempFile("cacheproof", ".jfr");
-        try (var m = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(8).build()) {
+    void aSecondTurnReusesTheFirst(@TempDir Path directory) throws Exception {
+        Path jfr = directory.resolve("cacheproof.jfr");
+        try (var m = ChatFixtures.builder().maxOutputTokens(8).build()) {
             try (Recording r = new Recording()) {
                 r.enable("jinfer.Inference");
                 r.start();

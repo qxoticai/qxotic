@@ -13,6 +13,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,6 +27,7 @@ import org.junit.jupiter.api.Test;
  * <p>Fixture-gated: the concurrency laws need a synthesis long enough to still be running when the
  * other thread acts, so they need real weights.
  */
+@Tag("integration")
 final class Inflect2StateLifecycleTest {
 
     private static final String REF = "hf.co/remixerdec/Inflect-Nano-v2-GGUF:Q8_0";
@@ -34,8 +38,23 @@ final class Inflect2StateLifecycleTest {
                     + "be surprising. In practice the hardest part is the data pipeline. "
                     + "Teams often underestimate this, repeatedly, and at some length.";
 
-    private static InflectTTS tts() throws Exception {
-        return InflectTTS.load(TestModels.require(REF), Arena.ofAuto());
+    private static Arena weights;
+    private static InflectTTS model;
+
+    @BeforeAll
+    static void load() throws Exception {
+        var path = TestModels.require(REF);
+        weights = Arena.ofShared();
+        model = InflectTTS.load(path, weights);
+    }
+
+    @AfterAll
+    static void unload() {
+        if (weights != null) weights.close();
+    }
+
+    private static InflectTTS tts() {
+        return model;
     }
 
     // ── ownership ─────────────────────────────────────────────────────────

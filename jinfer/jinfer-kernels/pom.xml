@@ -15,6 +15,11 @@
   <description>Compute kernels and GGUF tensor loading for Jinfer model providers.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <!-- One selection shared by the scalar and both vector-width runs. -->
+    <kernel.numeric.tests>**/*ContractTest.java,**/*AccuracyTest.java,**/*MatMul*Test.java,
+      **/KQuantFloorDotTest.java,**/TernaryQuantTest.java,**/MoeTest.java,
+      **/ConvolutionsTest.java,**/GatedDeltaNetTest.java,**/Mamba2Test.java,
+      **/*OpsTest.java,**/KimiDeltaAttentionTest.java,**/KernelSelectionTest.java</kernel.numeric.tests>
   </properties>
 
   <dependencies>
@@ -61,7 +66,7 @@
         <!-- Kernel selection matrix. Every kernel picks its implementation from a static constant
              read once at class initialization (register tile, Vector API width, the vector
              recurrences, the JAM rungs on the classpath), so a JVM tests exactly one selection.
-             Each execution below re-runs the whole suite (~2 s) under one selection and
+             The default runs the whole suite; variants run the affected numerical contracts.
              KernelSelectionTest pins the constants to the requested properties, so a selection
              that silently fell back to the default fails instead of re-testing it. Ordinary
              executions keep every jam-* jar off the classpath: they test the Java kernels.
@@ -69,6 +74,7 @@
              executions that want the vector kernels to run say vectorJit=fast explicitly, since
              on stock C2 the detection turns them off. -->
         <configuration>
+          <reportsDirectory>${project.build.directory}/surefire-reports/default</reportsDirectory>
           <classpathDependencyExcludes>
             <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
             <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
@@ -94,6 +100,11 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.convTile=4x2</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/conv-4x2</reportsDirectory>
+              <includes>
+                <include>**/ConvolutionsTest.java</include>
+                <include>**/KernelSelectionTest.java</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -104,6 +115,11 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.convTile=4x4</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/conv-4x4</reportsDirectory>
+              <includes>
+                <include>**/ConvolutionsTest.java</include>
+                <include>**/KernelSelectionTest.java</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -114,6 +130,14 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/vector-fast</reportsDirectory>
+              <includes>
+                <include>**/*MatMul*Test.java</include>
+                <include>**/KQuantFloorDotTest.java</include>
+                <include>**/GatedDeltaNetTest.java</include>
+                <include>**/Mamba2Test.java</include>
+                <include>**/KernelSelectionTest.java</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -124,6 +148,14 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=slow</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/vector-slow</reportsDirectory>
+              <includes>
+                <include>**/*MatMul*Test.java</include>
+                <include>**/KQuantFloorDotTest.java</include>
+                <include>**/GatedDeltaNetTest.java</include>
+                <include>**/Mamba2Test.java</include>
+                <include>**/KernelSelectionTest.java</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -134,6 +166,12 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.gdn.vector=false -Djinfer.mamba2.vector=false -Djinfer.mamba2.vectorNorm=false</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/java-recurrences</reportsDirectory>
+              <includes>
+                <include>**/GatedDeltaNetTest.java</include>
+                <include>**/Mamba2Test.java</include>
+                <include>**/KernelSelectionTest.java</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -144,6 +182,10 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.vectorBitSize=128</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/vector-128</reportsDirectory>
+              <includes>
+                <include>${kernel.numeric.tests}</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -154,6 +196,10 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.vectorBitSize=256</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/vector-256</reportsDirectory>
+              <includes>
+                <include>${kernel.numeric.tests}</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -164,6 +210,10 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorBitSize=0</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/scalar</reportsDirectory>
+              <includes>
+                <include>${kernel.numeric.tests}</include>
+              </includes>
             </configuration>
           </execution>
           <execution>
@@ -176,6 +226,7 @@
             </goals>
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.kernels.expectJam=vector,scalar</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/jam</reportsDirectory>
               <classpathDependencyExcludes>
                 <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
               </classpathDependencyExcludes>

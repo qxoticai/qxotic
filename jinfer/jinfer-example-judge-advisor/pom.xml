@@ -28,6 +28,14 @@
        the rating is always 1-4. Run: KIMI_API_KEY=... mvn spring-boot:run -->
   <dependencyManagement>
     <dependencies>
+      <!-- Match the parent databind pin across the OpenAI client's Jackson 2 family. -->
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>${jackson-databind.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.springframework.ai</groupId>
         <artifactId>spring-ai-bom</artifactId>

@@ -20,8 +20,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("integration")
 class Lfm2VisionModelTest {
     private static final String TEXT = "hf.co/LiquidAI/LFM2.5-VL-3B-GGUF:Q4_K_M";
     private static final String PROJECTOR =

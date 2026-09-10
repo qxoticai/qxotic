@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
  * (marker tokens, pad expansion rows, skiplist) that a ranking-only test would miss. Skipped when
  * the checkpoint is not cached.
  */
+@Tag("integration")
 class Lfm2ColbertTest {
 
     private static final String QUERY = "What is panda?";

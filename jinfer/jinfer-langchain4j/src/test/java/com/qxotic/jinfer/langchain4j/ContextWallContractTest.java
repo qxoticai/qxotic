@@ -4,44 +4,35 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.FinishReason;
-import java.nio.file.Path;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 
 /**
  * The context-overflow taxonomy, blocking lanes (the streaming wall pin lives in {@link
  * StreamingContractTest#hittingTheContextWallMidStreamKeepsThePartialsAndFinishesLength}). Three
  * distinct fates, three distinct signals: a prompt that cannot fit is refused BEFORE any state is
  * touched, with the counts and the remedy in the message; a generation that runs out of room ends
- * gracefully as LENGTH (what a hosted provider answers at max_tokens); a prompt that leaves zero
- * room for even one output token is the same refusal as any other over-capacity prompt.
+ * gracefully as LENGTH; prompt framing counts toward the context limit too.
  */
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ContextWallContractTest {
 
-    private static JinferChatModel model;
+    private JinferChatModel model;
 
-    @BeforeAll
+    @BeforeEach
     void load() {
-        Path gguf =
-                TestModels.require(
-                        "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf");
         model =
-                JinferChatModel.builder()
-                        .modelPath(gguf)
+                ChatFixtures.builder()
                         .contextLength(64) // small enough that walls are a few dozen tokens away
                         .temperature(0.0)
                         .build();
     }
 
-    @AfterAll
+    @AfterEach
     void close() {
         if (model != null) model.close();
     }
@@ -64,15 +55,15 @@ class ContextWallContractTest {
     }
 
     @Test
-    void promptLeavingNoRoomForOneTokenIsTheSameRefusal() {
-        // 55 repeats land the prompt a token past the wall: no room to answer at all
+    void promptFramingCountsTowardCapacity() {
+        // The text alone fits; the template's final token pushes it past the wall.
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 model.chat(
                                         ChatRequest.builder()
-                                                .messages(UserMessage.from("word ".repeat(55)))
+                                                .messages(UserMessage.from("a".repeat(64)))
                                                 .maxOutputTokens(8)
                                                 .build()));
         assertTrue(e.getMessage().contains("context capacity"), e.getMessage());
@@ -80,7 +71,7 @@ class ContextWallContractTest {
 
     @Test
     void generationHittingTheWallFinishesLengthNeverErrors() {
-        // fits: prompt ~22 tokens, wall at 42 output tokens - the count runs into it
+        // The model never emits a stop token, so generation must reach the context wall.
         ChatResponse r =
                 model.chat(
                         ChatRequest.builder()
@@ -91,7 +82,7 @@ class ContextWallContractTest {
                                 .build());
         assertEquals(FinishReason.LENGTH, r.finishReason());
         String text = r.aiMessage().text();
-        assertTrue(text.startsWith("1") && text.contains("2"), text);
+        assertTrue(!text.isEmpty() && text.chars().allMatch(c -> c == 'x'), text);
         assertTrue(
                 r.tokenUsage().inputTokenCount() + r.tokenUsage().outputTokenCount() <= 64,
                 "the wall is the context: " + r.tokenUsage());

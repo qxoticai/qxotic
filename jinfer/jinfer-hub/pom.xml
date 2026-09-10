@@ -34,6 +34,30 @@
         <configuration>
           <argLine>@{argLine} ${jinfer.jvm.flags} --add-reads com.qxotic.jinfer.hub=jdk.httpserver</argLine>
         </configuration>
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <excludes>
+                <exclude>**/StallGuardTest.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <!-- A fresh scanner reads the short timeout before any download starts. -->
+          <execution>
+            <id>stall-guard</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <includes>
+                <include>**/StallGuardTest.java</include>
+              </includes>
+              <argLine>@{argLine} ${jinfer.jvm.flags} --add-reads com.qxotic.jinfer.hub=jdk.httpserver -Djinfer.downloadStallSeconds=1</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports/stall</reportsDirectory>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

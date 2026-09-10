@@ -16,8 +16,10 @@ import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("integration")
 class MapleTest {
     private static final String REF = "hf.co/deepgrove/maple-preview-GGUF:TQ1_0-head-Q4_K";
 

@@ -1,5 +1,10 @@
 package com.qxotic.jinfer.jinja;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +14,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Behavioral tests for {@link JinjaRenderer}, the minimal Jinja2 engine used to apply GGUF {@code
@@ -22,42 +30,6 @@ import org.junit.jupiter.api.Test;
  * gaps are documented and a future fix trips a test instead of changing behavior silently.
  */
 public final class JinjaRendererTest {
-
-    static int failures;
-
-    @Test
-    void run() {
-        literalsAndOutput();
-        arithmetic();
-        comparisonsAndLogic();
-        stringConcatAndSlicing();
-        filters();
-        tests();
-        membership();
-        controlFlow();
-        forLoops();
-        setAndNamespace();
-        macros();
-        whitespaceAndComments();
-        blockTrimDefaults();
-        sequencesAndSlicing();
-        objectAccess();
-        templateFunctions();
-        collectionLiteralsAndConcat();
-        tojson();
-        realisticChatTemplate();
-        generationTag();
-        compileReuse();
-        unsupportedFeaturesThrow();
-        lenientQuirks();
-        realModelChatTemplates();
-
-        if (failures > 0) {
-            System.err.println("\nJinjaRendererTest: " + failures + " failures");
-            throw new AssertionError("failure(s) - see output above");
-        }
-        System.out.println("\nJinjaRendererTest: 0 failures");
-    }
 
     // ── real model chat templates (resources/chat_templates/*.jinja) ──
     // Bundled, verbatim tokenizer.chat_template strings from popular models (provenance is in each
@@ -75,43 +47,25 @@ public final class JinjaRendererTest {
             TOOL = "get_current_weather",
             TOOL2 = "set_alarm";
 
-    static void realModelChatTemplates() {
-        System.out.println("-- real model chat templates --");
-        List<Path> templates;
-        try {
-            URL dir = JinjaRendererTest.class.getResource("/chat_templates");
-            if (dir == null) {
-                check("chat_templates resources on classpath", false);
-                return;
-            }
-            templates = new ArrayList<>();
-            try (var s = Files.newDirectoryStream(Path.of(dir.toURI()), "*.jinja")) {
-                for (Path p : s) templates.add(p);
-            }
-            templates.sort(Comparator.comparing(p -> p.getFileName().toString()));
-        } catch (Exception e) {
-            check("enumerate chat_templates resources (" + e + ")", false);
-            return;
+    static List<Arguments> templates() throws Exception {
+        URL directory = JinjaRendererTest.class.getResource("/chat_templates");
+        assertNotNull(directory, "bundled chat templates");
+        try (var files = Files.list(Path.of(directory.toURI()))) {
+            List<Arguments> templates =
+                    files.filter(p -> p.toString().endsWith(".jinja"))
+                            .sorted(Comparator.comparing(Path::toString))
+                            .map(p -> Arguments.of(p.getFileName().toString(), p))
+                            .toList();
+            assertTrue(templates.size() >= 25, "bundled template corpus is incomplete");
+            return templates;
         }
-        check("found bundled chat templates (" + templates.size() + ")", templates.size() >= 25);
-        for (Path p : templates) {
-            String name = p.getFileName().toString();
-            String tpl;
-            try {
-                tpl = Files.readString(p);
-            } catch (Exception e) {
-                check(name + " readable", false);
-                continue;
-            }
-            JinjaRenderer.Prog prog;
-            try {
-                prog = JinjaRenderer.parse(tpl);
-            } catch (RuntimeException e) {
-                check(name + " COMPILES (" + oneLine(e) + ")", false);
-                continue;
-            }
-            validateTemplate(name, tpl, prog);
-        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("templates")
+    void realModelChatTemplates(String name, Path path) throws Exception {
+        String source = Files.readString(path);
+        validateTemplate(name, source, JinjaRenderer.parse(source));
     }
 
     static void validateTemplate(String name, String tpl, JinjaRenderer.Prog prog) {
@@ -327,27 +281,7 @@ public final class JinjaRendererTest {
 
     /** Render {@code tpl} against {@code ctx} and assert the output equals {@code expected}. */
     static void eq(String tpl, Map<String, Object> ctx, String expected) {
-        String got;
-        try {
-            got = JinjaRenderer.render(tpl, ctx);
-        } catch (Throwable t) {
-            failures++;
-            System.err.println("FAIL: " + show(tpl) + " threw " + t);
-            return;
-        }
-        if (expected.equals(got)) {
-            System.out.println("ok: " + show(tpl) + " => " + show(got));
-        } else {
-            failures++;
-            System.err.println(
-                    "FAIL: "
-                            + show(tpl)
-                            + "\n  expected ["
-                            + show(expected)
-                            + "]\n  got      ["
-                            + show(got)
-                            + "]");
-        }
+        assertEquals(expected, JinjaRenderer.render(tpl, ctx), () -> show(tpl));
     }
 
     static void eq(String tpl, String expected) {
@@ -355,11 +289,7 @@ public final class JinjaRendererTest {
     }
 
     static void check(String what, boolean ok) {
-        if (ok) System.out.println("ok: " + what);
-        else {
-            failures++;
-            System.err.println("FAIL: " + what);
-        }
+        assertTrue(ok, what);
     }
 
     /** Assert that rendering {@code tpl} raises (parse or eval error). */
@@ -368,13 +298,7 @@ public final class JinjaRendererTest {
     }
 
     static void throwsErr(String what, String tpl, Map<String, Object> ctx) {
-        try {
-            JinjaRenderer.render(tpl, ctx);
-            failures++;
-            System.err.println("FAIL: " + what + " (expected an exception, none thrown)");
-        } catch (RuntimeException e) {
-            System.out.println("ok: " + what + " (threw: " + e.getMessage() + ")");
-        }
+        assertThrows(RuntimeException.class, () -> JinjaRenderer.render(tpl, ctx), what);
     }
 
     static String render(String tpl, Map<String, Object> ctx) {
@@ -407,8 +331,8 @@ public final class JinjaRendererTest {
 
     // ── {% generation %} tag (transformers assistant-span extension; SmolLM3 uses it) ──
 
-    static void generationTag() {
-        System.out.println("-- {% generation %} tag --");
+    @Test
+    void generationTag() {
         // transparent: the body renders exactly as if the tags weren't there
         eq("{% generation %}hello{% endgeneration %}", "hello");
         eq("A{% generation %}B{{ x }}{% endgeneration %}C", Map.of("x", "!"), "AB!C");
@@ -436,8 +360,8 @@ public final class JinjaRendererTest {
 
     // ── literals & output ────────────────────────────────────────
 
-    static void literalsAndOutput() {
-        System.out.println("-- literals & output --");
+    @Test
+    void literalsAndOutput() {
         eq("plain text, no tags", "plain text, no tags");
         eq("{{ 42 }}", "42");
         eq("{{ 3.14 }}", "3.14");
@@ -454,8 +378,8 @@ public final class JinjaRendererTest {
 
     // ── arithmetic ───────────────────────────────────────────────
 
-    static void arithmetic() {
-        System.out.println("-- arithmetic --");
+    @Test
+    void arithmetic() {
         eq("{{ 2 + 3 }}", "5");
         eq("{{ 10 - 4 }}", "6");
         eq("{{ 6 * 7 }}", "42");
@@ -472,8 +396,8 @@ public final class JinjaRendererTest {
 
     // ── comparisons & boolean logic ──────────────────────────────
 
-    static void comparisonsAndLogic() {
-        System.out.println("-- comparisons & logic --");
+    @Test
+    void comparisonsAndLogic() {
         eq("{{ 1 == 1 }}", "True");
         eq("{{ 1 == 2 }}", "False");
         eq("{{ 1 != 2 }}", "True");
@@ -498,8 +422,8 @@ public final class JinjaRendererTest {
 
     // ── string concat & slicing ──────────────────────────────────
 
-    static void stringConcatAndSlicing() {
-        System.out.println("-- string concat & slicing --");
+    @Test
+    void stringConcatAndSlicing() {
         eq("{{ 'a' ~ 'b' }}", "ab"); // ~ concatenation
         eq("{{ 'x' ~ 1 }}", "x1"); // ~ stringifies operands
         eq("{{ 'a' + 'b' }}", "ab"); // + concatenates when either side is a string
@@ -524,8 +448,8 @@ public final class JinjaRendererTest {
 
     // ── filters ──────────────────────────────────────────────────
 
-    static void filters() {
-        System.out.println("-- filters --");
+    @Test
+    void filters() {
         eq("{{ 'WIDE' | lower }}", "wide");
         eq("{{ 'wide' | upper }}", "WIDE");
         eq("{{ '  pad  ' | trim }}", "pad");
@@ -550,8 +474,8 @@ public final class JinjaRendererTest {
 
     // ── tests (is ...) ───────────────────────────────────────────
 
-    static void tests() {
-        System.out.println("-- tests --");
+    @Test
+    void tests() {
         eq("{{ name is defined }}", map("name", "x"), "True");
         eq("{{ missing is defined }}", "False");
         eq("{{ missing is undefined }}", "True");
@@ -573,8 +497,8 @@ public final class JinjaRendererTest {
 
     // ── membership (in / not in) ─────────────────────────────────
 
-    static void membership() {
-        System.out.println("-- membership --");
+    @Test
+    void membership() {
         eq("{{ 'b' in xs }}", map("xs", list("a", "b", "c")), "True");
         eq("{{ 'z' in xs }}", map("xs", list("a", "b", "c")), "False");
         eq("{{ 'z' not in xs }}", map("xs", list("a", "b", "c")), "True");
@@ -588,8 +512,8 @@ public final class JinjaRendererTest {
 
     // ── control flow ─────────────────────────────────────────────
 
-    static void controlFlow() {
-        System.out.println("-- control flow --");
+    @Test
+    void controlFlow() {
         eq("{% if flag %}yes{% endif %}", map("flag", true), "yes");
         eq("{% if flag %}yes{% endif %}", map("flag", false), "");
         eq("{% if flag %}yes{% else %}no{% endif %}", map("flag", false), "no");
@@ -627,8 +551,8 @@ public final class JinjaRendererTest {
 
     // ── for loops ────────────────────────────────────────────────
 
-    static void forLoops() {
-        System.out.println("-- for loops --");
+    @Test
+    void forLoops() {
         eq("{% for x in xs %}{{ x }};{% endfor %}", map("xs", list("a", "b", "c")), "a;b;c;");
         eq("[{% for x in xs %}{{ x }}{% endfor %}]", map("xs", list()), "[]"); // empty iterable
         // loop variables
@@ -680,8 +604,8 @@ public final class JinjaRendererTest {
 
     // ── set & namespace ──────────────────────────────────────────
 
-    static void setAndNamespace() {
-        System.out.println("-- set & namespace --");
+    @Test
+    void setAndNamespace() {
         eq("{% set x = 5 %}{{ x }}", "5");
         eq("{% set greeting = 'Hi ' ~ name %}{{ greeting }}", map("name", "Sam"), "Hi Sam");
         eq("{% set total = a + b %}{{ total }}", map("a", 3, "b", 4), "7");
@@ -711,8 +635,8 @@ public final class JinjaRendererTest {
 
     // ── macros ───────────────────────────────────────────────────
 
-    static void macros() {
-        System.out.println("-- macros --");
+    @Test
+    void macros() {
         eq("{% macro greet(n) %}Hi {{ n }}!{% endmacro %}{{ greet('Bob') }}", "Hi Bob!");
         eq(
                 "{% macro tag(name, val) %}<{{ name }}>{{ val }}</{{ name }}>{% endmacro %}{{"
@@ -726,8 +650,8 @@ public final class JinjaRendererTest {
 
     // ── whitespace control & comments ────────────────────────────
 
-    static void whitespaceAndComments() {
-        System.out.println("-- whitespace & comments --");
+    @Test
+    void whitespaceAndComments() {
         eq("a {# this is a comment #}b", "a b");
         eq("x{# c #}y", "xy");
         // statement-level trim markers ({%- ... -%}) collapse whitespace between the tags
@@ -737,8 +661,8 @@ public final class JinjaRendererTest {
 
     // ── sequence indexing, slicing & filters ─────────────────────
 
-    static void sequencesAndSlicing() {
-        System.out.println("-- sequences: indexing, slicing, filters --");
+    @Test
+    void sequencesAndSlicing() {
         var ctx = map("xs", list("a", "b", "c", "d"));
         // integer indexing (Python-style negatives)
         eq("{{ xs[0] }} {{ xs[2] }} {{ xs[-1] }} {{ xs[-2] }}", ctx, "a c d c");
@@ -784,8 +708,8 @@ public final class JinjaRendererTest {
 
     // ── trim_blocks / lstrip_blocks (HF apply_chat_template defaults) ───────
 
-    static void blockTrimDefaults() {
-        System.out.println("-- trim_blocks / lstrip_blocks defaults --");
+    @Test
+    void blockTrimDefaults() {
         // trim_blocks: a bare %} swallows exactly one following newline
         eq("{% if true %}\nA{% endif %}\n", map(), "A");
         eq("{% if true %}\r\nA{% endif %}", map(), "A"); // and \r\n as one
@@ -828,24 +752,11 @@ public final class JinjaRendererTest {
 
     /** eq via the public template() entry point (keep_trailing_newline applies there). */
     static void eqTemplate(String tpl, String expected) {
-        String got = JinjaRenderer.template(tpl).render(map());
-        if (expected.equals(got)) {
-            System.out.println("ok: template(" + show(tpl) + ") => " + show(got));
-        } else {
-            failures++;
-            System.err.println(
-                    "FAIL: template("
-                            + show(tpl)
-                            + ")\n  expected ["
-                            + show(expected)
-                            + "]\n  got      ["
-                            + show(got)
-                            + "]");
-        }
+        assertEquals(expected, JinjaRenderer.template(tpl).render(map()), () -> show(tpl));
     }
 
-    static void objectAccess() {
-        System.out.println("-- object access --");
+    @Test
+    void objectAccess() {
         var user = map("role", "admin", "age", 30, "address", map("city", "NYC"));
         eq("{{ user.role }}", map("user", user), "admin");
         eq("{{ user['role'] }}", map("user", user), "admin"); // computed string key
@@ -862,21 +773,19 @@ public final class JinjaRendererTest {
 
     // ── template functions (raise_exception, strftime_now) ───────
 
-    static void templateFunctions() {
-        System.out.println("-- template functions --");
+    @Test
+    void templateFunctions() {
         // raise_exception(msg) aborts rendering with the given message (chat templates use it to
         // reject malformed conversations)
-        try {
-            JinjaRenderer.render(
-                    "{% if true_flag %}{{ raise_exception('bad input') }}{% endif %}",
-                    map("true_flag", true));
-            failures++;
-            System.err.println("FAIL: raise_exception should throw");
-        } catch (RuntimeException e) {
-            check(
-                    "raise_exception throws with its message",
-                    e.getMessage() != null && e.getMessage().contains("bad input"));
-        }
+        RuntimeException failure =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                JinjaRenderer.render(
+                                        "{% if true_flag %}{{ raise_exception('bad input') }}{%"
+                                                + " endif %}",
+                                        map("true_flag", true)));
+        assertTrue(failure.getMessage().contains("bad input"));
         // strftime_now(fmt) renders the current time; just assert the format is applied (4-digit
         // year)
         String year = JinjaRenderer.render("{{ strftime_now('%Y') }}", Map.of());
@@ -895,8 +804,8 @@ public final class JinjaRendererTest {
 
     // ── tojson ───────────────────────────────────────────────────
 
-    static void tojson() {
-        System.out.println("-- tojson --");
+    @Test
+    void tojson() {
         eq("{{ s | tojson }}", map("s", "hi"), "\"hi\"");
         eq("{{ n | tojson }}", map("n", 42), "42");
         eq("{{ f | tojson }}", map("f", 1.5), "1.5");
@@ -913,8 +822,8 @@ public final class JinjaRendererTest {
 
     // ── a realistic ChatML-style template ────────────────────────
 
-    static void realisticChatTemplate() {
-        System.out.println("-- realistic chat template --");
+    @Test
+    void realisticChatTemplate() {
         String tpl =
                 "{% for m in messages %}"
                         + "<|im_start|>{{ m['role'] }}\n{{ m['content'] }}<|im_end|>\n"
@@ -955,8 +864,8 @@ public final class JinjaRendererTest {
 
     // ── compile once, render many ────────────────────────────────
 
-    static void compileReuse() {
-        System.out.println("-- compile reuse --");
+    @Test
+    void compileReuse() {
         JinjaRenderer.Prog prog = JinjaRenderer.parse("Hi {{ name }} ({{ n }})");
         check(
                 "compiled program renders #1",
@@ -970,8 +879,8 @@ public final class JinjaRendererTest {
     // Constructs this minimal engine does not implement raise an exception (rather than silently
     // mis-rendering the prompt). These tests pin that fail-loud contract.
 
-    static void collectionLiteralsAndConcat() {
-        System.out.println("-- collection literals & concatenation --");
+    @Test
+    void collectionLiteralsAndConcat() {
         // list literals (evaluated, incl. variable elements)
         eq("{{ [1, 2, 3] | join('-') }}", "1-2-3");
         eq("{{ [a, b, 'z'] | join(',') }}", map("a", "x", "b", "y"), "x,y,z");
@@ -996,8 +905,8 @@ public final class JinjaRendererTest {
         eq("{{ obj | string }}", map("obj", map("name", "get_weather")), "{'name': 'get_weather'}");
     }
 
-    static void unsupportedFeaturesThrow() {
-        System.out.println("-- unsupported features throw --");
+    @Test
+    void unsupportedFeaturesThrow() {
         var xs = map("xs", list("a", "b", "c"));
         // unknown filter / function names
         throwsErr("unknown filter throws", "{{ 'x' | no_such_filter }}");
@@ -1010,22 +919,17 @@ public final class JinjaRendererTest {
         throwsErr("integer division `//` throws", "{{ 7 // 2 }}");
         // the public template() entry point must propagate the failure too - swallowing it into
         // a null template silently downgraded the model to ChatML framing at render time
-        try {
-            JinjaRenderer.template("{% for x in xs %}{{ x }}{% break %}{% endfor %}");
-            failures++;
-            System.err.println("FAIL: template() returned instead of throwing on {% break %}");
-        } catch (RuntimeException e) {
-            System.out.println(
-                    "ok: template() propagates unsupported features (" + e.getMessage() + ")");
-        }
+        assertThrows(
+                RuntimeException.class,
+                () -> JinjaRenderer.template("{% for x in xs %}{{ x }}{% break %}{% endfor %}"));
     }
 
     // ── remaining lenient quirks (render, do NOT throw) ──────────
     // These differ from CPython Jinja2 but render leniently rather than producing obviously-broken
     // output, so they stay best-effort instead of raising. Pinned to document the behavior.
 
-    static void lenientQuirks() {
-        System.out.println("-- lenient quirks (no throw) --");
+    @Test
+    void lenientQuirks() {
         // expression-level trim markers ({{- ... -}}) do NOT strip surrounding whitespace
         // (only statement-level {%- ... -%} markers do)
         // whitespace-control markers, reference jinja2 semantics: {{- strips the

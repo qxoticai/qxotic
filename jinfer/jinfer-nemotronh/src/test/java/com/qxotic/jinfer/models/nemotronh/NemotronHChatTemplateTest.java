@@ -18,9 +18,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** Both framework and server tool-result shapes must retain their payload in the prompt. */
+@Tag("integration")
 class NemotronHChatTemplateTest {
 
     private static final String RESULT = "{\"temp_c\": 7, \"condition\": \"light rain\"}";

@@ -1,17 +1,20 @@
 package com.qxotic.jinfer.llm;
 
-import static com.qxotic.jinfer.llm.GrammarSpecTest.BV;
-import static com.qxotic.jinfer.llm.GrammarSpecTest.accepts;
+import static com.qxotic.jinfer.llm.GrammarMembership.BV;
+import static com.qxotic.jinfer.llm.GrammarMembership.accepts;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.json.Json;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
-import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * llama.cpp's grammar corpus, run against this engine. The cases are lifted verbatim from {@code
@@ -90,63 +93,29 @@ final class LlamaCppGrammarCorpusTest {
                     // three emoji there and three bytes of the first emoji here.
                     Map.entry("special characters", "dot matches a byte, not a code point"));
 
-    @Test
-    void llamaCppCorpus() throws IOException {
+    static Stream<Arguments> cases() throws IOException {
         List<?> cases = (List<?>) Json.parse(resource("/llama-cpp/grammar-corpus.json"));
-        var failures = new TreeMap<String, List<String>>();
-        int checks = 0, ran = 0;
+        return cases.stream()
+                .map(o -> (Map<?, ?>) o)
+                .map(c -> Arguments.of(String.valueOf(c.get("desc")), c));
+    }
 
-        for (Object o : cases) {
-            Map<?, ?> c = (Map<?, ?>) o;
-            String kind = String.valueOf(c.get("kind"));
-            String desc = String.valueOf(c.get("desc"));
-            if (DIVERGENCES.containsKey(desc)) continue;
-            ran++;
-
-            Grammar.Spec spec;
-            try {
-                spec =
-                        "test_grammar".equals(kind)
-                                ? Grammar.of(String.valueOf(c.get("src")), BV)
-                                : Grammar.fromSchema(schema(String.valueOf(c.get("src"))), BV);
-            } catch (RuntimeException e) {
-                failures.computeIfAbsent(desc, k -> new ArrayList<>()).add("did not compile: " + e);
-                continue;
-            }
-
-            for (Object s : (List<?>) c.get("passing")) {
-                checks++;
-                if (!accepts(spec, BV, String.valueOf(s)))
-                    failures.computeIfAbsent(desc, k -> new ArrayList<>())
-                            .add("must ACCEPT " + show(String.valueOf(s)));
-            }
-            for (Object s : (List<?>) c.get("failing")) {
-                checks++;
-                if (accepts(spec, BV, String.valueOf(s)))
-                    failures.computeIfAbsent(desc, k -> new ArrayList<>())
-                            .add("must REJECT " + show(String.valueOf(s)));
-            }
-        }
-
-        System.out.println(
-                "\nllama.cpp corpus: "
-                        + ran
-                        + " cases, "
-                        + checks
-                        + " checks, "
-                        + failures.size()
-                        + " cases with failures ("
-                        + DIVERGENCES.size()
-                        + " skipped, see DIVERGENCES)");
-        if (!failures.isEmpty()) {
-            StringBuilder sb = new StringBuilder("llama.cpp grammar corpus:\n");
-            failures.forEach(
-                    (name, msgs) -> {
-                        sb.append("  ").append(name).append('\n');
-                        msgs.forEach(m -> sb.append("      ").append(m).append('\n'));
-                    });
-            throw new AssertionError(sb.toString());
-        }
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("cases")
+    void llamaCppCorpus(String description, Map<?, ?> c) {
+        Assumptions.assumeFalse(DIVERGENCES.containsKey(description), DIVERGENCES.get(description));
+        Grammar.Spec spec =
+                "test_grammar".equals(c.get("kind"))
+                        ? Grammar.of(String.valueOf(c.get("src")), BV)
+                        : Grammar.fromSchema(schema(String.valueOf(c.get("src"))), BV);
+        for (Object s : (List<?>) c.get("passing"))
+            assertTrue(
+                    accepts(spec, BV, String.valueOf(s)),
+                    () -> "must ACCEPT " + show(String.valueOf(s)));
+        for (Object s : (List<?>) c.get("failing"))
+            assertTrue(
+                    !accepts(spec, BV, String.valueOf(s)),
+                    () -> "must REJECT " + show(String.valueOf(s)));
     }
 
     @SuppressWarnings("unchecked")

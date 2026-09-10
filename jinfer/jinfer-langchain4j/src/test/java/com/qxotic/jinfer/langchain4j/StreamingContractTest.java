@@ -2,61 +2,48 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialResponse;
 import dev.langchain4j.model.chat.response.PartialResponseContext;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
-import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 
-/**
- * Streaming had NO default coverage: the TCK that exercises it is opt-in, so a normal build never
- * ran a single delta. It is also the most failure-prone adapter here - callback ordering,
- * cancellation, and what happens when the caller's own handler throws are all easy to get subtly
- * wrong and invisible until someone integrates.
- *
- * <p>One model load, a handful of tokens per test.
- */
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+/** Callback ordering, cancellation and lifecycle over a fresh weightless model per test. */
 class StreamingContractTest {
 
-    private static JinferChatModel model;
+    private JinferChatModel model;
 
-    private static final String MODEL_REF =
-            "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf";
-
-    @BeforeAll
+    @BeforeEach
     void load() {
-        Path gguf = TestModels.require(MODEL_REF);
-        model = JinferChatModel.builder().modelPath(gguf).maxOutputTokens(12).seed(7L).build();
+        model = ChatFixtures.builder().build();
     }
 
-    @AfterAll
+    @AfterEach
     void close() {
         if (model != null) model.close();
     }
 
-    /** Collects everything a handler can be told, so ordering can be asserted afterwards. */
+    /** One writer; tests read after a callback latch or the stream-driver barrier. */
     private static class Recorder implements StreamingChatResponseHandler {
         final StringBuilder text = new StringBuilder();
-        final List<String> events = new CopyOnWriteArrayList<>();
-        final AtomicReference<ChatResponse> response = new AtomicReference<>();
-        final AtomicReference<Throwable> error = new AtomicReference<>();
+        final List<String> events = new ArrayList<>();
+        ChatResponse response;
+        Throwable error;
+        int partials;
         final CountDownLatch done = new CountDownLatch(1);
 
         final CountDownLatch firstDelta = new CountDownLatch(1);
@@ -65,42 +52,40 @@ class StreamingContractTest {
         public void onPartialResponse(PartialResponse partial, PartialResponseContext context) {
             text.append(partial.text());
             events.add("partial");
+            partials++;
             firstDelta.countDown();
         }
 
         @Override
         public void onCompleteResponse(ChatResponse complete) {
             events.add("complete");
-            response.set(complete);
+            response = complete;
             done.countDown();
         }
 
         @Override
         public void onError(Throwable t) {
             events.add("error");
-            error.set(t);
+            error = t;
             // deliberately NOT counting down: onError is not terminal for a handler fault, and a
             // latch that released here would stop the test watching before the stream finished
         }
 
         void awaitCompletion() throws InterruptedException {
-            assertTrue(done.await(120, TimeUnit.SECONDS), "the stream never completed: " + events);
+            assertTrue(done.await(10, TimeUnit.SECONDS), "the stream never completed");
         }
     }
 
     @Test
     void deltasArriveAndCompleteFiresExactlyOnce() throws Exception {
         Recorder r = new Recorder();
-        model.streaming().chat("Name one colour.", r);
+        model.streaming().chat("hello", r);
         r.awaitCompletion();
 
-        assertEquals(null, r.error.get(), "a healthy stream reports no error");
-        assertEquals(
-                1,
-                r.events.stream().filter("complete"::equals).count(),
-                "onCompleteResponse must fire exactly once: " + r.events);
-        assertTrue(r.events.indexOf("complete") == r.events.size() - 1, "complete must come last");
-        assertTrue(!r.text.isEmpty(), "the stream produced no text");
+        assertNull(r.error, "a healthy stream reports no error");
+        assertEquals(1, Collections.frequency(r.events, "complete"), r.events.toString());
+        assertEquals("complete", r.events.getLast());
+        assertFalse(r.text.isEmpty(), "the stream produced no text");
     }
 
     /**
@@ -109,9 +94,7 @@ class StreamingContractTest {
      */
     @Test
     void streamedTextMatchesTheBlockingReply() throws Exception {
-        String prompt = "Name one colour.";
-        model.chat(prompt); // warm: interpreted and compiled kernels differ by ~1 LSB
-
+        String prompt = "hello";
         String blocking = model.chat(prompt);
         Recorder r = new Recorder();
         model.streaming().chat(prompt, r);
@@ -119,82 +102,51 @@ class StreamingContractTest {
         assertEquals(blocking, r.text.toString(), "streamed text diverged from the blocking reply");
     }
 
-    /**
-     * A caller's handler throwing is a bug in THEIR code, not a reason to lose the generation: it
-     * is reported to onError and the stream carries on to completion. Pinning it because the
-     * alternative - aborting mid-generation on a transient handler fault - is a tempting change
-     * that would silently drop work.
-     */
     @Test
     void cancellationEndsTheStreamSilently() throws Exception {
-        // the cancel law (jinfer's analog of a client disconnecting mid-stream): deltas stop
-        // soon after cancel(), and NEITHER complete NOR error fires - a cancelled stream has
-        // nothing to report. Asserting "no terminal event" needs a settle window, not a latch.
+        // A barrier behind the cancelled stream proves its callbacks have finished.
         Recorder r =
                 new Recorder() {
                     @Override
                     public void onPartialResponse(
                             PartialResponse partial, PartialResponseContext context) {
                         super.onPartialResponse(partial, context);
-                        if (events.size() == 2) context.streamingHandle().cancel();
+                        if (partials == 2) context.streamingHandle().cancel();
                     }
                 };
-        model.streaming().chat("Name ten colours, one per line, with a sentence about each.", r);
-        Thread.sleep(3000); // past any in-flight decode window on this model
-        assertTrue(r.events.size() >= 2, "partials flowed before cancel: " + r.events);
-        assertTrue(
-                !r.events.contains("complete") && !r.events.contains("error"),
-                "a cancelled stream ends silently: " + r.events);
+        model.streaming().chat("hello", r);
+        CountDownLatch drained = new CountDownLatch(1);
+        model.engine.stream(drained::countDown);
+        assertTrue(drained.await(10, TimeUnit.SECONDS), "cancelled stream did not finish");
+        assertTrue(r.partials >= 2, "partials flowed before cancel");
+        assertNull(r.response, "cancellation has no completion callback");
+        assertNull(r.error, "cancellation has no error callback");
     }
 
     @Test
     void theTwinsShareOneLifecycle() {
-        // the twin half of the shared-lifecycle law: close() on either face closes both - and the
-        // streaming face rejects afterwards SYNCHRONOUSLY, like every invalid request. Each
-        // direction needs its own engine: a closed one stays closed.
-        JinferChatModel blockingFirst =
-                JinferChatModel.builder()
-                        .modelPath(TestModels.require(MODEL_REF))
-                        .maxOutputTokens(4)
-                        .build();
-        JinferStreamingChatModel streamingOfFirst = blockingFirst.streaming();
-        blockingFirst.close();
-        assertThrows(
-                IllegalStateException.class, () -> streamingOfFirst.chat("hi", new Recorder()));
-
-        JinferChatModel blockingSecond =
-                JinferChatModel.builder()
-                        .modelPath(TestModels.require(MODEL_REF))
-                        .maxOutputTokens(4)
-                        .build();
-        blockingSecond.streaming().close();
-        assertThrows(
-                IllegalStateException.class, () -> blockingSecond.chat(UserMessage.from("hi")));
+        JinferStreamingChatModel streaming = model.streaming();
+        model.close();
+        assertThrows(IllegalStateException.class, () -> streaming.chat("hi", new Recorder()));
+        try (JinferChatModel other = ChatFixtures.builder().build()) {
+            other.streaming().close();
+            assertThrows(IllegalStateException.class, () -> other.chat(UserMessage.from("hi")));
+        }
     }
 
     @Test
     void hittingTheContextWallMidStreamKeepsThePartialsAndFinishesLength() throws Exception {
-        // the mid-stream-exhaustion law: where a hosted provider would fail the stream, jinfer
-        // stops gracefully at the wall - every delta already delivered stays delivered, the
-        // terminal event is a COMPLETE with finishReason LENGTH, and onError never fires. A
-        // consumer that renders partials live is never left with an unterminated reply.
+        // Context exhaustion preserves partials and completes with LENGTH, not an error.
         try (JinferChatModel tiny =
-                JinferChatModel.builder()
-                        .modelPath(TestModels.require(MODEL_REF))
-                        .contextLength(64) // prompt ~22 tokens: ~40 fit before the wall
-                        .temperature(0.0)
-                        .build()) {
+                ChatFixtures.builder().contextLength(64).maxOutputTokens(128).build()) {
             Recorder r = new Recorder();
-            tiny.streaming().chat("Count from 1 to 500, separated by commas.", r);
+            tiny.streaming().chat("hello", r);
             r.awaitCompletion();
 
-            assertEquals(null, r.error.get(), "the wall is not an error: " + r.error.get());
-            assertTrue(r.events.size() > 10, "partials must flow before the wall: " + r.events);
-            assertEquals("complete", r.events.get(r.events.size() - 1), r.events.toString());
-            assertEquals(
-                    FinishReason.LENGTH,
-                    r.response.get().finishReason(),
-                    "the wall ends as LENGTH: " + r.response.get().finishReason());
+            assertNull(r.error, "the wall is not an error");
+            assertTrue(r.partials > 10, "partials must flow before the wall");
+            assertEquals("complete", r.events.getLast());
+            assertEquals(FinishReason.LENGTH, r.response.finishReason());
         }
     }
 
@@ -202,54 +154,62 @@ class StreamingContractTest {
     void startingAStreamDoesNotWaitForTheRunningGeneration() throws Exception {
         // chat() prepares the request on the caller's thread; preparing used to take the
         // generation lock, so a second stream could not even be enqueued until the first reply
-        // had finished generating. A long first reply makes the wait visible.
-        try (JinferChatModel patient =
-                JinferChatModel.builder()
-                        .modelPath(TestModels.require(MODEL_REF))
-                        .maxOutputTokens(400)
-                        .seed(7L)
-                        .build()) {
-            Recorder first = new Recorder();
-            patient.streaming().chat("Write a long story about a lighthouse keeper.", first);
-            assertTrue(
-                    first.firstDelta.await(30, TimeUnit.SECONDS), "the first stream is generating");
-
+        // had finished generating. Hold its callback so the overlap is guaranteed.
+        CountDownLatch release = new CountDownLatch(1);
+        Recorder first =
+                new Recorder() {
+                    @Override
+                    public void onPartialResponse(
+                            PartialResponse partial, PartialResponseContext context) {
+                        super.onPartialResponse(partial, context);
+                        try {
+                            assertTrue(
+                                    release.await(10, TimeUnit.SECONDS),
+                                    "callback was not released");
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new AssertionError(e);
+                        }
+                    }
+                };
+        try (var caller = Executors.newSingleThreadExecutor()) {
             Recorder second = new Recorder();
-            long start = System.nanoTime();
-            patient.streaming().chat("Name one colour.", second); // enqueues, must not block
-            long waited = (System.nanoTime() - start) / 1_000_000;
-
-            assertFalse(first.events.contains("complete"), "the first reply was still generating");
-            assertTrue(waited < 2_000, "chat() returned after " + waited + " ms");
+            try {
+                model.streaming().chat("hello", first);
+                assertTrue(first.firstDelta.await(10, TimeUnit.SECONDS));
+                caller.submit(() -> model.streaming().chat("hello", second))
+                        .get(5, TimeUnit.SECONDS);
+                assertFalse(first.events.contains("complete"));
+            } finally {
+                release.countDown();
+            }
             first.awaitCompletion();
             second.awaitCompletion();
-            assertTrue(second.events.contains("complete"), second.events.toString());
+            assertNull(first.error);
+            assertNull(second.error);
         }
     }
 
     @Test
     void aThrowingHandlerIsReportedWithoutKillingTheStream() throws Exception {
-        AtomicInteger deltas = new AtomicInteger();
         Recorder r =
                 new Recorder() {
                     @Override
                     public void onPartialResponse(
                             PartialResponse partial, PartialResponseContext context) {
                         super.onPartialResponse(partial, context);
-                        if (deltas.incrementAndGet() == 1) {
+                        if (partials == 1) {
                             throw new IllegalStateException("handler blew up");
                         }
                     }
                 };
-        // a prompt whose reply spans several tokens: "Name one colour." is answered "Blue", one
-        // delta, which cannot show that deltas keep arriving after the fault
-        model.streaming().chat("Count from one to five, comma separated.", r);
+        model.streaming().chat("hello", r);
         r.awaitCompletion();
 
         assertTrue(r.events.contains("error"), "the handler fault must be reported: " + r.events);
         assertTrue(r.events.contains("complete"), "the generation must still finish: " + r.events);
         assertTrue(
-                deltas.get() > 1,
+                r.partials > 1,
                 "deltas must keep arriving after a handler fault: " + r.events + " " + r.text);
     }
 }
