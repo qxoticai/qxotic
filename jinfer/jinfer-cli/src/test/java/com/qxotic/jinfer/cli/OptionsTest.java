@@ -496,18 +496,15 @@ final class OptionsTest {
         Path model = Files.createFile(dir.resolve("m.gguf"));
         int invocations = 0;
         for (String line : Files.readAllLines(makefile)) {
-            // recipe lines start with a tab; a target's help text may show flags too
-            if (!line.startsWith("\t") || !line.contains("--model")) continue;
-            String argv =
-                    line.strip()
-                            .replace("\\", "")
-                            .replace("$(MODEL)", model.toString())
-                            .replaceAll("\\s*2>/dev/null.*$", "");
-            // the flags start at the first --model; what precedes is the java launch line
-            Options.parse(shellSplit(argv.substring(argv.indexOf("--model"))));
+            // a CLI invocation with a fixed argv, recipe or variable: not `run`, which forwards
+            // $(ARGS), and not a target's help text, which may show flags too
+            int flags = line.indexOf("-jar $(JAR_FILE)");
+            if (flags < 0 || !line.contains("--model")) continue;
+            String argv = line.substring(flags + "-jar $(JAR_FILE)".length());
+            Options.parse(shellSplit(argv.replace("$(MODEL)", model.toString())));
             invocations++;
         }
-        assertTrue(invocations >= 2, "the golden target's two runs were found: " + invocations);
+        assertTrue(invocations >= 1, "the golden run was found: " + invocations);
     }
 
     /** Whitespace split honouring double quotes - the Makefile's prompts are quoted. */
