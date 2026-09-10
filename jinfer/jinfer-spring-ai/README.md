@@ -74,6 +74,8 @@ Chat is the default when no other chat provider is selected. Model sources may b
 or local paths and resolve during application startup. Add companions under
 `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
 
+Every knob here has the same name on the other faces (CLI, server, LangChain4j, Java API); the [translation table](https://qxotic.ai/jinfer#the-same-knob-at-each-face) maps one to the other.
+
 ## Add the provider
 
 Use the Spring Boot parent or BOM for Spring Boot itself. Import the Spring AI and jinfer BOMs,

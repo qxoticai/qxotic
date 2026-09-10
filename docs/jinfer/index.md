@@ -185,6 +185,25 @@ Every restore stops one position short and re-ingests the last token, so logits 
 
 Framework users need only `retainSessions(n)`, `promptCache(path)`, and `withCachedPrompt(...)`; see the [LangChain4j](/jinfer/langchain4j#cached-prompts) and [Spring AI](/jinfer/spring-ai#prompt-caching) guides. The CLI exposes `--cache file.jkv` (growing) and `--cache-ro file.jkv` (read-only).
 
+## The same knob at each face
+
+One engine, four faces: the Java API, the CLI, the OpenAI-compatible server and the two framework providers.
+A knob a face inherits keeps that face's name - `max_tokens` is OpenAI's, `maxOutputTokens` LangChain4j's, `maxTokens` Spring AI's `ChatOptions` - and a knob jinfer adds is named the same on every face.
+This table is the translation.
+
+| concept | Java API | CLI | server | LangChain4j | Spring AI |
+|---|---|---|---|---|---|
+| context capacity: the usable context of this model or state, what you set | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.chat.context-capacity` |
+| max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextCapacity(0)` selects it | same |
+| max output tokens | `Request.maxTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
+| temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
+| thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
+| reasoning budget | `Request.reasoningMaxTokens` | `--reasoning-budget` | `reasoning_max_tokens` | `reasoningBudget` | `reasoningBudget` |
+| grammar (raw GBNF) | `Request.contentGbnf` | - | `grammar` | `JinferChatRequestParameters.grammar` | `JinferChatOptions.grammar` |
+| speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
+| prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
+| structured output | `Request.contentGbnf` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
+
 ## Performance and observability
 
 - Vector API kernels run on x86 and ARM. JAM is selected automatically when present.

@@ -52,6 +52,8 @@ detections onto a PNG. Models download on first use. `Detect.java` uses a 12B vi
 for a 16 GB heap; the rest are small. The [full gallery](../examples/scripts/README.md) also covers
 speech, semantic search, reranking and prompt caching.
 
+Every knob here has the same name on the other faces (CLI, server, Spring AI, Java API); the [translation table](https://qxotic.ai/jinfer#the-same-knob-at-each-face) maps one to the other.
+
 ## Add the provider
 
 ```xml

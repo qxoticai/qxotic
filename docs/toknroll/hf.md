@@ -94,4 +94,5 @@ Tokenizer llama = HuggingFaceTokenizerLoader
 | `toknroll.cache.root` / `TOKNROLL_CACHE_ROOT` | Cache directory for downloaded artifacts |
 | `toknroll.huggingface.token` / `HF_TOKEN` | HuggingFace authentication token |
 | `toknroll.modelscope.token` / `MODELSCOPE_TOKEN` | ModelScope authentication token |
+| `toknroll.hf.connectTimeoutSeconds` | HTTP connect timeout (default 120) |
 | `toknroll.downloadTimeoutSeconds` | Artifact download deadline in seconds (default 300) |

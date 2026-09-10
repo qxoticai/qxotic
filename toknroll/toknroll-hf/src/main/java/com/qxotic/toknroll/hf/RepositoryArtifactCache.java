@@ -30,7 +30,7 @@ final class RepositoryArtifactCache {
     private static final String DEFAULT_CACHE_DIR = "cache";
 
     private static final long CONNECT_TIMEOUT_SECONDS =
-            Long.getLong("toknroll.gguf.connectTimeoutSeconds", 120);
+            Long.getLong("toknroll.hf.connectTimeoutSeconds", 120);
     private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
             Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
 
