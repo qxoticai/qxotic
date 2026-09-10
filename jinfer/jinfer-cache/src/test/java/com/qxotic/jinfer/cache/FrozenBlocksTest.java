@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.ContentKey;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -17,6 +18,8 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.zip.CRC32C;
 import org.junit.jupiter.api.Test;
 
@@ -380,15 +383,39 @@ public final class FrozenBlocksTest {
     }
 
     @Test
-    void appendSkipsDuplicatesWithinOneBatch() throws Exception {
+    void appendDeduplicatesNewKeys() throws Exception {
         ContentKey seed = ContentKey.sha256(new byte[] {11});
         Path file = artifactWithTwoBlocks(seed);
         FrozenBlocks mounted = FrozenBlocks.open(file, seed);
-        FrozenBlocks.Entry first = mounted.entries().get(0);
-        long before = Files.size(file);
-        mounted.append(List.of(first, first));
-        assertEquals(before, Files.size(file), "nothing new to write");
-        assertEquals(2, FrozenBlocks.open(file, seed).entries().size());
+        FrozenBlocks.Entry child = child(mounted, 11);
+
+        mounted.append(List.of(child, child));
+
+        assertEquals(3, FrozenBlocks.open(file, seed).blockCount());
+    }
+
+    @Test
+    void independentWritersSerializeInOneJvm() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {13});
+        Path file = artifactWithTwoBlocks(seed);
+        FrozenBlocks left = FrozenBlocks.open(file, seed);
+        FrozenBlocks right = FrozenBlocks.open(file, seed);
+        CountDownLatch ready = new CountDownLatch(2), start = new CountDownLatch(1);
+        try (var writers = Executors.newFixedThreadPool(2)) {
+            var a = writers.submit(() -> appendAfter(ready, start, left, 13));
+            var b = writers.submit(() -> appendAfter(ready, start, right, 14));
+            ready.await();
+            start.countDown();
+            IOException leftFailure = a.get(), rightFailure = b.get();
+            assertTrue(
+                    (leftFailure == null) != (rightFailure == null),
+                    "exactly one stale mount must win");
+            IOException stale = leftFailure != null ? leftFailure : rightFailure;
+            assertTrue(
+                    stale.getMessage().contains("changed since it was mounted"),
+                    stale.getMessage());
+        }
+        assertEquals(3, FrozenBlocks.open(file, seed).blockCount());
     }
 
     @Test
@@ -436,6 +463,35 @@ public final class FrozenBlocksTest {
         BlockTree<BlockResumeTest.FakeState>.Block tip = tree.resume(new long[0], 0, s);
         s.ingestTo(fp.length);
         tree.commit(tip, fp, 0, fp.length, s);
+    }
+
+    private static FrozenBlocks.Entry child(FrozenBlocks blocks, long key) {
+        FrozenBlocks.Entry parent = blocks.entries().getLast();
+        int length = parent.to() - parent.from();
+        // Appending from a mapping of the same locked file can block on macOS.
+        MemorySegment mem =
+                MemorySegment.ofArray(new byte[Math.toIntExact(parent.mem().byteSize())]);
+        return new FrozenBlocks.Entry(
+                new BlockTree.BlockKey(key, key, key, key),
+                parent.key(),
+                parent.to(),
+                parent.to() + length,
+                -1,
+                mem,
+                FrozenBlocks.crc32c(mem));
+    }
+
+    private static IOException appendAfter(
+            CountDownLatch ready, CountDownLatch start, FrozenBlocks blocks, long key)
+            throws InterruptedException {
+        ready.countDown();
+        start.await();
+        try {
+            blocks.append(List.of(child(blocks, key)));
+            return null;
+        } catch (IOException failure) {
+            return failure;
+        }
     }
 
     @Test
@@ -517,11 +573,16 @@ public final class FrozenBlocksTest {
         assertCorrupt(
                 repairSlotCrc(mutateLong(pristine, commit + 24, pristine.length + 64), 0), seed);
 
-        // entry 0: inverted span, negative from
+        // entry 0: empty/disconnected span, negative from
+        assertCorrupt(repairIndexCrc(mutateInt(pristine, index + 68, 0)), seed);
+        assertCorrupt(repairIndexCrc(mutateInt(pristine, index + 64, 1)), seed);
         assertCorrupt(repairIndexCrc(mutateInt(pristine, index + 64, -4)), seed); // from
         assertCorrupt(repairIndexCrc(mutateInt(pristine, index + 68, -1)), seed); // to < from
-        // entry 0: blob below the KV region, negative length, length past the index
+        // entry 0: blob below/misaligned in the KV region, negative length, length past the index
         assertCorrupt(repairIndexCrc(mutateLong(pristine, index + 72, 0)), seed);
+        assertCorrupt(
+                repairIndexCrc(mutateLong(pristine, index + 72, FrozenBlocks.HEADER_BYTES + 1)),
+                seed);
         assertCorrupt(repairIndexCrc(mutateLong(pristine, index + 80, -8)), seed);
         assertCorrupt(
                 repairIndexCrc(
@@ -539,6 +600,11 @@ public final class FrozenBlocksTest {
             swapped[index + FrozenBlocks.INDEX_ENTRY_BYTES + i] = t;
         }
         assertCorrupt(repairIndexCrc(swapped), seed);
+        // entry 1 does not continue entry 0
+        assertCorrupt(
+                repairIndexCrc(
+                        mutateInt(pristine, index + FrozenBlocks.INDEX_ENTRY_BYTES + 64, 11)),
+                seed);
         // duplicate key: entry 1's key overwritten with entry 0's
         byte[] dup = pristine.clone();
         System.arraycopy(pristine, index, dup, index + 96, 32);

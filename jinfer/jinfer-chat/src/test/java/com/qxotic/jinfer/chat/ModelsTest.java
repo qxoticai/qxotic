@@ -26,6 +26,7 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.lang.foreign.Arena;
 import java.lang.reflect.Proxy;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -161,6 +162,23 @@ class ModelsTest {
         Files.write(a, new byte[] {1, 2, 3, 5});
         assertNotEquals(first, Models.modelSeed(a));
         assertTrue(first.value().startsWith("sha256:"));
+    }
+
+    @Test
+    void modelSeedDetectsChangesInTheMiddleOfLargeFiles(@TempDir Path dir) throws Exception {
+        Path model = dir.resolve("large.gguf");
+        long size = 16L << 20;
+        try (FileChannel channel =
+                FileChannel.open(model, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+            channel.write(ByteBuffer.wrap(new byte[] {0}), size - 1);
+        }
+
+        ContentKey first = Models.modelSeed(model);
+        try (FileChannel channel = FileChannel.open(model, StandardOpenOption.WRITE)) {
+            channel.write(ByteBuffer.wrap(new byte[] {1}), size / 2);
+        }
+
+        assertNotEquals(first, Models.modelSeed(model));
     }
 
     @Test

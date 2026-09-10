@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -50,6 +51,10 @@ import java.util.TreeSet;
 public final class Models {
 
     private static final System.Logger LOG = System.getLogger("jinfer.models");
+    private static final int MODEL_SEED_SAMPLE_BYTES = 1 << 20;
+    private static final int MODEL_SEED_SAMPLES = 5;
+    private static final byte[] MODEL_SEED_DOMAIN =
+            "jinfer:model:sampled:v2".getBytes(StandardCharsets.UTF_8);
 
     private Models() {}
 
@@ -550,9 +555,9 @@ public final class Models {
     }
 
     /**
-     * A fast, stable identity for a model file: length + first and last MiB, hashed (full-content
-     * hashing of multi-GB weights is not worth it - length + head/tail covers metadata, tensor
-     * table and data edges).
+     * A bounded model-file fingerprint for cache compatibility: size plus five evenly distributed 1
+     * MiB samples. Files up to 1 MiB are hashed in full; larger files require at most 5 MiB of I/O.
+     * This detects changes in sampled regions, not arbitrary mutations elsewhere in the file.
      */
     public static ContentKey modelSeed(Path gguf) {
         try (var ch = FileChannel.open(gguf, StandardOpenOption.READ)) {
@@ -567,15 +572,18 @@ public final class Models {
         try {
             MessageDigest d = sha256();
             long size = ch.size();
-            ByteBuffer len = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, size);
-            d.update(len);
-            ByteBuffer buf = ByteBuffer.allocate((int) Math.min(1 << 20, size));
-            readFully(ch, buf, 0);
-            buf.flip();
-            d.update(buf);
-            if (size > (1 << 20)) {
+            d.update(MODEL_SEED_DOMAIN);
+            d.update(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, size));
+            int window = (int) Math.min(MODEL_SEED_SAMPLE_BYTES, size);
+            ByteBuffer buf = ByteBuffer.allocate(window);
+            int samples = size <= MODEL_SEED_SAMPLE_BYTES ? 1 : MODEL_SEED_SAMPLES;
+            long span = size - window;
+            long step = samples == 1 ? 0 : span / (samples - 1);
+            for (int i = 0; i < samples; i++) {
+                long pos = i == samples - 1 ? span : step * i;
+                d.update(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, pos));
                 buf.clear();
-                readFully(ch, buf, size - buf.capacity());
+                readFully(ch, buf, pos);
                 buf.flip();
                 d.update(buf);
             }

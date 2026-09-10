@@ -467,7 +467,8 @@ public final class FrozenBlocks {
                         .asByteBuffer()
                         .order(ByteOrder.LITTLE_ENDIAN);
         BlockTree.BlockKey root = BlockTree.chainRoot(modelSeed);
-        Set<BlockTree.BlockKey> seen = new HashSet<>();
+        Map<BlockTree.BlockKey, Integer> ends = new HashMap<>();
+        ends.put(root, 0);
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             BlockTree.BlockKey key = getKey(idx);
@@ -476,18 +477,24 @@ public final class FrozenBlocks {
             long offset = idx.getLong(), len = idx.getLong();
             int crc = idx.getInt();
             idx.getInt(); // pad
-            if (from < 0 || to < from) {
+            if (from < 0 || to <= from) {
                 throw corrupt(file, "block " + i + " has span [" + from + "," + to + ")");
             }
-            if (offset < HEADER_BYTES || len < 0 || len > indexOffset - offset) {
+            if (offset < HEADER_BYTES
+                    || (offset & (ALIGN - 1)) != 0
+                    || len < 0
+                    || len > indexOffset - offset) {
                 throw corrupt(file, "block " + i + " blob lies outside the KV region");
             }
-            // parents-first: every parent is the chain root or an entry already seen
-            if (!parentKey.equals(root) && !seen.contains(parentKey)) {
+            Integer parentTo = ends.get(parentKey);
+            if (parentTo == null) {
                 throw corrupt(
                         file, "block " + i + " precedes its parent (index not parents-first)");
             }
-            if (!seen.add(key)) {
+            if (from != parentTo) {
+                throw corrupt(file, "block " + i + " does not continue its parent");
+            }
+            if (ends.putIfAbsent(key, to) != null) {
                 throw corrupt(file, "block " + i + " duplicates an earlier key");
             }
             entries.add(new Entry(key, parentKey, from, to, offset, map.asSlice(offset, len), crc));
@@ -648,10 +655,17 @@ public final class FrozenBlocks {
      * PromptCache#export} is exactly that) - only live blocks are re-serialized. Partial state
      * never touches disk: blocks only exist complete.
      */
-    synchronized void append(List<Entry> fresh) throws IOException {
+    void append(List<Entry> fresh) throws IOException {
+        // ponytail: saves are rare; use per-path locks only if global write contention is measured.
+        synchronized (FrozenBlocks.class) {
+            appendUnderJvmLock(fresh);
+        }
+    }
+
+    private void appendUnderJvmLock(List<Entry> fresh) throws IOException {
         // The index is a tree, one entry per key, and open() refuses anything else; enforce it
-        // where the index is written. Entries already on disk (or repeated in this batch) are
-        // skipped, not rewritten: the key names the same bytes.
+        // where the index is written. Entries already on disk are skipped, not rewritten: the key
+        // names the same bytes.
         List<Entry> unseen = new ArrayList<>(fresh.size());
         Set<BlockTree.BlockKey> batch = new HashSet<>();
         for (Entry e : fresh) if (!keys.contains(e.key()) && batch.add(e.key())) unseen.add(e);
@@ -659,11 +673,9 @@ public final class FrozenBlocks {
         if (fresh.isEmpty()) return;
         try (FileChannel ch =
                 FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
-            // single-writer law, enforced: offsets below come from THIS instance's parsed view,
-            // so a writer that mounted before another writer appended would overwrite its blocks
-            // and orphan them - silent last-writer-wins. The advisory lock serializes writers;
-            // selecting the disk commit turns a stale view into a loud refusal instead of data
-            // loss.
+            // The class monitor serializes this JVM and the file lock serializes processes. Offsets
+            // come from THIS instance's parsed view, so selecting the disk commit turns a stale
+            // view into a loud refusal instead of silent last-writer-wins.
             try (FileLock ignored = ch.lock()) {
                 FrozenBlocks disk = open(file, modelSeed, ch);
                 if (!sameCommit(disk.commit, commit)) {
