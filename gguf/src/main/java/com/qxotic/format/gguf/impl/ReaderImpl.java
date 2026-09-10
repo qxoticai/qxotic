@@ -118,10 +118,10 @@ final class ReaderImpl {
     // a truncated or corrupt header reads garbage into a length field; refusing it here keeps
     // the failure a GGUFFormatException instead of an ArithmeticException or a multi-GB
     // allocation attempt (the largest real vocabularies are a few hundred thousand entries)
-    private static final long MAX_STRING_BYTES = 1L << 28;
-    private static final long MAX_COUNT = 1L << 26;
+    private static final int MAX_STRING_BYTES = 1 << 28;
+    private static final int MAX_COUNT = 1 << 26;
 
-    private static int plausible(long value, long max, String what) {
+    private static int plausible(long value, int max, String what) { // int max: the cast is exact
         if (value < 0 || value > max) {
             throw new GGUFFormatException(
                     what + " is not plausible: " + Long.toUnsignedString(value));
