@@ -1075,6 +1075,23 @@ public final class ChatEngine implements AutoCloseable {
             return reply == null;
         }
 
+        /**
+         * Tokens the reply spent in its reasoning span - part of the completion count, decoded at
+         * the same rate as the visible answer and invisible in it. On a reasoning checkpoint a
+         * one-line question can cost ten times its answer here; this is the number that says so.
+         * Zero when the pass was cancelled or the model did not reason.
+         */
+        public int reasoningTokens() {
+            if (reply == null) return 0;
+            int total = 0;
+            for (Content part : reply.content()) {
+                if (part instanceof Content.Reasoning reasoning) {
+                    total += reasoning.verbatim().length();
+                }
+            }
+            return total;
+        }
+
         /** Non-null when the pass ran self-speculation - carries the acceptance counters. */
         public Optional<SpeculativeDecoding.SpeculationResult> speculated() {
             return Optional.ofNullable(speculation);
@@ -1128,18 +1145,7 @@ public final class ChatEngine implements AutoCloseable {
             event.finishReason = result.finishReason().name().toLowerCase(Locale.ROOT);
         }
         if (completion.cancelled()) event.finishReason = "cancelled";
-        if (completion.reply() != null) event.reasoningTokens = reasoningTokens(completion.reply());
-    }
-
-    /** Reasoning tokens ride the parsed parts as verbatim ids, so counting them is free. */
-    private static int reasoningTokens(Message reply) {
-        int total = 0;
-        for (Content part : reply.content()) {
-            if (part instanceof Content.Reasoning reasoning) {
-                total += reasoning.verbatim().length();
-            }
-        }
-        return total;
+        event.reasoningTokens = completion.reasoningTokens();
     }
 
     private Completion complete0(

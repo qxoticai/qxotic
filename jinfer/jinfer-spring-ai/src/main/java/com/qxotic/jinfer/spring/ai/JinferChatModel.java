@@ -598,6 +598,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                         new JinferUsage(
                                                 result.promptTime().toNanos(),
                                                 result.decodeTime().toNanos(),
+                                                done.reasoningTokens(),
                                                 done.tier(),
                                                 done.speculated()
                                                         .map(s -> (long) s.drafted())
@@ -625,11 +626,14 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * BLOCKS}, so the usage's cache-read COUNT is the ground truth for how much was saved), and -
      * when the pass ran self-speculation - its acceptance counters ({@code drafted} tokens proposed
      * by the draft head, {@code accepted} of them verified, {@code forwards} target model passes;
-     * all null on a plain decode).
+     * all null on a plain decode). {@code reasoningTokens} is the part of the completion spent in
+     * the think span - decoded at the answer's rate and absent from it, so a slow one-line call is
+     * explained here.
      */
     public record JinferUsage(
             long promptNanos,
             long predictedNanos,
+            int reasoningTokens,
             PromptCache.Tier servedFrom,
             Long speculatedDrafted,
             Long speculatedAccepted,

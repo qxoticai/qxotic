@@ -171,6 +171,11 @@ instead of being ignored.
 `thinkingPolicy()` says how a checkpoint reasons.
 `NONE` has no think span, `OPTIONAL` honours `thinking(false)`, and `ALWAYS` (LFM2.5-8B-A1B) has no non-thinking turn, so `thinking(false)` fails at `build()` with an `UnsupportedFeatureException` naming the remedy.
 Reasoning always arrives separated in `AiMessage.thinking()`; `reasoningBudget(n)` caps the span on every policy (a budget of 0 makes the model answer first, which costs accuracy even on simple questions: prefer a small positive budget), and a per-request `JinferChatRequestParameters.reasoningBudget` wins over the builder's.
+Reasoning costs latency before it costs anything else.
+Hidden tokens decode at the same rate as visible ones, so a one-line question that spends 130 tokens thinking before a 9-token answer takes fifteen times longer than the answer alone - 10 seconds on a laptop that decodes at 13 tokens per second.
+That is the model's own default: LFM2.5-2.6B opens its think span in the generation prompt itself, so every client pays those tokens, and `thinking(false)` closes a span the template opened.
+`JinferTokenUsage.reasoningTokenCount()` reports the hidden part of every reply, so a slow call explains itself in the usage line (`output=138 (reasoning=129)`).
+For a call that needs no reasoning - summarising a tool result, classifying, extracting - set `JinferChatRequestParameters.reasoningBudget(0)` on that request and keep the model's default for the rest.
 
 ## Structured output
 

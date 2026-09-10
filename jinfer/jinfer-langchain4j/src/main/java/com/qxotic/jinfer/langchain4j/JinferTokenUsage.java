@@ -28,6 +28,7 @@ import java.util.Objects;
 public final class JinferTokenUsage extends TokenUsage {
 
     private final int cachedInputTokens;
+    private final int reasoningTokens;
     private final PromptCache.Tier servedFrom;
     private final long promptNanos;
     private final long predictedNanos;
@@ -38,6 +39,7 @@ public final class JinferTokenUsage extends TokenUsage {
                 promptTokens,
                 done.result().completionTokens(),
                 done.restoredTokens(),
+                done.reasoningTokens(),
                 done.tier(),
                 done.result().promptTime().toNanos(),
                 done.result().decodeTime().toNanos());
@@ -47,11 +49,13 @@ public final class JinferTokenUsage extends TokenUsage {
             int inputTokenCount,
             int outputTokenCount,
             int cachedInputTokens,
+            int reasoningTokens,
             PromptCache.Tier servedFrom,
             long promptNanos,
             long predictedNanos) {
         super(inputTokenCount, outputTokenCount);
         this.cachedInputTokens = cachedInputTokens;
+        this.reasoningTokens = reasoningTokens;
         this.servedFrom = servedFrom;
         this.promptNanos = promptNanos;
         this.predictedNanos = predictedNanos;
@@ -63,6 +67,16 @@ public final class JinferTokenUsage extends TokenUsage {
      */
     public int cachedInputTokens() {
         return cachedInputTokens;
+    }
+
+    /**
+     * Output tokens spent in the reasoning span; part of {@code outputTokenCount}, decoded at the
+     * same rate as the answer and absent from it. On a reasoning checkpoint a one-line question can
+     * spend ten times its answer here - this is where a slow trivial call went. {@code
+     * reasoningBudget(n)} caps it; a per-request budget of 0 skips it. Sums across {@link #add}.
+     */
+    public int reasoningTokenCount() {
+        return reasoningTokens;
     }
 
     /**
@@ -98,6 +112,7 @@ public final class JinferTokenUsage extends TokenUsage {
                 sum(inputTokenCount(), that.inputTokenCount()),
                 sum(outputTokenCount(), that.outputTokenCount()),
                 cachedInputTokens + (j == null ? 0 : j.cachedInputTokens),
+                reasoningTokens + (j == null ? 0 : j.reasoningTokens),
                 null,
                 promptNanos + (j == null ? 0 : j.promptNanos),
                 predictedNanos + (j == null ? 0 : j.predictedNanos));
@@ -108,6 +123,7 @@ public final class JinferTokenUsage extends TokenUsage {
         return o instanceof JinferTokenUsage that
                 && super.equals(that)
                 && cachedInputTokens == that.cachedInputTokens
+                && reasoningTokens == that.reasoningTokens
                 && servedFrom == that.servedFrom
                 && promptNanos == that.promptNanos
                 && predictedNanos == that.predictedNanos;
@@ -116,7 +132,12 @@ public final class JinferTokenUsage extends TokenUsage {
     @Override
     public int hashCode() {
         return Objects.hash(
-                super.hashCode(), cachedInputTokens, servedFrom, promptNanos, predictedNanos);
+                super.hashCode(),
+                cachedInputTokens,
+                reasoningTokens,
+                servedFrom,
+                promptNanos,
+                predictedNanos);
     }
 
     @Override
@@ -129,6 +150,7 @@ public final class JinferTokenUsage extends TokenUsage {
                         .append(servedFrom == null ? "" : ", " + servedFrom)
                         .append("), output=")
                         .append(outputTokenCount())
+                        .append(reasoningTokens > 0 ? " (reasoning=" + reasoningTokens + ")" : "")
                         .append(String.format(Locale.ROOT, ", prompt=%.2fs", promptNanos / 1e9));
         if (predictedNanos > 0) {
             sb.append(

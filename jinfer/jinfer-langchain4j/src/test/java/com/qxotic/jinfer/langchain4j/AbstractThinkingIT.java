@@ -102,6 +102,13 @@ abstract class AbstractThinkingIT {
         assertFalse(
                 ai.thinking().contains(ai.text()),
                 "the answer must not be duplicated inside the reasoning lane");
+        // the hidden lane is accounted for: reported, non-empty, and inside the output count
+        JinferTokenUsage usage = (JinferTokenUsage) r.tokenUsage();
+        assertTrue(
+                usage.reasoningTokenCount() > 0, "a reasoning turn reports its tokens: " + usage);
+        assertTrue(
+                usage.reasoningTokenCount() < usage.outputTokenCount(),
+                "reasoning is part of the output, never all of it: " + usage);
     }
 
     private record Streamed(

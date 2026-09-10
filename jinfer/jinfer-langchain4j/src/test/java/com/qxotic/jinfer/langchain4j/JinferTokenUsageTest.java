@@ -20,12 +20,13 @@ class JinferTokenUsageTest {
     @Test
     void addSumsEverythingAndDropsTheTier() {
         JinferTokenUsage a =
-                new JinferTokenUsage(100, 10, 80, PromptCache.Tier.BLOCKS, 1_000, 2_000);
-        JinferTokenUsage b = new JinferTokenUsage(50, 5, 0, PromptCache.Tier.FRESH, 500, 1_000);
+                new JinferTokenUsage(100, 10, 80, 7, PromptCache.Tier.BLOCKS, 1_000, 2_000);
+        JinferTokenUsage b = new JinferTokenUsage(50, 5, 0, 2, PromptCache.Tier.FRESH, 500, 1_000);
         JinferTokenUsage sum = a.add(b);
         assertEquals(150, sum.inputTokenCount());
         assertEquals(15, sum.outputTokenCount());
         assertEquals(80, sum.cachedInputTokens());
+        assertEquals(9, sum.reasoningTokenCount(), "hidden tokens sum like the visible ones");
         assertEquals(1_500, sum.promptNanos());
         assertEquals(3_000, sum.predictedNanos());
         assertNull(sum.servedFrom(), "an aggregate has no single serving");
@@ -39,7 +40,7 @@ class JinferTokenUsageTest {
     @Test
     void plainOperandsContributeCountsOnly() {
         JinferTokenUsage a =
-                new JinferTokenUsage(100, 10, 80, PromptCache.Tier.SESSION, 1_000, 2_000);
+                new JinferTokenUsage(100, 10, 80, 0, PromptCache.Tier.SESSION, 1_000, 2_000);
         JinferTokenUsage sum = a.add(new TokenUsage(50, 5));
         assertEquals(150, sum.inputTokenCount());
         assertEquals(80, sum.cachedInputTokens(), "a plain usage has no cache read to add");
@@ -50,14 +51,16 @@ class JinferTokenUsageTest {
     void toStringIsTheDiagnosisLine() {
         JinferTokenUsage usage =
                 new JinferTokenUsage(
-                        1204, 87, 1180, PromptCache.Tier.BLOCKS, 210_000_000L, 2_000_000_000L);
+                        1204, 87, 1180, 61, PromptCache.Tier.BLOCKS, 210_000_000L, 2_000_000_000L);
         String line = usage.toString();
         assertTrue(line.contains("input=1204"), line);
         assertTrue(line.contains("cached=1180, BLOCKS"), line);
+        assertTrue(line.contains("output=87 (reasoning=61)"), line);
         assertTrue(line.contains("prompt=0.21s"), line);
         assertTrue(line.contains("decode=43.5 tok/s"), line);
         // zero decode time (an empty completion) must not divide by zero
-        String empty = new JinferTokenUsage(10, 0, 0, PromptCache.Tier.FRESH, 1_000, 0).toString();
+        String empty =
+                new JinferTokenUsage(10, 0, 0, 0, PromptCache.Tier.FRESH, 1_000, 0).toString();
         assertTrue(!empty.contains("tok/s"), empty);
     }
 }

@@ -224,6 +224,11 @@ try (var model = JinferChatModel.builder()
 `thinkingPolicy()` says how a checkpoint reasons.
 `NONE` has no think span, `OPTIONAL` honours `thinking(false)`, and `ALWAYS` (LFM2.5-8B-A1B) has no non-thinking turn, so `thinking(false)` is refused with an `IllegalArgumentException` naming the remedy.
 `reasoningBudget` caps the span on every policy (a budget of 0 makes the model answer first, which costs accuracy even on simple questions: prefer a small positive budget), as an option or as `spring.ai.jinfer.chat.reasoning-budget`.
+Reasoning costs latency before it costs anything else.
+Hidden tokens decode at the same rate as visible ones, so a one-line question that spends 130 tokens thinking before a 9-token answer takes fifteen times longer than the answer alone - 10 seconds on a laptop that decodes at 13 tokens per second.
+That is the model's own default: LFM2.5-2.6B opens its think span in the generation prompt itself, so every client pays those tokens, and `thinking(false)` closes a span the template opened.
+`JinferUsage.reasoningTokens()` on the response usage reports the hidden part of every reply, so a slow call explains itself.
+For a call that needs no reasoning - summarising a tool result, classifying, extracting - set `reasoningBudget(0)` in that call's options and keep the model's default for the rest.
 
 Use `model("...")` for a model reference and `modelPath(Path.of("model.gguf"))` for a local
 file. Companions follow the same pattern with `companion(...)` and `companionPath(...)`.
