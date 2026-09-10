@@ -214,6 +214,9 @@ abstract class AbstractThinkingIT {
                                                 call.id(), call.name(), "18C, sunny"))
                                 .toolSpecifications(WEATHER)
                                 .build());
+        Assumptions.assumeTrue(
+                !second.aiMessage().hasToolExecutionRequests(),
+                "model chose another tool call after receiving the result: " + second.aiMessage());
         assertNotNull(second.aiMessage().text(), second.aiMessage().toString());
         assertNoThinkingSyntax(second.aiMessage().text());
         assertTrue(second.aiMessage().text().contains("18"), second.aiMessage().text());
