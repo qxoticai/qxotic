@@ -53,7 +53,7 @@ for a 16 GB heap; the rest are small. The [full gallery](../examples/scripts/REA
 speech, semantic search, reranking and prompt caching.
 
 Using the Spring AI provider too?
-[The same knob in each framework](../README.md#the-same-knob-in-each-framework) maps one to the other.
+[The same knob at each face](../README.md#the-same-knob-at-each-face) maps one to the other, and to the CLI, the server and the Java API.
 
 ## Add the provider
 

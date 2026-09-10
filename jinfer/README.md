@@ -251,16 +251,27 @@ try (var speech = JinferSpeechModel.builder()
 }
 ```
 
-## The same knob in each framework
+## The same knob at each face
 
-Each provider speaks its framework's dialect: a knob the framework defines keeps the framework's name and place, and a knob jinfer adds is named the same in both.
+One engine, four faces: the Java API, the CLI, the OpenAI-compatible server and the two framework providers.
+A knob a face inherits keeps that face's name - `max_tokens` is OpenAI's, `maxOutputTokens` LangChain4j's, `maxTokens` Spring AI's `ChatOptions` - and a knob jinfer adds is named the same on every face.
+This table is the translation.
 
-| knob | LangChain4j | Spring AI |
-|---|---|---|
-| model, companions, context length, prompt cache, retained sessions, speculation depth | builder | builder, same names |
-| temperature, top-p, top-k, max tokens, stop sequences | builder and `ChatRequestParameters` (`maxOutputTokens`) | `JinferChatOptions`, as `ChatOptions` names them (`maxTokens`) |
-| seed, min-p, thinking, reasoning budget and message, timeout, grammar | builder; per request `JinferChatRequestParameters` | `JinferChatOptions`, as the model default or per call |
-| structured output | `AiServices` return type, a schema described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
+| concept | Java API | CLI | server | LangChain4j | Spring AI |
+|---|---|---|---|---|---|
+| context capacity: the tokens a conversation's state can hold | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextLength` on the builder | `contextLength` on the builder, `spring.ai.jinfer.chat.context-length` |
+| trained context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.contextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextLength(0)` selects it | same |
+| max output tokens | `Request.maxTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
+| temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
+| thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
+| reasoning budget | `Request.reasoningMaxTokens` | `--reasoning-budget` | `reasoning_max_tokens` | `reasoningBudget` | `reasoningBudget` |
+| grammar (raw GBNF) | `Request.contentGbnf` | - | `grammar` | `JinferChatRequestParameters.grammar` | `JinferChatOptions.grammar` |
+| speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
+| prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
+| structured output | `Request.contentGbnf` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
+
+The one collision: the providers' `contextLength` sets the **capacity**, under the name the Java API uses for the trained length.
+`0` there means "the trained length", and a value above it is refused at build.
 
 ## CLI and server
 

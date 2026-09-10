@@ -90,7 +90,7 @@ or local paths and resolve during application startup. Add companions under
 `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
 
 Using the LangChain4j provider too?
-[The same knob in each framework](../README.md#the-same-knob-in-each-framework) maps one to the other.
+[The same knob at each face](../README.md#the-same-knob-at-each-face) maps one to the other, and to the CLI, the server and the Java API.
 
 ## Add the provider
 
