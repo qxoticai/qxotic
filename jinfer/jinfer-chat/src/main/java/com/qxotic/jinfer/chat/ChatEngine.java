@@ -176,6 +176,11 @@ public final class ChatEngine implements AutoCloseable {
         }
     }
 
+    /** Loads a model with no companions and the default prompt-cache policy. */
+    public ChatEngine(Path modelPath) {
+        this(modelPath, Map.of(), PromptCache.Options.DEFAULTS);
+    }
+
     public ChatEngine(
             Path modelPath, Map<String, Path> companions, PromptCache.Options cacheOptions) {
         // Refuse invalid options before allocating owned weights.
@@ -519,19 +524,99 @@ public final class ChatEngine implements AutoCloseable {
          * framework-free callers should start here instead of juggling 12 slots.
          */
         public static Request of(List<Message> messages, Sampling sampling) {
-            return new Request(
-                    messages,
-                    List.of(),
-                    false,
-                    Generator.Constraints.UNLIMITED,
-                    null,
-                    null,
-                    Duration.ZERO,
-                    sampling,
-                    null,
-                    ForcedTool.NONE,
-                    List.of(),
-                    null);
+            return builder(messages, sampling).build();
+        }
+
+        /** Starts a request with the same conservative defaults as {@link #of}. */
+        public static Builder builder(List<Message> messages, Sampling sampling) {
+            return new Builder(messages, sampling);
+        }
+
+        /** Fluent construction for requests that need more than the conservative defaults. */
+        public static final class Builder {
+            private final List<Message> messages;
+            private final Sampling sampling;
+            private List<Tool> tools = List.of();
+            private boolean thinking;
+            private int maxTokens = Generator.Constraints.UNLIMITED;
+            private Integer reasoningMaxTokens;
+            private String reasoningMessage;
+            private Duration timeout = Duration.ZERO;
+            private String contentGbnf;
+            private ForcedTool forcedTool = ForcedTool.NONE;
+            private List<String> stops = List.of();
+            private Map<String, Object> templateKwargs;
+
+            private Builder(List<Message> messages, Sampling sampling) {
+                this.messages = messages;
+                this.sampling = sampling;
+            }
+
+            public Builder tools(List<Tool> tools) {
+                this.tools = tools;
+                return this;
+            }
+
+            public Builder thinking(boolean thinking) {
+                this.thinking = thinking;
+                return this;
+            }
+
+            public Builder maxTokens(int maxTokens) {
+                this.maxTokens = maxTokens;
+                return this;
+            }
+
+            public Builder reasoningMaxTokens(Integer reasoningMaxTokens) {
+                this.reasoningMaxTokens = reasoningMaxTokens;
+                return this;
+            }
+
+            public Builder reasoningMessage(String reasoningMessage) {
+                this.reasoningMessage = reasoningMessage;
+                return this;
+            }
+
+            public Builder timeout(Duration timeout) {
+                this.timeout = timeout;
+                return this;
+            }
+
+            public Builder contentGbnf(String contentGbnf) {
+                this.contentGbnf = contentGbnf;
+                return this;
+            }
+
+            public Builder forcedTool(ForcedTool forcedTool) {
+                this.forcedTool = forcedTool;
+                return this;
+            }
+
+            public Builder stops(List<String> stops) {
+                this.stops = stops;
+                return this;
+            }
+
+            public Builder templateKwargs(Map<String, Object> templateKwargs) {
+                this.templateKwargs = templateKwargs;
+                return this;
+            }
+
+            public Request build() {
+                return new Request(
+                        messages,
+                        tools,
+                        thinking,
+                        maxTokens,
+                        reasoningMaxTokens,
+                        reasoningMessage,
+                        timeout,
+                        sampling,
+                        contentGbnf,
+                        forcedTool,
+                        stops,
+                        templateKwargs);
+            }
         }
     }
 
@@ -1124,6 +1209,11 @@ public final class ChatEngine implements AutoCloseable {
             event.end();
             event.commit();
         }
+    }
+
+    /** Prepares, completes, and releases one request's copied media rows. */
+    public Completion complete(Request request) {
+        return complete(request, ReplySink.NONE);
     }
 
     /** Prepares, completes, and releases one request's copied media rows. */

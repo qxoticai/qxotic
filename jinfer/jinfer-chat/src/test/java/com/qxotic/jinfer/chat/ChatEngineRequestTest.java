@@ -18,10 +18,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/**
- * {@link ChatEngine.Request} is a positional record built by every integration, so its guards are
- * the only thing standing between a mis-ordered argument and a request that quietly runs wrong.
- */
+/** The request factories and canonical guards share one set of defaults and validation. */
 final class ChatEngineRequestTest {
 
     private static final List<Message> ONE_TURN = List.of(Message.user("hi"));
@@ -43,6 +40,50 @@ final class ChatEngineRequestTest {
         assertEquals(ChatEngine.ForcedTool.NONE, r.forcedTool());
         assertTrue(r.stops().isEmpty());
         assertNull(r.templateKwargs());
+    }
+
+    @Test
+    void builderSetsOptionalFields() {
+        Duration timeout = Duration.ofSeconds(3);
+        Map<String, Object> kwargs = Map.of("mode", "brief");
+        ChatEngine.Request request =
+                ChatEngine.Request.builder(ONE_TURN, SAMPLING)
+                        .tools(ONE_TOOL)
+                        .thinking(true)
+                        .maxTokens(128)
+                        .reasoningMaxTokens(32)
+                        .reasoningMessage("Enough.")
+                        .timeout(timeout)
+                        .contentGbnf("root ::= \"ok\"")
+                        .stops(List.of("STOP"))
+                        .templateKwargs(kwargs)
+                        .build();
+
+        assertEquals(ONE_TURN, request.messages());
+        assertEquals(ONE_TOOL, request.tools());
+        assertTrue(request.thinking());
+        assertEquals(128, request.maxTokens());
+        assertEquals(32, request.reasoningMaxTokens());
+        assertEquals("Enough.", request.reasoningMessage());
+        assertEquals(timeout, request.timeout());
+        assertEquals(SAMPLING, request.sampling());
+        assertEquals("root ::= \"ok\"", request.contentGbnf());
+        assertEquals(ChatEngine.ForcedTool.NONE, request.forcedTool());
+        assertEquals(List.of("STOP"), request.stops());
+        assertEquals(kwargs, request.templateKwargs());
+    }
+
+    @Test
+    void builderUsesTheCanonicalValidation() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ChatEngine.Request.builder(ONE_TURN, SAMPLING).maxTokens(-2).build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        ChatEngine.Request.builder(ONE_TURN, SAMPLING)
+                                .forcedTool(ChatEngine.ForcedTool.ANY)
+                                .build());
     }
 
     @Test

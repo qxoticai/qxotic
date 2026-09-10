@@ -22,6 +22,15 @@ import org.junit.jupiter.params.provider.ValueSource;
 @Isolated("Exercises JVM and native-image arena selection through a system property")
 final class ChatEngineLoadTest {
 
+    @Test
+    void oneArgumentConstructorPreservesTheLoadFailure(@TempDir Path directory) {
+        Path missing = directory.resolve("missing.gguf");
+        UncheckedIOException error =
+                assertThrows(UncheckedIOException.class, () -> new ChatEngine(missing));
+        assertTrue(error.getMessage().contains(missing.toString()));
+        assertInstanceOf(NoSuchFileException.class, error.getCause());
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void loadFailuresKeepTheirCause(boolean automaticArena, @TempDir Path directory)

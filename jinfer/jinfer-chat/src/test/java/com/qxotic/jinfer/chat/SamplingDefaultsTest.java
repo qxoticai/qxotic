@@ -40,4 +40,10 @@ class SamplingDefaultsTest {
         assertEquals(0.1f, sampling.minP());
         assertEquals(7L, sampling.seed());
     }
+
+    @Test
+    void resolveWithoutOverridesUsesTheEffectiveDefaults() {
+        var defaults = new LoadedModel.SamplingDefaults(0.2f, 0.9f, 12, 0.1f);
+        assertEquals(defaults.resolve(null, null, null, null, null), defaults.resolve());
+    }
 }

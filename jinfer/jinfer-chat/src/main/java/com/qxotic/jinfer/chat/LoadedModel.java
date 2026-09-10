@@ -167,6 +167,11 @@ public record LoadedModel<S extends ContextState>(
                     minP != null ? minP : fallback.minP);
         }
 
+        /** Resolves the model recommendations and engine baselines without request overrides. */
+        public Sampling resolve() {
+            return resolve(null, null, null, null, null);
+        }
+
         /**
          * The layered chain resolved into one {@link Sampling}: each non-null argument (a request
          * field or a CLI flag) wins, then this record's recommendation, then the engine baseline.

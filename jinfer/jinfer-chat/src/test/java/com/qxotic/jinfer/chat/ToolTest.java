@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
@@ -52,5 +53,45 @@ final class ToolTest {
         assertThrows(
                 UnsupportedOperationException.class,
                 () -> ((List<Object>) tool.parameters().get("required")).add("unit"));
+    }
+
+    @Test
+    void factoryBuildsAFunctionDefinition() {
+        Map<String, Object> parameters =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of("city", Map.of("type", "string")),
+                        "required",
+                        List.of("city"));
+
+        Tool tool = Tool.of("get_weather", "Current weather", parameters);
+
+        assertEquals("get_weather", tool.name());
+        assertEquals(parameters, tool.parameters());
+        assertEquals(
+                Map.of(
+                        "type",
+                        "function",
+                        "function",
+                        Map.of(
+                                "name",
+                                "get_weather",
+                                "description",
+                                "Current weather",
+                                "parameters",
+                                parameters)),
+                tool.definition());
+    }
+
+    @Test
+    void absentOptionalValuesProduceAParameterlessFunction() {
+        Tool tool = Tool.of("noop", null, null);
+        Map<?, ?> function = (Map<?, ?>) tool.definition().get("function");
+
+        assertFalse(function.containsKey("description"));
+        assertEquals(Map.of("type", "object"), tool.parameters());
+        assertThrows(IllegalArgumentException.class, () -> Tool.of("", null, null));
     }
 }

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Batch;
@@ -12,6 +13,7 @@ import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampler;
+import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpeculativeDecoding;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
@@ -42,6 +44,22 @@ final class ChatEngineTimeoutTest {
 
     private static final Duration TIMEOUT = Duration.ofMillis(100);
     private static final List<Batch> PROMPT = List.of(Batch.prefill(new int[] {1, 2, 3}));
+
+    @Test
+    void blockingRequestConvenienceUsesTheExistingCompletionPath() {
+        ChatEngine engine = engine(new ProbeModel(() -> {}));
+        engine.close();
+
+        IllegalStateException failure =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                engine.complete(
+                                        ChatEngine.Request.of(
+                                                List.of(Message.user("hi")),
+                                                new Sampling(0, 1, 0, 0, 1L))));
+        assertEquals("the model is closed", failure.getMessage());
+    }
 
     @Test
     void deadlineExhaustedByFinalPrefillChunkNeverEntersSpeculativeDecoder() {
