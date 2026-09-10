@@ -69,7 +69,7 @@ class EventSchemaTest {
                 Set.of(
                         "model",
                         "architecture",
-                        "contextLength",
+                        "maxContextLength",
                         "dimensions",
                         "weightsBytes",
                         "mapped"));

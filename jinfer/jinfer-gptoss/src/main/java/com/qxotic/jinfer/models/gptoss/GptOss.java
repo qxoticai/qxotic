@@ -437,7 +437,7 @@ public final class GptOss
             int numberOfKeyValueHeads,
             int headSize,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             double ropeTheta,
             float ropeScalingFactor,
@@ -456,7 +456,7 @@ public final class GptOss
                     || numberOfKeyValueHeads <= 0
                     || headSize <= 0
                     || vocabularySize <= 0
-                    || contextLength <= 0
+                    || maxContextLength <= 0
                     || ropeOrigCtx <= 0
                     || expertCount <= 0
                     || expertFeedForwardLength <= 0)
@@ -560,12 +560,12 @@ public final class GptOss
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > c.contextLength)
+            if (contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + c.contextLength);
+                                + " exceeds the model's maxContextLength "
+                                + c.maxContextLength);
             int rows = batchCapacity(), dim = c.embeddingLength;
             int queryDim = c.queryDim(), kvDim = c.kvDim();
             residual = Views.allocateF32(memoryArena(), rows, dim);

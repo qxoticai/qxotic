@@ -140,7 +140,7 @@ public final class Inflect2 {
         }
 
         /** The frame ceiling: a runaway log-duration must fail, not exhaust memory. */
-        public int contextLength() {
+        public int maxContextLength() {
             return MAX_FRAMES;
         }
     }

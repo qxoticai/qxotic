@@ -71,11 +71,11 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
             this.modelName = loaded.name();
-            int modelContextLength = loaded.model().configuration().contextLength();
+            int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =
                     b.contextLength == 0
-                            ? modelContextLength
-                            : Math.min(b.contextLength, modelContextLength);
+                            ? maxContextLength
+                            : Math.min(b.contextLength, maxContextLength);
             this.state = newState(loaded, contextCapacity, arena);
             this.observationRegistry =
                     b.observationRegistry == null

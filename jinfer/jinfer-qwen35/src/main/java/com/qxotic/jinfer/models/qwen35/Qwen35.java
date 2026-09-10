@@ -673,7 +673,7 @@ public final class Qwen35
             int numberOfKeyValueHeads,
             int headSize,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             float ropeTheta,
             int ropeDimensionCount,
@@ -808,9 +808,9 @@ public final class Qwen35
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > c.contextLength)
+            if (contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException(
-                        "contextCapacity " + contextCapacity + " exceeds " + c.contextLength);
+                        "contextCapacity " + contextCapacity + " exceeds " + c.maxContextLength);
             int b = batchCapacity, dim = c.embeddingLength, qd = c.queryDim(), kvd = c.kvDim();
             int hd = c.headVDim(), heads = c.ssmTimeStepRank, channels = c.convChannels();
             residual = Views.allocateF32(memoryArena(), b, dim);

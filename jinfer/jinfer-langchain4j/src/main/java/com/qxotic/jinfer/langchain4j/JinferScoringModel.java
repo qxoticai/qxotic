@@ -55,11 +55,11 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
-            int modelContextLength = loaded.model().configuration().contextLength();
+            int maxContextLength = loaded.model().configuration().maxContextLength();
             this.contextCapacity =
                     b.contextLength == 0
-                            ? modelContextLength
-                            : Math.min(b.contextLength, modelContextLength);
+                            ? maxContextLength
+                            : Math.min(b.contextLength, maxContextLength);
             this.state = newState(loaded, contextCapacity, arena);
             // the card's own wording is only knowable once the port is loaded
             if (b.instruction != null && !loaded.reranker().hasInstructionSlot())

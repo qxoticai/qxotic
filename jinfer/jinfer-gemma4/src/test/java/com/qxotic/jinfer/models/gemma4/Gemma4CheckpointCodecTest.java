@@ -77,7 +77,7 @@ final class Gemma4CheckpointCodecTest {
                 2, // numberOfHeads
                 new int[] {1, 2, 2}, // numberOfKeyValueHeadsPerLayer
                 8, // vocabularySize
-                16, // contextLength
+                16, // maxContextLength
                 1e-5f, // rmsNormEps
                 10_000f, // ropeThetaFull
                 10_000f, // ropeThetaSwa

@@ -549,7 +549,7 @@ public final class Qwen3
             int numberOfHeads,
             int numberOfKeyValueHeads,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             int hiddenDim,
             float rmsNormEps,
             float ropeTheta,
@@ -610,12 +610,12 @@ public final class Qwen3
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > config.contextLength()) {
+            if (contextCapacity > config.maxContextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + config.contextLength());
+                                + " exceeds the model's maxContextLength "
+                                + config.maxContextLength());
             }
             int c = batchCapacity;
             int dim = config.embeddingLength;

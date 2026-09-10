@@ -350,7 +350,7 @@ public final class NemotronH
             int numberOfKeyValueHeads,
             int headSize,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             LayerType[] layerTypes,
             int ssmInnerSize,
@@ -436,12 +436,12 @@ public final class NemotronH
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity <= 0 || contextCapacity > c.contextLength)
+            if (contextCapacity <= 0 || contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
                                 + " outside [1,"
-                                + c.contextLength
+                                + c.maxContextLength
                                 + "]");
             if (batchCapacity <= 0)
                 throw new IllegalArgumentException("batchCapacity " + batchCapacity);

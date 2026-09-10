@@ -339,7 +339,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
             int headSize,
             int ropeDimension,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             double ropeTheta,
             int slidingWindow,
@@ -440,7 +440,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > c.contextLength)
+            if (contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException("contextCapacity exceeds model context length");
             int rows = batchCapacity(), dim = c.embeddingLength;
             int qDim = c.queryDim(), kvDim = c.kvDim();

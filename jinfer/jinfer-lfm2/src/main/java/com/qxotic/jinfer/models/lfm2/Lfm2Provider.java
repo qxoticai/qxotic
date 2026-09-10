@@ -69,7 +69,7 @@ public final class Lfm2Provider implements ModelProvider {
         String name = gguf.getStringOrDefault("general.name", "").toUpperCase(Locale.ROOT);
         boolean lfm25 =
                 name.contains("LFM2.5")
-                        || config.contextLength() > 32_768
+                        || config.maxContextLength() > 32_768
                         || config.vocabularySize() > 65_536;
         if (vision) {
             if (config.vocabularySize() > 65_536)

@@ -847,7 +847,7 @@ public final class Lfm2
             int numberOfHeads,
             int[] numberOfKeyValueHeadsPerLayer,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             float ropeTheta,
             int headSize,
@@ -1071,12 +1071,12 @@ public final class Lfm2
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > config.contextLength())
+            if (contextCapacity > config.maxContextLength())
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + config.contextLength());
+                                + " exceeds the model's maxContextLength "
+                                + config.maxContextLength());
             int c = batchCapacity;
             int dim = config.embeddingLength;
             int maxQueryDim = config.queryDim();

@@ -602,7 +602,7 @@ public final class Gemma4
             int numberOfHeads,
             int[] numberOfKeyValueHeadsPerLayer,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             float ropeThetaFull,
             float ropeThetaSwa,
@@ -748,12 +748,12 @@ public final class Gemma4
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity > c.contextLength)
+            if (contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
-                                + " exceeds model contextLength "
-                                + c.contextLength);
+                                + " exceeds the model's maxContextLength "
+                                + c.maxContextLength);
             int rows = batchCapacity, dim = c.embeddingLength;
             residual = Views.allocateF32(memoryArena(), rows, dim);
             normed = Views.allocateF32(memoryArena(), rows, dim);

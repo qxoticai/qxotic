@@ -18,7 +18,7 @@ final class Serve {
                 options.modelPath().getFileName(),
                 model.model().getClass().getSimpleName(),
                 engine.contextCapacity(),
-                model.model().configuration().contextLength());
+                model.model().configuration().maxContextLength());
         System.out.printf(
                 "speculation %s (depth %d)%n",
                 engine.speculationReady() ? "ready" : "unavailable", engine.speculationDepth());

@@ -72,7 +72,8 @@ public final class PromptCacheTest {
         protected void clearHistory() {}
     }
 
-    record Configuration(int vocabularySize, int contextLength) implements ContextConfiguration {}
+    record Configuration(int vocabularySize, int maxContextLength)
+            implements ContextConfiguration {}
 
     static final Configuration CONFIG = new Configuration(32, CONTEXT);
 

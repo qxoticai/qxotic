@@ -88,7 +88,7 @@ final class Qwen3CheckpointCodecTest {
                 2, // numberOfHeads
                 1, // numberOfKeyValueHeads
                 8, // vocabularySize
-                16, // contextLength
+                16, // maxContextLength
                 8, // hiddenDim
                 1e-5f, // rmsNormEps
                 10_000f, // ropeTheta

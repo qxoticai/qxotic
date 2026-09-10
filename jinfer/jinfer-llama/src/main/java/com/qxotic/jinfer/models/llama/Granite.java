@@ -336,7 +336,7 @@ public final class Granite
             int numberOfKeyValueHeads,
             int headSize,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             float ropeTheta,
             int ropeDimensionCount,
@@ -442,12 +442,12 @@ public final class Granite
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity <= 0 || contextCapacity > config.contextLength()) {
+            if (contextCapacity <= 0 || contextCapacity > config.maxContextLength()) {
                 throw new IllegalArgumentException(
                         "contextCapacity "
                                 + contextCapacity
                                 + " outside [1,"
-                                + config.contextLength()
+                                + config.maxContextLength()
                                 + "]");
             }
             if (batchCapacity <= 0)

@@ -9,5 +9,5 @@ public interface ContextConfiguration {
      * Model-declared maximum context length. This describes the model, not the capacity allocated
      * by any particular state.
      */
-    int contextLength();
+    int maxContextLength();
 }

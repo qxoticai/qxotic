@@ -120,7 +120,7 @@ final class Qwen35CheckpointCodecTest {
                 1, // numberOfKeyValueHeads
                 2, // headSize
                 8, // vocabularySize
-                16, // contextLength
+                16, // maxContextLength
                 1e-5f, // rmsNormEps
                 10_000f, // ropeTheta
                 2, // ropeDimensionCount

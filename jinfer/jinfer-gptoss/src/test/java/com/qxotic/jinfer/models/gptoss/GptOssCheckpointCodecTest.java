@@ -76,7 +76,7 @@ final class GptOssCheckpointCodecTest {
                 1, // numberOfKeyValueHeads
                 2, // headSize
                 8, // vocabularySize
-                16, // contextLength
+                16, // maxContextLength
                 1e-5f, // rmsNormEps
                 10_000.0, // ropeTheta
                 1.0f, // ropeScalingFactor

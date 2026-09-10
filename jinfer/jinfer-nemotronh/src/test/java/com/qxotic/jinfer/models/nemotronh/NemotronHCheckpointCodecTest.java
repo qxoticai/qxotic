@@ -84,7 +84,7 @@ final class NemotronHCheckpointCodecTest {
                 1, // numberOfKeyValueHeads
                 2, // headSize
                 8, // vocabularySize
-                16, // contextLength
+                16, // maxContextLength
                 1e-5f, // rmsNormEps
                 new NemotronH.LayerType[] {NemotronH.LayerType.ATTENTION, NemotronH.LayerType.SSM},
                 4, // ssmInnerSize

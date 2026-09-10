@@ -28,7 +28,7 @@ import java.util.stream.IntStream;
 public final class TestLanguageModel
         implements LanguageModel<TestLanguageModel.Configuration, Void, TestLanguageModel.State> {
 
-    public record Configuration(int vocabularySize, int contextLength)
+    public record Configuration(int vocabularySize, int maxContextLength)
             implements ContextConfiguration {}
 
     public static final Tokenizer TOKENIZER =

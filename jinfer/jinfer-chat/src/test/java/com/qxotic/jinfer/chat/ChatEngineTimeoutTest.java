@@ -234,7 +234,7 @@ final class ChatEngineTimeoutTest {
                         });
     }
 
-    private record Configuration(int vocabularySize, int contextLength)
+    private record Configuration(int vocabularySize, int maxContextLength)
             implements ContextConfiguration {}
 
     private static final class ProbeState extends ContextState {

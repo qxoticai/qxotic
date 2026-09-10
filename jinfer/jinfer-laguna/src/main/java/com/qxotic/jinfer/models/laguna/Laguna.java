@@ -350,7 +350,7 @@ public final class Laguna
             int keyValueHeadCount,
             int headSize,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             int feedForwardLength,
             int denseLeadingLayers,
@@ -458,7 +458,7 @@ public final class Laguna
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity <= 0 || contextCapacity > c.contextLength)
+            if (contextCapacity <= 0 || contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException("invalid context capacity " + contextCapacity);
             int rows = batchCapacity(), dim = c.embeddingLength, kvDim = c.kvDim();
             residual = Views.allocateF32(memoryArena(), rows, dim);
@@ -637,7 +637,7 @@ public final class Laguna
                         && c.keyValueHeadCount > 0
                         && c.headSize > 0
                         && c.vocabularySize > 0
-                        && c.contextLength > 0,
+                        && c.maxContextLength > 0,
                 "invalid core dimensions");
         for (int heads : c.headCount)
             require(heads > 0 && heads % c.keyValueHeadCount == 0, "invalid per-layer head count");

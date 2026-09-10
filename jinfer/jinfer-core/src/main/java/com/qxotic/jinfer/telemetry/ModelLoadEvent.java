@@ -33,7 +33,7 @@ public final class ModelLoadEvent extends Event {
     // codebase and the honest source is the dominant tensor type. It lands with that lookup.
 
     @Label("Context Length")
-    public int contextLength;
+    public int maxContextLength;
 
     /** Embedding models only; 0 elsewhere. */
     @Label("Dimensions")

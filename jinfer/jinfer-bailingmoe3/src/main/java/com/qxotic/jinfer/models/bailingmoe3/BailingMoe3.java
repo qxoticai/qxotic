@@ -567,7 +567,7 @@ public final class BailingMoe3
             int nextnPredictLayers,
             int numberOfHeads,
             int vocabularySize,
-            int contextLength,
+            int maxContextLength,
             float rmsNormEps,
             float ropeTheta,
             int ropeDimensionCount,
@@ -721,7 +721,7 @@ public final class BailingMoe3
                 MemoryArena<MemorySegment> arena,
                 boolean ownsArena) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
-            if (contextCapacity <= 0 || contextCapacity > c.contextLength)
+            if (contextCapacity <= 0 || contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException("invalid context capacity " + contextCapacity);
             int b = batchCapacity, dim = c.embeddingLength, heads = c.numberOfHeads;
             int inner = c.kdaInnerSize(), qk = c.mlaQkDim(), packed = c.mlaPackedDim();
@@ -913,7 +913,7 @@ public final class BailingMoe3
                         && c.numberOfLayers > 0
                         && c.numberOfHeads > 0
                         && c.vocabularySize > 0
-                        && c.contextLength > 0,
+                        && c.maxContextLength > 0,
                 "invalid core dimensions");
         require(
                 c.rmsNormEps > 0f

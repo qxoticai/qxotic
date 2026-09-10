@@ -185,7 +185,7 @@ final class Qwen35MtpLoadTest {
                 mtp.numberOfKeyValueHeads(),
                 mtp.headSize(),
                 mtp.vocabularySize(),
-                mtp.contextLength(),
+                mtp.maxContextLength(),
                 mtp.rmsNormEps(),
                 mtp.ropeTheta(),
                 mtp.ropeDimensionCount(),

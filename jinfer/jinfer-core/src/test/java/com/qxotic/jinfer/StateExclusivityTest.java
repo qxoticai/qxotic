@@ -308,7 +308,8 @@ final class StateExclusivityTest {
         }
     }
 
-    record Configuration(int vocabularySize, int contextLength) implements ContextConfiguration {}
+    record Configuration(int vocabularySize, int maxContextLength)
+            implements ContextConfiguration {}
 
     static final class ProbeState extends ContextState {
         ProbeState(MemoryArena<MemorySegment> arena, boolean ownsArena) {

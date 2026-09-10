@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 
 class GeneratorTest {
 
-    private record Configuration(int vocabularySize, int contextLength)
+    private record Configuration(int vocabularySize, int maxContextLength)
             implements ContextConfiguration {}
 
     private static final Configuration CONFIG = new Configuration(32_000, 1 << 20);

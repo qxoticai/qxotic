@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Test;
 /** The public state factories make ownership unambiguous: owned or borrowed, never a flag. */
 class ModelArenaMatrixTest {
 
-    record Configuration(int vocabularySize, int contextLength) implements ContextConfiguration {}
+    record Configuration(int vocabularySize, int maxContextLength)
+            implements ContextConfiguration {}
 
     static class ProbeModel
             implements LanguageModel<Configuration, Void, RuntimeStateLifecycleTest.ProbeState> {

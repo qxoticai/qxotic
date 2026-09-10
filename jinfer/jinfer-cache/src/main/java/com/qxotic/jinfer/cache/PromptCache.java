@@ -224,7 +224,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
             LanguageModel<?, ?, S> model, ContentKey seed, Options o) {
         if (seed == null) throw new IllegalArgumentException("null seed");
         if (o == null) throw new IllegalArgumentException("null options");
-        int modelCapacity = model.configuration().contextLength();
+        int modelCapacity = model.configuration().maxContextLength();
         int requested = o.contextCapacity;
         int capacity;
         if (requested == Options.AUTO) {
