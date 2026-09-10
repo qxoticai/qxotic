@@ -18,21 +18,25 @@ instead of introducing silent incompatibilities.
 ## Quick Start
 
 ```java
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.hf.HuggingFaceTokenizerLoader;
+import java.nio.file.Path;
+
 // From local files (directory or tokenizer.json path)
 Tokenizer t = HuggingFaceTokenizerLoader
-                .fromLocal(Path.of("/models/gemma-4-e2b-it"));
+        .fromLocal(Path.of("/models/gemma-4-e2b-it"));
 
 // From HuggingFace
-Tokenizer t = HuggingFaceTokenizerLoader
+Tokenizer hf = HuggingFaceTokenizerLoader
         .fromHuggingFace("google", "gemma-4-e2b-it");
 
 // From ModelScope
-Tokenizer t = HuggingFaceTokenizerLoader
+Tokenizer ms = HuggingFaceTokenizerLoader
         .fromModelScope("deepseek-ai", "DeepSeek-V4-Pro");
 
 // Encode and decode
-int[] tokens = t.encodeToArray("Hello, world!");
-String decoded = t.decode(tokens);
+int[] tokens = hf.encodeToArray("Hello, world!");
+String decoded = hf.decode(tokens);
 ```
 
 `fromLocal(...)` accepts a model directory (containing `tokenizer.json`) or a direct path to a `tokenizer.json` file.
@@ -76,4 +80,3 @@ Token-perfect tested against 15 model families:
 - **Poolside** - Laguna XS 2.1
 
 Other models are likely to work but are not tested against reference Python tokenizers.
-

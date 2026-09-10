@@ -15,13 +15,12 @@ AI on the JVM, just a Maven dependency away.
 
 ## Highlights
 
-- **Multi-modal support.** Vision, audio, video, embeddings for RAG, text-to-speech.
+- **Multimodal support.** Vision, audio, video, embeddings for RAG, text-to-speech.
 - **Supports popular Java AI frameworks.** [LangChain4j](jinfer-langchain4j/README.md) and
   [Spring AI](jinfer-spring-ai/README.md) providers and an [OpenAI-compatible server](./jinfer-server).
 - **Top performance.** Efficient prompt caching, speculative decoding, Matryoshka embeddings and optional hand-tuned native kernels from [JAM](../jam), with a performant Vector API fallback.
 - **Constrained generation.** Models can only emit tokens that follow the specified schema.
 - **First-class support for GraalVM's Native Image.** Self-contained binaries with millisecond startup.
-
 
 ## Supported architectures
 
@@ -33,18 +32,18 @@ AI on the JVM, just a Maven dependency away.
 | Poolside Laguna XS 2.1 | chat | `jinfer-laguna` |
 | Meta Llama 3+ | chat | `jinfer-llama` |
 | IBM Granite 4.1+ | chat | `jinfer-llama` |
-| Mistral Ministral 3 | chat | `jinfer-llama` |
-| Hugging Face SmolLM 3 | chat | `jinfer-llama` |
-| OpenBMB MiniCPM 5 | chat | `jinfer-llama` |
-| inflectionAI Ling 3 | chat | `jinfer-bailingmoe3` |
+| Mistral AI Ministral 3 | chat | `jinfer-llama` |
+| Hugging Face SmolLM3 | chat | `jinfer-llama` |
+| inclusionAI Ling 3 | chat | `jinfer-bailingmoe3` |
+| OpenBMB MiniCPM5 | chat | `jinfer-llama` |
 | Alibaba Qwen 3 | embeddings, reranking | `jinfer-qwen3` |
 | Alibaba Qwen 3.5+ | chat, vision, MTP | `jinfer-qwen35` |
-| NVIDIA Nemotron | chat | `jinfer-nemotronh` |
+| NVIDIA Nemotron-H | chat | `jinfer-nemotronh` |
 | Owen Song's Inflect | speech synthesis | `jinfer-inflect2` |
 | Kokoro | speech synthesis | `jinfer-kokoro` |
 
 Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
-The "recommended" quantization for small models is `Q8_0`, it provides a good balance between quality and performance.
+Jinfer recommends `Q8_0` for its balance of quality and performance.
 
 ## Run the demos
 
@@ -105,7 +104,7 @@ try (var model = JinferChatModel.builder()
 ```
 
 A model reference is defined as `[provider.com/]owner/repository[/path][@revision][:quant]`, downloaded once from Hugging Face and cached.  
-Supports other model providers/hosts e.g. `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.  
+Other providers and hosts are supported, for example `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.
 Use `.modelPath(Path modelPath)` to specify a model file already on disk.
 
 Run with `--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED`, and add
@@ -114,7 +113,7 @@ If native libraries cannot be used/loaded, use `jam-vector` instead to accelerat
 
 ## Examples
 
-The snippets below use the [LangChain4j](jinfer-langchain4j) integration. The [Spring AI](jinfer-spring-ai/README.md) integration cover the same features.
+The snippets below use the [LangChain4j](jinfer-langchain4j) integration. The [Spring AI](jinfer-spring-ai/README.md) integration covers the same features.
 
 **Streaming.**
 
@@ -222,7 +221,7 @@ try (var gemma = JinferChatModel.builder()
 This provides a speed-up only when the draft head guesses well, and that depends on the text, not the model.
 Measured on Gemma 4 E2B Q8_0 on a 16-core CPU: lists 2.0x, code 1.7x, prose 0.9x; chat prose on a Q4_K_M checkpoint fell to 0.4x.
 
-**Text-to-Speech.**
+**Text-to-speech.**
 
 ```java
 try (var speech = JinferSpeechModel.builder()
@@ -271,7 +270,7 @@ curl -s http://127.0.0.1:54154/v1/chat/completions \
     -d '{"messages": [{"role": "user", "content": "What is the capital of France?"}]}'
 ```
 
-## GraalVM Native image
+## GraalVM Native Image
 
 ```bash
 make -C jinfer native

@@ -15,8 +15,10 @@ Loads Tok'n'Roll `Tokenizer` instances from GGUF files (llama.cpp format).
 ## Quick Start
 
 ```java
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
+import java.nio.file.Path;
 
 GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
 
@@ -24,20 +26,20 @@ GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().bui
 Tokenizer t = loader.fromLocal(Path.of("/models/model.gguf"));
 
 // From HuggingFace
-Tokenizer t = loader.fromHuggingFace("unsloth", "Llama-3.2-1B-Instruct-GGUF",
+Tokenizer hf = loader.fromHuggingFace("unsloth", "Llama-3.2-1B-Instruct-GGUF",
     "Llama-3.2-1B-Instruct-Q8_0.gguf");
 
 // From ModelScope
-Tokenizer t = loader.fromModelScope("Qwen", "Qwen3-8B-GGUF",
+Tokenizer ms = loader.fromModelScope("Qwen", "Qwen3-8B-GGUF",
     "qwen3-8b-Q8_0.gguf");
 
 // From a pre-parsed GGUF instance
-GGUF gguf = GGUF.read(Path.of("/models/model.gguf"));
-Tokenizer t = loader.fromGGUF(gguf);
+GGUF metadata = GGUF.read(Path.of("/models/model.gguf"));
+Tokenizer gguf = loader.fromGGUF(metadata);
 
 // Encode and decode
-int[] tokens = t.encodeToArray("Hello, world!");
-String decoded = t.decode(tokens);
+int[] tokens = hf.encodeToArray("Hello, world!");
+String decoded = hf.decode(tokens);
 ```
 
 ## Examples by model family
