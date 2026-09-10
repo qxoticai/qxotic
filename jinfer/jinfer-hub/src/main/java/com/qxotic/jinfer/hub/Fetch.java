@@ -257,9 +257,10 @@ final class Fetch {
         }
     }
 
-    /** A line above the live region when one is painted, a plain line otherwise. */
+    /** A line above the live region on a terminal; a log line everywhere else. */
     static void announce(String message) {
-        Board.announce(message);
+        if (Progress.BOARD) Board.announce(message);
+        else LOG.log(System.Logger.Level.INFO, message);
     }
 
     /**
@@ -1025,15 +1026,20 @@ final class Fetch {
         }
     }
 
+    /** The Board's canvas: a terminal, and only ever a terminal. */
     static PrintStream progress() {
         return System.err;
     }
 
+    /** Where progress goes when no terminal is watching: the application's logging, at INFO. */
+    private static final System.Logger LOG = System.getLogger("jinfer.hub");
+
     /**
      * One transfer's progress. A terminal gets a live row on the {@link Board}; anything else (a
-     * pipe, a CI log, a systemd unit) gets one named line per decile, because a log full of escape
-     * codes is worse than no progress at all. A non-UTF-8 console falls back to ASCII glyphs;
-     * {@code NO_COLOR} or {@code TERM=dumb} falls all the way back to the plain lines.
+     * pipe, a CI log, a library embedded in a service) gets one INFO line per decile on the {@code
+     * jinfer.hub} logger, so the host's logging configuration decides whether and where it shows. A
+     * non-UTF-8 console falls back to ASCII glyphs; {@code NO_COLOR} or {@code TERM=dumb} falls all
+     * the way back to the log lines.
      *
      * <p>Worker threads write the fields, the Board's ticker reads them - each is independently
      * volatile, so a frame may briefly mix a fresh phase with a stale rate, which costs one tick of
@@ -1091,13 +1097,12 @@ final class Fetch {
                 }
                 return;
             }
-            progress()
-                    .println(
-                            "  "
-                                    + label
-                                    + "  "
-                                    + size(total)
-                                    + (already > 0 ? ", resuming at " + size(already) : ""));
+            LOG.log(
+                    System.Logger.Level.INFO,
+                    label
+                            + "  "
+                            + size(total)
+                            + (already > 0 ? ", resuming at " + size(already) : ""));
         }
 
         void at(long written) {
@@ -1109,7 +1114,9 @@ final class Fetch {
             int decile = total > 0 ? (int) (10 * written / total) : -1;
             if (decile > lastDecile) {
                 lastDecile = decile;
-                progress().println("  " + label + "  " + render(written, System.nanoTime()));
+                LOG.log(
+                        System.Logger.Level.INFO,
+                        label + "  " + render(written, System.nanoTime()));
             }
         }
 
@@ -1138,7 +1145,7 @@ final class Fetch {
             if (BOARD) {
                 Board.announce("  " + label + ": " + message);
             } else {
-                progress().println("  " + label + ": " + message);
+                LOG.log(System.Logger.Level.INFO, label + ": " + message);
             }
         }
 
