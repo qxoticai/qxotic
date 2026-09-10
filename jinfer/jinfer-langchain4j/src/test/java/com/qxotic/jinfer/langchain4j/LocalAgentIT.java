@@ -47,6 +47,14 @@ class LocalAgentIT {
 
     /** Gemma 4 behind two tools: the brain never sees pixels or samples, only descriptions. */
     static class Senses {
+        /**
+         * Caps what Gemma is asked to do, NOT how long the agent loops: a tool result is just
+         * another message to the brain, which may well retry on it. The loop's bound is the
+         * AiServices builder's {@code maxToolCallingRoundTrips} below.
+         */
+        static final String BUDGET_EXHAUSTED =
+                "Tool budget exhausted - answer from what you already know.";
+
         final ChatModel gemma;
         final List<String> log = new ArrayList<>();
 
@@ -60,7 +68,7 @@ class LocalAgentIT {
                 @P("what to look for or answer") String question) {
             log.add("lookAt(" + path + ")");
             System.err.println("  [tool] lookAt(" + path + ", \"" + question + "\")");
-            if (log.size() > 6) return "Tool budget exhausted - answer from what you already know.";
+            if (log.size() > 6) return BUDGET_EXHAUSTED;
             return gemma.chat(
                             ChatRequest.builder()
                                     .messages(
@@ -78,7 +86,7 @@ class LocalAgentIT {
                 @P("what to listen for") String question) {
             log.add("listenTo(" + path + ")");
             System.err.println("  [tool] listenTo(" + path + ", \"" + question + "\")");
-            if (log.size() > 6) return "Tool budget exhausted - answer from what you already know.";
+            if (log.size() > 6) return BUDGET_EXHAUSTED;
             return gemma.chat(
                             ChatRequest.builder()
                                     .messages(
@@ -110,11 +118,15 @@ class LocalAgentIT {
 
     @BeforeAll
     static void wire() {
+        // greedy and seeded on BOTH models: Gemma's answers are the brain's inputs, so one
+        // sampled draw anywhere makes the whole trajectory a draw
         brain =
                 JinferChatModel.builder()
                         .modelPath(TestModels.require(BRAIN_REF))
                         .contextLength(8192)
                         .maxOutputTokens(512)
+                        .temperature(0.0)
+                        .seed(7L)
                         .build();
         eyes =
                 JinferChatModel.builder()
@@ -122,13 +134,21 @@ class LocalAgentIT {
                         .companionPath("media", TestModels.require(EYES_MMPROJ_REF))
                         .contextLength(4096)
                         .maxOutputTokens(256)
+                        .temperature(0.0)
+                        .seed(7L)
                         .build();
         senses = new Senses(eyes);
         agent =
                 AiServices.builder(Agent.class)
                         .chatModel(brain)
                         .tools(senses)
-                        .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
+                        // each turn needs one call; a brain that retries a tool it believes
+                        // failed must hit a wall in seconds, not langchain4j's default of 100
+                        // round trips of an always-reasoning 8B (a quarter of an hour)
+                        .maxToolCallingRoundTrips(4)
+                        // wide enough that a bounded loop can never evict the question: a
+                        // round trip is two messages, and the three turns must stay in view
+                        .chatMemory(MessageWindowChatMemory.withMaxMessages(40))
                         .build();
     }
 
@@ -142,13 +162,16 @@ class LocalAgentIT {
     void seesHearsRemembers() throws Exception {
         // scene: a "traffic light" picture and a tone recording. The dir name is FIXED: the path
         // appears verbatim in the prompts, and a random path would make every run a different
-        // trajectory despite greedy sampling + fixed seed (observed flaky).
+        // trajectory despite greedy sampling + fixed seed (observed flaky). The tone is FIVE
+        // seconds: the 12B hears that as music, while one second of a flat tone comes back as
+        // "please provide the audio file" (llama.cpp agrees, token for token) - and a brain told
+        // its tool received no file retries the tool, which is how this test once looped.
         Path dir = Path.of(System.getProperty("java.io.tmpdir"), "local-agent-demo");
         Files.createDirectories(dir);
         Path photo = dir.resolve("sign.png");
         ImageIO.write(trafficLight(), "png", photo.toFile());
         Path memo = dir.resolve("memo.wav");
-        Files.write(memo, Gemma4MediaIT.toneWav(440, 1.0, 16000));
+        Files.write(memo, Gemma4MediaIT.toneWav(440, 5.0, 16000));
 
         String first =
                 agent.chat(

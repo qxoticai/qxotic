@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -114,7 +115,8 @@ class Gemma4MediaIT extends AbstractMediaIT {
                     engineModel(audioModel) instanceof Multimodal mm
                             && mm.projector(Media.Audio.class).isPresent(),
                     "mmproj carries no audio adapter");
-            byte[] wav = toneWav(440, 1.0, 16000);
+            // five seconds: one second of a flat tone the 12B reports as no audio at all
+            byte[] wav = toneWav(440, 5.0, 16000);
             ChatResponse r =
                     audioModel.chat(
                             ChatRequest.builder()
@@ -127,8 +129,17 @@ class Gemma4MediaIT extends AbstractMediaIT {
                                                             "Describe this audio in one"
                                                                     + " sentence.")))
                                     .build());
-            assertNotNull(r.aiMessage().text());
-            assertTrue(!r.aiMessage().text().isBlank());
+            String heard = r.aiMessage().text();
+            assertNotNull(heard);
+            assertTrue(!heard.isBlank());
+            // the model must have HEARD something: "please provide the audio file" is non-blank
+            // too, and passed here for as long as the clip was one second
+            assertFalse(
+                    heard.toLowerCase().contains("provide"),
+                    "asked for the file instead: " + heard);
+            assertTrue(
+                    heard.matches("(?is).*(tone|music|sound|beep|pitch|note|synth|hum|beat).*"),
+                    "no sound described: " + heard);
         }
     }
 
