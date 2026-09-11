@@ -770,7 +770,7 @@ public record Options(
                         + " flight, the rest get 503), default 16");
         out.println("  --queue-capacity <int>        waiting generations, default 4");
         out.println("  --max-body-mb <int>           request body limit, default 32");
-        out.println("  --write-timeout <seconds>     stalled SSE write limit, default 30");
+        out.println("  --write-timeout <seconds>     body read/SSE write deadline, default 30");
         out.println("  --request-timeout <seconds>   generation deadline, default 300; 0 disables");
         out.println("  --no-grammar                  reject grammar-constrained server requests");
         out.println();

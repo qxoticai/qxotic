@@ -359,7 +359,11 @@ public final class Server {
                     if (method != null && Http.requireMethod(exchange, method)) return;
                     Map<String, Object> request = Map.of();
                     if ("POST".equals(method)) {
-                        byte[] raw = Http.readBody(exchange, config.limits().maxBodyBytes());
+                        byte[] raw =
+                                Http.readBody(
+                                        exchange,
+                                        config.limits().maxBodyBytes(),
+                                        config.limits().writeTimeout());
                         if (raw == null) return;
                         try {
                             request = Values.asObject(JsonCodec.parse(raw), "request");
@@ -411,7 +415,11 @@ public final class Server {
         }
         if (Http.requireMethod(exchange, "POST")) return;
         // read on the handler thread: a stalled upload must not block the generation worker
-        byte[] body = Http.readBody(exchange, config.limits().maxBodyBytes());
+        byte[] body =
+                Http.readBody(
+                        exchange,
+                        config.limits().maxBodyBytes(),
+                        config.limits().writeTimeout());
         if (body == null) {
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
             return;

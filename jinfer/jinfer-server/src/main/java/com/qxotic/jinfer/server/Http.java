@@ -6,8 +6,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * HTTP transport plumbing shared by every endpoint: the request preamble (access log, CORS, OPTIONS
@@ -89,17 +91,43 @@ final class Http {
     }
 
     /**
-     * Reads the request body, bounded by {@code maxBodyBytes}; returns null after sending 413 when
-     * the body exceeds the limit (callers must return immediately on null).
+     * Reads the request body, bounded by {@code maxBodyBytes} and {@code timeout}; returns null after
+     * rejecting an oversized or expired upload (callers must return immediately on null).
      */
-    static byte[] readBody(HttpExchange exchange, long maxBodyBytes) throws IOException {
+    static byte[] readBody(HttpExchange exchange, long maxBodyBytes, Duration timeout)
+            throws IOException {
+        AtomicBoolean reading = new AtomicBoolean(true);
+        var deadline =
+                Thread.ofVirtual()
+                        .name("body-read-deadline")
+                        .start(
+                                () -> {
+                                    try {
+                                        Thread.sleep(timeout);
+                                        if (reading.compareAndSet(true, false)) exchange.close();
+                                    } catch (InterruptedException ignored) {
+                                        // body completed before its deadline
+                                    }
+                                });
         // clamp before narrowing: (int) of a limit >= 2 GiB wrapped negative, and readNBytes then
         // threw IllegalArgumentException instead of reading anything
         int probe =
                 maxBodyBytes >= Integer.MAX_VALUE
                         ? Integer.MAX_VALUE
                         : Math.toIntExact(maxBodyBytes + 1);
-        byte[] body = exchange.getRequestBody().readNBytes(probe);
+        byte[] body = null;
+        IOException readFailure = null;
+        boolean beforeDeadline;
+        try {
+            body = exchange.getRequestBody().readNBytes(probe);
+        } catch (IOException e) {
+            readFailure = e;
+        } finally {
+            beforeDeadline = reading.compareAndSet(true, false);
+            deadline.interrupt();
+        }
+        if (!beforeDeadline) return null;
+        if (readFailure != null) throw readFailure;
         if (body.length > maxBodyBytes) {
             // bytes, not ">> 20": a sub-megabyte limit reported "exceeds 0 MB"
             sendError(exchange, 413, "Request body exceeds the " + maxBodyBytes + "-byte limit");

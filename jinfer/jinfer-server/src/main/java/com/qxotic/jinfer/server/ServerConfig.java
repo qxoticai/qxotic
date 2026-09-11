@@ -56,7 +56,7 @@ public record ServerConfig(
         }
     }
 
-    /** Resource and protocol limits clients cannot lift. */
+    /** Resource limits; {@code writeTimeout} bounds body reads and SSE writes. */
     public record Limits(
             int threads,
             int queueCapacity,
