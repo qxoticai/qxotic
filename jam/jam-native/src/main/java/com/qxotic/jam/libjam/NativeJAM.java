@@ -4,7 +4,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import com.qxotic.jam.JAM;
-import com.qxotic.jam.internal.GGMLType;
+import com.qxotic.jam.internal.MemoryChecks;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -117,12 +117,12 @@ public final class NativeJAM implements JAM, AutoCloseable {
             int m,
             int n,
             int k) {
-        requireNative(w, "weight W"); // heap/array-backed segments have no usable native address
-        requireNative(a, "activation A");
-        requireNative(r, "result R");
+        MemoryChecks.requireNative(w, "weight W");
+        MemoryChecks.requireNative(a, "activation A");
+        MemoryChecks.requireNative(r, "result R");
         if (m > 0 && n > 0 && k > 0 && ldw >= k && lda >= k
                 && ldr >= m) { // else native classifies (EINVAL)
-            checkSegment(
+            MemoryChecks.checkSegment(
                     "weight W",
                     w,
                     wOff,
@@ -130,8 +130,8 @@ public final class NativeJAM implements JAM, AutoCloseable {
                     ldw,
                     m,
                     k); // [m×k] row-major, k elems/row at stride ldw
-            checkSegment("activation A", a, aOff, at, lda, n, k); // [n×k] row-major
-            checkSegment(
+            MemoryChecks.checkSegment("activation A", a, aOff, at, lda, n, k); // [n×k] row-major
+            MemoryChecks.checkSegment(
                     "result R", r, rOff, rt, ldr, n, m); // [m×n] token-major: n tokens × m features
         }
         long wa = w.address() + wOff, aa = a.address() + aOff, ra = r.address() + rOff;
@@ -156,50 +156,6 @@ public final class NativeJAM implements JAM, AutoCloseable {
             Reference.reachabilityFence(a);
             Reference.reachabilityFence(r);
         }
-    }
-
-    /**
-     * A heap (array-backed) segment has no stable native address - its {@code address()} is a heap
-     * offset, not a pointer, so the kernel would corrupt memory. Reject it before we ever call
-     * native.
-     */
-    private static void requireNative(MemorySegment seg, String which) {
-        if (!seg.isNative())
-            throw new IllegalArgumentException(
-                    "jam.mm: "
-                            + which
-                            + " must be a NATIVE (off-heap) MemorySegment - heap/array-backed has"
-                            + " no native address");
-    }
-
-    /**
-     * Verify {@code seg} holds the bytes the kernel touches for {@code nRows} rows of {@code
-     * rowElems} elements (dtype {@code dt}) at element row-stride {@code stride}, starting at byte
-     * {@code off}. The element-stride → byte-span conversion (block-aware) lives in {@link
-     * GGMLType#spanBytes}.
-     */
-    private static void checkSegment(
-            String which,
-            MemorySegment seg,
-            long off,
-            int dt,
-            int stride,
-            int nRows,
-            int rowElems) {
-        GGMLType g = GGMLType.byCode(dt);
-        if (g == null) return; // unrecognized/unsupported -> native classifies; nothing to bound
-        long need = g.spanBytes(nRows, stride, rowElems);
-        if (off < 0 || off > seg.byteSize() - need) // overflow-safe form of off + need > byteSize
-        throw new IndexOutOfBoundsException(
-                    "jam.mm: "
-                            + which
-                            + " segment too small - need "
-                            + need
-                            + " B at offset "
-                            + off
-                            + ", segment is "
-                            + seg.byteSize()
-                            + " B");
     }
 
     // ── backends: one native jam_mm, reached via JNI (default) or Panama. ──

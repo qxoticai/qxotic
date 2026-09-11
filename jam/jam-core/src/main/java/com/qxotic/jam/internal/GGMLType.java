@@ -59,7 +59,8 @@ public enum GGMLType {
      * (it then compares this to {@code MemorySegment.byteSize()}).
      */
     public long spanBytes(int rows, int stride, int rowElems) {
-        return (long) (rows - 1) * rowBytes(stride) + rowBytes(rowElems);
+        return Math.addExact(
+                Math.multiplyExact(rows - 1L, rowBytes(stride)), rowBytes(rowElems));
     }
 
     /** O(1) code → dtype lookup; {@code null} for an unrecognized or unsupported code. */

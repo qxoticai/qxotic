@@ -2,6 +2,7 @@ package com.qxotic.jam.vector;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jam.internal.GGMLType;
+import com.qxotic.jam.internal.MemoryChecks;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -80,12 +81,20 @@ public final class VectorJAM implements JAM {
             int m,
             int n,
             int k) {
+        MemoryChecks.requireNative(w, "weight W");
+        MemoryChecks.requireNative(a, "activation A");
+        MemoryChecks.requireNative(r, "result R");
         if (n <= 1 || at != F32 || rt != F32 || VectorSupport.F_SPECIES.vectorBitSize() < 128)
             return EUNSUPPORTED;
         GGMLType t = GGMLType.byCode(wt);
         if (t == null) return EUNSUPPORTED; // unknown tag; untiled dtypes hit the switch default
         if (ldw != k || k % t.elementsPerBlock() != 0)
             return EUNSUPPORTED; // contiguous weight rows, whole blocks
+        if (m <= 0 || k <= 0 || lda < k || ldr < m) return EINVAL;
+
+        MemoryChecks.checkSegment("weight W", w, wOff, wt, ldw, m, k);
+        MemoryChecks.checkSegment("activation A", a, aOff, at, lda, n, k);
+        MemoryChecks.checkSegment("result R", r, rOff, rt, ldr, n, m);
 
         // Weight read relative to its slice (kernel wOff = 0); activation/output via GLOBAL at
         // absolute base.
