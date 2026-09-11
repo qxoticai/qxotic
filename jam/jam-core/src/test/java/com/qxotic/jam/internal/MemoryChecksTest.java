@@ -15,7 +15,9 @@ class MemoryChecksTest {
             assertDoesNotThrow(() -> MemoryChecks.requireNative(arena.allocate(1), "operand"));
             assertThrows(
                     IllegalArgumentException.class,
-                    () -> MemoryChecks.requireNative(MemorySegment.ofArray(new byte[1]), "operand"));
+                    () ->
+                            MemoryChecks.requireNative(
+                                    MemorySegment.ofArray(new byte[1]), "operand"));
         }
     }
 
@@ -26,8 +28,7 @@ class MemoryChecksTest {
         arena.close();
 
         assertThrows(
-                IllegalStateException.class,
-                () -> MemoryChecks.requireNative(segment, "operand"));
+                IllegalStateException.class, () -> MemoryChecks.requireNative(segment, "operand"));
     }
 
     @Test

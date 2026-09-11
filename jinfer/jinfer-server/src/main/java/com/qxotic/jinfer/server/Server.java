@@ -417,9 +417,7 @@ public final class Server {
         // read on the handler thread: a stalled upload must not block the generation worker
         byte[] body =
                 Http.readBody(
-                        exchange,
-                        config.limits().maxBodyBytes(),
-                        config.limits().writeTimeout());
+                        exchange, config.limits().maxBodyBytes(), config.limits().writeTimeout());
         if (body == null) {
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
             return;

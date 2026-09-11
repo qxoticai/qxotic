@@ -91,8 +91,8 @@ final class Http {
     }
 
     /**
-     * Reads the request body, bounded by {@code maxBodyBytes} and {@code timeout}; returns null after
-     * rejecting an oversized or expired upload (callers must return immediately on null).
+     * Reads the request body, bounded by {@code maxBodyBytes} and {@code timeout}; returns null
+     * after rejecting an oversized or expired upload (callers must return immediately on null).
      */
     static byte[] readBody(HttpExchange exchange, long maxBodyBytes, Duration timeout)
             throws IOException {

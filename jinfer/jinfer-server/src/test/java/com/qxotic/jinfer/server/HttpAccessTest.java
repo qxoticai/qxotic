@@ -94,8 +94,7 @@ class HttpAccessTest {
                 Server.gated(
                         exchange -> {
                             try {
-                                byte[] body =
-                                        Http.readBody(exchange, 64, Duration.ofMillis(100));
+                                byte[] body = Http.readBody(exchange, 64, Duration.ofMillis(100));
                                 if (body != null) Http.sendJson(exchange, 200, "ok");
                             } finally {
                                 finished.countDown();
@@ -120,8 +119,7 @@ class HttpAccessTest {
                     HttpClient.newHttpClient()
                             .send(
                                     HttpRequest.newBuilder(
-                                                    URI.create(
-                                                            "http://127.0.0.1:" + port + "/"))
+                                                    URI.create("http://127.0.0.1:" + port + "/"))
                                             .POST(HttpRequest.BodyPublishers.ofString("{}"))
                                             .build(),
                                     HttpResponse.BodyHandlers.ofString())

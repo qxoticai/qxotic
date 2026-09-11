@@ -44,7 +44,8 @@ class VectorJAMValidationTest {
             MemorySegment a = arena.allocate(A_BYTES, 64);
             MemorySegment r = arena.allocate(R_BYTES, 64);
 
-            assertThrows(IllegalStateException.class, () -> mm(closed(weightBytes(JAM.Q8_0)), a, r));
+            assertThrows(
+                    IllegalStateException.class, () -> mm(closed(weightBytes(JAM.Q8_0)), a, r));
             assertThrows(IllegalStateException.class, () -> mm(w, closed(A_BYTES), r));
             assertThrows(IllegalStateException.class, () -> mm(w, a, closed(R_BYTES)));
         }
@@ -133,12 +134,10 @@ class VectorJAMValidationTest {
                     VECTOR.mm(w, 0, JAM.Q8_0, 0, a, 0, JAM.F32, 0, r, 0, JAM.F32, M, M, N, 0));
             assertEquals(
                     JAM.EINVAL,
-                    VECTOR.mm(
-                            w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K - 1, r, 0, JAM.F32, M, M, N, K));
+                    VECTOR.mm(w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K - 1, r, 0, JAM.F32, M, M, N, K));
             assertEquals(
                     JAM.EINVAL,
-                    VECTOR.mm(
-                            w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K, r, 0, JAM.F32, M - 1, M, N, K));
+                    VECTOR.mm(w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K, r, 0, JAM.F32, M - 1, M, N, K));
         }
     }
 
