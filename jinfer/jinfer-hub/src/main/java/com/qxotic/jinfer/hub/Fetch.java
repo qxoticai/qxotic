@@ -1059,12 +1059,9 @@ final class Fetch {
         /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
         private static final String EIGHTHS = "\u258f\u258e\u258d\u258c\u258b\u258a\u2589";
 
-        // process constants, probed once: isTerminal(), NOT console() != null - since JDK 22 a
-        // Console is handed out even when output is redirected, so the older check can mistake a
-        // CI log for a terminal and fill it with escape codes
+        // Progress writes to stderr; Console.isTerminal() checks stdin/stdout instead.
         private static final boolean BOARD =
-                System.console() != null
-                        && System.console().isTerminal()
+                stderrTerminal()
                         && System.getenv("NO_COLOR") == null
                         && !"dumb".equals(System.getenv("TERM"));
         private static final boolean UNICODE = utf8Console();
@@ -1239,6 +1236,26 @@ final class Fetch {
                             ? System.console().charset()
                             : Charset.defaultCharset();
             return charset.contains(StandardCharsets.UTF_8);
+        }
+
+        private static boolean stderrTerminal() {
+            if (System.getProperty("os.name").startsWith("Windows")) {
+                // Java has no stderr-specific Windows probe; preserve the existing console check.
+                var console = System.console();
+                return console != null && console.isTerminal();
+            }
+            try {
+                return new ProcessBuilder("/bin/test", "-t", "2")
+                                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                                .start()
+                                .waitFor()
+                        == 0;
+            } catch (IOException e) {
+                return false;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
         }
 
         private static String eta(long seconds) {
