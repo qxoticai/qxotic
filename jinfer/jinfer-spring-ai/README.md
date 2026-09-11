@@ -200,7 +200,7 @@ try (var model = JinferChatModel.builder()
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
-                .reasoningBudget(256)
+                .maxReasoningTokens(256)
                 .build())
         .build()) {
 

@@ -51,8 +51,8 @@ public record Options(
         boolean echo,
         boolean think,
         boolean thinkInline,
-        Integer reasoningBudget,
-        String reasoningBudgetMessage,
+        Integer maxReasoningTokens,
+        String reasoningCutoffMessage,
         boolean colors,
         boolean rawPrompt,
         Path promptCache,
@@ -136,10 +136,10 @@ public record Options(
             require(!interactive, "Invalid argument: --raw-prompt applies to --prompt, not --chat");
             require(
                     systemPrompt == null
-                            && reasoningBudget == null
-                            && reasoningBudgetMessage == null,
+                            && maxReasoningTokens == null
+                            && reasoningCutoffMessage == null,
                     "Invalid argument: --raw-prompt bypasses the chat template, so --system-prompt"
-                            + " and --reasoning-budget* cannot apply");
+                            + " and --max-reasoning-tokens* cannot apply");
         }
     }
 
@@ -210,8 +210,8 @@ public record Options(
                         maxOutputTokens,
                         think,
                         rawPrompt,
-                        reasoningBudget,
-                        reasoningBudgetMessage),
+                        maxReasoningTokens,
+                        reasoningCutoffMessage),
                 limits.withGrammar(!noGrammar),
                 new ServerConfig.Access(apiKey, allowedOrigins));
     }
@@ -375,8 +375,8 @@ public record Options(
                     "--speculation-depth",
                     "--stream",
                     "--echo",
-                    "--reasoning-budget",
-                    "--reasoning-budget-message",
+                    "--max-reasoning-tokens",
+                    "--reasoning-cutoff-message",
                     "--color",
                     "--cache",
                     "--cache-ro",
@@ -415,8 +415,8 @@ public record Options(
         boolean echo = false;
         boolean think = true;
         boolean thinkInline = false;
-        Integer reasoningBudget = null;
-        String reasoningBudgetMessage = null;
+        Integer maxReasoningTokens = null;
+        String reasoningCutoffMessage = null;
         String colorMode = "auto";
         boolean rawPrompt = false;
         Path promptCache = null;
@@ -503,15 +503,15 @@ public record Options(
                                 speculationDepth = parseInt(optionName, nextArg);
                         case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
                         case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
-                        case "--reasoning-budget" -> {
-                            reasoningBudget = parseInt(optionName, nextArg);
+                        case "--max-reasoning-tokens" -> {
+                            maxReasoningTokens = parseInt(optionName, nextArg);
                             require(
-                                    reasoningBudget >= -1,
+                                    maxReasoningTokens >= -1,
                                     "Invalid argument for %s: -1 (uncapped) or >= 0, got %s",
                                     optionName,
                                     nextArg);
                         }
-                        case "--reasoning-budget-message" -> reasoningBudgetMessage = nextArg;
+                        case "--reasoning-cutoff-message" -> reasoningCutoffMessage = nextArg;
                         case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
                         case "--cache" -> {
                             promptCache = Path.of(nextArg);
@@ -608,8 +608,8 @@ public record Options(
                 echo,
                 think,
                 thinkInline,
-                reasoningBudget,
-                reasoningBudgetMessage,
+                maxReasoningTokens,
+                reasoningCutoffMessage,
                 color,
                 rawPrompt,
                 promptCache,
@@ -704,12 +704,12 @@ public record Options(
         out.println(
                 "  --think <off|on|inline>       on: reason, thoughts on stderr (default); off: do"
                         + " not reason, the model answers directly (a model that always reasons"
-                        + " refuses off: use --reasoning-budget); inline: thoughts on stdout");
+                        + " refuses off: use --max-reasoning-tokens); inline: thoughts on stdout");
         out.println(
-                "  --reasoning-budget <int>      cap the thinking span at N tokens (default: model"
-                        + " policy, -1: uncapped)");
+                "  --max-reasoning-tokens <int>  cap the thinking span at N tokens (default:"
+                        + " model policy, -1: uncapped)");
         out.println(
-                "  --reasoning-budget-message <s>  forced as the model's own words when the budget"
+                "  --reasoning-cutoff-message <s> forced as the model's own words when the budget"
                         + " runs out, e.g. \"... Let me wrap up.\" (default: a paragraph break)");
         out.println();
         out.println("Sampling (default: the model's recommended values):");

@@ -76,7 +76,7 @@ class CachedPromptIT {
                         .options(
                                 JinferChatOptions.builder()
                                         .maxTokens(128)
-                                        .reasoningBudget(32) // 8B-A1B always reasons: cap it
+                                        .maxReasoningTokens(32) // 8B-A1B always reasons: cap it
                                         .seed(1L)
                                         .build())
                         .build();
@@ -87,7 +87,7 @@ class CachedPromptIT {
                         .options(
                                 JinferChatOptions.builder()
                                         .maxTokens(128)
-                                        .reasoningBudget(32)
+                                        .maxReasoningTokens(32)
                                         .seed(2L)
                                         .build())
                         .build();

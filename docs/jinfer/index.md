@@ -193,7 +193,7 @@ This table is the translation.
 | max output tokens | `Request.maxOutputTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
 | temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
 | thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
-| reasoning budget | `Request.reasoningBudget` | `--reasoning-budget` | `reasoning_max_tokens` | `reasoningBudget` | `reasoningBudget` |
+| reasoning budget | `Request.maxReasoningTokens` | `--max-reasoning-tokens` | `max_reasoning_tokens` | `maxReasoningTokens` | `maxReasoningTokens` |
 | grammar (raw GBNF) | `Request.grammar` | - | `grammar` | `JinferChatRequestParameters.grammar` | `JinferChatOptions.grammar` |
 | speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
 | prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |

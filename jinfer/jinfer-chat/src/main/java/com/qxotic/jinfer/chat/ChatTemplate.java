@@ -97,7 +97,7 @@ public interface ChatTemplate {
      * Default generated-token budget for a reasoning span. Negative leaves it uncapped. Families
      * may override this when their published generation policy expects unrestricted reasoning.
      */
-    default int defaultReasoningBudget(int maxOutputTokens) {
+    default int defaultMaxReasoningTokens(int maxOutputTokens) {
         return maxOutputTokens >= 0 ? Math.max(1, maxOutputTokens / 2) : -1;
     }
 

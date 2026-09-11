@@ -63,7 +63,7 @@ ChatModel model = JinferChatModel.builder()
         .temperature(0.7)
         .topP(0.95)
         .maxOutputTokens(1024)
-        .reasoningBudget(256)     // this model always reasons: cap the span instead of switching it off
+        .maxReasoningTokens(256)     // this model always reasons: cap the span instead of switching it off
         .seed(42L)                // deterministic sampling
         .build();
 

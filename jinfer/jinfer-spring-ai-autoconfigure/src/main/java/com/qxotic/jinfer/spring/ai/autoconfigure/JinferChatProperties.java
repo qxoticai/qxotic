@@ -31,9 +31,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param seed sampling seed; null chooses a fresh seed per request
  * @param thinking the model's reasoning scaffold toggle (templates without one ignore it; a model
  *     that always reasons refuses false); default on
- * @param reasoningBudget cap on the reasoning span in generated tokens, the lever for models that
- *     always reason; -1 uncaps; unset = the family's policy
- * @param reasoningBudgetMessage what the model "decides" when the budget runs out, in its own
+ * @param maxReasoningTokens cap on the reasoning span in generated tokens, the lever for models
+ *     that always reason; -1 uncaps; unset = the family's policy
+ * @param reasoningCutoffMessage what the model "decides" when the budget runs out, in its own
  *     words; unset = a paragraph break
  * @param timeout wall-clock generation deadline; null = none
  * @param speculationDepth draft tokens per verify block for self-speculative decoding (0 disables,
@@ -54,8 +54,8 @@ public record JinferChatProperties(
         Integer maxTokens,
         Long seed,
         Boolean thinking,
-        Integer reasoningBudget,
-        String reasoningBudgetMessage,
+        Integer maxReasoningTokens,
+        String reasoningCutoffMessage,
         Duration timeout,
         Integer speculationDepth) {
 
@@ -69,8 +69,8 @@ public record JinferChatProperties(
                 .maxTokens(maxTokens)
                 .seed(seed)
                 .thinking(thinking)
-                .reasoningBudget(reasoningBudget)
-                .reasoningBudgetMessage(reasoningBudgetMessage)
+                .maxReasoningTokens(maxReasoningTokens)
+                .reasoningCutoffMessage(reasoningCutoffMessage)
                 .timeout(timeout)
                 .build();
     }

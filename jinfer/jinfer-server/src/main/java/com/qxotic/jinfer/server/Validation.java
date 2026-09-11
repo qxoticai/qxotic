@@ -299,8 +299,8 @@ final class Validation {
                     "Invalid argument: max_tokens must be -1 (context-bounded) or at least 1");
         }
         require(
-                -1 <= Values.intValue(request.get("reasoning_max_tokens"), -1),
-                "Invalid argument: reasoning_max_tokens must be -1 (uncapped) or non-negative");
+                -1 <= Values.intValue(request.get("max_reasoning_tokens"), -1),
+                "Invalid argument: max_reasoning_tokens must be -1 (uncapped) or non-negative");
         Values.longValue(request.get("seed"), 0); // type check only
         require(
                 !present(request, "logprobs") && !present(request, "top_logprobs"),

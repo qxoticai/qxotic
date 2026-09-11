@@ -117,11 +117,11 @@ final class OptionsTest {
                         new String[] {
                             "--model", model.toString(),
                             "-p", "hi",
-                            "--reasoning-budget", "128",
-                            "--reasoning-budget-message", "... Let me wrap up."
+                            "--max-reasoning-tokens", "128",
+                            "--reasoning-cutoff-message", "... Let me wrap up."
                         });
-        assertEquals(128, options.reasoningBudget());
-        assertEquals("... Let me wrap up.", options.reasoningBudgetMessage());
+        assertEquals(128, options.maxReasoningTokens());
+        assertEquals("... Let me wrap up.", options.reasoningCutoffMessage());
     }
 
     @Test
@@ -135,9 +135,9 @@ final class OptionsTest {
                                         new String[] {
                                             "--model", model.toString(),
                                             "-p", "hi",
-                                            "--reasoning-budget", "-2"
+                                            "--max-reasoning-tokens", "-2"
                                         }));
-        assertTrue(e.getMessage().contains("--reasoning-budget"), e.getMessage());
+        assertTrue(e.getMessage().contains("--max-reasoning-tokens"), e.getMessage());
     }
 
     @Test
@@ -148,14 +148,14 @@ final class OptionsTest {
                         new String[] {
                             "--model", model.toString(),
                             "-p", "hi",
-                            "--reasoning-budget", "128",
-                            "--reasoning-budget-message", "... Let me wrap up."
+                            "--max-reasoning-tokens", "128",
+                            "--reasoning-cutoff-message", "... Let me wrap up."
                         });
         var request =
                 Requests.of(
                         List.of(Message.user("hi")), new Sampling(0f, 1f, 0, 0f, null), options);
-        assertEquals(128, request.reasoningBudget());
-        assertEquals("... Let me wrap up.", request.reasoningBudgetMessage());
+        assertEquals(128, request.maxReasoningTokens());
+        assertEquals("... Let me wrap up.", request.reasoningCutoffMessage());
     }
 
     @Test

@@ -226,14 +226,14 @@ class JinferChatOptionsTest {
     void reasoningBudgetRoundTripsAndCombinesLikeEveryJinferExtra() {
         JinferChatOptions o =
                 JinferChatOptions.builder()
-                        .reasoningBudget(48)
-                        .reasoningBudgetMessage("... Let me answer.")
+                        .maxReasoningTokens(48)
+                        .reasoningCutoffMessage("... Let me answer.")
                         .build();
         JinferChatOptions copy = o.mutate().build();
         assertEquals(48, copy.getReasoningBudget());
         assertEquals("... Let me answer.", copy.getReasoningBudgetMessage());
         JinferChatOptions merged =
-                o.mutate().combineWith(JinferChatOptions.builder().reasoningBudget(-1)).build();
+                o.mutate().combineWith(JinferChatOptions.builder().maxReasoningTokens(-1)).build();
         assertEquals(-1, merged.getReasoningBudget(), "the request's cap wins");
         assertEquals(
                 "... Let me answer.",
@@ -241,7 +241,7 @@ class JinferChatOptionsTest {
                 "unset keeps the default");
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JinferChatOptions.builder().reasoningBudget(-2));
+                () -> JinferChatOptions.builder().maxReasoningTokens(-2));
     }
 
     @Test

@@ -72,8 +72,8 @@ final class Generation {
                         tools,
                         thinking(request) && forcedTool(request) == null,
                         maxTokens(request),
-                        reasoningMaxOrDefault(request),
-                        reasoningMessageOrDefault(request),
+                        maxReasoningTokensOrDefault(request),
+                        reasoningCutoffMessageOrDefault(request),
                         config.limits().requestTimeout(),
                         sampling(request, defaults),
                         grammar(request),
@@ -421,28 +421,28 @@ final class Generation {
     }
 
     static Integer reasoningMax(Map<String, Object> request) {
-        return request.get("reasoning_max_tokens") == null
+        return request.get("max_reasoning_tokens") == null
                 ? null
-                : Values.intValue(request.get("reasoning_max_tokens"), -1);
+                : Values.intValue(request.get("max_reasoning_tokens"), -1);
     }
 
     /**
      * What the model "decides" when the think-span cap fires (llama.cpp's {@code
-     * --reasoning-budget-message}); absent = a bare paragraph break.
+     * --reasoning-cutoff-message}); absent = a bare paragraph break.
      */
-    static String reasoningBudgetMessage(Map<String, Object> request) {
-        return Values.stringValue(request.get("reasoning_message"), null);
+    static String reasoningCutoffMessage(Map<String, Object> request) {
+        return Values.stringValue(request.get("reasoning_cutoff_message"), null);
     }
 
     /** The request's value, else the server's configured default - as {@code think} does. */
-    private Integer reasoningMaxOrDefault(Map<String, Object> request) {
+    private Integer maxReasoningTokensOrDefault(Map<String, Object> request) {
         Integer value = reasoningMax(request);
-        return value != null ? value : config.defaults().reasoningBudget();
+        return value != null ? value : config.defaults().maxReasoningTokens();
     }
 
-    private String reasoningMessageOrDefault(Map<String, Object> request) {
-        String value = reasoningBudgetMessage(request);
-        return value != null ? value : config.defaults().reasoningBudgetMessage();
+    private String reasoningCutoffMessageOrDefault(Map<String, Object> request) {
+        String value = reasoningCutoffMessage(request);
+        return value != null ? value : config.defaults().reasoningCutoffMessage();
     }
 
     private boolean thinking(Map<String, Object> request) {

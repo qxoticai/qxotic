@@ -47,9 +47,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     private final String grammar;
     private final Long seed;
     private final Double minP;
-    private final Integer reasoningBudget;
+    private final Integer maxReasoningTokens;
     private final Boolean thinking;
-    private final String reasoningBudgetMessage;
+    private final String reasoningCutoffMessage;
     private final Duration timeout;
 
     protected JinferChatRequestParameters(Builder builder) {
@@ -57,9 +57,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         this.grammar = builder.grammar;
         this.seed = builder.seed;
         this.minP = builder.minP;
-        this.reasoningBudget = builder.reasoningBudget;
+        this.maxReasoningTokens = builder.maxReasoningTokens;
         this.thinking = builder.thinking;
-        this.reasoningBudgetMessage = builder.reasoningBudgetMessage;
+        this.reasoningCutoffMessage = builder.reasoningCutoffMessage;
         this.timeout = builder.timeout;
     }
 
@@ -83,8 +83,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     }
 
     /** Reasoning-span cap for this request; null = the model's builder default. */
-    public Integer reasoningBudget() {
-        return reasoningBudget;
+    public Integer maxReasoningTokens() {
+        return maxReasoningTokens;
     }
 
     /** The reasoning scaffold for this request; null = the model's builder default. */
@@ -93,8 +93,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     }
 
     /** What the model "decides" when the budget runs out; null = the model's builder default. */
-    public String reasoningBudgetMessage() {
-        return reasoningBudgetMessage;
+    public String reasoningCutoffMessage() {
+        return reasoningCutoffMessage;
     }
 
     /** Wall-clock deadline for this request; null = the model's builder default. */
@@ -114,9 +114,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 && Objects.equals(grammar, that.grammar)
                 && Objects.equals(seed, that.seed)
                 && Objects.equals(minP, that.minP)
-                && Objects.equals(reasoningBudget, that.reasoningBudget)
+                && Objects.equals(maxReasoningTokens, that.maxReasoningTokens)
                 && Objects.equals(thinking, that.thinking)
-                && Objects.equals(reasoningBudgetMessage, that.reasoningBudgetMessage)
+                && Objects.equals(reasoningCutoffMessage, that.reasoningCutoffMessage)
                 && Objects.equals(timeout, that.timeout);
     }
 
@@ -127,9 +127,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 grammar,
                 seed,
                 minP,
-                reasoningBudget,
+                maxReasoningTokens,
                 thinking,
-                reasoningBudgetMessage,
+                reasoningCutoffMessage,
                 timeout);
     }
 
@@ -141,12 +141,12 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 + seed
                 + ", minP="
                 + minP
-                + ", reasoningBudget="
-                + reasoningBudget
+                + ", maxReasoningTokens="
+                + maxReasoningTokens
                 + ", thinking="
                 + thinking
-                + ", reasoningBudgetMessage="
-                + (reasoningBudgetMessage == null ? "null" : "'" + reasoningBudgetMessage + "'")
+                + ", reasoningCutoffMessage="
+                + (reasoningCutoffMessage == null ? "null" : "'" + reasoningCutoffMessage + "'")
                 + ", timeout="
                 + timeout
                 + ", "
@@ -163,9 +163,9 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         private String grammar;
         private Long seed;
         private Double minP;
-        private Integer reasoningBudget;
+        private Integer maxReasoningTokens;
         private Boolean thinking;
-        private String reasoningBudgetMessage;
+        private String reasoningCutoffMessage;
         private Duration timeout;
 
         @Override
@@ -175,10 +175,10 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 if (j.grammar() != null) grammar(j.grammar());
                 if (j.seed() != null) seed(j.seed());
                 if (j.minP() != null) minP(j.minP());
-                if (j.reasoningBudget() != null) reasoningBudget(j.reasoningBudget());
+                if (j.maxReasoningTokens() != null) maxReasoningTokens(j.maxReasoningTokens());
                 if (j.thinking() != null) thinking(j.thinking());
-                if (j.reasoningBudgetMessage() != null)
-                    reasoningBudgetMessage(j.reasoningBudgetMessage());
+                if (j.reasoningCutoffMessage() != null)
+                    reasoningCutoffMessage(j.reasoningCutoffMessage());
                 if (j.timeout() != null) timeout(j.timeout());
             }
             return this;
@@ -202,10 +202,10 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         }
 
         /** Caps the reasoning span for this request; {@code -1} uncaps, null leaves the default. */
-        public Builder reasoningBudget(Integer reasoningBudget) {
-            if (reasoningBudget != null && reasoningBudget < -1)
-                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
-            this.reasoningBudget = reasoningBudget;
+        public Builder maxReasoningTokens(Integer maxReasoningTokens) {
+            if (maxReasoningTokens != null && maxReasoningTokens < -1)
+                throw new IllegalArgumentException("maxReasoningTokens " + maxReasoningTokens);
+            this.maxReasoningTokens = maxReasoningTokens;
             return this;
         }
 
@@ -216,8 +216,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         }
 
         /** The model's own words when the reasoning budget runs out; null leaves the default. */
-        public Builder reasoningBudgetMessage(String message) {
-            this.reasoningBudgetMessage = message;
+        public Builder reasoningCutoffMessage(String message) {
+            this.reasoningCutoffMessage = message;
             return this;
         }
 

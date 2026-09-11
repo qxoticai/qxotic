@@ -49,8 +49,8 @@ class AlwaysThinkingIT {
                         .modelPath(always())
                         .temperature(0.0)
                         .maxOutputTokens(200)
-                        .reasoningBudget(48)
-                        .reasoningBudgetMessage("... Let me answer.")
+                        .maxReasoningTokens(48)
+                        .reasoningCutoffMessage("... Let me answer.")
                         .build()) {
             assertEquals(ThinkingPolicy.ALWAYS, m.thinkingPolicy());
             ChatResponse r =
@@ -73,7 +73,7 @@ class AlwaysThinkingIT {
                                     .messages(UserMessage.from("Capital of Italy? One word."))
                                     .parameters(
                                             JinferChatRequestParameters.builder()
-                                                    .reasoningBudget(32)
+                                                    .maxReasoningTokens(32)
                                                     .build())
                                     .build());
             assertTrue(

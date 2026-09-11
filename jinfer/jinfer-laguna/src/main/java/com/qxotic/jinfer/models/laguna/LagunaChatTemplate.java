@@ -230,7 +230,7 @@ final class LagunaChatTemplate implements ChatTemplate {
     }
 
     @Override
-    public int defaultReasoningBudget(int maxTokens) {
+    public int defaultMaxReasoningTokens(int maxTokens) {
         return -1;
     }
 }

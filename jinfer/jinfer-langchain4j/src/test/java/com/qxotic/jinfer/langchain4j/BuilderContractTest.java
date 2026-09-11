@@ -256,7 +256,7 @@ final class BuilderContractTest {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JinferChatModel.builder().reasoningBudget(-2));
-        assertEquals("reasoningBudget -2", e.getMessage());
+                        () -> JinferChatModel.builder().maxReasoningTokens(-2));
+        assertEquals("maxReasoningTokens -2", e.getMessage());
     }
 }

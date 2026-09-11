@@ -89,7 +89,7 @@ final class LagunaIntegrationTest {
                 new LagunaChatTemplate(
                         checkpoint.tokenizer(),
                         checkpoint.gguf().getValue(int.class, "tokenizer.ggml.bos_token_id"));
-        assertEquals(-1, nativeTemplate.defaultReasoningBudget(128));
+        assertEquals(-1, nativeTemplate.defaultMaxReasoningTokens(128));
         int[] plainThinking =
                 encode(nativeTemplate, new Conversation(List.of(Message.user("Who are you?"))));
         assertArrayEquals(

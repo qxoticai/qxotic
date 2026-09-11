@@ -23,8 +23,8 @@ class ChatTemplateTest {
 
     @Test
     void theDefaultReasoningBudgetIsHalfTheCompletion() {
-        assertEquals(64, STUB.defaultReasoningBudget(128));
-        assertEquals(-1, STUB.defaultReasoningBudget(-1));
+        assertEquals(64, STUB.defaultMaxReasoningTokens(128));
+        assertEquals(-1, STUB.defaultMaxReasoningTokens(-1));
     }
 
     @Test

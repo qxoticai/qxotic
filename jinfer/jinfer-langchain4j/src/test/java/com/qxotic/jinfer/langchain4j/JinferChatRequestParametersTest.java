@@ -72,14 +72,14 @@ class JinferChatRequestParametersTest {
                 JinferChatRequestParameters.builder()
                         .thinking(true)
                         .timeout(Duration.ofSeconds(30))
-                        .reasoningBudgetMessage("Enough.")
+                        .reasoningCutoffMessage("Enough.")
                         .build();
         ChatRequestParameters plain = DefaultChatRequestParameters.builder().build();
         JinferChatRequestParameters kept =
                 (JinferChatRequestParameters) defaults.overrideWith(plain);
         assertEquals(true, kept.thinking());
         assertEquals(Duration.ofSeconds(30), kept.timeout());
-        assertEquals("Enough.", kept.reasoningBudgetMessage());
+        assertEquals("Enough.", kept.reasoningCutoffMessage());
         JinferChatRequestParameters pinned =
                 JinferChatRequestParameters.builder()
                         .thinking(false)
@@ -89,7 +89,7 @@ class JinferChatRequestParametersTest {
                 (JinferChatRequestParameters) defaults.overrideWith(pinned);
         assertEquals(false, merged.thinking());
         assertEquals(Duration.ofSeconds(5), merged.timeout());
-        assertEquals("Enough.", merged.reasoningBudgetMessage(), "unset inherits");
+        assertEquals("Enough.", merged.reasoningCutoffMessage(), "unset inherits");
         assertThrows(
                 IllegalArgumentException.class,
                 () -> JinferChatRequestParameters.builder().timeout(Duration.ofSeconds(-1)));
@@ -161,18 +161,19 @@ class JinferChatRequestParametersTest {
     @Test
     void reasoningBudgetRidesTheMergeLikeEveryJinferExtra() {
         JinferChatRequestParameters defaults =
-                JinferChatRequestParameters.builder().reasoningBudget(48).build();
+                JinferChatRequestParameters.builder().maxReasoningTokens(48).build();
         ChatRequestParameters plain =
                 DefaultChatRequestParameters.builder().temperature(0.5).build();
         assertEquals(
-                48, ((JinferChatRequestParameters) defaults.overrideWith(plain)).reasoningBudget());
+                48,
+                ((JinferChatRequestParameters) defaults.overrideWith(plain)).maxReasoningTokens());
         JinferChatRequestParameters pinned =
-                JinferChatRequestParameters.builder().reasoningBudget(-1).build();
+                JinferChatRequestParameters.builder().maxReasoningTokens(-1).build();
         assertEquals(
                 -1,
-                ((JinferChatRequestParameters) defaults.overrideWith(pinned)).reasoningBudget());
+                ((JinferChatRequestParameters) defaults.overrideWith(pinned)).maxReasoningTokens());
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JinferChatRequestParameters.builder().reasoningBudget(-2));
+                () -> JinferChatRequestParameters.builder().maxReasoningTokens(-2));
     }
 }

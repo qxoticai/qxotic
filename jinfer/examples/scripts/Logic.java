@@ -54,7 +54,7 @@ public class Logic {
                 .model(modelRef)
                 .maxOutputTokens(1024)
                 .thinking(true)
-                .reasoningBudget(768) // room to reason before the grammar takes the answer
+                .maxReasoningTokens(768) // room to reason before the grammar takes the answer
                 .temperature(0.0) // deterministic: the same puzzles score the same every run
                 .seed(42L)
                 .build()) {

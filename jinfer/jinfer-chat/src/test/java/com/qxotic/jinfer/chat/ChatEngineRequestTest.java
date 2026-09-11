@@ -33,8 +33,8 @@ final class ChatEngineRequestTest {
         assertTrue(r.tools().isEmpty());
         assertFalse(r.thinking());
         assertEquals(Generator.Constraints.UNLIMITED, r.maxOutputTokens());
-        assertNull(r.reasoningBudget());
-        assertNull(r.reasoningBudgetMessage());
+        assertNull(r.maxReasoningTokens());
+        assertNull(r.reasoningCutoffMessage());
         assertEquals(Duration.ZERO, r.timeout());
         assertNull(r.grammar());
         assertEquals(ChatEngine.ForcedTool.NONE, r.forcedTool());
@@ -51,8 +51,8 @@ final class ChatEngineRequestTest {
                         .tools(ONE_TOOL)
                         .thinking(true)
                         .maxOutputTokens(128)
-                        .reasoningBudget(32)
-                        .reasoningBudgetMessage("Enough.")
+                        .maxReasoningTokens(32)
+                        .reasoningCutoffMessage("Enough.")
                         .timeout(timeout)
                         .grammar("root ::= \"ok\"")
                         .stops(List.of("STOP"))
@@ -63,8 +63,8 @@ final class ChatEngineRequestTest {
         assertEquals(ONE_TOOL, request.tools());
         assertTrue(request.thinking());
         assertEquals(128, request.maxOutputTokens());
-        assertEquals(32, request.reasoningBudget());
-        assertEquals("Enough.", request.reasoningBudgetMessage());
+        assertEquals(32, request.maxReasoningTokens());
+        assertEquals("Enough.", request.reasoningCutoffMessage());
         assertEquals(timeout, request.timeout());
         assertEquals(SAMPLING, request.sampling());
         assertEquals("root ::= \"ok\"", request.grammar());

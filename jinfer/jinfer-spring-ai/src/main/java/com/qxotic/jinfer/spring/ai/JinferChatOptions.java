@@ -22,8 +22,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     private final Long seed;
     private final Double minP;
     private final Boolean thinking;
-    private final Integer reasoningBudget;
-    private final String reasoningBudgetMessage;
+    private final Integer maxReasoningTokens;
+    private final String reasoningCutoffMessage;
     private final Duration timeout;
     private final String outputSchema;
     private final String grammar;
@@ -54,8 +54,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         this.seed = b.seed;
         this.minP = b.minP;
         this.thinking = b.thinking;
-        this.reasoningBudget = b.reasoningBudget;
-        this.reasoningBudgetMessage = b.reasoningBudgetMessage;
+        this.maxReasoningTokens = b.maxReasoningTokens;
+        this.reasoningCutoffMessage = b.reasoningCutoffMessage;
         this.timeout = b.timeout;
         this.outputSchema = b.outputSchema;
         this.grammar = b.grammar;
@@ -82,12 +82,12 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
 
     /** Reasoning-span cap in generated tokens; {@code -1} uncaps, null = the family's policy. */
     public Integer getReasoningBudget() {
-        return reasoningBudget;
+        return maxReasoningTokens;
     }
 
     /** What the model "decides" when the budget runs out, in its own words; null = a break. */
     public String getReasoningBudgetMessage() {
-        return reasoningBudgetMessage;
+        return reasoningCutoffMessage;
     }
 
     /** Wall-clock generation deadline; null = none. */
@@ -130,8 +130,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 .seed(seed)
                 .minP(minP)
                 .thinking(thinking)
-                .reasoningBudget(reasoningBudget)
-                .reasoningBudgetMessage(reasoningBudgetMessage)
+                .maxReasoningTokens(maxReasoningTokens)
+                .reasoningCutoffMessage(reasoningCutoffMessage)
                 .timeout(timeout)
                 .outputSchema(outputSchema)
                 .grammar(grammar);
@@ -165,8 +165,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         private Long seed;
         private Double minP;
         private Boolean thinking;
-        private Integer reasoningBudget;
-        private String reasoningBudgetMessage;
+        private Integer maxReasoningTokens;
+        private String reasoningCutoffMessage;
         private Duration timeout;
         private String outputSchema;
         private String grammar;
@@ -188,15 +188,15 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
             return this;
         }
 
-        public Builder reasoningBudget(Integer reasoningBudget) {
-            if (reasoningBudget != null && reasoningBudget < -1)
-                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
-            this.reasoningBudget = reasoningBudget;
+        public Builder maxReasoningTokens(Integer maxReasoningTokens) {
+            if (maxReasoningTokens != null && maxReasoningTokens < -1)
+                throw new IllegalArgumentException("maxReasoningTokens " + maxReasoningTokens);
+            this.maxReasoningTokens = maxReasoningTokens;
             return this;
         }
 
-        public Builder reasoningBudgetMessage(String reasoningBudgetMessage) {
-            this.reasoningBudgetMessage = reasoningBudgetMessage;
+        public Builder reasoningCutoffMessage(String reasoningCutoffMessage) {
+            this.reasoningCutoffMessage = reasoningCutoffMessage;
             return this;
         }
 
@@ -228,9 +228,9 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 if (j.seed != null) seed = j.seed;
                 if (j.minP != null) minP = j.minP;
                 if (j.thinking != null) thinking = j.thinking;
-                if (j.reasoningBudget != null) reasoningBudget = j.reasoningBudget;
-                if (j.reasoningBudgetMessage != null)
-                    reasoningBudgetMessage = j.reasoningBudgetMessage;
+                if (j.maxReasoningTokens != null) maxReasoningTokens = j.maxReasoningTokens;
+                if (j.reasoningCutoffMessage != null)
+                    reasoningCutoffMessage = j.reasoningCutoffMessage;
                 if (j.timeout != null) timeout = j.timeout;
                 if (j.outputSchema != null) outputSchema = j.outputSchema;
                 if (j.grammar != null) grammar = j.grammar;

@@ -48,7 +48,7 @@ final class Thinking {
      * this the budget silently never arms and a long reasoning run can starve the visible answer to
      * LENGTH. A non-blank {@code message} is forced between the paragraph breaks when the budget
      * runs out - the model "deciding" to wrap up in its own words (llama.cpp's {@code
-     * --reasoning-budget-message}), so the visible answer continues coherently instead of from an
+     * --reasoning-cutoff-message}), so the visible answer continues coherently instead of from an
      * unexplained stop. Encoding is the ordinary, non-special-aware path, so message text can never
      * inject a marker id; a tokenizer that cannot encode it closes hard.
      */

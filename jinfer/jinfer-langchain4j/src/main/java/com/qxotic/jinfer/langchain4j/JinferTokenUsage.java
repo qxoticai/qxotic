@@ -73,7 +73,7 @@ public final class JinferTokenUsage extends TokenUsage {
      * Output tokens spent in the reasoning span; part of {@code outputTokenCount}, decoded at the
      * same rate as the answer and absent from it. On a reasoning checkpoint a one-line question can
      * spend ten times its answer here - this is where a slow trivial call went. {@code
-     * reasoningBudget(n)} caps it; a per-request budget of 0 skips it. Sums across {@link #add}.
+     * maxReasoningTokens(n)} caps it; a per-request budget of 0 skips it. Sums across {@link #add}.
      */
     public int reasoningTokenCount() {
         return reasoningTokens;

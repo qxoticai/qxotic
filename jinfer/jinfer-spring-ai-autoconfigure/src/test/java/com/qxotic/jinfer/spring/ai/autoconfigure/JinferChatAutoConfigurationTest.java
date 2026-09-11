@@ -119,8 +119,8 @@ class JinferChatAutoConfigurationTest {
                         "spring.ai.jinfer.chat.max-tokens=512",
                         "spring.ai.jinfer.chat.seed=7",
                         "spring.ai.jinfer.chat.thinking=false",
-                        "spring.ai.jinfer.chat.reasoning-budget=48",
-                        "spring.ai.jinfer.chat.reasoning-budget-message=... Let me answer.",
+                        "spring.ai.jinfer.chat.max-reasoning-tokens=48",
+                        "spring.ai.jinfer.chat.reasoning-cutoff-message=... Let me answer.",
                         "spring.ai.jinfer.chat.timeout=30s",
                         "spring.ai.jinfer.chat.speculation-depth=3")
                 .run(
@@ -138,8 +138,8 @@ class JinferChatAutoConfigurationTest {
                             assertThat(p.maxTokens()).isEqualTo(512);
                             assertThat(p.seed()).isEqualTo(7L);
                             assertThat(p.thinking()).isFalse();
-                            assertThat(p.reasoningBudget()).isEqualTo(48);
-                            assertThat(p.reasoningBudgetMessage()).isEqualTo("... Let me answer.");
+                            assertThat(p.maxReasoningTokens()).isEqualTo(48);
+                            assertThat(p.reasoningCutoffMessage()).isEqualTo("... Let me answer.");
                             assertThat(p.timeout()).hasSeconds(30);
                             assertThat(p.speculationDepth()).isEqualTo(3);
                             var options = p.toOptions();

@@ -78,9 +78,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final ChatEngine engine;
     final ChatRequestParameters defaults;
     final boolean thinking;
-    final Integer reasoningBudget;
+    final Integer maxReasoningTokens;
     final boolean describeSchema;
-    final String reasoningBudgetMessage;
+    final String reasoningCutoffMessage;
     final Duration timeout;
     final List<ChatModelListener> listeners;
     final VideoSampler videoSampler;
@@ -134,9 +134,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         try {
             if (b.speculationDepth != null) engine.speculationDepth(b.speculationDepth);
             this.thinking = b.thinking;
-            this.reasoningBudget = b.reasoningBudget;
+            this.maxReasoningTokens = b.maxReasoningTokens;
             this.describeSchema = b.describeSchema;
-            this.reasoningBudgetMessage = b.reasoningBudgetMessage;
+            this.reasoningCutoffMessage = b.reasoningCutoffMessage;
             framed(() -> engine.requireThinkingRenderable(b.thinking));
             this.timeout = b.timeout == null ? Duration.ZERO : b.timeout;
             this.listeners = List.copyOf(b.listeners);
@@ -192,9 +192,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.engine = engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
-        this.reasoningBudget = base.reasoningBudget;
+        this.maxReasoningTokens = base.maxReasoningTokens;
         this.describeSchema = base.describeSchema;
-        this.reasoningBudgetMessage = base.reasoningBudgetMessage;
+        this.reasoningCutoffMessage = base.reasoningCutoffMessage;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
@@ -234,9 +234,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.engine = base.engine;
         this.defaults = base.defaults;
         this.thinking = base.thinking;
-        this.reasoningBudget = base.reasoningBudget;
+        this.maxReasoningTokens = base.maxReasoningTokens;
         this.describeSchema = base.describeSchema;
-        this.reasoningBudgetMessage = base.reasoningBudgetMessage;
+        this.reasoningCutoffMessage = base.reasoningCutoffMessage;
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
@@ -326,7 +326,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     /**
      * How the loaded checkpoint reasons. {@code ALWAYS} models refuse {@link Builder#thinking
-     * thinking(false)}; {@link Builder#reasoningBudget} is the lever that works on them.
+     * thinking(false)}; {@link Builder#maxReasoningTokens} is the lever that works on them.
      */
     public ChatTemplate.ThinkingPolicy thinkingPolicy() {
         return engine.thinkingPolicy();
@@ -428,12 +428,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         tools,
                         think,
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
-                        j != null && j.reasoningBudget() != null
-                                ? j.reasoningBudget()
-                                : reasoningBudget,
-                        j != null && j.reasoningBudgetMessage() != null
-                                ? j.reasoningBudgetMessage()
-                                : reasoningBudgetMessage,
+                        j != null && j.maxReasoningTokens() != null
+                                ? j.maxReasoningTokens()
+                                : maxReasoningTokens,
+                        j != null && j.reasoningCutoffMessage() != null
+                                ? j.reasoningCutoffMessage()
+                                : reasoningCutoffMessage,
                         j != null && j.timeout() != null ? j.timeout() : timeout,
                         engine.loaded()
                                 .samplingDefaults()
@@ -574,8 +574,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private List<ChatModelListener> listeners = List.of();
         private boolean thinking = true;
         private Integer speculationDepth;
-        private Integer reasoningBudget;
-        private String reasoningBudgetMessage;
+        private Integer maxReasoningTokens;
+        private String reasoningCutoffMessage;
         private boolean describeSchema = true;
         private Long seed;
         private Duration timeout;
@@ -807,15 +807,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Caps the reasoning span at {@code tokens} generated tokens: when it runs out, a paragraph
-         * break, the {@link #reasoningBudgetMessage} and the close marker are forced, and the
+         * break, the {@link #reasoningCutoffMessage} and the close marker are forced, and the
          * answer follows. The lever for checkpoints that {@link ChatTemplate.ThinkingPolicy#ALWAYS
          * always reason}. Default: the family's own policy (half of maxOutputTokens, else
          * uncapped); {@code -1} uncaps; a per-request {@link
-         * JinferChatRequestParameters#reasoningBudget} wins over this.
+         * JinferChatRequestParameters#maxReasoningTokens} wins over this.
          */
-        public Builder reasoningBudget(int tokens) {
-            if (tokens < -1) throw new IllegalArgumentException("reasoningBudget " + tokens);
-            this.reasoningBudget = tokens;
+        public Builder maxReasoningTokens(int tokens) {
+            if (tokens < -1) throw new IllegalArgumentException("maxReasoningTokens " + tokens);
+            this.maxReasoningTokens = tokens;
             return this;
         }
 
@@ -824,8 +824,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * me wrap up."} - so the answer continues coherently from a stated decision instead of an
          * unexplained stop. Default: a bare paragraph break.
          */
-        public Builder reasoningBudgetMessage(String message) {
-            this.reasoningBudgetMessage = message;
+        public Builder reasoningCutoffMessage(String message) {
+            this.reasoningCutoffMessage = message;
             return this;
         }
 

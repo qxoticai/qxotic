@@ -188,7 +188,7 @@ class CachedPromptIT {
                     JinferChatModel.builder()
                             .model(loaded)
                             .maxOutputTokens(128)
-                            .reasoningBudget(32) // 8B-A1B always reasons: cap, do not switch off
+                            .maxReasoningTokens(32) // 8B-A1B always reasons: cap, do not switch off
                             .seed(1L)
                             .build();
             JinferChatModel b = a.fork();

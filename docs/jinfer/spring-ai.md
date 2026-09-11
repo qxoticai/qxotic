@@ -39,7 +39,7 @@ try (var model = JinferChatModel.builder()
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)
-                .reasoningBudget(256) // this model always reasons: cap the span
+                .maxReasoningTokens(256) // this model always reasons: cap the span
                 .build())
         .build()) {
 

@@ -446,9 +446,9 @@ public final class ChatEngine implements AutoCloseable {
      *     and a forced call's override, so a request cannot ask for a think span it cannot afford
      * @param maxOutputTokens completion budget, {@link Generator.Constraints#UNLIMITED} = bounded
      *     only by the context
-     * @param reasoningBudget think-span cap override: null = the model family's default policy, -1
-     *     = uncapped, else the cap
-     * @param reasoningBudgetMessage forced as the model's own words when the think-span cap fires,
+     * @param maxReasoningTokens think-span cap override: null = the model family's default policy,
+     *     -1 = uncapped, else the cap
+     * @param reasoningCutoffMessage forced as the model's own words when the think-span cap fires,
      *     before the close marker; null or blank = a bare paragraph break
      * @param timeout wall-clock budget for the whole pass (prefill AND decode); {@link
      *     Duration#ZERO} = none
@@ -468,8 +468,8 @@ public final class ChatEngine implements AutoCloseable {
             List<Tool> tools,
             boolean thinking,
             int maxOutputTokens,
-            Integer reasoningBudget,
-            String reasoningBudgetMessage,
+            Integer maxReasoningTokens,
+            String reasoningCutoffMessage,
             Duration timeout,
             Sampling sampling,
             String grammar,
@@ -487,8 +487,8 @@ public final class ChatEngine implements AutoCloseable {
             if (maxOutputTokens < Generator.Constraints.UNLIMITED) {
                 throw new IllegalArgumentException("maxOutputTokens " + maxOutputTokens);
             }
-            if (reasoningBudget != null && reasoningBudget < -1) {
-                throw new IllegalArgumentException("reasoningBudget " + reasoningBudget);
+            if (maxReasoningTokens != null && maxReasoningTokens < -1) {
+                throw new IllegalArgumentException("maxReasoningTokens " + maxReasoningTokens);
             }
             if (timeout == null || timeout.isNegative()) {
                 throw new IllegalArgumentException("timeout " + timeout);
@@ -545,8 +545,8 @@ public final class ChatEngine implements AutoCloseable {
             private List<Tool> tools = List.of();
             private boolean thinking;
             private int maxOutputTokens = Generator.Constraints.UNLIMITED;
-            private Integer reasoningBudget;
-            private String reasoningBudgetMessage;
+            private Integer maxReasoningTokens;
+            private String reasoningCutoffMessage;
             private Duration timeout = Duration.ZERO;
             private String grammar;
             private ForcedTool forcedTool = ForcedTool.NONE;
@@ -573,13 +573,13 @@ public final class ChatEngine implements AutoCloseable {
                 return this;
             }
 
-            public Builder reasoningBudget(Integer reasoningBudget) {
-                this.reasoningBudget = reasoningBudget;
+            public Builder maxReasoningTokens(Integer maxReasoningTokens) {
+                this.maxReasoningTokens = maxReasoningTokens;
                 return this;
             }
 
-            public Builder reasoningBudgetMessage(String reasoningBudgetMessage) {
-                this.reasoningBudgetMessage = reasoningBudgetMessage;
+            public Builder reasoningCutoffMessage(String reasoningCutoffMessage) {
+                this.reasoningCutoffMessage = reasoningCutoffMessage;
                 return this;
             }
 
@@ -614,8 +614,8 @@ public final class ChatEngine implements AutoCloseable {
                         tools,
                         thinking,
                         maxOutputTokens,
-                        reasoningBudget,
-                        reasoningBudgetMessage,
+                        maxReasoningTokens,
+                        reasoningCutoffMessage,
                         timeout,
                         sampling,
                         grammar,
@@ -770,8 +770,8 @@ public final class ChatEngine implements AutoCloseable {
                         + " always reasons: its template has no non-thinking turn, so thinking off"
                         + " cannot be rendered. Reasoning arrives separated from the answer;"
                         + (cappable
-                                ? " cap it with a reasoning budget (--reasoning-budget,"
-                                        + " reasoningBudget(n), reasoning_max_tokens), or"
+                                ? " cap it with a reasoning budget (--max-reasoning-tokens,"
+                                        + " maxReasoningTokens(n), max_reasoning_tokens), or"
                                 : "")
                         + " pick a model with a thinking switch");
     }
@@ -801,8 +801,8 @@ public final class ChatEngine implements AutoCloseable {
                         request.sampling(),
                         think,
                         request.maxOutputTokens(),
-                        request.reasoningBudget(),
-                        request.reasoningBudgetMessage(),
+                        request.maxReasoningTokens(),
+                        request.reasoningCutoffMessage(),
                         encoded.replyPrefix());
         if (request.grammar() != null) {
             sampler =
@@ -877,7 +877,7 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
      * thinking on applies the family default or caller override ({@code reasoningOverride}: null =
-     * the family policy, -1 = uncapped; {@code reasoningBudgetMessage}: what the model "decides"
+     * the family policy, -1 = uncapped; {@code reasoningCutoffMessage}: what the model "decides"
      * when the cap fires); thinking off masks the think markers outright.
      */
     private Sampler sampler(
@@ -885,7 +885,7 @@ public final class ChatEngine implements AutoCloseable {
             boolean think,
             int maxOutputTokens,
             Integer reasoningOverride,
-            String reasoningBudgetMessage,
+            String reasoningCutoffMessage,
             IntSequence replyPrefix) {
         Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
         ChatTemplate.ThinkMarkers markers = thinkMarkers();
@@ -904,7 +904,7 @@ public final class ChatEngine implements AutoCloseable {
                                 : loaded.template()
                                         .map(
                                                 template ->
-                                                        template.defaultReasoningBudget(
+                                                        template.defaultMaxReasoningTokens(
                                                                 maxOutputTokens))
                                         .orElse(
                                                 maxOutputTokens >= 0
@@ -928,7 +928,7 @@ public final class ChatEngine implements AutoCloseable {
                 loaded.tokenizer(),
                 budget,
                 startInThink,
-                reasoningBudgetMessage,
+                reasoningCutoffMessage,
                 markers.open(),
                 markers.close());
     }
