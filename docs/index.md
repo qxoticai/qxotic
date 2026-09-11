@@ -38,4 +38,5 @@ tokenization, model formats, tensor math, native quantized matmul, and a full in
   layout, `toknroll` loads the tokenizer, `jinfer` runs the model.
 - **Memory-first.** Tensors and activations live in `MemoryView` (jota), shared by jota, jam and
   jinfer, with no copies between layers.
-- **Native-image first.** Every library compiles with GraalVM Native Image out of the box.
+- **Native-image first.** Every library supports GraalVM Native Image out of the box except Jota's
+  JVM-only Panama backend; Native Image uses Jota's C backend instead.
