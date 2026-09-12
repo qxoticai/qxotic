@@ -61,6 +61,7 @@ Architecture dispatch comes from providers on the classpath.
 | Qwen 3.5 | chat, vision, MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
 | Laguna XS 2.1 | chat |
+| Mellum 2 | chat |
 | Ling 3 | chat |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) |
 | gpt-oss, Nemotron-H | chat |

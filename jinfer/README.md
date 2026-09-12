@@ -30,6 +30,7 @@ AI on the JVM, just a Maven dependency away.
 | Liquid AI LFM 2.5 | chat, vision, embeddings, reranking | `jinfer-lfm2` |
 | OpenAI gpt-oss | chat | `jinfer-gptoss` |
 | Poolside Laguna XS 2.1 | chat | `jinfer-laguna` |
+| JetBrains Mellum 2 | chat | `jinfer-mellum` |
 | Meta Llama 3+ | chat | `jinfer-llama` |
 | IBM Granite 4.1+ | chat | `jinfer-llama` |
 | Mistral AI Ministral 3 | chat | `jinfer-llama` |

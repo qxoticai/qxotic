@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.llama;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.JsonEnvelopeReplies;
 import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Tool;
