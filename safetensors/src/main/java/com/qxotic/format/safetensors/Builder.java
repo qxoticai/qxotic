@@ -36,6 +36,7 @@ public interface Builder extends Cloneable {
      *
      * @param recomputeTensorOffsets if true, tensor offsets will be automatically re-computed,
      *     packed in the same order and respecting the alignment
+     * @throws ArithmeticException if a tensor end offset cannot be represented as a {@code long}
      */
     Safetensors build(boolean recomputeTensorOffsets);
 

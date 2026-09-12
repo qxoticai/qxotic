@@ -58,7 +58,7 @@ final class WriterImpl {
         }
         for (TensorEntry entry : tensorEntries) {
             long start = entry.byteOffset();
-            long end = start + entry.byteSize();
+            long end = Math.addExact(start, entry.byteSize());
             // insertion-ordered: Map.of iterates in a per-JVM random order, and the header bytes
             // must not change from one run to the next
             Map<String, Object> header = new LinkedHashMap<>();

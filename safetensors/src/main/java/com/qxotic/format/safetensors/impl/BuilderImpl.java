@@ -147,7 +147,7 @@ final class BuilderImpl implements Builder {
             DType dType = tensorEntry.dtype();
             reindexed.put(name, TensorEntry.create(name, dType, tensorEntry.shape(), tensorOffset));
             long byteSize = dType.byteSizeForShape(tensorEntry.shape());
-            tensorOffset += byteSize;
+            tensorOffset = Math.addExact(tensorOffset, byteSize);
         }
         return reindexed;
     }

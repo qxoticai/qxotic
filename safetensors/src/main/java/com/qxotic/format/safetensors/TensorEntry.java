@@ -14,6 +14,9 @@ public final class TensorEntry {
     private final long byteOffset;
 
     private TensorEntry(String name, DType dtype, long[] shape, long byteOffset) {
+        if (byteOffset < 0) {
+            throw new IllegalArgumentException("offset must be non-negative: " + byteOffset);
+        }
         this.name = name;
         this.dtype = dtype;
         this.shape = shape.clone();
@@ -22,6 +25,8 @@ public final class TensorEntry {
 
     /**
      * Creates an entry; {@code offset} is relative to {@link Safetensors#getTensorDataOffset()}.
+     *
+     * @throws IllegalArgumentException if {@code offset} is negative
      */
     public static TensorEntry create(String name, DType dtype, long[] shape, long offset) {
         return new TensorEntry(
@@ -90,7 +95,11 @@ public final class TensorEntry {
         return dtype.byteSizeForShape(shape);
     }
 
-    /** Creates a copy with a different byte offset. */
+    /**
+     * Creates a copy with a different byte offset.
+     *
+     * @throws IllegalArgumentException if {@code newOffset} is negative
+     */
     public TensorEntry withOffset(long newOffset) {
         return new TensorEntry(this.name, this.dtype, this.shape, newOffset);
     }

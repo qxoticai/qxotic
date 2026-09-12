@@ -219,6 +219,28 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     }
 
     @Test
+    public void testBuildRejectsOffsetEndOverflow() {
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(
+                                TensorEntry.create(
+                                        "tensor", DType.I8, new long[] {1}, Long.MAX_VALUE));
+
+        assertThrows(ArithmeticException.class, () -> builder.build(false));
+    }
+
+    @Test
+    public void testRecomputedOffsetsRejectOverflow() {
+        Builder builder = Builder.newBuilder();
+        long elements = Long.MAX_VALUE / Byte.SIZE;
+        for (int i = 0; i < 9; i++) {
+            builder.putTensor(TensorEntry.create("tensor" + i, DType.I8, new long[] {elements}, 0));
+        }
+
+        assertThrows(ArithmeticException.class, builder::build);
+    }
+
+    @Test
     public void testBuildWithRecomputingOffsets() {
         Builder builder =
                 Builder.newBuilder()

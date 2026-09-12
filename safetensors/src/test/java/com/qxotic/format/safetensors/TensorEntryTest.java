@@ -59,11 +59,21 @@ public class TensorEntryTest {
     }
 
     @Test
-    public void testWithOffsetNegative() {
-        TensorEntry original = TensorEntry.create("weights", DType.F32, new long[] {10}, 100);
-        TensorEntry modified = original.withOffset(-50);
+    public void testCreateRejectsNegativeOffset() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TensorEntry.create("weights", DType.F32, new long[] {10}, -50));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TensorEntry.create("weights", DType.F32, new long[] {10}, Long.MIN_VALUE));
+    }
 
-        assertEquals(-50, modified.byteOffset());
+    @Test
+    public void testWithOffsetRejectsNegativeOffset() {
+        TensorEntry original = TensorEntry.create("weights", DType.F32, new long[] {10}, 100);
+
+        assertThrows(IllegalArgumentException.class, () -> original.withOffset(-50));
+        assertEquals(100, original.byteOffset());
     }
 
     @Test
