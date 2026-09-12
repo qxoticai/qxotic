@@ -820,18 +820,19 @@ public final class Server {
                                             "item",
                                             items.get(i)));
                         }
+                        // Use the SAME items just emitted; rebuilding can mint new tool-call ids.
+                        Map<String, Object> response =
+                                OpenAiSchema.responseResponse(id, modelId, created, result, items);
+                        String event = "response." + response.get("status");
                         sse.emit(
-                                "response.completed",
+                                event,
                                 Map.of(
                                         "type",
-                                        "response.completed",
+                                        event,
                                         "timings",
                                         OpenAiSchema.timings(result),
                                         "response",
-                                        // the SAME items just emitted, not a rebuild: see the
-                                        // overload's note on clock-minted call ids
-                                        OpenAiSchema.responseResponse(
-                                                id, modelId, created, result, items)));
+                                        response));
                         sse.done();
                     });
         }

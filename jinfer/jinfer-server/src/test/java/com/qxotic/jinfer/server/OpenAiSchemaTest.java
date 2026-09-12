@@ -25,6 +25,39 @@ class OpenAiSchemaTest {
     }
 
     @Test
+    void responsesReportTruncationWithoutClaimingTheOutputIsComplete() {
+        var generation =
+                new Generator.GenerationResult(
+                        new int[] {1},
+                        OptionalInt.empty(),
+                        Generator.FinishReason.LENGTH,
+                        Duration.ZERO,
+                        Duration.ZERO);
+        var partial = new Reply(generation, 3, 0, "{", null, List.of(), "length", null);
+        Map<String, Object> response = OpenAiSchema.responseResponse("id", "m", partial);
+        assertEquals("incomplete", response.get("status"));
+        assertEquals(Map.of("reason", "max_output_tokens"), response.get("incomplete_details"));
+        assertEquals(
+                "incomplete",
+                OpenAiSchema.responseOutputItems("id", partial).getFirst().get("status"));
+        assertEquals(
+                "{",
+                Values.asObject(
+                                Values.asArray(
+                                                OpenAiSchema.responseOutputItems("id", partial)
+                                                        .getFirst()
+                                                        .get("content"),
+                                                "content")
+                                        .getFirst(),
+                                "text")
+                        .get("text"));
+
+        // A user stop can coincide with the budget boundary; the resolved finish reason wins.
+        var stopped = new Reply(generation, 3, 0, "ok", null, List.of(), "stop", null);
+        assertEquals("completed", OpenAiSchema.responseResponse("id", "m", stopped).get("status"));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void textAlongsideToolCallsIsContentInEveryShape() {
         // "Let me check that.<tool_call>..." streamed those words as content deltas; the

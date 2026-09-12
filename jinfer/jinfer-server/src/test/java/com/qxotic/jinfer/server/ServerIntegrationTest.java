@@ -18,6 +18,7 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -154,6 +155,245 @@ class ServerIntegrationTest {
             assertTrue(metrics.contains("jinfer_generation_requests_invalid_total 1"), metrics);
             assertTrue(metrics.contains("jinfer_speculation_accepted_tokens_total 0"), metrics);
         }
+    }
+
+    @Test
+    void structuredOutputAndTruncationAgreeAcrossBothApisAndStreams() throws Exception {
+        Path path = TestModels.require(MODEL);
+        Map<String, Object> schema =
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "city",
+                                Map.of("type", "string"),
+                                "answer",
+                                Map.of("type", "string")),
+                        "required",
+                        List.of("city", "answer"),
+                        "additionalProperties",
+                        false);
+        try (ChatEngine engine =
+                        new ChatEngine(
+                                path,
+                                Map.of(),
+                                PromptCache.Options.DEFAULTS.withContextCapacity(768));
+                Server.Running server = Server.start(engine, ServerConfig.local(0));
+                HttpClient client = HttpClient.newHttpClient()) {
+            for (boolean responses : List.of(false, true)) {
+                for (boolean stream : List.of(false, true)) {
+                    for (int budget : List.of(256, 1)) {
+                        Map<String, Object> request = new LinkedHashMap<>();
+                        request.put("temperature", 0);
+                        request.put("reasoning_effort", "none");
+                        request.put("stream", stream);
+                        if (responses) {
+                            request.put("input", "What is the capital of France?");
+                            request.put("max_output_tokens", budget);
+                            request.put(
+                                    "text",
+                                    Map.of(
+                                            "format",
+                                            Map.of(
+                                                    "type",
+                                                    "json_schema",
+                                                    "name",
+                                                    "answer",
+                                                    "strict",
+                                                    true,
+                                                    "schema",
+                                                    schema)));
+                        } else {
+                            request.put(
+                                    "messages",
+                                    List.of(
+                                            Map.of(
+                                                    "role",
+                                                    "user",
+                                                    "content",
+                                                    "What is the capital of France?")));
+                            request.put("max_tokens", budget);
+                            request.put(
+                                    "response_format",
+                                    Map.of(
+                                            "type",
+                                            "json_schema",
+                                            "json_schema",
+                                            Map.of(
+                                                    "name", "answer", "strict", true, "schema",
+                                                    schema)));
+                        }
+                        String route = responses ? "/v1/responses" : "/v1/chat/completions";
+                        HttpResponse<String> reply =
+                                post(client, base(server) + route, JsonCodec.stringify(request));
+                        assertEquals(200, reply.statusCode(), reply.body());
+                        List<Map<String, Object>> chunks =
+                                stream
+                                        ? eventPayloads(reply.body())
+                                        : List.of(
+                                                Values.asObject(
+                                                        JsonCodec.parse(reply.body()), "reply"));
+                        String text;
+                        if (responses) {
+                            String status = budget == 1 ? "incomplete" : "completed";
+                            Map<String, Object> body = chunks.getLast();
+                            if (stream) {
+                                assertEquals("response." + status, body.get("type"), reply.body());
+                                body = Values.asObject(body.get("response"), "response");
+                                assertFalse(
+                                        reply.body()
+                                                .contains(
+                                                        "event: response."
+                                                                + (budget == 1
+                                                                        ? "completed"
+                                                                        : "incomplete")
+                                                                + "\n"));
+                            }
+                            assertEquals(status, body.get("status"), reply.body());
+                            assertEquals(
+                                    budget == 1 ? Map.of("reason", "max_output_tokens") : null,
+                                    body.get("incomplete_details"));
+                            Map<String, Object> item =
+                                    Values.asObject(
+                                            Values.asArray(body.get("output"), "output").getFirst(),
+                                            "item");
+                            assertEquals(status, item.get("status"));
+                            text =
+                                    Values.stringValue(
+                                            Values.asObject(
+                                                            Values.asArray(
+                                                                            item.get("content"),
+                                                                            "content")
+                                                                    .getFirst(),
+                                                            "part")
+                                                    .get("text"),
+                                            "");
+                            if (stream) {
+                                StringBuilder deltas = new StringBuilder();
+                                for (Map<String, Object> chunk : chunks)
+                                    if ("response.output_text.delta".equals(chunk.get("type")))
+                                        deltas.append(chunk.get("delta"));
+                                assertEquals(text, deltas.toString());
+                            }
+                        } else {
+                            StringBuilder content = new StringBuilder();
+                            String finish = null;
+                            for (Map<String, Object> chunk : chunks) {
+                                Map<String, Object> choice =
+                                        Values.asObject(
+                                                Values.asArray(chunk.get("choices"), "choices")
+                                                        .getFirst(),
+                                                "choice");
+                                Map<String, Object> message =
+                                        Values.asObject(
+                                                choice.get(stream ? "delta" : "message"),
+                                                "message");
+                                content.append(Values.stringValue(message.get("content"), ""));
+                                if (choice.get("finish_reason") != null)
+                                    finish = choice.get("finish_reason").toString();
+                            }
+                            assertEquals(budget == 1 ? "length" : "stop", finish, reply.body());
+                            text = content.toString();
+                        }
+                        if (budget != 1) {
+                            Map<String, Object> answer =
+                                    Values.asObject(JsonCodec.parse(text), "answer");
+                            assertEquals(Set.of("city", "answer"), answer.keySet());
+                            assertEquals("Paris", answer.get("city"));
+                            assertTrue(
+                                    answer.get("answer") instanceof String value
+                                            && value.contains("Paris"),
+                                    text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static List<Map<String, Object>> eventPayloads(String body) {
+        List<Map<String, Object>> events = new ArrayList<>();
+        for (String line : body.split("\n")) {
+            if (line.startsWith("data: ") && !line.equals("data: [DONE]"))
+                events.add(Values.asObject(JsonCodec.parse(line.substring(6)), "event"));
+        }
+        return events;
+    }
+
+    @Test
+    void schemaInstructionsAllowAToolRoundBeforeTheFinalAnswer() throws Exception {
+        Map<String, Object> request =
+                Values.asObject(
+                        JsonCodec.parse(
+                                """
+                                {
+                                  "temperature": 0, "max_tokens": 256, "reasoning_effort": "none",
+                                  "messages": [{"role": "user", "content": "Call get_weather with city Paris. Do not answer before getting its result."}],
+                                  "tools": [{"type": "function", "function": {
+                                    "name": "get_weather", "description": "Get current weather for a city.",
+                                    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": false}
+                                  }}],
+                                  "response_format": {"type": "json_schema", "json_schema": {
+                                    "name": "weather", "strict": true,
+                                    "schema": {"type": "object", "properties": {"city": {"type": "string"}, "answer": {"type": "string"}}, "required": ["city", "answer"], "additionalProperties": false}
+                                  }}
+                                }
+                                """),
+                        "request");
+        try (ChatEngine engine =
+                        new ChatEngine(
+                                TestModels.require(MODEL),
+                                Map.of(),
+                                PromptCache.Options.DEFAULTS.withContextCapacity(768));
+                Server.Running server = Server.start(engine, ServerConfig.local(0));
+                HttpClient client = HttpClient.newHttpClient()) {
+            String uri = base(server) + "/v1/chat/completions";
+            HttpResponse<String> first = post(client, uri, JsonCodec.stringify(request));
+            assertEquals(200, first.statusCode(), first.body());
+            Map<String, Object> choice = chatChoice(first.body());
+            assertEquals("tool_calls", choice.get("finish_reason"), first.body());
+            Map<String, Object> message = Values.asObject(choice.get("message"), "message");
+            List<Object> calls = Values.asArray(message.get("tool_calls"), "calls");
+            assertEquals(1, calls.size());
+            Map<String, Object> call = Values.asObject(calls.getFirst(), "call");
+            Map<String, Object> function = Values.asObject(call.get("function"), "function");
+            assertEquals("get_weather", function.get("name"));
+            assertEquals(
+                    Map.of("city", "Paris"), JsonCodec.parse(function.get("arguments").toString()));
+            List<Object> messages =
+                    new ArrayList<>(Values.asArray(request.get("messages"), "messages"));
+            messages.add(message);
+            messages.add(
+                    Map.of(
+                            "role",
+                            "tool",
+                            "tool_call_id",
+                            call.get("id"),
+                            "content",
+                            "Paris is sunny, 18C."));
+            request.put("messages", messages);
+            HttpResponse<String> second = post(client, uri, JsonCodec.stringify(request));
+            assertEquals(200, second.statusCode(), second.body());
+            choice = chatChoice(second.body());
+            assertEquals("stop", choice.get("finish_reason"), second.body());
+            String text =
+                    Values.asObject(choice.get("message"), "message").get("content").toString();
+            Map<String, Object> answer = Values.asObject(JsonCodec.parse(text), "answer");
+            assertEquals("Paris", answer.get("city"));
+            assertTrue(
+                    answer.get("answer")
+                            .toString()
+                            .toLowerCase(java.util.Locale.ROOT)
+                            .contains("sunny"),
+                    text);
+        }
+    }
+
+    private static Map<String, Object> chatChoice(String body) {
+        Map<String, Object> response = Values.asObject(JsonCodec.parse(body), "response");
+        return Values.asObject(
+                Values.asArray(response.get("choices"), "choices").getFirst(), "choice");
     }
 
     @Test

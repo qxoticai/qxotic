@@ -66,9 +66,12 @@ final class Generation {
 
     Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         List<Tool> tools = ToolUse.offered(request) ? tools(request) : List.of();
+        List<Message> prompt = messages(messages);
+        Map<String, Object> schema = schema(request);
+        if (schema != null) describeSchema(prompt, schema);
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
-                        messages(messages),
+                        prompt,
                         tools,
                         thinking(request) && forcedTool(request) == null,
                         maxTokens(request),
@@ -478,15 +481,33 @@ final class Generation {
         if (request.get("grammar") instanceof String source && !source.isBlank()) return source;
         if (request.get("response_format") instanceof Map<?, ?> format) {
             if ("json_object".equals(format.get("type"))) return Grammar.jsonGbnf();
-            if ("json_schema".equals(format.get("type"))) {
-                Map<String, Object> wrapper =
-                        Values.asObject(format.get("json_schema"), "response_format.json_schema");
-                return Grammar.schemaGbnf(
-                        Values.asObject(
-                                wrapper.get("schema"), "response_format.json_schema.schema"));
-            }
         }
-        return null;
+        Map<String, Object> schema = schema(request);
+        return schema == null ? null : Grammar.schemaGbnf(schema);
+    }
+
+    private static Map<String, Object> schema(Map<String, Object> request) {
+        if (!(request.get("response_format") instanceof Map<?, ?> format)
+                || !"json_schema".equals(format.get("type"))) return null;
+        Map<String, Object> wrapper =
+                Values.asObject(format.get("json_schema"), "response_format.json_schema");
+        return Values.asObject(wrapper.get("schema"), "response_format.json_schema.schema");
+    }
+
+    /** The grammar enforces syntax; the prompt tells the model what to produce. */
+    static void describeSchema(List<Message> messages, Map<String, Object> schema) {
+        String instruction =
+                "Your final answer must be JSON matching this schema: "
+                        + JsonCodec.stringify(schema);
+        for (int i = 0; i < messages.size(); i++) {
+            Message message = messages.get(i);
+            if (!Role.SYSTEM.equals(message.role())) continue;
+            List<Content> content = new ArrayList<>(message.content());
+            content.add(new Content.Text("\n\n" + instruction));
+            messages.set(i, new Message(Role.SYSTEM, content));
+            return;
+        }
+        messages.addFirst(Message.system(instruction));
     }
 
     private static List<String> stops(Object value) {

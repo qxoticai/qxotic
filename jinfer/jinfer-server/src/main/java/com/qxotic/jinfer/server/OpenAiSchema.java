@@ -176,11 +176,12 @@ final class OpenAiSchema {
      */
     static List<Map<String, Object>> responseOutputItems(String id, Reply result) {
         String text = result.text() == null ? "" : result.text();
+        String status = "length".equals(result.finishReason()) ? "incomplete" : "completed";
         if (result.toolCalls().isEmpty()) {
-            return List.of(responseMessageItem("msg_" + id, "completed", text));
+            return List.of(responseMessageItem("msg_" + id, status, text));
         }
         List<Map<String, Object>> items = new ArrayList<>();
-        if (!text.isEmpty()) items.add(responseMessageItem("msg_" + id, "completed", text));
+        if (!text.isEmpty()) items.add(responseMessageItem("msg_" + id, status, text));
         items.addAll(responseToolCallItems(ToolCalls.toWire(result.toolCalls())));
         return items;
     }
@@ -208,7 +209,15 @@ final class OpenAiSchema {
             Reply result,
             List<Map<String, Object>> output) {
         Map<String, Object> response =
-                responseEnvelope(id, modelId, created, "completed", output, responseUsage(result));
+                responseEnvelope(
+                        id,
+                        modelId,
+                        created,
+                        "length".equals(result.finishReason()) ? "incomplete" : "completed",
+                        output,
+                        responseUsage(result));
+        if ("length".equals(result.finishReason()))
+            response.put("incomplete_details", Map.of("reason", "max_output_tokens"));
         response.put("timings", timings(result));
         return response;
     }

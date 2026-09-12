@@ -273,6 +273,46 @@ curl -s http://127.0.0.1:54154/v1/chat/completions \
     -d '{"messages": [{"role": "user", "content": "What is the capital of France?"}]}'
 ```
 
+### Structured output
+
+Chat Completions accepts `response_format` with type `text`, `json_object`, or `json_schema`.
+For `json_schema`, the server describes the schema in a system instruction and constrains the generated answer with a grammar.
+The question itself need not mention JSON or name the fields.
+The instruction applies to the final answer, so tools can still be called before answering.
+Schema support follows `Grammar.fromSchema`'s supported subset; `strict: true` does not enable unsupported JSON Schema keywords.
+
+```shell
+curl -s http://127.0.0.1:54154/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [{"role": "user", "content": "What is the capital of France?"}],
+    "temperature": 0,
+    "max_tokens": 256,
+    "reasoning_effort": "none",
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "capital",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {"city": {"type": "string"}},
+          "required": ["city"],
+          "additionalProperties": false
+        }
+      }
+    }
+  }'
+```
+
+For `/v1/responses`, use `text.format: {"type":"json_schema","name":"capital","strict":true,"schema":{...}}` and `max_output_tokens`.
+Both APIs support streaming structured output.
+In `json_object` mode, a system or user message must explicitly request JSON.
+
+A token budget can interrupt a document before it is valid JSON.
+Chat Completions reports `finish_reason: "length"`; Responses reports `status: "incomplete"` with `incomplete_details.reason: "max_output_tokens"`, and streams `response.incomplete` as its terminal response event.
+Check termination before parsing partial output; typed SDK parsers may raise when a document is incomplete.
+
 ## GraalVM Native Image
 
 ```bash
@@ -292,4 +332,3 @@ One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.3
 > Having sub-par performance for the `jinfer` MVP was a no-go, this is something that cannot be hidden under the _"JVM is safe, thus slower"_ carpet. I decided to go with the hand-written kernels and drop GPU supports for now.
 > I still have hope, that the Tensor API could be re-introduced gradually later on in `jinfer`. There are some components that are performant using the pristine Tensor API with a decent (tensor) compiler.  
 > **Advice for compiler hobbyists:** If you are designing, implementing, or planning to, a tensor DSL or programming language for accelerators or custom hardware ... top performance **requires** access to the hardware in a specialized way e.g. via intrinsics, escape hatches, dialects and custom extensions ...  there's no one true language/DSL, portability and performance hardly come together. The one language/DSL to rule them all, is only a fantasy. This is obvious, but sometimes we get blinded by biases and hubris; don't.
-

@@ -63,6 +63,7 @@ public final class ReplyLanguageTest {
     static final int THINK = 0, END_THINK = 1, CALL = 2, END_CALL = 3, END = 4, ODD = 5, ARGS = 6;
     static final int EOT = 7; // an empty-byte special: a grammar admits it wherever it accepts
     static final int HALF_1 = 8, HALF_2 = 9; // 0xC3, 0xA9: e-acute split across tokens
+    static final int DOUBLE_SPACE = SPECIALS.length + 2 + CHARS.length();
 
     static int ch(char c) {
         int at = CHARS.indexOf(c);
@@ -217,6 +218,100 @@ public final class ReplyLanguageTest {
         assertTrue(start[END], "an empty document ends the turn");
         assertFalse(start[EOT], "the entry set's empty-byte admissions are not exits");
         assertFalse(start[CALL]);
+    }
+
+    @Test
+    void whitespacePreferringSamplerMustAdvanceIntoTheDocument() {
+        Walk w =
+                Selection.of(
+                                seq(
+                                        opt(think(mark("<think>"), free(), mark("</think>"))),
+                                        content(gbnf("root ::= [ \\n]{0,8} \"{\\\"a\\\":1}\"")),
+                                        opt(mark("<end>"))),
+                                TOK)
+                        .walk();
+        Sampler sampler = w.sampler(Sampler.ARGMAX, END);
+        try (Arena arena = Arena.ofConfined()) {
+            float[] scores = new float[TOK.vocabulary().size()];
+            scores[ch(' ')] = 100;
+            scores[ch('\n')] = 90;
+            scores[ch('{')] = 10;
+            var logits = Views.allocateF32(MemoryAllocators.ofArena(arena), scores.length);
+            for (int i = 0; i < 8; i++) {
+                Views.copyFromArray(logits, 0, scores, 0, scores.length, "scores");
+                assertEquals(ch(' '), sampler.sampleToken(logits));
+            }
+            Views.copyFromArray(logits, 0, scores, 0, scores.length, "scores");
+            assertEquals(
+                    ch('{'),
+                    sampler.sampleToken(logits),
+                    "whitespace cannot reset its grammar budget");
+        }
+        run(w, toks("\"a\":1}"));
+        assertTrue(w.accepted());
+    }
+
+    @Test
+    void boundedFramingKeepsToolsOpenAndDoesNotRechargeTheDocument() {
+        Node document = content(gbnf("root ::= [ \\n]{0,2} \"{\\\"a\\\":1}\""));
+        Node language =
+                seq(
+                        opt(think(mark("<think>"), free(), mark("</think>"))),
+                        alt(document, weatherCall()),
+                        opt(mark("<end>")));
+        for (boolean useTool : List.of(false, true)) {
+            Walk w = Selection.of(language, TOK).walk();
+            w.seed(IntSequence.of(THINK, END_THINK, ch('\n'), ch('\n'), ch('\n')));
+            run(w, ch(' '), ch('\n'));
+            boolean[] ok = admitted(w);
+            assertFalse(ok[ch(' ')]);
+            assertFalse(ok[ch('\n')]);
+            assertTrue(ok[CALL], "framing must not commit the document instead of a tool");
+            assertTrue(ok[ch('{')]);
+            if (useTool) run(w, CALL);
+            run(w, toks("{\"a\":1}"));
+            if (useTool) run(w, END_CALL);
+            assertTrue(w.accepted());
+            run(w, END);
+            assertFalse(w.finish().content().isEmpty());
+        }
+    }
+
+    @Test
+    void framingIsMatchedInBytesAndKeepsRequiredWhitespaceConsumed() {
+        Walk w =
+                Selection.of(
+                                seq(
+                                        opt(think(mark("<think>"), free(), mark("</think>"))),
+                                        content(gbnf("root ::= \"   \" \"a\"")),
+                                        opt(mark("<end>"))),
+                                TOK)
+                        .walk();
+        run(w, DOUBLE_SPACE);
+        boolean[] ok = admitted(w);
+        assertFalse(ok[DOUBLE_SPACE], "one whitespace byte remains, not one token");
+        assertTrue(ok[ch(' ')]);
+        assertFalse(ok[ch('a')], "required whitespace has not finished");
+        run(w, ch(' '));
+        assertTrue(admitted(w)[ch('a')]);
+        run(w, ch('a'));
+        assertTrue(w.accepted(), "entering the document must not replay its prefix from zero");
+    }
+
+    @Test
+    void aWhitespaceOnlyGrammarCompletesRatherThanStayingAtDispatch() {
+        Walk w =
+                Selection.of(
+                                seq(
+                                        opt(think(mark("<think>"), free(), mark("</think>"))),
+                                        content(gbnf("root ::= \" \"")),
+                                        opt(mark("<end>"))),
+                                TOK)
+                        .walk();
+        run(w, ch(' '));
+        assertTrue(w.accepted());
+        assertFalse(admitted(w)[ch(' ')]);
+        assertTrue(admitted(w)[END]);
     }
 
     @Test
@@ -924,6 +1019,7 @@ public final class ReplyLanguageTest {
             if (id == HALF_1) out.put((byte) 0xC3);
             else if (id == HALF_2) out.put((byte) 0xA9);
             else if (id == EOT) return 1; // no bytes
+            else if (id == DOUBLE_SPACE) out.put(new byte[] {' ', ' '});
             else if (id < SPECIALS.length) out.put(SPECIALS[id].getBytes(StandardCharsets.UTF_8));
             else {
                 out.put(
@@ -937,18 +1033,20 @@ public final class ReplyLanguageTest {
     private static final class FakeVocabulary implements Vocabulary {
         @Override
         public int size() {
-            return SPECIALS.length + 2 + CHARS.length();
+            return DOUBLE_SPACE + 1;
         }
 
         @Override
         public String token(int id) {
             if (id < SPECIALS.length) return SPECIALS[id];
             if (id == HALF_1 || id == HALF_2) return "<byte>";
+            if (id == DOUBLE_SPACE) return "  ";
             return String.valueOf(CHARS.charAt(id - SPECIALS.length - 2));
         }
 
         @Override
         public int id(String text) {
+            if (text.equals("  ")) return DOUBLE_SPACE;
             for (int i = 0; i < SPECIALS.length; i++) {
                 if (SPECIALS[i].equals(text)) return i;
             }

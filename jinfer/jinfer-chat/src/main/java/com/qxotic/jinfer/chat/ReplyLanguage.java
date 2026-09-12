@@ -39,7 +39,10 @@ import java.util.function.Function;
  * the branch whose region it opens, a plain token selects the (at most one) free-opening region.
  * Several regions MAY share an opening mark (Harmony's four {@code <|channel|>} messages): the walk
  * then runs their opening grammars as parallel CANDIDATES and commits when one survives - candidate
- * tokens are scaffold in every branch, so nothing is ever emitted speculatively.
+ * tokens are scaffold in every branch, so nothing is ever emitted speculatively. Generated
+ * whitespace before a GBNF-opening region is matched by that region's grammar while alternative
+ * marks remain available. A mark selects its branch; a non-whitespace token commits the document
+ * with its already-advanced cursor. Prompt-owned seed framing is not document text.
  *
  * <p>Region bodies mix {@link Node.Bytes}, {@link Node.Mark}, {@link Node.Gbnf} and {@link
  * Node.Free}; everything between free holes compiles into one {@link Grammar} spec, so interior
@@ -875,6 +878,8 @@ public final class ReplyLanguage {
         private boolean ended;
         private boolean generated;
         private boolean seeding;
+        // The document candidate consumes framing without closing the alternative mark branches.
+        private Grammar.Cursor entryCursor;
         private boolean toolCallsEnabled = true;
         private int endTurnId = -1; // parse-only walks never bind one
         private Message finished;
@@ -1006,6 +1011,7 @@ public final class ReplyLanguage {
             if (cl.plain() != -1) {
                 plainEntry = sel.regionEntry[sel.ops[cl.plain()].arg];
                 if (plainEntry == null) return true; // a FREE-opening region: pass-through
+                if (entryCursor != null) plainEntry = entryCursor.admissible();
                 // a GBNF-opening region: the mask is the union of the payload's entry set, the
                 // closure's marks, and (at an accept position) the control exits
             }
@@ -1053,6 +1059,7 @@ public final class ReplyLanguage {
             Selection.Closure cl = sel.closure(at);
             List<Integer> targets = cl.marks().get(token);
             if (targets != null) {
+                entryCursor = null;
                 if (targets.size() > 1) return enterCandidates(targets, token);
                 Op op = sel.ops[targets.get(0)];
                 if (op.kind == Op.MARK) { // a terminator: scaffold, inert
@@ -1072,15 +1079,36 @@ public final class ReplyLanguage {
                 // generates anything. A free-opening point still enters: that is prompt text
                 // becoming the parse's own content region, and seed() drops the text afterwards.
                 if (seeding && sel.regionEntry[op.arg] != null) return Fragment.EMPTY;
-                // whitespace at a point that also offers marks is framing, not a commitment: Qwen
-                // writes a blank line after </think> before <tool_call>, and a JSON grammar's
-                // leading whitespace rule would take that newline into the document, after which
-                // the call opener is no longer admissible and the tool round the model reasoned
-                // about never happens
+                // Qwen may put a blank line before a tool call. Keep that branch open, but charge
+                // generated whitespace to the document's grammar: ignoring it reset the entry mask
+                // forever, bypassing the schema's whitespace bound.
                 if (sel.regionEntry[op.arg] != null
                         && !cl.marks().isEmpty()
-                        && sel.isWhitespace(token)) return Fragment.EMPTY;
+                        && sel.isWhitespace(token)) {
+                    if (entryCursor == null)
+                        entryCursor =
+                                ((Seg.Spec) sel.regions.get(op.arg).segs().getFirst())
+                                        .spec()
+                                        .cursor();
+                    if (!entryCursor.tryAdvance(token)) {
+                        ended = true;
+                        return Fragment.EMPTY;
+                    }
+                    if (!entryCursor.accepting()) return Fragment.EMPTY;
+                    // A whitespace-only grammar is already a complete document candidate.
+                    Grammar.Cursor consumed = entryCursor;
+                    enter(sel.regions.get(op.arg), op.next);
+                    cursor = consumed;
+                    if (cursor.exhausted()) {
+                        seg++;
+                        cursor = null;
+                        if (seg == region.segs().size()) exitRegion();
+                    }
+                    return Fragment.EMPTY;
+                }
+                Grammar.Cursor consumed = entryCursor;
                 enter(sel.regions.get(op.arg), op.next);
+                cursor = consumed;
                 return feedRegion(token);
             }
             ended = true; // the control rule: nothing here expects this token
@@ -1108,6 +1136,7 @@ public final class ReplyLanguage {
         }
 
         private void enter(CRegion r, int ret) {
+            entryCursor = null;
             region = r;
             regionReturn = ret;
             seg = 0;

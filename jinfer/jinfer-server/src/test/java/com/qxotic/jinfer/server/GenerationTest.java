@@ -5,12 +5,49 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class GenerationTest {
+
+    @Test
+    void schemaInstructionsPreserveTheSchemaAndStayStableAcrossTurns() {
+        Map<String, Object> schema =
+                Map.of(
+                        "$defs",
+                        Map.of("answer", Map.of("enum", List.of("yes", "no"))),
+                        "$ref",
+                        "#/$defs/answer");
+        Message system = Message.system("Be concise.");
+        Message user =
+                new Message(
+                        Role.USER, List.of(new Content.Text("Question"), new Content.Text("?")));
+        List<Message> messages = new ArrayList<>(List.of(system, user));
+        Generation.describeSchema(messages, schema);
+        assertEquals("Be concise.", system.text(), "the caller's message is immutable");
+        assertEquals(user, messages.getLast());
+        assertEquals(
+                "Be concise.\n\nYour final answer must be JSON matching this schema: "
+                        + JsonCodec.stringify(schema),
+                messages.getFirst().text());
+        List<Message> next =
+                new ArrayList<>(
+                        List.of(system, user, Message.assistant("yes"), Message.user("Next?")));
+        Generation.describeSchema(next, schema);
+        assertEquals(messages.getFirst(), next.getFirst());
+
+        List<Message> noSystem = new ArrayList<>(List.of(user));
+        Generation.describeSchema(noSystem, schema);
+        assertEquals(Role.SYSTEM, noSystem.getFirst().role());
+        assertEquals(user, noSystem.getLast());
+    }
 
     @Test
     void anOmittedSeedStaysUnseeded() {
