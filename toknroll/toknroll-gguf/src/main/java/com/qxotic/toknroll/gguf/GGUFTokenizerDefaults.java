@@ -189,7 +189,12 @@ final class GGUFTokenizerDefaults {
                 builder, new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN}, "deepseek-v3");
         // Digit-first stacks: every digit split apart, then the GPT-2 word-level pass.
         registerSequencePreTokenizers(
-                builder, new String[] {"\\p{N}", GPT2_PATTERN}, "smollm", "command-r", "exaone");
+                builder,
+                new String[] {"\\p{N}", GPT2_PATTERN},
+                "smollm",
+                "command-r",
+                "exaone",
+                "mellum2");
         registerSequencePreTokenizers(
                 builder, new String[] {"\\p{N}{1,3}", MINICPM5_MAIN}, "minicpm5");
         registerSequencePreTokenizers(

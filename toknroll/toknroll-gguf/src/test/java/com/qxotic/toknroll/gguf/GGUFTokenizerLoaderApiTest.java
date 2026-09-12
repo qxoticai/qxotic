@@ -59,6 +59,7 @@ class GGUFTokenizerLoaderApiTest {
             "smollm",
             "command-r",
             "exaone",
+            "mellum2",
             "minicpm5",
             "laguna",
             "default",

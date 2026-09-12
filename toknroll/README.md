@@ -35,7 +35,7 @@ echo "Hello\!" | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
 ## Why Tok'n'Roll
 
 - **Token-perfect.** Byte-exact parity with the reference tokenizers for
-  [19 model families](#tested-implementations), not "close enough".
+  [20 model families](#tested-implementations), not "close enough".
 - **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model family,
   and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
 - **Loads existing files.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
@@ -87,6 +87,7 @@ Token-perfect, backed by parity tests against the Hugging Face and llama.cpp ref
 - **MiniMax**: M2.7, M3
 - **Xiaomi**: MiMo V2
 - **Poolside**: Laguna XS 2.1
+- **JetBrains**: Mellum 2
 
 Other BPE-based tokenizers likely work. They just are not parity-tested.
 

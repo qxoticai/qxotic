@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Generate toknroll-gguf/src/test/resources/laguna_golden_tokens.json: reference token ids for
-LagunaGoldenParityTest, produced by Hugging Face `tokenizers` from the model's own tokenizer.json.
+Generate a tokenizer golden (toknroll-gguf/src/test/resources/<family>_golden_tokens.json): reference token ids for
+a GoldenParityTest family, produced by Hugging Face `tokenizers` from the model's own tokenizer.json.
 
     python3 -m venv .venv && .venv/bin/pip install tokenizers
     .venv/bin/python toknroll-benchmarks/generate_laguna_golden.py [--model poolside/Laguna-XS-2.1] [--out PATH]
