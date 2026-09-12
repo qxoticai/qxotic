@@ -17,6 +17,7 @@ import java.lang.ref.Reference;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * The native ({@code libjam}) {@link JAM} implementation - a handle to a jam context (a {@code
@@ -56,6 +57,12 @@ public final class NativeJAM implements JAM, AutoCloseable {
     // own lock and its own context.
     private final ReentrantLock mmLock = SERIAL ? new ReentrantLock(true) : null;
 
+    // Every native call holds the read side while it runs; close() takes the write side and only
+    // then clears the context and its registry slot. So a fan-out callback always resolves the
+    // instance that started it (never null, never a successor that reused the slot with a
+    // different width), and the destroy waits for the last call in either serial mode.
+    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock(true);
+
     private NativeJAM(long ctx, JAM.Parallel parallel) {
         this.ctx = ctx;
         this.parallel = parallel;
@@ -76,21 +83,21 @@ public final class NativeJAM implements JAM, AutoCloseable {
         return jam;
     }
 
-    /** Frees the native context; later calls throw. Idempotent. */
+    /** Frees the native context once no call is in flight; later calls throw. Idempotent. */
     @Override
     public void close() {
-        long handle;
-        synchronized (NativeJAM.class) {
-            handle = ctx;
-            if (handle == 0) return;
-            ctx = 0;
-            INSTANCES.set(INSTANCES.indexOf(this), null);
-        }
-        if (SERIAL) mmLock.lock(); // after any mm in flight
+        lifecycle.writeLock().lock(); // after every mm and packSize in flight
         try {
+            long handle;
+            synchronized (NativeJAM.class) {
+                handle = ctx;
+                if (handle == 0) return;
+                ctx = 0;
+                INSTANCES.set(INSTANCES.indexOf(this), null);
+            }
             destroyJni(handle);
         } finally {
-            if (SERIAL) mmLock.unlock();
+            lifecycle.writeLock().unlock();
         }
     }
 
@@ -141,6 +148,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
                     "result R", r, rOff, rt, ldr, n, m); // [m×n] token-major: n tokens × m features
         }
         long wa = w.address() + wOff, aa = a.address() + aOff, ra = r.address() + rOff;
+        lifecycle.readLock().lock();
         if (SERIAL) mmLock.lock();
         try {
             long ctx = ctx();
@@ -158,6 +166,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
             return status;
         } finally {
             if (SERIAL) mmLock.unlock();
+            lifecycle.readLock().unlock();
             Reference.reachabilityFence(w);
             Reference.reachabilityFence(a);
             Reference.reachabilityFence(r);
@@ -201,11 +210,16 @@ public final class NativeJAM implements JAM, AutoCloseable {
     @Override
     public long packSize(int dtype, int m, int k) {
         if (PACK_ABI_NATIVE != PACK_ABI) return 0;
-        long ctx = ctx();
+        lifecycle.readLock().lock();
         try {
-            return (long) PACK_SIZE_FFM.invokeExact(ctx, dtype, m, k);
-        } catch (Throwable t) {
-            throw new AssertionError("unreachable: jam_pack_size", t);
+            long ctx = ctx();
+            try {
+                return (long) PACK_SIZE_FFM.invokeExact(ctx, dtype, m, k);
+            } catch (Throwable t) {
+                throw new AssertionError("unreachable: jam_pack_size", t);
+            }
+        } finally {
+            lifecycle.readLock().unlock();
         }
     }
 

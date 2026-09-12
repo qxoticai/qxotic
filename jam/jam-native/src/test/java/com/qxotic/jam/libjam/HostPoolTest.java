@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jam.JAM;
+import com.qxotic.jam.internal.GGMLType;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -300,6 +301,75 @@ class HostPoolTest {
             }
             for (Thread t : threads) t.join(60_000);
             if (failure.get() != null) throw new AssertionError(failure.get());
+        }
+    }
+
+    /**
+     * close() waits for the call in flight before the context and its registry slot go: the parked
+     * callback still resolves ITS instance (a context created meanwhile lands on another slot, and
+     * its throwing pool never sees this call), the destroy happens only after the call returned,
+     * and the next call is refused as closed.
+     */
+    @Test
+    void closeWaitsForTheCallInFlightAndKeepsItsCallbackValid() throws Exception {
+        var inCallback = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        JAM.Parallel parking =
+                new JAM.Parallel() {
+                    @Override
+                    public void run(int count, Job body) {
+                        inCallback.countDown();
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            throw new IllegalStateException(e);
+                        }
+                        for (int i = 0; i < count; i++) body.run(i, 0);
+                    }
+
+                    @Override
+                    public int width() {
+                        return 2;
+                    }
+                };
+        JAM.Parallel throwing =
+                new JAM.Parallel() {
+                    @Override
+                    public void run(int count, Job body) {
+                        throw new IllegalStateException("a stranger's pool ran this call");
+                    }
+
+                    @Override
+                    public int width() {
+                        return 3;
+                    }
+                };
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try (Arena ar = Arena.ofConfined()) {
+            NativeJAM jam = NativeJAM.create(parking);
+            int m = 64, n = 4, k = 64;
+            // Q8_0 prefill fans out twice (requant, then the kernel): the second fan-out is where a
+            // reused slot would resolve the stranger
+            MemorySegment w = ar.allocate(m * GGMLType.byCode(JAM.Q8_0).rowBytes(k));
+            MemorySegment a = ar.allocate((long) n * k * Float.BYTES);
+            MemorySegment c = ar.allocate((long) m * n * Float.BYTES);
+            Future<Integer> call = pool.submit(() -> jam.mm(w, a, c, JAM.Q8_0, m, n, k));
+            assertTrue(inCallback.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+            Future<?> closing = pool.submit(jam::close);
+            assertThrows(
+                    java.util.concurrent.TimeoutException.class,
+                    () -> closing.get(300, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    "close returned while a call was in flight");
+            try (NativeJAM stranger = NativeJAM.create(throwing)) {
+                release.countDown();
+                assertEquals(JAM.OK, call.get(5, java.util.concurrent.TimeUnit.SECONDS));
+                closing.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                assertThrows(IllegalStateException.class, () -> jam.mm(w, a, c, JAM.Q8_0, m, n, k));
+                assertThrows(IllegalStateException.class, () -> jam.packSize(JAM.Q4_0, 4, 256));
+            }
+        } finally {
+            pool.shutdownNow();
         }
     }
 }
