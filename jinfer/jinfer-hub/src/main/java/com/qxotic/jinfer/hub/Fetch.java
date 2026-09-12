@@ -63,7 +63,8 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>Redirects are followed by hand. Both hosts answer with a 302 to a signed CDN URL, and a signed
  * URL that also carries an {@code Authorization} header is rejected by some CDNs, so the credential
- * is dropped the moment the host changes - the only place it was ever needed.
+ * is dropped the moment the HTTP origin changes - the only place it was ever needed. HTTPS is never
+ * allowed to downgrade to HTTP.
  */
 final class Fetch {
 
@@ -905,7 +906,7 @@ final class Fetch {
 
     // ---- HTTP ----
 
-    /** Sends a GET, following redirects by hand and dropping credentials off-host. */
+    /** Sends a GET, following redirects by hand and dropping credentials off-origin. */
     private static HttpResponse<InputStream> send(
             URI uri, Map<String, String> headers, Duration timeout) throws IOException {
         URI current = uri;
@@ -924,25 +925,80 @@ final class Fetch {
                 throw new IOException("interrupted while fetching " + current, e);
             }
             int status = response.statusCode();
-            if (status < 300 || status >= 400) {
+            if (!isRedirect(status)) {
                 return response;
             }
             String location = response.headers().firstValue("location").orElse(null);
-            try (InputStream drain = response.body()) {
-                drain.readNBytes(64 * 1024); // redirect bodies are small; hostile ones are not
-            }
+            response.body().close();
             if (location == null || redirect == MAX_REDIRECTS) {
                 throw new IOException("redirect loop or missing Location for " + uri);
             }
-            URI next = current.resolve(location);
-            if (!next.getHost().equalsIgnoreCase(current.getHost())) {
+            URI next = redirectTarget(current, location);
+            if (!sameOrigin(current, next)) {
                 // the CDN URL is already signed; an Authorization header alongside it is both
                 // useless and, on some CDNs, a 400
                 currentHeaders = new LinkedHashMap<>(currentHeaders);
-                currentHeaders.remove("Authorization");
+                currentHeaders.keySet().removeIf("Authorization"::equalsIgnoreCase);
             }
             current = next;
         }
+    }
+
+    static URI redirectTarget(URI current, String location) throws IOException {
+        URI next;
+        try {
+            URI reference = URI.create(location);
+            if (!reference.isAbsolute()
+                    && reference.getRawAuthority() == null
+                    && reference.getRawPath().isEmpty()) {
+                String query =
+                        reference.getRawQuery() != null
+                                ? reference.getRawQuery()
+                                : current.getRawQuery();
+                next =
+                        URI.create(
+                                current.getScheme()
+                                        + "://"
+                                        + current.getRawAuthority()
+                                        + current.getRawPath()
+                                        + (query == null ? "" : "?" + query));
+            } else {
+                next = current.resolve(reference);
+            }
+            if (next.getRawFragment() != null) {
+                next = URI.create(next.toString().substring(0, next.toString().indexOf('#')));
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IOException("invalid redirect Location: " + location, e);
+        }
+        String scheme = next.getScheme();
+        if (next.getPort() > 65535) {
+            throw new IOException("invalid redirect port: " + next.getPort());
+        }
+        if (next.getHost() == null
+                || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+            throw new IOException("refusing redirect to non-HTTP URI: " + next);
+        }
+        if ("https".equalsIgnoreCase(current.getScheme()) && "http".equalsIgnoreCase(scheme)) {
+            throw new IOException("refusing HTTPS downgrade redirect to " + next);
+        }
+        return next;
+    }
+
+    static boolean sameOrigin(URI a, URI b) {
+        return a.getScheme().equalsIgnoreCase(b.getScheme())
+                && a.getHost().equalsIgnoreCase(b.getHost())
+                && effectivePort(a) == effectivePort(b);
+    }
+
+    private static boolean isRedirect(int status) {
+        return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+    }
+
+    private static int effectivePort(URI uri) {
+        return uri.getPort() >= 0
+                ? uri.getPort()
+                : ("https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80);
     }
 
     /** The response body, or the response's own explanation of why there is not one. */

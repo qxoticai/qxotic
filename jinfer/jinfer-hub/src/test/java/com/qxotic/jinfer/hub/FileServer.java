@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -31,6 +32,10 @@ final class FileServer implements AutoCloseable {
     private final List<String> noRange = new CopyOnWriteArrayList<>();
     private final Map<String, String> etags = new ConcurrentHashMap<>();
     private final Map<String, Integer> denied = new ConcurrentHashMap<>();
+    private final Map<String, Redirect> redirects = new ConcurrentHashMap<>();
+    private final CountDownLatch releaseRedirectBodies = new CountDownLatch(1);
+
+    private record Redirect(int status, String location, boolean stalledBody) {}
 
     private FileServer(HttpServer server) {
         this.server = server;
@@ -63,6 +68,20 @@ final class FileServer implements AutoCloseable {
     /** Every request for {@code path} is answered with {@code status} (a gated file: 401). */
     FileServer deny(String path, int status) {
         denied.put(path, status);
+        return this;
+    }
+
+    FileServer redirect(String path, String location) {
+        return redirect(path, 302, location);
+    }
+
+    FileServer redirect(String path, int status, String location) {
+        redirects.put(path, new Redirect(status, location, false));
+        return this;
+    }
+
+    FileServer stalledRedirect(String path, String location) {
+        redirects.put(path, new Redirect(302, location, true));
         return this;
     }
 
@@ -107,6 +126,31 @@ final class FileServer implements AutoCloseable {
         if (query != null) {
             lastQuery.put(path, query);
         }
+        exchange.getRequestHeaders()
+                .forEach(
+                        (name, values) ->
+                                lastHeaders.put(path + "\n" + name.toLowerCase(), values.get(0)));
+        Redirect redirect = redirects.get(path);
+        if (redirect != null) {
+            hits.computeIfAbsent(path, p -> new AtomicInteger()).incrementAndGet();
+            exchange.getResponseHeaders().set("Location", redirect.location());
+            if (redirect.stalledBody()) {
+                exchange.sendResponseHeaders(redirect.status(), 2);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(1);
+                    out.flush();
+                    try {
+                        releaseRedirectBodies.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            } else {
+                exchange.sendResponseHeaders(redirect.status(), -1);
+            }
+            exchange.close();
+            return;
+        }
         byte[] payload = files.get(path);
         Integer refusal = denied.get(path);
         if (refusal != null) {
@@ -125,10 +169,6 @@ final class FileServer implements AutoCloseable {
             return;
         }
         hits.computeIfAbsent(path, p -> new AtomicInteger()).incrementAndGet();
-        exchange.getRequestHeaders()
-                .forEach(
-                        (name, values) ->
-                                lastHeaders.put(path + "\n" + name.toLowerCase(), values.get(0)));
         String range = exchange.getRequestHeaders().getFirst("Range");
         String etag = etags.get(path);
         if (etag != null) exchange.getResponseHeaders().set("ETag", etag);
@@ -158,6 +198,7 @@ final class FileServer implements AutoCloseable {
 
     @Override
     public void close() {
+        releaseRedirectBodies.countDown();
         server.stop(0);
     }
 }

@@ -2,16 +2,21 @@ package com.qxotic.jinfer.hub;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Random;
@@ -44,6 +49,129 @@ class FetchDownloadTest {
                                     .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
+        }
+    }
+
+    @Test
+    void redirectsStripAuthorizationOnPortChange() throws IOException {
+        try (FileServer target = FileServer.start().serve("/target", "ok");
+                FileServer source = FileServer.start().redirect("/source", target.url("/target"))) {
+            assertEquals(
+                    "ok",
+                    Fetch.getString(
+                            source.url("/source"), Map.of("authorization", "Bearer audit-dummy")));
+            assertEquals("Bearer audit-dummy", source.lastHeader("/source", "Authorization"));
+            assertNull(target.lastHeader("/target", "Authorization"));
+        }
+    }
+
+    @Test
+    void redirectsKeepAuthorizationWithinOneOrigin() throws IOException {
+        try (FileServer server =
+                FileServer.start().redirect("/source", "/target").serve("/target", "ok")) {
+            assertEquals(
+                    "ok",
+                    Fetch.getString(
+                            server.url("/source"), Map.of("Authorization", "Bearer audit-dummy")));
+            assertEquals("Bearer audit-dummy", server.lastHeader("/target", "Authorization"));
+        }
+    }
+
+    @Test
+    void authorizationStaysStrippedForTheRestOfTheChain() throws IOException {
+        try (FileServer first = FileServer.start();
+                FileServer second = FileServer.start()) {
+            first.redirect("/source", second.url("/middle")).serve("/target", "ok");
+            second.redirect("/middle", first.url("/target"));
+
+            assertEquals(
+                    "ok",
+                    Fetch.getString(
+                            first.url("/source"), Map.of("Authorization", "Bearer audit-dummy")));
+            assertEquals("Bearer audit-dummy", first.lastHeader("/source", "Authorization"));
+            assertNull(second.lastHeader("/middle", "Authorization"));
+            assertNull(first.lastHeader("/target", "Authorization"));
+        }
+    }
+
+    @Test
+    void originsIncludeSchemeHostAndEffectivePort() {
+        assertTrue(
+                Fetch.sameOrigin(
+                        URI.create("http://EXAMPLE.com/model"),
+                        URI.create("http://example.com:80/other")));
+        assertTrue(
+                Fetch.sameOrigin(
+                        URI.create("https://example.com/model"),
+                        URI.create("https://example.com:443/other")));
+        assertFalse(
+                Fetch.sameOrigin(
+                        URI.create("http://example.com/model"),
+                        URI.create("https://example.com/model")));
+        assertFalse(
+                Fetch.sameOrigin(
+                        URI.create("http://example.com/model"),
+                        URI.create("http://other.example/model")));
+        assertFalse(
+                Fetch.sameOrigin(
+                        URI.create("http://example.com:8080/model"),
+                        URI.create("http://example.com:8081/model")));
+    }
+
+    @Test
+    void unsafeRedirectTargetsAreIoFailures() {
+        URI source = URI.create("https://example.com/model");
+        assertThrows(
+                IOException.class, () -> Fetch.redirectTarget(source, "http://example.com/model"));
+        assertThrows(IOException.class, () -> Fetch.redirectTarget(source, "file:///tmp/model"));
+        assertThrows(
+                IOException.class,
+                () -> Fetch.redirectTarget(source, "https://example.com:99999/model"));
+        assertThrows(IOException.class, () -> Fetch.redirectTarget(source, "http://["));
+    }
+
+    @Test
+    void queryOnlyRedirectsKeepTheCurrentPath() throws IOException {
+        assertEquals(
+                URI.create("https://example.com/a/model?new"),
+                Fetch.redirectTarget(
+                        URI.create("https://example.com/a/model?old"), "?new#ignored"));
+        assertEquals(
+                URI.create("https://example.com//other.example/model?new"),
+                Fetch.redirectTarget(
+                        URI.create("https://example.com//other.example/model?old"), "?new"));
+    }
+
+    @Test
+    void nonRedirect3xxResponsesAreNotFollowed() throws IOException {
+        try (FileServer target = FileServer.start().serve("/target", "wrong");
+                FileServer source =
+                        FileServer.start().redirect("/source", 304, target.url("/target"))) {
+            var failure =
+                    assertThrows(
+                            Fetch.HttpStatusException.class,
+                            () -> Fetch.getString(source.url("/source"), Map.of()));
+            assertEquals(304, failure.status);
+            assertEquals(0, target.hits("/target"));
+        }
+    }
+
+    @Test
+    void redirectBodiesAreClosedWithoutBeingDrained() throws IOException {
+        try (FileServer target = FileServer.start().serve("/target", "ok");
+                FileServer source =
+                        FileServer.start().stalledRedirect("/source", target.url("/target"))) {
+            assertTimeoutPreemptively(
+                    Duration.ofSeconds(2),
+                    () -> assertEquals("ok", Fetch.getString(source.url("/source"), Map.of())));
+        }
+    }
+
+    @Test
+    void redirectLoopsStopAtTheLimit() throws IOException {
+        try (FileServer server = FileServer.start().redirect("/loop", "/loop")) {
+            assertThrows(IOException.class, () -> Fetch.getString(server.url("/loop"), Map.of()));
+            assertEquals(6, server.hits("/loop"));
         }
     }
 
