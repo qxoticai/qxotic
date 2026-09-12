@@ -38,6 +38,22 @@ static inline void jam_decode_q4_0_128(const void* blk, __m128i* wlo, __m128i* w
     *dW  = jam_half2float(w->d);
 }
 
+/* Q5_0: value = d·(q-16), q = nibble | 5th bit (bit j of qh for element j, bit j+16 for element j+16). SSE3 has
+ * no pshufb: spread the 32 high bits scalarly (once per block, amortized across the engine's column tile). */
+typedef struct __attribute__((packed)) { uint16_t d; uint32_t qh; uint8_t qs[16]; } jam_q5_0_blk; /* 22 bytes */
+static inline void jam_decode_q5_0_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
+    const jam_q5_0_blk* w = (const jam_q5_0_blk*) blk;
+    uint32_t qh; __builtin_memcpy(&qh, &w->qh, 4);
+    int8_t lo[16], hi[16];
+    for (int j = 0; j < 16; j++) {
+        lo[j] = (int8_t)(((w->qs[j] & 0x0F) | (((qh >> j) << 4) & 0x10)) - 16);
+        hi[j] = (int8_t)(((w->qs[j] >> 4)   | ((qh >> (j + 12)) & 0x10)) - 16);
+    }
+    *wlo = _mm_loadu_si128((const __m128i*) lo);
+    *whi = _mm_loadu_si128((const __m128i*) hi);
+    *dW  = jam_half2float(w->d);
+}
+
 /* MXFP4: nibble -> int8 code (FP4 value ×2); the ×½ folds into the scale (jam_mxfp4_dhalf). The LUT lookup
  * is SSSE3 pshufb on the wider kernels - true SSE3 has none, so decode the 32 nibbles SCALARLY here (done
  * ONCE per weight block, amortized across the engine's 4-column tile), then the SSE int8 dot does the rest. */

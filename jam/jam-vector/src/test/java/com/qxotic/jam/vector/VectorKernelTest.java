@@ -97,6 +97,11 @@ class VectorKernelTest {
     }
 
     @Test
+    void q5_0() {
+        eachShape("Q5_0", JAM.Q5_0, withScratch(Q5Kernel::gemm));
+    }
+
+    @Test
     void q4_k() {
         eachShape("Q4_K", JAM.Q4_K, withScratch(Q4KKernel::gemm));
     }
@@ -149,6 +154,7 @@ class VectorKernelTest {
         Deq[] deqs = {
             new Deq("Q8_0", JAM.Q8_0, Q8Kernel::dequantizeRow),
             new Deq("Q4_0", JAM.Q4_0, Q4Kernel::dequantizeRow),
+            new Deq("Q5_0", JAM.Q5_0, Q5Kernel::dequantizeRow),
             new Deq("Q4_K", JAM.Q4_K, Q4KKernel::dequantizeRow),
             new Deq("Q5_K", JAM.Q5_K, Q5KKernel::dequantizeRow),
             new Deq("Q6_K", JAM.Q6_K, Q6KKernel::dequantizeRow),

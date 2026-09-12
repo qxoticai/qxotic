@@ -2,6 +2,7 @@ package com.qxotic.jam.vector;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
+import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 import com.qxotic.jam.JAM;
@@ -41,6 +42,7 @@ final class QuantWeights {
             case JAM.BF16 -> bf16(m, k, a, rng);
             case JAM.Q8_0 -> q8_0(m, k, a, rng);
             case JAM.Q4_0 -> q4_0(m, k, a, rng);
+            case JAM.Q5_0 -> q5_0(m, k, a, rng);
             case JAM.Q4_K -> q4_k(m, k, a, rng);
             case JAM.Q5_K -> q5_k(m, k, a, rng);
             case JAM.Q6_K -> q6_k(m, k, a, rng);
@@ -166,6 +168,27 @@ final class QuantWeights {
                 }
             }
         return new Weight(JAM.Q4_0, s, v);
+    }
+
+    private static Weight q5_0(int m, int k, Arena a, Random rng) { // value (q-16) in [-16,15]
+        int nb = k / 32;
+        float[] v = new float[m * k];
+        MemorySegment s = a.allocate((long) m * nb * 22, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * 22;
+                s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
+                int qh = 0;
+                for (int e = 0; e < 16; e++) {
+                    int lo = rng.nextInt(32), hi = rng.nextInt(32);
+                    s.set(JAVA_BYTE, blk + 6 + e, (byte) ((lo & 0xF) | ((hi & 0xF) << 4)));
+                    qh |= (lo >> 4) << e | (hi >> 4) << (e + 16);
+                    v[r * k + b * 32 + e] = lo - 16;
+                    v[r * k + b * 32 + 16 + e] = hi - 16;
+                }
+                s.set(JAVA_INT_UNALIGNED, blk + 2, qh);
+            }
+        return new Weight(JAM.Q5_0, s, v);
     }
 
     private static Weight q4_k(

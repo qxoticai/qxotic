@@ -60,15 +60,15 @@ class JamBackendParityTest {
 
     /** Dtypes with a VectorJAM register-tiled / band gemm (the rest decline on VectorJAM). */
     private static final int[] TILEABLE = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0
+        JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0
     };
 
     /**
      * All JAM weight dtypes (tileable + the dense floats handled only by the dot floor / native).
      */
     private static final int[] ALL = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0, JAM.F16,
-        JAM.BF16, JAM.F32
+        JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0,
+        JAM.F16, JAM.BF16, JAM.F32
     };
 
     /**
@@ -80,8 +80,8 @@ class JamBackendParityTest {
 
     private static int[] nativeTypes() {
         int[] base = {
-            JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.F16,
-            JAM.BF16, JAM.F32
+            JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4,
+            JAM.F16, JAM.BF16, JAM.F32
         };
         if (NATIVE == null || q1_0ProbeStatus() == JAM.EUNSUPPORTED) return base;
         int[] all = Arrays.copyOf(base, base.length + 1);

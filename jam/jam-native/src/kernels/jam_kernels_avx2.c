@@ -100,6 +100,15 @@ void jam_mm_f32_avx2(void* arg, int rb, int re, int tid) {
 #undef JAM_BLK
 #undef JAM_DECODE
 #undef JAM_MM_NAME
+
+#define JAM_BLK    jam_q5_0_blk
+#define JAM_DECODE jam_decode_q5_0_256
+#define JAM_MM_NAME jam_mm_q5_0_avx2
+#include "jam_gemm_q256.inc"
+#undef JAM_BLK
+#undef JAM_DECODE
+#undef JAM_MM_NAME
+
 #undef JAM_DOT
 
 /* F16/BF16 dense weight @ F32 -> F32, avx2: a 2-weight-row × 4-activation-col dot tile, so each row's

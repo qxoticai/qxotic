@@ -23,6 +23,7 @@ class GGMLTypeJotaParityTest {
             {JAM.F16, GGMLType.F16, DataType.FP16},
             {JAM.BF16, GGMLType.BF16, DataType.BF16},
             {JAM.Q4_0, GGMLType.Q4_0, DataType.Q4_0},
+            {JAM.Q5_0, GGMLType.Q5_0, DataType.Q5_0},
             {JAM.Q8_0, GGMLType.Q8_0, DataType.Q8_0},
             {JAM.Q4_K, GGMLType.Q4_K, DataType.Q4_K},
             {JAM.Q5_K, GGMLType.Q5_K, DataType.Q5_K},

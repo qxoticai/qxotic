@@ -285,21 +285,22 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     c->q8_kernel  = NULL;   /* NULL -> generic floor */
     c->mxfp4_kernel = NULL;
     c->q4_0_kernel  = NULL;   /* K-quant ctx->kq[] is zero from calloc (NULL kernel -> float floor) */
+    c->q5_0_kernel  = NULL; c->q5_0_decode_kernel = NULL;
     c->q1_0_kernel  = NULL;   /* NULL -> generic (float) floor */
 #ifdef JAM_HAVE_SSE3
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
-        c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3;
+        c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3; c->q5_0_kernel = jam_mm_q5_0_sse3;
         c->kq[JAM_KQ_Q4K] = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
         c->kq[JAM_KQ_Q5K] = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_sse3; }
 #endif
 #ifdef JAM_HAVE_SSSE3
     if (cpu >= JAM_ISA_SSSE3) { c->q8_kernel = jam_mm_q8_0_ssse3;   /* maddubs sign-trick: faster Q8_0/Q4_0 (K-quants keep the SSE3 path) */
-        c->q4_0_kernel = jam_mm_q4_0_ssse3; }
+        c->q4_0_kernel = jam_mm_q4_0_ssse3; c->q5_0_kernel = jam_mm_q5_0_ssse3; }
 #endif
 #ifdef JAM_HAVE_AVX2
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
         c->q8_kernel = jam_mm_q8_0_avx2; c->mxfp4_kernel = jam_mm_mxfp4_avx2;
-        c->q4_0_kernel = jam_mm_q4_0_avx2;
+        c->q4_0_kernel = jam_mm_q4_0_avx2; c->q5_0_kernel = jam_mm_q5_0_avx2;
         /* K-quants keep the SSE3 int8 kernels (run_quant supplies the per-32 requant) */
         c->nvfp4_kernel = jam_mm_nvfp4_avx2;
         c->q1_0_kernel = jam_mm_q1_0_avx2;
@@ -311,7 +312,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
      * sufficient (an AVX-512 CPU may lack AVX-VNNI), so confirm the feature explicitly here. */
     if (cpu >= JAM_ISA_AVX_VNNI && x86_has("avxvnni")) {
         c->q8_kernel = jam_mm_q8_0_avxvnni; c->mxfp4_kernel = jam_mm_mxfp4_avxvnni;
-        c->q4_0_kernel = jam_mm_q4_0_avxvnni;
+        c->q4_0_kernel = jam_mm_q4_0_avxvnni; c->q5_0_kernel = jam_mm_q5_0_avxvnni;
         }
 #endif
 #ifdef JAM_HAVE_AVX512BW
@@ -343,6 +344,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_NEON
     if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = c->q8_decode_kernel = jam_mm_q8_0_neon;
                                 c->q4_0_kernel = c->q4_0_decode_kernel = jam_mm_q4_0_neon;
+                                c->q5_0_kernel = c->q5_0_decode_kernel = jam_mm_q5_0_neon;
                                 c->mxfp4_kernel = jam_mm_mxfp4_neon;
                                 c->kq[JAM_KQ_Q4K] = jam_mm_q4k_neon;
                                 c->kq[JAM_KQ_Q5K] = jam_mm_q5k_neon; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_neon;
@@ -355,6 +357,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
          * decode work for the 4-row activation reuse (4x1 GEMV) to pay off. */
         c->q8_decode_kernel = jam_mm_q8_0_dotprod;
         c->q4_0_kernel = jam_mm_q4_0_dotprod; c->q4_0_decode_kernel = jam_gemv_q4_0_dotprod_4x1;
+        c->q5_0_kernel = c->q5_0_decode_kernel = jam_mm_q5_0_dotprod;
         c->mxfp4_kernel = jam_mm_mxfp4_dotprod; c->mxfp4_decode_kernel = jam_gemv_mxfp4_dotprod_4x1;
         c->kq[JAM_KQ_Q4K] = jam_mm_q4k_dotprod; c->kq[JAM_KQ_Q5K] = jam_mm_q5k_dotprod; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_dotprod;
         c->kq_decode[JAM_KQ_Q4K] = jam_gemv_q4k_dotprod_4x1;
@@ -367,13 +370,15 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #endif
 #ifdef JAM_HAVE_I8MM
     if (cpu >= JAM_ISA_I8MM) { c->q8_kernel = jam_mm_q8_0_i8mm_4x4;
-                               c->q4_0_kernel = jam_mm_q4_0_i8mm_4x4; }
+                               c->q4_0_kernel = jam_mm_q4_0_i8mm_4x4;
+                               c->q5_0_kernel = jam_mm_q5_0_i8mm_4x4; }
 #endif
 
     /* Non-ARM ladders use their normal Q8_0/Q4_0 kernels for both shapes. ARM overrides these so an
      * i8mm-capable CPU retains the measured SDOT choices for one-column decode. */
     if (!c->q8_decode_kernel) c->q8_decode_kernel = c->q8_kernel;
     if (!c->q4_0_decode_kernel) c->q4_0_decode_kernel = c->q4_0_kernel;
+    if (!c->q5_0_decode_kernel) c->q5_0_decode_kernel = c->q5_0_kernel;
     if (!c->mxfp4_decode_kernel) c->mxfp4_decode_kernel = c->mxfp4_kernel;
     for (int kqi = 0; kqi < JAM_KQ_N; kqi++)
         if (!c->kq_decode[kqi]) c->kq_decode[kqi] = c->kq[kqi];
@@ -863,6 +868,22 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #endif
             jam_task_fn mxfp4_kernel = n == 1 ? ctx->mxfp4_decode_kernel : ctx->mxfp4_kernel;
             return run_quant(ctx, &q, m, mxfp4_kernel, jam_mm_mxfp4_f32_generic);
+        }
+        if (wt == JAM_Q5_0) {
+#ifdef JAM_HAVE_AVX512
+            if (try_vnni_band(ctx, w, ldw, a, lda, c, ldc, m, n, k, 22, jam_q5_0_repack_band)) return JAM_OK;
+#endif
+#ifdef JAM_HAVE_AVXVNNI
+            if (ctx->active == JAM_ISA_AVX_VNNI &&
+                try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 22, jam_q5_0_repack_band_avxvnni)) return JAM_OK;
+#endif
+#ifdef JAM_HAVE_AVX2
+            if (ctx->active == JAM_ISA_AVX2 &&
+                try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 22,
+                               a, lda, c, ldc, m, n, k, jam_q5_0_band8_avx2)) return JAM_OK;
+#endif
+            jam_task_fn q5_kernel = n == 1 ? ctx->q5_0_decode_kernel : ctx->q5_0_kernel;
+            return run_quant(ctx, &q, m, q5_kernel, jam_mm_q5_0_f32_generic);
         }
         if (wt == JAM_Q4_0) {
 #ifdef JAM_HAVE_AVX512

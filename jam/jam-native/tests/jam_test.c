@@ -338,6 +338,7 @@ static void* build_weight(int dtype, int m, int k, int* be, int* bb) {
             if      (dtype==JAM_Q4_K) { *be=256; *bb=144; WQ=jam_ref_make_q4k(m,k,7,dq,mn); }
             else if (dtype==JAM_Q5_K) { *be=256; *bb=176; WQ=jam_ref_make_q5k(m,k,7,dq,mn); }
             else if (dtype==JAM_Q6_K) { *be=256; *bb=210; WQ=jam_ref_make_q6k(m,k,7,dq,mn); }
+            else if (dtype==JAM_Q5_0) { *be=32;  *bb=22;  WQ=jam_ref_make_q5_0(m,k,7,dq,mn); }
             else                      { *be=32;  *bb=18;  WQ=jam_ref_make_q4_0(m,k,7,dq,mn); }
             free(dq); free(mn);
         }
@@ -774,6 +775,7 @@ int main(void) {
                     /* Q4_0: k%32. n==1 makes the packed Q4_0 decode gemv a unit-tested kernel
                      * (it was e2e-only); {4,1}/{36,*} mirror the KQ packed edge shapes. */
     for (unsigned s=0;s<sizeof Q40/sizeof*Q40;++s) suite_kquant(jam_ref_make_q4_0, JAM_Q4_0, "Q4_0", Q40[s][0],Q40[s][1],Q40[s][2]);
+    for (unsigned s=0;s<sizeof Q40/sizeof*Q40;++s) suite_kquant(jam_ref_make_q5_0, JAM_Q5_0, "Q5_0", Q40[s][0],Q40[s][1],Q40[s][2]);
     int DN[][3] = {{16,8,64},{32,16,128},{64,33,256},{17,5,48},{128,64,512},{40,7,80},{16,8,40},{33,9,24}};  /* k%16==0 (fast) + %16!=0 (floor) */
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_F16,  "F16",  DN[s][0],DN[s][1],DN[s][2]);
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_BF16, "BF16", DN[s][0],DN[s][1],DN[s][2]);
@@ -784,6 +786,7 @@ int main(void) {
     for (int ni=0; ni<2; ni++) { int nn = ni ? 1 : 16;
         suite_layout(JAM_Q8_0,  "Q8_0",  37, nn, 64);
         suite_layout(JAM_Q4_0,  "Q4_0",  37, nn, 64);
+        suite_layout(JAM_Q5_0,  "Q5_0",  37, nn, 64);
         suite_layout(JAM_MXFP4, "MXFP4", 37, nn, 64);
         suite_layout(JAM_NVFP4, "NVFP4", 37, nn, 128);
         suite_layout(JAM_Q1_0,  "Q1_0",  37, nn, 128);
@@ -816,6 +819,7 @@ int main(void) {
      * dtype. Packable dtypes run at m=36 (m%4==0 engages the packed twin inside); the extra n==1
      * rows drive the zero-activation column through the packed GEMV divide guard. */
     suite_adversarial(JAM_Q8_0,"Q8_0",37,8,64);  suite_adversarial(JAM_Q4_0,"Q4_0",36,8,64);
+    suite_adversarial(JAM_Q5_0,"Q5_0",37,8,64);  suite_adversarial(JAM_Q5_0,"Q5_0",37,1,64);
     suite_adversarial(JAM_MXFP4,"MXFP4",37,8,64); suite_adversarial(JAM_NVFP4,"NVFP4",37,8,128);
     suite_adversarial(JAM_Q4_K,"Q4_K",36,8,256);  suite_adversarial(JAM_Q5_K,"Q5_K",36,8,256);
     suite_adversarial(JAM_Q6_K,"Q6_K",36,8,256);  suite_adversarial(JAM_F16,"F16",37,8,80);
@@ -843,7 +847,7 @@ int main(void) {
          * (g_metal_half_ref), so these bound only the accumulation-order noise on top of it. */
         {"Q4_Kh",2e-2,1e-2}, {"Q5_Kh",2e-2,1e-2}, {"Q6_Kh",2e-2,1e-2},
         {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5},
-        {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5},
+        {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5}, {"Q5_0",5e-4,5e-5},
         /* packed layouts: identical values, identical numeric tier */
         {"Q4_Kp",4e-3,1.5e-3}, {"Q5_Kp",5e-3,2e-3}, {"Q6_Kp",6e-3,1.5e-3}, {"Q4_0p",5e-4,5e-5},
         {"F16",1e-3,1e-4},

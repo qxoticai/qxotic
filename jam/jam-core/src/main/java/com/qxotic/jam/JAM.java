@@ -162,6 +162,7 @@ public interface JAM {
             F16 = 1,
             BF16 = 30,
             Q4_0 = 2,
+            Q5_0 = 6,
             Q8_0 = 8,
             Q4_K = 12,
             Q5_K = 13,

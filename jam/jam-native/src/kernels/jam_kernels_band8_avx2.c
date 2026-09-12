@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
+#include <string.h>
 
 /* Activation columns per register tile, per quant - measured optima (m=4096 n=512 k=2048,
  * JAM_ISA=avx2): Q4_K peaks at 4 (dual lo/hi accumulators fill the file), the single-accumulator
@@ -607,6 +608,47 @@ void jam_q8_0_band8_avx2(void* arg, int t0, int t1, int tid) {
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
                     q8s_dot_scalar(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+    }
+}
+
+/* Q5_0: the Q8_0 sign-trick band over Q5_0 blocks (q-16 is an int8; only the block unpack differs). */
+static void repack_q5_0s_group8(const uint8_t* wbase, int64_t w_stride, int nb, uint8_t* qs, float* dw) {
+    for (int r = 0; r < 8; r++) {
+        const uint8_t* w = wbase + r * w_stride;
+        for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES) {
+            dw[(int64_t) B * 8 + r] = b8_h2f(*(const uint16_t*) w);
+            int8_t q[32]; jam_q5_0_unpack(w, q);
+            for (int g = 0; g < 8; g++)
+                memcpy(qs + (int64_t) B * 256 + g * 32 + r * 4, q + g * 4, 4);
+        }
+    }
+}
+
+void jam_q5_0_band8_avx2(void* arg, int t0, int t1, int tid) {
+    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const int nb = J->kblocks, seq = J->seq;
+    const int64_t ldc = J->out_stride;
+    jam_repack* rp = &J->repack[tid];
+    for (int tile = t0; tile < t1; tile++) {
+        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
+        if (row_end > J->dim0) row_end = J->dim0;
+        int group = 0;
+        for (int r = row; r + 7 < row_end; r += 8, group++) {
+            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
+            float* dw = rp->dw + (int64_t) group * nb * 8;
+            repack_q5_0s_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw);
+            int s = 0;
+            for (; s + B8_NR_Q8 <= seq; s += B8_NR_Q8)
+                q8s_block8_nr(qs, dw, J->xq, J->dx, s, nb, ldc, J->out, r);
+            for (; s < seq; s++)
+                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
+                                 q8s_block8(qs, dw, J->xq + (int64_t) s * nb * JAM_QK,
+                                            J->dx + (int64_t) s * nb, nb));
+        }
+        for (int r = row + group * 8; r < row_end; r++)
+            for (int s = 0; s < seq; s++)
+                J->out[(int64_t) s * ldc + r] =
+                    jam_q5_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 

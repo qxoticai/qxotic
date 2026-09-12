@@ -421,4 +421,33 @@ static inline uint8_t* jam_ref_make_q4_0(int rows, int k, unsigned seed, float* 
     return W;
 }
 
+/* Q5_0: { fp16 d; u32 qh; nibble qs[16] } = 22B; value = d·(q-16), q = nibble | (bit of qh) << 4, bit j
+ * for element j and bit j+16 for element j+16. No min (wmin=0), so the "requant, exact min" reference is
+ * the plain requant one; suite_kquant's builder signature is kept for reuse. */
+static inline uint8_t* jam_ref_make_q5_0(int rows, int k, unsigned seed, float* wdq, float* wmin) {
+    int nb = k / 32;
+    uint8_t* W = (uint8_t*) malloc((size_t) rows * nb * 22);
+    uint32_t st = seed * 2654435761u + 1u;
+    #define JAM_RND() (st = st * 1664525u + 1013904223u, (st >> 16))
+    for (int i = 0; i < rows; i++)
+        for (int b = 0; b < nb; b++) {
+            float d = 0.02f + (JAM_RND() % 100) / 1000.0f;
+            uint8_t* w = W + (size_t)(i * nb + b) * 22;
+            *(uint16_t*) w = jam_ref_f2h(d); float dd = jam_ref_h2f(jam_ref_f2h(d));
+            uint32_t qh = 0;
+            uint8_t* qs = w + 6;
+            float* dq = wdq + (size_t) i * k + b * 32; float* mq = wmin + (size_t) i * k + b * 32;
+            for (int e = 0; e < 16; e++) {
+                int lo = JAM_RND() & 0x1F, hi = JAM_RND() & 0x1F;
+                qs[e] = (uint8_t)((lo & 0xF) | ((hi & 0xF) << 4));
+                qh |= (uint32_t)(lo >> 4) << e; qh |= (uint32_t)(hi >> 4) << (e + 16);
+                dq[e]    = dd * (lo - 16); mq[e]    = 0.f;
+                dq[e+16] = dd * (hi - 16); mq[e+16] = 0.f;
+            }
+            memcpy(w + 2, &qh, 4);
+        }
+    #undef JAM_RND
+    return W;
+}
+
 #endif /* JAM_REF_H */

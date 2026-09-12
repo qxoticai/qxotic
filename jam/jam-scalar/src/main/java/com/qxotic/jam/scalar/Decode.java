@@ -36,6 +36,7 @@ final class Decode {
             case BF16 -> bf16(stage16(seg, src, count), count, out, at);
             case Q8_0 -> q8_0(stage(w, src, count), count, out, at);
             case Q4_0 -> q4_0(stage(w, src, count), count, out, at);
+            case Q5_0 -> q5_0(stage(w, src, count), count, out, at);
             case Q4_K -> q4_K(stage(w, src, count), count, out, at);
             case Q5_K -> q5_K(stage(w, src, count), count, out, at);
             case Q6_K -> q6_K(stage(w, src, count), count, out, at);
@@ -77,6 +78,24 @@ final class Decode {
     }
 
     /** Block (18 B): f16 d, nibbles qs[16]; low nibbles are elements 0..15; v = d(q-8). */
+    /** Q5_0: 22-byte blocks, {@code d·(q-16)} with the fifth bit of element j at bit j of qh. */
+    static void q5_0(byte[] q, int count, float[] out, int at) {
+        for (int o = at, p = 0, end = at + count; o < end; o += 32, p += 22) {
+            float d = f16(q, p);
+            int qh =
+                    (q[p + 2] & 0xFF)
+                            | (q[p + 3] & 0xFF) << 8
+                            | (q[p + 4] & 0xFF) << 16
+                            | q[p + 5] << 24;
+            int s = p + 6, hi = o + 16;
+            for (int e = 0; e < 16; e++) {
+                int b = q[s + e] & 0xFF;
+                out[o + e] = (((b & 0xF) | ((qh >>> e) << 4) & 0x10) - 16) * d;
+                out[hi + e] = (((b >> 4) | (qh >>> (e + 12)) & 0x10) - 16) * d;
+            }
+        }
+    }
+
     static void q4_0(byte[] q, int count, float[] out, int at) {
         for (int o = at, p = 0, end = at + count; o < end; o += 32, p += 18) {
             float d = f16(q, p);

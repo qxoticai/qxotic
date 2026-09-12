@@ -15,6 +15,7 @@
 #define JAM_QK          32     /* elements per 32-block (activation quant granularity) */
 #define JAM_Q8_0_BYTES  34     /* fp16 d + 32 int8 */
 #define JAM_Q4_0_BYTES  18     /* fp16 d + 16 nibble bytes */
+#define JAM_Q5_0_BYTES  22     /* fp16 d + 32 high bits (u32) + 16 nibble bytes */
 #define JAM_QKK         256    /* elements per K-quant super-block */
 #define JAM_Q4K_BYTES   144    /* d(f16) dmin(f16) scales[12] qs[128] */
 #define JAM_Q5K_BYTES   176    /* d(f16) dmin(f16) scales[12] qh[32] qs[128] */
@@ -39,6 +40,27 @@ static inline float jam_q8_0_dot_f32(const uint8_t* w, int nb, const float* x) {
     for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES, x += JAM_QK) {
         float d = jam_half2float(*(const uint16_t*) w);
         const int8_t* q = (const int8_t*) (w + 2);
+        float s = 0.0f;
+        for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
+        acc += d * s;
+    }
+    return acc;
+}
+/* Q5_0 block {fp16 d; u32 qh; nibble qs[16]}: element j = (qs[j] & 0xF | bit j of qh << 4) - 16, element
+ * j+16 = (qs[j] >> 4 | bit j+16 of qh << 4) - 16. */
+static inline void jam_q5_0_unpack(const uint8_t* w, int8_t* q) {
+    uint32_t qh = (uint32_t) w[2] | (uint32_t) w[3] << 8 | (uint32_t) w[4] << 16 | (uint32_t) w[5] << 24;
+    const uint8_t* qs = w + 6;
+    for (int j = 0; j < 16; j++) {
+        q[j]      = (int8_t)(((qs[j] & 0x0F) | (((qh >> j) << 4) & 0x10)) - 16);
+        q[j + 16] = (int8_t)(((qs[j] >> 4)   | ((qh >> (j + 12)) & 0x10)) - 16);
+    }
+}
+static inline float jam_q5_0_dot_f32(const uint8_t* w, int nb, const float* x) {
+    float acc = 0.0f;
+    for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES, x += JAM_QK) {
+        float d = jam_half2float(*(const uint16_t*) w);
+        int8_t q[32]; jam_q5_0_unpack(w, q);
         float s = 0.0f;
         for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
         acc += d * s;

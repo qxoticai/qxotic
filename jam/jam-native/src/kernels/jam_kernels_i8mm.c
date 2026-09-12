@@ -49,3 +49,15 @@ static inline void jam_i8mm_store_2x2(float* c, int ldc, int row, int col, float
 #undef JAM_TILE2_NAME
 #undef JAM_MM_NAME
 
+#define JAM_BLK        jam_q5_0_blk
+#define JAM_DECODE     jam_decode_q5_0_neon
+#define JAM_EDGE_NAME  jam_q5_i8mm_edge
+#define JAM_TILE2_NAME jam_q5_i8mm_tile2
+#define JAM_MM_NAME    jam_mm_q5_0_i8mm_4x4
+#include "jam_gemm_i8mm_4x4.inc"
+#undef JAM_BLK
+#undef JAM_DECODE
+#undef JAM_EDGE_NAME
+#undef JAM_TILE2_NAME
+#undef JAM_MM_NAME
+

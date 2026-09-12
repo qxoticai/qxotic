@@ -14,7 +14,7 @@ class VectorJAMValidationTest {
     private static final int M = 4, N = 2, K = 256;
     private static final long A_BYTES = N * K * 4L, R_BYTES = N * M * 4L;
     private static final int[] WEIGHT_TYPES = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0
+        JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0
     };
     private static final JAM VECTOR = new VectorJAM(JAM.Parallel.INLINE);
 

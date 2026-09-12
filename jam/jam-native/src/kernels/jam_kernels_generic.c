@@ -320,6 +320,23 @@ void jam_mm_q4_0_f32_generic(void* arg, int rb, int re, int tid) {
     }
 }
 
+/* Q5_0 weight @ F32 -> F32, portable floor + reference: value = d·(q-16), q from the nibble and the qh bit
+ * (jam_q5_0_unpack). block = { fp16 d; u32 qh; nibble qs[16] } = 22B. */
+void jam_mm_q5_0_f32_generic(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* W = (const uint8_t*) J->a;
+    const float* A = (const float*) J->b;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, nb = J->nb;
+    const size_t wrow = (size_t)(J->lda / 32) * JAM_Q5_0_BYTES;
+    for (int i = rb; i < re; ++i) {
+        const uint8_t* arow = W + (size_t) i * wrow;
+        for (int j = 0; j < n; ++j)
+            C[(size_t) j*ldc+i] = jam_q5_0_dot_f32(arow, nb, A + (size_t) j * ldb);
+    }
+}
+
 /* ---- F16 / BF16 DENSE weight @ F32 -> F32, portable floor (any k; the AVX-512 path needs k%16==0).
  * Weight converted per element; output token-major C[s*ldc + r]. ---- */
 static inline float jam_bf16_to_float(uint16_t h) {

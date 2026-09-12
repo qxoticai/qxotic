@@ -22,3 +22,12 @@
 #undef JAM_BLK
 #undef JAM_DECODE
 #undef JAM_MM_NAME
+
+#define JAM_BLK     jam_q5_0_blk
+#define JAM_DECODE  jam_decode_q5_0_128
+#define JAM_MM_NAME jam_mm_q5_0_ssse3
+#include "jam_gemm_q128_ssse3.inc"
+#undef JAM_BLK
+#undef JAM_DECODE
+#undef JAM_MM_NAME
+

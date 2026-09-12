@@ -2,6 +2,7 @@ package com.qxotic.jam.scalar;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
+import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -80,6 +81,27 @@ class ScalarJamTest {
                 }
             }
         return new Weight(JAM.Q8_0, s, v);
+    }
+
+    private static Weight q5_0(int m, int k) { // scale 1.0, value (q-16) in [-16,15]
+        int nb = k / 32;
+        float[] v = new float[m * k];
+        MemorySegment s = A.allocate((long) m * nb * 22, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * 22;
+                s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
+                int qh = 0;
+                for (int e = 0; e < 16; e++) {
+                    int lo = RNG.nextInt(32), hi = RNG.nextInt(32);
+                    s.set(JAVA_BYTE, blk + 6 + e, (byte) ((lo & 0xF) | ((hi & 0xF) << 4)));
+                    qh |= (lo >> 4) << e | (hi >> 4) << (e + 16);
+                    v[r * k + b * 32 + e] = lo - 16;
+                    v[r * k + b * 32 + 16 + e] = hi - 16;
+                }
+                s.set(JAVA_INT_UNALIGNED, blk + 2, qh);
+            }
+        return new Weight(JAM.Q5_0, s, v);
     }
 
     private static Weight q4_0(int m, int k) { // scale 1.0, nibble -> value (nibble-8) in [-8,7]
@@ -274,6 +296,7 @@ class ScalarJamTest {
         check("BF16", bf16(m, k), m, n, k);
         check("Q8_0", q8_0(m, k), m, n, k);
         check("Q4_0", q4_0(m, k), m, n, k);
+        check("Q5_0", q5_0(m, k), m, n, k);
     }
 
     @Test
@@ -293,6 +316,7 @@ class ScalarJamTest {
         check("F16.gemv", f16(m, k), m, 1, k);
         check("Q8_0.gemv", q8_0(m, k), m, 1, k);
         check("Q4_0.gemv", q4_0(m, k), m, 1, k);
+        check("Q5_0.gemv", q5_0(m, k), m, 1, k);
     }
 
     @Test

@@ -10,7 +10,7 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Java Vector API {@link JAM} backend - jam-vector's self-contained matmul, peer to the scalar and
  * native backends. Each tileable weight dtype is dispatched straight to its register-tiled
- * (Q8_0/Q4_0) or dequant-to-scratch band (k-quant/FP4) kernel on the raw operand segments - no
+ * (Q8_0/Q4_0) or dequant-to-scratch band (Q5_0/k-quant/FP4) kernel on the raw operand segments - no
  * tensor reconstruction.
  *
  * <p>PREFILL only ({@code n > 1}) with F32 activations + result. Decode ({@code n == 1},
@@ -107,6 +107,7 @@ public final class VectorJAM implements JAM {
             switch (wt) {
                 case Q8_0 -> Q8Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q4_0 -> Q4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case Q5_0 -> Q5Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q4_K -> Q4KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q5_K -> Q5KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q6_K -> Q6KKernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);

@@ -21,7 +21,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>Offsets are BYTE offsets into the operand segments; {@code ldw/lda/ldr} are ELEMENT row
  * strides (the native convention). {@code k} and {@code ldw} must be multiples of the weight's
  * block size ({@link #EINVAL} otherwise). Decodes every jam weight dtype: {@code F32 F16 BF16 Q4_0
- * Q8_0 Q1_0}, the k-quants {@code Q4_K/Q5_K/Q6_K}, and FP4 {@code MXFP4/NVFP4} - the dequant
+ * Q5_0 Q8_0 Q1_0}, the k-quants {@code Q4_K/Q5_K/Q6_K}, and FP4 {@code MXFP4/NVFP4} - the dequant
  * mirrors jam's native reference (jam_ref.h). All parallel work runs on the host's {@link
  * Parallel}; calls are serialized.
  */

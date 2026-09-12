@@ -41,7 +41,7 @@ jam_status st = jam_mm(
      m, n, k);         // R = W @ A^T
 ```
 
-Supported quantizations: `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
+Supported quantizations: `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
 Activations and result are always `F32`. The operands must be **native** segments, not heap arrays.
 
 `JAM.providers()` discovers the available backends from the classpath. The `mm` operation is meticulously bounds-checked.

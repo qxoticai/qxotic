@@ -43,7 +43,7 @@ AI on the JVM, just a Maven dependency away.
 | Owen Song's Inflect | speech synthesis | `jinfer-inflect2` |
 | Kokoro | speech synthesis | `jinfer-kokoro` |
 
-Supported quantizations: `Q4_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
+Supported quantizations: `Q4_0`, `Q5_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
 Jinfer recommends `Q8_0` for its balance of quality and performance.
 
 ## Run the demos

@@ -40,6 +40,15 @@
 #undef JAM_BLK
 #undef JAM_DECODE
 #undef JAM_MM_NAME
+
+#define JAM_BLK    jam_q5_0_blk
+#define JAM_DECODE jam_decode_q5_0_256
+#define JAM_MM_NAME jam_mm_q5_0_avxvnni
+#include "jam_gemm_q256.inc"
+#undef JAM_BLK
+#undef JAM_DECODE
+#undef JAM_MM_NAME
+
 #undef JAM_DOT
 
 /* ================= Q8_0 8-row 256-bit AVX-VNNI repack band - the AVX-512 jam_q8_0_repack_band ported to
@@ -141,6 +150,55 @@ void jam_q8_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
                     jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+    }
+}
+
+/* Q5_0 8-row band: the Q8_0 band over Q5_0 blocks (q-16 is an int8; only the block unpack differs). */
+static void repack_q5_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
+                               uint8_t* qs, float* dw, float* cw) {
+    for (int r = 0; r < 8; r++) {
+        const uint8_t* w = wbase + r * w_stride;
+        for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES) {
+            float d = q8b_h2f(*(const uint16_t*) w);
+            int8_t q[32]; jam_q5_0_unpack(w, q);
+            int sumw = 0;
+            for (int g = 0; g < 8; g++)
+                for (int e = 0; e < 4; e++) {
+                    int8_t v = q[g * 4 + e];
+                    qs[(int64_t) B * 256 + g * 32 + r * 4 + e] = (uint8_t) v;
+                    sumw += v;
+                }
+            dw[(int64_t) B * 8 + r] = d;
+            cw[(int64_t) B * 8 + r] = d * 128.0f * (float) sumw;
+        }
+    }
+}
+
+void jam_q5_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
+    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const int nb = J->kblocks, seq = J->seq;
+    const int64_t ldc = J->out_stride;
+    jam_repack* rp = &J->repack[tid];
+    for (int tile = t0; tile < t1; tile++) {
+        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
+        if (row_end > J->dim0) row_end = J->dim0;
+        int group = 0;
+        for (int r = row; r + 7 < row_end; r += 8, group++) {
+            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
+            float* dw = rp->dw + (int64_t) group * nb * 8;
+            float* cw = rp->mw + (int64_t) group * nb * 8;
+            repack_q5_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, cw);
+            int s = 0;
+            for (; s + JAM_VNNI_NR <= seq; s += JAM_VNNI_NR)
+                q8_block8_nr(qs, dw, cw, J->xq, J->dx, s, nb, ldc, J->out, r);
+            for (; s < seq; s++)
+                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
+                                 q8_block8(qs, dw, cw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb));
+        }
+        for (int r = row + group * 8; r < row_end; r++)
+            for (int s = 0; s < seq; s++)
+                J->out[(int64_t) s * ldc + r] =
+                    jam_q5_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 

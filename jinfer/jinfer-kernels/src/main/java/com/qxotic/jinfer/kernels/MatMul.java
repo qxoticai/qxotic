@@ -30,6 +30,7 @@ import java.util.List;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
+import jdk.incubator.vector.LongVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 
@@ -1249,43 +1250,91 @@ public final class MatMul {
     }
 
     // ------------------------------------------------------------------
-    // Q5_0·F32 dot - as Q5_1 below without the min: (q - 16) * d.
+    // Q5_0·F32 dot - the Q4_0 dot with the fifth bit ORed in from qh: (nibble | bit<<4) - 16.
     // ------------------------------------------------------------------
 
     private static float dotQ5_0(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
         if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, DataType.Q5_0);
-        float result = 0f;
         int upperBound = k / Q4_BLOCK * Q4_BLOCK;
-        float[] decoded = new float[Q4_BLOCK];
-        int vecUpper = F_SPECIES.loopBound(Q4_BLOCK);
+        FloatVector val = FloatVector.zero(F_SPECIES);
         long bo = wByte;
         int j = 0;
         for (; j < upperBound; j += Q4_BLOCK, bo += Q5_0_BYTES) {
-            float d = readFloat16(w, bo);
+            var wScale = FloatVector.broadcast(F_SPECIES, readFloat16(w, bo));
             int qh = readInt(w, bo + 2);
-            long qsBase = bo + 6;
-            for (int p = 0; p < Q4_BLOCK / 2; p++) {
-                int packed = Byte.toUnsignedInt(readByte(w, qsBase + p));
-                int x0 = (packed & 0x0F) | (((qh >> p) << 4) & 0x10);
-                int x1 = ((packed >>> 4) & 0x0F) | ((qh >> (p + 12)) & 0x10);
-                decoded[p] = (x0 - 16) * d;
-                decoded[p + Q4_BLOCK / 2] = (x1 - 16) * d;
-            }
-            FloatVector acc = FloatVector.zero(F_SPECIES);
-            for (int i = 0; i < vecUpper; i += F_SPECIES.length()) {
-                acc =
-                        FloatVector.fromArray(F_SPECIES, decoded, i)
-                                .fma(floatsAt(x, xByte + 4L * (j + i)), acc);
-            }
-            result += acc.reduceLanes(VectorOperators.ADD);
-            for (int i = vecUpper; i < Q4_BLOCK; i++) {
-                result += decoded[i] * readFloat(x, xByte + 4L * (j + i));
+            var wBytes =
+                    ByteVector.fromMemorySegment(
+                            ByteVector.SPECIES_128, w, bo + 6, ByteOrder.LITTLE_ENDIAN);
+            var loBytes = wBytes.and((byte) 0xF).or(fifthBits(qh)).sub((byte) 16);
+            var hiBytes =
+                    wBytes.lanewise(VectorOperators.LSHR, 4)
+                            .or(fifthBits(qh >>> 16))
+                            .sub((byte) 16);
+            switch (F_SPECIES.vectorBitSize()) {
+                case 512 -> {
+                    var s0 = floatsAt(x, xByte + 4L * j).mul(loBytes.castShape(F_SPECIES, 0));
+                    var s1 =
+                            floatsAt(x, xByte + 4L * (j + F_SPECIES.length()))
+                                    .mul(hiBytes.castShape(F_SPECIES, 0));
+                    val = s0.add(s1).fma(wScale, val);
+                }
+                case 256 -> {
+                    var s0 = floatsAt(x, xByte + 4L * j).mul(loBytes.castShape(F_SPECIES, 0));
+                    var s1 =
+                            floatsAt(x, xByte + 4L * (j + 2 * F_SPECIES.length()))
+                                    .mul(hiBytes.castShape(F_SPECIES, 0));
+                    s0 =
+                            floatsAt(x, xByte + 4L * (j + F_SPECIES.length()))
+                                    .fma(loBytes.castShape(F_SPECIES, 1), s0);
+                    s1 =
+                            floatsAt(x, xByte + 4L * (j + 3 * F_SPECIES.length()))
+                                    .fma(hiBytes.castShape(F_SPECIES, 1), s1);
+                    val = s0.add(s1).fma(wScale, val);
+                }
+                case 128 -> {
+                    for (int i = 0; i < 2; ++i) {
+                        var tmp = i == 0 ? loBytes : hiBytes;
+                        var s0 =
+                                floatsAt(x, xByte + 4L * (j + (i * 4) * F_SPECIES.length()))
+                                        .mul(tmp.castShape(F_SPECIES, 0));
+                        var s1 =
+                                floatsAt(x, xByte + 4L * (j + (i * 4 + 2) * F_SPECIES.length()))
+                                        .mul(tmp.castShape(F_SPECIES, 2));
+                        s0 =
+                                floatsAt(x, xByte + 4L * (j + (i * 4 + 1) * F_SPECIES.length()))
+                                        .fma(tmp.castShape(F_SPECIES, 1), s0);
+                        s1 =
+                                floatsAt(x, xByte + 4L * (j + (i * 4 + 3) * F_SPECIES.length()))
+                                        .fma(tmp.castShape(F_SPECIES, 3), s1);
+                        val = s0.add(s1).fma(wScale, val);
+                    }
+                }
+                default -> throw new UnsupportedOperationException(F_SPECIES.toString());
             }
         }
+        float result = val.reduceLanes(VectorOperators.ADD);
         if (j < k) {
             result += scalarDotLegacy(w, bo, x, xByte + 4L * j, k - j, DataType.Q5_0);
         }
         return result;
+    }
+
+    /**
+     * The low 16 bits of {@code bits} as 16 byte lanes holding {@code 0x10} where the bit is set:
+     * lane {@code i} is bit {@code i}. Each byte of the two longs is spread from one bit by a
+     * multiply-and-mask, then normalized to 0x10 through the carry into bit 7.
+     */
+    @AlwaysInline("hot Vector API leaf: an escaping ByteVector is materialized per call")
+    private static ByteVector fifthBits(int bits) {
+        return LongVector.zero(LongVector.SPECIES_128)
+                .withLane(0, spreadBits(bits))
+                .withLane(1, spreadBits(bits >>> 8))
+                .reinterpretAsBytes();
+    }
+
+    private static long spreadBits(int bits8) {
+        long m = ((long) (bits8 & 0xFF) * 0x0101010101010101L) & 0x8040201008040201L;
+        return ((m + 0x7F7F7F7F7F7F7F7FL) & 0x8080808080808080L) >>> 3;
     }
 
     // ------------------------------------------------------------------
@@ -1944,6 +1993,7 @@ public final class MatMul {
         }
         if (dt != DataType.Q8_0
                 && dt != DataType.Q4_0
+                && dt != DataType.Q5_0
                 && dt != DataType.Q4_K
                 && dt != DataType.Q5_K
                 && dt != DataType.Q6_K
@@ -1976,6 +2026,7 @@ public final class MatMul {
         if (dt instanceof JamPacked p) return jamTag(p.base()) | JAM.PACKED;
         if (dt == DataType.Q8_0) return JAM.Q8_0;
         if (dt == DataType.Q4_0) return JAM.Q4_0;
+        if (dt == DataType.Q5_0) return JAM.Q5_0;
         if (dt == DataType.Q4_K) return JAM.Q4_K;
         if (dt == DataType.Q5_K) return JAM.Q5_K;
         if (dt == DataType.Q6_K) return JAM.Q6_K;
