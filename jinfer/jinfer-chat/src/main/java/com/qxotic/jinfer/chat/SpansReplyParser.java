@@ -50,9 +50,9 @@ final class SpansReplyParser implements ReplyParser {
         if (result != null) throw new IllegalStateException("parser already finished");
         seed.forEachInt(this::consume);
         pending.flush();
-        content.reset();
+        content.discardSeedContent();
         reasoningIds = IntSequence.newBuilder();
-        if (reasoningContent != null) reasoningContent.reset();
+        if (reasoningContent != null) reasoningContent.discardSeedContent();
         if (toolCalls != null) seenSpans = toolCalls.spans().size();
         lastReasoning = false;
     }
@@ -205,8 +205,10 @@ final class SpansReplyParser implements ReplyParser {
         private final StringBuilder text = new StringBuilder();
         private IntSequence.Builder ids = IntSequence.newBuilder();
 
-        void reset() {
-            parts.clear();
+        void discardSeedContent() {
+            // Empty thinking spans are structural replay data, even when prompt-owned.
+            // Keep them across further seeds (e.g. a forced call), without counting prompt tokens.
+            parts.removeIf(part -> !(part instanceof Content.Reasoning r && r.content().isEmpty()));
             text.setLength(0);
             ids = IntSequence.newBuilder();
         }

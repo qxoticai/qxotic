@@ -401,11 +401,9 @@ final class Lfm2ChatTemplate implements ChatTemplate {
                     switch (part) {
                         case Content.Text text -> !text.verbatim().isEmpty();
                         case Content.ToolCall call -> !call.verbatim().isEmpty();
+                        // An empty span still replays both structural markers.
                         case Content.Reasoning reasoning ->
-                                thinkOpen >= 0
-                                        && thinkClose >= 0
-                                        && !reasoning.content().isEmpty()
-                                        && verbatim(reasoning.content());
+                                thinkOpen >= 0 && thinkClose >= 0 && verbatim(reasoning.content());
                         default -> false;
                     };
             if (!exact) return false;

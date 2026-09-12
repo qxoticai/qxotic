@@ -318,6 +318,49 @@ final class Lfm2ChatTemplateTest {
     }
 
     @Test
+    void emptyThinkingSpansReplayExactlyBeforeTextAndSeededCalls() {
+        Lfm2ChatTemplate template = new Lfm2ChatTemplate(tokenizer, true);
+        for (boolean thinking : List.of(false, true)) {
+            for (boolean toolCall : List.of(false, true)) {
+                Conversation conversation =
+                        new Conversation(
+                                List.of(Message.user("Weather?")), List.of(weather()), thinking);
+                ChatTemplate.ReplyState state = state(template, conversation);
+                IntSequence generated =
+                        thinking ? IntSequence.of(special("</think>")) : IntSequence.empty();
+                IntSequence seeded = IntSequence.empty();
+                if (toolCall) {
+                    // Forced calls seed a second prefix after the template's thinking prefix.
+                    seeded = generated.concat(IntSequence.of(special("<|tool_call_start|>")));
+                    state.parser().seed(seeded);
+                    generated =
+                            tokenizer
+                                    .encode("[get_weather(city='Paris')]")
+                                    .concat(IntSequence.of(special("<|tool_call_end|>")));
+                } else {
+                    generated = generated.concat(tokenizer.encode("Paris"));
+                }
+                Message reply = ReplyParser.parse(state.parser(), generated);
+                Conversation next = conversation.append(reply);
+                next =
+                        toolCall
+                                ? next.append(
+                                        new Message(
+                                                Role.TOOL,
+                                                List.of(new Content.ToolResult("", "sunny"))))
+                                : next.append(Message.user("And tomorrow?"));
+                IntSequence expectedPrefix =
+                        IntSequence.of(encode(template, conversation))
+                                .concat(seeded)
+                                .concat(generated);
+                assertTrue(
+                        IntSequence.of(encode(template, next)).startsWith(expectedPrefix),
+                        "thinking=" + thinking + ", toolCall=" + toolCall);
+            }
+        }
+    }
+
+    @Test
     void aCallInsideGeneratedReasoningReplaysExactly() {
         Lfm2ChatTemplate template = new Lfm2ChatTemplate(tokenizer, false);
         IntSequence generated =

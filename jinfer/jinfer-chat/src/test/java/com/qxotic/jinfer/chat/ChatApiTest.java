@@ -278,6 +278,44 @@ final class ChatApiTest {
     }
 
     @Test
+    void seededEmptyThinkingSurvivesFurtherSeedingForReplay() {
+        for (boolean split : List.of(false, true)) {
+            ReplyParser parser = ReplyParser.spans(TOKENIZER);
+            if (split) {
+                parser.seed(IntSequence.of(ByteTokenizer.THINK_OPEN));
+                parser.seed(IntSequence.of(ByteTokenizer.THINK_CLOSE));
+            } else {
+                parser.seed(IntSequence.of(ByteTokenizer.THINK_OPEN, ByteTokenizer.THINK_CLOSE));
+            }
+            parser.seed(IntSequence.empty());
+            assertEquals(Channel.CONTENT, parser.channel());
+            Message reply = ReplyParser.parse(parser, TOKENIZER.encode("answer"));
+            assertEquals("answer", reply.text());
+            assertEquals(2, reply.content().size());
+            Content.Reasoning framing =
+                    assertInstanceOf(Content.Reasoning.class, reply.content().getFirst());
+            assertTrue(framing.content().isEmpty());
+            assertTrue(framing.verbatim().isEmpty(), "prompt tokens are not generated tokens");
+            assertEquals(
+                    TOKENIZER.encode("answer"),
+                    assertInstanceOf(Content.Text.class, reply.content().getLast()).verbatim());
+        }
+    }
+
+    @Test
+    void aClosedSeededThoughtDoesNotLeakPromptText() {
+        ReplyParser parser = ReplyParser.spans(TOKENIZER);
+        parser.seed(
+                IntSequence.of(ByteTokenizer.THINK_OPEN)
+                        .concat(TOKENIZER.encode("prompt-only thought"))
+                        .concat(IntSequence.of(ByteTokenizer.THINK_CLOSE)));
+        Message reply = ReplyParser.parse(parser, TOKENIZER.encode("answer"));
+        assertEquals(1, reply.content().size());
+        assertEquals(
+                "answer", assertInstanceOf(Content.Text.class, reply.content().getFirst()).text());
+    }
+
+    @Test
     void forcedCallSeedKeepsOpenCapture() {
         ReplyParser parser =
                 ReplyParser.spans(
