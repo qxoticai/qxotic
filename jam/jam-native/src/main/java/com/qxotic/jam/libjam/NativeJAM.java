@@ -122,14 +122,20 @@ public final class NativeJAM implements JAM, AutoCloseable {
         MemoryChecks.requireNative(r, "result R");
         if (m > 0 && n > 0 && k > 0 && ldw >= k && lda >= k
                 && ldr >= m) { // else native classifies (EINVAL)
-            MemoryChecks.checkSegment(
-                    "weight W",
-                    w,
-                    wOff,
-                    wt,
-                    ldw,
-                    m,
-                    k); // [m×k] row-major, k elems/row at stride ldw
+            if ((wt & PACKED) != 0) {
+                // the packed layout is one blob of packSize bytes; native reads it only when that
+                // size is non-zero (otherwise EUNSUPPORTED, no bytes touched)
+                MemoryChecks.checkSpan("weight W", w, wOff, packSize(wt & ~PACKED, m, k));
+            } else {
+                MemoryChecks.checkSegment(
+                        "weight W",
+                        w,
+                        wOff,
+                        wt,
+                        ldw,
+                        m,
+                        k); // [m×k] row-major, k elems/row at stride ldw
+            }
             MemoryChecks.checkSegment("activation A", a, aOff, at, lda, n, k); // [n×k] row-major
             MemoryChecks.checkSegment(
                     "result R", r, rOff, rt, ldr, n, m); // [m×n] token-major: n tokens × m features

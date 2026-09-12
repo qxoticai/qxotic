@@ -2,6 +2,7 @@ package com.qxotic.jam.internal;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -85,6 +86,22 @@ class MemoryChecksTest {
                                         stride,
                                         rows,
                                         rowElements));
+            }
+        }
+    }
+
+    @Test
+    void spanCheckBoundsAnyByteCount() {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment segment = arena.allocate(16, 8);
+            MemoryChecks.checkSpan("blob", segment, 0, 16);
+            MemoryChecks.checkSpan("blob", segment, 16, 0);
+            for (long[] bad : new long[][] {{0, 17}, {1, 16}, {-1, 1}, {17, 0}}) {
+                IndexOutOfBoundsException e =
+                        assertThrows(
+                                IndexOutOfBoundsException.class,
+                                () -> MemoryChecks.checkSpan("blob", segment, bad[0], bad[1]));
+                assertTrue(e.getMessage().contains("blob"), e.getMessage());
             }
         }
     }

@@ -660,4 +660,53 @@ class JamTest {
                     () -> g + ": public int tag"); // enum <-> JAM.<name>
         }
     }
+
+    /**
+     * A PACKED weight is one blob of {@code packSize} bytes, not the canonical row layout: its
+     * bounds are checked against that size, so a one-byte segment never reaches a packed kernel.
+     * Where this hardware packs nothing (packSize 0) the native answers EUNSUPPORTED without
+     * touching the bytes, and that path is pinned too.
+     */
+    @Test
+    void packedWeightsAreBoundedByTheirPackSize() {
+        int m = 4, n = 2, k = 256;
+        try (Arena ar = Arena.ofConfined()) {
+            MemorySegment a = ar.allocate(n * k * 4L, 64);
+            MemorySegment r = ar.allocate(n * m * 4L, 64);
+            MemorySegment tiny = ar.allocate(1, 64);
+            for (int base : new int[] {JAM.Q4_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4}) {
+                int packed = base | JAM.PACKED;
+                long size = jam.packSize(base, m, k);
+                if (size == 0) {
+                    assertEquals(JAM.EUNSUPPORTED, mm(tiny, 0, packed, k, a, r, m, n, k));
+                    continue;
+                }
+                MemorySegment w = ar.allocate(size, 64);
+                assertEquals(JAM.OK, mm(w, 0, packed, k, a, r, m, n, k));
+                assertThrows(
+                        IndexOutOfBoundsException.class,
+                        () -> mm(tiny, 0, packed, k, a, r, m, n, k));
+                assertThrows(
+                        IndexOutOfBoundsException.class,
+                        () -> mm(w.asSlice(0, size - 1), 0, packed, k, a, r, m, n, k));
+                assertThrows(
+                        IndexOutOfBoundsException.class, () -> mm(w, 1, packed, k, a, r, m, n, k));
+                assertThrows(
+                        IndexOutOfBoundsException.class, () -> mm(w, -1, packed, k, a, r, m, n, k));
+            }
+        }
+    }
+
+    private static int mm(
+            MemorySegment w,
+            long wOff,
+            int wt,
+            int ldw,
+            MemorySegment a,
+            MemorySegment r,
+            int m,
+            int n,
+            int k) {
+        return jam.mm(w, wOff, wt, ldw, a, 0, JAM.F32, k, r, 0, JAM.F32, m, m, n, k);
+    }
 }

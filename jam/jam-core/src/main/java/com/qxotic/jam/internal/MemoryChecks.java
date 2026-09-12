@@ -34,6 +34,11 @@ public final class MemoryChecks {
         } catch (ArithmeticException e) {
             throw new IndexOutOfBoundsException("jam.mm: " + name + " byte span overflows");
         }
+        checkSpan(name, segment, offset, required);
+    }
+
+    /** {@code required} bytes at {@code offset} fit in the segment; 0 bytes need nothing. */
+    public static void checkSpan(String name, MemorySegment segment, long offset, long required) {
         if (offset < 0 || offset > segment.byteSize() - required)
             throw new IndexOutOfBoundsException(
                     "jam.mm: "
