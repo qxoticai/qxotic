@@ -16,7 +16,7 @@ import java.lang.invoke.MethodType;
 import java.lang.ref.Reference;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -52,16 +52,13 @@ public final class NativeJAM implements JAM, AutoCloseable {
     private static final boolean SERIAL =
             Boolean.parseBoolean(NativeLoader.config("jam.native.serial", "true"));
 
-    // Non-null only when SERIAL: concurrent mm calls then serialize FIFO instead of bouncing off
-    // the native serial-stream guard (EBUSY). Per-instance: every NativeJAM.create(...) has its
-    // own lock and its own context.
-    private final ReentrantLock mmLock = SERIAL ? new ReentrantLock(true) : null;
-
-    // Every native call holds the read side while it runs; close() takes the write side and only
-    // then clears the context and its registry slot. So a fan-out callback always resolves the
-    // instance that started it (never null, never a successor that reused the slot with a
-    // different width), and the destroy waits for the last call in either serial mode.
-    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock(true);
+    // One fair lock per instance. mm holds the write side when SERIAL (callers queue FIFO instead
+    // of bouncing off the native guard with EBUSY) and the read side otherwise (callers overlap,
+    // the guard decides); close() holds the write side and only then clears the context and its
+    // registry slot. So a fan-out callback always resolves the instance that started it (never
+    // null, never a successor that reused the slot with another width), and the destroy waits
+    // for the last call in either mode.
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
 
     private NativeJAM(long ctx, JAM.Parallel parallel) {
         this.ctx = ctx;
@@ -86,7 +83,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
     /** Frees the native context once no call is in flight; later calls throw. Idempotent. */
     @Override
     public void close() {
-        lifecycle.writeLock().lock(); // after every mm and packSize in flight
+        lock.writeLock().lock(); // after every mm and packSize in flight
         try {
             long handle;
             synchronized (NativeJAM.class) {
@@ -97,7 +94,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
             }
             destroyJni(handle);
         } finally {
-            lifecycle.writeLock().unlock();
+            lock.writeLock().unlock();
         }
     }
 
@@ -148,8 +145,8 @@ public final class NativeJAM implements JAM, AutoCloseable {
                     "result R", r, rOff, rt, ldr, n, m); // [m×n] token-major: n tokens × m features
         }
         long wa = w.address() + wOff, aa = a.address() + aOff, ra = r.address() + rOff;
-        lifecycle.readLock().lock();
-        if (SERIAL) mmLock.lock();
+        Lock held = SERIAL ? lock.writeLock() : lock.readLock();
+        held.lock();
         try {
             long ctx = ctx();
             int status =
@@ -165,8 +162,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
             }
             return status;
         } finally {
-            if (SERIAL) mmLock.unlock();
-            lifecycle.readLock().unlock();
+            held.unlock();
             Reference.reachabilityFence(w);
             Reference.reachabilityFence(a);
             Reference.reachabilityFence(r);
@@ -210,7 +206,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
     @Override
     public long packSize(int dtype, int m, int k) {
         if (PACK_ABI_NATIVE != PACK_ABI) return 0;
-        lifecycle.readLock().lock();
+        lock.readLock().lock();
         try {
             long ctx = ctx();
             try {
@@ -219,7 +215,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
                 throw new AssertionError("unreachable: jam_pack_size", t);
             }
         } finally {
-            lifecycle.readLock().unlock();
+            lock.readLock().unlock();
         }
     }
 
