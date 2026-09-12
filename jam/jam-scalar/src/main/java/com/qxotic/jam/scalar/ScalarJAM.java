@@ -2,6 +2,7 @@ package com.qxotic.jam.scalar;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jam.internal.GGMLType;
+import com.qxotic.jam.internal.MemoryChecks;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Reference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -62,8 +63,15 @@ public final class ScalarJAM implements JAM {
                 || n < 0
                 || k < 0
                 || k % t.elementsPerBlock() != 0
-                || ldw % t.elementsPerBlock() != 0) return EINVAL;
+                || ldw % t.elementsPerBlock() != 0
+                || lda < k
+                || ldr < m) return EINVAL;
         if (m == 0 || n == 0) return OK;
+        // heap operands are fine here (every access is a checked accessor); the bounds are checked
+        // up front all the same, so an undersized operand is refused whole, not mid-kernel
+        MemoryChecks.checkSegment("weight W", w, wOff, wt, ldw, m, k);
+        MemoryChecks.checkSegment("activation A", a, aOff, at, lda, n, k);
+        MemoryChecks.checkSegment("result R", r, rOff, rt, ldr, n, m);
         lock.lock();
         try {
             Weight weight = new Weight(w, wOff, t, ldw);
