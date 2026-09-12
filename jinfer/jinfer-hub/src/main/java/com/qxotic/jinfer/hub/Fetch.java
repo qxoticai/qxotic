@@ -31,11 +31,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 /**
  * One file, off the network, onto disk, correctly and fast.
@@ -85,6 +86,10 @@ final class Fetch {
     private static final int MAX_REDIRECTS = 5;
     private static final int MAX_ATTEMPTS = 3;
     private static final int BUFFER = 1 << 20;
+    private static final Pattern CONTENT_RANGE =
+            Pattern.compile("bytes ([0-9]+)-([0-9]+)/([0-9]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern STRONG_ETAG =
+            Pattern.compile("\"[\\x21\\x23-\\x7e\\x80-\\xff]*\"");
 
     /** 32 MB: big enough that per-request overhead vanishes, small enough to resume cheaply. */
     private static final long CHUNK = 32L << 20;
@@ -396,7 +401,7 @@ final class Fetch {
      * disk check, neither of which can work from a stream of unknown length.
      */
     static long sizeOf(String url, Map<String, String> headers) {
-        Map<String, String> ranged = new LinkedHashMap<>(headers);
+        Map<String, String> ranged = downloadHeaders(headers);
         ranged.put("Range", "bytes=0-0");
         try {
             HttpResponse<InputStream> response = send(URI.create(url), ranged, LISTING_TIMEOUT);
@@ -509,6 +514,7 @@ final class Fetch {
             Map<String, String> headers)
             throws IOException {
         Path part = sibling(dest, ".part");
+        headers = downloadHeaders(headers);
         Progress progress = new Progress(label, expectedSize);
         IOException last = null;
         boolean parallel = expectedSize >= PARALLEL_FLOOR;
@@ -516,20 +522,15 @@ final class Fetch {
             try {
                 if (parallel) {
                     try {
-                        parallel(url, part, expectedSize, headers, progress);
-                    } catch (RangeIgnored ignored) {
-                        progress.note("the server ignores Range - downloading as one stream");
+                        parallel(url, part, expectedSize, sha256, headers, progress);
+                    } catch (SingleStreamRequired fallback) {
+                        progress.note(fallback.getMessage() + " - downloading as one stream");
                         parallel = false;
-                        Files.deleteIfExists(part); // chunk 0 may have landed; a stream restarts
-                        Files.deleteIfExists(sibling(part, ".map"));
-                        sequential(url, part, expectedSize, sha256, headers, progress);
-                        progress.finish();
-                        Files.move(part, dest, StandardCopyOption.ATOMIC_MOVE);
-                        Files.deleteIfExists(sibling(part, ".etag"));
-                        return;
+                        discard(part); // workers have stopped; none may write into the restart
                     }
-                    verify(part, sha256, progress);
-                } else {
+                    if (parallel) verify(part, sha256, progress);
+                }
+                if (!parallel) {
                     sequential(url, part, expectedSize, sha256, headers, progress);
                 }
                 progress.finish();
@@ -538,6 +539,14 @@ final class Fetch {
                 Files.deleteIfExists(sibling(part, ".etag"));
                 return;
             } catch (IOException e) {
+                if (e instanceof InvalidTransfer) {
+                    try {
+                        discard(part);
+                    } catch (IOException cleanup) {
+                        e.addSuppressed(cleanup);
+                        throw e; // do not retry while suspect state remains on disk
+                    }
+                }
                 if (diskFull(e)) {
                     // retrying cannot conjure disk space; say the remedy instead of stalling
                     throw new IOException(
@@ -548,9 +557,9 @@ final class Fetch {
                                     + " disk",
                             e);
                 }
-                if (refused(e)) throw e; // the server said no, not "not now"
+                if (refused(e) || Thread.currentThread().isInterrupted()) throw e;
                 last = e;
-                // the .part and its chunk map survive on purpose: the next attempt resumes
+                // Transport failures retain validated progress; invalid data starts over.
                 if (attempt < MAX_ATTEMPTS) {
                     progress.note(
                             e.getMessage() + " - retrying (" + attempt + "/" + MAX_ATTEMPTS + ")");
@@ -558,6 +567,19 @@ final class Fetch {
             }
         }
         throw last;
+    }
+
+    private static void discard(Path part) throws IOException {
+        Files.deleteIfExists(part);
+        Files.deleteIfExists(sibling(part, ".map"));
+        Files.deleteIfExists(sibling(part, ".etag"));
+    }
+
+    private static Map<String, String> downloadHeaders(Map<String, String> headers) {
+        Map<String, String> result = new LinkedHashMap<>(headers);
+        result.keySet().removeIf(name -> name.equalsIgnoreCase("Accept-Encoding"));
+        result.put("Accept-Encoding", "identity");
+        return result;
     }
 
     /** A client error other than a timeout or a rate limit: retrying cannot change the answer. */
@@ -577,22 +599,21 @@ final class Fetch {
     // ---- parallel path ----
 
     /**
-     * Splits the file into chunks and fetches the ones the map says are missing. Workers write
-     * positionally into the pre-allocated {@code part}, which is safe on every platform and needs
-     * no coordination between them beyond the map.
+     * Splits the file into chunks and fetches the ones the map says are missing. Writes are
+     * positional; the shared validator prevents workers from combining different revisions.
      */
     private static void parallel(
-            String url, Path part, long size, Map<String, String> headers, Progress progress)
+            String url,
+            Path part,
+            long size,
+            String sha256,
+            Map<String, String> headers,
+            Progress progress)
             throws IOException {
         int chunks = chunkCount(size);
         Path mapFile = sibling(part, ".map");
-        // the first response's validator (ETag or Last-Modified) rides in the .etag sidecar and
-        // every later chunk request carries it as If-Range: a remote that changed answers 200,
-        // which the chunk fetch turns into a restart. A map with no validator cannot be trusted.
-        Path validatorFile = sibling(part, ".etag");
-        String validator =
-                Files.exists(validatorFile) ? Files.readString(validatorFile).strip() : null;
-        if (validator == null) Files.deleteIfExists(mapFile);
+        Validator validator = new Validator(part, sha256 != null);
+        if (validator.value == null && sha256 == null) Files.deleteIfExists(mapFile);
         byte[] done = chunkMap(mapFile, chunks, part, size);
         long already = 0;
         List<Integer> todo = new ArrayList<>();
@@ -620,33 +641,38 @@ final class Fetch {
                         Executors.newFixedThreadPool(Math.min(THREADS, todo.size()))) {
             allocated.setLength(size);
             FileChannel file = allocated.getChannel();
-            List<Future<?>> futures = new ArrayList<>(todo.size());
+            var completed = new ExecutorCompletionService<Void>(pool);
             for (int index : todo) {
-                futures.add(
-                        pool.submit(
-                                () -> {
-                                    chunk(
-                                            url,
-                                            headers,
-                                            validator,
-                                            validatorFile,
-                                            file,
-                                            index,
-                                            chunks,
-                                            size,
-                                            written,
-                                            progress);
-                                    // the data MUST reach the disk before the map says it did:
-                                    // a crash that persisted the bit but not the bytes would
-                                    // resume over a hole, and the hole only surfaces as a sha256
-                                    // mismatch after everything else has been downloaded again
-                                    file.force(false);
-                                    map.write(ByteBuffer.wrap(new byte[] {1}), index);
-                                    return null;
-                                }));
+                completed.submit(
+                        () -> {
+                            chunk(
+                                    url, headers, validator, file, index, chunks, size, written,
+                                    progress);
+                            // the data MUST reach the disk before the map says it did:
+                            // a crash that persisted the bit but not the bytes would
+                            // resume over a hole, and the hole only surfaces as a sha256
+                            // mismatch after everything else has been downloaded again
+                            file.force(false);
+                            map.write(ByteBuffer.wrap(new byte[] {1}), index);
+                            return null;
+                        });
             }
-            for (Future<?> future : futures) {
-                await(future);
+            try {
+                for (int i = 0; i < todo.size(); i++) completed.take().get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted while downloading", e);
+            } catch (ExecutionException e) {
+                switch (e.getCause()) {
+                    case IOException io -> throw io;
+                    case RuntimeException runtime -> throw runtime;
+                    case Error error -> throw error;
+                    case Throwable other -> throw new IOException(other);
+                }
+            } finally {
+                // Observe the first failure, cancel siblings, then close() joins them before
+                // their files close and transfer() can discard or reuse any partial state.
+                pool.shutdownNow();
             }
             map.force(true);
         }
@@ -656,8 +682,7 @@ final class Fetch {
     private static void chunk(
             String url,
             Map<String, String> headers,
-            String validator,
-            Path validatorFile,
+            Validator validator,
             FileChannel file,
             int index,
             int chunks,
@@ -671,42 +696,42 @@ final class Fetch {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             Map<String, String> ranged = new LinkedHashMap<>(headers);
             ranged.put("Range", "bytes=" + start + "-" + (start + length - 1));
-            if (validator != null) ranged.put("If-Range", validator);
+            String tag = validator.value;
+            if (tag != null) ranged.put("If-Range", tag);
             long at = start;
             Stall stall = null;
-            HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
-            if (response.statusCode() == 200 && (start > 0 || validator != null)) {
-                // the whole file, not the chunk (or, under If-Range, a file that changed):
-                // writing it at `start` would corrupt the file (silently, when no sha256 is
-                // known). The transfer falls back to one stream from scratch.
-                try (InputStream drain = response.body()) {
-                    drain.readNBytes(8 * 1024);
-                }
-                throw new RangeIgnored(url);
-            }
-            if (validator == null) recordValidator(response, validatorFile);
-            try (InputStream in = body(response, url, true)) {
-                stall = new Stall(in);
-                byte[] buffer = new byte[BUFFER];
-                long remaining = length;
-                while (remaining > 0) {
-                    int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
-                    if (n < 0) {
-                        throw new IOException("short chunk " + index + " of " + url);
+            try {
+                HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
+                try (InputStream in = body(response, url, true)) {
+                    if (response.statusCode() == 200) {
+                        throw new SingleStreamRequired("server ignored Range: " + url);
                     }
-                    stall.advance(n);
-                    ByteBuffer slice = ByteBuffer.wrap(buffer, 0, n);
-                    while (slice.hasRemaining()) {
-                        at += file.write(slice, at);
+                    validateRange(response, start, start + length - 1, size);
+                    validator.accept(response, true);
+                    stall = new Stall(in);
+                    byte[] buffer = new byte[BUFFER];
+                    long remaining = length;
+                    while (remaining > 0) {
+                        int n = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                        if (n < 0) {
+                            throw new IOException("short chunk " + index + " of " + url);
+                        }
+                        stall.advance(n);
+                        ByteBuffer slice = ByteBuffer.wrap(buffer, 0, n);
+                        while (slice.hasRemaining()) {
+                            at += file.write(slice, at);
+                        }
+                        remaining -= n;
+                        progress.at(written.addAndGet(n));
                     }
-                    remaining -= n;
-                    progress.at(written.addAndGet(n));
+                    if (in.read() != -1)
+                        throw new InvalidTransfer("oversized chunk " + index + " of " + url);
+                    return;
                 }
-                return;
-            } catch (RangeIgnored e) {
-                throw e; // retrying the same request cannot make the server honor Range
+            } catch (InvalidTransfer e) {
+                throw e; // partial state may no longer describe one representation
             } catch (IOException e) {
-                if (refused(e)) throw e; // a 4xx is the answer, not a bad moment
+                if (refused(e) || Thread.currentThread().isInterrupted()) throw e;
                 last = e;
                 written.addAndGet(start - at); // un-count what this failed attempt had reported
             } finally {
@@ -737,16 +762,94 @@ final class Fetch {
         return Files.readAllBytes(mapFile);
     }
 
-    /** The first chunk response to land writes the validator every resume will send back. */
-    private static synchronized void recordValidator(
-            HttpResponse<InputStream> response, Path validatorFile) throws IOException {
-        if (Files.exists(validatorFile)) return;
-        String validator =
-                response.headers()
-                        .firstValue("etag")
-                        .or(() -> response.headers().firstValue("last-modified"))
-                        .orElse(null);
-        if (validator != null) Files.writeString(validatorFile, validator);
+    /**
+     * One identity for every worker and retry, including responses requested before it was known.
+     */
+    private static final class Validator {
+        private final Path file;
+        private final boolean checksum;
+        private volatile String value;
+        private boolean checksumOnly;
+
+        Validator(Path part, boolean checksum) throws IOException {
+            this.file = sibling(part, ".etag");
+            this.checksum = checksum;
+            this.value = Files.exists(file) ? strongETag(Files.readString(file).strip()) : null;
+            this.checksumOnly =
+                    checksum && value == null && Files.exists(part) && Files.size(part) > 0;
+        }
+
+        synchronized void accept(HttpResponse<?> response, boolean ranged) throws IOException {
+            validateEncoding(response);
+            String received = strongETag(response.headers().firstValue("etag").orElse(null));
+            if (received == null) {
+                if (ranged && !checksum) {
+                    throw new SingleStreamRequired("no strong ETag or checksum");
+                }
+                if (checksum && !checksumOnly) {
+                    Files.deleteIfExists(file);
+                    checksumOnly = true;
+                }
+                return; // one full response is safe; combining unversioned bytes needs a checksum
+            }
+            if (value != null && !value.equals(received)) {
+                throw new InvalidTransfer("ETag changed from " + value + " to " + received);
+            }
+            if (value == null) {
+                // A tag on a later response cannot certify earlier, unversioned bytes.
+                // Keep that resume dependent on its checksum, even if a later caller has none.
+                if (!checksumOnly) Files.writeString(file, received);
+                value = received;
+            }
+        }
+    }
+
+    private static String strongETag(String value) {
+        return value != null && STRONG_ETAG.matcher(value).matches() ? value : null;
+    }
+
+    private static void validateEncoding(HttpResponse<?> response) throws InvalidTransfer {
+        String encoding = response.headers().firstValue("content-encoding").orElse("identity");
+        if (!encoding.equalsIgnoreCase("identity")) {
+            throw new InvalidTransfer("unexpected Content-Encoding: " + encoding);
+        }
+    }
+
+    /** Validates a single range and returns its total size; -1 means an unknown end or total. */
+    private static long validateRange(HttpResponse<?> response, long start, long end, long size)
+            throws InvalidTransfer {
+        String range = response.headers().firstValue("content-range").orElse("");
+        var match = CONTENT_RANGE.matcher(range);
+        String mismatch =
+                "Content-Range '"
+                        + range
+                        + "' does not match bytes="
+                        + start
+                        + "-"
+                        + (end < 0 ? "" : end)
+                        + (size < 0 ? "" : " (size " + size + ")");
+        if (!match.matches()) throw new InvalidTransfer(mismatch);
+        try {
+            long first = Long.parseLong(match.group(1));
+            long last = Long.parseLong(match.group(2));
+            long total = Long.parseLong(match.group(3));
+            if (first != start
+                    || last < first
+                    || last >= total
+                    || last != (end < 0 ? total - 1 : end)
+                    || (size >= 0 && total != size)) {
+                throw new InvalidTransfer(mismatch);
+            }
+            long length =
+                    response.headers().firstValueAsLong("content-length").orElse(last - first + 1);
+            if (length != last - first + 1) {
+                throw new InvalidTransfer(
+                        "invalid Content-Length " + length + " for Content-Range '" + range + "'");
+            }
+            return total;
+        } catch (NumberFormatException invalid) {
+            throw new InvalidTransfer(mismatch);
+        }
     }
 
     private static int chunkCount(long size) {
@@ -755,22 +858,6 @@ final class Fetch {
 
     private static long chunkSize(int index, int chunks, long size) {
         return index == chunks - 1 ? size - index * CHUNK : CHUNK;
-    }
-
-    private static void await(Future<?> future) throws IOException {
-        try {
-            future.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted while downloading", e);
-        } catch (ExecutionException e) {
-            switch (e.getCause()) {
-                case IOException io -> throw io;
-                case RuntimeException runtime -> throw runtime;
-                case Error error -> throw error;
-                case Throwable other -> throw new IOException(other);
-            }
-        }
     }
 
     /**
@@ -785,7 +872,7 @@ final class Fetch {
         progress.verifying();
         MessageDigest digest = sha256Digest();
         digestFile(part, digest, progress);
-        checkDigest(digest, sha256, part, progress);
+        checkDigest(digest, sha256, progress);
     }
 
     /** Digests {@code file} into {@code digest}, reporting to {@code progress} when given. */
@@ -809,13 +896,11 @@ final class Fetch {
      * chunk map - corrupt is beyond resuming), so the retry is a clean download and the final path
      * never receives unverified bytes.
      */
-    private static void checkDigest(MessageDigest digest, String expected, Path part, Progress row)
+    private static void checkDigest(MessageDigest digest, String expected, Progress row)
             throws IOException {
         String actual = HexFormat.of().formatHex(digest.digest());
         if (!actual.equalsIgnoreCase(expected)) {
-            Files.deleteIfExists(part);
-            Files.deleteIfExists(sibling(part, ".map"));
-            throw new IOException(
+            throw new InvalidTransfer(
                     row.label + ": sha256 mismatch, expected " + expected + " but got " + actual);
         }
     }
@@ -831,10 +916,15 @@ final class Fetch {
             Progress progress)
             throws IOException {
         long have = Files.exists(part) ? Files.size(part) : 0;
-        if (expectedSize > 0 && have >= expectedSize) {
-            // a .part as long as the file (a crash between its last byte and the rename) or
-            // longer is not a resume: a range past the end answers 416 on every attempt
-            Files.delete(part);
+        Validator validator = new Validator(part, sha256 != null);
+        if (have == 0
+                || (expectedSize >= 0 && have >= expectedSize)
+                || Files.exists(sibling(part, ".map"))
+                || (sha256 == null && validator.value == null)) {
+            // A sparse chunk file is not a contiguous prefix. Without a strong validator or
+            // checksum, even a contiguous prefix cannot safely be joined to another response.
+            discard(part);
+            validator = new Validator(part, sha256 != null);
             have = 0;
         }
         MessageDigest digest = sha256 == null ? null : sha256Digest();
@@ -844,63 +934,66 @@ final class Fetch {
             digestFile(part, digest, null);
         }
         Map<String, String> ranged = headers;
-        Path validatorFile = sibling(part, ".etag");
         if (have > 0) {
             ranged = new LinkedHashMap<>(headers);
             ranged.put("Range", "bytes=" + have + "-");
             // resume only the same bytes: with the first response's validator, a remote that
             // changed since answers 200 (the whole file) instead of a tail of a different file
-            if (Files.exists(validatorFile)) {
-                ranged.put("If-Range", Files.readString(validatorFile).strip());
+            if (validator.value != null) {
+                ranged.put("If-Range", validator.value);
             }
         }
         HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
-        if (have > 0 && response.statusCode() == 200) {
-            // the server ignored the range, or the file changed: start over rather than append
-            have = 0;
-            digest = sha256 == null ? null : sha256Digest();
-            Files.deleteIfExists(part);
-        }
-        if (have == 0) {
-            String validator =
-                    response.headers()
-                            .firstValue("etag")
-                            .or(() -> response.headers().firstValue("last-modified"))
-                            .orElse(null);
-            if (validator != null) Files.writeString(validatorFile, validator);
-            else Files.deleteIfExists(validatorFile);
-        }
-        progress.start(have);
-        long written = have;
         Stall stall = null;
-        try (InputStream in = body(response, url, true);
-                OutputStream out =
-                        Files.newOutputStream(
-                                part,
-                                StandardOpenOption.CREATE,
-                                StandardOpenOption.WRITE,
-                                StandardOpenOption.APPEND)) {
-            stall = new Stall(in);
-            byte[] buffer = new byte[BUFFER];
-            for (int n; (n = in.read(buffer)) > 0; ) {
-                stall.advance(n);
-                out.write(buffer, 0, n);
-                if (digest != null) {
-                    digest.update(buffer, 0, n);
+        try (InputStream in = body(response, url, true)) {
+            if (have > 0 && response.statusCode() == 200) {
+                // the server ignored the range, or the file changed: start over rather than append
+                have = 0;
+                digest = sha256 == null ? null : sha256Digest();
+                discard(part);
+                validator = new Validator(part, sha256 != null);
+            }
+            if (response.statusCode() == 206) {
+                if (have == 0) throw new InvalidTransfer("unsolicited partial response: " + url);
+                expectedSize =
+                        validateRange(
+                                response,
+                                have,
+                                expectedSize < 0 ? -1 : expectedSize - 1,
+                                expectedSize);
+            }
+            validator.accept(response, have > 0);
+            progress.start(have);
+            long written = have;
+            try (OutputStream out =
+                    Files.newOutputStream(
+                            part,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.WRITE,
+                            StandardOpenOption.APPEND)) {
+                stall = new Stall(in);
+                byte[] buffer = new byte[BUFFER];
+                for (int n; (n = in.read(buffer)) > 0; ) {
+                    if (expectedSize >= 0 && n > expectedSize - written) {
+                        throw new InvalidTransfer("response exceeds expected size " + expectedSize);
+                    }
+                    stall.advance(n);
+                    out.write(buffer, 0, n);
+                    if (digest != null) {
+                        digest.update(buffer, 0, n);
+                    }
+                    written += n;
+                    progress.at(written);
                 }
-                written += n;
-                progress.at(written);
+            }
+            if (expectedSize >= 0 && written != expectedSize) {
+                throw new IOException("expected " + expectedSize + " bytes, got " + written);
+            }
+            if (digest != null) {
+                checkDigest(digest, sha256, progress);
             }
         } finally {
-            if (stall != null) {
-                stall.done();
-            }
-        }
-        if (expectedSize > 0 && written != expectedSize) {
-            throw new IOException("expected " + expectedSize + " bytes, got " + written);
-        }
-        if (digest != null) {
-            checkDigest(digest, sha256, part, progress);
+            if (stall != null) stall.done();
         }
     }
 
@@ -1015,10 +1108,17 @@ final class Fetch {
         }
     }
 
-    /** A ranged request answered with the whole file: the server does not serve Range. */
-    static final class RangeIgnored extends IOException {
-        RangeIgnored(String url) {
-            super("server ignored Range: " + url);
+    /** Invalid bytes or metadata cannot be retained as resumable progress. */
+    private static class InvalidTransfer extends IOException {
+        InvalidTransfer(String message) {
+            super(message);
+        }
+    }
+
+    /** Ranges cannot safely be combined; the transfer can still use one full response. */
+    private static final class SingleStreamRequired extends InvalidTransfer {
+        SingleStreamRequired(String message) {
+            super(message);
         }
     }
 

@@ -158,8 +158,11 @@ Resolution happens before loading, and inference never fetches: the path returne
 
 ## A plain URL is not a model reference
 
-A URL does not provide a repository listing, quant, revision or published checksum. Jinfer can
-validate only the content length reported by the server and warns when downloading a URL.
+A URL does not provide a repository listing, quant, revision or published checksum.
+Jinfer checks the reported size and range responses, and warns that no checksum is available.
+Parallel downloads and resumes require a strong ETag or an expected SHA-256 checksum.
+Without either, Jinfer downloads in one stream and restarts from zero after interruption.
+Conflicting validators or invalid ranges discard the partial transfer before retrying.
 `https://example.org/models/x.gguf` is cached at `<root>/example.org/models/x.gguf`. Model builders
 accept a reference through `model(...)` or a local file through `modelPath(...)`. Download a URL
 first, then pass its local path.

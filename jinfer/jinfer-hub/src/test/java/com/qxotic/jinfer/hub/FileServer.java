@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.hub;
 
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -63,6 +64,12 @@ final class FileServer implements AutoCloseable {
 
     FileServer serve(String path, String payload) {
         return serve(path, payload.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** A protocol-level response for tests of broken range servers. */
+    FileServer respond(String path, HttpHandler handler) {
+        server.createContext(path, handler);
+        return this;
     }
 
     /** Every request for {@code path} is answered with {@code status} (a gated file: 401). */

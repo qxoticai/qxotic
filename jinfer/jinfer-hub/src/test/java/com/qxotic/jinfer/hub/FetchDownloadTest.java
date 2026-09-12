@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URI;
@@ -17,12 +18,21 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The download's own guarantees against a {@link FileServer}: sha256 enforcement, the resume
@@ -42,11 +52,12 @@ class FetchDownloadTest {
     }
 
     private static String sha256(String value) {
+        return sha256(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String sha256(byte[] value) {
         try {
-            return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
         } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
         }
@@ -359,6 +370,377 @@ class FetchDownloadTest {
                                     null,
                                     Map.of()));
             assertTrue(Files.notExists(dest));
+        }
+    }
+
+    @Test
+    void freshParallelResponsesMustAgreeOnTheirETag(@TempDir Path dir) throws IOException {
+        long size = Fetch.PARALLEL_FLOOR;
+        byte[] first = new byte[(int) (size / 2)];
+        byte[] second = new byte[first.length];
+        Arrays.fill(first, (byte) 'A');
+        Arrays.fill(second, (byte) 'B');
+        CountDownLatch requests = new CountDownLatch(2);
+        try (FileServer server = FileServer.start()) {
+            server.respond(
+                    "/mixed.bin",
+                    exchange -> {
+                        long start = rangeStart(exchange);
+                        requests.countDown();
+                        try {
+                            if (!requests.await(5, TimeUnit.SECONDS))
+                                throw new IOException("missing peer");
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException(e);
+                        }
+                        reply(
+                                exchange,
+                                "bytes %d-%d/%d".formatted(start, start + first.length - 1, size),
+                                start == 0 ? "\"v1\"" : "\"v2\"",
+                                start == 0 ? first : second,
+                                false);
+                    });
+            Path dest = dir.resolve("mixed.bin");
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    Fetch.download(
+                                            server.url("/mixed.bin"), dest, size, null, Map.of()));
+            assertTrue(failure.getMessage().contains("ETag changed"), failure.getMessage());
+            assertDiscarded(dest);
+        }
+    }
+
+    @Test
+    void aParallelChunkMustDescribeTheRequestedRange(@TempDir Path dir) throws IOException {
+        long size = Fetch.PARALLEL_FLOOR;
+        byte[] chunk = new byte[(int) (size / 2)];
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/wrong.bin",
+                                exchange ->
+                                        reply(
+                                                exchange,
+                                                "bytes 0-" + (chunk.length - 1) + "/" + size,
+                                                "\"stable\"",
+                                                chunk,
+                                                false))) {
+            Path dest = dir.resolve("wrong.bin");
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    Fetch.download(
+                                            server.url("/wrong.bin"), dest, size, null, Map.of()));
+            assertTrue(failure.getMessage().contains("Content-Range"), failure.getMessage());
+            assertDiscarded(dest);
+        }
+    }
+
+    @Test
+    void aChunkRetryKeepsTheOriginalValidator(@TempDir Path dir) throws IOException {
+        long size = Fetch.PARALLEL_FLOOR;
+        byte[] chunk = new byte[(int) (size / 2)];
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicReference<String> retryTag = new AtomicReference<>();
+        try (FileServer server = FileServer.start()) {
+            server.respond(
+                    "/retry.bin",
+                    exchange -> {
+                        long start = rangeStart(exchange);
+                        int attempt = start == 0 ? attempts.incrementAndGet() : 0;
+                        if (attempt == 2)
+                            retryTag.set(exchange.getRequestHeaders().getFirst("If-Range"));
+                        reply(
+                                exchange,
+                                "bytes %d-%d/%d".formatted(start, start + chunk.length - 1, size),
+                                attempt > 1 ? "\"v2\"" : "\"v1\"",
+                                attempt == 1 ? new byte[] {1} : chunk,
+                                true); // a short first body forces a retry of chunk zero
+                    });
+            Path dest = dir.resolve("retry.bin");
+            IOException failure =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    Fetch.download(
+                                            server.url("/retry.bin"), dest, size, null, Map.of()));
+            assertEquals("\"v1\"", retryTag.get());
+            assertTrue(failure.getMessage().contains("ETag changed"), failure.getMessage());
+            assertDiscarded(dest);
+        }
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"W/\"v1\"", "Wed, 21 Oct 2015 07:28:00 GMT"})
+    void anUnverifiedSequentialPrefixIsNeverAppendedTo(String validator, @TempDir Path dir)
+            throws IOException {
+        try (FileServer server = FileServer.start().serve("/m.gguf", PAYLOAD)) {
+            if (validator != null) server.etag("/m.gguf", validator);
+            Path dest = dir.resolve("m.gguf");
+            Files.writeString(dir.resolve("m.gguf.part"), "stale prefix");
+            if (validator != null) Files.writeString(dir.resolve("m.gguf.part.etag"), validator);
+            Fetch.download(server.url("/m.gguf"), dest, PAYLOAD.length(), null, Map.of());
+            assertEquals(PAYLOAD, Files.readString(dest));
+            assertNull(server.lastRange("/m.gguf"), "restart as one full response");
+            assertEquals("identity", server.lastHeader("/m.gguf", "Accept-Encoding"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "",
+                "bytes 0-3/8",
+                "bytes 4-6/8",
+                "bytes 4-7/9",
+                "bytes 4-7/*",
+                "items 4-7/8",
+                "bytes 4-7/999999999999999999999"
+            })
+    void aSequentialResumeValidatesContentRange(String range, @TempDir Path dir)
+            throws IOException {
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/bad.bin",
+                                exchange ->
+                                        reply(
+                                                exchange,
+                                                range,
+                                                "\"v1\"",
+                                                "BBBB".getBytes(StandardCharsets.UTF_8),
+                                                false))) {
+            Path dest = dir.resolve("bad.bin");
+            Files.writeString(dir.resolve("bad.bin.part"), "AAAA");
+            Files.writeString(dir.resolve("bad.bin.part.etag"), "\"v1\"");
+            assertThrows(
+                    IOException.class,
+                    () -> Fetch.download(server.url("/bad.bin"), dest, 8, null, Map.of()));
+            assertDiscarded(dest);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void anOversizedChunkIsNotSilentlyTruncated(boolean chunked, @TempDir Path dir)
+            throws IOException {
+        long size = Fetch.PARALLEL_FLOOR;
+        byte[] oversized = new byte[(int) (size / 2) + 1];
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/long.bin",
+                                exchange -> {
+                                    long start = rangeStart(exchange);
+                                    reply(
+                                            exchange,
+                                            "bytes %d-%d/%d"
+                                                    .formatted(start, start + size / 2 - 1, size),
+                                            "\"v1\"",
+                                            oversized,
+                                            chunked);
+                                })) {
+            Path dest = dir.resolve("long.bin");
+            assertThrows(
+                    IOException.class,
+                    () -> Fetch.download(server.url("/long.bin"), dest, size, null, Map.of()));
+            assertDiscarded(dest);
+        }
+    }
+
+    @Test
+    void aValidatedParallelPrefixStillResumes(@TempDir Path dir) throws IOException {
+        byte[] payload = new byte[(int) Fetch.PARALLEL_FLOOR];
+        Arrays.fill(payload, (byte) 'B');
+        byte[] partial = payload.clone();
+        Arrays.fill(partial, partial.length / 2, partial.length, (byte) 0);
+        try (FileServer server =
+                FileServer.start().serve("/big.bin", payload).etag("/big.bin", "\"v1\"")) {
+            Path dest = dir.resolve("big.bin");
+            Files.write(dir.resolve("big.bin.part"), partial);
+            Files.write(dir.resolve("big.bin.part.map"), new byte[] {1, 0});
+            Files.writeString(dir.resolve("big.bin.part.etag"), "\"v1\"");
+            Fetch.download(server.url("/big.bin"), dest, payload.length, null, Map.of());
+            assertArrayEquals(payload, Files.readAllBytes(dest));
+            assertEquals(1, server.hits("/big.bin"));
+            assertEquals("\"v1\"", server.lastHeader("/big.bin", "If-Range"));
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, false", "false, true", "true, false", "true, true"})
+    void unversionedParallelDownloadsNeedAChecksum(
+            boolean checksum, boolean weakTag, @TempDir Path dir) throws IOException {
+        byte[] payload = new byte[(int) Fetch.PARALLEL_FLOOR];
+        new Random(19).nextBytes(payload);
+        AtomicInteger fullResponses = new AtomicInteger();
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/big.bin",
+                                exchange -> {
+                                    String range = exchange.getRequestHeaders().getFirst("Range");
+                                    String etag = weakTag ? "W/\"v1\"" : null;
+                                    if (range == null) {
+                                        fullResponses.incrementAndGet();
+                                        reply(exchange, null, etag, payload, false);
+                                    } else {
+                                        int start = (int) rangeStart(exchange);
+                                        int end = start + payload.length / 2;
+                                        reply(
+                                                exchange,
+                                                "bytes %d-%d/%d"
+                                                        .formatted(start, end - 1, payload.length),
+                                                etag,
+                                                Arrays.copyOfRange(payload, start, end),
+                                                false);
+                                    }
+                                })) {
+            Path dest = dir.resolve("big.bin");
+            Fetch.download(
+                    server.url("/big.bin"),
+                    dest,
+                    payload.length,
+                    checksum ? sha256(payload) : null,
+                    Map.of());
+            assertArrayEquals(payload, Files.readAllBytes(dest));
+            assertEquals(checksum ? 0 : 1, fullResponses.get());
+        }
+    }
+
+    @Test
+    void aLaterETagCannotCertifyAnUnversionedPrefix(@TempDir Path dir) throws IOException {
+        String current = "B".repeat(12);
+        AtomicInteger calls = new AtomicInteger();
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/m.bin",
+                                exchange -> {
+                                    int call = calls.incrementAndGet();
+                                    if (call == 1) {
+                                        // The resumed response ends early. A later refusal keeps
+                                        // its partial state.
+                                        reply(
+                                                exchange,
+                                                "bytes 4-11/12",
+                                                "\"v2\"",
+                                                "BBBB".getBytes(StandardCharsets.UTF_8),
+                                                true);
+                                    } else if (call == 2) {
+                                        try (exchange) {
+                                            exchange.sendResponseHeaders(403, -1);
+                                        }
+                                    } else {
+                                        String range =
+                                                exchange.getRequestHeaders().getFirst("Range");
+                                        int start = range == null ? 0 : (int) rangeStart(exchange);
+                                        reply(
+                                                exchange,
+                                                range == null ? null : "bytes " + start + "-11/12",
+                                                "\"v2\"",
+                                                current.substring(start)
+                                                        .getBytes(StandardCharsets.UTF_8),
+                                                false);
+                                    }
+                                })) {
+            Path dest = dir.resolve("m.bin");
+            Files.writeString(dir.resolve("m.bin.part"), "AAAA");
+            assertThrows(
+                    IOException.class,
+                    () ->
+                            Fetch.download(
+                                    server.url("/m.bin"), dest, 12, sha256(current), Map.of()));
+            assertTrue(
+                    Files.notExists(dir.resolve("m.bin.part.etag")),
+                    "old prefix has no proven ETag");
+            Fetch.download(server.url("/m.bin"), dest, 12, null, Map.of());
+            assertEquals(current, Files.readString(dest));
+        }
+    }
+
+    @Test
+    void unexpectedContentEncodingIsRefused(@TempDir Path dir) throws IOException {
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/encoded.bin",
+                                exchange -> {
+                                    exchange.getResponseHeaders().set("Content-Encoding", "gzip");
+                                    reply(exchange, null, "\"v1\"", new byte[] {1, 2, 3}, false);
+                                })) {
+            Path dest = dir.resolve("encoded.bin");
+            var failure =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    Fetch.download(
+                                            server.url("/encoded.bin"), dest, 3, null, Map.of()));
+            assertTrue(failure.getMessage().contains("Content-Encoding"));
+            assertDiscarded(dest);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {-1, 8})
+    void aValidatedSequentialPrefixResumesWithKnownOrUnknownSize(long size, @TempDir Path dir)
+            throws IOException {
+        AtomicReference<String> request = new AtomicReference<>();
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/m.bin",
+                                exchange -> {
+                                    request.set(
+                                            exchange.getRequestHeaders().getFirst("Range")
+                                                    + " "
+                                                    + exchange.getRequestHeaders()
+                                                            .getFirst("If-Range"));
+                                    reply(
+                                            exchange,
+                                            "Bytes 4-7/8",
+                                            "\"v1\"",
+                                            "BBBB".getBytes(StandardCharsets.UTF_8),
+                                            false);
+                                })) {
+            Path dest = dir.resolve("m.bin");
+            Files.writeString(dir.resolve("m.bin.part"), "AAAA");
+            Files.writeString(dir.resolve("m.bin.part.etag"), "\"v1\"");
+            Fetch.download(server.url("/m.bin"), dest, size, null, Map.of());
+            assertEquals("AAAABBBB", Files.readString(dest));
+            assertEquals("bytes=4- \"v1\"", request.get());
+        }
+    }
+
+    private static long rangeStart(HttpExchange exchange) {
+        return Long.parseLong(
+                exchange.getRequestHeaders()
+                        .getFirst("Range")
+                        .substring("bytes=".length())
+                        .split("-", 2)[0]);
+    }
+
+    private static void reply(
+            HttpExchange exchange, String range, String etag, byte[] bytes, boolean chunked)
+            throws IOException {
+        try (exchange) {
+            if (range != null && !range.isEmpty())
+                exchange.getResponseHeaders().set("Content-Range", range);
+            if (etag != null) exchange.getResponseHeaders().set("ETag", etag);
+            exchange.sendResponseHeaders(range == null ? 200 : 206, chunked ? 0 : bytes.length);
+            exchange.getResponseBody().write(bytes);
+        }
+    }
+
+    private static void assertDiscarded(Path dest) {
+        assertTrue(Files.notExists(dest), "corrupt data must not be published");
+        for (String suffix : new String[] {".part", ".part.map", ".part.etag"}) {
+            assertTrue(Files.notExists(dest.resolveSibling(dest.getFileName() + suffix)), suffix);
         }
     }
 }
