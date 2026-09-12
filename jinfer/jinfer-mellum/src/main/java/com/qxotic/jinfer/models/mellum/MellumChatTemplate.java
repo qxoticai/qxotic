@@ -54,22 +54,26 @@ final class MellumChatTemplate implements ChatTemplate {
     private final Tokenizer tokenizer;
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
-    private ReplyLanguage.Spans spans; // the family's derived faces, markers written once
+    private final ReplyLanguage.Spans spans; // the family's derived faces, markers written once
 
     MellumChatTemplate(Tokenizer tokenizer) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
         imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
+        spans =
+                new ReplyLanguage.Spans(
+                        "<think>",
+                        "</think>",
+                        "<tool_call>",
+                        "</tool_call>",
+                        ToolCallSyntax::parseBlock,
+                        ReplyLanguage.mark("<|im_end|>"),
+                        tokenizer);
     }
 
     @Override
     public ThinkingPolicy thinkingPolicy() {
         return ThinkingPolicy.NONE;
-    }
-
-    @Override
-    public int defaultMaxReasoningTokens(int maxOutputTokens) {
-        return -1;
     }
 
     @Override
@@ -114,7 +118,7 @@ final class MellumChatTemplate implements ChatTemplate {
         }
         out.id(imStart).text("assistant\n");
         out.finish();
-        return new ReplyState(IntSequence.empty(), spans().parser());
+        return new ReplyState(IntSequence.empty(), spans.parser());
     }
 
     /** {@code <|im_start|>{role}\n{content}<|im_end|>\n} - one contiguous run per turn. */
@@ -187,17 +191,17 @@ final class MellumChatTemplate implements ChatTemplate {
 
     @Override
     public ReplyParser parser(Tokenizer tokenizer) {
-        return spans().parser();
+        return spans.parser();
     }
 
     @Override
     public Optional<ReplyLanguage.Selection> constrainedReply(String grammar) {
-        return Optional.of(spans().constrained(grammar));
+        return Optional.of(spans.constrained(grammar));
     }
 
     @Override
     public Optional<ReplyLanguage.Selection> constrainedReply(String grammar, boolean calls) {
-        return Optional.of(spans().constrained(grammar, calls));
+        return Optional.of(spans.constrained(grammar, calls));
     }
 
     /** Forced calls: the envelope carries an OFFERED name, the schema binds the arguments. */
@@ -207,20 +211,5 @@ final class MellumChatTemplate implements ChatTemplate {
         return Optional.of(
                 ReplyLanguage.Selection.of(
                         JsonEnvelopeReplies.forced(callableTools, "<|im_end|>"), tokenizer));
-    }
-
-    private ReplyLanguage.Spans spans() {
-        if (spans == null) {
-            spans =
-                    new ReplyLanguage.Spans(
-                            "<think>",
-                            "</think>",
-                            "<tool_call>",
-                            "</tool_call>",
-                            ToolCallSyntax::parseBlock,
-                            ReplyLanguage.mark("<|im_end|>"),
-                            tokenizer);
-        }
-        return spans;
     }
 }

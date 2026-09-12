@@ -35,9 +35,7 @@ final class MellumConfigurationTest {
         assertArrayEquals(new boolean[] {true, true, true, false}, config.isSwa());
         assertEquals(4_096, config.queryDim());
         assertEquals(512, config.kvDim());
-        assertEquals(128, config.ropeDimensionCount());
         assertEquals(500_000d, config.ropeTheta());
-        assertEquals(500_000d, config.ropeThetaSwa());
         assertEquals(16f, config.ropeScalingFactor());
         assertEquals(8_192, config.ropeOriginalContext());
         assertEquals(
@@ -92,6 +90,13 @@ final class MellumConfigurationTest {
                         Mellum.loadConfiguration(
                                 metadata().putString("mellum.rope.scaling.type", "linear").build(),
                                 98_304));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        Mellum.loadConfiguration(
+                                metadata().putInteger("mellum.rope.dimension_count", 64).build(),
+                                98_304),
+                "partial rotary is not what llama.cpp runs for this architecture");
         assertThrows(
                 IllegalArgumentException.class,
                 () -> Mellum.loadConfiguration(metadata().build(), 98_305),

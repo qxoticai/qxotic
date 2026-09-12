@@ -35,13 +35,13 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * JetBrains Mellum 2 decoder ({@code general.architecture = mellum}): a mixture-of-experts
- * transformer with grouped-query attention, per-head Q/K RMS-norm, NeoX rotary and a repeating
- * sliding-window pattern - the window layers rotate with the plain schedule, the full-attention
- * layers with YaRN. Every block routes through softmax top-k experts with renormalized weights
- * (llama.cpp {@code build_moe_ffn}, softmax gating, {@code norm_w}); there is no dense or shared
- * expert. Loaded from GGUF via {@link #loadModel(Path, Arena)}; block caching through a {@link
- * CheckpointCodec} over the FP16 KV caches (linear for full layers, a ring for window layers).
+ * JetBrains Mellum 2 ({@code general.architecture = mellum}): a mixture-of-experts decoder with
+ * grouped-query attention, per-head Q/K RMS-norm and NeoX rotary. Three layers in four attend
+ * through a sliding window and rotate with the plain schedule; the fourth attends to everything and
+ * rotates with YaRN. Every block routes softmax top-k over its experts and renormalizes the k
+ * weights (llama.cpp {@code build_moe_ffn}, softmax gating, {@code norm_w}); there is no dense or
+ * shared expert. Block caching runs through a {@link CheckpointCodec} over the FP16 KV caches:
+ * linear for full layers, a ring for window layers.
  */
 public final class Mellum
         implements LanguageModel<Mellum.Configuration, Mellum.Weights, Mellum.State> {
@@ -108,7 +108,7 @@ public final class Mellum
             throw new IllegalArgumentException(
                     "ingest of "
                             + rows
-                            + " at position "
+                            + " at "
                             + start
                             + " exceeds contextCapacity "
                             + state.contextCapacity());
@@ -130,7 +130,7 @@ public final class Mellum
 
     private void forward(State state, int[] tokens, int startPos, int rows) {
         Configuration c = configuration;
-        int lanes = c.ropeDimensionCount / 2;
+        int lanes = c.headSize / 2;
         RoPE.fill(state.ropeCosFull, state.ropeSinFull, startPos, rows, lanes, weights.ropeFull);
         RoPE.fill(state.ropeCosSwa, state.ropeSinSwa, startPos, rows, lanes, weights.ropeSwa);
         Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
@@ -145,20 +145,19 @@ public final class Mellum
     }
 
     /**
-     * Pre-norm GQA: Q/K/V projections, per-head Q/K RMS-norm, NeoX RoPE (the window layers on the
-     * plain schedule, the full layers on YaRN), causal attention over the layer's own cache ({@code
-     * scale = 1/sqrt(headSize)}), output projection added to the residual.
+     * Pre-norm GQA: Q/K/V projections, per-head Q/K RMS-norm and NeoX RoPE, causal attention over
+     * the layer's own cache at {@code 1/sqrt(headSize)}, the output projection added to the
+     * residual, then the chunk's K/V committed - inside the layer, because {@code batchK}/{@code
+     * batchV} are reused by every layer.
      */
     private void attention(State state, int layer, int startPos, int rows) {
         Configuration c = configuration;
         LayerWeights w = weights.layers[layer];
         int dim = c.embeddingLength, headSize = c.headSize, kvDim = c.kvDim();
-        int heads = c.numberOfHeads, kvHeads = c.numberOfKeyValueHeads, kvMul = heads / kvHeads;
-        int queryDim = c.queryDim();
+        int queryDim = c.queryDim(), kvMul = c.numberOfHeads / c.numberOfKeyValueHeads;
         boolean swa = c.isSwa[layer];
         MemoryView<MemorySegment> cos = swa ? state.ropeCosSwa : state.ropeCosFull;
         MemoryView<MemorySegment> sin = swa ? state.ropeSinSwa : state.ropeSinFull;
-        int ropeLanes = c.ropeDimensionCount / 2;
 
         Norms.rmsnormRowsGgml(state.normed, state.residual, w.attnNorm, rows, dim, c.rmsNormEps);
         MatMul.gemm(w.query, state.normed, state.query, rows);
@@ -167,30 +166,10 @@ public final class Mellum
         Parallel.forLoop(
                 rows,
                 row -> {
-                    for (int head = 0; head < heads; head++) {
-                        long offset = (long) row * queryDim + (long) head * headSize;
-                        Norms.rmsnormGgml(
-                                state.query,
-                                offset,
-                                state.query,
-                                offset,
-                                w.queryNorm,
-                                headSize,
-                                c.rmsNormEps);
-                        RoPE.applyNeox(state.query, offset, row, cos, sin, ropeLanes);
-                    }
-                    for (int head = 0; head < kvHeads; head++) {
-                        long offset = (long) row * kvDim + (long) head * headSize;
-                        Norms.rmsnormGgml(
-                                state.batchK,
-                                offset,
-                                state.batchK,
-                                offset,
-                                w.keyNorm,
-                                headSize,
-                                c.rmsNormEps);
-                        RoPE.applyNeox(state.batchK, offset, row, cos, sin, ropeLanes);
-                    }
+                    headNormRope(
+                            state.query, row, queryDim, c.numberOfHeads, w.queryNorm, cos, sin);
+                    headNormRope(
+                            state.batchK, row, kvDim, c.numberOfKeyValueHeads, w.keyNorm, cos, sin);
                 });
 
         float scale = 1f / (float) Math.sqrt(headSize);
@@ -202,7 +181,7 @@ public final class Mellum
                     state.valueCache[layer],
                     state.batchK,
                     state.batchV,
-                    heads,
+                    c.numberOfHeads,
                     startPos,
                     rows,
                     headSize,
@@ -222,7 +201,7 @@ public final class Mellum
                     state.valueCache[layer],
                     state.batchK,
                     state.batchV,
-                    heads,
+                    c.numberOfHeads,
                     startPos,
                     c.attentionStart(layer, startPos),
                     headSize,
@@ -234,36 +213,34 @@ public final class Mellum
                     state.decodeScratch);
         MatMul.gemm(w.output, state.attentionOut, state.branch, rows);
         Ops.addInPlace(state.residual, 0, state.branch, 0, rows * dim);
-        commitKv(state, layer, startPos, rows);
+
+        for (int row = 0; row < rows; row++) {
+            long slot = (long) c.kvCacheIndex(layer, startPos + row) * kvDim;
+            long from = (long) row * kvDim;
+            Convert.f32ToF16(state.batchK, from, state.keyCache[layer], slot, kvDim);
+            Convert.f32ToF16(state.batchV, from, state.valueCache[layer], slot, kvDim);
+        }
     }
 
-    /**
-     * Writes the chunk's K/V into layer {@code layer}'s cache - inside the layer, because {@code
-     * batchK}/{@code batchV} are reused by every layer. Window layers write through their ring
-     * slot.
-     */
-    private void commitKv(State state, int layer, int startPos, int rows) {
-        Configuration c = configuration;
-        int kvDim = c.kvDim();
-        for (int row = 0; row < rows; row++) {
-            long position = c.kvCacheIndex(layer, startPos + row);
-            Convert.f32ToF16(
-                    state.batchK,
-                    (long) row * kvDim,
-                    state.keyCache[layer],
-                    position * kvDim,
-                    kvDim);
-            Convert.f32ToF16(
-                    state.batchV,
-                    (long) row * kvDim,
-                    state.valueCache[layer],
-                    position * kvDim,
-                    kvDim);
+    /** RMS-norm then NeoX-rotate every head of one row, in place. */
+    private void headNormRope(
+            MemoryView<MemorySegment> t,
+            int row,
+            int rowStride,
+            int heads,
+            MemoryView<MemorySegment> normWeight,
+            MemoryView<MemorySegment> cos,
+            MemoryView<MemorySegment> sin) {
+        int headSize = configuration.headSize;
+        for (int head = 0; head < heads; head++) {
+            long at = (long) row * rowStride + (long) head * headSize;
+            Norms.rmsnormGgml(t, at, t, at, normWeight, headSize, configuration.rmsNormEps);
+            RoPE.applyNeox(t, at, row, cos, sin, headSize / 2);
         }
     }
 
     /**
-     * Pre-norm MoE block: router logits, softmax, top-k, the k weights renormalized to sum to one,
+     * Pre-norm MoE block: router logits, softmax, top-k with the k weights renormalized to one,
      * then each selected expert's SwiGLU FFN scatter-added into the residual.
      */
     private void moe(State state, int layer, int rows) {
@@ -286,15 +263,15 @@ public final class Mellum
                 dim,
                 state.normed,
                 state.moeGather,
-                state.moeDown,
+                state.moeExpertOut,
                 state.branch,
                 null,
-                (expert, count, gather, output) -> {
+                (expert, count, gather, out) -> {
                     MatMul.gemm(w.expertGate[expert], gather, state.moeHidden, count);
                     MatMul.gemm(w.expertUp[expert], gather, state.moeHidden2, count);
                     Activations.siluMultiply(
                             state.moeHidden, 0, state.moeHidden2, 0, count * expertFf);
-                    MatMul.gemm(w.expertDown[expert], state.moeHidden, output, count);
+                    MatMul.gemm(w.expertDown[expert], state.moeHidden, out, count);
                 });
         Ops.addInPlace(state.residual, 0, state.branch, 0, rows * dim);
     }
@@ -326,6 +303,11 @@ public final class Mellum
 
     // === Configuration ===
 
+    /**
+     * The checkpoint's shape. {@code isSwa} marks the sliding-window layers; {@code
+     * ropeAttentionFactor} is llama.cpp's {@code rope.scaling.attn_factor}, the multiplier on top
+     * of the YaRN magnitude the schedule derives itself.
+     */
     public record Configuration(
             int embeddingLength,
             int numberOfLayers,
@@ -340,13 +322,9 @@ public final class Mellum
             int expertFeedForwardLength,
             int slidingWindow,
             boolean[] isSwa,
-            int ropeDimensionCount,
             double ropeTheta,
-            double ropeThetaSwa,
             float ropeScalingFactor,
             int ropeOriginalContext,
-            float ropeBetaFast,
-            float ropeBetaSlow,
             float ropeAttentionFactor)
             implements ContextConfiguration {
 
@@ -401,7 +379,7 @@ public final class Mellum
         final MemoryView<MemorySegment> residual, normed, branch, logits;
         final MemoryView<MemorySegment> query, attentionOut, batchK, batchV;
         final MemoryView<MemorySegment> ropeCosFull, ropeSinFull, ropeCosSwa, ropeSinSwa;
-        final MemoryView<MemorySegment> moeRouter, moeGather, moeDown, moeHidden, moeHidden2;
+        final MemoryView<MemorySegment> moeRouter, moeGather, moeExpertOut, moeHidden, moeHidden2;
         final MemoryView<MemorySegment>[] keyCache, valueCache;
         final FlashAttention.DecodeScratch decodeScratch;
         final int[] moeExpertCounts, moeRowTopE;
@@ -424,7 +402,7 @@ public final class Mellum
                                 + c.maxContextLength
                                 + "], the model's maxContextLength");
             int rows = batchCapacity(), dim = c.embeddingLength, kvDim = c.kvDim();
-            int lanes = c.ropeDimensionCount / 2;
+            int lanes = c.headSize / 2;
             residual = Views.allocateF32(memoryArena(), rows, dim);
             normed = Views.allocateF32(memoryArena(), rows, dim);
             branch = Views.allocateF32(memoryArena(), rows, dim);
@@ -439,7 +417,7 @@ public final class Mellum
             ropeSinSwa = Views.allocateF32(memoryArena(), rows, lanes);
             moeRouter = Views.allocateF32(memoryArena(), rows, c.expertCount);
             moeGather = Views.allocateF32(memoryArena(), rows, dim);
-            moeDown = Views.allocateF32(memoryArena(), rows, dim);
+            moeExpertOut = Views.allocateF32(memoryArena(), rows, dim);
             moeHidden = Views.allocateF32(memoryArena(), rows, c.expertFeedForwardLength);
             moeHidden2 = Views.allocateF32(memoryArena(), rows, c.expertFeedForwardLength);
             decodeScratch = new FlashAttention.DecodeScratch(memoryArena());
@@ -503,87 +481,41 @@ public final class Mellum
         return new Mellum(c, tokenizer, loadWeights(tensors, c));
     }
 
+    /**
+     * Reads what llama.cpp reads. The keys it ignores are ignored here too: the converter's {@code
+     * yarn_attn_factor} (the derived magnitude, recomputed by the schedule), {@code
+     * yarn_beta_fast}/{@code yarn_beta_slow} (its fixed 32/1) and {@code freq_base_swa} (its graph
+     * rotates every layer at {@code freq_base}).
+     */
     static Configuration loadConfiguration(GGUF gguf, int vocabularySize) {
-        String arch = ARCHITECTURE;
-        int layers = gguf.getValue(int.class, arch + ".block_count");
-        int dim = gguf.getValue(int.class, arch + ".embedding_length");
-        int heads = gguf.getValue(int.class, arch + ".attention.head_count");
-        int headSize =
-                gguf.getValueOrDefault(int.class, arch + ".attention.key_length", dim / heads);
-        int valueSize =
-                gguf.getValueOrDefault(int.class, arch + ".attention.value_length", headSize);
-        int context = gguf.getValue(int.class, arch + ".context_length");
-        int window = gguf.getValueOrDefault(int.class, arch + ".attention.sliding_window", 0);
-        float ropeTheta = gguf.getValueOrDefault(float.class, arch + ".rope.freq_base", 10_000f);
+        String a = ARCHITECTURE + ".";
+        int layers = gguf.getValue(int.class, a + "block_count");
+        int dim = gguf.getValue(int.class, a + "embedding_length");
+        int heads = gguf.getValue(int.class, a + "attention.head_count");
+        int headSize = gguf.getValueOrDefault(int.class, a + "attention.key_length", dim / heads);
+        int context = gguf.getValue(int.class, a + "context_length");
+        int window = gguf.getValueOrDefault(int.class, a + "attention.sliding_window", 0);
         Configuration c =
                 new Configuration(
                         dim,
                         layers,
                         heads,
-                        gguf.getValue(int.class, arch + ".attention.head_count_kv"),
+                        gguf.getValue(int.class, a + "attention.head_count_kv"),
                         headSize,
                         vocabularySize,
                         context,
                         gguf.getValueOrDefault(
-                                float.class, arch + ".attention.layer_norm_rms_epsilon", 1e-6f),
-                        gguf.getValue(int.class, arch + ".expert_count"),
-                        gguf.getValue(int.class, arch + ".expert_used_count"),
-                        gguf.getValue(int.class, arch + ".expert_feed_forward_length"),
+                                float.class, a + "attention.layer_norm_rms_epsilon", 1e-6f),
+                        gguf.getValue(int.class, a + "expert_count"),
+                        gguf.getValue(int.class, a + "expert_used_count"),
+                        gguf.getValue(int.class, a + "expert_feed_forward_length"),
                         window,
-                        swaLayers(gguf, arch, layers, window),
-                        gguf.getValueOrDefault(int.class, arch + ".rope.dimension_count", headSize),
-                        ropeTheta,
+                        swaLayers(gguf, layers, window),
+                        gguf.getValueOrDefault(float.class, a + "rope.freq_base", 10_000f),
+                        gguf.getValueOrDefault(float.class, a + "rope.scaling.factor", 1f),
                         gguf.getValueOrDefault(
-                                float.class, arch + ".rope.freq_base_swa", ropeTheta),
-                        gguf.getValueOrDefault(float.class, arch + ".rope.scaling.factor", 1f),
-                        gguf.getValueOrDefault(
-                                int.class, arch + ".rope.scaling.original_context_length", context),
-                        gguf.getValueOrDefault(
-                                float.class, arch + ".rope.scaling.yarn_beta_fast", 32f),
-                        gguf.getValueOrDefault(
-                                float.class, arch + ".rope.scaling.yarn_beta_slow", 1f),
-                        // llama.cpp's rope_attn_factor: the bare multiplier on top of the YaRN
-                        // magnitude RoPE.yarn derives itself (the converter's yarn_attn_factor
-                        // key, which llama.cpp never reads, is that derived magnitude)
-                        gguf.getValueOrDefault(
-                                float.class, arch + ".rope.scaling.attn_factor", 1f));
-        validate(c, valueSize);
-        String scaling = gguf.getValueOrDefault(String.class, arch + ".rope.scaling.type", "none");
-        require(
-                scaling.equals("none") || scaling.equals("yarn"),
-                "unsupported RoPE scaling " + scaling);
-        require(
-                gguf.getValueOrDefault(int.class, arch + ".vocab_size", vocabularySize)
-                        == vocabularySize,
-                "tokenizer vocabulary does not match the model");
-        return c;
-    }
-
-    /**
-     * Which layers slide: llama.cpp reads {@code attention.sliding_window_pattern} either as the
-     * period {@code n} (layer {@code il} slides unless {@code il % n == 0}; {@code 0} means every
-     * layer) or as one boolean per layer, and defaults to a period of 4. No window: no layer
-     * slides.
-     */
-    private static boolean[] swaLayers(GGUF gguf, String arch, int layers, int window) {
-        boolean[] swa = new boolean[layers];
-        if (window <= 0) return swa;
-        Object pattern =
-                gguf.getValueOrDefault(Object.class, arch + ".attention.sliding_window_pattern", 4);
-        if (pattern instanceof boolean[] perLayer) {
-            require(
-                    perLayer.length == layers,
-                    "sliding_window_pattern must have one flag per layer");
-            return perLayer.clone();
-        }
-        int period = ((Number) pattern).intValue();
-        require(period >= 0, "sliding-window pattern must not be negative");
-        for (int layer = 0; layer < layers; layer++)
-            swa[layer] = period == 0 || layer % period != 0;
-        return swa;
-    }
-
-    private static void validate(Configuration c, int valueSize) {
+                                int.class, a + "rope.scaling.original_context_length", context),
+                        gguf.getValueOrDefault(float.class, a + "rope.scaling.attn_factor", 1f));
         require(
                 c.embeddingLength > 0
                         && c.numberOfLayers > 0
@@ -591,37 +523,62 @@ public final class Mellum
                         && c.numberOfKeyValueHeads > 0
                         && c.numberOfHeads % c.numberOfKeyValueHeads == 0
                         && c.headSize > 0
+                        && (c.headSize & 1) == 0
                         && c.vocabularySize > 0
                         && c.maxContextLength > 0,
                 "invalid core dimensions");
-        require(valueSize == c.headSize, "different key/value head sizes are unsupported");
         require(
-                c.ropeDimensionCount > 0
-                        && (c.ropeDimensionCount & 1) == 0
-                        && c.ropeDimensionCount <= c.headSize,
-                "invalid RoPE dimensions");
+                gguf.getValueOrDefault(int.class, a + "attention.value_length", headSize)
+                                == headSize
+                        && gguf.getValueOrDefault(int.class, a + "rope.dimension_count", headSize)
+                                == headSize,
+                "key, value and rotary widths must all equal the head size");
         require(
                 c.rmsNormEps > 0f
                         && Float.isFinite(c.rmsNormEps)
                         && c.ropeTheta > 0
-                        && c.ropeThetaSwa > 0
                         && c.ropeScalingFactor > 0f
                         && c.ropeOriginalContext > 0
                         && c.ropeAttentionFactor > 0f,
                 "invalid normalization or RoPE metadata");
+        String scaling = gguf.getValueOrDefault(String.class, a + "rope.scaling.type", "none");
+        require(
+                scaling.equals("none") || scaling.equals("yarn"),
+                "unsupported RoPE scaling " + scaling);
         require(
                 c.expertCount > 0
                         && c.expertUsedCount > 0
                         && c.expertUsedCount <= c.expertCount
                         && c.expertFeedForwardLength > 0,
                 "invalid MoE metadata");
-        require(c.isSwa.length == c.numberOfLayers, "one sliding-window flag per layer");
-        boolean anySwa = false;
-        for (boolean swa : c.isSwa) anySwa |= swa;
-        if (anySwa)
-            require(
-                    c.slidingWindow > 0 && Integer.bitCount(c.slidingWindow) == 1,
-                    "sliding window must be a power of two");
+        require(
+                gguf.getValueOrDefault(int.class, a + "vocab_size", vocabularySize)
+                        == vocabularySize,
+                "tokenizer vocabulary does not match the model");
+        return c;
+    }
+
+    /**
+     * Which layers slide, as llama.cpp reads {@code attention.sliding_window_pattern}: one boolean
+     * per layer, or a period {@code n} (layer {@code il} slides unless {@code il % n == 0}; 0 means
+     * every layer) defaulting to 4. No window: no layer slides. A ring needs a power-of-two window.
+     */
+    private static boolean[] swaLayers(GGUF gguf, int layers, int window) {
+        boolean[] swa = new boolean[layers];
+        if (window <= 0) return swa;
+        require(Integer.bitCount(window) == 1, "sliding window must be a power of two");
+        Object pattern =
+                gguf.getValueOrDefault(
+                        Object.class, ARCHITECTURE + ".attention.sliding_window_pattern", 4);
+        if (pattern instanceof boolean[] perLayer) {
+            require(perLayer.length == layers, "one sliding-window flag per layer");
+            return perLayer.clone();
+        }
+        int period = ((Number) pattern).intValue();
+        require(period >= 0, "sliding-window period must not be negative");
+        for (int layer = 0; layer < layers; layer++)
+            swa[layer] = period == 0 || layer % period != 0;
+        return swa;
     }
 
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {
@@ -650,26 +607,29 @@ public final class Mellum
         MemoryView<MemorySegment> head =
                 ModelLoader.find(tensors, "output.weight").orElse(embedding);
         requireShape(head, "output.weight", c.vocabularySize, dim);
-        // the full-attention layers rotate with YaRN, the window layers with the plain schedule
-        // at their own base (llama.cpp: freq_scale 1, ext_factor 0, attn_factor 1 on SWA layers)
+        // the full-attention layers rotate with YaRN (llama.cpp's fixed beta 32/1), the window
+        // layers with the plain schedule (freq_scale 1, ext_factor 0, attn_factor 1)
         RoPE.Schedule full =
                 c.ropeScalingFactor == 1f
-                        ? RoPE.plain(c.ropeDimensionCount, c.ropeTheta)
+                        ? RoPE.plain(c.headSize, c.ropeTheta)
                         : RoPE.yarn(
-                                c.ropeDimensionCount,
+                                c.headSize,
                                 c.ropeTheta,
                                 c.ropeScalingFactor,
                                 c.ropeOriginalContext,
-                                c.ropeBetaFast,
-                                c.ropeBetaSlow,
+                                32f,
+                                1f,
                                 1f,
                                 c.ropeAttentionFactor);
-        RoPE.Schedule swa = RoPE.plain(c.ropeDimensionCount, c.ropeThetaSwa);
         return new Weights(
-                embedding, f32(tensors, "output_norm.weight", dim), head, layers, full, swa);
+                embedding,
+                f32(tensors, "output_norm.weight", dim),
+                head,
+                layers,
+                full,
+                RoPE.plain(c.headSize, c.ropeTheta));
     }
 
-    @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment>[] experts(
             Map<String, MemoryView<MemorySegment>> tensors,
             String name,
@@ -677,9 +637,7 @@ public final class Mellum
             int rows,
             int columns) {
         MemoryView<MemorySegment> stacked = ModelLoader.require(tensors, name);
-        Shape actual = stacked.dataType().logicalShape(stacked.shape());
-        Shape expected = Shape.flat(experts, rows, columns);
-        require(actual.equals(expected), name + " expected " + expected + " but was " + actual);
+        requireShape(stacked, name, Shape.flat(experts, rows, columns));
         return Views.sliceLeadingAxis(stacked, experts);
     }
 
@@ -692,18 +650,18 @@ public final class Mellum
 
     private static void requireShape(
             MemoryView<MemorySegment> value, String name, int rows, int columns) {
+        requireShape(value, name, Shape.flat(rows, columns));
+    }
+
+    private static void requireShape(MemoryView<MemorySegment> value, String name, Shape expected) {
         Shape actual = value.dataType().logicalShape(value.shape());
-        Shape expected = Shape.flat(rows, columns);
         require(actual.equals(expected), name + " expected " + expected + " but was " + actual);
     }
 
     private static MemoryView<MemorySegment> f32(
             Map<String, MemoryView<MemorySegment>> tensors, String name, long... shape) {
         MemoryView<MemorySegment> value = ModelLoader.requireF32(tensors, name);
-        Shape expected = Shape.flat(shape);
-        require(
-                value.shape().equals(expected),
-                name + " expected " + expected + " but was " + value.shape());
+        requireShape(value, name, Shape.flat(shape));
         return value;
     }
 
