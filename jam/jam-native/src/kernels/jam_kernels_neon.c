@@ -40,7 +40,6 @@ static inline int32x4_t jam_blkdot_neon(int8x16_t wlo, int8x16_t whi, int8x16_t 
 #undef JAM_DECODE
 #undef JAM_MM_NAME
 
-
 #define JAM_BLK     jam_mxfp4_blk
 #define JAM_DECODE  jam_decode_mxfp4_neon
 #define JAM_MM_NAME jam_mm_mxfp4_neon

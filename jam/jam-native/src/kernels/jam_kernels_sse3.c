@@ -30,7 +30,6 @@
 #undef JAM_DECODE
 #undef JAM_MM_NAME
 
-
 #define JAM_BLK     jam_mxfp4_blk
 #define JAM_DECODE  jam_decode_mxfp4_128
 #define JAM_MM_NAME jam_mm_mxfp4_sse3

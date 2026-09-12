@@ -223,7 +223,6 @@ void jam_gemv_mxfp4_packed_4x1(void* arg, int rb, int re, int tid) {
 #undef JAM_DECODE
 #undef JAM_MM_NAME
 
-
 #define JAM_BLK     jam_mxfp4_blk
 #define JAM_DECODE  jam_decode_mxfp4_neon
 #define JAM_MM_NAME jam_mm_mxfp4_dotprod
