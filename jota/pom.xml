@@ -144,7 +144,7 @@
               <goals>
                 <goal>exec</goal>
               </goals>
-              <phase>compile</phase>
+              <phase>generate-resources</phase>
               <configuration>
                 <skip>${native.skip.build}</skip>
                 <executable>${native.cmake.executable}</executable>

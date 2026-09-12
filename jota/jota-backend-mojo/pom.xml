@@ -101,29 +101,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-resources-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>copy-native-backend-after-build</id>
-            <goals>
-              <goal>copy-resources</goal>
-            </goals>
-            <phase>process-test-resources</phase>
-            <configuration>
-              <skip>${native.copy.skip}</skip>
-              <outputDirectory>${native.resource.dir}</outputDirectory>
-              <resources>
-                <resource>
-                  <directory>${native.build.dir}</directory>
-                  <includes>
-                    <include>libjota_mojo.so</include>
-                    <include>libjota_mojo.dylib</include>
-                    <include>jota_mojo.dll</include>
-                  </includes>
-                </resource>
-              </resources>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
