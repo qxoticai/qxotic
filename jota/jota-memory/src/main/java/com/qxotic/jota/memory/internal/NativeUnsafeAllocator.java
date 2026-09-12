@@ -32,16 +32,25 @@ class NativeUnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
     @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
+        if (byteSize < 0) {
+            throw new IllegalArgumentException("negative byte size: " + byteSize);
+        }
         if (!Util.isPowerOf2(byteAlignment)) {
             throw new IllegalArgumentException("invalid byteAlignment, not a power of 2");
         }
-        long mallocAddress = UNSAFE.allocateMemory(byteSize + byteAlignment - 1);
-        long alignedAddress = mallocAddress;
-        if (alignedAddress % byteAlignment != 0) {
-            alignedAddress += byteAlignment - (alignedAddress % byteAlignment);
+        long mallocAddress = UNSAFE.allocateMemory(Math.addExact(byteSize, byteAlignment - 1));
+        try {
+            long alignedAddress = mallocAddress;
+            if (alignedAddress % byteAlignment != 0) {
+                alignedAddress += byteAlignment - (alignedAddress % byteAlignment);
+            }
+            assert alignedAddress % byteAlignment == 0;
+            return new RawScopedMemory(mallocAddress, alignedAddress, byteSize, true);
+        } catch (RuntimeException | Error failure) {
+            // Ownership transfers only after the wrapper has been constructed successfully.
+            UNSAFE.freeMemory(mallocAddress);
+            throw failure;
         }
-        assert alignedAddress % byteAlignment == 0;
-        return new RawScopedMemory(mallocAddress, alignedAddress, byteSize, true);
     }
 
     private static final class RawScopedMemory implements ScopedMemory<MemorySegment> {
