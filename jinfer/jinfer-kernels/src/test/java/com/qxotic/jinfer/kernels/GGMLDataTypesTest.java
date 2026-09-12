@@ -17,6 +17,7 @@ class GGMLDataTypesTest {
             GGMLType.BF16,
             GGMLType.Q4_0,
             GGMLType.Q4_1,
+            GGMLType.Q5_0,
             GGMLType.Q5_1,
             GGMLType.Q8_0,
             GGMLType.Q4_K,
@@ -39,7 +40,7 @@ class GGMLDataTypesTest {
     @Test
     void unsupportedTypesFailClearly() {
         assertThrows(
-                UnsupportedOperationException.class, () -> GGMLDataTypes.toDataType(GGMLType.Q5_0));
+                UnsupportedOperationException.class, () -> GGMLDataTypes.toDataType(GGMLType.Q2_K));
         assertThrows(
                 UnsupportedOperationException.class, () -> GGMLDataTypes.toGGMLType(DataType.I8));
     }

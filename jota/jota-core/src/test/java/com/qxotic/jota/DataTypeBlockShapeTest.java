@@ -17,6 +17,7 @@ class DataTypeBlockShapeTest {
     private static final DataType[] BLOCK_DTYPES = {
         DataType.Q4_0,
         DataType.Q4_1,
+        DataType.Q5_0,
         DataType.Q5_1,
         DataType.Q8_0,
         DataType.Q4_K,

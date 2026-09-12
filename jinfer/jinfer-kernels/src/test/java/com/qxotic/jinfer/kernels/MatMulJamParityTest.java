@@ -137,6 +137,7 @@ class MatMulJamParityTest {
                 new GGMLType[] {
                     GGMLType.Q4_0,
                     GGMLType.Q4_1,
+                    GGMLType.Q5_0,
                     GGMLType.Q5_1,
                     GGMLType.Q4_K,
                     GGMLType.Q5_K,

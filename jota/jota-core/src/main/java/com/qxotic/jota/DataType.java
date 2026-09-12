@@ -107,6 +107,7 @@ public interface DataType {
 
     DataType Q4_0 = blockType("q4_0", 32, 18);
     DataType Q4_1 = blockType("q4_1", 32, 20);
+    DataType Q5_0 = blockType("q5_0", 32, 22);
     DataType Q5_1 = blockType("q5_1", 32, 24);
     DataType Q8_0 = blockType("q8_0", 32, 34);
     DataType Q4_K = blockType("q4_k", 256, 144);

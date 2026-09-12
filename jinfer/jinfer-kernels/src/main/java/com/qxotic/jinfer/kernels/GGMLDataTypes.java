@@ -12,6 +12,7 @@ final class GGMLDataTypes {
         new Pair(GGMLType.BF16, DataType.BF16),
         new Pair(GGMLType.Q4_0, DataType.Q4_0),
         new Pair(GGMLType.Q4_1, DataType.Q4_1),
+        new Pair(GGMLType.Q5_0, DataType.Q5_0),
         new Pair(GGMLType.Q5_1, DataType.Q5_1),
         new Pair(GGMLType.Q8_0, DataType.Q8_0),
         new Pair(GGMLType.Q4_K, DataType.Q4_K),

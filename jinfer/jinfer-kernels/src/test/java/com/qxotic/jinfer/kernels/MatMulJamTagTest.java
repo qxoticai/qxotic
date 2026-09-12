@@ -45,6 +45,7 @@ class MatMulJamTagTest {
             DataType.I64,
             DataType.FP64,
             DataType.Q4_1,
+            DataType.Q5_0,
             DataType.Q5_1,
             DataType.TQ1_0,
             DataType.TQ2_0,

@@ -68,7 +68,7 @@ Architecture dispatch comes from providers on the classpath.
 | Inflect | speech synthesis |
 | Kokoro 82M | speech synthesis |
 
-GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.
+GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.
 
 ### Capability → artifact
 

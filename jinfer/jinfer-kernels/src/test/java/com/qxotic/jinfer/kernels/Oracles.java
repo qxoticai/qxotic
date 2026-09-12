@@ -93,7 +93,7 @@ final class Oracles {
         for (long b = 0; b < elements / type.getElementsPerBlock(); b++) {
             long bo = b * bs;
             switch (type) {
-                case Q4_0, Q1_0 -> seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo, d);
+                case Q4_0, Q5_0, Q1_0 -> seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo, d);
                 case Q4_1, Q5_1, Q4_K, Q5_K -> {
                     seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo, d);
                     seg.set(ValueLayout.JAVA_SHORT_UNALIGNED, bo + 2, dmin);

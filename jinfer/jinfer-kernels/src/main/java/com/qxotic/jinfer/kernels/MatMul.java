@@ -38,10 +38,10 @@ import jdk.incubator.vector.VectorOperators;
  *
  * <p>Contract: activations {@code a} and result {@code c} are dense FP32; weights {@code w} are
  * dense, dtype dispatched ({@code FP32}, {@code FP16}, {@code BF16} element-strided; every jota
- * block dtype - {@code Q8_0}, {@code MXFP4}, {@code Q4_0}, {@code Q4_1}, {@code Q5_1}, {@code
- * Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code TQ1_0}, {@code TQ2_0} -
- * via block geometry). Offsets/strides are in ELEMENTS (weights: quant elements, block-aligned) and
- * must be block-aligned.
+ * block dtype - {@code Q8_0}, {@code MXFP4}, {@code Q4_0}, {@code Q4_1}, {@code Q5_0}, {@code
+ * Q5_1}, {@code Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code TQ1_0},
+ * {@code TQ2_0} - via block geometry). Offsets/strides are in ELEMENTS (weights: quant elements,
+ * block-aligned) and must be block-aligned.
  *
  * <p>Computes {@code C = W · Aᵀ}: for output row {@code s} and weight row {@code row}, {@code
  * C[s*cStride + cOff + row] = dot(W[row], A[s])}.
@@ -100,9 +100,10 @@ public final class MatMul {
     };
 
     // legacy-quant block geometry (GGUF wire formats; jota DataType carries the same numbers)
-    private static final int Q4_BLOCK = 32; // Q4_0/Q4_1/Q5_1 elements per block
+    private static final int Q4_BLOCK = 32; // Q4_0/Q4_1/Q5_0/Q5_1 elements per block
     private static final int Q4_0_BYTES = 18; // f16 scale + 16 packed nibbles
     private static final int Q4_1_BYTES = 20; // f16 delta + f16 min + 16 packed
+    private static final int Q5_0_BYTES = 22; // f16 d + u32 qh + 16 packed
     private static final int Q5_1_BYTES = 24; // f16 d + f16 m + u32 qh + 16 packed
     private static final int QK_K = 256; // k-quant elements per super-block
     private static final int Q4_K_BYTES = 144; // f16 d + f16 dmin + 12 scales + 128 qs
@@ -492,6 +493,7 @@ public final class MatMul {
         if (weightType == DataType.MXFP4) return dotMxfp4(w, wByte, x, xByte, k);
         if (weightType == DataType.Q4_0) return dotQ4_0(w, wByte, x, xByte, k);
         if (weightType == DataType.Q4_1) return dotQ4_1(w, wByte, x, xByte, k);
+        if (weightType == DataType.Q5_0) return dotQ5_0(w, wByte, x, xByte, k);
         if (weightType == DataType.Q5_1) return dotQ5_1(w, wByte, x, xByte, k);
         if (weightType == DataType.Q4_K) return dotQ4K(w, wByte, x, xByte, k);
         if (weightType == DataType.Q5_K) return dotQ5K(w, wByte, x, xByte, k);
@@ -851,6 +853,18 @@ public final class MatMul {
         return delta * quant + min;
     }
 
+    static float getQ5_0(MemorySegment w, long wByte, long i) {
+        long bo = wByte + i / Q4_BLOCK * Q5_0_BYTES;
+        int m = (int) (i % Q4_BLOCK);
+        float d = readFloat16(w, bo);
+        int qh = readInt(w, bo + 2);
+        int j = m < 16 ? m : m - 16;
+        int packed = Byte.toUnsignedInt(readByte(w, bo + 6 + j));
+        int nibble = (m < 16 ? packed : packed >>> 4) & 0xF;
+        int xh = m < 16 ? ((qh >> j) << 4) & 0x10 : (qh >> (j + 12)) & 0x10;
+        return ((nibble | xh) - 16) * d;
+    }
+
     static float getQ5_1(MemorySegment w, long wByte, long i) {
         long bo = wByte + i / Q4_BLOCK * Q5_1_BYTES;
         int m = (int) (i % Q4_BLOCK);
@@ -1044,6 +1058,7 @@ public final class MatMul {
     static float getLegacy(MemorySegment w, long wByte, long i, DataType dt) {
         if (dt == DataType.Q4_0) return getQ4_0(w, wByte, i);
         if (dt == DataType.Q4_1) return getQ4_1(w, wByte, i);
+        if (dt == DataType.Q5_0) return getQ5_0(w, wByte, i);
         if (dt == DataType.Q5_1) return getQ5_1(w, wByte, i);
         if (dt == DataType.Q4_K) return getQ4K(w, wByte, i);
         if (dt == DataType.Q5_K) return getQ5K(w, wByte, i);
@@ -1229,6 +1244,46 @@ public final class MatMul {
         float result = val.reduceLanes(VectorOperators.ADD);
         if (j < k) {
             result += scalarDotLegacy(w, bo, x, xByte + 4L * j, k - j, DataType.Q4_1);
+        }
+        return result;
+    }
+
+    // ------------------------------------------------------------------
+    // Q5_0·F32 dot - as Q5_1 below without the min: (q - 16) * d.
+    // ------------------------------------------------------------------
+
+    private static float dotQ5_0(MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
+        if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, DataType.Q5_0);
+        float result = 0f;
+        int upperBound = k / Q4_BLOCK * Q4_BLOCK;
+        float[] decoded = new float[Q4_BLOCK];
+        int vecUpper = F_SPECIES.loopBound(Q4_BLOCK);
+        long bo = wByte;
+        int j = 0;
+        for (; j < upperBound; j += Q4_BLOCK, bo += Q5_0_BYTES) {
+            float d = readFloat16(w, bo);
+            int qh = readInt(w, bo + 2);
+            long qsBase = bo + 6;
+            for (int p = 0; p < Q4_BLOCK / 2; p++) {
+                int packed = Byte.toUnsignedInt(readByte(w, qsBase + p));
+                int x0 = (packed & 0x0F) | (((qh >> p) << 4) & 0x10);
+                int x1 = ((packed >>> 4) & 0x0F) | ((qh >> (p + 12)) & 0x10);
+                decoded[p] = (x0 - 16) * d;
+                decoded[p + Q4_BLOCK / 2] = (x1 - 16) * d;
+            }
+            FloatVector acc = FloatVector.zero(F_SPECIES);
+            for (int i = 0; i < vecUpper; i += F_SPECIES.length()) {
+                acc =
+                        FloatVector.fromArray(F_SPECIES, decoded, i)
+                                .fma(floatsAt(x, xByte + 4L * (j + i)), acc);
+            }
+            result += acc.reduceLanes(VectorOperators.ADD);
+            for (int i = vecUpper; i < Q4_BLOCK; i++) {
+                result += decoded[i] * readFloat(x, xByte + 4L * (j + i));
+            }
+        }
+        if (j < k) {
+            result += scalarDotLegacy(w, bo, x, xByte + 4L * j, k - j, DataType.Q5_0);
         }
         return result;
     }

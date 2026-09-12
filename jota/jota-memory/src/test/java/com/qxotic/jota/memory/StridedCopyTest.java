@@ -82,6 +82,7 @@ class StridedCopyTest {
         return Stream.of(
                 DataType.Q4_0,
                 DataType.Q4_1,
+                DataType.Q5_0,
                 DataType.Q5_1,
                 DataType.Q8_0,
                 DataType.Q4_K,
