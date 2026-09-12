@@ -17,8 +17,7 @@ import jdk.incubator.vector.VectorOperators;
  * {@code d·(q-16)} with {@code q} the nibble plus one high bit from {@code qh} (bit {@code j} for
  * element {@code j}, bit {@code j+16} for element {@code j+16}). A {@link BandGemm#MR}-row band is
  * dequantized into an F32 scratch and {@link BandGemm}'s F32 band sweeps the columns, like every
- * other 32-block quant here. The high bits are spread to byte lanes in registers: one int
- * broadcast, a per-lane shift, mask, shift into bit 4.
+ * other 32-block quant here.
  */
 final class Q5Kernel {
 

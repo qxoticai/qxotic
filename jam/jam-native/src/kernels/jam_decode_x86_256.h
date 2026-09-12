@@ -30,11 +30,10 @@ static inline void jam_decode_q4_0_256(const void* blk, __m256i* wq, float* dW) 
 }
 
 /* Q5_0: { fp16 d; uint32 qh; nibble qs[16] } = 22 bytes. value = d·(q-16), q = nibble | (5th bit from qh):
- * bit j of qh is element j's high bit (j < 16), bit j+16 element j+16's. Spread the 32 bits to bytes with a
- * broadcast + per-lane shift (elements 0..7 / 8..15 come from bit ranges of the low half, so the two 128-bit
- * lanes each take 8 bits, unpacked with a shuffle-and-mask). */
+ * bit j of qh is element j's high bit (j < 16), bit j+16 element j+16's. One half's 16 bits become 16 bytes
+ * in three ops: pshufb copies bit-byte j/8 into byte j, and+cmpeq tests bit j%8 there, and lands it as 0x10. */
 typedef struct __attribute__((packed)) { uint16_t d; uint32_t qh; uint8_t qs[16]; } jam_q5_0_blk;
-static inline __m128i jam_q5_0_highbits_128(uint32_t bits) {   /* 16 bytes: (bits >> j) & 1, then << 4 */
+static inline __m128i jam_q5_0_highbits_128(uint32_t bits) {   /* byte j = ((bits >> j) & 1) << 4, j < 16 */
     const __m128i shuf = _mm_setr_epi8(0,0,0,0,0,0,0,0, 1,1,1,1,1,1,1,1);
     const __m128i mask = _mm_setr_epi8(1,2,4,8,16,32,64,(char)128, 1,2,4,8,16,32,64,(char)128);
     __m128i b = _mm_shuffle_epi8(_mm_set1_epi32((int) bits), shuf);       /* byte j = bits byte j/8 */
