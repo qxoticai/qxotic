@@ -24,9 +24,13 @@ import java.util.function.Consumer;
 /**
  * Mellum 2 chat framing (ChatML with Hermes-style JSON tool calls), token-exact with the GGUF's
  * Jinja chat_template: no bos, per turn {@code <|im_start|>{role}\n{content}<|im_end|>\n} (content
- * verbatim, never trimmed), generation prompt {@code <|im_start|>assistant\n}. The model answers
- * directly - there is no thinking mode - and the template keeps only what follows the last {@code
- * </think>} of an echoed assistant turn.
+ * verbatim, never trimmed), generation prompt {@code <|im_start|>assistant\n}.
+ *
+ * <p>Two checkpoints share the frame. Instruct answers directly: no thinking mode, and only what
+ * follows the last {@code </think>} of an echoed assistant turn is kept. Thinking opens its own
+ * {@code <think>} span, so thinking on adds nothing to the prompt and thinking off pre-closes the
+ * span ({@code <think>\n\n</think>\n\n}); echoed reasoning is kept only on assistant turns after
+ * the last real user query, as the template's {@code last_query_index} walk-back does.
  *
  * <p>With tools the system turn carries the declarations ({@code # Tools ... <tools>} with each
  * tool's {@code tojson}) and the call-format instructions; assistant call turns render their
@@ -52,14 +56,29 @@ final class MellumChatTemplate implements ChatTemplate {
                     + "</tool_call>";
 
     private final Tokenizer tokenizer;
+    private final boolean reasons; // the Thinking checkpoint, whose template has enable_thinking
     private final int imStart; // <|im_start|>
     private final int imEnd; // <|im_end|>
+    private final IntSequence closedThink; // <think>\n\n</think>\n\n, the thinking-off prefix
     private final ReplyLanguage.Spans spans; // the family's derived faces, markers written once
 
-    MellumChatTemplate(Tokenizer tokenizer) {
+    /**
+     * @param reasons whether this is the Thinking checkpoint (its template has enable_thinking)
+     */
+    MellumChatTemplate(Tokenizer tokenizer, boolean reasons) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
+        this.reasons = reasons;
         imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
         imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
+        closedThink =
+                reasons
+                        ? IntSequence.newBuilder()
+                                .add(SpecialTokens.require(tokenizer, "<think>"))
+                                .addAll(tokenizer.encode("\n\n"))
+                                .add(SpecialTokens.require(tokenizer, "</think>"))
+                                .addAll(tokenizer.encode("\n\n"))
+                                .build()
+                        : IntSequence.empty();
         spans =
                 new ReplyLanguage.Spans(
                         "<think>",
@@ -73,7 +92,7 @@ final class MellumChatTemplate implements ChatTemplate {
 
     @Override
     public ThinkingPolicy thinkingPolicy() {
-        return ThinkingPolicy.NONE;
+        return reasons ? ThinkingPolicy.OPTIONAL : ThinkingPolicy.NONE;
     }
 
     @Override
@@ -99,6 +118,7 @@ final class MellumChatTemplate implements ChatTemplate {
             writeTurn(out, "system", text(system));
             out.flush();
         }
+        int lastQuery = lastQuery(msgs);
         for (int i = 0; i < msgs.size(); i++) {
             Message m = msgs.get(i);
             if (m == system) continue; // rendered above; the template skips it in its loop
@@ -109,7 +129,7 @@ final class MellumChatTemplate implements ChatTemplate {
                 out.trusted("\n<tool_response>\n").text(text(m)).trusted("\n</tool_response>");
                 if (closes) out.id(imEnd).text("\n").flush();
             } else if (m.role().equals(Role.ASSISTANT)) {
-                writeAssistant(out, m);
+                writeAssistant(out, m, reasons && i > lastQuery, i == msgs.size() - 1);
                 out.flush();
             } else {
                 writeTurn(out, m.role().name(), text(m));
@@ -117,8 +137,28 @@ final class MellumChatTemplate implements ChatTemplate {
             }
         }
         out.id(imStart).text("assistant\n");
+        IntSequence replyPrefix = conversation.thinking() ? IntSequence.empty() : closedThink;
+        out.verbatim(replyPrefix);
         out.finish();
-        return new ReplyState(IntSequence.empty(), spans.parser());
+        ReplyParser parser = spans.parser();
+        parser.seed(replyPrefix);
+        return new ReplyState(replyPrefix, parser);
+    }
+
+    /**
+     * The template's walk-back: the last user turn that is not a {@code <tool_response>} wrapper,
+     * or the last message when there is none.
+     */
+    private static int lastQuery(List<Message> msgs) {
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            Message m = msgs.get(i);
+            if (!m.role().equals(Role.USER)) continue;
+            String content = text(m);
+            if (content.startsWith("<tool_response>") && content.endsWith("</tool_response>"))
+                continue;
+            return i;
+        }
+        return msgs.size() - 1;
     }
 
     /** {@code <|im_start|>{role}\n{content}<|im_end|>\n} - one contiguous run per turn. */
@@ -127,13 +167,28 @@ final class MellumChatTemplate implements ChatTemplate {
     }
 
     /**
-     * The assistant turn: the text after its last {@code </think>} (leading newlines dropped, as
-     * the template's {@code split('</think>')[-1].lstrip('\n')}), then one envelope per call - a
-     * newline before every call except a first one after empty content.
+     * The assistant turn. Its reasoning (a {@link Content.Reasoning} part, or the {@code <think>}
+     * span inside its text) is split off the way the template does; {@code echoReasoning} turns
+     * (the Thinking checkpoint after the last query) render it as {@code
+     * <think>\n...\n</think>\n\n} when there is any, or when the turn is the prompt's last message.
+     * Then one envelope per call, a newline before every call except a first one after empty
+     * content.
      */
-    private void writeAssistant(PromptWriter out, Message m) {
-        String content = afterThinking(text(m));
-        out.id(imStart).text("assistant\n" + content);
+    private void writeAssistant(PromptWriter out, Message m, boolean echoReasoning, boolean last) {
+        String raw = textWithReasoning(m);
+        int close = raw.lastIndexOf("</think>");
+        String content = stripLeading(close < 0 ? raw : raw.substring(close + "</think>".length()));
+        String reasoning = "";
+        if (close >= 0) {
+            String head = raw.substring(0, raw.indexOf("</think>"));
+            int open = head.lastIndexOf("<think>");
+            reasoning = stripBoth(open < 0 ? head : head.substring(open + "<think>".length()));
+        }
+        out.id(imStart).text("assistant\n");
+        if (echoReasoning && (last || !reasoning.isEmpty())) {
+            out.trusted("<think>\n").text(reasoning).trusted("\n</think>\n\n");
+        }
+        out.text(content);
         boolean first = true;
         for (Content part : m.content()) {
             if (!(part instanceof Content.ToolCall call)) continue;
@@ -151,7 +206,7 @@ final class MellumChatTemplate implements ChatTemplate {
         out.id(imEnd).text("\n");
     }
 
-    /** The turn's text and tool-result parts, concatenated; reasoning is never echoed. */
+    /** The turn's text and tool-result parts, concatenated. */
     private static String text(Message m) {
         StringBuilder text = new StringBuilder();
         for (Content part : m.content()) {
@@ -161,13 +216,31 @@ final class MellumChatTemplate implements ChatTemplate {
         return text.toString();
     }
 
-    /** Python {@code content.split('</think>')[-1].lstrip('\n')}. */
-    private static String afterThinking(String content) {
-        int at = content.lastIndexOf("</think>");
-        String tail = at < 0 ? content : content.substring(at + "</think>".length());
+    /**
+     * As {@link #text}, with reasoning parts wrapped in think markers - the whole-render's view.
+     */
+    private static String textWithReasoning(Message m) {
+        StringBuilder text = new StringBuilder();
+        for (Content part : m.content()) {
+            if (part instanceof Content.Text value) text.append(value.text());
+            else if (part instanceof Content.Reasoning value)
+                text.append("<think>").append(value.text()).append("</think>");
+        }
+        return text.toString();
+    }
+
+    /** Python {@code s.lstrip('\n')}. */
+    private static String stripLeading(String s) {
         int i = 0;
-        while (i < tail.length() && tail.charAt(i) == '\n') i++;
-        return tail.substring(i);
+        while (i < s.length() && s.charAt(i) == '\n') i++;
+        return s.substring(i);
+    }
+
+    /** Python {@code s.strip('\n')}. */
+    private static String stripBoth(String s) {
+        int end = s.length();
+        while (end > 0 && s.charAt(end - 1) == '\n') end--;
+        return stripLeading(s.substring(0, end));
     }
 
     /** The part shapes the template frames; anything else (media) is rejected loudly. */

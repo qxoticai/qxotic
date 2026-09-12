@@ -15,6 +15,8 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Batch embeddings.** A packed embedding group larger than the state's batch capacity is ingested in chunks; earlier builds failed the request.
 - **Grammars with thinking off.** A completed grammar ends the turn cleanly on every family, and Qwen 3.5's thinking-off prefix no longer swallows a raw grammar.
 - **Mellum 2.** JetBrains Mellum 2 (`jinfer-mellum`, architecture `mellum`) is a chat family: 64-expert MoE with sliding-window attention, ChatML with JSON tool calls, and the `mellum2` pre-tokenizer in toknroll.
+  The Instruct checkpoint answers directly; the Thinking checkpoint reasons in `<think>` spans with the usual thinking switch.
+- **Q5_0 weights.** The legacy `Q5_0` quantization loads and runs (the Q4_K_M mixes of Mellum 2 use it for some expert tensors), on the Java kernels like `Q4_1` and `Q5_1`.
 - **Kokoro.** Kokoro 82M joins Inflect as a speech family (`jinfer-kokoro`): the model GGUF plus one voice pack as the `voice` companion, nine languages by voice, and espeak-ng on `PATH` for the phoneme front end, which speaks misaki's dialect - the one the model was trained on.
 - **Speech companions.** The pronunciation lexicon of Inflect models is the `lexicon` companion, attachable on both speech builders and as `spring.ai.jinfer.speech.companions.lexicon`; a Kokoro voice attaches the same way.
 - **Speech at the phoneme level.** `SpeechSynthesisModel.synthesize` takes phoneme ids and `phonemizer()` exposes the model's front end, a `Phonemizer` in `jinfer-core` that is to speech what a tokenizer is to text; `speak(text)` remains the text door.

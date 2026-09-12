@@ -71,7 +71,7 @@ final class MellumChatTemplateTest {
                 assertArrayEquals(
                         expected,
                         encode(
-                                new MellumChatTemplate(tokenizer),
+                                new MellumChatTemplate(tokenizer, false),
                                 new Conversation(messages, List.of(), false),
                                 capacity));
             }
@@ -139,7 +139,8 @@ final class MellumChatTemplateTest {
 
         for (int capacity : new int[] {3, 64, 4096})
             assertArrayEquals(
-                    expected, encode(new MellumChatTemplate(tokenizer), conversation, capacity));
+                    expected,
+                    encode(new MellumChatTemplate(tokenizer, false), conversation, capacity));
     }
 
     @Test
@@ -153,14 +154,14 @@ final class MellumChatTemplateTest {
         assertArrayEquals(
                 expected,
                 encode(
-                        new MellumChatTemplate(tokenizer),
+                        new MellumChatTemplate(tokenizer, false),
                         new Conversation(messages, List.of(weather), false),
                         64));
     }
 
     @Test
     void parserRecognizesTheJsonEnvelopeWire() {
-        MellumChatTemplate template = new MellumChatTemplate(tokenizer);
+        MellumChatTemplate template = new MellumChatTemplate(tokenizer, false);
         assertEquals(ChatTemplate.ThinkingPolicy.NONE, template.thinkingPolicy());
         Message reply =
                 ReplyParser.parse(
@@ -180,7 +181,7 @@ final class MellumChatTemplateTest {
 
     @Test
     void rejectsShapesTheTemplateCannotFrame() {
-        MellumChatTemplate template = new MellumChatTemplate(tokenizer);
+        MellumChatTemplate template = new MellumChatTemplate(tokenizer, false);
         assertThrows(
                 UnsupportedConversation.class,
                 () -> encode(template, new Conversation(List.of()), 32));

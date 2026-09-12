@@ -37,13 +37,14 @@ public final class MellumProvider implements ModelProvider {
         Mellum model = Mellum.loadModel(channel, gguf, arena, tokenizer);
         Tokenizer tok = model.tokenizer();
         int eos = gguf.getValueOrDefault(int.class, "tokenizer.ggml.eos_token_id", -1);
+        String template = gguf.getStringOrDefault("tokenizer.chat_template", "");
         return new LoadedModel<>(
                 model,
                 tok,
-                gguf.getStringOrDefault("tokenizer.chat_template", ""),
+                template,
                 SpecialTokens.stops(tok, eos, "<|im_end|>", "<|endoftext|>"),
                 Models.modelSeed(channel),
-                Optional.of(new MellumChatTemplate(tok)),
+                Optional.of(new MellumChatTemplate(tok, template.contains("enable_thinking"))),
                 SAMPLING_DEFAULTS);
     }
 }
