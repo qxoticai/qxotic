@@ -33,7 +33,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * <p><b>Concurrency:</b> a context is a single serial stream - concurrent calls on one context
  * serialize through a fair (FIFO) lock, so each waits its turn. {@code -Djam.native.serial=false}
  * (or {@code JAM_NATIVE_SERIAL=false}) restores the raw behavior where a contended call surfaces
- * {@link JAM#EBUSY} from the native guard (callers typically fall back to another backend).
+ * {@link JAM#EBUSY} from the native guard (callers typically fall back to another backend). In
+ * either mode {@link #close} waits for the call in flight before the context goes.
  */
 public final class NativeJAM implements JAM, AutoCloseable {
 
@@ -52,13 +53,12 @@ public final class NativeJAM implements JAM, AutoCloseable {
     private static final boolean SERIAL =
             Boolean.parseBoolean(NativeLoader.config("jam.native.serial", "true"));
 
-    // One fair lock per instance. mm holds the write side when SERIAL (callers queue FIFO instead
-    // of bouncing off the native guard with EBUSY) and the read side otherwise (callers overlap,
-    // the guard decides); close() holds the write side and only then clears the context and its
-    // registry slot. So a fan-out callback always resolves the instance that started it (never
-    // null, never a successor that reused the slot with another width), and the destroy waits
-    // for the last call in either mode.
+    // One fair lock per instance: close() and, when SERIAL, mm hold the write side; otherwise mm
+    // holds the read side and the native guard arbitrates. So no call overlaps a close, and a
+    // fan-out callback always resolves the instance that started it - never a cleared slot, never
+    // a successor that reused it with another width.
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
+    private final Lock callLock = SERIAL ? lock.writeLock() : lock.readLock();
 
     private NativeJAM(long ctx, JAM.Parallel parallel) {
         this.ctx = ctx;
@@ -145,8 +145,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
                     "result R", r, rOff, rt, ldr, n, m); // [m×n] token-major: n tokens × m features
         }
         long wa = w.address() + wOff, aa = a.address() + aOff, ra = r.address() + rOff;
-        Lock held = SERIAL ? lock.writeLock() : lock.readLock();
-        held.lock();
+        callLock.lock();
         try {
             long ctx = ctx();
             int status =
@@ -162,7 +161,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
             }
             return status;
         } finally {
-            held.unlock();
+            callLock.unlock();
             Reference.reachabilityFence(w);
             Reference.reachabilityFence(a);
             Reference.reachabilityFence(r);
