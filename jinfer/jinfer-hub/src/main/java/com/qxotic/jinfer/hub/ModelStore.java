@@ -312,9 +312,9 @@ public final class ModelStore {
      * caller who thinks jinfer verified these bytes has been misled.
      *
      * <p>The cache mapping still holds: {@code https://example.org/models/x.gguf} lands at {@code
-     * <root>/example.org/models/x.gguf}, so a path still tells you where it came from. The URL is
-     * used VERBATIM for the request - a query may be a signature - while the cache path is derived
-     * from the path portion alone.
+     * <root>/example.org/models/x.gguf}; a non-default port adds a numeric suffix such as {@code
+     * _8000} to the host directory. The URL is used VERBATIM for the request - a query may be a
+     * signature - while the cache path excludes its query.
      */
     private Path url(String url) {
         URI uri;
@@ -328,7 +328,14 @@ public final class ModelStore {
         require(
                 scheme.equals("https") || scheme.equals("http"),
                 "cannot fetch '" + url + "': only http and https URLs are supported");
-        String ref = repositoryRef(uri);
+        String host = uri.getHost();
+        require(host != null, "the URL must include a host: " + url);
+        int port = uri.getPort();
+        boolean defaultPort =
+                port < 0
+                        || (scheme.equals("http") && port == 80)
+                        || (scheme.equals("https") && port == 443);
+        String ref = defaultPort ? repositoryRef(uri) : null;
         if (ref != null) {
             return resolveRef(ModelRef.parse(ref)); // a repository page pasted from the browser
         }
@@ -337,7 +344,7 @@ public final class ModelStore {
                 !path.isEmpty() && !path.endsWith("/") && !nameOf(path).isEmpty(),
                 "the URL must end in the file name, so the cache has something to call it: " + url);
 
-        Path dest = root.resolve(uri.getHost());
+        Path dest = root.resolve(defaultPort ? host : host + "_" + port);
         for (String segment : path.split("/")) {
             if (!segment.isEmpty()) {
                 require(
@@ -358,10 +365,10 @@ public final class ModelStore {
         tagCacheDirectory(root);
         Fetch.announce(
                 "download "
-                        + uri.getHost()
+                        + host
                         + path
                         + "\n  "
-                        + uri.getHost()
+                        + host
                         + " publishes no checksum - verifying size only");
         try {
             Fetch.download(url, dest, size, null, headers);

@@ -68,7 +68,7 @@ class ModelStoreUrlTest {
             assertTrue(e.getMessage().contains("web page"), e.getMessage());
             assertTrue(e.getMessage().contains("owner/repo"), e.getMessage());
             assertFalse(
-                    Files.exists(root.resolve("127.0.0.1/models/page.gguf")),
+                    Files.exists(cachePath(root, server.url("/models/page.gguf"))),
                     "the page does not stay in the cache");
         }
     }
@@ -81,7 +81,7 @@ class ModelStoreUrlTest {
 
             Path file = store.resolve(url);
 
-            assertEquals(root.resolve("127.0.0.1/models/x.gguf"), file);
+            assertEquals(cachePath(root, url), file);
             assertEquals("weights", Files.readString(file));
             int hits = server.hits("/models/x.gguf");
             assertEquals(file, store.resolve(url), "the second resolve is a cache hit");
@@ -92,13 +92,49 @@ class ModelStoreUrlTest {
     @Test
     void theQueryReachesTheServerButNotTheCachePath(@TempDir Path root) throws IOException {
         try (FileServer server = FileServer.start().serve("/models/signed.gguf", "weights")) {
-            Path file =
-                    ModelStore.of(root)
-                            .resolve(server.url("/models/signed.gguf") + "?sig=abc&expires=1");
+            String url = server.url("/models/signed.gguf") + "?sig=abc&expires=1";
+            Path file = ModelStore.of(root).resolve(url);
 
             assertEquals("sig=abc&expires=1", server.lastQuery("/models/signed.gguf"));
-            assertEquals(root.resolve("127.0.0.1/models/signed.gguf"), file);
+            assertEquals(cachePath(root, url), file);
         }
+    }
+
+    @Test
+    void differentPortsHaveDifferentCacheEntries(@TempDir Path root) throws IOException {
+        try (FileServer first = FileServer.start().serve("/models/x.gguf", "first");
+                FileServer second = FileServer.start().serve("/models/x.gguf", "second")) {
+            ModelStore store = ModelStore.of(root);
+
+            Path firstFile = store.resolve(first.url("/models/x.gguf"));
+            Path secondFile = store.resolve(second.url("/models/x.gguf"));
+
+            assertFalse(firstFile.equals(secondFile));
+            assertEquals("first", Files.readString(firstFile));
+            assertEquals("second", Files.readString(secondFile));
+            assertTrue(second.hits("/models/x.gguf") > 0, "the second origin was contacted");
+        }
+    }
+
+    @Test
+    void aUrlWithoutAHostIsRejectedExplicitly(@TempDir Path root) {
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ModelStore.of(root).resolve("http:///models/x.gguf"));
+
+        assertTrue(failure.getMessage().contains("include a host"), failure.getMessage());
+    }
+
+    @Test
+    void defaultPortsPreserveTheHostOnlyCachePath(@TempDir Path root) throws IOException {
+        Path cached = root.resolve("example.org/models/x.gguf");
+        Files.createDirectories(cached.getParent());
+        Files.writeString(cached, "weights");
+        ModelStore store = ModelStore.of(root);
+
+        assertEquals(cached, store.resolve("http://example.org:80/models/x.gguf"));
+        assertEquals(cached, store.resolve("https://example.org:443/models/x.gguf"));
     }
 
     @Test
@@ -125,5 +161,11 @@ class ModelStoreUrlTest {
             assertTrue(failure.getMessage().contains("escape the cache"), failure.getMessage());
             assertEquals(0, server.hits("/evil.gguf"), "the request never left the machine");
         }
+    }
+
+    private static Path cachePath(Path root, String url) {
+        URI uri = URI.create(url);
+        return root.resolve(uri.getHost() + "_" + uri.getPort())
+                .resolve(uri.getPath().substring(1));
     }
 }
