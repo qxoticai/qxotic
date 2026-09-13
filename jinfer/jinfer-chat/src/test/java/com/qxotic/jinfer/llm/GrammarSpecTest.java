@@ -787,6 +787,20 @@ public final class GrammarSpecTest {
         rej("optchain", optChain, "aa");
     }
 
+    @Test
+    void testGbnfMissingRuleBody() {
+        for (String gbnf :
+                List.of("root ::=", "root ::= # comment", "helper ::=\nroot ::= \"x\"")) {
+            IllegalArgumentException error =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            IllegalArgumentException.class, () -> g(gbnf));
+            check("missing rule body names the remedy", error.getMessage().contains("use \"\""));
+        }
+
+        Grammar.Spec continued = g("root ::=\n  \"x\"");
+        acc("continued rule body", continued, "x");
+    }
+
     // ========================================================================
     // matcher invariants
     // ========================================================================

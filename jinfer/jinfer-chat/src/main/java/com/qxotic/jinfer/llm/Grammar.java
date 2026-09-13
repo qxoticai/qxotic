@@ -41,7 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * declares no {@code root} is refused. A line without {@code ::=} continues the previous rule
  * (alternatives may sit on their own lines); {@code #} starts a comment to end of line (except
  * inside a literal or class). Rule names are Java identifiers plus hyphens ({@code kebab-case}
- * works). Bodies compose:
+ * works). A missing body is refused; use {@code ""} to explicitly match the empty string. Bodies
+ * compose:
  *
  * <ul>
  *   <li>{@code "literal"} - its UTF-8 bytes; escapes {@code \" \\ \n \r \t}, and {@code \xNN} for
@@ -1120,6 +1121,7 @@ public final class Grammar {
      * {@code choice(v, "yes", "no")} forces the model to answer yes or no.
      */
     static Spec choice(Vocab v, String... options) {
+        if (options.length == 0) return of("root ::= \"\"", v);
         StringBuilder sb = new StringBuilder("root ::= ");
         for (int i = 0; i < options.length; i++) {
             if (i > 0) sb.append(" | ");
@@ -1620,6 +1622,10 @@ public final class Grammar {
             String name = line.substring(0, eq).trim();
             int id = nameToId.get(name);
             String body = line.substring(eq + 3).trim();
+            if (body.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "missing rule body for '" + name + "'; use \"\" to match the empty string");
+            }
             rules.set(id, new Rule(id, parseBody(body, nameToId)));
         }
         for (int i = 0; i < rules.size(); i++)
