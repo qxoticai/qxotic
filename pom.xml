@@ -361,6 +361,14 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-jar-plugin</artifactId>
           <version>${maven-jar-plugin.version}</version>
+          <configuration>
+            <!-- Shade replaces the main jar in place with the fat jar. Without forcing, the next
+                 non-clean package finds that fat jar newer than target/classes, skips rebuilding
+                 it, and shade re-shades its OWN previous output: stale classes from it win over
+                 freshly installed dependencies (hit on jinfer-cli, jinfer-bench and jinfer-tts).
+                 Jars stay reproducible - project.build.outputTimestamp pins the entries. -->
+            <forceCreation>true</forceCreation>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
