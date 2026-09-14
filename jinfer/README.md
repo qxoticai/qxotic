@@ -26,22 +26,22 @@ AI on the JVM, just a Maven dependency away.
 
 | Family | Capabilities | Artifact |
 |--------|--------------|----------|
-| Google Gemma 4 | chat, vision, audio, MTP | `jinfer-gemma4` |
-| Liquid AI LFM 2.5 | chat, vision, embeddings, reranking | `jinfer-lfm2` |
-| OpenAI gpt-oss | chat | `jinfer-gptoss` |
-| Poolside Laguna XS 2.1 | chat | `jinfer-laguna` |
-| JetBrains Mellum 2 | chat | `jinfer-mellum` |
-| Meta Llama 3+ | chat | `jinfer-llama` |
-| IBM Granite 4.1+ | chat | `jinfer-llama` |
-| Mistral AI Ministral 3 | chat | `jinfer-llama` |
-| Hugging Face SmolLM3 | chat | `jinfer-llama` |
-| inclusionAI Ling 3 | chat | `jinfer-bailingmoe3` |
-| OpenBMB MiniCPM5 | chat | `jinfer-llama` |
-| Alibaba Qwen 3 | embeddings, reranking | `jinfer-qwen3` |
-| Alibaba Qwen 3.5+ | chat, vision, MTP | `jinfer-qwen35` |
-| NVIDIA Nemotron-H | chat | `jinfer-nemotronh` |
-| Owen Song's Inflect | speech synthesis | `jinfer-inflect2` |
-| Kokoro | speech synthesis | `jinfer-kokoro` |
+| [Google Gemma 4](https://deepmind.google/models/gemma/gemma-4) | chat, vision, audio, MTP | `jinfer-gemma4` |
+| [Liquid AI LFM 2.5](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) | chat, vision, embeddings, reranking | `jinfer-lfm2` |
+| [OpenAI gpt-oss](https://openai.com/index/introducing-gpt-oss/) | chat | `jinfer-gptoss` |
+| [Poolside Laguna XS 2.1](https://poolside.ai/blog/introducing-laguna-xs-2-1) | chat | `jinfer-laguna` |
+| [JetBrains Mellum 2](https://blog.jetbrains.com/ai/2026/06/mellum2-goes-open-source-a-fast-model-for-ai-workflows/) | chat | `jinfer-mellum` |
+| [Meta Llama 3+](https://github.com/meta-llama/llama-models) | chat | `jinfer-llama` |
+| [IBM Granite 4.1+](https://www.ibm.com/granite) | chat | `jinfer-llama` |
+| [Mistral AI Ministral 3](https://mistral.ai/news/mistral-3) | chat | `jinfer-llama` |
+| [Hugging Face SmolLM3](https://huggingface.co/blog/smollm3) | chat | `jinfer-llama` |
+| [inclusionAI Ling 3](https://github.com/inclusionAI/Ling) | chat | `jinfer-bailingmoe3` |
+| [OpenBMB MiniCPM5](https://github.com/OpenBMB/MiniCPM) | chat | `jinfer-llama` |
+| [Alibaba Qwen 3](https://qwen.ai/blog?id=qwen3) | embeddings, reranking | `jinfer-qwen3` |
+| [Alibaba Qwen 3.5+](https://qwen.ai/blog?id=qwen3.5) | chat, vision, MTP | `jinfer-qwen35` |
+| [NVIDIA Nemotron-H](https://arxiv.org/abs/2504.03624) | chat | `jinfer-nemotronh` |
+| [Owen Song's Inflect](https://github.com/owenawsong/Inflect) | speech synthesis | `jinfer-inflect2` |
+| [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) | speech synthesis | `jinfer-kokoro` |
 
 Supported quantizations: `Q4_0`, `Q5_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
 Jinfer recommends `Q8_0` for its balance of quality and performance.
