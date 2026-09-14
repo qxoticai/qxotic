@@ -269,12 +269,29 @@ final class Fetch {
         else LOG.log(System.Logger.Level.INFO, message);
     }
 
+    /** Seconds of zero movement before a download attempt is abandoned and retried. */
+    private static long stallSeconds() {
+        return Long.getLong("jinfer.downloadStallSeconds", 60);
+    }
+
     /**
-     * Notices a stream whose bytes stopped MOVING and closes it. Downloads carry no request timeout
+     * How long a download request waits for response HEADERS. No bytes move before headers, so it
+     * is the stall limit: a server that accepts a request and never answers (seen from a CDN under
+     * a burst of 429s) would otherwise park {@code HttpClient.send} forever, before any stream
+     * exists for {@link Stall} to watch. The JDK cancels a request timeout once headers arrive, so
+     * this never bounds a slow body - that stays the stall guard's job.
+     */
+    private static Duration headerTimeout() {
+        return Duration.ofSeconds(stallSeconds());
+    }
+
+    /**
+     * Notices a stream whose bytes stopped MOVING and closes it. Download bodies carry no timeout
      * on purpose - a fixed timeout kills legitimately slow links - but a peer that vanishes without
      * a RST would otherwise hold a read parked until the kernel's TCP timeout, which is minutes.
      * Zero bytes for {@code jinfer.downloadStallSeconds} (default 60) closes the stream; that
-     * surfaces as an IOException to the retry machinery, and a retry RESUMES.
+     * surfaces as an IOException to the retry machinery, and a retry RESUMES. The wait for headers
+     * is bounded by {@link #headerTimeout} instead.
      */
     private static final class Stall {
         private static final Set<Stall> WATCHED = ConcurrentHashMap.newKeySet();
@@ -307,7 +324,7 @@ final class Fetch {
 
         private static void scan() {
             while (true) {
-                long limitNanos = Long.getLong("jinfer.downloadStallSeconds", 60) * 1_000_000_000L;
+                long limitNanos = stallSeconds() * 1_000_000_000L;
                 try {
                     Thread.sleep(Math.max(500, limitNanos / 4_000_000L));
                 } catch (InterruptedException e) {
@@ -701,7 +718,7 @@ final class Fetch {
             long at = start;
             Stall stall = null;
             try {
-                HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
+                HttpResponse<InputStream> response = send(URI.create(url), ranged, headerTimeout());
                 try (InputStream in = body(response, url, true)) {
                     if (response.statusCode() == 200) {
                         throw new SingleStreamRequired("server ignored Range: " + url);
@@ -943,7 +960,7 @@ final class Fetch {
                 ranged.put("If-Range", validator.value);
             }
         }
-        HttpResponse<InputStream> response = send(URI.create(url), ranged, null);
+        HttpResponse<InputStream> response = send(URI.create(url), ranged, headerTimeout());
         Stall stall = null;
         try (InputStream in = body(response, url, true)) {
             if (have > 0 && response.statusCode() == 200) {

@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.hub;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,9 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,6 +35,10 @@ class StallGuardTest {
     private static HttpServer server;
     private static ExecutorService executor;
     private static CountDownLatch stop;
+    private static final byte[] PAYLOAD = new byte[(int) Fetch.PARALLEL_FLOOR + 1000];
+
+    /** Range starts whose FIRST request has already been swallowed without headers. */
+    private static final Set<String> SWALLOWED = ConcurrentHashMap.newKeySet();
 
     @BeforeAll
     static void start() throws IOException {
@@ -52,6 +60,44 @@ class StallGuardTest {
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                         }
+                    }
+                });
+        new Random(7).nextBytes(PAYLOAD);
+        // accepts each distinct request once and never answers it - no status line, no headers -
+        // then serves the retry normally. Seen from a CDN under a burst of 429s.
+        server.createContext(
+                "/silent-headers/",
+                exchange -> {
+                    String name = exchange.getRequestURI().getPath();
+                    int size = name.endsWith("big.bin") ? PAYLOAD.length : 200_000;
+                    String range = exchange.getRequestHeaders().getFirst("Range");
+                    long start = 0, end = size - 1;
+                    if (range != null) {
+                        String[] bounds = range.substring("bytes=".length()).split("-", -1);
+                        start = Long.parseLong(bounds[0]);
+                        if (!bounds[1].isEmpty()) end = Math.min(end, Long.parseLong(bounds[1]));
+                    }
+                    boolean probe = start == end; // sizeOf-style 0-0 probes answer at once
+                    if (!probe && SWALLOWED.add(name + "@" + start)) {
+                        try {
+                            stop.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return;
+                    }
+                    exchange.getResponseHeaders().add("ETag", "\"silent-1\"");
+                    exchange.getResponseHeaders().add("Accept-Ranges", "bytes");
+                    long length = end - start + 1;
+                    if (range != null) {
+                        exchange.getResponseHeaders()
+                                .add("Content-Range", "bytes " + start + "-" + end + "/" + size);
+                        exchange.sendResponseHeaders(206, length);
+                    } else {
+                        exchange.sendResponseHeaders(200, length);
+                    }
+                    try (OutputStream out = exchange.getResponseBody()) {
+                        out.write(PAYLOAD, (int) start, (int) length);
                     }
                 });
         server.start();
@@ -85,6 +131,33 @@ class StallGuardTest {
             while (helperAlive("jinfer-stall-guard") && System.nanoTime() < deadline)
                 Thread.sleep(10);
             assertTrue(!helperAlive("jinfer-stall-guard"), "the stall guard outlived its work");
+        } finally {
+            if (previous == null) System.clearProperty("jinfer.downloadStallSeconds");
+            else System.setProperty("jinfer.downloadStallSeconds", previous);
+        }
+    }
+
+    @Test
+    void aServerThatNeverSendsHeadersIsRetriedNotAwaitedForever(@TempDir Path dir)
+            throws IOException {
+        String previous = System.setProperty("jinfer.downloadStallSeconds", "1");
+        try {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/silent-headers/";
+            // one stream (below the parallel floor) and chunked (at it): both used to call
+            // HttpClient.send with no timeout, so a swallowed request parked the pull for good
+            for (String name : new String[] {"small.bin", "big.bin"}) {
+                int size = name.equals("big.bin") ? PAYLOAD.length : 200_000;
+                Path dest = dir.resolve(name);
+                long t0 = System.nanoTime();
+                Fetch.download(base + name, dest, size, null, Map.of());
+                double seconds = (System.nanoTime() - t0) / 1e9;
+                assertTrue(
+                        seconds < 30,
+                        name + " took " + seconds + "s - the header wait is unbounded");
+                byte[] expected = java.util.Arrays.copyOf(PAYLOAD, size);
+                assertArrayEquals(
+                        expected, Files.readAllBytes(dest), name + " resumed wrong bytes");
+            }
         } finally {
             if (previous == null) System.clearProperty("jinfer.downloadStallSeconds");
             else System.setProperty("jinfer.downloadStallSeconds", previous);
