@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
@@ -1016,8 +1017,62 @@ final class Fetch {
 
     // ---- HTTP ----
 
-    /** Sends a GET, following redirects by hand and dropping credentials off-origin. */
+    /**
+     * Sends a GET, waiting out a server rate limit (HTTP 429, or 503 with a stated wait) instead of
+     * failing on it - see {@link RateLimit}.
+     */
     private static HttpResponse<InputStream> send(
+            URI uri, Map<String, String> headers, Duration timeout) throws IOException {
+        long waitedNanos = 0;
+        for (int backoff = 0; ; backoff++) {
+            HttpResponse<InputStream> response = sendOnce(uri, headers, timeout);
+            int status = response.statusCode();
+            Duration asked =
+                    status == 429 || status == 503
+                            ? RateLimit.requested(response.headers(), System.currentTimeMillis())
+                            : null;
+            if (status != 429 && asked == null) {
+                return response; // a 503 without a stated wait is an outage, not a rate limit
+            }
+            // A rate limit is the server saying WHEN, not a failure: wait what it asked (a doubling
+            // guess when it named nothing), then ask again - within a budget, past which the 429
+            // is reported like any other status.
+            Duration wait =
+                    asked != null
+                            ? asked
+                            : Duration.ofSeconds(Math.min(60, 5L << Math.min(backoff, 4)));
+            wait =
+                    (wait.compareTo(RateLimit.MAX_WAIT) > 0 ? RateLimit.MAX_WAIT : wait)
+                            .plusMillis(
+                                    ThreadLocalRandom.current()
+                                            .nextLong(250, 1_250)); // spread the workers
+            if (Duration.ofNanos(waitedNanos).plus(wait).compareTo(RateLimit.BUDGET) > 0) {
+                return response;
+            }
+            response.body().close();
+            String host = response.uri().getHost();
+            if (RateLimit.hold(host, wait)) {
+                announce(
+                        host
+                                + " is rate limiting this address (HTTP "
+                                + status
+                                + ") - waiting "
+                                + Math.max(1, wait.toSeconds())
+                                + " s"
+                                + (asked != null ? ", as it asked" : "")
+                                + ", then resuming");
+            }
+            try {
+                waitedNanos += RateLimit.awaitClear(host);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted while waiting out a rate limit on " + uri, e);
+            }
+        }
+    }
+
+    /** One GET, following redirects by hand and dropping credentials off-origin. */
+    private static HttpResponse<InputStream> sendOnce(
             URI uri, Map<String, String> headers, Duration timeout) throws IOException {
         URI current = uri;
         Map<String, String> currentHeaders = headers;
@@ -1029,6 +1084,8 @@ final class Fetch {
             }
             HttpResponse<InputStream> response;
             try {
+                RateLimit.awaitClear(
+                        current.getHost()); // a held host is asked nothing until it clears
                 response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
