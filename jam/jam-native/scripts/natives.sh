@@ -76,8 +76,8 @@ write_stamp() {  # <target>
         "$(sha256 "$NATIVE/$1/$(libfile "$1")")" > "$NATIVE/$1/$STAMP"
 }
 
-# Copy the built library into the staging tree ourselves. CMake's POST_BUILD staging only runs when
-# the target relinks, so an up-to-date build after `rm -rf dist/native` would stage nothing.
+# Copy the built library into the release tree ourselves: CMake's jam_stage target stages into the
+# dev tree (dist/native) only, and the release set must come from exactly the build just made.
 stage() {  # <target> <built file>
     mkdir -p "$NATIVE/$1"
     cp -L "$2" "$NATIVE/$1/$(libfile "$1")"

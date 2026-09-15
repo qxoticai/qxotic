@@ -103,6 +103,7 @@
                 <argument>${project.basedir}/build</argument>
                 <argument>--target</argument>
                 <argument>jam</argument>
+                <argument>jam_stage</argument>
                 <argument>jam_test</argument>
               </arguments>
             </configuration>

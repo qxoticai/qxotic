@@ -208,10 +208,16 @@ else()
     set(JAM_LIBFILE "libjam.so")
 endif()
 set(JAM_STAGE "${CMAKE_SOURCE_DIR}/dist/native/com/qxotic/jam/native/${JAM_OS}-${JAM_ARCH}")
-add_custom_command(TARGET jam POST_BUILD
+# A target that runs on EVERY build, not a POST_BUILD step: POST_BUILD fires only when jam relinks, so
+# an up-to-date build never replaced a library another build left in the stage (scripts/natives.sh's
+# release legs stage here too, as does any older checkout) - and mvn test then silently loaded that
+# stale library (seen: a pre-Q5_0 libjam failing JamBackendParityTest with JAM_EUNSUPPORTED on tag 6).
+# copy_if_different keeps an unchanged stage untouched. Maven builds this target by name (pom.xml).
+add_custom_target(jam_stage ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "${JAM_STAGE}"
-    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:jam>" "${JAM_STAGE}/${JAM_LIBFILE}"
-    COMMENT "jam: staged ${JAM_LIBFILE} for jam.jar (${JAM_OS}-${JAM_ARCH})")
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:jam>" "${JAM_STAGE}/${JAM_LIBFILE}"
+    DEPENDS jam
+    COMMENT "jam: staging ${JAM_LIBFILE} for jam.jar (${JAM_OS}-${JAM_ARCH})")
 
 # ---- tests + benchmark ----
 option(JAM_TESTS "Build tests and benchmarks" ON)
