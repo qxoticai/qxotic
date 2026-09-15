@@ -135,3 +135,9 @@ mvn -pl jam/jam-vector -am package -DskipTests   # from the repository root
 
 Toolchains, the cmake-only build, the multi-platform release set and the test suites are in
 [BUILDING.md](BUILDING.md).
+
+> [!IMPORTANT]
+> The native jam (libjam) is where most of my time was spent and is the most optimized backend.  
+> Interesting fact: the `Q8_0` `mm` implementation surpasses the max. theoretical FLOPS of my AMD 9950x3D CPU; this is both impossible and really not that hard.  
+> The vector jam, uses Java's Vector API and remains competitive with native kernels for pure-Java deployments.  
+> For this particular use-case: high-performance, non-trivial kernels using the Vector API, the Graal compiler turned to be **STELLAR**, way beyond my already-high expectations.
