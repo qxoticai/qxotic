@@ -76,7 +76,19 @@
                   <mainClass>org.openjdk.jmh.Main</mainClass>
                 </transformer>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                <!-- This jar bundles THIRD-PARTY jars (Jackson, JMH, Commons Math), so their
+                     LICENSE and NOTICE files are appended verbatim - never one picked. Not the
+                     Apache NOTICE transformer jinfer's jars use: it rewrites every "developed at"
+                     line to one organization, which would misattribute Commons Math. -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/LICENSE</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/NOTICE</resource>
+                </transformer>
               </transformers>
+              <!-- A shaded jar is one classpath jar: the JPMS descriptors of the modules it swallows
+                   would declare modules that no longer exist, and the manifest is regenerated. -->
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
@@ -84,6 +96,9 @@
                     <exclude>META-INF/*.SF</exclude>
                     <exclude>META-INF/*.DSA</exclude>
                     <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
                   </excludes>
                 </filter>
               </filters>
