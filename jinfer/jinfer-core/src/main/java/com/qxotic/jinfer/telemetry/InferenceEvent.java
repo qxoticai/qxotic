@@ -10,9 +10,9 @@ import jdk.jfr.Threshold;
 import jdk.jfr.Timespan;
 
 /**
- * One model call - chat, embedding, rerank or speech. Emitted by jinfer; consume it through JFR
- * ({@code jfr print --events jinfer.Inference}, JMC, or a {@code RecordingStream}) rather than
- * constructing it.
+ * One model call - chat, embedding, rerank, transcription or speech. Emitted by jinfer; consume it
+ * through JFR ({@code jfr print --events jinfer.Inference}, JMC, or a {@code RecordingStream})
+ * rather than constructing it.
  *
  * <p>The field vocabulary is OpenTelemetry's {@code gen_ai.*}, so an exporter is a rename table:
  *
@@ -44,7 +44,7 @@ import jdk.jfr.Timespan;
 @Name("jinfer.Inference")
 @Label("Inference")
 @Category({"jinfer", "Inference"})
-@Description("One model call: chat, embedding, rerank or speech.")
+@Description("One model call: chat, embedding, rerank, transcription or speech.")
 @StackTrace(false)
 @Threshold("0 ms")
 public final class InferenceEvent extends Event {
@@ -57,6 +57,9 @@ public final class InferenceEvent extends Event {
 
     /** No OpenTelemetry value fits a cross-encoder score, so this is jinfer's own. */
     public static final String RERANK = "rerank";
+
+    /** Speech-to-text: also jinfer's own - OpenTelemetry names no transcription operation. */
+    public static final String TRANSCRIPTION = "transcription";
 
     /** Speech is {@code generate_content} with {@link #SPEECH} output, not its own operation. */
     public static final String GENERATE_CONTENT = "generate_content";
