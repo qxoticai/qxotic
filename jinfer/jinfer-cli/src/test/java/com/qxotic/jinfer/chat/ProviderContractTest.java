@@ -23,7 +23,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 class ProviderContractTest {
 
     private static final Set<String> KINDS =
-            Set.of("loadLanguage", "loadEmbedder", "loadReranker", "loadSpeech");
+            Set.of(
+                    "loadLanguage",
+                    "loadEmbedder",
+                    "loadReranker",
+                    "loadSpeech",
+                    "loadTranscription");
 
     static Stream<ModelProvider> providers() {
         return ServiceLoader.load(ModelProvider.class).stream().map(ServiceLoader.Provider::get);
