@@ -65,7 +65,8 @@ public record Options(
         Set<String> allowedOrigins,
         boolean noGrammar,
         ServerConfig.Limits limits,
-        Integer threads) {
+        Integer threads,
+        Path transcribeAudio) {
 
     /** The default bind port for {@code --server} (overridable with {@code --port}). */
     public static final int DEFAULT_PORT = 54154;
@@ -79,9 +80,13 @@ public record Options(
         limits = limits == null ? ServerConfig.Limits.DEFAULTS : limits;
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
-                server || interactive || prompt != null,
+                server || interactive || prompt != null || transcribeAudio != null,
                 "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is"
                         + " the sky blue?\"");
+        require(
+                transcribeAudio == null || (!server && !interactive && prompt == null),
+                "Invalid argument: --transcribe is its own mode; it cannot combine with --chat,"
+                        + " --server or --prompt");
         require(
                 temperature == null || 0 <= temperature,
                 "Invalid argument: --temp must be non-negative");
@@ -199,6 +204,7 @@ public record Options(
                 Set.of("*"),
                 false,
                 ServerConfig.Limits.DEFAULTS,
+                null,
                 null);
     }
 
@@ -353,6 +359,7 @@ public record Options(
                     "--min-p",
                     "--model",
                     "-m",
+                    "--transcribe",
                     "--mmproj",
                     "--with",
                     "--host",
@@ -399,6 +406,7 @@ public record Options(
         Integer contextCapacity = null; // the engine's bounded default
         boolean interactive = false;
         boolean server = false;
+        Path transcribeAudio = null;
         String host = "127.0.0.1";
         int port = DEFAULT_PORT;
         String apiKey = null;
@@ -460,6 +468,7 @@ public record Options(
                         case "--top-k" -> topk = parseInt(optionName, nextArg);
                         case "--min-p" -> minp = parseFloat(optionName, nextArg);
                         case "--model", "-m" -> modelRef = nextArg;
+                        case "--transcribe" -> transcribeAudio = Path.of(nextArg);
                         case "--mmproj" -> companionRefs.put("media", nextArg);
                         case "--with" -> {
                             int eq = nextArg.indexOf('=');
@@ -629,7 +638,8 @@ public record Options(
                         writeTimeout,
                         requestTimeout,
                         defaultLimits.shutdownTimeout()),
-                threads);
+                threads,
+                transcribeAudio);
     }
 
     /**
@@ -693,6 +703,10 @@ public record Options(
         out.println("  --instruct                    answer --prompt once and exit");
         out.println("  --interactive, --chat, -i     chat in the terminal");
         out.println("  --server                      serve an OpenAI-compatible HTTP API");
+        out.println(
+                "  --transcribe <audio|->        speech-to-text: transcript of an audio file, or"
+                        + " '-' to stream raw 16 kHz mono s16le PCM from stdin with live"
+                        + " partials on stderr (needs a transcription model, e.g. Parakeet)");
         out.println();
         out.println("Prompt:");
         out.println("  --prompt, -p <string>         input prompt");

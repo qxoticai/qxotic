@@ -1,0 +1,11 @@
+{
+  "comment": "Transcribe asks libc isatty(2) whether stderr is a terminal for the streaming HUD.",
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": ["jint"]
+      }
+    ]
+  }
+}
