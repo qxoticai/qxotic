@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.models.kokoro;
+package com.qxotic.jinfer;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
@@ -6,10 +6,15 @@ import com.qxotic.jota.memory.MemoryAllocator;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
-/** State-owned scratch that grows to the largest synthesis seen, then reuses its buffers. */
-final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
+/**
+ * State-owned scratch that grows to the largest request seen, then reuses its buffers: a model
+ * state holds one and {@link #rewind}s it per call, so steady-state inference allocates nothing.
+ * Buffers are handed out by allocation order, so a call must allocate in the same order each time
+ * to reuse them, and they come back holding the previous call's data - never zeroed.
+ */
+public final class Workspace implements MemoryAllocator<MemorySegment> {
 
-    interface Scope extends AutoCloseable {
+    public interface Scope extends AutoCloseable {
         @Override
         void close();
     }
@@ -28,12 +33,12 @@ final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
     private final StackScope[] scopes = new StackScope[16];
     private int top, floatTop, intTop, matrixTop, depth, backingAllocations;
 
-    KokoroWorkspace(MemoryAllocator<MemorySegment> arena) {
+    public Workspace(MemoryAllocator<MemorySegment> arena) {
         this.arena = arena;
         for (int i = 0; i < scopes.length; i++) scopes[i] = new StackScope();
     }
 
-    void rewind() {
+    public void rewind() {
         top = 0;
         floatTop = 0;
         intTop = 0;
@@ -63,7 +68,7 @@ final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
         return scope;
     }
 
-    float[] floats(int size) {
+    public float[] floats(int size) {
         if (floatTop == floatBuffers.length)
             floatBuffers = Arrays.copyOf(floatBuffers, floatBuffers.length * 2);
         float[] buffer = floatBuffers[floatTop];
@@ -73,7 +78,7 @@ final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
         return buffer;
     }
 
-    int[] ints(int size) {
+    public int[] ints(int size) {
         if (intTop == intBuffers.length)
             intBuffers = Arrays.copyOf(intBuffers, intBuffers.length * 2);
         int[] buffer = intBuffers[intTop];
@@ -82,7 +87,7 @@ final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
         return buffer;
     }
 
-    float[][] matrix(int rows, int columns) {
+    public float[][] matrix(int rows, int columns) {
         if (matrixTop == matrices.length) matrices = Arrays.copyOf(matrices, matrices.length * 2);
         float[][] matrix = matrices[matrixTop];
         if (matrix == null || matrix.length != rows || (rows != 0 && matrix[0].length != columns)) {
@@ -92,26 +97,23 @@ final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
         return matrix;
     }
 
-    static float[] takeFloats(MemoryAllocator<MemorySegment> allocator, int size) {
-        return allocator instanceof KokoroWorkspace workspace
-                ? workspace.floats(size)
-                : new float[size];
+    public static float[] takeFloats(MemoryAllocator<MemorySegment> allocator, int size) {
+        return allocator instanceof Workspace workspace ? workspace.floats(size) : new float[size];
     }
 
-    static int[] takeInts(MemoryAllocator<MemorySegment> allocator, int size) {
-        return allocator instanceof KokoroWorkspace workspace
-                ? workspace.ints(size)
-                : new int[size];
+    public static int[] takeInts(MemoryAllocator<MemorySegment> allocator, int size) {
+        return allocator instanceof Workspace workspace ? workspace.ints(size) : new int[size];
     }
 
-    static float[][] takeMatrix(MemoryAllocator<MemorySegment> allocator, int rows, int columns) {
-        return allocator instanceof KokoroWorkspace workspace
+    public static float[][] takeMatrix(
+            MemoryAllocator<MemorySegment> allocator, int rows, int columns) {
+        return allocator instanceof Workspace workspace
                 ? workspace.matrix(rows, columns)
                 : new float[rows][columns];
     }
 
-    static Scope scope(MemoryAllocator<MemorySegment> allocator) {
-        return allocator instanceof KokoroWorkspace workspace ? workspace.scope() : NO_SCOPE;
+    public static Scope scope(MemoryAllocator<MemorySegment> allocator) {
+        return allocator instanceof Workspace workspace ? workspace.scope() : NO_SCOPE;
     }
 
     @Override
@@ -130,7 +132,7 @@ final class KokoroWorkspace implements MemoryAllocator<MemorySegment> {
         return buffer;
     }
 
-    int backingAllocations() {
+    public int backingAllocations() {
         return backingAllocations;
     }
 

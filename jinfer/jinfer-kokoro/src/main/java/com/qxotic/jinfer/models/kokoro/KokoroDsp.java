@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.kokoro;
 
 import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jota.memory.MemoryAllocator;
 import java.lang.foreign.MemorySegment;
 import java.util.Random;
@@ -50,7 +51,7 @@ final class KokoroDsp {
         // samples index zero. Keep consuming them so seeded Gaussian noise remains unchanged.
         for (int harmonic = 1; harmonic < HARMONICS; harmonic++) random.nextFloat();
 
-        float[][] phaseLow = KokoroWorkspace.takeMatrix(scratch, HARMONICS, f0.length);
+        float[][] phaseLow = Workspace.takeMatrix(scratch, HARMONICS, f0.length);
         for (int harmonic = 0; harmonic < HARMONICS; harmonic++) {
             float sum = 0;
             for (int t = 0; t < f0.length; t++) {
@@ -62,11 +63,10 @@ final class KokoroDsp {
 
         // The noise is one seeded stream, nine draws per sample: drawn first, in order, so the
         // arithmetic that follows can run over the samples in parallel.
-        float[] noise =
-                KokoroWorkspace.takeFloats(scratch, Math.multiplyExact(highLength, HARMONICS));
+        float[] noise = Workspace.takeFloats(scratch, Math.multiplyExact(highLength, HARMONICS));
         for (int i = 0; i < noise.length; i++) noise[i] = (float) random.nextGaussian();
 
-        float[] source = KokoroWorkspace.takeFloats(scratch, highLength);
+        float[] source = Workspace.takeFloats(scratch, highLength);
         Parallel.forLoop(
                 highLength,
                 t -> {
@@ -99,7 +99,7 @@ final class KokoroDsp {
 
         // Each frame is one job into its own row; the overlap-add then walks the output samples,
         // each summing its (at most four) frames in frame order, so the floats come out the same.
-        float[] values = KokoroWorkspace.takeFloats(scratch, Math.multiplyExact(frames, FFT_SIZE));
+        float[] values = Workspace.takeFloats(scratch, Math.multiplyExact(frames, FFT_SIZE));
         Parallel.forLoop(
                 frames,
                 frame -> {
@@ -145,7 +145,7 @@ final class KokoroDsp {
 
     private static Spectrum stft(float[] source, MemoryAllocator<MemorySegment> scratch) {
         int pad = FFT_SIZE / 2;
-        float[] padded = KokoroWorkspace.takeFloats(scratch, source.length + 2 * pad);
+        float[] padded = Workspace.takeFloats(scratch, source.length + 2 * pad);
         System.arraycopy(source, 0, padded, pad, source.length);
         for (int i = 0; i < pad; i++) {
             padded[pad - 1 - i] = source[i + 1];
@@ -153,8 +153,8 @@ final class KokoroDsp {
         }
 
         int frames = source.length / HOP_SIZE + 1;
-        float[][] magnitude = KokoroWorkspace.takeMatrix(scratch, BINS, frames);
-        float[][] phase = KokoroWorkspace.takeMatrix(scratch, BINS, frames);
+        float[][] magnitude = Workspace.takeMatrix(scratch, BINS, frames);
+        float[][] phase = Workspace.takeMatrix(scratch, BINS, frames);
         Parallel.forLoop(
                 frames,
                 frame -> {

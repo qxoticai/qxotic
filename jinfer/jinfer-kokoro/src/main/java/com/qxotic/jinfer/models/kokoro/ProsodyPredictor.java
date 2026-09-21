@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.kokoro;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.DataType;
@@ -117,7 +118,7 @@ final class ProsodyPredictor {
         MemoryView<MemorySegment> nextDuration =
                 Views.allocateF32(scratch, length, weights.hidden() + weights.style());
         for (DurationLayer layer : weights.durationEncoder()) {
-            try (var ignored = KokoroWorkspace.scope(scratch)) {
+            try (var ignored = Workspace.scope(scratch)) {
                 MemoryView<MemorySegment> recurrent =
                         Views.allocateF32(scratch, length, weights.hidden());
                 KokoroOps.bidirectionalLstm(
@@ -165,12 +166,12 @@ final class ProsodyPredictor {
                 Views.allocateF32(scratch, weights.hidden(), frames);
         Ops.transposeCopy(shared, frames, weights.hidden(), channelMajor);
 
-        float[] f0 = KokoroWorkspace.takeFloats(scratch, 2 * frames);
-        try (var ignored = KokoroWorkspace.scope(scratch)) {
+        float[] f0 = Workspace.takeFloats(scratch, 2 * frames);
+        try (var ignored = Workspace.scope(scratch)) {
             runBranch(weights.f0(), channelMajor, frames, predictorStyle, scratch, f0);
         }
-        float[] noise = KokoroWorkspace.takeFloats(scratch, 2 * frames);
-        try (var ignored = KokoroWorkspace.scope(scratch)) {
+        float[] noise = Workspace.takeFloats(scratch, 2 * frames);
+        try (var ignored = Workspace.scope(scratch)) {
             runBranch(weights.noise(), channelMajor, frames, predictorStyle, scratch, noise);
         }
         return new Output(alignment, f0, noise);
@@ -182,7 +183,7 @@ final class ProsodyPredictor {
             require(duration > 0, "durations must be positive");
             size = Math.addExact(size, duration);
         }
-        int[] indices = KokoroWorkspace.takeInts(scratch, size);
+        int[] indices = Workspace.takeInts(scratch, size);
         int at = 0;
         for (int token = 0; token < durations.length; token++)
             for (int frame = 0; frame < durations[token]; frame++) indices[at++] = token;

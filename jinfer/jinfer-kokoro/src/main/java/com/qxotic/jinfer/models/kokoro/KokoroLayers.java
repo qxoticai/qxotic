@@ -5,6 +5,7 @@ import static com.qxotic.jinfer.Segments.writeFloat;
 
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;
 import com.qxotic.jinfer.kernels.MatMul;
@@ -161,7 +162,7 @@ final class KokoroLayers {
                 float b = bias == null ? 0f : Views.getFloat(bias, oc, "conv transpose bias");
                 Ops.fillInPlace(output, (long) oc * outTime, outTime, b);
             }
-            try (var ignored = KokoroWorkspace.scope(allocator)) {
+            try (var ignored = Workspace.scope(allocator)) {
                 int columnsPerTime = Math.multiplyExact(outChannels, kernel);
                 MemoryView<MemorySegment> inputRows =
                         Views.allocateF32(allocator, time, inChannels);

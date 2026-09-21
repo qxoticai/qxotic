@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.kokoro;
 import static com.qxotic.jinfer.Segments.readFloat;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;
 import com.qxotic.jinfer.kernels.Ops;
@@ -45,7 +46,7 @@ final class KokoroGenerator {
             MemoryView<MemorySegment> current = Views.allocateF32(scratch, channels, time);
             Convert.copyF32(input, 0, current, 0, Math.multiplyExact(channels, time));
             for (Step step : steps) {
-                try (var ignored = KokoroWorkspace.scope(scratch)) {
+                try (var ignored = Workspace.scope(scratch)) {
                     MemoryView<MemorySegment> branch =
                             step.adain1().forward(current, time, style, scratch);
                     branch = step.snake1().forward(branch, time, scratch);
@@ -197,7 +198,7 @@ final class KokoroGenerator {
                     residuals.getFirst().forward(current, time, decoderStyle, scratch);
             int size = Math.multiplyExact(stage.channels(), time);
             for (int i = 1; i < residuals.size(); i++) {
-                try (var ignored = KokoroWorkspace.scope(scratch)) {
+                try (var ignored = Workspace.scope(scratch)) {
                     MemoryView<MemorySegment> branch =
                             residuals.get(i).forward(current, time, decoderStyle, scratch);
                     Ops.addInPlace(sum, 0, branch, 0, size);
@@ -308,8 +309,8 @@ final class KokoroGenerator {
     static KokoroDsp.Spectrum outputTransform(
             MemoryView<MemorySegment> input, int frames, MemoryAllocator<MemorySegment> scratch) {
         requireMatrix(input, 2 * BINS, frames, "generator output");
-        float[][] magnitude = KokoroWorkspace.takeMatrix(scratch, BINS, frames);
-        float[][] phase = KokoroWorkspace.takeMatrix(scratch, BINS, frames);
+        float[][] magnitude = Workspace.takeMatrix(scratch, BINS, frames);
+        float[][] phase = Workspace.takeMatrix(scratch, BINS, frames);
         for (int bin = 0; bin < BINS; bin++)
             for (int frame = 0; frame < frames; frame++) {
                 magnitude[bin][frame] = (float) Math.exp(get(input, (long) bin * frames + frame));

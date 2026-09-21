@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.models.kokoro;
+package com.qxotic.jinfer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -9,12 +9,12 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
-class KokoroWorkspaceTest {
+class WorkspaceTest {
 
     @Test
     void reusesTheHighWaterBuffersAfterRewind() {
         try (Arena arena = Arena.ofShared()) {
-            var workspace = new KokoroWorkspace(MemoryAllocators.ofArena(arena));
+            var workspace = new Workspace(MemoryAllocators.ofArena(arena));
             Memory<MemorySegment> first = workspace.allocateMemory(64, 64);
             Memory<MemorySegment> second = workspace.allocateMemory(128, 64);
 

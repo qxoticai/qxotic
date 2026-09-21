@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.kokoro;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.Convolutions;
 import com.qxotic.jinfer.kernels.ModelLoader;
@@ -95,7 +96,7 @@ final class TextEncoder {
         Convert.gatherToF32(weights.embedding(), tokens, 0, steps, timeMajor, 0, hidden);
 
         for (Conv convolution : weights.convolutions()) {
-            try (var ignored = KokoroWorkspace.scope(scratch)) {
+            try (var ignored = Workspace.scope(scratch)) {
                 MemoryView<MemorySegment> channelMajor = Views.allocateF32(scratch, hidden, steps);
                 Ops.transposeCopy(timeMajor, steps, hidden, channelMajor);
                 MemoryView<MemorySegment> convolved = Views.allocateF32(scratch, hidden, steps);

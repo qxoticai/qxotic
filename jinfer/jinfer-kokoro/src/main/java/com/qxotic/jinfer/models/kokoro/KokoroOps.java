@@ -4,6 +4,7 @@ import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
@@ -101,7 +102,7 @@ final class KokoroOps {
                 biasInput.logicalSize() == gates && biasHidden.logicalSize() == gates,
                 "biases must contain 4*hidden_size values");
 
-        try (var ignored = KokoroWorkspace.scope(scratch)) {
+        try (var ignored = Workspace.scope(scratch)) {
             MemoryView<MemorySegment> projected = Views.allocateF32(scratch, steps, gates);
             MemoryView<MemorySegment> hidden = Views.allocateF32(scratch, 1, hiddenSize);
             MemoryView<MemorySegment> recurrent = Views.allocateF32(scratch, 1, gates);
@@ -109,7 +110,7 @@ final class KokoroOps {
                     .base()
                     .asSlice(hidden.byteOffset(), (long) hiddenSize * Float.BYTES)
                     .fill((byte) 0);
-            float[] cell = KokoroWorkspace.takeFloats(scratch, hiddenSize);
+            float[] cell = Workspace.takeFloats(scratch, hiddenSize);
             java.util.Arrays.fill(cell, 0);
 
             MatMul.gemm(weightInput, input, projected, steps);
@@ -177,7 +178,7 @@ final class KokoroOps {
                 logits.logicalSize() == Math.multiplyExact(tokenCount, maxDuration),
                 "duration logits have the wrong size");
         require(Double.isFinite(speed) && speed > 0, "speed must be finite and positive");
-        int[] durations = KokoroWorkspace.takeInts(scratch, tokenCount);
+        int[] durations = Workspace.takeInts(scratch, tokenCount);
         for (int token = 0; token < tokenCount; token++) {
             float duration = 0;
             int offset = token * maxDuration;
