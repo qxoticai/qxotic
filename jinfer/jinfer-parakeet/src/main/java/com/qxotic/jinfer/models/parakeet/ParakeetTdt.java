@@ -1,14 +1,12 @@
 package com.qxotic.jinfer.models.parakeet;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Ops;
-import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -149,15 +147,12 @@ public final class ParakeetTdt {
      * The joint's encoder projection, precomputed for every frame: {@code [frames, jointHidden]}.
      */
     public float[] encProjection(float[] encoderFrameMajor, int frames) {
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            return encProjection(
-                    Views.fromFloatArray(scratch, encoderFrameMajor),
-                    frames,
-                    new Workspace(scratch));
-        } finally {
-            Arenas.close(scratch);
-        }
+        return Tensors.withScratch(
+                workspace ->
+                        encProjection(
+                                Views.fromFloatArray(workspace, encoderFrameMajor),
+                                frames,
+                                workspace));
     }
 
     /** As above, from the encoder's own view; the result is the workspace's, until its rewind. */
@@ -191,12 +186,7 @@ public final class ParakeetTdt {
 
     /** Greedy TDT over {@code frames} joint-projected encoder frames. */
     public List<Emission> decode(float[] encProjection, int frames) {
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            return decode(encProjection, frames, new Workspace(scratch));
-        } finally {
-            Arenas.close(scratch);
-        }
+        return Tensors.withScratch(workspace -> decode(encProjection, frames, workspace));
     }
 
     /** As above, with every buffer drawn from {@code workspace}. */
@@ -279,7 +269,8 @@ public final class ParakeetTdt {
         return text.startsWith(" ") ? text.substring(1) : text;
     }
 
-    private static boolean isSpecial(String piece) {
+    /** Bracketed specials ({@code <unk>}, {@code [..]}) carry no text. */
+    static boolean isSpecial(String piece) {
         return !piece.isEmpty()
                 && ((piece.startsWith("<") && piece.endsWith(">"))
                         || (piece.startsWith("[") && piece.endsWith("]")));
@@ -396,28 +387,27 @@ public final class ParakeetTdt {
 
     /** Parity probe: the prediction network's SOS output (zero input, zero state). */
     float[] probeSos() {
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            Work work = new Work(new Workspace(scratch), config);
-            State zero = new State(config.predLayers(), config.predHidden());
-            State stepped = new State(config.predLayers(), config.predHidden());
-            return predStep(config.blankId(), true, zero, stepped, work);
-        } finally {
-            Arenas.close(scratch);
-        }
+        State zero = new State(config.predLayers(), config.predHidden());
+        State stepped = new State(config.predLayers(), config.predHidden());
+        return Tensors.withScratch(
+                workspace ->
+                        predStep(
+                                config.blankId(),
+                                true,
+                                zero,
+                                stepped,
+                                new Work(workspace, config)));
     }
 
     /** Parity probe: raw joint logits for one frame with a given prediction output. */
     float[] probeJointLogits(float[] encProjection, int frame, float[] g) {
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            Work work = new Work(new Workspace(scratch), config);
-            float[] logits = new float[config.vPlus()];
-            jointLogits(encProjection, frame, config.jointHidden(), g, logits, work);
-            return logits;
-        } finally {
-            Arenas.close(scratch);
-        }
+        return Tensors.withScratch(
+                workspace -> {
+                    float[] logits = new float[config.vPlus()];
+                    Work work = new Work(workspace, config);
+                    jointLogits(encProjection, frame, config.jointHidden(), g, logits, work);
+                    return logits;
+                });
     }
 
     /** The reference's rescaled max-probability over the token slice (stable softmax). */

@@ -160,8 +160,8 @@ public final class Parakeet
     // pace at a few seconds.
     private static final int WINDOW_SECONDS = 60;
 
-    private int chunkSamples(int defaultSeconds) {
-        int seconds = Integer.getInteger("jinfer.parakeet.chunkSeconds", defaultSeconds);
+    private int chunkSamples() {
+        int seconds = Integer.getInteger("jinfer.parakeet.chunkSeconds", WINDOW_SECONDS);
         return Math.max(2 * OVERLAP_SECONDS, seconds) * sampleRate();
     }
 
@@ -170,7 +170,7 @@ public final class Parakeet
     public Transcription transcribe(State state, float[] pcm) {
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(pcm, "pcm");
-        TranscriptionStream stream = new Stream(state, chunkSamples(WINDOW_SECONDS));
+        TranscriptionStream stream = new Stream(state, chunkSamples());
         stream.feed(pcm);
         return stream.finish();
     }
@@ -182,7 +182,7 @@ public final class Parakeet
     @Override
     public TranscriptionStream stream(State state) {
         Objects.requireNonNull(state, "state");
-        return new Stream(state, chunkSamples(WINDOW_SECONDS));
+        return new Stream(state, chunkSamples());
     }
 
     private final class Stream implements TranscriptionStream {
@@ -424,10 +424,7 @@ public final class Parakeet
         List<Transcription.Token> tokens = new ArrayList<>(emissions.size());
         for (ParakeetTdt.Emission emission : emissions) {
             String piece = pieces[emission.token()];
-            if (!piece.isEmpty()
-                    && ((piece.startsWith("<") && piece.endsWith(">"))
-                            || (piece.startsWith("[") && piece.endsWith("]"))))
-                continue; // bracketed specials carry no text
+            if (ParakeetTdt.isSpecial(piece)) continue;
             textual.add(emission);
             tokens.add(
                     new Transcription.Token(

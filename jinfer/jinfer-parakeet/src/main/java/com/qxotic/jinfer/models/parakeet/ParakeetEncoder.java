@@ -1,22 +1,20 @@
 package com.qxotic.jinfer.models.parakeet;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Activations;
+import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.LogMel;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
-import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -67,44 +65,46 @@ public final class ParakeetEncoder {
         }
     }
 
-    /** Linear {@code *Bias} fields are null for the bias-free checkpoints (tdt-0.6b-v2/v3). */
+    /** A projection; {@code bias} is null on the bias-free checkpoints (tdt-0.6b-v2/v3). */
+    record Linear(
+            MemoryView<MemorySegment> weight, MemoryView<MemorySegment> bias, int in, int out) {
+        /** {@code output[rows][out] = input[rows][in] · weightᵀ + bias}. */
+        void apply(MemoryView<MemorySegment> input, MemoryView<MemorySegment> output, int rows) {
+            MatMul.gemm(weight, input, in, output, out, out, rows, in);
+            if (bias != null) Ops.addRowBiasInPlace(output, 0, bias, 0, rows, out);
+        }
+    }
+
+    /** LayerNorm over rows of {@code weight.size()} channels. */
+    record Norm(MemoryView<MemorySegment> weight, MemoryView<MemorySegment> bias) {
+        void apply(MemoryView<MemorySegment> output, MemoryView<MemorySegment> input, int rows) {
+            int channels = Math.toIntExact(weight.shape().size());
+            Norms.layerNorm(output, input, weight, bias, channels, rows, NORM_EPS);
+        }
+    }
+
     record Block(
-            MemoryView<MemorySegment> ff1NormWeight,
-            MemoryView<MemorySegment> ff1NormBias,
-            MemoryView<MemorySegment> ff1Up,
-            MemoryView<MemorySegment> ff1UpBias,
-            MemoryView<MemorySegment> ff1Down,
-            MemoryView<MemorySegment> ff1DownBias,
-            MemoryView<MemorySegment> attnNormWeight,
-            MemoryView<MemorySegment> attnNormBias,
-            MemoryView<MemorySegment> query,
-            MemoryView<MemorySegment> queryBias,
-            MemoryView<MemorySegment> key,
-            MemoryView<MemorySegment> keyBias,
-            MemoryView<MemorySegment> value,
-            MemoryView<MemorySegment> valueBias,
-            MemoryView<MemorySegment> position,
-            MemoryView<MemorySegment> output,
-            MemoryView<MemorySegment> outputBias,
-            float[] posBiasU,
-            float[] posBiasV,
-            MemoryView<MemorySegment> convNormWeight,
-            MemoryView<MemorySegment> convNormBias,
-            MemoryView<MemorySegment> pointwise1,
-            MemoryView<MemorySegment> pointwise1Bias,
+            Norm ff1Norm,
+            Linear ff1Up,
+            Linear ff1Down,
+            Norm attnNorm,
+            Linear query,
+            Linear key,
+            Linear value,
+            Linear position,
+            Linear output,
+            MemoryView<MemorySegment> posBiasU,
+            MemoryView<MemorySegment> posBiasV,
+            Norm convNorm,
+            Linear pointwise1,
             float[] depthwise,
             float[] bnScale,
             float[] bnShift,
-            MemoryView<MemorySegment> pointwise2,
-            MemoryView<MemorySegment> pointwise2Bias,
-            MemoryView<MemorySegment> ff2NormWeight,
-            MemoryView<MemorySegment> ff2NormBias,
-            MemoryView<MemorySegment> ff2Up,
-            MemoryView<MemorySegment> ff2UpBias,
-            MemoryView<MemorySegment> ff2Down,
-            MemoryView<MemorySegment> ff2DownBias,
-            MemoryView<MemorySegment> outNormWeight,
-            MemoryView<MemorySegment> outNormBias) {}
+            Linear pointwise2,
+            Norm ff2Norm,
+            Linear ff2Up,
+            Linear ff2Down,
+            Norm outNorm) {}
 
     /** Encoder output, frame-major {@code [frames, dModel]}. */
     public record Output(float[] data, int frames) {}
@@ -113,9 +113,7 @@ public final class ParakeetEncoder {
     private final LogMel logMel;
     private final float[] conv0Taps, conv0Bias;
     private final float[] dw1Taps, dw1Bias, dw2Taps, dw2Bias;
-    private final MemoryView<MemorySegment> pw1Weight, pw2Weight;
-    private final float[] pw1Bias, pw2Bias;
-    private final MemoryView<MemorySegment> preOutWeight, preOutBias;
+    private final Linear pw1, pw2, preOut;
     private final Block[] blocks;
 
     private ParakeetEncoder(
@@ -125,14 +123,11 @@ public final class ParakeetEncoder {
             float[] conv0Bias,
             float[] dw1Taps,
             float[] dw1Bias,
-            MemoryView<MemorySegment> pw1Weight,
-            float[] pw1Bias,
+            Linear pw1,
             float[] dw2Taps,
             float[] dw2Bias,
-            MemoryView<MemorySegment> pw2Weight,
-            float[] pw2Bias,
-            MemoryView<MemorySegment> preOutWeight,
-            MemoryView<MemorySegment> preOutBias,
+            Linear pw2,
+            Linear preOut,
             Block[] blocks) {
         this.config = config;
         this.logMel = logMel;
@@ -140,14 +135,11 @@ public final class ParakeetEncoder {
         this.conv0Bias = conv0Bias;
         this.dw1Taps = dw1Taps;
         this.dw1Bias = dw1Bias;
-        this.pw1Weight = pw1Weight;
-        this.pw1Bias = pw1Bias;
+        this.pw1 = pw1;
         this.dw2Taps = dw2Taps;
         this.dw2Bias = dw2Bias;
-        this.pw2Weight = pw2Weight;
-        this.pw2Bias = pw2Bias;
-        this.preOutWeight = preOutWeight;
-        this.preOutBias = preOutBias;
+        this.pw2 = pw2;
+        this.preOut = preOut;
         this.blocks = blocks;
     }
 
@@ -174,8 +166,8 @@ public final class ParakeetEncoder {
         if (config.magPower() != 1f && config.magPower() != 2f)
             throw new IllegalArgumentException("unsupported mag_power " + config.magPower());
         int channels = config.subsamplingChannels();
-        int dim = config.dModel();
-        int flattened = channels * (config.nMels() / 8);
+        int dim = config.dModel(), ffDim = config.ffDim();
+        int flattened = channels * subsampled(subsampled(subsampled(config.nMels())));
         Block[] blocks = new Block[config.layers()];
         for (int i = 0; i < blocks.length; i++) {
             String prefix = "encoder.layers." + i + ".";
@@ -198,52 +190,30 @@ public final class ParakeetEncoder {
             }
             blocks[i] =
                     new Block(
-                            Tensors.require(tensors, prefix + "norm_feed_forward1.weight"),
-                            Tensors.require(tensors, prefix + "norm_feed_forward1.bias"),
-                            Tensors.weight(
-                                    tensors,
-                                    prefix + "feed_forward1.linear1.weight",
-                                    config.ffDim()),
-                            tensors.get(prefix + "feed_forward1.linear1.bias"),
-                            Tensors.weight(tensors, prefix + "feed_forward1.linear2.weight", dim),
-                            tensors.get(prefix + "feed_forward1.linear2.bias"),
-                            Tensors.require(tensors, prefix + "norm_self_att.weight"),
-                            Tensors.require(tensors, prefix + "norm_self_att.bias"),
-                            Tensors.weight(tensors, prefix + "self_attn.linear_q.weight", dim),
-                            tensors.get(prefix + "self_attn.linear_q.bias"),
-                            Tensors.weight(tensors, prefix + "self_attn.linear_k.weight", dim),
-                            tensors.get(prefix + "self_attn.linear_k.bias"),
-                            Tensors.weight(tensors, prefix + "self_attn.linear_v.weight", dim),
-                            tensors.get(prefix + "self_attn.linear_v.bias"),
-                            Tensors.weight(tensors, prefix + "self_attn.linear_pos.weight", dim),
-                            Tensors.weight(tensors, prefix + "self_attn.linear_out.weight", dim),
-                            tensors.get(prefix + "self_attn.linear_out.bias"),
-                            Tensors.floats(tensors, prefix + "self_attn.pos_bias_u", dim),
-                            Tensors.floats(tensors, prefix + "self_attn.pos_bias_v", dim),
-                            Tensors.require(tensors, prefix + "norm_conv.weight"),
-                            Tensors.require(tensors, prefix + "norm_conv.bias"),
-                            Tensors.weight(
-                                    tensors, prefix + "conv.pointwise_conv1.weight", dim * 2),
-                            tensors.get(prefix + "conv.pointwise_conv1.bias"),
+                            norm(tensors, prefix + "norm_feed_forward1"),
+                            linear(tensors, prefix + "feed_forward1.linear1", dim, ffDim),
+                            linear(tensors, prefix + "feed_forward1.linear2", ffDim, dim),
+                            norm(tensors, prefix + "norm_self_att"),
+                            linear(tensors, prefix + "self_attn.linear_q", dim, dim),
+                            linear(tensors, prefix + "self_attn.linear_k", dim, dim),
+                            linear(tensors, prefix + "self_attn.linear_v", dim, dim),
+                            linear(tensors, prefix + "self_attn.linear_pos", dim, dim),
+                            linear(tensors, prefix + "self_attn.linear_out", dim, dim),
+                            Tensors.vector(tensors, prefix + "self_attn.pos_bias_u", dim),
+                            Tensors.vector(tensors, prefix + "self_attn.pos_bias_v", dim),
+                            norm(tensors, prefix + "norm_conv"),
+                            linear(tensors, prefix + "conv.pointwise_conv1", dim, 2 * dim),
                             Tensors.floats(
                                     tensors,
                                     prefix + "conv.depthwise_conv.weight",
                                     dim * config.convKernel()),
                             bnScale,
                             bnShift,
-                            Tensors.weight(tensors, prefix + "conv.pointwise_conv2.weight", dim),
-                            tensors.get(prefix + "conv.pointwise_conv2.bias"),
-                            Tensors.require(tensors, prefix + "norm_feed_forward2.weight"),
-                            Tensors.require(tensors, prefix + "norm_feed_forward2.bias"),
-                            Tensors.weight(
-                                    tensors,
-                                    prefix + "feed_forward2.linear1.weight",
-                                    config.ffDim()),
-                            tensors.get(prefix + "feed_forward2.linear1.bias"),
-                            Tensors.weight(tensors, prefix + "feed_forward2.linear2.weight", dim),
-                            tensors.get(prefix + "feed_forward2.linear2.bias"),
-                            Tensors.require(tensors, prefix + "norm_out.weight"),
-                            Tensors.require(tensors, prefix + "norm_out.bias"));
+                            linear(tensors, prefix + "conv.pointwise_conv2", dim, dim),
+                            norm(tensors, prefix + "norm_feed_forward2"),
+                            linear(tensors, prefix + "feed_forward2.linear1", dim, ffDim),
+                            linear(tensors, prefix + "feed_forward2.linear2", ffDim, dim),
+                            norm(tensors, prefix + "norm_out"));
         }
         return new ParakeetEncoder(
                 config,
@@ -252,15 +222,38 @@ public final class ParakeetEncoder {
                 Tensors.floats(tensors, "encoder.pre_encode.conv.0.bias", channels),
                 Tensors.floats(tensors, "encoder.pre_encode.conv.2.weight", channels * 9),
                 Tensors.floats(tensors, "encoder.pre_encode.conv.2.bias", channels),
-                Tensors.weight(tensors, "encoder.pre_encode.conv.3.weight", channels),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.3.bias", channels),
+                biasedLinear(tensors, "encoder.pre_encode.conv.3", channels, channels),
                 Tensors.floats(tensors, "encoder.pre_encode.conv.5.weight", channels * 9),
                 Tensors.floats(tensors, "encoder.pre_encode.conv.5.bias", channels),
-                Tensors.weight(tensors, "encoder.pre_encode.conv.6.weight", channels),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.6.bias", channels),
-                Tensors.weight(tensors, "encoder.pre_encode.out.weight", dim),
-                Tensors.require(tensors, "encoder.pre_encode.out.bias"),
+                biasedLinear(tensors, "encoder.pre_encode.conv.6", channels, channels),
+                biasedLinear(tensors, "encoder.pre_encode.out", flattened, dim),
                 blocks);
+    }
+
+    /** A conformer projection: its bias is optional (the v2/v3 checkpoints have none). */
+    private static Linear linear(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int in, int out) {
+        return new Linear(
+                Tensors.weight(tensors, name + ".weight", out),
+                tensors.get(name + ".bias"),
+                in,
+                out);
+    }
+
+    /** A subsampling projection: every checkpoint has its bias. */
+    private static Linear biasedLinear(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int in, int out) {
+        return new Linear(
+                Tensors.weight(tensors, name + ".weight", out),
+                Tensors.require(tensors, name + ".bias"),
+                in,
+                out);
+    }
+
+    private static Norm norm(Map<String, MemoryView<MemorySegment>> tensors, String name) {
+        return new Norm(
+                Tensors.require(tensors, name + ".weight"),
+                Tensors.require(tensors, name + ".bias"));
     }
 
     /** The NeMo featurizer: window and filterbank are lifted verbatim from the model weights. */
@@ -395,21 +388,13 @@ public final class ParakeetEncoder {
      */
     private Output forward(
             float[] pcm16k, MelStats stats, boolean persist, ObjIntConsumer<float[]> layerTap) {
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            MemoryView<MemorySegment> x =
-                    encode(
-                            pcm16k,
-                            0,
-                            pcm16k.length,
-                            stats,
-                            persist,
-                            layerTap,
-                            new Workspace(scratch));
-            return new Output(Views.toFloatArray(x, "encoder output"), frames(pcm16k.length));
-        } finally {
-            Arenas.close(scratch);
-        }
+        return Tensors.withScratch(
+                workspace -> {
+                    MemoryView<MemorySegment> x =
+                            encode(pcm16k, 0, pcm16k.length, stats, persist, layerTap, workspace);
+                    return new Output(
+                            Views.toFloatArray(x, "encoder output"), frames(pcm16k.length));
+                });
     }
 
     /** Encoder frames for {@code samples} of audio. */
@@ -444,36 +429,11 @@ public final class ParakeetEncoder {
         Scratch work = Scratch.allocate(workspace, frames, config.dModel(), config.ffDim());
         for (int i = 0; i < blocks.length; i++) {
             Block block = blocks[i];
-            halfFfn(
-                    x,
-                    block.ff1NormWeight(),
-                    block.ff1NormBias(),
-                    block.ff1Up(),
-                    block.ff1UpBias(),
-                    block.ff1Down(),
-                    block.ff1DownBias(),
-                    frames,
-                    work);
+            halfFfn(x, block.ff1Norm(), block.ff1Up(), block.ff1Down(), frames, work);
             attention(x, block, positions, frames, valid, work);
             convolution(x, block, frames, valid, work);
-            halfFfn(
-                    x,
-                    block.ff2NormWeight(),
-                    block.ff2NormBias(),
-                    block.ff2Up(),
-                    block.ff2UpBias(),
-                    block.ff2Down(),
-                    block.ff2DownBias(),
-                    frames,
-                    work);
-            Norms.layerNorm(
-                    x,
-                    x,
-                    block.outNormWeight(),
-                    block.outNormBias(),
-                    config.dModel(),
-                    frames,
-                    NORM_EPS);
+            halfFfn(x, block.ff2Norm(), block.ff2Up(), block.ff2Down(), frames, work);
+            block.outNorm().apply(x, x, frames);
             if (layerTap != null) layerTap.accept(Views.toFloatArray(x, "encoder layer"), i);
         }
         return x;
@@ -524,14 +484,8 @@ public final class ParakeetEncoder {
                     }
                 });
 
-        float[] s2 =
-                separable(
-                        s1, channels, t1, f1, t2, f2, dw1Taps, dw1Bias, pw1Weight, pw1Bias,
-                        workspace);
-        float[] s3 =
-                separable(
-                        s2, channels, t2, f2, t3, f3, dw2Taps, dw2Bias, pw2Weight, pw2Bias,
-                        workspace);
+        float[] s2 = separable(s1, channels, t1, f1, t2, f2, dw1Taps, dw1Bias, pw1, workspace);
+        float[] s3 = separable(s2, channels, t2, f2, t3, f3, dw2Taps, dw2Bias, pw2, workspace);
 
         // NeMo flattens (B, C, T', F') to (B, T', C*F') - the frame vector is channel-major.
         int flattened = channels * f3;
@@ -546,12 +500,11 @@ public final class ParakeetEncoder {
         MemoryView<MemorySegment> flatView = Views.allocateF32(workspace, t3, flattened);
         Views.copyFromArray(flatView, 0, flat, 0, t3 * flattened, "pre-encode flat");
         MemoryView<MemorySegment> x = Views.allocateF32(workspace, frames, dim);
-        MatMul.gemm(preOutWeight, flatView, flattened, x, dim, dim, frames, flattened);
-        Ops.addRowBiasInPlace(x, 0, preOutBias, 0, frames, dim);
+        preOut.apply(flatView, x, frames);
         return x;
     }
 
-    /** One depthwise 3x3 stride-2 stage (bias, no activation) then pointwise 1x1 (bias + ReLU). */
+    /** One depthwise 3x3 stride-2 conv (bias, no activation) then its pointwise 1x1 and ReLU. */
     private float[] separable(
             float[] in,
             int channels,
@@ -559,10 +512,9 @@ public final class ParakeetEncoder {
             int frequencyIn,
             int timeOut,
             int frequencyOut,
-            float[] dwTaps,
-            float[] dwBias,
-            MemoryView<MemorySegment> pwWeight,
-            float[] pwBias,
+            float[] taps,
+            float[] bias,
+            Linear pointwise,
             Workspace workspace) {
         int positions = timeOut * frequencyOut;
         int size = positions * channels;
@@ -572,11 +524,10 @@ public final class ParakeetEncoder {
                 channels,
                 c -> {
                     int tapBase = c * 9;
-                    float bias = dwBias[c];
                     int inBase = c * timeIn * frequencyIn;
                     for (int ot = 0; ot < timeOut; ot++) {
                         for (int of = 0; of < frequencyOut; of++) {
-                            float sum = bias;
+                            float sum = bias[c];
                             for (int ky = 0; ky < 3; ky++) {
                                 int it = 2 * ot - 1 + ky;
                                 if (it < 0 || it >= timeIn) continue;
@@ -584,7 +535,7 @@ public final class ParakeetEncoder {
                                     int f = 2 * of - 1 + kx;
                                     if (f < 0 || f >= frequencyIn) continue;
                                     sum +=
-                                            dwTaps[tapBase + ky * 3 + kx]
+                                            taps[tapBase + ky * 3 + kx]
                                                     * in[inBase + it * frequencyIn + f];
                                 }
                             }
@@ -595,13 +546,13 @@ public final class ParakeetEncoder {
         MemoryView<MemorySegment> pwIn = Views.allocateF32(workspace, positions, channels);
         Views.copyFromArray(pwIn, 0, positionsMajor, 0, size, "depthwise conv");
         MemoryView<MemorySegment> pwOut = Views.allocateF32(workspace, positions, channels);
-        MatMul.gemm(pwWeight, pwIn, channels, pwOut, channels, channels, positions, channels);
+        pointwise.apply(pwIn, pwOut, positions);
         float[] mixed = positionsMajor; // consumed by the copy above: reuse it for the result
         Views.copyToArray(pwOut, 0, mixed, 0, size, "pointwise conv");
         float[] out = workspace.floatsAtLeast(size);
         for (int p = 0; p < positions; p++)
             for (int c = 0; c < channels; c++)
-                out[c * positions + p] = Math.max(mixed[p * channels + c] + pwBias[c], 0f);
+                out[c * positions + p] = Math.max(mixed[p * channels + c], 0f);
         return out;
     }
 
@@ -640,8 +591,6 @@ public final class ParakeetEncoder {
     record Scratch(
             MemoryView<MemorySegment> norm,
             MemoryView<MemorySegment> ff,
-            MemoryView<MemorySegment> ffOut,
-            MemoryView<MemorySegment> query,
             MemoryView<MemorySegment> queryU,
             MemoryView<MemorySegment> queryV,
             MemoryView<MemorySegment> key,
@@ -656,48 +605,41 @@ public final class ParakeetEncoder {
             MemoryView<MemorySegment> attentionT, // [dim][frames]
             float[] gated, // conv module staging, [frames][dim]
             float[] mixed) {
-        static Scratch allocate(Workspace arena, int frames, int dim, int ffDim) {
+        static Scratch allocate(Workspace workspace, int frames, int dim, int ffDim) {
             int positionRows = 2 * frames - 1;
             return new Scratch(
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, ffDim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, positionRows, dim),
-                    Views.allocateF32(arena, frames, dim * 2),
-                    Views.allocateF32(arena, frames, dim),
-                    Views.allocateF32(arena, frames, frames),
-                    Views.allocateF32(arena, frames, positionRows),
-                    Views.allocateF32(arena, dim, frames),
-                    Views.allocateF32(arena, dim, frames),
-                    arena.floatsAtLeast(frames * dim),
-                    arena.floatsAtLeast(frames * dim));
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, frames, ffDim),
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, positionRows, dim),
+                    Views.allocateF32(workspace, frames, dim * 2),
+                    Views.allocateF32(workspace, frames, dim),
+                    Views.allocateF32(workspace, frames, frames),
+                    Views.allocateF32(workspace, frames, positionRows),
+                    Views.allocateF32(workspace, dim, frames),
+                    Views.allocateF32(workspace, dim, frames),
+                    workspace.floatsAtLeast(frames * dim),
+                    workspace.floatsAtLeast(frames * dim));
         }
     }
 
     private void halfFfn(
             MemoryView<MemorySegment> x,
-            MemoryView<MemorySegment> normWeight,
-            MemoryView<MemorySegment> normBias,
-            MemoryView<MemorySegment> up,
-            MemoryView<MemorySegment> upBias,
-            MemoryView<MemorySegment> down,
-            MemoryView<MemorySegment> downBias,
+            Norm norm,
+            Linear up,
+            Linear down,
             int frames,
             Scratch work) {
-        int dim = config.dModel(), ffDim = config.ffDim();
-        Norms.layerNorm(work.norm(), x, normWeight, normBias, dim, frames, NORM_EPS);
-        MatMul.gemm(up, work.norm(), dim, work.ff(), ffDim, ffDim, frames, dim);
-        if (upBias != null) Ops.addRowBiasInPlace(work.ff(), 0, upBias, 0, frames, ffDim);
+        int ffDim = config.ffDim();
+        norm.apply(work.norm(), x, frames);
+        up.apply(work.norm(), work.ff(), frames);
         Parallel.forLoop(frames, row -> Ops.siluInPlace(work.ff(), (long) row * ffDim, ffDim));
-        MatMul.gemm(down, work.ff(), ffDim, work.ffOut(), dim, dim, frames, ffDim);
-        if (downBias != null) Ops.addRowBiasInPlace(work.ffOut(), 0, downBias, 0, frames, dim);
-        Ops.saxpyInPlace(x, 0, work.ffOut(), 0, Math.multiplyExact(frames, dim), 0.5f);
+        down.apply(work.ff(), work.norm(), frames); // the up projection has consumed norm
+        Ops.saxpyInPlace(x, 0, work.norm(), 0, Math.multiplyExact(frames, config.dModel()), 0.5f);
     }
 
     private void attention(
@@ -707,34 +649,18 @@ public final class ParakeetEncoder {
             int frames,
             int valid,
             Scratch work) {
-        int dim = config.dModel(), heads = config.heads();
-        Norms.layerNorm(
-                work.norm(),
-                x,
-                block.attnNormWeight(),
-                block.attnNormBias(),
-                dim,
-                frames,
-                NORM_EPS);
-        MatMul.gemm(block.query(), work.norm(), dim, work.query(), dim, dim, frames, dim);
-        MatMul.gemm(block.key(), work.norm(), dim, work.key(), dim, dim, frames, dim);
-        MatMul.gemm(block.value(), work.norm(), dim, work.value(), dim, dim, frames, dim);
-        if (block.queryBias() != null)
-            Ops.addRowBiasInPlace(work.query(), 0, block.queryBias(), 0, frames, dim);
-        if (block.keyBias() != null)
-            Ops.addRowBiasInPlace(work.key(), 0, block.keyBias(), 0, frames, dim);
-        if (block.valueBias() != null)
-            Ops.addRowBiasInPlace(work.value(), 0, block.valueBias(), 0, frames, dim);
-        int positionRows = 2 * frames - 1;
-        MatMul.gemm(
-                block.position(), positionTable, dim, work.position(), dim, dim, positionRows, dim);
-        biasedCopy(work.queryU(), work.query(), block.posBiasU(), frames, dim);
-        biasedCopy(work.queryV(), work.query(), block.posBiasV(), frames, dim);
-
-        relativeAttention(work, frames, valid, dim, heads);
-        MatMul.gemm(block.output(), work.attention(), dim, work.norm(), dim, dim, frames, dim);
-        if (block.outputBias() != null)
-            Ops.addRowBiasInPlace(work.norm(), 0, block.outputBias(), 0, frames, dim);
+        int dim = config.dModel();
+        block.attnNorm().apply(work.norm(), x, frames);
+        block.query().apply(work.norm(), work.queryU(), frames);
+        block.key().apply(work.norm(), work.key(), frames);
+        block.value().apply(work.norm(), work.value(), frames);
+        block.position().apply(positionTable, work.position(), 2 * frames - 1);
+        // Transformer-XL's learned query biases: u for the content term, v for the position term
+        Convert.copyF32(work.queryU(), 0, work.queryV(), 0, (long) frames * dim);
+        Ops.addRowBiasInPlace(work.queryU(), 0, block.posBiasU(), 0, frames, dim);
+        Ops.addRowBiasInPlace(work.queryV(), 0, block.posBiasV(), 0, frames, dim);
+        relativeAttention(work, frames, valid, dim, config.heads());
+        block.output().apply(work.attention(), work.norm(), frames);
         Ops.addInPlace(x, 0, work.norm(), 0, Math.multiplyExact(frames, dim));
     }
 
@@ -811,31 +737,14 @@ public final class ParakeetEncoder {
                     valid);
         }
         Ops.transposeCopy(work.attentionT(), dim, frames, work.attention());
-        zeroRows(work.attention(), valid, frames, dim);
+        Ops.fillInPlace(work.attention(), (long) valid * dim, (frames - valid) * dim, 0f);
     }
 
     private void convolution(
             MemoryView<MemorySegment> x, Block block, int frames, int valid, Scratch work) {
         int dim = config.dModel(), kernel = config.convKernel(), pad = (kernel - 1) / 2;
-        Norms.layerNorm(
-                work.norm(),
-                x,
-                block.convNormWeight(),
-                block.convNormBias(),
-                dim,
-                frames,
-                NORM_EPS);
-        MatMul.gemm(
-                block.pointwise1(),
-                work.norm(),
-                dim,
-                work.pointwise(),
-                dim * 2,
-                dim * 2,
-                frames,
-                dim);
-        if (block.pointwise1Bias() != null)
-            Ops.addRowBiasInPlace(work.pointwise(), 0, block.pointwise1Bias(), 0, frames, dim * 2);
+        block.convNorm().apply(work.norm(), x, frames);
+        block.pointwise1().apply(work.norm(), work.pointwise(), frames);
         Parallel.forLoop(
                 frames,
                 row ->
@@ -845,7 +754,7 @@ public final class ParakeetEncoder {
                                 work.pointwise(),
                                 (long) row * dim * 2,
                                 dim));
-        zeroRows(work.glu(), valid, frames, dim);
+        Ops.fillInPlace(work.glu(), (long) valid * dim, (frames - valid) * dim, 0f);
 
         float[] gated = work.gated(), mixed = work.mixed();
         Views.copyToArray(work.glu(), 0, gated, 0, frames * dim, "conv glu");
@@ -868,32 +777,7 @@ public final class ParakeetEncoder {
                     }
                 });
         Views.copyFromArray(work.norm(), 0, mixed, 0, frames * dim, "conv mixed");
-        MatMul.gemm(block.pointwise2(), work.norm(), dim, work.glu(), dim, dim, frames, dim);
-        if (block.pointwise2Bias() != null)
-            Ops.addRowBiasInPlace(work.glu(), 0, block.pointwise2Bias(), 0, frames, dim);
+        block.pointwise2().apply(work.norm(), work.glu(), frames);
         Ops.addInPlace(x, 0, work.glu(), 0, Math.multiplyExact(frames, dim));
-    }
-
-    private static void biasedCopy(
-            MemoryView<MemorySegment> out,
-            MemoryView<MemorySegment> in,
-            float[] bias,
-            int frames,
-            int dim) {
-        MemorySegment source = (MemorySegment) in.memory().base();
-        MemorySegment target = (MemorySegment) out.memory().base();
-        for (int row = 0; row < frames; row++) {
-            long offset = (long) row * dim;
-            for (int c = 0; c < dim; c++) {
-                float value =
-                        source.get(ValueLayout.JAVA_FLOAT, Views.byteOffset(in, offset + c))
-                                + bias[c];
-                target.set(ValueLayout.JAVA_FLOAT, Views.byteOffset(out, offset + c), value);
-            }
-        }
-    }
-
-    private static void zeroRows(MemoryView<MemorySegment> x, int from, int frames, int dim) {
-        for (int row = from; row < frames; row++) Ops.fillInPlace(x, (long) row * dim, dim, 0f);
     }
 }
