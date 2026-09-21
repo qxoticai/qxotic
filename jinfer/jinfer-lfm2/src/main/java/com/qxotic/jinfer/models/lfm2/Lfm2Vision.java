@@ -261,13 +261,13 @@ final class Lfm2Vision implements MediaProjector<Media.Image> {
         float attentionScale = 1f / (float) Math.sqrt(headDim);
 
         for (Layer layer : layers) {
-            Norms.layerNorm(
+            Norms.layerNormRows(
                     normalized,
                     current,
                     layer.norm1Weight(),
                     layer.norm1Bias(),
-                    visionDim,
                     count,
+                    visionDim,
                     normEps);
             linear(layer.query(), normalized, query, count);
             linear(layer.key(), normalized, key, count);
@@ -290,21 +290,21 @@ final class Lfm2Vision implements MediaProjector<Media.Image> {
             linear(layer.attentionOutput(), attention, normalized, count);
             Ops.addInPlace(current, 0, normalized, 0, elements);
 
-            Norms.layerNorm(
+            Norms.layerNormRows(
                     normalized,
                     current,
                     layer.norm2Weight(),
                     layer.norm2Bias(),
-                    visionDim,
                     count,
+                    visionDim,
                     normEps);
             linear(layer.ffnUp(), normalized, hidden, count);
             Activations.geluInPlace(hidden, 0, Math.multiplyExact(count, ffnDim));
             linear(layer.ffnDown(), hidden, normalized, count);
             Ops.addInPlace(current, 0, normalized, 0, elements);
         }
-        Norms.layerNorm(
-                normalized, current, postNormWeight, postNormBias, visionDim, count, normEps);
+        Norms.layerNormRows(
+                normalized, current, postNormWeight, postNormBias, count, visionDim, normEps);
         return project(merge(normalized, patchesX, patchesY, merge, visionDim, scratch), scratch);
     }
 
@@ -425,8 +425,8 @@ final class Lfm2Vision implements MediaProjector<Media.Image> {
         int rows = Math.toIntExact(merged.shape().flatAt(0));
         int mergedDim = Math.multiplyExact(visionDim, Math.multiplyExact(merge, merge));
         if (projectorNormWeight != null)
-            Norms.layerNorm(
-                    merged, merged, projectorNormWeight, projectorNormBias, mergedDim, rows, 1e-5f);
+            Norms.layerNormRows(
+                    merged, merged, projectorNormWeight, projectorNormBias, rows, mergedDim, 1e-5f);
         MemoryView<MemorySegment> hidden = Views.allocateF32(scratch, rows, projectorDim);
         linear(projectorUp, merged, hidden, rows);
         Activations.geluInPlace(hidden, 0, Math.multiplyExact(rows, projectorDim));

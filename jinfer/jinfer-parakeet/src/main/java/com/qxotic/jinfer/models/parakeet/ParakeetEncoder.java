@@ -79,7 +79,7 @@ public final class ParakeetEncoder {
     record Norm(MemoryView<MemorySegment> weight, MemoryView<MemorySegment> bias) {
         void apply(MemoryView<MemorySegment> output, MemoryView<MemorySegment> input, int rows) {
             int channels = Math.toIntExact(weight.shape().size());
-            Norms.layerNorm(output, input, weight, bias, channels, rows, NORM_EPS);
+            Norms.layerNormRows(output, input, weight, bias, rows, channels, NORM_EPS);
         }
     }
 

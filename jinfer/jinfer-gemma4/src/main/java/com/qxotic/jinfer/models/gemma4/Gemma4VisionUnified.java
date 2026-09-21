@@ -139,15 +139,17 @@ final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
 
         MemoryView<MemorySegment> flat =
                 VisionPreprocess.im2col(image, targetWidth, targetHeight, patchSize, scratch);
-        Norms.layerNorm(flat, flat, norm1Weight, norm1Bias, patchVector, count, LAYER_NORM_EPS);
+        Norms.layerNormRows(flat, flat, norm1Weight, norm1Bias, count, patchVector, LAYER_NORM_EPS);
 
         MemoryView<MemorySegment> current = Views.allocateF32(scratch, count, visionDim);
         MatMul.gemm(patchEmbedding, flat, current, count);
         Ops.addRowBiasInPlace(current, 0, patchBias, 0, count, visionDim);
-        Norms.layerNorm(current, current, norm2Weight, norm2Bias, visionDim, count, LAYER_NORM_EPS);
+        Norms.layerNormRows(
+                current, current, norm2Weight, norm2Bias, count, visionDim, LAYER_NORM_EPS);
 
         Ops.addGridPositions(current, positionEmbedding, count, patchesX, visionDim, positionSize);
-        Norms.layerNorm(current, current, norm3Weight, norm3Bias, visionDim, count, LAYER_NORM_EPS);
+        Norms.layerNormRows(
+                current, current, norm3Weight, norm3Bias, count, visionDim, LAYER_NORM_EPS);
         Parallel.forLoop(
                 count,
                 row ->

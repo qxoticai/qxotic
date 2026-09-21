@@ -112,13 +112,13 @@ final class TextEncoder {
                         convolution.bias());
                 Ops.transposeCopy(convolved, hidden, steps, next);
             }
-            Norms.layerNorm(
+            Norms.layerNormRows(
                     next,
                     next,
                     convolution.gamma(),
                     convolution.beta(),
-                    hidden,
                     steps,
+                    hidden,
                     LAYER_NORM_EPS);
             Ops.leakyReluInPlace(next, 0, Math.multiplyExact(steps, hidden), LEAKY_RELU_SLOPE);
             MemoryView<MemorySegment> swap = timeMajor;
