@@ -25,7 +25,7 @@ final class Player implements AutoCloseable {
     }
 
     static void play(Path wav) throws IOException {
-        Player player = firstThatRuns(afplay(wav), soundPlayer(wav));
+        Player player = firstThatRuns(afplay(wav), aplay(wav), ffplay(wav), soundPlayer(wav));
         if (player == null) throw new IOException("no supported audio player found");
         player.close();
     }
@@ -54,6 +54,19 @@ final class Player implements AutoCloseable {
 
     static String[] afplay(Path wav) {
         return new String[] {"afplay", wav.toString()};
+    }
+
+    // The file players read the WAV header themselves, so they take no format arguments. Built as
+    // arrays rather than split from a string: the path is a temporary file, not a literal.
+
+    static String[] aplay(Path wav) {
+        return new String[] {"aplay", "-q", wav.toString()};
+    }
+
+    static String[] ffplay(Path wav) {
+        return new String[] {
+            "ffplay", "-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit", wav.toString()
+        };
     }
 
     static String[] soundPlayer(Path wav) {
