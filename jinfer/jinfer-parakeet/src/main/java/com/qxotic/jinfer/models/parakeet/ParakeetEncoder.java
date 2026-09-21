@@ -70,8 +70,18 @@ public final class ParakeetEncoder {
             MemoryView<MemorySegment> weight, MemoryView<MemorySegment> bias, int in, int out) {
         /** {@code output[rows][out] = input[rows][in] · weightᵀ + bias}. */
         void apply(MemoryView<MemorySegment> input, MemoryView<MemorySegment> output, int rows) {
-            MatMul.gemm(weight, input, in, output, out, out, rows, in);
-            if (bias != null) Ops.addRowBiasInPlace(output, 0, bias, 0, rows, out);
+            apply(input, output, 0, rows);
+        }
+
+        /** As above, into {@code output} from row {@code outputRow} on. */
+        void apply(
+                MemoryView<MemorySegment> input,
+                MemoryView<MemorySegment> output,
+                int outputRow,
+                int rows) {
+            long offset = (long) outputRow * out;
+            MatMul.mm(weight, 0, in, input, 0, in, output, offset, out, out, rows, in);
+            if (bias != null) Ops.addRowBiasInPlace(output, offset, bias, 0, rows, out);
         }
     }
 
@@ -341,7 +351,7 @@ public final class ParakeetEncoder {
      * NeMo mel front end over {@code pcm[from, from+length)}: frame-major {@code [frames, nMels]},
      * per-feature normalized, with {@code stats} (nullable) carried across windows.
      */
-    private float[] mel(float[] pcm, int from, int length, MelStats stats, boolean persist) {
+    float[] mel(float[] pcm, int from, int length, MelStats stats, boolean persist) {
         int frames = melFrames(length);
         int nMels = config.nMels();
         float[] features = logMel.frames(pcm, from, length, config.nFft() / 2, frames);
@@ -361,7 +371,7 @@ public final class ParakeetEncoder {
         return features;
     }
 
-    private int melFrames(int samples) {
+    int melFrames(int samples) {
         return 1 + samples / config.hop();
     }
 
@@ -447,25 +457,75 @@ public final class ParakeetEncoder {
     // pointwise + ReLU), channel-major staging in plain arrays, flattened channel-major. The
     // arrays are the workspace's, so they arrive holding the previous window: every loop below
     // writes its whole output, and the one read-before-written span (flat's padding) is cleared.
+
+    /**
+     * Encoder frames per subsampling tile. Each stride-2 3x3 stage reads rows {@code 2t-1..2t+1} of
+     * its input, so a tile needs only a 15-mel-frame halo, and its intermediates stay ~40 MB
+     * whatever the window's length (a 65 s window at once was ~500 MB).
+     */
+    private static final int SUBSAMPLING_TILE = 64;
+
     private MemoryView<MemorySegment> preEncode(
             float[] mel, int melFrames, int frames, int valid, Workspace workspace) {
+        return preEncode(mel, melFrames, frames, valid, SUBSAMPLING_TILE, workspace);
+    }
+
+    /** As above with the tile size explicit: the tiling test's seam. */
+    MemoryView<MemorySegment> preEncode(
+            float[] mel, int melFrames, int frames, int valid, int tile, Workspace workspace) {
         int channels = config.subsamplingChannels();
-        int dim = config.dModel();
         int frequency = config.nMels();
         int t1 = subsampled(melFrames), f1 = subsampled(frequency);
         int t2 = subsampled(t1), f2 = subsampled(f1);
         int t3 = subsampled(t2), f3 = subsampled(f2);
         if (t3 != frames) throw new IllegalStateException("subsampling frame mismatch");
+        int flattened = channels * f3;
+        MemoryView<MemorySegment> x = Views.allocateF32(workspace, frames, config.dModel());
+        for (int j0 = 0; j0 < frames; j0 += tile) {
+            int j1 = (int) Math.min(frames, (long) j0 + tile);
+            // the rows each earlier stage must produce for output rows [j0, j1), clamped
+            int a2 = Math.max(0, 2 * j0 - 1), b2 = Math.min(t2, 2 * j1);
+            int a1 = Math.max(0, 2 * a2 - 1), b1 = Math.min(t1, 2 * b2);
+            try (var scope = Workspace.scope(workspace)) {
+                float[] s1 = conv0(mel, melFrames, a1, b1, f1, workspace);
+                float[] s2 =
+                        separable(s1, a1, b1, t1, f1, a2, b2, f2, dw1Taps, dw1Bias, pw1, workspace);
+                float[] s3 =
+                        separable(s2, a2, b2, t2, f2, j0, j1, f3, dw2Taps, dw2Bias, pw2, workspace);
 
-        // conv.0: full 3x3 stride-2 pad-1 (1 -> channels), bias + ReLU.
-        float[] s1 = workspace.floatsAtLeast(channels * t1 * f1);
+                // NeMo flattens (B, C, T', F') to (B, T', C*F') - the frame vector is
+                // channel-major. Frames beyond the valid length are zero: the reference masks
+                // before the linear.
+                int rows = j1 - j0, live = Math.max(0, Math.min(j1, valid) - j0);
+                float[] flat = workspace.floatsAtLeast(rows * flattened);
+                for (int c = 0; c < channels; c++)
+                    for (int t = 0; t < live; t++)
+                        for (int f = 0; f < f3; f++)
+                            flat[t * flattened + c * f3 + f] = s3[(c * rows + t) * f3 + f];
+                Arrays.fill(flat, live * flattened, rows * flattened, 0f);
+                MemoryView<MemorySegment> flatView = Views.allocateF32(workspace, rows, flattened);
+                Views.copyFromArray(flatView, 0, flat, 0, rows * flattened, "pre-encode flat");
+                preOut.apply(flatView, x, j0, rows);
+            }
+        }
+        return x;
+    }
+
+    /**
+     * conv.0: full 3x3 stride-2 pad-1 (1 -> channels), bias + ReLU, for output rows {@code [from,
+     * to)}: channel-major {@code [channels][to-from][f1]}.
+     */
+    private float[] conv0(
+            float[] mel, int melFrames, int from, int to, int f1, Workspace workspace) {
+        int channels = config.subsamplingChannels(), frequency = config.nMels(), rows = to - from;
+        float[] out = workspace.floatsAtLeast(channels * rows * f1);
         Parallel.forLoop(
                 0,
                 channels,
                 oc -> {
                     int tapBase = oc * 9;
                     float bias = conv0Bias[oc];
-                    for (int ot = 0; ot < t1; ot++) {
+                    for (int ot = from; ot < to; ot++) {
                         for (int of = 0; of < f1; of++) {
                             float sum = bias;
                             for (int ky = 0; ky < 3; ky++) {
@@ -479,44 +539,35 @@ public final class ParakeetEncoder {
                                                     * mel[it * frequency + f];
                                 }
                             }
-                            s1[(oc * t1 + ot) * f1 + of] = Math.max(sum, 0f);
+                            out[(oc * rows + ot - from) * f1 + of] = Math.max(sum, 0f);
                         }
                     }
                 });
-
-        float[] s2 = separable(s1, channels, t1, f1, t2, f2, dw1Taps, dw1Bias, pw1, workspace);
-        float[] s3 = separable(s2, channels, t2, f2, t3, f3, dw2Taps, dw2Bias, pw2, workspace);
-
-        // NeMo flattens (B, C, T', F') to (B, T', C*F') - the frame vector is channel-major.
-        int flattened = channels * f3;
-        float[] flat = workspace.floatsAtLeast(t3 * flattened);
-        for (int c = 0; c < channels; c++)
-            for (int t = 0; t < valid; t++)
-                for (int f = 0; f < f3; f++)
-                    flat[t * flattened + c * f3 + f] = s3[(c * t3 + t) * f3 + f];
-        // Frames beyond the valid length are zero: the reference masks before the linear.
-        Arrays.fill(flat, valid * flattened, t3 * flattened, 0f);
-
-        MemoryView<MemorySegment> flatView = Views.allocateF32(workspace, t3, flattened);
-        Views.copyFromArray(flatView, 0, flat, 0, t3 * flattened, "pre-encode flat");
-        MemoryView<MemorySegment> x = Views.allocateF32(workspace, frames, dim);
-        preOut.apply(flatView, x, frames);
-        return x;
+        return out;
     }
 
-    /** One depthwise 3x3 stride-2 conv (bias, no activation) then its pointwise 1x1 and ReLU. */
+    /**
+     * One depthwise 3x3 stride-2 conv (bias, no activation) then its pointwise 1x1 and ReLU, for
+     * output rows {@code [outFrom, outTo)} of a {@code timeIn}-row input whose rows {@code [inFrom,
+     * inTo)} are in {@code in} (channel-major). Time indices stay global, so the zero padding is
+     * only ever the real edges', never a tile boundary's.
+     */
     private float[] separable(
             float[] in,
-            int channels,
+            int inFrom,
+            int inTo,
             int timeIn,
             int frequencyIn,
-            int timeOut,
+            int outFrom,
+            int outTo,
             int frequencyOut,
             float[] taps,
             float[] bias,
             Linear pointwise,
             Workspace workspace) {
-        int positions = timeOut * frequencyOut;
+        int channels = config.subsamplingChannels();
+        int inRows = inTo - inFrom;
+        int positions = (outTo - outFrom) * frequencyOut;
         int size = positions * channels;
         float[] positionsMajor = workspace.floatsAtLeast(size);
         Parallel.forLoop(
@@ -524,8 +575,8 @@ public final class ParakeetEncoder {
                 channels,
                 c -> {
                     int tapBase = c * 9;
-                    int inBase = c * timeIn * frequencyIn;
-                    for (int ot = 0; ot < timeOut; ot++) {
+                    int inBase = c * inRows * frequencyIn;
+                    for (int ot = outFrom; ot < outTo; ot++) {
                         for (int of = 0; of < frequencyOut; of++) {
                             float sum = bias[c];
                             for (int ky = 0; ky < 3; ky++) {
@@ -536,10 +587,11 @@ public final class ParakeetEncoder {
                                     if (f < 0 || f >= frequencyIn) continue;
                                     sum +=
                                             taps[tapBase + ky * 3 + kx]
-                                                    * in[inBase + it * frequencyIn + f];
+                                                    * in[inBase + (it - inFrom) * frequencyIn + f];
                                 }
                             }
-                            positionsMajor[(ot * frequencyOut + of) * channels + c] = sum;
+                            positionsMajor[((ot - outFrom) * frequencyOut + of) * channels + c] =
+                                    sum;
                         }
                     }
                 });
