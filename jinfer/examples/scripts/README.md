@@ -71,6 +71,7 @@ The model returns normalized boxes. Java2D scales and paints them into `detected
 | Task | Command | Result |
 |---|---|---|
 | Speech synthesis | `jbang Speak.java "Hello from Java."` | Writes `hello.wav` |
+| Speech recognition | `jbang Transcribe.java speech.wav` | Prints the transcript, word timing on stderr |
 | Semantic search | `jbang Search.java "what causes coffee bitterness?"` | Ranks documents by embedding similarity |
 | Reranking | `jbang Rerank.java "what causes coffee bitterness?"` | Scores each query and document pair |
 | Prompt caching | `jbang CachedPrompt.java` | Reports restored prompt tokens |

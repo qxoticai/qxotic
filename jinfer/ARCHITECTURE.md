@@ -35,7 +35,8 @@ Model<C, W, S extends RuntimeState>
 ├── ContextModel             incremental bounded ingestion
 │   ├── LanguageModel        logits projection
 │   └── EmbeddingModel       pooled embedding projection
-└── SpeechSynthesisModel     phonemes-to-waveform synthesis; speak(text) is the text door
+├── SpeechSynthesisModel     phonemes-to-waveform synthesis; speak(text) is the text door
+└── TranscriptionModel       PCM-to-timed-transcript recognition; codecs decode, the model listens
 
 Reranker<S extends ContextState>   relevance projection - a sibling of Model, not a subtype
 Phonemizer                         text to phoneme ids in one model's vocabulary - the speech tokenizer
