@@ -356,6 +356,24 @@ JinferSpeechModel.builder()
 
 A request that names a `voice` is refused rather than answered in this model's only voice.
 
+## Speech recognition
+
+`JinferTranscriptionModel` implements langchain4j's `AudioTranscriptionModel`:
+
+```java
+try (var transcriber = JinferTranscriptionModel.builder()
+        .model("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf")
+        .build()) {
+
+    System.out.println(transcriber.transcribe(Path.of("speech.wav")).text());
+}
+```
+
+The typed doors return the full jinfer `Transcription`, with per-token spans, confidences
+and `words()` grouping; the langchain4j `transcribe(AudioTranscriptionRequest)` door
+returns its text. A request that carries a `prompt`, `temperature` or `language` is
+refused rather than silently ignored.
+
 ## Cached prompts
 
 Prefill a system prompt once, then reuse it:
