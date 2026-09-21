@@ -25,6 +25,11 @@ import java.util.stream.Stream;
  *        TranscriptionBench --model tdt.gguf --audio jfk.wav [--reps N]
  * </pre>
  *
+ * <p>{@code --gate <percent>} turns the WER run into a pass/fail check: exit 1 when the corpus WER
+ * exceeds the bound. Decoding is deterministic, so a subset's WER is a constant per model and
+ * quant; gate with a margin over the measured value and a windowing or normalization regression
+ * trips it while quantization noise cannot.
+ *
  * <p>WER uses the usual normalization (lowercase, keep {@code [a-z0-9']}, collapse spaces) and
  * word-level edit distance. RTF is seconds of audio transcribed per wall second, model load
  * excluded, first run discarded as warmup.
@@ -36,6 +41,7 @@ public final class TranscriptionBench {
     public static void main(String[] args) throws Exception {
         Path model = null, corpus = null, audio = null;
         int limit = Integer.MAX_VALUE, reps = 3;
+        double gate = -1;
         for (int i = 0; i < args.length; i += 2) {
             if (i + 1 >= args.length)
                 throw new IllegalArgumentException("missing value: " + args[i]);
@@ -45,13 +51,14 @@ public final class TranscriptionBench {
                 case "--audio" -> audio = Path.of(args[i + 1]);
                 case "--limit" -> limit = Integer.parseInt(args[i + 1]);
                 case "--reps" -> reps = Integer.parseInt(args[i + 1]);
+                case "--gate" -> gate = Double.parseDouble(args[i + 1]);
                 default -> throw new IllegalArgumentException("unknown option: " + args[i]);
             }
         }
-        if (model == null || (corpus == null) == (audio == null))
+        if (model == null || (corpus == null) == (audio == null) || (gate >= 0 && corpus == null))
             throw new IllegalArgumentException(
-                    "usage: --model <gguf> (--librispeech <dir> [--limit N] | --audio <file>"
-                            + " [--reps N])");
+                    "usage: --model <gguf> (--librispeech <dir> [--limit N] [--gate maxWer%] |"
+                            + " --audio <file> [--reps N])");
 
         try (Arena arena = Arena.ofShared()) {
             long loadStart = System.nanoTime();
@@ -59,8 +66,18 @@ public final class TranscriptionBench {
             System.out.printf(
                     "model %s loaded in %.1f s%n",
                     model.getFileName(), (System.nanoTime() - loadStart) / 1e9);
-            if (corpus != null) wer(transcriber, corpus, limit);
-            else rtf(transcriber, audio, reps);
+            if (corpus != null) {
+                double wer = wer(transcriber, corpus, limit);
+                if (gate >= 0) {
+                    boolean passed = wer <= gate;
+                    System.out.printf(
+                            "%ngate %.3f%%: %s (measured %.3f%%)%n",
+                            gate, passed ? "PASS" : "FAIL", wer);
+                    if (!passed) System.exit(1);
+                }
+            } else {
+                rtf(transcriber, audio, reps);
+            }
         }
     }
 
@@ -68,7 +85,7 @@ public final class TranscriptionBench {
 
     private record Scored(Utterance utterance, int errors, int words, String hypothesis) {}
 
-    private static void wer(TranscriptionModel<?, ?, ?> transcriber, Path corpus, int limit)
+    private static double wer(TranscriptionModel<?, ?, ?> transcriber, Path corpus, int limit)
             throws IOException {
         List<Utterance> utterances = corpus(corpus, limit);
         System.out.printf("%d utterances from %s%n", utterances.size(), corpus);
@@ -117,6 +134,7 @@ public final class TranscriptionBench {
                                         s.words(),
                                         s.utterance().reference(),
                                         s.hypothesis()));
+        return 100.0 * errors / Math.max(1, words);
     }
 
     private static void rtf(TranscriptionModel<?, ?, ?> transcriber, Path audio, int reps)
