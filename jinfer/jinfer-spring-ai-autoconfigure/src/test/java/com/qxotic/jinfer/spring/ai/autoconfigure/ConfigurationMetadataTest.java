@@ -34,6 +34,8 @@ class ConfigurationMetadataTest {
                         "\"spring.ai.jinfer.embedding.model\"",
                         "\"spring.ai.jinfer.embedding.context-capacity\"",
                         "\"spring.ai.jinfer.rerank.instruction\"",
-                        "\"spring.ai.jinfer.speech.max-input-chars\"");
+                        "\"spring.ai.jinfer.speech.max-input-chars\"",
+                        "\"spring.ai.jinfer.transcription\"",
+                        "\"spring.ai.jinfer.transcription.model\"");
     }
 }

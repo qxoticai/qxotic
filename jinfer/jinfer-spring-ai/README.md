@@ -83,6 +83,7 @@ The starter creates beans from these properties:
 | Embeddings | `spring.ai.model.embedding=jinfer` | `spring.ai.jinfer.embedding.model` |
 | Reranking | configured when a model is present | `spring.ai.jinfer.rerank.model` |
 | Speech | configured when a model is present | `spring.ai.jinfer.speech.model` |
+| Transcription | configured when a model is present | `spring.ai.jinfer.transcription.model` |
 
 Chat is enabled when its model is configured and no other chat provider is selected.
 Model sources may be remote references or local paths and resolve during application startup.
@@ -372,6 +373,23 @@ try (var speech = JinferSpeechModel.builder()
 Chunks may include silence and do not necessarily align with sentences.
 In a WebFlux application, inject the Spring-managed `TextToSpeechModel` and return its `Flux` from the handler.
 Block only at an imperative boundary such as this standalone example, never on a WebFlux event-loop thread.
+
+## Transcription
+
+`JinferTranscriptionModel` implements Spring AI's `TranscriptionModel`:
+
+```java
+try (var transcriber = JinferTranscriptionModel.builder()
+        .model("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf")
+        .build()) {
+
+    System.out.println(transcriber.transcribe(new FileSystemResource("speech.wav")));
+}
+```
+
+The `Resource` may hold any format `jinfer-codecs` decodes.
+The typed `transcribe(Path)` and `transcribe(byte[])` doors return the full jinfer
+`Transcription`, with per-token spans, confidences and `words()` grouping.
 
 Kokoro takes its voice as a companion, the same way; `espeak-ng` must be on `PATH`:
 

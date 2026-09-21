@@ -114,6 +114,12 @@
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- the transcription test reads its expected transcript out of a GGUF fixture -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- E2E proof that the type-seam framing makes a single-bean VectorStore retrieval-correct -->
     <dependency>
       <groupId>org.springframework.ai</groupId>
