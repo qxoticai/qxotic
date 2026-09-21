@@ -29,4 +29,26 @@ class WorkspaceTest {
             assertSame(grown, workspace.allocateMemory(65, 64));
         }
     }
+
+    @Test
+    void floatsAtLeastReusesAnyLargeEnoughArray() {
+        try (Arena arena = Arena.ofShared()) {
+            var workspace = new Workspace(MemoryAllocators.ofArena(arena));
+            float[] first = workspace.floatsAtLeast(100);
+            float[] second = workspace.floatsAtLeast(10);
+            assertEquals(2, workspace.heapAllocations());
+
+            workspace.rewind();
+            assertSame(first, workspace.floatsAtLeast(40)); // smaller: same array
+            assertSame(second, workspace.floatsAtLeast(10));
+            assertEquals(2, workspace.heapAllocations());
+
+            workspace.rewind();
+            float[] grown = workspace.floatsAtLeast(101); // larger: replaced once
+            assertEquals(101, grown.length);
+            workspace.rewind();
+            assertSame(grown, workspace.floatsAtLeast(101));
+            assertEquals(3, workspace.heapAllocations());
+        }
+    }
 }

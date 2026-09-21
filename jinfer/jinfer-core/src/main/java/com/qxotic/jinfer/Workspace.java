@@ -31,7 +31,7 @@ public final class Workspace implements MemoryAllocator<MemorySegment> {
     private int[][] intBuffers = new int[16][];
     private float[][][] matrices = new float[16][][];
     private final StackScope[] scopes = new StackScope[16];
-    private int top, floatTop, intTop, matrixTop, depth, backingAllocations;
+    private int top, floatTop, intTop, matrixTop, depth, backingAllocations, heapAllocations;
 
     public Workspace(MemoryAllocator<MemorySegment> arena) {
         this.arena = arena;
@@ -73,16 +73,38 @@ public final class Workspace implements MemoryAllocator<MemorySegment> {
             floatBuffers = Arrays.copyOf(floatBuffers, floatBuffers.length * 2);
         float[] buffer = floatBuffers[floatTop];
         if (buffer == null || buffer.length != size)
-            buffer = floatBuffers[floatTop] = new float[size];
+            buffer = floatBuffers[floatTop] = newFloats(size);
         floatTop++;
         return buffer;
+    }
+
+    /**
+     * As {@link #floats}, but any pooled array of at least {@code size} is reused: for callers that
+     * index explicitly (never through {@code length}) and see sizes vary call to call.
+     */
+    public float[] floatsAtLeast(int size) {
+        if (floatTop == floatBuffers.length)
+            floatBuffers = Arrays.copyOf(floatBuffers, floatBuffers.length * 2);
+        float[] buffer = floatBuffers[floatTop];
+        if (buffer == null || buffer.length < size)
+            buffer = floatBuffers[floatTop] = newFloats(size);
+        floatTop++;
+        return buffer;
+    }
+
+    private float[] newFloats(int size) {
+        heapAllocations++;
+        return new float[size];
     }
 
     public int[] ints(int size) {
         if (intTop == intBuffers.length)
             intBuffers = Arrays.copyOf(intBuffers, intBuffers.length * 2);
         int[] buffer = intBuffers[intTop];
-        if (buffer == null || buffer.length != size) buffer = intBuffers[intTop] = new int[size];
+        if (buffer == null || buffer.length != size) {
+            buffer = intBuffers[intTop] = new int[size];
+            heapAllocations++;
+        }
         intTop++;
         return buffer;
     }
@@ -92,6 +114,7 @@ public final class Workspace implements MemoryAllocator<MemorySegment> {
         float[][] matrix = matrices[matrixTop];
         if (matrix == null || matrix.length != rows || (rows != 0 && matrix[0].length != columns)) {
             matrix = matrices[matrixTop] = new float[rows][columns];
+            heapAllocations++;
         }
         matrixTop++;
         return matrix;
@@ -132,8 +155,14 @@ public final class Workspace implements MemoryAllocator<MemorySegment> {
         return buffer;
     }
 
+    /** Native buffers allocated so far: flat across calls once the workspace is warm. */
     public int backingAllocations() {
         return backingAllocations;
+    }
+
+    /** Heap arrays allocated so far: flat across calls once the workspace is warm. */
+    public int heapAllocations() {
+        return heapAllocations;
     }
 
     @Override
