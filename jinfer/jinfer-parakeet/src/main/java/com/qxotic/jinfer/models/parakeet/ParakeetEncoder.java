@@ -568,10 +568,12 @@ public final class ParakeetEncoder {
         int half = dModel / 2;
         int rows = 2 * frames - 1;
         double scale = -Math.log(10_000.0) / dModel;
+        double[] frequencies = new double[half]; // per column, the same for every row
+        for (int i = 0; i < half; i++) frequencies[i] = Math.exp(2 * i * scale);
         for (int row = 0; row < rows; row++) {
             int position = frames - 1 - row;
             for (int i = 0; i < half; i++) {
-                double angle = position * Math.exp(2 * i * scale);
+                double angle = position * frequencies[i];
                 table[row * dModel + 2 * i] = (float) Math.sin(angle);
                 table[row * dModel + 2 * i + 1] = (float) Math.cos(angle);
             }
