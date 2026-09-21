@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
@@ -50,7 +51,8 @@ class ParakeetAttentionTest {
 
         MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
         try {
-            ParakeetEncoder.Scratch work = ParakeetEncoder.Scratch.allocate(arena, frames, dim, 4);
+            ParakeetEncoder.Scratch work =
+                    ParakeetEncoder.Scratch.allocate(new Workspace(arena), frames, dim, 4);
             // Scratch is reused across layers: no result may lean on it starting out zeroed.
             for (MemoryView<MemorySegment> stale :
                     List.of(

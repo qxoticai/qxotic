@@ -4,6 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.LogMel;
 import com.qxotic.jinfer.kernels.MatMul;
@@ -19,6 +20,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.ObjIntConsumer;
@@ -342,17 +344,15 @@ public final class ParakeetEncoder {
         }
     }
 
-    /** NeMo mel front end: frame-major {@code [frames, nMels]}, per-feature normalized. */
-    private float[] mel(float[] pcm16k) {
-        return mel(pcm16k, null, false);
-    }
-
-    /** As {@link #mel(float[])}, normalizing with {@code stats} carried across windows. */
-    private float[] mel(float[] pcm16k, MelStats stats, boolean persist) {
-        int frames = melFrames(pcm16k.length);
+    /**
+     * NeMo mel front end over {@code pcm[from, from+length)}: frame-major {@code [frames, nMels]},
+     * per-feature normalized, with {@code stats} (nullable) carried across windows.
+     */
+    private float[] mel(float[] pcm, int from, int length, MelStats stats, boolean persist) {
+        int frames = melFrames(length);
         int nMels = config.nMels();
-        float[] features = logMel.frames(pcm16k, 0, pcm16k.length, config.nFft() / 2, frames);
-        int valid = Math.min(pcm16k.length / config.hop(), frames);
+        float[] features = logMel.frames(pcm, from, length, config.nFft() / 2, frames);
+        int valid = Math.min(length / config.hop(), frames);
         if (stats == null) {
             LogMel.normalizePerFeature(features, nMels, frames, valid);
             return features;
@@ -395,59 +395,88 @@ public final class ParakeetEncoder {
      */
     private Output forward(
             float[] pcm16k, MelStats stats, boolean persist, ObjIntConsumer<float[]> layerTap) {
-        int melFrames = melFrames(pcm16k.length);
-        float[] mel = mel(pcm16k, stats, persist);
-        // Offline valid-length recurrence seeds at melFrames - 1: the center pad contributes one
-        // trailing mel frame that carries no signal.
-        int frames = subsampled(subsampled(subsampled(melFrames)));
-        int valid = subsampled(subsampled(subsampled(melFrames - 1)));
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
-            MemoryView<MemorySegment> x = preEncode(mel, melFrames, frames, valid, scratch);
-            if (config.xscaling())
-                Ops.multiplyInPlace(
-                        x, 0, frames * config.dModel(), (float) Math.sqrt(config.dModel()));
-            if (layerTap != null) layerTap.accept(Views.toFloatArray(x, "pre-encode"), -1);
-            MemoryView<MemorySegment> positions = positionTable(frames, scratch);
-            Scratch work = Scratch.allocate(scratch, frames, config.dModel(), config.ffDim());
-            for (int i = 0; i < blocks.length; i++) {
-                Block block = blocks[i];
-                halfFfn(
-                        x,
-                        block.ff1NormWeight(),
-                        block.ff1NormBias(),
-                        block.ff1Up(),
-                        block.ff1UpBias(),
-                        block.ff1Down(),
-                        block.ff1DownBias(),
-                        frames,
-                        work);
-                attention(x, block, positions, frames, valid, work);
-                convolution(x, block, frames, valid, work);
-                halfFfn(
-                        x,
-                        block.ff2NormWeight(),
-                        block.ff2NormBias(),
-                        block.ff2Up(),
-                        block.ff2UpBias(),
-                        block.ff2Down(),
-                        block.ff2DownBias(),
-                        frames,
-                        work);
-                Norms.layerNorm(
-                        x,
-                        x,
-                        block.outNormWeight(),
-                        block.outNormBias(),
-                        config.dModel(),
-                        frames,
-                        NORM_EPS);
-                if (layerTap != null) layerTap.accept(Views.toFloatArray(x, "encoder layer"), i);
-            }
-            return new Output(Views.toFloatArray(x, "encoder output"), frames);
+            MemoryView<MemorySegment> x =
+                    encode(
+                            pcm16k,
+                            0,
+                            pcm16k.length,
+                            stats,
+                            persist,
+                            layerTap,
+                            new Workspace(scratch));
+            return new Output(Views.toFloatArray(x, "encoder output"), frames(pcm16k.length));
         } finally {
             Arenas.close(scratch);
         }
+    }
+
+    /** Encoder frames for {@code samples} of audio. */
+    int frames(int samples) {
+        return subsampled(subsampled(subsampled(melFrames(samples))));
+    }
+
+    /**
+     * The pipeline's pass over {@code pcm[from, from+length)}: {@code [frames, dModel]} as a view
+     * into {@code workspace}, valid until its next rewind. Every buffer comes from the workspace,
+     * so a warm state encodes without allocating.
+     */
+    MemoryView<MemorySegment> encode(
+            float[] pcm,
+            int from,
+            int length,
+            MelStats stats,
+            boolean persist,
+            ObjIntConsumer<float[]> layerTap,
+            Workspace workspace) {
+        int melFrames = melFrames(length);
+        float[] mel = mel(pcm, from, length, stats, persist);
+        // Offline valid-length recurrence seeds at melFrames - 1: the center pad contributes one
+        // trailing mel frame that carries no signal.
+        int frames = frames(length);
+        int valid = subsampled(subsampled(subsampled(melFrames - 1)));
+        MemoryView<MemorySegment> x = preEncode(mel, melFrames, frames, valid, workspace);
+        if (config.xscaling())
+            Ops.multiplyInPlace(x, 0, frames * config.dModel(), (float) Math.sqrt(config.dModel()));
+        if (layerTap != null) layerTap.accept(Views.toFloatArray(x, "pre-encode"), -1);
+        MemoryView<MemorySegment> positions = positionTable(frames, workspace);
+        Scratch work = Scratch.allocate(workspace, frames, config.dModel(), config.ffDim());
+        for (int i = 0; i < blocks.length; i++) {
+            Block block = blocks[i];
+            halfFfn(
+                    x,
+                    block.ff1NormWeight(),
+                    block.ff1NormBias(),
+                    block.ff1Up(),
+                    block.ff1UpBias(),
+                    block.ff1Down(),
+                    block.ff1DownBias(),
+                    frames,
+                    work);
+            attention(x, block, positions, frames, valid, work);
+            convolution(x, block, frames, valid, work);
+            halfFfn(
+                    x,
+                    block.ff2NormWeight(),
+                    block.ff2NormBias(),
+                    block.ff2Up(),
+                    block.ff2UpBias(),
+                    block.ff2Down(),
+                    block.ff2DownBias(),
+                    frames,
+                    work);
+            Norms.layerNorm(
+                    x,
+                    x,
+                    block.outNormWeight(),
+                    block.outNormBias(),
+                    config.dModel(),
+                    frames,
+                    NORM_EPS);
+            if (layerTap != null) layerTap.accept(Views.toFloatArray(x, "encoder layer"), i);
+        }
+        return x;
     }
 
     static int subsampled(int length) {
@@ -455,9 +484,11 @@ public final class ParakeetEncoder {
     }
 
     // --- subsampling: NeMo dw_striding x8 (conv2d s2 + ReLU, then twice depthwise s2 ->
-    // pointwise + ReLU), channel-major staging in plain arrays, flattened channel-major ---
+    // pointwise + ReLU), channel-major staging in plain arrays, flattened channel-major. The
+    // arrays are the workspace's, so they arrive holding the previous window: every loop below
+    // writes its whole output, and the one read-before-written span (flat's padding) is cleared.
     private MemoryView<MemorySegment> preEncode(
-            float[] mel, int melFrames, int frames, int valid, MemoryArena<MemorySegment> scratch) {
+            float[] mel, int melFrames, int frames, int valid, Workspace workspace) {
         int channels = config.subsamplingChannels();
         int dim = config.dModel();
         int frequency = config.nMels();
@@ -467,7 +498,7 @@ public final class ParakeetEncoder {
         if (t3 != frames) throw new IllegalStateException("subsampling frame mismatch");
 
         // conv.0: full 3x3 stride-2 pad-1 (1 -> channels), bias + ReLU.
-        float[] s1 = new float[channels * t1 * f1];
+        float[] s1 = workspace.floatsAtLeast(channels * t1 * f1);
         Parallel.forLoop(
                 0,
                 channels,
@@ -496,23 +527,25 @@ public final class ParakeetEncoder {
         float[] s2 =
                 separable(
                         s1, channels, t1, f1, t2, f2, dw1Taps, dw1Bias, pw1Weight, pw1Bias,
-                        scratch);
+                        workspace);
         float[] s3 =
                 separable(
                         s2, channels, t2, f2, t3, f3, dw2Taps, dw2Bias, pw2Weight, pw2Bias,
-                        scratch);
+                        workspace);
 
         // NeMo flattens (B, C, T', F') to (B, T', C*F') - the frame vector is channel-major.
         int flattened = channels * f3;
-        float[] flat = new float[t3 * flattened];
+        float[] flat = workspace.floatsAtLeast(t3 * flattened);
         for (int c = 0; c < channels; c++)
             for (int t = 0; t < valid; t++)
                 for (int f = 0; f < f3; f++)
                     flat[t * flattened + c * f3 + f] = s3[(c * t3 + t) * f3 + f];
-        // Frames beyond the valid length stay zero: the reference masks before the linear.
+        // Frames beyond the valid length are zero: the reference masks before the linear.
+        Arrays.fill(flat, valid * flattened, t3 * flattened, 0f);
 
-        MemoryView<MemorySegment> flatView = Views.fromFloatArray(scratch, flat);
-        MemoryView<MemorySegment> x = Views.allocateF32(scratch, frames, dim);
+        MemoryView<MemorySegment> flatView = Views.allocateF32(workspace, t3, flattened);
+        Views.copyFromArray(flatView, 0, flat, 0, t3 * flattened, "pre-encode flat");
+        MemoryView<MemorySegment> x = Views.allocateF32(workspace, frames, dim);
         MatMul.gemm(preOutWeight, flatView, flattened, x, dim, dim, frames, flattened);
         Ops.addRowBiasInPlace(x, 0, preOutBias, 0, frames, dim);
         return x;
@@ -530,9 +563,10 @@ public final class ParakeetEncoder {
             float[] dwBias,
             MemoryView<MemorySegment> pwWeight,
             float[] pwBias,
-            MemoryArena<MemorySegment> scratch) {
+            Workspace workspace) {
         int positions = timeOut * frequencyOut;
-        float[] positionsMajor = new float[positions * channels];
+        int size = positions * channels;
+        float[] positionsMajor = workspace.floatsAtLeast(size);
         Parallel.forLoop(
                 0,
                 channels,
@@ -558,11 +592,13 @@ public final class ParakeetEncoder {
                         }
                     }
                 });
-        MemoryView<MemorySegment> pwIn = Views.fromFloatArray(scratch, positionsMajor);
-        MemoryView<MemorySegment> pwOut = Views.allocateF32(scratch, positions, channels);
+        MemoryView<MemorySegment> pwIn = Views.allocateF32(workspace, positions, channels);
+        Views.copyFromArray(pwIn, 0, positionsMajor, 0, size, "depthwise conv");
+        MemoryView<MemorySegment> pwOut = Views.allocateF32(workspace, positions, channels);
         MatMul.gemm(pwWeight, pwIn, channels, pwOut, channels, channels, positions, channels);
-        float[] mixed = Views.toFloatArray(pwOut, "pointwise conv");
-        float[] out = new float[channels * positions];
+        float[] mixed = positionsMajor; // consumed by the copy above: reuse it for the result
+        Views.copyToArray(pwOut, 0, mixed, 0, size, "pointwise conv");
+        float[] out = workspace.floatsAtLeast(size);
         for (int p = 0; p < positions; p++)
             for (int c = 0; c < channels; c++)
                 out[c * positions + p] = Math.max(mixed[p * channels + c] + pwBias[c], 0f);
@@ -573,9 +609,13 @@ public final class ParakeetEncoder {
 
     /** Sinusoidal table for {@code 2*frames-1} relative positions {@code +(T-1)..-(T-1)}. */
     static float[] relativePositions(int frames, int dModel) {
+        return relativePositions(frames, dModel, new float[(2 * frames - 1) * dModel]);
+    }
+
+    /** As above, into {@code table} (at least {@code (2*frames-1)*dModel} long). */
+    static float[] relativePositions(int frames, int dModel, float[] table) {
         int half = dModel / 2;
         int rows = 2 * frames - 1;
-        float[] table = new float[rows * dModel];
         double scale = -Math.log(10_000.0) / dModel;
         for (int row = 0; row < rows; row++) {
             int position = frames - 1 - row;
@@ -589,9 +629,12 @@ public final class ParakeetEncoder {
     }
 
     /** The raw table as a view; every block projects it with its own {@code linear_pos}. */
-    private MemoryView<MemorySegment> positionTable(
-            int frames, MemoryArena<MemorySegment> scratch) {
-        return Views.fromFloatArray(scratch, relativePositions(frames, config.dModel()));
+    private MemoryView<MemorySegment> positionTable(int frames, Workspace workspace) {
+        int dim = config.dModel(), rows = 2 * frames - 1;
+        float[] table = relativePositions(frames, dim, workspace.floatsAtLeast(rows * dim));
+        MemoryView<MemorySegment> view = Views.allocateF32(workspace, rows, dim);
+        Views.copyFromArray(view, 0, table, 0, rows * dim, "relative positions");
+        return view;
     }
 
     record Scratch(
@@ -610,8 +653,10 @@ public final class ParakeetEncoder {
             MemoryView<MemorySegment> scores, // one head's [valid][valid] probabilities
             MemoryView<MemorySegment> positionScores, // one head's [valid][2*valid-1]
             MemoryView<MemorySegment> valueT, // [dim][frames]
-            MemoryView<MemorySegment> attentionT) { // [dim][frames]
-        static Scratch allocate(MemoryArena<MemorySegment> arena, int frames, int dim, int ffDim) {
+            MemoryView<MemorySegment> attentionT, // [dim][frames]
+            float[] gated, // conv module staging, [frames][dim]
+            float[] mixed) {
+        static Scratch allocate(Workspace arena, int frames, int dim, int ffDim) {
             int positionRows = 2 * frames - 1;
             return new Scratch(
                     Views.allocateF32(arena, frames, dim),
@@ -629,7 +674,9 @@ public final class ParakeetEncoder {
                     Views.allocateF32(arena, frames, frames),
                     Views.allocateF32(arena, frames, positionRows),
                     Views.allocateF32(arena, dim, frames),
-                    Views.allocateF32(arena, dim, frames));
+                    Views.allocateF32(arena, dim, frames),
+                    arena.floatsAtLeast(frames * dim),
+                    arena.floatsAtLeast(frames * dim));
         }
     }
 
@@ -800,8 +847,8 @@ public final class ParakeetEncoder {
                                 dim));
         zeroRows(work.glu(), valid, frames, dim);
 
-        float[] gated = Views.toFloatArray(work.glu(), "conv glu");
-        float[] mixed = new float[frames * dim];
+        float[] gated = work.gated(), mixed = work.mixed();
+        Views.copyToArray(work.glu(), 0, gated, 0, frames * dim, "conv glu");
         float[] taps = block.depthwise();
         float[] bnScale = block.bnScale(), bnShift = block.bnShift();
         Parallel.forLoop(
@@ -820,7 +867,7 @@ public final class ParakeetEncoder {
                         mixed[t * dim + c] = (float) (normalized / (1.0 + Math.exp(-normalized)));
                     }
                 });
-        Views.copyFromArray(work.norm(), 0, mixed, 0, mixed.length, "conv mixed");
+        Views.copyFromArray(work.norm(), 0, mixed, 0, frames * dim, "conv mixed");
         MatMul.gemm(block.pointwise2(), work.norm(), dim, work.glu(), dim, dim, frames, dim);
         if (block.pointwise2Bias() != null)
             Ops.addRowBiasInPlace(work.glu(), 0, block.pointwise2Bias(), 0, frames, dim);

@@ -1,10 +1,13 @@
 package com.qxotic.jinfer.models.parakeet;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Transcription;
 import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.TranscriptionStream;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jota.memory.MemoryArena;
@@ -40,13 +43,40 @@ public final class Parakeet
     public record Weights(ParakeetEncoder encoder, ParakeetTdt decoder) {}
 
     /**
-     * A transcription pipeline's slot. Inference scratch is currently per-call, so the state holds
-     * no memory yet; it exists for the contract's serial-pipeline law and will carry streaming
-     * state when incremental input lands.
+     * A transcription pipeline's slot: owns the {@link Workspace} every window's encoder and
+     * decoder scratch comes from, so a warm state transcribes without allocating. The workspace
+     * grows to the longest window seen (at most the window plus the commit lookahead).
      */
     public static final class State extends RuntimeState {
+        private final MemoryArena<MemorySegment> owned; // null when the arena is borrowed
+        private final MemoryArena<MemorySegment> allocator;
+        private final Workspace workspace;
+        private final Runnable disarm;
+
+        private State(MemoryArena<MemorySegment> allocator, MemoryArena<MemorySegment> owned) {
+            Arenas.requireCrossThread(allocator);
+            this.owned = owned;
+            this.allocator = allocator;
+            this.workspace = new Workspace(allocator);
+            this.disarm = LeakWatch.arm(this, "Parakeet.State");
+        }
+
+        /** Native plus heap buffers allocated so far: flat once the state is warm. */
+        int scratchAllocations() {
+            return workspace.backingAllocations() + workspace.heapAllocations();
+        }
+
         @Override
-        protected void releaseResources() {}
+        protected void checkResourcesAlive() {
+            if (!allocator.isAlive())
+                throw new IllegalStateException("the transcription state's arena has been closed");
+        }
+
+        @Override
+        protected void releaseResources() {
+            disarm.run();
+            if (owned != null) Arenas.close(owned);
+        }
     }
 
     private final Configuration configuration;
@@ -95,13 +125,19 @@ public final class Parakeet
 
     @Override
     public State newState() {
-        return new State();
+        MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        try {
+            return new State(arena, arena);
+        } catch (RuntimeException | Error e) {
+            Arenas.close(arena);
+            throw e;
+        }
     }
 
     @Override
     public State newState(MemoryArena<MemorySegment> arena) {
         Objects.requireNonNull(arena, "arena");
-        return new State(); // no borrowed buffers yet; see State
+        return new State(arena, null);
     }
 
     /**
@@ -183,7 +219,7 @@ public final class Parakeet
                 boolean persist) {
             long started = System.nanoTime();
             try {
-                return window(pcm, from, length, stats, persist);
+                return window(state, pcm, from, length, stats, persist);
             } finally {
                 computeNanos += System.nanoTime() - started;
             }
@@ -362,18 +398,26 @@ public final class Parakeet
 
     private record Window(List<ParakeetTdt.Emission> emissions, List<Transcription.Token> tokens) {}
 
-    /** One window transcribed whole; tokens are timed relative to the window start. */
+    /**
+     * One window transcribed whole on the state's workspace, which it rewinds: nothing from the
+     * previous window survives it. Tokens are timed relative to the window start.
+     */
     private Window window(
-            float[] pcm, int from, int length, ParakeetEncoder.MelStats stats, boolean persist) {
-        float[] slice = pcm;
-        if (from != 0 || length != pcm.length) {
-            slice = new float[length];
-            System.arraycopy(pcm, from, slice, 0, length);
-        }
-        ParakeetEncoder.Output encoded = weights.encoder().forward(slice, stats, persist);
+            State state,
+            float[] pcm,
+            int from,
+            int length,
+            ParakeetEncoder.MelStats stats,
+            boolean persist) {
+        Workspace workspace = state.workspace;
+        workspace.rewind();
+        ParakeetEncoder encoder = weights.encoder();
+        MemoryView<MemorySegment> encoded =
+                encoder.encode(pcm, from, length, stats, persist, null, workspace);
+        int frames = encoder.frames(length);
         ParakeetTdt decoder = weights.decoder();
-        float[] projected = decoder.encProjection(encoded.data(), encoded.frames());
-        List<ParakeetTdt.Emission> emissions = decoder.decode(projected, encoded.frames());
+        float[] projected = decoder.encProjection(encoded, frames, workspace);
+        List<ParakeetTdt.Emission> emissions = decoder.decode(projected, frames, workspace);
         double frameSeconds = configuration.frameSeconds();
         String[] pieces = decoder.config().pieces();
         List<ParakeetTdt.Emission> textual = new ArrayList<>(emissions.size());

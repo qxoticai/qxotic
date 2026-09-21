@@ -3,9 +3,11 @@ package com.qxotic.jinfer.models.parakeet;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
+import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.io.IOException;
@@ -147,27 +149,35 @@ public final class ParakeetTdt {
      * The joint's encoder projection, precomputed for every frame: {@code [frames, jointHidden]}.
      */
     public float[] encProjection(float[] encoderFrameMajor, int frames) {
-        int encHidden = config.encHidden(), jointHidden = config.jointHidden();
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
-            MemoryView<MemorySegment> encoder = Views.fromFloatArray(scratch, encoderFrameMajor);
-            MemoryView<MemorySegment> projected = Views.allocateF32(scratch, frames, jointHidden);
-            MatMul.gemm(
-                    encWeight,
-                    encoder,
-                    encHidden,
-                    projected,
-                    jointHidden,
-                    jointHidden,
+            return encProjection(
+                    Views.fromFloatArray(scratch, encoderFrameMajor),
                     frames,
-                    encHidden);
-            float[] result = Views.toFloatArray(projected, "joint enc projection");
-            for (int frame = 0; frame < frames; frame++)
-                for (int c = 0; c < jointHidden; c++) result[frame * jointHidden + c] += encBias[c];
-            return result;
+                    new Workspace(scratch));
         } finally {
             Arenas.close(scratch);
         }
+    }
+
+    /** As above, from the encoder's own view; the result is the workspace's, until its rewind. */
+    float[] encProjection(MemoryView<MemorySegment> encoder, int frames, Workspace workspace) {
+        int encHidden = config.encHidden(), jointHidden = config.jointHidden();
+        MemoryView<MemorySegment> projected = Views.allocateF32(workspace, frames, jointHidden);
+        MatMul.gemm(
+                encWeight,
+                encoder,
+                encHidden,
+                projected,
+                jointHidden,
+                jointHidden,
+                frames,
+                encHidden);
+        float[] result = workspace.floatsAtLeast(frames * jointHidden);
+        Views.copyToArray(projected, 0, result, 0, frames * jointHidden, "joint enc projection");
+        for (int frame = 0; frame < frames; frame++)
+            for (int c = 0; c < jointHidden; c++) result[frame * jointHidden + c] += encBias[c];
+        return result;
     }
 
     /**
@@ -181,75 +191,79 @@ public final class ParakeetTdt {
 
     /** Greedy TDT over {@code frames} joint-projected encoder frames. */
     public List<Emission> decode(float[] encProjection, int frames) {
+        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
+        try {
+            return decode(encProjection, frames, new Workspace(scratch));
+        } finally {
+            Arenas.close(scratch);
+        }
+    }
+
+    /** As above, with every buffer drawn from {@code workspace}. */
+    List<Emission> decode(float[] encProjection, int frames, Workspace workspace) {
         int hidden = config.predHidden(), jointHidden = config.jointHidden();
         int tokenCount = config.tokenCount(), blank = config.blankId();
         int[] durations = config.durations();
         List<Emission> emissions = new ArrayList<>();
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            Work work = new Work(scratch, config);
-            State committed = new State(config.predLayers(), hidden);
-            State stepped = new State(config.predLayers(), hidden);
-            float[] g = null;
-            boolean emittedAny = false;
-            int lastToken = -1;
-            int lastEmissionFrame = 0;
-            int emissionsAtLastFire = -1; // forward progress: one fruitless re-scan, then move on
-            float[] logits = new float[config.vPlus()];
-            int t = 0;
-            while (t < frames) {
-                if (t - lastEmissionFrame >= WATCHDOG_FRAMES) {
-                    committed = new State(config.predLayers(), hidden);
-                    emittedAny = false;
-                    g = null;
-                    // Rewind and re-decode the muted span with the fresh state: over a trap the
-                    // words come back, over genuine silence the re-scan decodes nothing. A fire
-                    // with no emissions since the previous fire means the span is truly empty -
-                    // no second rewind, the loop advances.
-                    if (emissions.size() != emissionsAtLastFire) {
-                        emissionsAtLastFire = emissions.size();
-                        t = lastEmissionFrame + 1;
-                    }
-                    lastEmissionFrame = t;
+        Work work = new Work(workspace, config);
+        State committed = new State(config.predLayers(), hidden);
+        State stepped = new State(config.predLayers(), hidden);
+        float[] g = null;
+        boolean emittedAny = false;
+        int lastToken = -1;
+        int lastEmissionFrame = 0;
+        int emissionsAtLastFire = -1; // forward progress: one fruitless re-scan, then move on
+        float[] logits = workspace.floatsAtLeast(config.vPlus());
+        int t = 0;
+        while (t < frames) {
+            if (t - lastEmissionFrame >= WATCHDOG_FRAMES) {
+                committed = new State(config.predLayers(), hidden);
+                emittedAny = false;
+                g = null;
+                // Rewind and re-decode the muted span with the fresh state: over a trap the
+                // words come back, over genuine silence the re-scan decodes nothing. A fire
+                // with no emissions since the previous fire means the span is truly empty -
+                // no second rewind, the loop advances.
+                if (emissions.size() != emissionsAtLastFire) {
+                    emissionsAtLastFire = emissions.size();
+                    t = lastEmissionFrame + 1;
                 }
-                int symbolsAdded = 0;
-                boolean needLoop = true;
-                int skip = 0;
-                while (needLoop && symbolsAdded < config.maxSymbols()) {
-                    if (g == null)
-                        g =
-                                predStep(
-                                        emittedAny ? lastToken : blank,
-                                        !emittedAny,
-                                        committed,
-                                        stepped,
-                                        work);
-                    jointLogits(encProjection, t, jointHidden, g, logits, work);
-                    int token = argmax(logits, 0, tokenCount);
-                    int durationIndex = argmax(logits, tokenCount, config.vPlus()) - tokenCount;
-                    skip = durations[durationIndex];
-                    if (token != blank) {
-                        emissions.add(
-                                new Emission(
-                                        token, t, skip, confidence(logits, tokenCount, token)));
-                        lastToken = token;
-                        lastEmissionFrame = t;
-                        committed.copyFrom(stepped);
-                        emittedAny = true;
-                        g = null;
-                    }
-                    symbolsAdded++;
-                    t += skip;
-                    needLoop = skip == 0;
-                }
-                // parakeet.cpp advances one extra frame when the symbol budget is exhausted, even
-                // when the final iteration already advanced.
-                if (symbolsAdded == config.maxSymbols()) t += 1;
+                lastEmissionFrame = t;
             }
-            return emissions;
-        } finally {
-            Arenas.close(scratch);
+            int symbolsAdded = 0;
+            boolean needLoop = true;
+            int skip = 0;
+            while (needLoop && symbolsAdded < config.maxSymbols()) {
+                if (g == null)
+                    g =
+                            predStep(
+                                    emittedAny ? lastToken : blank,
+                                    !emittedAny,
+                                    committed,
+                                    stepped,
+                                    work);
+                jointLogits(encProjection, t, jointHidden, g, logits, work);
+                int token = argmax(logits, 0, tokenCount);
+                int durationIndex = argmax(logits, tokenCount, config.vPlus()) - tokenCount;
+                skip = durations[durationIndex];
+                if (token != blank) {
+                    emissions.add(
+                            new Emission(token, t, skip, confidence(logits, tokenCount, token)));
+                    lastToken = token;
+                    lastEmissionFrame = t;
+                    committed.copyFrom(stepped);
+                    emittedAny = true;
+                    g = null;
+                }
+                symbolsAdded++;
+                t += skip;
+                needLoop = skip == 0;
+            }
+            // parakeet.cpp advances one extra frame when the symbol budget is exhausted, even
+            // when the final iteration already advanced.
+            if (symbolsAdded == config.maxSymbols()) t += 1;
         }
+        return emissions;
     }
 
     /** NeMo SentencePiece detokenization with bracketed special tokens dropped. */
@@ -271,34 +285,38 @@ public final class ParakeetTdt {
                         || (piece.startsWith("[") && piece.endsWith("]")));
     }
 
-    /** Per-decode scratch views for the gemv-shaped steps. */
+    /** Per-decode scratch for the gemv-shaped steps, drawn from the state's workspace. */
     private static final class Work {
         final MemoryView<MemorySegment> x, h, zInput, zHidden, fused, logits;
-        final float[] zInputArr, zHiddenArr;
+        final float[] zInputArr, zHiddenArr, fusedArr;
 
-        Work(MemoryArena<MemorySegment> scratch, Config config) {
+        Work(Workspace workspace, Config config) {
             int hidden = config.predHidden();
-            x = Views.allocateF32(scratch, 1, hidden);
-            h = Views.allocateF32(scratch, 1, hidden);
-            zInput = Views.allocateF32(scratch, 1, 4 * hidden);
-            zHidden = Views.allocateF32(scratch, 1, 4 * hidden);
-            fused = Views.allocateF32(scratch, 1, config.jointHidden());
-            logits = Views.allocateF32(scratch, 1, config.vPlus());
-            zInputArr = new float[4 * hidden];
-            zHiddenArr = new float[4 * hidden];
+            x = Views.allocateF32(workspace, 1, hidden);
+            h = Views.allocateF32(workspace, 1, hidden);
+            zInput = Views.allocateF32(workspace, 1, 4 * hidden);
+            zHidden = Views.allocateF32(workspace, 1, 4 * hidden);
+            fused = Views.allocateF32(workspace, 1, config.jointHidden());
+            logits = Views.allocateF32(workspace, 1, config.vPlus());
+            zInputArr = workspace.floatsAtLeast(4 * hidden);
+            zHiddenArr = workspace.floatsAtLeast(4 * hidden);
+            fusedArr = workspace.floatsAtLeast(config.jointHidden());
         }
     }
 
     /**
      * One prediction-network step. {@code in} is the committed state; {@code out} receives the
-     * stepped state; the return value is the top layer's new hidden vector.
+     * stepped state; the return value is the top layer's new hidden vector - {@code out}'s own
+     * array, so it lives until {@code out} steps again. {@code in} and {@code out} must differ:
+     * each layer reads {@code in} while writing {@code out}.
      */
     float[] predStep(int token, boolean sos, State in, State out, Work work) {
         int hidden = config.predHidden();
-        float[] x = new float[hidden];
-        if (!sos) System.arraycopy(embed, token * hidden, x, 0, hidden);
+        if (sos) Ops.fillInPlace(work.x, 0, hidden, 0f);
+        else Views.copyFromArray(work.x, 0, embed, token * hidden, hidden, "lstm input");
         for (int layer = 0; layer < config.predLayers(); layer++) {
-            Views.copyFromArray(work.x, 0, x, 0, hidden, "lstm input");
+            if (layer > 0)
+                Views.copyFromArray(work.x, 0, out.hidden[layer - 1], 0, hidden, "lstm input");
             Views.copyFromArray(work.h, 0, in.hidden[layer], 0, hidden, "lstm hidden");
             MatMul.gemm(
                     weightInput[layer],
@@ -322,7 +340,6 @@ public final class ParakeetTdt {
             Views.copyToArray(work.zHidden, 0, work.zHiddenArr, 0, 4 * hidden, "lstm gates");
             float[] bias = gateBias[layer];
             float[] cell = in.cell[layer];
-            float[] next = new float[hidden];
             for (int c = 0; c < hidden; c++) {
                 float inputGate = Activations.sigmoid(z(work, bias, c));
                 float forgetGate = Activations.sigmoid(z(work, bias, hidden + c));
@@ -330,12 +347,10 @@ public final class ParakeetTdt {
                 float outputGate = Activations.sigmoid(z(work, bias, 3 * hidden + c));
                 float newCell = forgetGate * cell[c] + inputGate * candidate;
                 out.cell[layer][c] = newCell;
-                next[c] = outputGate * (float) Math.tanh(newCell);
+                out.hidden[layer][c] = outputGate * (float) Math.tanh(newCell);
             }
-            System.arraycopy(next, 0, out.hidden[layer], 0, hidden);
-            x = next;
         }
-        return x;
+        return out.hidden[config.predLayers() - 1];
     }
 
     private static float z(Work work, float[] bias, int index) {
@@ -360,7 +375,8 @@ public final class ParakeetTdt {
                 jointHidden,
                 1,
                 config.predHidden());
-        float[] fused = Views.toFloatArray(work.fused, "joint fused");
+        float[] fused = work.fusedArr;
+        Views.copyToArray(work.fused, 0, fused, 0, jointHidden, "joint fused");
         int base = frame * jointHidden;
         for (int c = 0; c < jointHidden; c++)
             fused[c] = Math.max(fused[c] + predBias[c] + encProjection[base + c], 0f);
@@ -382,7 +398,7 @@ public final class ParakeetTdt {
     float[] probeSos() {
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
-            Work work = new Work(scratch, config);
+            Work work = new Work(new Workspace(scratch), config);
             State zero = new State(config.predLayers(), config.predHidden());
             State stepped = new State(config.predLayers(), config.predHidden());
             return predStep(config.blankId(), true, zero, stepped, work);
@@ -395,7 +411,7 @@ public final class ParakeetTdt {
     float[] probeJointLogits(float[] encProjection, int frame, float[] g) {
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
-            Work work = new Work(scratch, config);
+            Work work = new Work(new Workspace(scratch), config);
             float[] logits = new float[config.vPlus()];
             jointLogits(encProjection, frame, config.jointHidden(), g, logits, work);
             return logits;
