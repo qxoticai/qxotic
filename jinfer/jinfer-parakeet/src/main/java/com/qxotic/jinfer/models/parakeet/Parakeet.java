@@ -325,14 +325,10 @@ public final class Parakeet
                         done = true;
                         buffer = new float[0];
                         // encoder frames of unique audio: the transcription analog of input tokens
+                        long samplesPerFrame =
+                                (long) configuration.hop() * configuration.subsamplingFactor();
                         event.inputTokens =
-                                (int)
-                                        Math.min(
-                                                Integer.MAX_VALUE,
-                                                totalFed
-                                                        / ((long) configuration.hop()
-                                                                * configuration
-                                                                        .subsamplingFactor()));
+                                (int) Math.min(Integer.MAX_VALUE, totalFed / samplesPerFrame);
                         event.outputTokens = last.tokens().size();
                         event.decodeTime = computeNanos;
                         event.finishReason = "stop";

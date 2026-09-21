@@ -5,6 +5,7 @@ package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Transcription;
+import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.hub.ModelStore;
@@ -32,7 +33,7 @@ import org.springframework.core.io.Resource;
 public final class JinferTranscriptionModel
         implements org.springframework.ai.audio.transcription.TranscriptionModel, AutoCloseable {
 
-    private final com.qxotic.jinfer.TranscriptionModel<?, ?, ?> model;
+    private final TranscriptionModel<?, ?, ?> model;
     private final Arena owned; // null unless this instance loaded the weights
     // Requests take the READ lock and run in PARALLEL - a state is per-call. close() takes the
     // WRITE lock, so it waits for every in-flight transcription before freeing the weights arena.
@@ -135,14 +136,14 @@ public final class JinferTranscriptionModel
     public static final class Builder {
 
         private Object source; // Path | model-ref String | TranscriptionModel: last setter wins
-        private com.qxotic.jinfer.TranscriptionModel<?, ?, ?> model; // derived at build()
+        private TranscriptionModel<?, ?, ?> model; // derived at build()
         private Path modelPath; // derived from source at build()
 
         /**
          * A model you loaded yourself - the typed path, where a port's own knobs are expressible.
          * Its weights arena stays yours. The model source is the last setter called.
          */
-        public Builder model(com.qxotic.jinfer.TranscriptionModel<?, ?, ?> model) {
+        public Builder model(TranscriptionModel<?, ?, ?> model) {
             this.source = model;
             return this;
         }
@@ -174,7 +175,7 @@ public final class JinferTranscriptionModel
             model = null;
             modelPath = null;
             switch (source) {
-                case com.qxotic.jinfer.TranscriptionModel<?, ?, ?> m -> model = m;
+                case TranscriptionModel<?, ?, ?> m -> model = m;
                 case Path path -> modelPath = path;
                 case String ref -> modelPath = ModelStore.standard().resolve(ref);
                 case null, default ->
