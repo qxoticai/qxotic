@@ -594,7 +594,7 @@ public final class ParakeetEncoder {
         return Views.fromFloatArray(scratch, relativePositions(frames, config.dModel()));
     }
 
-    private record Scratch(
+    record Scratch(
             MemoryView<MemorySegment> norm,
             MemoryView<MemorySegment> ff,
             MemoryView<MemorySegment> ffOut,
@@ -606,7 +606,11 @@ public final class ParakeetEncoder {
             MemoryView<MemorySegment> attention,
             MemoryView<MemorySegment> position,
             MemoryView<MemorySegment> pointwise,
-            MemoryView<MemorySegment> glu) {
+            MemoryView<MemorySegment> glu,
+            MemoryView<MemorySegment> scores, // one head's [valid][valid] probabilities
+            MemoryView<MemorySegment> positionScores, // one head's [valid][2*valid-1]
+            MemoryView<MemorySegment> valueT, // [dim][frames]
+            MemoryView<MemorySegment> attentionT) { // [dim][frames]
         static Scratch allocate(MemoryArena<MemorySegment> arena, int frames, int dim, int ffDim) {
             int positionRows = 2 * frames - 1;
             return new Scratch(
@@ -621,7 +625,11 @@ public final class ParakeetEncoder {
                     Views.allocateF32(arena, frames, dim),
                     Views.allocateF32(arena, positionRows, dim),
                     Views.allocateF32(arena, frames, dim * 2),
-                    Views.allocateF32(arena, frames, dim));
+                    Views.allocateF32(arena, frames, dim),
+                    Views.allocateF32(arena, frames, frames),
+                    Views.allocateF32(arena, frames, positionRows),
+                    Views.allocateF32(arena, dim, frames),
+                    Views.allocateF32(arena, dim, frames));
         }
     }
 
@@ -652,7 +660,7 @@ public final class ParakeetEncoder {
             int frames,
             int valid,
             Scratch work) {
-        int dim = config.dModel(), heads = config.heads(), headDim = dim / heads;
+        int dim = config.dModel(), heads = config.heads();
         Norms.layerNorm(
                 work.norm(),
                 x,
@@ -676,60 +684,87 @@ public final class ParakeetEncoder {
         biasedCopy(work.queryU(), work.query(), block.posBiasU(), frames, dim);
         biasedCopy(work.queryV(), work.query(), block.posBiasV(), frames, dim);
 
-        float scale = (float) (1.0 / Math.sqrt(headDim));
-        Parallel.forLoop(
-                0,
-                frames * heads,
-                unit -> {
-                    int queryRow = unit / heads, head = unit % heads;
-                    long headBase = (long) head * headDim;
-                    long queryOffset = (long) queryRow * dim + headBase;
-                    // Keys at and beyond the valid length are masked out, except for padded query
-                    // rows, which the reference leaves unmasked to avoid an all-masked softmax.
-                    int keys = queryRow < valid ? valid : frames;
-                    float[] scores = new float[keys];
-                    float maximum = Float.NEGATIVE_INFINITY;
-                    for (int keyRow = 0; keyRow < keys; keyRow++) {
-                        float content =
-                                Ops.dot(
-                                        work.queryU(),
-                                        queryOffset,
-                                        work.key(),
-                                        (long) keyRow * dim + headBase,
-                                        headDim);
-                        int relative = frames - 1 - queryRow + keyRow;
-                        float position =
-                                Ops.dot(
-                                        work.queryV(),
-                                        queryOffset,
-                                        work.position(),
-                                        (long) relative * dim + headBase,
-                                        headDim);
-                        float score = (content + position) * scale;
-                        scores[keyRow] = score;
-                        maximum = Math.max(maximum, score);
-                    }
-                    float sum = 0f;
-                    for (int keyRow = 0; keyRow < keys; keyRow++) {
-                        scores[keyRow] = (float) Math.exp(scores[keyRow] - maximum);
-                        sum += scores[keyRow];
-                    }
-                    float inverse = 1f / sum;
-                    Ops.fillInPlace(work.attention(), queryOffset, headDim, 0f);
-                    for (int keyRow = 0; keyRow < keys; keyRow++)
-                        Ops.saxpyInPlace(
-                                work.attention(),
-                                queryOffset,
-                                work.value(),
-                                (long) keyRow * dim + headBase,
-                                headDim,
-                                scores[keyRow] * inverse);
-                });
-        zeroRows(work.attention(), valid, frames, dim);
+        relativeAttention(work, frames, valid, dim, heads);
         MatMul.gemm(block.output(), work.attention(), dim, work.norm(), dim, dim, frames, dim);
         if (block.outputBias() != null)
             Ops.addRowBiasInPlace(work.norm(), 0, block.outputBias(), 0, frames, dim);
         Ops.addInPlace(x, 0, work.norm(), 0, Math.multiplyExact(frames, dim));
+    }
+
+    /**
+     * Transformer-XL relative attention, {@code queryU/queryV/key/value/position -> attention}, as
+     * three jam GEMMs per head: {@code (queryU·keyᵀ + shift(queryV·positionᵀ)) * scale}, softmax,
+     * then the value mix. Only the valid block is computed: padded key columns are masked, and
+     * padded query rows are zeroed right after anyway, so the reference's unmasked padded-row
+     * softmax never reaches the output.
+     *
+     * <p>The value mix runs as {@code attentionᵀ = valueᵀ·scoresᵀ} (m = valid queries): with m =
+     * headDim instead, jam splits 128 rows over the pool and runs at a third of the speed.
+     */
+    static void relativeAttention(Scratch work, int frames, int valid, int dim, int heads) {
+        int headDim = dim / heads;
+        int positionRows = 2 * valid - 1; // relative offsets +(valid-1)..-(valid-1)
+        long positionStart = (long) (frames - valid) * dim; // offset +(valid-1) in the table
+        float scale = (float) (1.0 / Math.sqrt(headDim));
+        Ops.transposeCopy(work.value(), frames, dim, work.valueT());
+        for (int head = 0; head < heads; head++) { // sequential: mm refuses nested regions
+            long headBase = (long) head * headDim;
+            MatMul.mm(
+                    work.key(),
+                    headBase,
+                    dim,
+                    work.queryU(),
+                    headBase,
+                    dim,
+                    work.scores(),
+                    0,
+                    valid,
+                    valid,
+                    valid,
+                    headDim);
+            MatMul.mm(
+                    work.position(),
+                    positionStart + headBase,
+                    dim,
+                    work.queryV(),
+                    headBase,
+                    dim,
+                    work.positionScores(),
+                    0,
+                    positionRows,
+                    positionRows,
+                    valid,
+                    headDim);
+            Parallel.forLoop(
+                    valid,
+                    query -> {
+                        long row = (long) query * valid;
+                        // score[q][k] takes relative offset q-k, at column valid-1-q+k
+                        Ops.addInPlace(
+                                work.scores(),
+                                row,
+                                work.positionScores(),
+                                (long) query * positionRows + valid - 1 - query,
+                                valid);
+                        Ops.multiplyInPlace(work.scores(), row, valid, scale);
+                        Ops.softmaxInPlace(work.scores(), row, valid);
+                    });
+            MatMul.mm(
+                    work.scores(),
+                    0,
+                    valid,
+                    work.valueT(),
+                    headBase * frames,
+                    frames,
+                    work.attentionT(),
+                    headBase * frames,
+                    frames,
+                    valid,
+                    headDim,
+                    valid);
+        }
+        Ops.transposeCopy(work.attentionT(), dim, frames, work.attention());
+        zeroRows(work.attention(), valid, frames, dim);
     }
 
     private void convolution(
