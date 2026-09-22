@@ -1,39 +1,49 @@
 package com.qxotic.jinfer;
 
+import com.qxotic.jinfer.media.Media;
+
 /**
- * One live utterance: PCM in as it arrives, the evolving transcript out. Feed any chunk sizes;
- * {@link #partial()} is the current best transcript of everything fed so far and may revise its
- * tail as more audio arrives (text already behind the model's commit horizon no longer changes);
- * {@link #finish()} flushes and returns the final transcript.
+ * Live audio of any length: samples in, transcription out in final pieces. Each {@link #feed}
+ * returns the piece that became final, often empty; final pieces never change, and their texts
+ * joined in order are the whole transcript. {@link #partial()} is the provisional transcription of
+ * the audio after the last final piece.
  *
- * <p>A stream is one serial pipeline: one caller at a time, like the state it runs on. {@code
- * partial()} computes on demand - the caller paces it - so poll at the cadence your UI needs.
+ * <p>Calls are synchronous: decoding happens inside them, on the caller's thread. A stream is one
+ * serial pipeline, used by one caller at a time, like the state it runs on. Token times are offsets
+ * from the start of the stream. Once finished or closed, a stream refuses every call but {@link
+ * #close()} with an {@link IllegalStateException}.
  */
 public interface TranscriptionStream extends AutoCloseable {
 
-    /** Appends mono {@code [-1, 1]} PCM at the model's {@link TranscriptionModel#sampleRate()}. */
-    void feed(float[] pcm, int offset, int length);
-
-    default void feed(float[] pcm) {
-        feed(pcm, 0, pcm.length);
-    }
-
-    /** The current best transcript of all audio fed so far; the tail may still be revised. */
-    Transcription partial();
+    /** The sample rate {@link #feed} expects, in Hz. */
+    int sampleRate();
 
     /**
-     * The prefix of {@link #partial()} that is behind the commit horizon and can no longer change;
-     * empty until something commits. A renderer keeps this text still and repaints only the
-     * remainder.
+     * Appends mono {@code [-1, 1]} PCM from {@code pcm[offset, offset+length)} and returns the
+     * transcription that became final, often empty.
      */
-    default Transcription committed() {
-        return new Transcription("", java.util.List.of());
+    Transcription feed(float[] pcm, int offset, int length);
+
+    /** Appends all of {@code pcm}. */
+    default Transcription feed(float[] pcm) {
+        return feed(pcm, 0, pcm.length);
     }
 
-    /** Flushes remaining audio and returns the final transcript. The stream is then closed. */
+    /** Appends decoded audio, which must be mono at {@link #sampleRate()}. */
+    default Transcription feed(Media.Audio audio) {
+        return feed(AudioFormat.requireMono(audio, sampleRate()));
+    }
+
+    /**
+     * The provisional transcription of the audio after the last final piece. It may still change,
+     * each call replaces the previous one, and each costs a decode, so the caller paces it.
+     */
+    Transcription partial();
+
+    /** The rest of the transcription, final. The stream is then closed. */
     Transcription finish();
 
-    /** Releases the stream without a final transcript; idempotent. */
+    /** Releases the stream without a final piece; idempotent. */
     @Override
     void close();
 }

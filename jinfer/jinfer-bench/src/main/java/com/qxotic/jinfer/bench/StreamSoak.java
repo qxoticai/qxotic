@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,12 +30,11 @@ import java.util.stream.Stream;
  *       --hours 6 [--seed 7] [--report out.txt]
  * </pre>
  *
- * <p>Checked while feeding: the committed transcript only grows and always prefixes the partial;
- * token times are ordered and never ahead of the audio; a live mute alarm fires when a minute of
- * speech-energy audio produces no new text. Checked at the end: no 45 s speech span without
- * emissions, recovery within 60 s after every injected event, RSS slope after warmup, and partial
- * latency percentiles per simulated hour. Phase 0 first proves streamed == offline on a 30 min
- * prefix of the same program.
+ * <p>Checked while feeding: final pieces and the partial tail after them are in time order, and
+ * never ahead of the audio; a live mute alarm fires when a minute of speech-energy audio produces
+ * no new text. Checked at the end: no 45 s speech span without emissions, recovery within 60 s
+ * after every injected event, RSS slope after warmup, and partial latency percentiles per simulated
+ * hour. Phase 0 first proves streamed == offline on a 30 min prefix of the same program.
  */
 public final class StreamSoak {
 
@@ -113,9 +113,10 @@ public final class StreamSoak {
         List<String> violations = new ArrayList<>();
         boolean[] speechBySecond = new boolean[(int) program.seconds + 2];
         double lastGrowthSec = 0;
-        int lastPartialLength = 0;
-        List<Transcription.Token> finalTokens = null;
-        String previousCommitted = "";
+        int heardLength = 0;
+        List<Transcription.Token> finalTokens = new ArrayList<>(); // every final piece so far
+        int finalTextLength = 0;
+        double finalOrdered = -1; // start of the last final token, in seconds
         double fedSec = 0;
         long nextPartialAt = PARTIAL_EVERY_SECONDS * (long) RATE;
         long nextRssAt = 0;
@@ -127,7 +128,15 @@ public final class StreamSoak {
                 for (int from = 0; from < block.length; from += FEED_CHUNK) {
                     int n = Math.min(FEED_CHUNK, block.length - from);
                     markSpeech(speechBySecond, block, from, n, fedSamples);
-                    stream.feed(block, from, n);
+                    Transcription piece = stream.feed(block, from, n);
+                    for (Transcription.Token token : piece.tokens()) {
+                        if (seconds(token.start()) < finalOrdered)
+                            violations.add(
+                                    "final token order regressed at %.0fs".formatted(fedSec));
+                        finalOrdered = seconds(token.start());
+                    }
+                    finalTokens.addAll(piece.tokens());
+                    finalTextLength += piece.text().length();
                     fedSamples += n;
                     fedSec = fedSamples / (double) RATE;
 
@@ -139,30 +148,25 @@ public final class StreamSoak {
                         partialNanosByHour
                                 .computeIfAbsent((int) (fedSec / 3600), h -> new ArrayList<>())
                                 .add(nanos);
-                        String committed = stream.committed().text();
-                        if (!committed.startsWith(previousCommitted))
-                            violations.add("committed shrank at %.0fs".formatted(fedSec));
-                        if (!partial.text().startsWith(committed))
-                            violations.add("committed not a prefix at %.0fs".formatted(fedSec));
-                        previousCommitted = committed;
                         List<Transcription.Token> tokens = partial.tokens();
                         if (!tokens.isEmpty()) {
                             Transcription.Token last = tokens.get(tokens.size() - 1);
-                            if (last.end() > fedSec + 2)
+                            if (seconds(last.end()) > fedSec + 2)
                                 violations.add(
                                         "token ahead of audio at %.0fs (end %.1f)"
-                                                .formatted(fedSec, last.end()));
+                                                .formatted(fedSec, seconds(last.end())));
                         }
-                        double ordered = -1;
+                        double ordered = finalOrdered; // the partial continues the final text
                         for (Transcription.Token token : tokens) {
-                            if (token.start() < ordered) {
+                            if (seconds(token.start()) < ordered) {
                                 violations.add("token order regressed at %.0fs".formatted(fedSec));
                                 break;
                             }
-                            ordered = token.start();
+                            ordered = seconds(token.start());
                         }
-                        if (partial.text().length() > lastPartialLength) {
-                            lastPartialLength = partial.text().length();
+                        int heard = finalTextLength + partial.text().length();
+                        if (heard > heardLength) {
+                            heardLength = heard;
                             lastGrowthSec = fedSec;
                         } else if (fedSec - lastGrowthSec > 60
                                 && speechFraction(speechBySecond, fedSec - 60, fedSec) > 0.5) {
@@ -178,8 +182,7 @@ public final class StreamSoak {
                     }
                 }
             }
-            Transcription finished = stream.finish();
-            finalTokens = finished.tokens();
+            finalTokens.addAll(stream.finish().tokens());
         }
 
         double wallMinutes = (System.nanoTime() - wallStart) / 60e9;
@@ -194,7 +197,7 @@ public final class StreamSoak {
         // end-of-run sweep: speech spans without emissions, event recovery
         boolean[] tokenBySecond = new boolean[(int) program.seconds + 2];
         for (Transcription.Token token : finalTokens) {
-            int second = (int) token.start();
+            int second = (int) token.start().toSeconds();
             if (second < tokenBySecond.length) tokenBySecond[second] = true;
         }
         int holes = 0;
@@ -210,8 +213,8 @@ public final class StreamSoak {
         for (Event event : program.events) {
             double firstAfter = Double.MAX_VALUE;
             for (Transcription.Token token : finalTokens)
-                if (token.start() >= event.endSec()) {
-                    firstAfter = token.start();
+                if (seconds(token.start()) >= event.endSec()) {
+                    firstAfter = seconds(token.start());
                     break;
                 }
             double recovery = firstAfter - event.endSec();
@@ -331,9 +334,10 @@ public final class StreamSoak {
             throws Exception {
         try (AutoCloseable state = (AutoCloseable) newState(transcriber);
                 TranscriptionStream stream = stream(transcriber, state)) {
+            StringBuilder text = new StringBuilder();
             for (int from = 0; from < pcm.length; from += FEED_CHUNK)
-                stream.feed(pcm, from, Math.min(FEED_CHUNK, pcm.length - from));
-            return stream.finish().text();
+                text.append(stream.feed(pcm, from, Math.min(FEED_CHUNK, pcm.length - from)).text());
+            return text.append(stream.finish().text()).toString();
         }
     }
 
@@ -394,5 +398,9 @@ public final class StreamSoak {
         String line = String.format(Locale.ROOT, format, args);
         System.out.println(line);
         out.append(line).append('\n');
+    }
+
+    private static double seconds(Duration offset) {
+        return offset.toNanos() / 1e9;
     }
 }

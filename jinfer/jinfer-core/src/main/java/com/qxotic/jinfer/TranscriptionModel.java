@@ -5,10 +5,9 @@ import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.MemorySegment;
 
 /**
- * A speech-to-text model with reusable runtime state: PCM in, a timed transcript out, the way a
- * language model takes tokens and a speech model takes phonemes. Decoding a container format and
- * resampling are the caller's business ({@code jinfer-codecs} produces the expected PCM); the model
- * takes the samples it was trained on, verbatim.
+ * A speech-to-text model with reusable runtime state: PCM in, a timed transcript out. Decoding a
+ * container format and resampling are the caller's job ({@code jinfer-codecs} produces the expected
+ * PCM).
  *
  * <p>The model is shared; a state is one serial pipeline, used by one call at a time.
  */
@@ -29,13 +28,13 @@ public interface TranscriptionModel<C, W, S extends RuntimeState> extends Model<
      */
     S newState(MemoryArena<MemorySegment> arena);
 
-    /** One utterance of mono {@code [-1, 1]} PCM at {@link #sampleRate()}, transcribed whole. */
+    /** Mono {@code [-1, 1]} PCM at {@link #sampleRate()}, of any length, transcribed whole. */
     Transcription transcribe(S state, float[] pcm);
 
     /**
-     * A live utterance over {@code state}: feed audio as it arrives, poll the evolving transcript.
-     * The stream owns the state's serial slot until it is finished or closed. Ports that cannot
-     * stream keep the default refusal.
+     * Live audio over {@code state}: feed it as it arrives, poll the evolving transcript. The
+     * stream owns the state's serial slot until it is finished or closed. Ports that cannot stream
+     * keep the default refusal.
      */
     default TranscriptionStream stream(S state) {
         throw new UnsupportedOperationException(
@@ -49,23 +48,9 @@ public interface TranscriptionModel<C, W, S extends RuntimeState> extends Model<
         }
     }
 
-    /**
-     * One decoded utterance. The audio must already be mono at {@link #sampleRate()} - the shape
-     * {@code jinfer-codecs} produces - and anything else is refused rather than silently resampled:
-     * a rate mismatch does not fail, it degrades recognition, so the conversion stays the caller's
-     * explicit decision.
-     */
+    /** Decoded audio, of any length, which must be mono at {@link #sampleRate()}. */
     default Transcription transcribe(S state, Media.Audio audio) {
-        if (audio.sampleRate() != sampleRate() || audio.channels() != 1)
-            throw new IllegalArgumentException(
-                    "audio is "
-                            + audio.sampleRate()
-                            + " Hz x"
-                            + audio.channels()
-                            + " but this model expects mono "
-                            + sampleRate()
-                            + " Hz - decode through jinfer-codecs' AudioCodec, or resample first");
-        return transcribe(state, audio.pcm());
+        return transcribe(state, AudioFormat.requireMono(audio, sampleRate()));
     }
 
     /** As {@link #transcribe(RuntimeState, Media.Audio)} on a fresh state. */
