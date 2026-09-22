@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -33,7 +34,9 @@ class ParakeetEncoderTest {
             float[] expected = Fixtures.floats(channel, gguf, "pos_emb");
             int dModel = 1024;
             int frames = (expected.length / dModel + 1) / 2;
-            float[] table = ParakeetEncoder.relativePositions(frames, dModel);
+            float[] table =
+                    ParakeetEncoder.relativePositions(
+                            frames, dModel, new float[(2 * frames - 1) * dModel]);
             assertEquals(expected.length, table.length);
             double maxAbs = 0;
             for (int i = 0; i < table.length; i++)
@@ -56,7 +59,7 @@ class ParakeetEncoderTest {
                 Arena arena = Arena.ofShared()) {
             GGUF gguf = GGUF.read(fixture.get());
             float[] pcm = Fixtures.floats(channel, gguf, "pcm");
-            ParakeetEncoder encoder = ParakeetEncoder.load(model, arena);
+            ParakeetEncoder encoder = Fixtures.load(model, arena).weights().encoder();
             int layers = encoder.config().layers();
 
             Map<Integer, String> taps = new HashMap<>();
@@ -65,14 +68,22 @@ class ParakeetEncoderTest {
             taps.put(layers / 2, "enc_layer_mid");
             taps.put(layers - 1, "enc_layer_last");
             Map<Integer, float[]> captured = new HashMap<>();
-            ParakeetEncoder.Output output =
-                    encoder.forward(
-                            pcm,
-                            (data, layer) -> {
-                                if (taps.containsKey(layer)) captured.put(layer, data);
-                            });
+            float[] output =
+                    Fixtures.onScratch(
+                            workspace ->
+                                    Views.toFloatArray(
+                                            encoder.encode(
+                                                    pcm,
+                                                    0,
+                                                    pcm.length,
+                                                    (data, layer) -> {
+                                                        if (taps.containsKey(layer))
+                                                            captured.put(layer, data);
+                                                    },
+                                                    workspace),
+                                            "encoder output"));
 
-            int frames = output.frames();
+            int frames = encoder.frames(pcm.length);
             int dim = encoder.config().dModel();
             // Fixture layer dumps are frame-major [T', d]; encoder_out is channels-first [d, T'].
             for (Map.Entry<Integer, String> tap : taps.entrySet()) {
@@ -96,8 +107,7 @@ class ParakeetEncoderTest {
                     maxAbs =
                             Math.max(
                                     maxAbs,
-                                    Math.abs(
-                                            expected[c * frames + t] - output.data()[t * dim + c]));
+                                    Math.abs(expected[c * frames + t] - output[t * dim + c]));
             System.out.printf("%s encoder_out maxAbs=%.3e%n", tag, maxAbs);
             // Post-norm output on the O(1) scale the joint consumes. Measured floors: 3.7e-4 for
             // the 24-layer v3, 8.1e-3 for the 42-layer 1.1b (more accumulation of the same

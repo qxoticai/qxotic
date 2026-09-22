@@ -3,31 +3,29 @@ package com.qxotic.jinfer.models.parakeet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.Workspace;
-import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.testkit.TestModels;
-import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
+import com.sun.management.ThreadMXBean;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.management.ManagementFactory;
-import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * The state-owned workspace: a warm state transcribes without allocating, and recycled buffers,
  * which come back holding the previous window, never leak into a result.
  */
+@Tag("integration")
 class ParakeetWorkspaceTest {
 
     private static Arena arena;
@@ -37,10 +35,7 @@ class ParakeetWorkspaceTest {
     static void load() throws IOException {
         Path model = TestModels.require("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf");
         arena = Arena.ofShared();
-        try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {
-            parakeet =
-                    Parakeet.load(channel, ModelLoader.readGguf(channel, model.toString()), arena);
-        }
+        parakeet = Fixtures.load(model, arena);
     }
 
     @AfterAll
@@ -68,16 +63,15 @@ class ParakeetWorkspaceTest {
             long used = allocatedBytes() - before;
             assertTrue(used < 10_000_000, "warm transcription allocated " + used + " bytes");
         }
-        // Several windows of different lengths (commit, preview, tail) share one workspace too.
-        System.setProperty("jinfer.parakeet.chunkSeconds", "10");
-        try (Parakeet.State state = parakeet.newState()) {
-            float[] windowed = signal(27, 3);
-            parakeet.transcribe(state, windowed);
-            int warm = state.scratchAllocations();
-            parakeet.transcribe(state, windowed);
-            assertEquals(warm, state.scratchAllocations());
-        } finally {
-            System.clearProperty("jinfer.parakeet.chunkSeconds");
+        // Windows of different lengths (committed windows, then the tail) share one workspace too.
+        try (var chunks = Fixtures.chunkSeconds(10)) {
+            try (Parakeet.State state = parakeet.newState()) {
+                float[] windowed = signal(27, 3);
+                parakeet.transcribe(state, windowed);
+                int warm = state.scratchAllocations();
+                parakeet.transcribe(state, windowed);
+                assertEquals(warm, state.scratchAllocations());
+            }
         }
     }
 
@@ -90,24 +84,19 @@ class ParakeetWorkspaceTest {
     @Test
     void staleBuffersNeverLeakIntoTheNextWindow() {
         float[] clip = signal(6, 4);
-        float[] poison = new float[16_000 * 9]; // longer: its buffers cover the clip's
+        float[] poison = new float[parakeet.sampleRate() * 9]; // longer: covers the clip's buffers
         Arrays.fill(poison, Float.NaN);
-        MemoryArena<MemorySegment> fresh = Arenas.newCrossThreadMemoryArena();
-        MemoryArena<MemorySegment> dirty = Arenas.newCrossThreadMemoryArena();
-        try {
-            Pass expected = pass(clip, new Workspace(fresh));
-            Workspace reused = new Workspace(dirty);
-            pass(poison, reused);
-            reused.rewind();
-            Pass actual = pass(clip, reused);
-
-            assertClose(expected.encoded(), actual.encoded(), "encoder output");
-            assertClose(expected.joint(), actual.joint(), "joint projection");
-            assertEquals(expected.tokens(), actual.tokens(), "decoded tokens");
-        } finally {
-            Arenas.close(fresh);
-            Arenas.close(dirty);
-        }
+        Pass expected = Fixtures.onScratch(workspace -> pass(clip, workspace));
+        Pass actual =
+                Fixtures.onScratch(
+                        workspace -> {
+                            pass(poison, workspace);
+                            workspace.rewind();
+                            return pass(clip, workspace);
+                        });
+        assertClose(expected.encoded(), actual.encoded(), "encoder output");
+        assertClose(expected.joint(), actual.joint(), "joint projection");
+        assertEquals(expected.tokens(), actual.tokens(), "decoded tokens");
     }
 
     private record Pass(float[] encoded, float[] joint, List<Integer> tokens) {}
@@ -117,8 +106,7 @@ class ParakeetWorkspaceTest {
         ParakeetEncoder encoder = parakeet.weights().encoder();
         ParakeetTdt decoder = parakeet.weights().decoder();
         int frames = encoder.frames(pcm.length);
-        MemoryView<MemorySegment> encoded =
-                encoder.encode(pcm, 0, pcm.length, null, false, null, workspace);
+        MemoryView<MemorySegment> encoded = encoder.encode(pcm, 0, pcm.length, null, workspace);
         float[] joint = decoder.encProjection(encoded, frames, workspace);
         List<Integer> tokens =
                 decoder.decode(joint, frames, workspace).stream()
@@ -130,7 +118,7 @@ class ParakeetWorkspaceTest {
     }
 
     private static long allocatedBytes() {
-        return ((com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean())
+        return ((ThreadMXBean) ManagementFactory.getThreadMXBean())
                 .getThreadAllocatedBytes(Thread.currentThread().threadId());
     }
 

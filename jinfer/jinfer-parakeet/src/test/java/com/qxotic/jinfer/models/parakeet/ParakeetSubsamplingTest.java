@@ -3,21 +3,15 @@ package com.qxotic.jinfer.models.parakeet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.Workspace;
-import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.testkit.TestModels;
-import com.qxotic.jota.memory.MemoryArena;
 import java.io.IOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.nio.channels.FileChannel;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Random;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -26,6 +20,7 @@ import org.junit.jupiter.params.provider.CsvSource;
  * field's halo, and zero padding must come only from the real edges, never a tile boundary. Lengths
  * land on and around tile boundaries, at both ends of a frame's mel range.
  */
+@Tag("integration")
 class ParakeetSubsamplingTest {
 
     private static Arena arena;
@@ -35,12 +30,7 @@ class ParakeetSubsamplingTest {
     static void load() throws IOException {
         Path model = TestModels.require("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-f16.gguf");
         arena = Arena.ofShared();
-        try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {
-            var gguf = ModelLoader.readGguf(channel, model.toString());
-            encoder =
-                    ParakeetEncoder.load(
-                            gguf, ModelLoader.loadTensors(channel, gguf, arena), arena);
-        }
+        encoder = Fixtures.load(model, arena).weights().encoder();
     }
 
     @AfterAll
@@ -73,7 +63,7 @@ class ParakeetSubsamplingTest {
         int valid =
                 ParakeetEncoder.subsampled(
                         ParakeetEncoder.subsampled(ParakeetEncoder.subsampled(melFrames - 1)));
-        float[] mel = encoder.mel(pcm, 0, pcm.length, null, false);
+        float[] mel = encoder.mel(pcm, 0, pcm.length);
 
         float[] tiled = preEncode(mel, melFrames, frames, valid, tile);
         float[] whole = preEncode(mel, melFrames, frames, valid, Integer.MAX_VALUE);
@@ -90,12 +80,10 @@ class ParakeetSubsamplingTest {
     }
 
     private static float[] preEncode(float[] mel, int melFrames, int frames, int valid, int tile) {
-        MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
-        try {
-            var x = encoder.preEncode(mel, melFrames, frames, valid, tile, new Workspace(scratch));
-            return Views.toFloatArray(x, "pre-encode");
-        } finally {
-            Arenas.close(scratch);
-        }
+        return Fixtures.onScratch(
+                workspace ->
+                        Views.toFloatArray(
+                                encoder.preEncode(mel, melFrames, frames, valid, tile, workspace),
+                                "pre-encode"));
     }
 }

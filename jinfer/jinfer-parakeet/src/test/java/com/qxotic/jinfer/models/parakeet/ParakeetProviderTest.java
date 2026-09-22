@@ -15,6 +15,7 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -39,24 +40,22 @@ class ParakeetProviderTest {
                     fixture.getValue(String.class, "fixture.transcript"), transcription.text());
 
             assertFalse(transcription.tokens().isEmpty());
-            double previousStart = 0;
-            double audioSeconds = (double) pcm.length / loaded.sampleRate();
+            Duration previousStart = Duration.ZERO;
+            Duration audio = Duration.ofNanos(pcm.length * 1_000_000_000L / loaded.sampleRate());
             for (Transcription.Token token : transcription.tokens()) {
-                assertTrue(token.start() >= previousStart, "token starts must not go backwards");
-                assertTrue(token.end() <= audioSeconds + 1, "token end past the audio");
+                assertTrue(
+                        token.start().compareTo(previousStart) >= 0,
+                        "token starts must not go backwards");
+                assertTrue(token.end().compareTo(audio) <= 0, "token end past the audio");
                 previousStart = token.start();
             }
 
-            // Long-form windowing: 10-second windows over the 11-second clip force the overlap
-            // stitcher, which must still reproduce the whole-utterance transcript here.
-            System.setProperty("jinfer.parakeet.chunkSeconds", "10");
-            try {
+            // 10 s chunks over the 11 s clip commit mid-utterance, which must not change the text.
+            try (var chunks = Fixtures.chunkSeconds(10)) {
                 assertEquals(
                         transcription.text(),
                         loaded.transcribe(pcm).text(),
-                        "windowed transcription drifted");
-            } finally {
-                System.clearProperty("jinfer.parakeet.chunkSeconds");
+                        "chunked transcription drifted");
             }
         }
     }
