@@ -85,6 +85,9 @@ public final class Parakeet
     // A partial, provisional and asked for often, keeps only 3 s of left context: its window is
     // a third as long, and far cheaper, since attention is quadratic in it.
     private static final int LEFT_FRAMES = 125, PARTIAL_LEFT_FRAMES = 38;
+    // A partial also stops short of the audio fed: with no right context there, the decoder
+    // invents words that the next partial takes back.
+    private static final int PARTIAL_EDGE_FRAMES = 3;
     private static final int STREAM_CHUNK_FRAMES = 25, STREAM_RIGHT_FRAMES = 25;
     private static final int OFFLINE_CHUNK_FRAMES = 575, OFFLINE_RIGHT_FRAMES = 50;
 
@@ -243,8 +246,9 @@ public final class Parakeet
             requireOpen();
             long from =
                     Math.max(bufferStart, (cursor.frame() - PARTIAL_LEFT_FRAMES) * frameSamples());
+            long until = end() - (long) PARTIAL_EDGE_FRAMES * frameSamples();
             return state.exclusively(
-                    () -> transcription(decode(from, end(), Long.MAX_VALUE, cursor.copy())));
+                    () -> transcription(decode(from, end(), until, cursor.copy())));
         }
 
         @Override
