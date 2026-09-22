@@ -39,6 +39,12 @@
       <groupId>com.qxotic</groupId>
       <artifactId>gguf</artifactId>
     </dependency>
+    <!-- test-only: decodes (and resamples to 16 kHz) the end-to-end test clips -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-codecs</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- test-only: checkpoint acquisition by ref (lookup only, never a download) -->
     <dependency>
       <groupId>com.qxotic</groupId>
