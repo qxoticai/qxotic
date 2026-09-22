@@ -84,12 +84,9 @@ ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
 Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS, `-f dshow -i
 audio="Microphone"` on Windows.
 
-<p align="center">
-  <video src="https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.mp4"
-         poster="https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.png"
-         width="820" controls playsinline></video>
-</p>
-<p align="center"><sub>Live transcription of JFK's 1961 inaugural address, with sound.</sub></p>
+https://github.com/user-attachments/assets/7298c6fc-65da-45f7-a7b3-0d21cce713eb
+
+<sub>Live transcription of JFK's 1961 inaugural address, with sound ([download](https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.mp4)).</sub>
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
 piece lands in color and fades into the text, the provisional tail follows in grey italics with a
