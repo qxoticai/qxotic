@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.bench;
 
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Transcription;
 import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.chat.Models;
@@ -21,6 +22,7 @@ import java.util.stream.Stream;
  * <pre>
  *   WER  over a LibriSpeech-layout corpus (*.flac beside *.trans.txt):
  *        TranscriptionBench --model tdt.gguf --librispeech LibriSpeech/test-clean [--limit N]
+ *                           [--dump out.tsv]
  *   RTF  over one audio file:
  *        TranscriptionBench --model tdt.gguf --audio jfk.wav [--reps N]
  * </pre>
@@ -29,6 +31,10 @@ import java.util.stream.Stream;
  * exceeds the bound. Decoding is deterministic, so a subset's WER is a constant per model and
  * quant; gate with a margin over the measured value and a windowing or normalization regression
  * trips it while quantization noise cannot.
+ *
+ * <p>{@code --dump <file>} writes what was heard, one utterance per line: {@code id, audio seconds,
+ * decode seconds, hypothesis, reference}, tab separated, so another scorer can compare engines on
+ * equal terms.
  *
  * <p>WER uses the usual normalization (lowercase, keep {@code [a-z0-9']}, collapse spaces) and
  * word-level edit distance. RTF is seconds of audio transcribed per wall second, model load
@@ -39,7 +45,7 @@ public final class TranscriptionBench {
     private TranscriptionBench() {}
 
     public static void main(String[] args) throws Exception {
-        Path model = null, corpus = null, audio = null;
+        Path model = null, corpus = null, audio = null, dump = null;
         int limit = Integer.MAX_VALUE, reps = 3;
         double gate = -1;
         for (int i = 0; i < args.length; i += 2) {
@@ -52,12 +58,14 @@ public final class TranscriptionBench {
                 case "--limit" -> limit = Integer.parseInt(args[i + 1]);
                 case "--reps" -> reps = Integer.parseInt(args[i + 1]);
                 case "--gate" -> gate = Double.parseDouble(args[i + 1]);
+                case "--dump" -> dump = Path.of(args[i + 1]);
                 default -> throw new IllegalArgumentException("unknown option: " + args[i]);
             }
         }
         if (model == null || (corpus == null) == (audio == null) || (gate >= 0 && corpus == null))
             throw new IllegalArgumentException(
-                    "usage: --model <gguf> (--librispeech <dir> [--limit N] [--gate maxWer%] |"
+                    "usage: --model <gguf> (--librispeech <dir> [--limit N] [--gate maxWer%]"
+                            + " [--dump out.tsv] |"
                             + " --audio <file> [--reps N])");
 
         try (Arena arena = Arena.ofShared()) {
@@ -67,7 +75,7 @@ public final class TranscriptionBench {
                     "model %s loaded in %.1f s%n",
                     model.getFileName(), (System.nanoTime() - loadStart) / 1e9);
             if (corpus != null) {
-                double wer = wer(transcriber, corpus, limit);
+                double wer = wer(transcriber, corpus, limit, dump);
                 if (gate >= 0) {
                     boolean passed = wer <= gate;
                     System.out.printf(
@@ -83,34 +91,53 @@ public final class TranscriptionBench {
 
     private record Utterance(String id, Path flac, String reference) {}
 
-    private record Scored(Utterance utterance, int errors, int words, String hypothesis) {}
+    private record Scored(
+            Utterance utterance,
+            int errors,
+            int words,
+            String hypothesis,
+            double audioSeconds,
+            double decodeSeconds) {}
 
-    private static double wer(TranscriptionModel<?, ?, ?> transcriber, Path corpus, int limit)
+    private static <S extends RuntimeState> double wer(
+            TranscriptionModel<?, ?, S> transcriber, Path corpus, int limit, Path dump)
             throws IOException {
         List<Utterance> utterances = corpus(corpus, limit);
         System.out.printf("%d utterances from %s%n", utterances.size(), corpus);
         long errors = 0, words = 0, samples = 0, nanos = 0;
         List<Scored> scored = new ArrayList<>(utterances.size());
-        for (int i = 0; i < utterances.size(); i++) {
-            Utterance utterance = utterances.get(i);
-            Media.Audio decoded = AudioCodec.load(utterance.flac());
-            long start = System.nanoTime();
-            Transcription transcription = transcriber.transcribe(decoded.pcm());
-            nanos += System.nanoTime() - start;
-            samples += decoded.pcm().length;
-            String[] reference = normalize(utterance.reference());
-            String[] hypothesis = normalize(transcription.text());
-            int distance = editDistance(reference, hypothesis);
-            errors += distance;
-            words += reference.length;
-            scored.add(new Scored(utterance, distance, reference.length, transcription.text()));
-            if ((i + 1) % 100 == 0 || i + 1 == utterances.size())
-                System.out.printf(
-                        "  %5d/%d  WER %.3f%%  RTFx %.1f%n",
-                        i + 1,
-                        utterances.size(),
-                        100.0 * errors / Math.max(1, words),
-                        (samples / 16_000.0) / (nanos / 1e9));
+        // one state for the corpus, as a server holds one per pipeline: the timed region is
+        // decoding, not allocating a fresh workspace per utterance
+        try (S state = transcriber.newState()) {
+            for (int i = 0; i < utterances.size(); i++) {
+                Utterance utterance = utterances.get(i);
+                Media.Audio decoded = AudioCodec.load(utterance.flac());
+                long start = System.nanoTime();
+                Transcription transcription = transcriber.transcribe(state, decoded.pcm());
+                long spent = System.nanoTime() - start;
+                nanos += spent;
+                samples += decoded.pcm().length;
+                String[] reference = normalize(utterance.reference());
+                String[] hypothesis = normalize(transcription.text());
+                int distance = editDistance(reference, hypothesis);
+                errors += distance;
+                words += reference.length;
+                scored.add(
+                        new Scored(
+                                utterance,
+                                distance,
+                                reference.length,
+                                transcription.text(),
+                                decoded.pcm().length / (double) transcriber.sampleRate(),
+                                spent / 1e9));
+                if ((i + 1) % 100 == 0 || i + 1 == utterances.size())
+                    System.out.printf(
+                            "  %5d/%d  WER %.3f%%  RTFx %.1f%n",
+                            i + 1,
+                            utterances.size(),
+                            100.0 * errors / Math.max(1, words),
+                            (samples / 16_000.0) / (nanos / 1e9));
+            }
         }
         System.out.printf(
                 "%nWER %.3f%%  (%d errors / %d words, %d utterances)%n",
@@ -134,22 +161,38 @@ public final class TranscriptionBench {
                                         s.words(),
                                         s.utterance().reference(),
                                         s.hypothesis()));
+        if (dump != null) {
+            List<String> lines = new ArrayList<>(scored.size());
+            for (Scored s : scored)
+                lines.add(
+                        "%s\t%.3f\t%.3f\t%s\t%s"
+                                .formatted(
+                                        s.utterance().id(),
+                                        s.audioSeconds(),
+                                        s.decodeSeconds(),
+                                        s.hypothesis().strip(),
+                                        s.utterance().reference()));
+            Files.write(dump, lines);
+            System.out.println("dumped " + lines.size() + " utterances to " + dump);
+        }
         return 100.0 * errors / Math.max(1, words);
     }
 
-    private static void rtf(TranscriptionModel<?, ?, ?> transcriber, Path audio, int reps)
-            throws IOException {
+    private static <S extends RuntimeState> void rtf(
+            TranscriptionModel<?, ?, S> transcriber, Path audio, int reps) throws IOException {
         Media.Audio decoded = AudioCodec.load(audio);
         double seconds = decoded.pcm().length / (double) transcriber.sampleRate();
-        transcriber.transcribe(decoded.pcm()); // warmup
-        for (int i = 0; i < reps; i++) {
-            long start = System.nanoTime();
-            Transcription transcription = transcriber.transcribe(decoded.pcm());
-            double wall = (System.nanoTime() - start) / 1e9;
-            System.out.printf(
-                    "run %d: %.2f s audio in %.2f s  (RTFx %.1f)%n",
-                    i + 1, seconds, wall, seconds / wall);
-            if (i == 0) System.out.println("  " + transcription.text());
+        try (S state = transcriber.newState()) {
+            transcriber.transcribe(state, decoded.pcm()); // warmup
+            for (int i = 0; i < reps; i++) {
+                long start = System.nanoTime();
+                Transcription transcription = transcriber.transcribe(state, decoded.pcm());
+                double wall = (System.nanoTime() - start) / 1e9;
+                System.out.printf(
+                        "run %d: %.2f s audio in %.2f s  (RTFx %.1f)%n",
+                        i + 1, seconds, wall, seconds / wall);
+                if (i == 0) System.out.println("  " + transcription.text());
+            }
         }
     }
 
