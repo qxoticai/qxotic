@@ -80,6 +80,10 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
         int n = raw.length / 4; // 4 bytes per float32 sample
         float[] pcm = new float[n];
         ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(pcm);
+        // float decoding overshoots [-1,1] wherever the source clips, so the samples land in
+        // range here rather than failing a whole recording over a few loud ones
+        for (int i = 0; i < n; i++)
+            pcm[i] = Float.isFinite(pcm[i]) ? Math.clamp(pcm[i], -1f, 1f) : 0f;
         return new Media.Audio(pcm, SAMPLE_RATE, 1);
     }
 }
