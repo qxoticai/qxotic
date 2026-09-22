@@ -85,8 +85,8 @@ Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS,
 audio="Microphone"` on Windows.
 
 <p align="center">
-  <video src="https://cdn.jsdelivr.net/gh/qxoticai/assets@main/qxotic/parakeet-live-transcription.mp4"
-         poster="https://cdn.jsdelivr.net/gh/qxoticai/assets@main/qxotic/parakeet-live-transcription.png"
+  <video src="https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.mp4"
+         poster="https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.png"
          width="820" controls playsinline></video>
 </p>
 <p align="center"><sub>Live transcription of JFK's 1961 inaugural address, with sound.</sub></p>
