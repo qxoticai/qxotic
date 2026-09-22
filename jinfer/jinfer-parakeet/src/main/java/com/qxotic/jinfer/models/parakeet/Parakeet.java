@@ -16,36 +16,34 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /**
  * NVIDIA Parakeet speech recognition ({@code general.architecture=parakeet}): the FastConformer
- * encoder and TDT transducer decoder behind the {@link TranscriptionModel} contract. Offline,
- * whole-utterance transcription; the TDT variant is required (a CTC-only conversion is refused at
- * load).
+ * encoder and the TDT transducer decoder. CTC-only checkpoints are refused at load.
  */
 public final class Parakeet
         implements TranscriptionModel<Parakeet.Configuration, Parakeet.Weights, Parakeet.State> {
 
     public static final String ARCHITECTURE = "parakeet";
 
-    /** The load-time summary; {@code frameSeconds} is the unit of the decoder's token timing. */
     public record Configuration(
             int sampleRate, int dModel, int layers, int vocabSize, int subsamplingFactor, int hop) {
-        public double frameSeconds() {
-            return (double) hop * subsamplingFactor / sampleRate;
+        /** One encoder frame, the unit of token timing. */
+        public Duration frame() {
+            return Duration.ofNanos(1_000_000_000L * hop * subsamplingFactor / sampleRate);
         }
     }
 
     public record Weights(ParakeetEncoder encoder, ParakeetTdt decoder) {}
 
     /**
-     * A transcription pipeline's slot: owns the {@link Workspace} every window's encoder and
-     * decoder scratch comes from, so a warm state transcribes without allocating. The workspace
-     * grows to the longest window seen (at most the window plus the commit lookahead).
+     * Owns the {@link Workspace} that every window draws its scratch from, so a warm state
+     * transcribes without allocating.
      */
     public static final class State extends RuntimeState {
         private final MemoryArena<MemorySegment> owned; // null when the arena is borrowed
@@ -79,9 +77,20 @@ public final class Parakeet
         }
     }
 
+    // Windows are decoded as NeMo streams Parakeet: left context, a chunk and right context, of
+    // which only the chunk's tokens become final, while the decoder carries its state from chunk to
+    // chunk so words simply continue across them. Sizes in encoder frames (80 ms). A live stream
+    // uses NeMo's 10-2-2 s, so final text trails the audio by about 4 s; offline transcription
+    // uses 46 s chunks, keeping windows at 60 s. -Djinfer.parakeet.chunkSeconds overrides both.
+    // A partial, provisional and asked for often, keeps only 3 s of left context: its window is
+    // a third as long, and far cheaper, since attention is quadratic in it.
+    private static final int LEFT_FRAMES = 125, PARTIAL_LEFT_FRAMES = 38;
+    private static final int STREAM_CHUNK_FRAMES = 25, STREAM_RIGHT_FRAMES = 25;
+    private static final int OFFLINE_CHUNK_FRAMES = 575, OFFLINE_RIGHT_FRAMES = 50;
+
     private final Configuration configuration;
     private final Weights weights;
-    private final String name; // for telemetry: the checkpoint's own name
+    private final String name; // checkpoint name, for telemetry
 
     private Parakeet(Configuration configuration, Weights weights, String name) {
         this.configuration = configuration;
@@ -90,9 +99,12 @@ public final class Parakeet
     }
 
     public static Parakeet load(FileChannel channel, GGUF gguf, Arena arena) throws IOException {
-        Map<String, MemoryView<MemorySegment>> tensors =
-                ModelLoader.loadTensors(channel, gguf, arena);
-        ParakeetEncoder encoder = ParakeetEncoder.load(gguf, tensors, arena);
+        String architecture = gguf.getValue(String.class, "general.architecture");
+        if (!ARCHITECTURE.equals(architecture))
+            throw new IllegalArgumentException(
+                    "expected general.architecture=parakeet but was '" + architecture + "'");
+        Tensors tensors = new Tensors(ModelLoader.loadTensors(channel, gguf, arena));
+        ParakeetEncoder encoder = ParakeetEncoder.load(gguf, tensors);
         ParakeetTdt decoder = ParakeetTdt.load(gguf, tensors);
         Configuration configuration =
                 new Configuration(
@@ -140,232 +152,113 @@ public final class Parakeet
         return new State(arena, null);
     }
 
-    /**
-     * Full-context attention is quadratic in audio length, so audio is windowed: a window commits
-     * once audio beyond it arrives (its kept tokens can no longer change), neighbors overlap and
-     * split the overlap at its midpoint, and the buffered tail re-decodes on demand. One window or
-     * less is a single exact pass. {@code -Djinfer.parakeet.chunkSeconds} sizes the window.
-     */
-    private static final int OVERLAP_SECONDS = 5;
-
-    // A window commits only once this much audio exists beyond it, and the consensus preview is
-    // cut to exactly overlap+lookahead - so the anchor, and therefore the transcript, is
-    // identical for every feeding pattern (0.5 s live chunks or the whole file at once).
-    private static final int COMMIT_LOOKAHEAD_SECONDS = 5;
-
-    // One window size for offline and streaming: 60 s measures within 0.1 WER of full context
-    // (consensus seams + shared mel statistics + the decode watchdog), while smaller windows
-    // re-expose the model's short-excerpt fragility - whole windows can normalize into silence.
-    // The streaming reader thread absorbs the larger per-partial decode, so live partials still
-    // pace at a few seconds.
-    private static final int WINDOW_SECONDS = 60;
-
-    private int chunkSamples() {
-        int seconds = Integer.getInteger("jinfer.parakeet.chunkSeconds", WINDOW_SECONDS);
-        return Math.max(2 * OVERLAP_SECONDS, seconds) * sampleRate();
-    }
-
-    /** Offline transcription is the stream fed whole: one windowing implementation, not two. */
     @Override
     public Transcription transcribe(State state, float[] pcm) {
+        Stream stream = stream(state, OFFLINE_CHUNK_FRAMES, OFFLINE_RIGHT_FRAMES);
+        Transcription head = stream.feed(pcm), tail = stream.finish();
+        List<Transcription.Token> tokens = new ArrayList<>(head.tokens());
+        tokens.addAll(tail.tokens());
+        return new Transcription(head.text() + tail.text(), tokens);
+    }
+
+    @Override
+    public TranscriptionStream stream(State state) {
+        return stream(state, STREAM_CHUNK_FRAMES, STREAM_RIGHT_FRAMES);
+    }
+
+    private Stream stream(State state, int chunkFrames, int rightFrames) {
         Objects.requireNonNull(state, "state");
-        Objects.requireNonNull(pcm, "pcm");
-        TranscriptionStream stream = new Stream(state, chunkSamples());
-        stream.feed(pcm);
-        return stream.finish();
+        Integer seconds = Integer.getInteger("jinfer.parakeet.chunkSeconds");
+        if (seconds != null) chunkFrames = seconds * sampleRate() / frameSamples();
+        return new Stream(state, chunkFrames, rightFrames);
     }
 
     /**
-     * The one windowing implementation ({@link #transcribe} is this stream fed whole). A
-     * cache-aware streaming encoder can later replace the tail re-decode behind this interface.
+     * Windowed decoding, since full-context attention is quadratic in length. A chunk commits once
+     * the audio reaches its end plus the right context; the buffer then keeps just the next
+     * window's left context. {@link #partial()} and {@link #finish()} decode what is buffered from
+     * a copy of the decoder's cursor, or the cursor itself.
      */
-    @Override
-    public TranscriptionStream stream(State state) {
-        Objects.requireNonNull(state, "state");
-        return new Stream(state, chunkSamples());
-    }
-
     private final class Stream implements TranscriptionStream {
         private final State state;
-        private final int chunk;
-        private final ParakeetEncoder.MelStats melStats = new ParakeetEncoder.MelStats();
+        private final int chunk, right, left; // samples
+        private final ParakeetTdt.Cursor cursor;
         private float[] buffer = new float[sampleRate() * 8];
         private int buffered;
-        private long windowStart; // absolute sample index of buffer[0]
-        private double committedUpTo; // absolute seconds: tokens starting before this are final
-        private final List<ParakeetTdt.Emission> committed = new ArrayList<>();
-        private final List<Transcription.Token> committedTokens = new ArrayList<>();
+        private long bufferStart; // absolute sample of buffer[0], where the next window starts
+        private long chunkEnd; // absolute sample where the next chunk to commit ends
+        private int finalTokens; // emitted in final pieces so far
         private boolean done;
-        // One utterance = one jinfer.Inference event, committed at finish. The event spans the
-        // stream's life - for offline transcribe that IS the call - while decodeTime carries only
-        // compute, so a live stream's waiting for audio is not billed as inference.
+        // One inference event per stream, committed at finish. decodeTime counts compute only, so
+        // time spent waiting for live audio is not billed.
         private final InferenceEvent event;
-        private long totalFed; // samples
         private long computeNanos;
 
-        private Stream(State state, int chunk) {
+        private Stream(State state, int chunkFrames, int rightFrames) {
             this.state = state;
-            this.chunk = chunk;
+            this.chunk = chunkFrames * frameSamples();
+            this.right = rightFrames * frameSamples();
+            this.left = LEFT_FRAMES * frameSamples();
+            this.chunkEnd = chunk;
+            this.cursor = new ParakeetTdt.Cursor(weights.decoder().config());
             this.event =
                     InferenceEvent.started(name, InferenceEvent.TRANSCRIPTION, InferenceEvent.TEXT);
         }
 
-        /** Every encoder+decoder pass goes through here so the event sees all of the compute. */
-        private Window timed(
-                float[] pcm,
-                int from,
-                int length,
-                ParakeetEncoder.MelStats stats,
-                boolean persist) {
-            long started = System.nanoTime();
-            try {
-                return window(state, pcm, from, length, stats, persist);
-            } finally {
-                computeNanos += System.nanoTime() - started;
-            }
+        @Override
+        public int sampleRate() {
+            return Parakeet.this.sampleRate();
         }
 
         @Override
-        public void feed(float[] pcm, int offset, int length) {
+        public Transcription feed(float[] pcm, int offset, int length) {
             Objects.requireNonNull(pcm, "pcm");
             Objects.checkFromIndexSize(offset, length, pcm.length);
-            if (done) throw new IllegalStateException("stream is finished");
-            state.exclusively(
+            requireOpen();
+            return state.exclusively(
                     () -> {
                         if (buffered + length > buffer.length) {
                             int grown = buffer.length;
                             while (grown < buffered + length) grown *= 2;
-                            float[] wider = new float[grown];
-                            System.arraycopy(buffer, 0, wider, 0, buffered);
-                            buffer = wider;
+                            buffer = Arrays.copyOf(buffer, grown);
                         }
                         System.arraycopy(pcm, offset, buffer, buffered, length);
                         buffered += length;
-                        totalFed += length;
-                        int step = chunk - OVERLAP_SECONDS * sampleRate();
-                        int lookahead = COMMIT_LOOKAHEAD_SECONDS * sampleRate();
-                        while (buffered >= chunk + lookahead) {
-                            commitWindow(step);
+                        List<Transcription.Token> piece = new ArrayList<>();
+                        while (bufferStart + buffered >= chunkEnd + right) {
+                            piece.addAll(decode(bufferStart, chunkEnd + right, chunkEnd, cursor));
+                            chunkEnd += chunk;
+                            int dropped =
+                                    (int) (Math.max(0, chunkEnd - chunk - left) - bufferStart);
+                            System.arraycopy(buffer, dropped, buffer, 0, buffered - dropped);
+                            buffered -= dropped;
+                            bufferStart += dropped;
                         }
+                        return finalPiece(piece);
                     });
-        }
-
-        /**
-         * Commits the oldest window by CONSENSUS: the old window and the new window's prefix both
-         * transcribe the overlap, and the commit horizon lands in a gap inside their longest
-         * agreeing token run, so both sides attribute every boundary word identically. Measured
-         * seam cost: ~0.3 errors per seam, from ~2.5 under a midpoint time split. Midpoint remains
-         * the fallback for an overlap the decoders cannot agree on (silence, music).
-         */
-        private void commitWindow(int step) {
-            Window old = timed(buffer, 0, chunk, melStats, true);
-            // fixed-length preview: determinism requires the same lookahead every time
-            int preview = (OVERLAP_SECONDS + COMMIT_LOOKAHEAD_SECONDS) * sampleRate();
-            Window next = timed(buffer, step, Math.min(buffered - step, preview), melStats, false);
-            double anchor = consensusAnchor(old, next, step);
-            keep(old, 0, committedUpTo, anchor, committed, committedTokens);
-            committedUpTo = anchor;
-            System.arraycopy(buffer, step, buffer, 0, buffered - step);
-            buffered -= step;
-            windowStart += step;
-        }
-
-        /**
-         * The cut inside the overlap {@code [windowStart+step, windowStart+chunk]}: the midpoint of
-         * the middle gap of the longest run of tokens both decodes agree on (same id, frames within
-         * 3), or the overlap midpoint when no two-token run agrees.
-         */
-        private double consensusAnchor(Window old, Window next, int step) {
-            double overlapFrom =
-                    Math.max(committedUpTo, (windowStart + step) / (double) sampleRate());
-            double overlapTo = (windowStart + chunk) / (double) sampleRate();
-            List<double[]> gaps = new ArrayList<>(); // start times of agreed consecutive pairs
-            int j = 0;
-            int runLength = 0;
-            double previousStart = 0;
-            for (int i = 0; i < old.emissions().size(); i++) {
-                double start = old.tokens().get(i).start() + windowStart / (double) sampleRate();
-                if (start < overlapFrom || start >= overlapTo) continue;
-                // two-pointer scan for the same token at nearly the same absolute time
-                boolean matched = false;
-                double matchedStart = 0;
-                for (; j < next.emissions().size(); j++) {
-                    double nextStart =
-                            next.tokens().get(j).start()
-                                    + (windowStart + step) / (double) sampleRate();
-                    if (nextStart < start - 0.25) continue;
-                    if (nextStart > start + 0.25) break;
-                    if (next.emissions().get(j).token() == old.emissions().get(i).token()) {
-                        matched = true;
-                        matchedStart = start;
-                        j++;
-                        break;
-                    }
-                }
-                if (matched) {
-                    if (runLength > 0) gaps.add(new double[] {previousStart, matchedStart});
-                    runLength++;
-                    previousStart = matchedStart;
-                } else {
-                    runLength = 0;
-                }
-            }
-            if (gaps.isEmpty())
-                return Math.max(committedUpTo, (overlapFrom + overlapTo) / 2); // fallback
-            double[] middle = gaps.get(gaps.size() / 2);
-            return (middle[0] + middle[1]) / 2;
-        }
-
-        /** Appends the window's tokens that start inside {@code [keepFrom, keepTo)}, retimed. */
-        private void keep(
-                Window window,
-                long windowOffsetSamples,
-                double keepFrom,
-                double keepTo,
-                List<ParakeetTdt.Emission> emissions,
-                List<Transcription.Token> tokens) {
-            double offset = (windowStart + windowOffsetSamples) / (double) sampleRate();
-            for (int i = 0; i < window.emissions().size(); i++) {
-                Transcription.Token token = window.tokens().get(i);
-                double start = token.start() + offset;
-                if (start < keepFrom || start >= keepTo) continue;
-                emissions.add(window.emissions().get(i));
-                tokens.add(
-                        new Transcription.Token(
-                                token.text(), start, token.end() + offset, token.confidence()));
-            }
-        }
-
-        @Override
-        public Transcription committed() {
-            if (done) throw new IllegalStateException("stream is finished");
-            return state.exclusively(
-                    () ->
-                            new Transcription(
-                                    weights.decoder().text(committed),
-                                    List.copyOf(committedTokens)));
         }
 
         @Override
         public Transcription partial() {
-            if (done) throw new IllegalStateException("stream is finished");
-            return state.exclusively(this::assemble);
+            requireOpen();
+            long from =
+                    Math.max(bufferStart, (cursor.frame() - PARTIAL_LEFT_FRAMES) * frameSamples());
+            return state.exclusively(
+                    () -> transcription(decode(from, end(), Long.MAX_VALUE, cursor.copy())));
         }
 
         @Override
         public Transcription finish() {
-            if (done) throw new IllegalStateException("stream is finished");
+            requireOpen();
             return state.exclusively(
                     () -> {
-                        Transcription last = assemble();
-                        done = true;
-                        buffer = new float[0];
-                        // encoder frames of unique audio: the transcription analog of input tokens
-                        long samplesPerFrame =
-                                (long) configuration.hop() * configuration.subsamplingFactor();
-                        event.inputTokens =
-                                (int) Math.min(Integer.MAX_VALUE, totalFed / samplesPerFrame);
-                        event.outputTokens = last.tokens().size();
+                        long fed = end();
+                        Transcription last =
+                                finalPiece(decode(bufferStart, fed, Long.MAX_VALUE, cursor));
+                        close();
+                        // input tokens: encoder frames of audio fed
+                        event.inputTokens = (int) Math.min(Integer.MAX_VALUE, fed / frameSamples());
+                        event.outputTokens = finalTokens;
                         event.decodeTime = computeNanos;
                         event.finishReason = "stop";
                         event.end();
@@ -374,19 +267,68 @@ public final class Parakeet
                     });
         }
 
-        /** Committed windows plus a decode of the buffered tail - the offline last-window rule. */
-        private Transcription assemble() {
-            List<ParakeetTdt.Emission> emissions = new ArrayList<>(committed);
-            List<Transcription.Token> tokens = new ArrayList<>(committedTokens);
-            if (buffered > 0)
-                keep(
-                        timed(buffer, 0, buffered, melStats, false),
-                        0,
-                        committedUpTo,
-                        Double.MAX_VALUE,
-                        emissions,
-                        tokens);
-            return new Transcription(weights.decoder().text(emissions), tokens);
+        private long end() {
+            return bufferStart + buffered;
+        }
+
+        /**
+         * Decodes the buffered audio between absolute samples {@code from}, a frame boundary at or
+         * before the cursor, and {@code to}, running the decoder from {@code cursor} up to the
+         * frame at absolute sample {@code until}. Token times are from the start of the stream. The
+         * state's workspace is rewound first.
+         */
+        private List<Transcription.Token> decode(
+                long from, long to, long until, ParakeetTdt.Cursor cursor) {
+            if (to <= from) return List.of();
+            long started = System.nanoTime();
+            try {
+                Workspace workspace = state.workspace;
+                workspace.rewind();
+                int offset = (int) (from - bufferStart), length = (int) (to - from);
+                ParakeetEncoder encoder = weights.encoder();
+                MemoryView<MemorySegment> encoded =
+                        encoder.encode(buffer, offset, length, null, workspace);
+                int frames = encoder.frames(length), first = (int) (from / frameSamples());
+                int last = (int) Math.min(first + frames, until / frameSamples());
+                ParakeetTdt decoder = weights.decoder();
+                float[] projected = decoder.encProjection(encoded, frames, workspace);
+                List<ParakeetTdt.Emission> emissions =
+                        decoder.decode(projected, first, last, cursor, workspace);
+                Duration frame = configuration.frame();
+                // a duration predicted near the end can overrun the audio: tokens end inside it
+                Duration audioEnd = duration(to);
+                String[] pieces = decoder.config().pieces();
+                List<Transcription.Token> tokens = new ArrayList<>(emissions.size());
+                for (ParakeetTdt.Emission emission : emissions) {
+                    String piece = pieces[emission.token()];
+                    if (ParakeetTdt.isSpecial(piece)) continue;
+                    Duration end = frame.multipliedBy(emission.frame() + emission.duration());
+                    tokens.add(
+                            new Transcription.Token(
+                                    piece.replace('▁', ' '),
+                                    frame.multipliedBy(emission.frame()),
+                                    end.compareTo(audioEnd) < 0 ? end : audioEnd,
+                                    emission.confidence()));
+                }
+                return tokens;
+            } finally {
+                computeNanos += System.nanoTime() - started;
+            }
+        }
+
+        private Transcription finalPiece(List<Transcription.Token> tokens) {
+            Transcription piece = transcription(tokens);
+            finalTokens += tokens.size();
+            return piece;
+        }
+
+        /** The tokens' text keeps its leading space, except where it opens the transcript. */
+        private Transcription transcription(List<Transcription.Token> tokens) {
+            if (tokens.isEmpty()) return Transcription.empty();
+            StringBuilder text = new StringBuilder();
+            for (Transcription.Token token : tokens) text.append(token.text());
+            if (finalTokens == 0 && text.charAt(0) == ' ') text.deleteCharAt(0);
+            return new Transcription(text.toString(), tokens);
         }
 
         @Override
@@ -394,45 +336,17 @@ public final class Parakeet
             done = true;
             buffer = new float[0];
         }
+
+        private void requireOpen() {
+            if (done) throw new IllegalStateException("the stream is finished or closed");
+        }
     }
 
-    private record Window(List<ParakeetTdt.Emission> emissions, List<Transcription.Token> tokens) {}
+    private int frameSamples() {
+        return configuration.hop() * configuration.subsamplingFactor();
+    }
 
-    /**
-     * One window transcribed whole on the state's workspace, which it rewinds: nothing from the
-     * previous window survives it. Tokens are timed relative to the window start.
-     */
-    private Window window(
-            State state,
-            float[] pcm,
-            int from,
-            int length,
-            ParakeetEncoder.MelStats stats,
-            boolean persist) {
-        Workspace workspace = state.workspace;
-        workspace.rewind();
-        ParakeetEncoder encoder = weights.encoder();
-        MemoryView<MemorySegment> encoded =
-                encoder.encode(pcm, from, length, stats, persist, null, workspace);
-        int frames = encoder.frames(length);
-        ParakeetTdt decoder = weights.decoder();
-        float[] projected = decoder.encProjection(encoded, frames, workspace);
-        List<ParakeetTdt.Emission> emissions = decoder.decode(projected, frames, workspace);
-        double frameSeconds = configuration.frameSeconds();
-        String[] pieces = decoder.config().pieces();
-        List<ParakeetTdt.Emission> textual = new ArrayList<>(emissions.size());
-        List<Transcription.Token> tokens = new ArrayList<>(emissions.size());
-        for (ParakeetTdt.Emission emission : emissions) {
-            String piece = pieces[emission.token()];
-            if (ParakeetTdt.isSpecial(piece)) continue;
-            textual.add(emission);
-            tokens.add(
-                    new Transcription.Token(
-                            piece.replace('▁', ' '),
-                            emission.frame() * frameSeconds,
-                            (emission.frame() + emission.duration()) * frameSeconds,
-                            emission.confidence()));
-        }
-        return new Window(textual, tokens);
+    private Duration duration(long samples) {
+        return Duration.ofNanos(samples * 1_000_000_000L / sampleRate());
     }
 }

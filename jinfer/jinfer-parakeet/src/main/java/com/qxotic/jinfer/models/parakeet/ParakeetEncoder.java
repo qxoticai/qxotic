@@ -8,26 +8,17 @@ import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.LogMel;
 import com.qxotic.jinfer.kernels.MatMul;
-import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
-import java.io.IOException;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.nio.channels.FileChannel;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
 import java.util.function.ObjIntConsumer;
 
 /**
- * NVIDIA Parakeet FastConformer encoder (NeMo {@code ConformerEncoder}, {@code
- * general.architecture=parakeet}): NeMo mel front end, 8x depthwise-separable conv subsampling,
- * then macaron Conformer blocks with Transformer-XL relative-position attention. Ported against
- * parakeet.cpp; layer semantics are documented in the port plan and verified against its fixtures.
+ * NVIDIA Parakeet FastConformer encoder (NeMo {@code ConformerEncoder}): NeMo mel front end, 8x
+ * depthwise-separable conv subsampling, then macaron Conformer blocks with Transformer-XL
+ * relative-position attention. Ported from parakeet.cpp and checked against its fixtures.
  */
 public final class ParakeetEncoder {
     private static final float NORM_EPS = 1e-5f;
@@ -65,7 +56,7 @@ public final class ParakeetEncoder {
         }
     }
 
-    /** A projection; {@code bias} is null on the bias-free checkpoints (tdt-0.6b-v2/v3). */
+    /** A projection; {@code bias} is null on bias-free checkpoints such as tdt-0.6b-v3. */
     record Linear(
             MemoryView<MemorySegment> weight, MemoryView<MemorySegment> bias, int in, int out) {
         /** {@code output[rows][out] = input[rows][in] · weightᵀ + bias}. */
@@ -116,9 +107,6 @@ public final class ParakeetEncoder {
             Linear ff2Down,
             Norm outNorm) {}
 
-    /** Encoder output, frame-major {@code [frames, dModel]}. */
-    public record Output(float[] data, int frames) {}
-
     private final Config config;
     private final LogMel logMel;
     private final float[] conv0Taps, conv0Bias;
@@ -157,21 +145,7 @@ public final class ParakeetEncoder {
         return config;
     }
 
-    public static ParakeetEncoder load(Path path, Arena arena) throws IOException {
-        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            GGUF gguf = ModelLoader.readGguf(channel, path.toString());
-            return load(gguf, ModelLoader.loadTensors(channel, gguf, arena), arena);
-        }
-    }
-
-    public static ParakeetEncoder load(
-            GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, Arena arena) {
-        Objects.requireNonNull(gguf, "gguf");
-        Objects.requireNonNull(tensors, "tensors");
-        String architecture = gguf.getValue(String.class, "general.architecture");
-        if (!"parakeet".equals(architecture))
-            throw new IllegalArgumentException(
-                    "expected general.architecture=parakeet but was '" + architecture + "'");
+    static ParakeetEncoder load(GGUF gguf, Tensors tensors) {
         Config config = Config.from(gguf);
         if (config.magPower() != 1f && config.magPower() != 2f)
             throw new IllegalArgumentException("unsupported mag_power " + config.magPower());
@@ -181,16 +155,15 @@ public final class ParakeetEncoder {
         Block[] blocks = new Block[config.layers()];
         for (int i = 0; i < blocks.length; i++) {
             String prefix = "encoder.layers." + i + ".";
-            float[] bnWeight = Tensors.floats(tensors, prefix + "conv.batch_norm.weight", dim);
-            float[] bnBias = Tensors.floats(tensors, prefix + "conv.batch_norm.bias", dim);
-            float[] mean = Tensors.floats(tensors, prefix + "conv.batch_norm.running_mean", dim);
-            float[] variance = Tensors.floats(tensors, prefix + "conv.batch_norm.running_var", dim);
+            float[] bnWeight = tensors.floats(prefix + "conv.batch_norm.weight", dim);
+            float[] bnBias = tensors.floats(prefix + "conv.batch_norm.bias", dim);
+            float[] mean = tensors.floats(prefix + "conv.batch_norm.running_mean", dim);
+            float[] variance = tensors.floats(prefix + "conv.batch_norm.running_var", dim);
             // The depthwise conv's bias (absent on v2/v3) precedes the norm, so it folds into
             // the same per-channel affine: (x + b)*scale + shift = x*scale + (shift + b*scale).
+            String dwBiasName = prefix + "conv.depthwise_conv.bias";
             float[] dwBias =
-                    tensors.containsKey(prefix + "conv.depthwise_conv.bias")
-                            ? Tensors.floats(tensors, prefix + "conv.depthwise_conv.bias", dim)
-                            : null;
+                    tensors.optional(dwBiasName) == null ? null : tensors.floats(dwBiasName, dim);
             float[] bnScale = new float[dim];
             float[] bnShift = new float[dim];
             for (int c = 0; c < dim; c++) {
@@ -209,12 +182,11 @@ public final class ParakeetEncoder {
                             linear(tensors, prefix + "self_attn.linear_v", dim, dim),
                             linear(tensors, prefix + "self_attn.linear_pos", dim, dim),
                             linear(tensors, prefix + "self_attn.linear_out", dim, dim),
-                            Tensors.vector(tensors, prefix + "self_attn.pos_bias_u", dim),
-                            Tensors.vector(tensors, prefix + "self_attn.pos_bias_v", dim),
+                            tensors.vector(prefix + "self_attn.pos_bias_u", dim),
+                            tensors.vector(prefix + "self_attn.pos_bias_v", dim),
                             norm(tensors, prefix + "norm_conv"),
                             linear(tensors, prefix + "conv.pointwise_conv1", dim, 2 * dim),
-                            Tensors.floats(
-                                    tensors,
+                            tensors.floats(
                                     prefix + "conv.depthwise_conv.weight",
                                     dim * config.convKernel()),
                             bnScale,
@@ -228,56 +200,43 @@ public final class ParakeetEncoder {
         return new ParakeetEncoder(
                 config,
                 featurizer(gguf, tensors, config),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.0.weight", channels * 9),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.0.bias", channels),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.2.weight", channels * 9),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.2.bias", channels),
+                tensors.floats("encoder.pre_encode.conv.0.weight", channels * 9),
+                tensors.floats("encoder.pre_encode.conv.0.bias", channels),
+                tensors.floats("encoder.pre_encode.conv.2.weight", channels * 9),
+                tensors.floats("encoder.pre_encode.conv.2.bias", channels),
                 biasedLinear(tensors, "encoder.pre_encode.conv.3", channels, channels),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.5.weight", channels * 9),
-                Tensors.floats(tensors, "encoder.pre_encode.conv.5.bias", channels),
+                tensors.floats("encoder.pre_encode.conv.5.weight", channels * 9),
+                tensors.floats("encoder.pre_encode.conv.5.bias", channels),
                 biasedLinear(tensors, "encoder.pre_encode.conv.6", channels, channels),
                 biasedLinear(tensors, "encoder.pre_encode.out", flattened, dim),
                 blocks);
     }
 
-    /** A conformer projection: its bias is optional (the v2/v3 checkpoints have none). */
-    private static Linear linear(
-            Map<String, MemoryView<MemorySegment>> tensors, String name, int in, int out) {
+    /** A conformer projection, whose bias is optional. */
+    private static Linear linear(Tensors tensors, String name, int in, int out) {
         return new Linear(
-                Tensors.weight(tensors, name + ".weight", out),
-                tensors.get(name + ".bias"),
-                in,
-                out);
+                tensors.weight(name + ".weight", out), tensors.optional(name + ".bias"), in, out);
     }
 
-    /** A subsampling projection: every checkpoint has its bias. */
-    private static Linear biasedLinear(
-            Map<String, MemoryView<MemorySegment>> tensors, String name, int in, int out) {
+    /** A subsampling projection, whose bias every checkpoint has. */
+    private static Linear biasedLinear(Tensors tensors, String name, int in, int out) {
         return new Linear(
-                Tensors.weight(tensors, name + ".weight", out),
-                Tensors.require(tensors, name + ".bias"),
-                in,
-                out);
+                tensors.weight(name + ".weight", out), tensors.require(name + ".bias"), in, out);
     }
 
-    private static Norm norm(Map<String, MemoryView<MemorySegment>> tensors, String name) {
-        return new Norm(
-                Tensors.require(tensors, name + ".weight"),
-                Tensors.require(tensors, name + ".bias"));
+    private static Norm norm(Tensors tensors, String name) {
+        return new Norm(tensors.require(name + ".weight"), tensors.require(name + ".bias"));
     }
 
-    /** The NeMo featurizer: window and filterbank are lifted verbatim from the model weights. */
-    private static LogMel featurizer(
-            GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, Config config) {
+    /** The NeMo featurizer, with the window and filterbank taken from the weights. */
+    private static LogMel featurizer(GGUF gguf, Tensors tensors, Config config) {
         int winLength = gguf.getValue(int.class, "parakeet.preprocessor.win_length");
-        float[] window = Tensors.floats(tensors, "preprocessor.featurizer.window", winLength);
+        float[] window = tensors.floats("preprocessor.featurizer.window", winLength);
         float[] centered = new float[config.nFft()];
         System.arraycopy(window, 0, centered, (config.nFft() - winLength) / 2, winLength);
         float[] filterbank =
-                Tensors.floats(
-                        tensors,
-                        "preprocessor.featurizer.fb",
-                        config.nMels() * (config.nFft() / 2 + 1));
+                tensors.floats(
+                        "preprocessor.featurizer.fb", config.nMels() * (config.nFft() / 2 + 1));
         return new LogMel(
                 new LogMel.Spec(
                         config.nFft(),
@@ -292,119 +251,20 @@ public final class ParakeetEncoder {
     }
 
     /**
-     * Running per-bin mel statistics for streamed windows. Per-utterance {@code per_feature}
-     * normalization is fragile on short excerpts - a 10 s cut of clean speech can normalize into
-     * features the model decodes as silence - so consecutive windows of one stream share
-     * statistics, weight-capped at about a minute so they still track slow gain changes.
+     * Log-mel features of {@code pcm[from, from + length)}, normalized per feature: {@code [frames,
+     * nMels]}.
      */
-    public static final class MelStats {
-        private double[] mean, variance;
-        private double weight;
-
-        private static final double CAP_FRAMES = 6_000; // ~60 s at the 10 ms hop
-
-        /**
-         * The combined statistics of the carried weight plus this window; persisted only for
-         * committed windows so that polling a partial never changes later results.
-         */
-        private double[][] combined(float[] features, int nMels, int valid, boolean persist) {
-            if (mean == null) {
-                mean = new double[nMels];
-                variance = new double[nMels];
-            }
-            double[] combinedMean = new double[nMels];
-            double[] combinedVariance = new double[nMels];
-            if (valid == 0) {
-                System.arraycopy(mean, 0, combinedMean, 0, nMels);
-                System.arraycopy(variance, 0, combinedVariance, 0, nMels);
-                return new double[][] {combinedMean, combinedVariance};
-            }
-            double total = weight + valid;
-            for (int m = 0; m < nMels; m++) {
-                double sum = 0;
-                for (int t = 0; t < valid; t++) sum += features[t * nMels + m];
-                double windowMean = sum / valid;
-                double squares = 0;
-                for (int t = 0; t < valid; t++) {
-                    double centered = features[t * nMels + m] - windowMean;
-                    squares += centered * centered;
-                }
-                double windowVariance = valid > 1 ? squares / (valid - 1) : 0;
-                double delta = windowMean - mean[m];
-                combinedVariance[m] =
-                        (weight * variance[m]
-                                        + valid * windowVariance
-                                        + weight * valid / total * delta * delta)
-                                / total;
-                combinedMean[m] = (weight * mean[m] + valid * windowMean) / total;
-            }
-            if (persist) {
-                System.arraycopy(combinedMean, 0, mean, 0, nMels);
-                System.arraycopy(combinedVariance, 0, variance, 0, nMels);
-                weight = Math.min(total, CAP_FRAMES);
-            }
-            return new double[][] {combinedMean, combinedVariance};
-        }
-    }
-
-    /**
-     * NeMo mel front end over {@code pcm[from, from+length)}: frame-major {@code [frames, nMels]},
-     * per-feature normalized, with {@code stats} (nullable) carried across windows.
-     */
-    float[] mel(float[] pcm, int from, int length, MelStats stats, boolean persist) {
+    float[] mel(float[] pcm, int from, int length) {
         int frames = melFrames(length);
         int nMels = config.nMels();
         float[] features = logMel.frames(pcm, from, length, config.nFft() / 2, frames);
-        int valid = Math.min(length / config.hop(), frames);
-        if (stats == null) {
-            LogMel.normalizePerFeature(features, nMels, frames, valid);
-            return features;
-        }
-        double[][] combined = stats.combined(features, nMels, valid, persist);
-        for (int m = 0; m < nMels; m++) {
-            double deviation = Math.sqrt(combined[1][m]) + 1e-5;
-            for (int t = 0; t < valid; t++)
-                features[t * nMels + m] =
-                        (float) ((features[t * nMels + m] - combined[0][m]) / deviation);
-            for (int t = valid; t < frames; t++) features[t * nMels + m] = 0f;
-        }
+        LogMel.normalizePerFeature(
+                features, nMels, frames, Math.min(length / config.hop(), frames));
         return features;
     }
 
     int melFrames(int samples) {
         return 1 + samples / config.hop();
-    }
-
-    public Output forward(float[] pcm16k) {
-        return forward(pcm16k, null, false, null);
-    }
-
-    /**
-     * Runs the encoder with running mel statistics shared across a stream's windows; {@code
-     * persist} folds this window into the carried statistics and is reserved for windows being
-     * committed - previews and tail re-decodes stay side-effect-free.
-     */
-    public Output forward(float[] pcm16k, MelStats stats, boolean persist) {
-        return forward(pcm16k, stats, persist, null);
-    }
-
-    public Output forward(float[] pcm16k, ObjIntConsumer<float[]> layerTap) {
-        return forward(pcm16k, null, false, layerTap);
-    }
-
-    /**
-     * Runs the encoder; {@code layerTap} (nullable) receives each conformer block's output as
-     * frame-major {@code [frames, dModel]} for parity testing.
-     */
-    private Output forward(
-            float[] pcm16k, MelStats stats, boolean persist, ObjIntConsumer<float[]> layerTap) {
-        return Tensors.withScratch(
-                workspace -> {
-                    MemoryView<MemorySegment> x =
-                            encode(pcm16k, 0, pcm16k.length, stats, persist, layerTap, workspace);
-                    return new Output(
-                            Views.toFloatArray(x, "encoder output"), frames(pcm16k.length));
-                });
     }
 
     /** Encoder frames for {@code samples} of audio. */
@@ -413,25 +273,23 @@ public final class ParakeetEncoder {
     }
 
     /**
-     * The pipeline's pass over {@code pcm[from, from+length)}: {@code [frames, dModel]} as a view
-     * into {@code workspace}, valid until its next rewind. Every buffer comes from the workspace,
-     * so a warm state encodes without allocating.
+     * Encodes {@code pcm[from, from + length)} to {@code [frames, dModel]}, drawing every buffer
+     * from {@code workspace}. The result is valid until the workspace's next rewind.
      */
     MemoryView<MemorySegment> encode(
             float[] pcm,
             int from,
             int length,
-            MelStats stats,
-            boolean persist,
             ObjIntConsumer<float[]> layerTap,
             Workspace workspace) {
         int melFrames = melFrames(length);
-        float[] mel = mel(pcm, from, length, stats, persist);
-        // Offline valid-length recurrence seeds at melFrames - 1: the center pad contributes one
-        // trailing mel frame that carries no signal.
+        float[] mel = mel(pcm, from, length);
+        // The valid length starts from melFrames - 1: the center pad adds one trailing mel frame
+        // that carries no signal.
         int frames = frames(length);
         int valid = subsampled(subsampled(subsampled(melFrames - 1)));
-        MemoryView<MemorySegment> x = preEncode(mel, melFrames, frames, valid, workspace);
+        MemoryView<MemorySegment> x =
+                preEncode(mel, melFrames, frames, valid, SUBSAMPLING_TILE, workspace);
         if (config.xscaling())
             Ops.multiplyInPlace(x, 0, frames * config.dModel(), (float) Math.sqrt(config.dModel()));
         if (layerTap != null) layerTap.accept(Views.toFloatArray(x, "pre-encode"), -1);
@@ -453,24 +311,19 @@ public final class ParakeetEncoder {
         return (length - 1) / 2 + 1;
     }
 
-    // --- subsampling: NeMo dw_striding x8 (conv2d s2 + ReLU, then twice depthwise s2 ->
-    // pointwise + ReLU), channel-major staging in plain arrays, flattened channel-major. The
-    // arrays are the workspace's, so they arrive holding the previous window: every loop below
-    // writes its whole output, and the one read-before-written span (flat's padding) is cleared.
+    // Subsampling, NeMo's dw_striding x8: a stride-2 conv2d and ReLU, then twice a stride-2
+    // depthwise conv, a pointwise conv and ReLU. Stages are channel-major arrays from the
+    // workspace, which still hold the previous window's values, so every loop writes its whole
+    // output and flat's padding is cleared explicitly.
 
     /**
-     * Encoder frames per subsampling tile. Each stride-2 3x3 stage reads rows {@code 2t-1..2t+1} of
-     * its input, so a tile needs only a 15-mel-frame halo, and its intermediates stay ~40 MB
-     * whatever the window's length (a 65 s window at once was ~500 MB).
+     * Encoder frames per subsampling tile. Each stride-2 3x3 stage reads input rows {@code
+     * 2t-1..2t+1}, so a tile needs a 15-mel-frame halo, and its intermediates stay near 40 MB for
+     * any window length (a whole 65 s window took about 500 MB).
      */
     private static final int SUBSAMPLING_TILE = 64;
 
-    private MemoryView<MemorySegment> preEncode(
-            float[] mel, int melFrames, int frames, int valid, Workspace workspace) {
-        return preEncode(mel, melFrames, frames, valid, SUBSAMPLING_TILE, workspace);
-    }
-
-    /** As above with the tile size explicit: the tiling test's seam. */
+    /** The subsampled frames {@code [frames, dModel]}, computed {@code tile} frames at a time. */
     MemoryView<MemorySegment> preEncode(
             float[] mel, int melFrames, int frames, int valid, int tile, Workspace workspace) {
         int channels = config.subsamplingChannels();
@@ -493,9 +346,9 @@ public final class ParakeetEncoder {
                 float[] s3 =
                         separable(s2, a2, b2, t2, f2, j0, j1, f3, dw2Taps, dw2Bias, pw2, workspace);
 
-                // NeMo flattens (B, C, T', F') to (B, T', C*F') - the frame vector is
-                // channel-major. Frames beyond the valid length are zero: the reference masks
-                // before the linear.
+                // NeMo flattens (B, C, T', F') to (B, T', C*F'), so the frame vector is
+                // channel-major. Frames past the valid length are zero, as the reference masks
+                // them before the linear.
                 int rows = j1 - j0, live = Math.max(0, Math.min(j1, valid) - j0);
                 float[] flat = workspace.floatsAtLeast(rows * flattened);
                 for (int c = 0; c < channels; c++)
@@ -512,8 +365,8 @@ public final class ParakeetEncoder {
     }
 
     /**
-     * conv.0: full 3x3 stride-2 pad-1 (1 -> channels), bias + ReLU, for output rows {@code [from,
-     * to)}: channel-major {@code [channels][to-from][f1]}.
+     * conv.0, a full 3x3 stride-2 conv from 1 to {@code channels} channels with bias and ReLU, for
+     * output rows {@code [from, to)}, as {@code [channels][to-from][f1]}.
      */
     private float[] conv0(
             float[] mel, int melFrames, int from, int to, int f1, Workspace workspace) {
@@ -547,10 +400,10 @@ public final class ParakeetEncoder {
     }
 
     /**
-     * One depthwise 3x3 stride-2 conv (bias, no activation) then its pointwise 1x1 and ReLU, for
-     * output rows {@code [outFrom, outTo)} of a {@code timeIn}-row input whose rows {@code [inFrom,
-     * inTo)} are in {@code in} (channel-major). Time indices stay global, so the zero padding is
-     * only ever the real edges', never a tile boundary's.
+     * A depthwise 3x3 stride-2 conv with bias, then a pointwise conv and ReLU, for output rows
+     * {@code [outFrom, outTo)}. {@code in} holds rows {@code [inFrom, inTo)} of a {@code
+     * timeIn}-row input, channel-major. Time indices are global, so zero padding only ever applies
+     * at the real edges, never at a tile boundary.
      */
     private float[] separable(
             float[] in,
@@ -599,7 +452,7 @@ public final class ParakeetEncoder {
         Views.copyFromArray(pwIn, 0, positionsMajor, 0, size, "depthwise conv");
         MemoryView<MemorySegment> pwOut = Views.allocateF32(workspace, positions, channels);
         pointwise.apply(pwIn, pwOut, positions);
-        float[] mixed = positionsMajor; // consumed by the copy above: reuse it for the result
+        float[] mixed = positionsMajor; // already copied into pwIn, so reused
         Views.copyToArray(pwOut, 0, mixed, 0, size, "pointwise conv");
         float[] out = workspace.floatsAtLeast(size);
         for (int p = 0; p < positions; p++)
@@ -608,14 +461,10 @@ public final class ParakeetEncoder {
         return out;
     }
 
-    // --- Transformer-XL relative positions ---
-
-    /** Sinusoidal table for {@code 2*frames-1} relative positions {@code +(T-1)..-(T-1)}. */
-    static float[] relativePositions(int frames, int dModel) {
-        return relativePositions(frames, dModel, new float[(2 * frames - 1) * dModel]);
-    }
-
-    /** As above, into {@code table} (at least {@code (2*frames-1)*dModel} long). */
+    /**
+     * Fills {@code table} with the sinusoidal encodings of the relative positions {@code frames-1}
+     * down to {@code 1-frames}, {@code dModel} values each.
+     */
     static float[] relativePositions(int frames, int dModel, float[] table) {
         int half = dModel / 2;
         int rows = 2 * frames - 1;
@@ -633,7 +482,7 @@ public final class ParakeetEncoder {
         return table;
     }
 
-    /** The raw table as a view; every block projects it with its own {@code linear_pos}. */
+    /** The table as a view; each block projects it with its own {@code linear_pos}. */
     private MemoryView<MemorySegment> positionTable(int frames, Workspace workspace) {
         int dim = config.dModel(), rows = 2 * frames - 1;
         float[] table = relativePositions(frames, dim, workspace.floatsAtLeast(rows * dim));
@@ -719,14 +568,13 @@ public final class ParakeetEncoder {
     }
 
     /**
-     * Transformer-XL relative attention, {@code queryU/queryV/key/value/position -> attention}, as
-     * three jam GEMMs per head: {@code (queryU·keyᵀ + shift(queryV·positionᵀ)) * scale}, softmax,
-     * then the value mix. Only the valid block is computed: padded key columns are masked, and
-     * padded query rows are zeroed right after anyway, so the reference's unmasked padded-row
-     * softmax never reaches the output.
+     * Transformer-XL relative attention as three GEMMs per head: {@code (queryU·keyᵀ +
+     * shift(queryV·positionᵀ)) * scale}, softmax, then the value mix. Only the valid block is
+     * computed: padded key columns are masked, and padded query rows are zeroed afterwards, so the
+     * reference's unmasked softmax over padded rows never reaches the output.
      *
-     * <p>The value mix runs as {@code attentionᵀ = valueᵀ·scoresᵀ} (m = valid queries): with m =
-     * headDim instead, jam splits 128 rows over the pool and runs at a third of the speed.
+     * <p>The value mix runs as {@code attentionᵀ = valueᵀ·scoresᵀ} so that m is the number of valid
+     * queries: with m = headDim, jam splits 128 rows over the pool and runs 3x slower.
      */
     static void relativeAttention(Scratch work, int frames, int valid, int dim, int heads) {
         int headDim = dim / heads;
