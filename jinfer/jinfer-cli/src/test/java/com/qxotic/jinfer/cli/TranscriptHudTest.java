@@ -98,7 +98,7 @@ class TranscriptHudTest {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         TranscriptHud hud = hud(bytes, ColorDepth.NONE);
         String frame = "";
-        for (int i = 0; i < 40; i++) {
+        for (int i = 0; i < 120; i++) { // past the silence the label waits for
             hud.level(i % 2 == 0 ? 0.30f : 0.32f);
             Thread.sleep(20);
             String out = bytes.toString(StandardCharsets.UTF_8);

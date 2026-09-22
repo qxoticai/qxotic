@@ -29,6 +29,7 @@ final class TranscriptHud {
 
     private static final int MAX_LIVE_ROWS = 6, METER_CELLS = 16, WAVE_BARS = 5;
     private static final long FRAME_MILLIS = 33, VOICE_NANOS = 400_000_000L;
+    private static final long QUIET_NANOS = 1_500_000_000L; // before the view says it is listening
     private static final double DOUBT = 0.5; // final words below this confidence are flagged
     private static final double VOICE = 0.5; // levels above this point of their range are speech
     private static final double RANGE_DB = 30; // the level's range covers at least this much
@@ -231,7 +232,11 @@ final class TranscriptHud {
             if (i < from) continue;
             String more = i == from && from > flushed ? grey() + glyphs.more() + ' ' + RESET : "";
             String row = more + styled(lines.get(i), index, provisionalFrom, t, landing);
-            live.add(i == lines.size() - 1 ? row + waveform(now, t) : row);
+            // the waveform only where it fits: a row that overflows wraps, and the next frame
+            // would climb back one row short of where it started
+            String wave = i == lines.size() - 1 ? waveform(now, t) : "";
+            boolean fits = visibleLength(row) + visibleLength(wave) <= columns - 1;
+            live.add(fits ? row + wave : row);
         }
         live.add("");
         live.add(status(now, t, columns));
@@ -312,7 +317,8 @@ final class TranscriptHud {
      */
     private String status(long now, double t, int columns) {
         boolean speaking = now - voiceAt < VOICE_NANOS;
-        boolean idle = !speaking && voiceAt <= shownAt; // quiet, and the text has caught up
+        // a pause between sentences is not silence: the label waits for a real one
+        boolean idle = now - voiceAt > QUIET_NANOS && voiceAt <= shownAt;
         int dot = speaking ? theme.dot() : mix(mix(0, theme.dot(), 0.4), theme.dot(), breath(t));
         String line =
                 fg(dot)
