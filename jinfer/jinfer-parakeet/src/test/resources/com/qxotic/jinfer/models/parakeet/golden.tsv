@@ -1,0 +1,12 @@
+# ParakeetGoldenTest references: clip, what is said, each word's start (s), source.
+# Text is the truth from an independent source (last column). Starts: parakeet.cpp
+# tdt-0.6b-v3 F16 on 16 kHz input, one per whitespace-separated word; sherpa-onnx and
+# every jinfer quant agree within 0.08 s (one encoder frame).
+en	Ask not what your country can do for you, ask what you can do for your country.	0.00 0.48 0.64 0.80 0.96 1.28 1.44 1.60 1.68 2.08 2.40 2.56 2.64 2.80 2.96 3.04 3.20	the spoken sentence (JFK)
+en0	Well, I don't wish to see it any more, observed Phoebe, turning away her eyes. It is certainly very like the old portrait.	0.32 0.64 0.80 1.04 1.28 1.36 1.52 1.68 1.92 2.24 2.56 3.28 3.68 4.00 4.16 4.88 5.12 5.28 5.76 6.00 6.16 6.32 6.64	NeMo tdt-0.6b-v3, parakeet.cpp docs/parity.md
+de	Alles hat ein Ende, nur die Wurst hat zwei.	0.00 0.40 0.64 0.80 1.28 1.44 1.68 2.16 2.32	the spoken sentence (proverb)
+es	No preguntes qué puede hacer tu país por ti, pregunta qué puedes hacer tú por tu país.	0.00 0.24 0.80 1.04 1.36 1.60 1.84 2.16 2.32 2.72 3.20 3.44 3.68 4.00 4.32 4.56 4.80	the spoken sentence
+fr	Ne vous demandez pas ce que votre pays peut faire pour vous. Demandez-vous plutôt ce que vous pouvez faire pour lui.	0.00 0.16 0.32 0.72 0.80 0.88 1.04 1.20 1.52 1.84 2.00 2.16 2.56 3.28 3.60 3.76 3.84 4.00 4.32 4.48 4.64	the spoken sentence
+ls0	AFTER EARLY NIGHTFALL THE YELLOW LAMPS WOULD LIGHT UP HERE AND THERE THE SQUALID QUARTER OF THE BROTHELS	0.24 0.64 1.04 1.76 1.84 2.16 2.64 2.80 3.04 3.28 3.52 3.68 4.00 4.16 4.80 5.20 5.28 5.52	LibriSpeech 1089-134686-0002
+ls1	GOD AS A DIRECT CONSEQUENCE OF THE SIN WHICH MAN THUS PUNISHED HAD GIVEN HER A LOVELY CHILD WHOSE PLACE WAS ON THAT SAME DISHONOURED BOSOM TO CONNECT HER PARENT FOR EVER WITH THE RACE AND DESCENT OF MORTALS AND TO BE FINALLY A BLESSED SOUL IN HEAVEN	0.32 0.72 0.88 1.04 1.44 2.00 2.16 2.40 2.64 2.96 3.20 3.52 4.24 4.48 4.88 5.04 5.20 5.68 6.24 6.72 6.96 7.20 7.44 7.60 7.92 8.64 9.12 9.36 9.76 10.00 10.56 10.72 11.04 11.28 11.52 11.76 12.08 12.56 12.80 13.60 13.76 13.92 14.16 14.56 14.80 15.36 15.68 15.92	LibriSpeech 1221-135766-0001
+ls8k	YET THESE THOUGHTS AFFECTED HESTER PRYNNE LESS WITH HOPE THAN APPREHENSION	0.24 0.56 0.80 1.12 1.52 2.08 2.64 2.88 3.12 3.44 3.76	LibriSpeech 1221-135766-0002 (8 kHz)
