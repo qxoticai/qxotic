@@ -11,6 +11,7 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.MediaProjectorContract;
+import com.qxotic.jinfer.testkit.SystemProperty;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocators;
@@ -276,18 +277,14 @@ class Qwen35VisionComponentsTest {
             Media.Image image = new Media.Image(pixels, 4, 4, 3);
 
             String property = "jinfer.qwen35.visionFlash";
-            String saved = System.getProperty(property);
             float[] reference, flash;
-            try {
-                System.setProperty(property, "false");
+            try (var off = SystemProperty.override(property, "false")) {
                 assertFalse(Qwen35Vision.flashAttention());
                 reference = projectAll(tower, image);
-                System.setProperty(property, "true");
+            }
+            try (var on = SystemProperty.override(property, "true")) {
                 assertTrue(Qwen35Vision.flashAttention());
                 flash = projectAll(tower, image);
-            } finally {
-                if (saved == null) System.clearProperty(property);
-                else System.setProperty(property, saved);
             }
             float scale = 0f;
             for (float v : reference) scale = Math.max(scale, Math.abs(v));

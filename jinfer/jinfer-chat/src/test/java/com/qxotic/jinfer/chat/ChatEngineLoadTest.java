@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.testkit.SystemProperty;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -36,10 +37,7 @@ final class ChatEngineLoadTest {
     void loadFailuresKeepTheirCause(boolean automaticArena, @TempDir Path directory)
             throws Exception {
         String property = "org.graalvm.nativeimage.imagecode";
-        String previous = System.getProperty(property);
-        try {
-            if (automaticArena) System.setProperty(property, "runtime");
-            else System.clearProperty(property);
+        try (var imageCode = SystemProperty.override(property, automaticArena ? "runtime" : null)) {
             assertEquals(!automaticArena, Arenas.sharedArenas());
 
             Path missing = directory.resolve("missing.gguf");
@@ -57,9 +55,6 @@ final class ChatEngineLoadTest {
                             () -> new ChatEngine(invalid, Map.of(), PromptCache.Options.DEFAULTS));
             assertTrue(format.getMessage().contains(invalid.toString()));
             assertInstanceOf(GGUFFormatException.class, format.getCause());
-        } finally {
-            if (previous == null) System.clearProperty(property);
-            else System.setProperty(property, previous);
         }
     }
 
