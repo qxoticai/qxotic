@@ -209,8 +209,8 @@ public final class TranscriptionServer {
         for (Transcription.Word word : transcription.words()) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("word", word.text());
-            entry.put("start", word.start());
-            entry.put("end", word.end());
+            entry.put("start", word.start().toNanos() / 1e9); // OpenAI's float seconds
+            entry.put("end", word.end().toNanos() / 1e9);
             entry.put("confidence", Math.round(word.confidence() * 1000) / 1000.0);
             words.add(entry);
         }

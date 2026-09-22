@@ -6,11 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.qxotic.jinfer.Transcription;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class TranscriptionServerTest {
+
+    private static Duration ms(long millis) {
+        return Duration.ofMillis(millis);
+    }
 
     @Test
     void parsesTheMultipartShapeCurlAndOpenAiClientsSend() {
@@ -60,10 +65,10 @@ class TranscriptionServerTest {
                 new Transcription(
                         "And so, my",
                         List.of(
-                                new Transcription.Token(" And", 0.2, 0.5, 0.9),
-                                new Transcription.Token(" so", 0.5, 0.8, 0.8),
-                                new Transcription.Token(",", 0.8, 0.9, 0.6),
-                                new Transcription.Token(" my", 1.0, 1.2, 1.0)));
+                                new Transcription.Token(" And", ms(200), ms(500), 0.9),
+                                new Transcription.Token(" so", ms(500), ms(800), 0.8),
+                                new Transcription.Token(",", ms(800), ms(900), 0.6),
+                                new Transcription.Token(" my", ms(1000), ms(1200), 1.0)));
         List<Map<String, Object>> words = TranscriptionServer.words(transcription);
         assertEquals(3, words.size());
         assertEquals("And", words.get(0).get("word"));

@@ -35,7 +35,11 @@ public class Transcribe {
             Transcription transcription = transcriber.transcribe(audio);
             System.out.println(transcription.text());
             for (Transcription.Token token : transcription.tokens()) {
-                System.err.printf("%6.2f-%6.2f %s%n", token.start(), token.end(), token.text());
+                System.err.printf(
+                        "%6.2f-%6.2f %s%n",
+                        token.start().toMillis() / 1e3,
+                        token.end().toMillis() / 1e3,
+                        token.text());
             }
         }
     }

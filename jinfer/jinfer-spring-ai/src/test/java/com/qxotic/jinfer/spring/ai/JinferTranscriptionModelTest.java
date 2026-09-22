@@ -20,6 +20,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
@@ -33,6 +34,10 @@ import org.springframework.core.io.ByteArrayResource;
  * fixture-gated pass over the real thing so the dispatch path is covered too.
  */
 class JinferTranscriptionModelTest {
+
+    private static Duration ms(long millis) {
+        return Duration.ofMillis(millis);
+    }
 
     @Test
     void requiresAModel() {
@@ -210,8 +215,8 @@ class JinferTranscriptionModelTest {
             return new Transcription(
                     "hello world",
                     List.of(
-                            new Transcription.Token(" hello", 0.0, 0.4, 0.9),
-                            new Transcription.Token(" world", 0.5, 0.9, 0.8)));
+                            new Transcription.Token(" hello", ms(0), ms(400), 0.9),
+                            new Transcription.Token(" world", ms(500), ms(900), 0.8)));
         }
     }
 
