@@ -58,8 +58,8 @@ jobs:
           java -version
           gcc --version | head -1
           cmake --version | head -1
-      # Neither fixture set is in git; `make test-fixtures` (the first step of `make ci`) fills in
-      # whatever the cache did not restore, and both scripts verify what they find.
+      # No fixture set is in git; `make test-fixtures` (the first step of `make ci`) fills in
+      # whatever the cache did not restore, and every script verifies what it finds.
       - uses: actions/cache@v6
         with:
           path: test-fixtures/tiktoken
@@ -70,6 +70,11 @@ jobs:
           path: .ci-toknroll-cache/corpus
           key: enwik8-corpus-${{ hashFiles('toknroll/scripts/download_enwik8.py') }}
           restore-keys: enwik8-corpus-
+      - uses: actions/cache@v6
+        with:
+          path: test-fixtures/parakeet
+          key: parakeet-fixtures-${{ hashFiles('jinfer/scripts/download_parakeet_fixtures.py') }}
+          restore-keys: parakeet-fixtures-
       - run: make test-fixtures
       - run: make ci-format
       # JAVA_TOOL_OPTIONS reaches every forked test JVM; a -DargLine on the command line does

@@ -2,3 +2,4 @@ com.qxotic.jinfer.spring.ai.autoconfigure.JinferChatAutoConfiguration
 com.qxotic.jinfer.spring.ai.autoconfigure.JinferEmbeddingAutoConfiguration
 com.qxotic.jinfer.spring.ai.autoconfigure.JinferRerankAutoConfiguration
 com.qxotic.jinfer.spring.ai.autoconfigure.JinferSpeechAutoConfiguration
+com.qxotic.jinfer.spring.ai.autoconfigure.JinferTranscriptionAutoConfiguration

@@ -15,7 +15,7 @@ AI on the JVM, just a Maven dependency away.
 
 ## Highlights
 
-- **Multimodal support.** Vision, audio, video, embeddings for RAG, text-to-speech.
+- **Multimodal support.** Vision, audio, video, embeddings for RAG, text-to-speech, speech-to-text.
 - **Supports popular Java AI frameworks.** [LangChain4j](jinfer-langchain4j/README.md) and
   [Spring AI](jinfer-spring-ai/README.md) providers and an [OpenAI-compatible server](./jinfer-server).
 - **Top performance.** Efficient prompt caching, speculative decoding, Matryoshka embeddings and optional hand-tuned native kernels from [JAM](../jam), with a performant Vector API fallback.
@@ -236,6 +236,44 @@ try (var speech = JinferSpeechModel.builder()
     Files.write(Path.of("hello.wav"), audio.binaryData());
 }
 ```
+
+**Speech-to-text.** Transcription with word timing, faster than realtime on the CPU:
+
+```java
+try (var transcriber = JinferTranscriptionModel.builder()
+        .model("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf")
+        .build()) {
+
+    System.out.println(transcriber.transcribe(Path.of("speech.wav")).text());
+}
+```
+
+The same model behind the CLI (`--transcribe speech.wav`) or `--server` serves an
+OpenAI-compatible `POST /v1/audio/transcriptions` (multipart; `response_format` of `json`,
+`text`, or `verbose_json` with word timestamps).
+
+**Streaming transcription.** Feed audio as it arrives and poll the evolving transcript; text
+behind the commit horizon no longer changes, and `finish()` equals the offline transcript:
+
+```java
+try (var state = parakeet.newState(); var stream = parakeet.stream(state)) {
+    while (capturing) {
+        stream.feed(nextPcmChunk);
+        display(stream.partial().text());
+    }
+    System.out.println(stream.finish().text());
+}
+```
+
+Or from a microphone straight through the CLI, live partials on stderr:
+
+```bash
+ffmpeg -nostats -loglevel error -f avfoundation -i ":0" -ar 16000 -ac 1 -f s16le - \
+  | jinfer -m parakeet.gguf --transcribe -
+```
+
+On a terminal the partials render as one status line updated in place; redirected stderr gets one
+line per partial instead, so scripts can follow along.
 
 ## Chat CLI
 

@@ -1352,7 +1352,7 @@ public final class Inflect2 {
     private MemoryView<MemorySegment> norm(
             State state, MemoryView<MemorySegment> x, Norm layer, int time) {
         MemoryView<MemorySegment> out = state.take(layer.channels() * time);
-        Norms.layerNorm(out, x, layer.gamma(), layer.beta(), layer.channels(), time, 1e-5f);
+        Norms.layerNormRows(out, x, layer.gamma(), layer.beta(), time, layer.channels(), 1e-5f);
         return out;
     }
 

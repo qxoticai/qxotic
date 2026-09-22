@@ -6,6 +6,7 @@ import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.SpeechSynthesisModel;
+import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.kernels.ModelLoader;
@@ -74,7 +75,8 @@ public final class Models {
                     "com.qxotic.jinfer.models.nemotronh.NemotronHProvider",
                     "com.qxotic.jinfer.models.gptoss.GptOssProvider",
                     "com.qxotic.jinfer.models.inflect2.Inflect2Provider",
-                    "com.qxotic.jinfer.models.kokoro.KokoroProvider");
+                    "com.qxotic.jinfer.models.kokoro.KokoroProvider",
+                    "com.qxotic.jinfer.models.parakeet.ParakeetProvider");
 
     private static final List<ModelProvider> PROVIDERS = discover();
 
@@ -251,6 +253,24 @@ public final class Models {
         return provider.loadSpeech(channel, gguf.at(baseOffset), path, arena, attached);
     }
 
+    /** Loads a TRANSCRIPTION (speech-to-text) model at the port's own defaults. */
+    public static TranscriptionModel<?, ?, ?> loadTranscription(Path path, Arena arena)
+            throws IOException {
+        return loadTranscription(path, arena, Map.of());
+    }
+
+    /** As {@link #loadTranscription(Path, Arena)} with COMPANIONS, named as the port declares. */
+    public static TranscriptionModel<?, ?, ?> loadTranscription(
+            Path path, Arena arena, Map<String, Path> companions) throws IOException {
+        Map<String, Path> attached = Map.copyOf(companions);
+        return open(
+                path,
+                attached,
+                null,
+                (provider, fc, gguf) ->
+                        provider.loadTranscription(fc, gguf, path, arena, attached));
+    }
+
     /**
      * The capabilities {@code path}'s architecture can gain from a companion, and the filename that
      * carries each - the GGUF header only, no weights. A caller uses it to reject a capability this
@@ -352,7 +372,8 @@ public final class Models {
                     Map.entry("qwen3", "com.qxotic:jinfer-qwen3"),
                     Map.entry("qwen35", "com.qxotic:jinfer-qwen35"),
                     Map.entry("inflect", "com.qxotic:jinfer-inflect2"),
-                    Map.entry("kokoro", "com.qxotic:jinfer-kokoro"));
+                    Map.entry("kokoro", "com.qxotic:jinfer-kokoro"),
+                    Map.entry("parakeet", "com.qxotic:jinfer-parakeet"));
 
     /**
      * The provider for {@code arch} among {@code providers}, or null: highest {@link

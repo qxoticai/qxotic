@@ -21,9 +21,12 @@ ASR encoder. This is not the 12B's encoder-free `gemma4ua`
   `use_htk=false`): the NON-HTK custom scale - `min_log_hz=1000`, `lin_slope`,
   `log_step = log(6.4)/27`, `min_log_mel = 1000*lin_slope`; Slaney area normalization
   `enorm = 2/(f_right-f_left)`. `n_mel = clip.audio.num_mel_bins`.
-- Confirm from the gemma preprocess params: `use_magnitude` (expect false=power),
-  `use_natural_log` (log vs log10), `mel_floor`, and the boundary padding of `samples_padded`.
 - Output: `[n_mel, n_frames]`, fed as `build_inp_raw(1)` then transposed.
+- **As implemented** (`AudioPreprocess`, shared core in `jinfer-kernels` `LogMel`): natural log,
+  `mel_floor = 0.001`, left pad `window/2`; spectral **magnitude** (`sqrt(re^2+im^2)`) and an
+  **HTK triangular filterbank without area normalization** - deliberately simpler than the
+  llama.cpp defaults quoted above, and validated end-to-end against the reference encoder
+  outputs during the port. Treat the code as authoritative for the shipped behavior.
 
 ## Conformer body (`models/gemma4a.cpp::build()`) - full op order
 Constants: `res_weight=0.5`, `norm_eps=1e-6`, all norms are **RMS** (except the two conv2d

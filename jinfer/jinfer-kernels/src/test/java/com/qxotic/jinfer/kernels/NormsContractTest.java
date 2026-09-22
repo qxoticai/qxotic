@@ -78,13 +78,13 @@ class NormsContractTest {
             var x = Views.fromFloatArray(memory, values);
             var out = Views.allocateF32(memory, values.length);
 
-            Norms.layerNorm(
+            Norms.layerNormRows(
                     out,
                     x,
                     Views.fromFloatArray(memory, gamma),
                     Views.fromFloatArray(memory, beta),
-                    4,
                     2,
+                    4,
                     1e-5f);
 
             float[] expected = new float[values.length];
@@ -103,6 +103,51 @@ class NormsContractTest {
                 }
             }
             assertArrayEquals(expected, Views.toFloatArray(out, "out"), 1e-6f);
+        }
+    }
+
+    /**
+     * Rows split across the pool, a width off every vector multiple (scalar tails), and values near
+     * 1000 with unit spread: a one-pass {@code E[x²] - mean²} variance is off by ~3% there. The
+     * two-pass one is within 5e-3 on both paths; the scalar path's serial float mean (sums near
+     * 1e6) is the looser, at ~1.3e-3.
+     */
+    @Test
+    void layerNormRowsIsStableForLargeMeans() {
+        int rows = 37, width = 1027;
+        java.util.Random random = new java.util.Random(7);
+        float[] values = new float[rows * width];
+        float[] gamma = new float[width], beta = new float[width];
+        for (int i = 0; i < values.length; i++) values[i] = 1000 + (float) random.nextGaussian();
+        for (int c = 0; c < width; c++) {
+            gamma[c] = 0.5f + random.nextFloat();
+            beta[c] = random.nextFloat() - 0.5f;
+        }
+        try (Arena arena = Arena.ofShared()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            var x = Views.fromFloatArray(memory, values);
+            Norms.layerNormRows(
+                    x,
+                    x, // in place
+                    Views.fromFloatArray(memory, gamma),
+                    Views.fromFloatArray(memory, beta),
+                    rows,
+                    width,
+                    1e-5f);
+            float[] actual = Views.toFloatArray(x, "out");
+            for (int row = 0; row < rows; row++) {
+                double mean = 0, variance = 0;
+                for (int c = 0; c < width; c++) mean += values[row * width + c];
+                mean /= width;
+                for (int c = 0; c < width; c++)
+                    variance += Math.pow(values[row * width + c] - mean, 2);
+                double inv = 1 / Math.sqrt(variance / width + 1e-5);
+                for (int c = 0; c < width; c++) {
+                    double expected = (values[row * width + c] - mean) * inv * gamma[c] + beta[c];
+                    assertEquals(
+                            expected, actual[row * width + c], 5e-3, "row " + row + " lane " + c);
+                }
+            }
         }
     }
 

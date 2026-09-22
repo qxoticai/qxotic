@@ -7,6 +7,7 @@ import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.LeakWatch;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.Workspace;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jota.memory.MemoryAllocator;
@@ -450,7 +451,7 @@ public final class Kokoro {
     public static final class State extends RuntimeState {
         private final MemoryArena<MemorySegment> owned;
         private final MemoryArena<MemorySegment> allocator;
-        private final KokoroWorkspace scratch;
+        private final Workspace scratch;
         private final Runnable disarm;
         private final Random random = new Random();
 
@@ -458,7 +459,7 @@ public final class Kokoro {
             Arenas.requireCrossThread(allocator);
             this.owned = owned;
             this.allocator = allocator;
-            this.scratch = new KokoroWorkspace(allocator);
+            this.scratch = new Workspace(allocator);
             this.disarm = LeakWatch.arm(this, "Kokoro.State");
         }
 

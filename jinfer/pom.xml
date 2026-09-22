@@ -33,6 +33,7 @@
     <module>jinfer-gemma4</module>
     <module>jinfer-gptoss</module>
     <module>jinfer-nemotronh</module>
+    <module>jinfer-parakeet</module>
     <module>jinfer-llama</module>
     <module>jinfer-inflect2</module>
     <module>jinfer-kokoro</module>
@@ -179,6 +180,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-nemotronh</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-parakeet</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -8,6 +8,7 @@ on:
     paths:
       - toknroll/scripts/download_tiktoken_fixtures.py
       - toknroll/scripts/download_enwik8.py
+      - jinfer/scripts/download_parakeet_fixtures.py
       - .github/workflows/fixtures.yml
   workflow_dispatch:
 
@@ -30,4 +31,8 @@ jobs:
         with:
           path: .ci-toknroll-cache/corpus
           key: enwik8-corpus-${{ hashFiles('toknroll/scripts/download_enwik8.py') }}
+      - uses: actions/cache@v6
+        with:
+          path: test-fixtures/parakeet
+          key: parakeet-fixtures-${{ hashFiles('jinfer/scripts/download_parakeet_fixtures.py') }}
       - run: make test-fixtures

@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.models.gemma4;
 
-import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.kernels.LogMel;
 import com.qxotic.jinfer.media.Media;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,28 +19,23 @@ final class AudioPreprocess {
     public record MelChunk(float[] data, int frames) {}
 
     private final int nMel;
-    private final float[] hann;
-    private final float[] melFilterbank;
-    private final int[] bandStart, bandEnd;
+    private final LogMel logMel;
 
     public AudioPreprocess(int nMel) {
         if (nMel <= 0) throw new IllegalArgumentException("nMel must be positive");
         this.nMel = nMel;
-        this.hann = buildHann();
-        this.melFilterbank = buildMelFilterbank(nMel);
-        this.bandStart = new int[nMel];
-        this.bandEnd = new int[nMel];
-        for (int m = 0; m < nMel; m++) {
-            int first = N_BINS, last = -1;
-            for (int b = 0; b < N_BINS; b++) {
-                if (melFilterbank[m * N_BINS + b] != 0f) {
-                    if (first == N_BINS) first = b;
-                    last = b;
-                }
-            }
-            bandStart[m] = first == N_BINS ? 0 : first & ~3;
-            bandEnd[m] = last + 1;
-        }
+        this.logMel =
+                new LogMel(
+                        new LogMel.Spec(
+                                N_FFT,
+                                HOP,
+                                nMel,
+                                buildHann(),
+                                buildMelFilterbank(nMel),
+                                0f,
+                                1f,
+                                MEL_FLOOR,
+                                0f));
     }
 
     /** Number of samples produced by {@link #toMono16k(Media.Audio)}. */
@@ -109,50 +104,10 @@ final class AudioPreprocess {
     private MelChunk chunk(float[] pcm, int from, int length) {
         int frames = framesFor(length);
         if (frames == 0) return new MelChunk(new float[0], 0);
-        int paddedNeeded = (frames - 1) * HOP + N_FFT;
-        int totalPad = Math.max(paddedNeeded - length, WINDOW / 2);
-        float[] padded = new float[totalPad + length];
-        System.arraycopy(pcm, from, padded, WINDOW / 2, length);
-        float[] output = new float[frames * nMel];
-        int threads = Parallel.threads();
-        float[][] fftInputs = new float[threads][N_FFT * 2];
-        float[][] fftOutputs = new float[threads][N_FFT * 8];
-        float[][] magnitudes = new float[threads][N_BINS];
-        Parallel.forLoop(
-                0,
-                frames,
-                (t, slot) -> {
-                    float[] fftInput = fftInputs[slot];
-                    float[] fftOutput = fftOutputs[slot];
-                    float[] magnitude = magnitudes[slot];
-                    int offset = t * HOP;
-                    for (int k = 0; k < WINDOW; k++) fftInput[k] = hann[k] * padded[offset + k];
-                    fftReal(fftInput, 0, N_FFT, fftOutput, 0);
-                    for (int b = 0; b < N_BINS; b++) {
-                        float power =
-                                fftOutput[2 * b] * fftOutput[2 * b]
-                                        + fftOutput[2 * b + 1] * fftOutput[2 * b + 1];
-                        magnitude[b] = (float) Math.sqrt(power);
-                    }
-                    int lastGroup = (N_BINS - 1) & ~3;
-                    for (int m = 0; m < nMel; m++) {
-                        double sum = 0;
-                        int base = m * N_BINS;
-                        int end = Math.min(bandEnd[m], lastGroup);
-                        for (int b = bandStart[m]; b < end; b += 4)
-                            sum +=
-                                    magnitude[b] * melFilterbank[base + b]
-                                            + magnitude[b + 1] * melFilterbank[base + b + 1]
-                                            + magnitude[b + 2] * melFilterbank[base + b + 2]
-                                            + magnitude[b + 3] * melFilterbank[base + b + 3];
-                        for (int b = Math.max(bandStart[m], lastGroup); b < bandEnd[m]; b++)
-                            sum += magnitude[b] * melFilterbank[base + b];
-                        output[t * nMel + m] = (float) Math.log(Math.max(sum, MEL_FLOOR));
-                    }
-                });
-        return new MelChunk(output, frames);
+        return new MelChunk(logMel.frames(pcm, from, length, WINDOW / 2, frames), frames);
     }
 
+    /** Periodic Hann of {@link #WINDOW} samples, left-aligned and zero-padded to the FFT size. */
     private static float[] buildHann() {
         float[] window = new float[N_FFT];
         float pi = (float) Math.PI;
@@ -163,6 +118,7 @@ final class AudioPreprocess {
         return window;
     }
 
+    /** Triangular HTK-scale filterbank, unnormalized, matching llama.cpp's gemma4a projector. */
     private static float[] buildMelFilterbank(int nMel) {
         double low = hzToMel(0), high = hzToMel(0.5 * SAMPLE_RATE);
         double[] hz = new double[nMel + 2];
@@ -193,51 +149,5 @@ final class AudioPreprocess {
 
     private static double melToHz(double mel) {
         return 700 * (Math.pow(10, mel / 2595) - 1);
-    }
-
-    private static final float[] SIN = new float[N_FFT];
-    private static final float[] COS = new float[N_FFT];
-
-    static {
-        for (int i = 0; i < N_FFT; i++) {
-            double theta = 2 * Math.PI * i / N_FFT;
-            SIN[i] = (float) Math.sin((double) (float) theta);
-            COS[i] = (float) Math.cos((double) (float) theta);
-        }
-    }
-
-    static void fftReal(float[] input, int inputOffset, int n, float[] output, int outputOffset) {
-        if (n == 1) {
-            output[outputOffset] = input[inputOffset];
-            output[outputOffset + 1] = 0;
-            return;
-        }
-        int half = n / 2;
-        int childInputOffset = inputOffset + n;
-        for (int i = 0; i < half; i++) input[childInputOffset + i] = input[inputOffset + 2 * i];
-        int evenOutputOffset = outputOffset + 2 * n;
-        fftReal(input, childInputOffset, half, output, evenOutputOffset);
-        for (int i = 0; i < half; i++) input[childInputOffset + i] = input[inputOffset + 2 * i + 1];
-        int oddOutputOffset = evenOutputOffset + n;
-        fftReal(input, childInputOffset, half, output, oddOutputOffset);
-        int step = N_FFT / n;
-        for (int k = 0; k < half; k++) {
-            int index = k * step;
-            float real = COS[index], imaginary = -SIN[index];
-            float oddReal = output[oddOutputOffset + 2 * k];
-            float oddImaginary = output[oddOutputOffset + 2 * k + 1];
-            output[outputOffset + 2 * k] =
-                    output[evenOutputOffset + 2 * k] + real * oddReal - imaginary * oddImaginary;
-            output[outputOffset + 2 * k + 1] =
-                    output[evenOutputOffset + 2 * k + 1]
-                            + real * oddImaginary
-                            + imaginary * oddReal;
-            output[outputOffset + 2 * (k + half)] =
-                    output[evenOutputOffset + 2 * k] - real * oddReal + imaginary * oddImaginary;
-            output[outputOffset + 2 * (k + half) + 1] =
-                    output[evenOutputOffset + 2 * k + 1]
-                            - real * oddImaginary
-                            - imaginary * oddReal;
-        }
     }
 }

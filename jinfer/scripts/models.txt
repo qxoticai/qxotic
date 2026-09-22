@@ -43,3 +43,8 @@ hf.co remixerdec Inflect-Micro-v2-GGUF inflect_micro_v2_q8_0.gguf
 hf.co remixerdec Inflect-Micro-v2-GGUF lexicon.bin
 hf.co simonfxr kokoro.cpp-GGUF kokoro-82m-f16.gguf
 hf.co simonfxr kokoro.cpp-GGUF voices/kokoro-voice-af_heart.gguf
+hf.co mudler parakeet-cpp-gguf tdt-0.6b-v3-q8_0.gguf
+hf.co mudler parakeet-cpp-gguf tdt-0.6b-v3-f16.gguf
+hf.co mudler parakeet-cpp-gguf tdt-0.6b-v3-q4_k.gguf
+hf.co mudler parakeet-cpp-gguf tdt-1.1b-q8_0.gguf
+hf.co mudler parakeet-cpp-gguf tdt-1.1b-f16.gguf

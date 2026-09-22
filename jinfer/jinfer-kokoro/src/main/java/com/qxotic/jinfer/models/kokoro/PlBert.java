@@ -107,13 +107,13 @@ final class PlBert {
         Convert.copyToF32(weights.positionEmbedding(), 0, positions, 0, elements);
         Ops.addInPlace(embedded, 0, positions, 0, elements);
         Ops.addRowBiasInPlace(embedded, 0, weights.tokenType(), 0, steps, embedding);
-        Norms.layerNorm(
+        Norms.layerNormRows(
                 embedded,
                 embedded,
                 weights.embeddingGamma(),
                 weights.embeddingBeta(),
-                embedding,
                 steps,
+                embedding,
                 LAYER_NORM_EPS);
 
         MemoryView<MemorySegment> current = Views.allocateF32(scratch, steps, hidden);
@@ -166,26 +166,26 @@ final class PlBert {
                     query, temporary, key, value, heads, steps, headSize, hidden, hidden, 1, scale);
             linear(layer.attentionOutput(), temporary, query, steps);
             Ops.addInPlace(current, 0, query, 0, elements);
-            Norms.layerNorm(
+            Norms.layerNormRows(
                     current,
                     current,
                     layer.attentionGamma(),
                     layer.attentionBeta(),
-                    hidden,
                     steps,
+                    hidden,
                     LAYER_NORM_EPS);
 
             linear(layer.ffnUp(), current, ffn, steps);
             Activations.geluInPlace(ffn, 0, Math.multiplyExact(steps, intermediate));
             linear(layer.ffnDown(), ffn, temporary, steps);
             Ops.addInPlace(current, 0, temporary, 0, elements);
-            Norms.layerNorm(
+            Norms.layerNormRows(
                     current,
                     current,
                     layer.ffnGamma(),
                     layer.ffnBeta(),
-                    hidden,
                     steps,
+                    hidden,
                     LAYER_NORM_EPS);
         }
     }

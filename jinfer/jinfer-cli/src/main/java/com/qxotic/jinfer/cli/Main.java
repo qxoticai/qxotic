@@ -105,6 +105,10 @@ public class Main {
                 return;
             }
         }
+        if (options.transcribeAudio() != null) {
+            System.exit(Transcribe.run(options));
+            return;
+        }
         LoadedModel<?> model;
         // A cold load is seconds of silent work (mmap + parse + weight packing); on a terminal,
         // show a heartbeat so it never looks hung. Piped/scripted runs stay byte-clean: the
@@ -123,7 +127,32 @@ public class Main {
             // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack
             // trace; anything else is a bug and still traces
             spinner.stop();
-            System.err.println("ERROR " + Options.rootMessage(e));
+            boolean transcriptionOnly =
+                    e instanceof UnsupportedOperationException
+                            && e.getMessage() != null
+                            && e.getMessage().contains("not a language");
+            if (transcriptionOnly && options.server()) {
+                // a transcription-only checkpoint behind --server serves the audio API instead
+                try {
+                    Serve.runTranscription(options);
+                    return;
+                } catch (IllegalArgumentException
+                        | IllegalStateException
+                        | UnsupportedOperationException
+                        | UncheckedIOException
+                        | IOException audio) {
+                    System.err.println("ERROR " + Options.rootMessage(audio));
+                    System.exit(1);
+                    return;
+                }
+            }
+            System.err.println(
+                    "ERROR "
+                            + Options.rootMessage(e)
+                            + (transcriptionOnly
+                                    ? " (a speech-to-text model? --transcribe <audio> or --server"
+                                            + " serve it)"
+                                    : ""));
             System.exit(1);
             return;
         }

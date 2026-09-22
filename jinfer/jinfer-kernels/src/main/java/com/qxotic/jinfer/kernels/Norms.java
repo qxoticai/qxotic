@@ -332,74 +332,141 @@ public final class Norms {
     }
 
     /**
-     * LayerNorm over FP32 activations: {@code out = gamma·(x-mean)/σ + beta}, time-major ({@code
-     * data[t*C + c]}, channels contiguous). {@code out} and {@code x} may be the same view. Gamma
-     * and beta must be FP32 (the old F16 scalar fallback is gone by contract).
+     * Layer normalization: {@code out = gamma * (x - mean) / sqrt(variance + eps) + beta} over
+     * {@code size} contiguous lanes; the variance is two-pass (centered), stable for large means.
+     * {@code out} and {@code x} may be the same span.
      */
     public static void layerNorm(
             MemoryView<MemorySegment> out,
+            long outOffset,
             MemoryView<MemorySegment> x,
+            long xOffset,
             MemoryView<MemorySegment> gamma,
             MemoryView<MemorySegment> beta,
-            int C,
-            int T,
+            int size,
             float eps) {
         Raw o = Raw.f32(out, "out");
         Raw xv = Raw.f32(x, "x");
         Raw g = Raw.f32(gamma, "gamma");
         Raw b = Raw.f32(beta, "beta");
-        var sp = F_SPECIES;
-        int bound = USE_VECTOR_API ? sp.loopBound(C) : 0;
-        for (int t = 0; t < T; t++) {
-            long row = (long) t * C;
-            float mean = 0;
-            for (int c = 0; c < C; c++) {
-                mean += readFloat(xv.vseg(), xv.vbase() + (row + c) * Float.BYTES);
+        if (USE_VECTOR_API) {
+            var species = F_SPECIES;
+            int upperBound = species.loopBound(size);
+            FloatVector acc = FloatVector.zero(species);
+            int i = 0;
+            for (; i < upperBound; i += species.length()) {
+                acc =
+                        acc.add(
+                                FloatVector.fromMemorySegment(
+                                        species,
+                                        xv.vseg(),
+                                        xv.vbase() + (xOffset + i) * Float.BYTES,
+                                        ByteOrder.LITTLE_ENDIAN));
             }
-            mean /= C;
-            float variance = 0;
-            for (int c = 0; c < C; c++) {
-                float d = readFloat(xv.vseg(), xv.vbase() + (row + c) * Float.BYTES) - mean;
+            float mean = acc.reduceLanes(VectorOperators.ADD);
+            for (; i < size; i++)
+                mean += readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES);
+            mean /= size;
+            FloatVector means = FloatVector.broadcast(species, mean);
+            acc = FloatVector.zero(species);
+            for (i = 0; i < upperBound; i += species.length()) {
+                var d =
+                        FloatVector.fromMemorySegment(
+                                        species,
+                                        xv.vseg(),
+                                        xv.vbase() + (xOffset + i) * Float.BYTES,
+                                        ByteOrder.LITTLE_ENDIAN)
+                                .sub(means);
+                acc = d.fma(d, acc);
+            }
+            float variance = acc.reduceLanes(VectorOperators.ADD);
+            for (; i < size; i++) {
+                float d = readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES) - mean;
                 variance += d * d;
             }
-            float inv = (float) (1.0 / Math.sqrt(variance / C + eps));
-            int c = 0;
-            if (USE_VECTOR_API) {
-                var means = FloatVector.broadcast(sp, mean);
-                var invs = FloatVector.broadcast(sp, inv);
-                for (; c < bound; c += sp.length()) {
-                    long byteOff = xv.vbase() + (row + c) * Float.BYTES;
-                    var v =
-                            FloatVector.fromMemorySegment(
-                                            sp, xv.vseg(), byteOff, ByteOrder.LITTLE_ENDIAN)
-                                    .sub(means)
-                                    .mul(invs)
-                                    .mul(
-                                            FloatVector.fromMemorySegment(
-                                                    sp,
-                                                    g.vseg(),
-                                                    g.vbase() + (long) c * Float.BYTES,
-                                                    ByteOrder.LITTLE_ENDIAN))
-                                    .add(
-                                            FloatVector.fromMemorySegment(
-                                                    sp,
-                                                    b.vseg(),
-                                                    b.vbase() + (long) c * Float.BYTES,
-                                                    ByteOrder.LITTLE_ENDIAN));
-                    v.intoMemorySegment(
-                            o.vseg(), o.vbase() + (row + c) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                }
+            float inv = (float) (1.0 / Math.sqrt(variance / size + eps));
+            FloatVector invs = FloatVector.broadcast(species, inv);
+            for (i = 0; i < upperBound; i += species.length()) {
+                FloatVector.fromMemorySegment(
+                                species,
+                                xv.vseg(),
+                                xv.vbase() + (xOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN)
+                        .sub(means)
+                        .mul(invs)
+                        .mul(
+                                FloatVector.fromMemorySegment(
+                                        species,
+                                        g.vseg(),
+                                        g.vbase() + (long) i * Float.BYTES,
+                                        ByteOrder.LITTLE_ENDIAN))
+                        .add(
+                                FloatVector.fromMemorySegment(
+                                        species,
+                                        b.vseg(),
+                                        b.vbase() + (long) i * Float.BYTES,
+                                        ByteOrder.LITTLE_ENDIAN))
+                        .intoMemorySegment(
+                                o.vseg(),
+                                o.vbase() + (outOffset + i) * Float.BYTES,
+                                ByteOrder.LITTLE_ENDIAN);
             }
-            for (; c < C; c++) {
+            for (; i < size; i++) {
                 writeFloat(
                         o.vseg(),
-                        o.vbase() + (row + c) * Float.BYTES,
-                        (readFloat(xv.vseg(), xv.vbase() + (row + c) * Float.BYTES) - mean)
+                        o.vbase() + (outOffset + i) * Float.BYTES,
+                        (readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES) - mean)
                                         * inv
-                                        * readFloat(g.vseg(), g.vbase() + (long) c * Float.BYTES)
-                                + readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES));
+                                        * readFloat(g.vseg(), g.vbase() + (long) i * Float.BYTES)
+                                + readFloat(b.vseg(), b.vbase() + (long) i * Float.BYTES));
             }
+            return;
         }
+        float mean = 0f;
+        for (int i = 0; i < size; i++)
+            mean += readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES);
+        mean /= size;
+        float variance = 0f;
+        for (int i = 0; i < size; i++) {
+            float d = readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES) - mean;
+            variance += d * d;
+        }
+        float inv = (float) (1.0 / Math.sqrt(variance / size + eps));
+        for (int i = 0; i < size; i++) {
+            writeFloat(
+                    o.vseg(),
+                    o.vbase() + (outOffset + i) * Float.BYTES,
+                    (readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES) - mean)
+                                    * inv
+                                    * readFloat(g.vseg(), g.vbase() + (long) i * Float.BYTES)
+                            + readFloat(b.vseg(), b.vbase() + (long) i * Float.BYTES));
+        }
+    }
+
+    /**
+     * Per-row {@link #layerNorm} over {@code rows} rows of {@code rowDim} lanes ({@code out == x}
+     * for in-place norms), rows in parallel - the {@link #rmsnormRows} idiom.
+     */
+    public static void layerNormRows(
+            MemoryView<MemorySegment> out,
+            MemoryView<MemorySegment> x,
+            MemoryView<MemorySegment> gamma,
+            MemoryView<MemorySegment> beta,
+            int rows,
+            int rowDim,
+            float eps) {
+        Parallel.forLoop(
+                rows,
+                r ->
+                        layerNorm(
+                                out,
+                                (long) r * rowDim,
+                                x,
+                                (long) r * rowDim,
+                                gamma,
+                                beta,
+                                rowDim,
+                                eps));
     }
 
     /**

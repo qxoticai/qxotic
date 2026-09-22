@@ -313,7 +313,8 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
         MemoryView<MemorySegment> scores = flash ? null : Views.allocateF32(scratch, nPos, nPos);
         MemoryView<MemorySegment> o = flash ? null : Views.allocateF32(scratch, nPos, headDim);
         for (Layer layer : layers) {
-            Norms.layerNorm(hidden, tokens, layer.ln1W(), layer.ln1B(), visionDim, nPos, normEps);
+            Norms.layerNormRows(
+                    hidden, tokens, layer.ln1W(), layer.ln1B(), nPos, visionDim, normEps);
             MatMul.gemm(layer.qkvW(), hidden, qkv, nPos);
             Ops.addRowBiasInPlace(qkv, 0, layer.qkvB(), 0, nPos, 3 * visionDim);
             if (flash) flashAttention(qkv, attn, q, k, v, nPos, patchesX);
@@ -322,7 +323,8 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
             Ops.addRowBiasInPlace(hidden, 0, layer.attnOutB(), 0, nPos, visionDim);
             Ops.addInPlace(tokens, 0, hidden, 0, nPos * visionDim);
 
-            Norms.layerNorm(hidden, tokens, layer.ln2W(), layer.ln2B(), visionDim, nPos, normEps);
+            Norms.layerNormRows(
+                    hidden, tokens, layer.ln2W(), layer.ln2B(), nPos, visionDim, normEps);
             MatMul.gemm(layer.ffnUpW(), hidden, ffn, nPos);
             Ops.addRowBiasInPlace(ffn, 0, layer.ffnUpB(), 0, nPos, ffnDim);
             geluTanhInPlace(ffn, nPos, ffnDim);
@@ -336,7 +338,7 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
         // the merger hidden width is mm0's OUTPUT dim, not visionDim - for Qwen3.5's
         // mmproj they differ (1024 vs 4096), so the tower's `hidden` scratch cannot be reused
         // here (MatMul's shaped contract rejects a c narrower than the weight rows).
-        Norms.layerNorm(tokens, tokens, postLnW, postLnB, visionDim, nPos, normEps);
+        Norms.layerNormRows(tokens, tokens, postLnW, postLnB, nPos, visionDim, normEps);
         MemoryView<MemorySegment> mergedRows = Views.allocateF32(scratch, merged, 4 * visionDim);
         MemoryView<MemorySegment> mergerHidden =
                 Views.allocateF32(scratch, merged, mm0.outputDim());
