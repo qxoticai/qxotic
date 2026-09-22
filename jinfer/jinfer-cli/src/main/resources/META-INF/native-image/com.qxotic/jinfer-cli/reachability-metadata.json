@@ -1,10 +1,31 @@
 {
-  "comment": "Transcribe asks libc isatty(2) whether stderr is a terminal for the streaming HUD.",
+  "comment": "Terminal, for the live transcription view: on Linux and macOS libc isatty (int)int and ioctl(TIOCGWINSZ) (int, long, ...)int; on Windows kernel32 GetStdHandle (int)void*, GetConsoleMode and GetConsoleScreenBufferInfo (void*, void*)int, SetConsoleMode (void*, int)int, GetConsoleOutputCP ()int and SetConsoleOutputCP (int)int.",
   "foreign": {
     "downcalls": [
       {
         "returnType": "jint",
         "parameterTypes": ["jint"]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": ["jint", "jlong", "void*"],
+        "options": {"firstVariadicArg": 2}
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": ["jint"]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": ["void*", "void*"]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": ["void*", "jint"]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": []
       }
     ]
   }

@@ -229,6 +229,22 @@ final class OptionsTest {
     }
 
     @Test
+    void themeNamesABundledPaletteAndDefaultsToTheFirst(@TempDir Path dir) throws IOException {
+        String m = model(dir).toString();
+        assertEquals(
+                "nord",
+                Options.parse(new String[] {"-m", m, "--transcribe", "-", "--theme", "nord"})
+                        .theme()
+                        .name());
+        assertEquals(
+                TranscriptHud.Theme.BUNDLED.getFirst(),
+                Options.parse(new String[] {"-m", m, "--transcribe", "-"}).theme());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Options.parse(new String[] {"-m", m, "--transcribe", "-", "--theme", "x"}));
+    }
+
+    @Test
     void parseReadsFlagsInBothSpellings(@TempDir Path dir) throws IOException {
         String m = model(dir).toString();
         Options options =

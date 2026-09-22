@@ -66,7 +66,8 @@ public record Options(
         boolean noGrammar,
         ServerConfig.Limits limits,
         Integer threads,
-        Path transcribeAudio) {
+        Path transcribeAudio,
+        TranscriptHud.Theme theme) {
 
     /** The default bind port for {@code --server} (overridable with {@code --port}). */
     public static final int DEFAULT_PORT = 54154;
@@ -78,6 +79,7 @@ public record Options(
         host = host == null ? "127.0.0.1" : host;
         allowedOrigins = allowedOrigins == null ? Set.of("*") : Set.copyOf(allowedOrigins);
         limits = limits == null ? ServerConfig.Limits.DEFAULTS : limits;
+        theme = theme == null ? TranscriptHud.Theme.BUNDLED.getFirst() : theme;
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
                 server || interactive || prompt != null || transcribeAudio != null,
@@ -204,6 +206,7 @@ public record Options(
                 Set.of("*"),
                 false,
                 ServerConfig.Limits.DEFAULTS,
+                null,
                 null,
                 null);
     }
@@ -360,6 +363,7 @@ public record Options(
                     "--model",
                     "-m",
                     "--transcribe",
+                    "--theme",
                     "--mmproj",
                     "--with",
                     "--host",
@@ -407,6 +411,7 @@ public record Options(
         boolean interactive = false;
         boolean server = false;
         Path transcribeAudio = null;
+        TranscriptHud.Theme theme = null; // unset = the first bundled
         String host = "127.0.0.1";
         int port = DEFAULT_PORT;
         String apiKey = null;
@@ -469,6 +474,13 @@ public record Options(
                         case "--min-p" -> minp = parseFloat(optionName, nextArg);
                         case "--model", "-m" -> modelRef = nextArg;
                         case "--transcribe" -> transcribeAudio = Path.of(nextArg);
+                        case "--theme" -> {
+                            theme = TranscriptHud.Theme.named(nextArg);
+                            require(
+                                    theme != null,
+                                    "Invalid argument: --theme must be one of %s",
+                                    String.join("|", TranscriptHud.Theme.names()));
+                        }
                         case "--mmproj" -> companionRefs.put("media", nextArg);
                         case "--with" -> {
                             int eq = nextArg.indexOf('=');
@@ -639,7 +651,8 @@ public record Options(
                         requestTimeout,
                         defaultLimits.shutdownTimeout()),
                 threads,
-                transcribeAudio);
+                transcribeAudio,
+                theme);
     }
 
     /**
@@ -707,6 +720,10 @@ public record Options(
                 "  --transcribe <audio|->        speech-to-text: transcript of an audio file, or"
                         + " '-' to stream raw 16 kHz mono s16le PCM from stdin with live"
                         + " partials on stderr (needs a transcription model, e.g. Parakeet)");
+        out.println(
+                "  --theme <name>                colors of the live --transcribe view: "
+                        + String.join(", ", TranscriptHud.Theme.names())
+                        + " (default: mint)");
         out.println();
         out.println("Prompt:");
         out.println("  --prompt, -p <string>         input prompt");

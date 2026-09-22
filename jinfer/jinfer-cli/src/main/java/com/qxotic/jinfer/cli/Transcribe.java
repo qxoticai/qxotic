@@ -12,18 +12,20 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
-import java.lang.foreign.Linker;
-import java.lang.foreign.ValueLayout;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 /**
- * {@code --transcribe <audio|->}: transcript of an audio file, or {@code -} to stream raw 16 kHz
- * mono s16le PCM from stdin with live partials on stderr - one status line redrawn in place when
- * stderr is a terminal, one line per partial when redirected. The final transcript alone goes to
- * stdout, so it pipes. Pipe a microphone in with e.g. {@code ffmpeg -nostats -loglevel error -f
- * avfoundation -i ":0" -ar 16000 -ac 1 -f s16le - | jinfer -m parakeet.gguf --transcribe -}
+ * {@code --transcribe <audio|->}: the transcript of an audio file, or with {@code -}, live
+ * transcription of raw 16 kHz mono s16le PCM streamed on stdin. On a terminal, stderr shows the
+ * live view ({@link TranscriptHud}); redirected, or on a terminal that cannot move the cursor, it
+ * logs the final text in whole words and each partial on lines of their own. The final transcript
+ * alone goes to stdout, so it pipes. Pipe a microphone in with ffmpeg, then {@code ... -ar 16000
+ * -ac 1 -f s16le - | jinfer -m parakeet.gguf --transcribe -}, capturing with {@code -f pulse -i
+ * default} on Linux, {@code -f avfoundation -i ":0"} on macOS, or {@code -f dshow -i
+ * audio="Microphone"} on Windows (cmd, or PowerShell 7.4 and on, which pipe bytes unchanged).
  */
 final class Transcribe {
 
@@ -60,12 +62,18 @@ final class Transcribe {
                 System.err.println("ERROR " + Options.rootMessage(e));
                 return 1;
             }
+            // a native image is compiled ahead of time: nothing to warm
+            if (stdin && System.getProperty("org.graalvm.nativeimage.imagecode") == null)
+                warmUp(model);
             spinner.stop();
-            boolean hud = stdin && terminal(2);
+            Terminal terminal = stdin ? Terminal.stderr() : null;
             Transcription transcription =
-                    stdin ? pump(model, System.in, hud) : model.transcribe(audio.pcm());
+                    stdin
+                            ? pump(model, System.in, terminal, options.theme())
+                            : model.transcribe(audio.pcm());
             // the live view already settled the full transcript on this same screen
-            if (!(hud && terminal(1))) System.out.println(transcription.text());
+            if (terminal == null || !Terminal.isTerminal(1))
+                System.out.println(transcription.text());
             return 0;
         } catch (IOException e) {
             System.err.println("ERROR reading stdin: " + Options.rootMessage(e));
@@ -75,23 +83,46 @@ final class Transcribe {
         }
     }
 
-    /** Streams stdin PCM through the model, surfacing a partial every two seconds of audio. */
+    /**
+     * On the JVM the first decodes run cold while the JIT compiles them, seconds on a busy machine;
+     * paid here, behind the load spinner, they never hold up live audio.
+     */
+    private static <S extends RuntimeState> void warmUp(TranscriptionModel<?, ?, S> model) {
+        try (S state = model.newState();
+                TranscriptionStream stream = model.stream(state)) {
+            stream.feed(new float[5 * model.sampleRate()]); // past a chunk commit
+            stream.partial();
+        }
+    }
+
+    /**
+     * Streams stdin PCM through the model, into the live view on {@code terminal}, else the plain
+     * log. Final pieces show as soon as they commit; the partial refreshes after every half second
+     * of new audio, on the live view only while speech comes in, and everything captured meanwhile
+     * is fed before the next one, so a slow decode delays the view but never lets it fall behind.
+     */
     private static <S extends RuntimeState> Transcription pump(
-            TranscriptionModel<?, ?, S> model, InputStream in, boolean hud) throws IOException {
-        TranscriptHud view = hud ? new TranscriptHud(System.err) : null;
-        int partialEvery = 2 * model.sampleRate();
-        // Decoding pauses for tail re-decodes and window commits, but a live source cannot: if
-        // this thread stops reading, the pipe backs up and the capture side drops microphone
-        // audio - which reaches the model as spliced garbage. A reader thread keeps stdin
-        // drained; the queue absorbs decode bursts. Bounded, so a decode that cannot keep up at
-        // all backpressures like any pipe instead of buffering without limit.
-        BlockingQueue<float[]> queue = new ArrayBlockingQueue<>(4096); // ~13 min of 0.2 s chunks
+            TranscriptionModel<?, ?, S> model,
+            InputStream in,
+            Terminal terminal,
+            TranscriptHud.Theme theme)
+            throws IOException {
+        TranscriptHud view =
+                terminal == null ? null : new TranscriptHud(terminal, Terminal::columns, theme);
+        int rate = model.sampleRate();
+        int refreshEvery = rate / 2; // samples of new audio per partial
+        // Decoding pauses for partials and chunk commits, but a live source cannot: if this
+        // thread stops reading, the pipe backs up and the capture side drops microphone audio,
+        // which reaches the model as spliced garbage. A reader thread keeps stdin drained; the
+        // queue absorbs decode bursts. Bounded, so a decode that cannot keep up at all
+        // backpressures like any pipe instead of buffering without limit.
+        BlockingQueue<float[]> queue = new ArrayBlockingQueue<>(8192); // ~17 min of 0.125 s chunks
         float[] eof = new float[0];
         IOException[] readFailure = new IOException[1];
         Thread reader =
                 new Thread(
                         () -> {
-                            byte[] bytes = new byte[6400]; // 0.2 s of s16le at 16 kHz
+                            byte[] bytes = new byte[4000]; // 0.125 s of s16le at 16 kHz
                             try {
                                 int read;
                                 while ((read = in.readNBytes(bytes, 0, bytes.length)) > 0) {
@@ -101,6 +132,7 @@ final class Transcribe {
                                         int lo = bytes[2 * i] & 0xFF, hi = bytes[2 * i + 1];
                                         pcm[i] = ((short) ((hi << 8) | lo)) / 32768f;
                                     }
+                                    if (view != null) view.level(rms(pcm));
                                     queue.put(pcm);
                                 }
                             } catch (IOException e) {
@@ -120,8 +152,12 @@ final class Transcribe {
         reader.start();
         try (S state = model.newState();
                 TranscriptionStream stream = model.stream(state)) {
-            long fed = 0;
-            long sincePartial = 0;
+            StringBuilder text = new StringBuilder(); // the final pieces so far
+            List<Transcription.Token> tokens = new ArrayList<>();
+            List<Transcription.Token> tail = List.of();
+            long fed = 0, fresh = 0; // samples fed in total, and since the last partial
+            long partialAt = Long.MIN_VALUE; // when the last partial started
+            int logged = 0; // characters of the final text the plain log has printed
             boolean ended = false;
             while (!ended) {
                 float[] pcm;
@@ -131,53 +167,66 @@ final class Transcribe {
                     Thread.currentThread().interrupt();
                     break;
                 }
-                // drain everything already captured before spending time on a partial
+                // feed everything captured so far before spending time on a partial
                 while (true) {
                     if (pcm == eof) {
                         ended = true;
                         break;
                     }
-                    stream.feed(pcm);
+                    Transcription piece = stream.feed(pcm);
                     fed += pcm.length;
-                    sincePartial += pcm.length;
+                    fresh += pcm.length;
+                    if (!piece.tokens().isEmpty()) {
+                        text.append(piece.text());
+                        tokens.addAll(piece.tokens());
+                        if (view != null) view.show(tokens, tail);
+                        else logged = logWords(text, logged, false);
+                    }
                     pcm = queue.poll();
                     if (pcm == null) break;
                 }
-                if (!ended && sincePartial >= partialEvery) {
-                    sincePartial = 0;
-                    long seconds = fed / model.sampleRate();
-                    String text = stream.partial().text();
-                    if (view != null) {
-                        view.render(stream.committed().text(), text, seconds);
-                    } else {
-                        // the elapsed stamp keeps the heartbeat visible even over silence
-                        System.err.printf("… %ds %s%n", seconds, text);
-                    }
+                if (ended) break;
+                // new silence cannot change the partial, so it is not decoded again
+                boolean speech = view == null || view.heardSince(partialAt);
+                if (fresh >= refreshEvery && speech) {
+                    fresh = 0;
+                    partialAt = System.nanoTime();
+                    Transcription partial = stream.partial();
+                    tail = partial.tokens();
+                    if (view != null) view.show(tokens, tail);
+                    else System.err.printf("… %ds %s%n", fed / rate, partial.text().strip());
                 }
             }
             if (readFailure[0] != null) throw readFailure[0];
-            Transcription finished = stream.finish();
-            if (view != null) view.finish(finished.text());
+            Transcription last = stream.finish();
+            text.append(last.text());
+            tokens.addAll(last.tokens());
+            Transcription finished = new Transcription(text.toString(), tokens);
+            if (view != null) view.finish(finished.words());
+            else logWords(text, logged, true);
             return finished;
         }
     }
 
+    /** RMS about the mean, so a microphone's DC offset does not read as a constant level. */
+    private static float rms(float[] pcm) {
+        if (pcm.length == 0) return 0;
+        double mean = 0, sum = 0;
+        for (float sample : pcm) mean += sample;
+        mean /= pcm.length;
+        for (float sample : pcm) sum += (sample - mean) * (sample - mean);
+        return (float) Math.sqrt(sum / pcm.length);
+    }
+
     /**
-     * Whether the file descriptor is an interactive terminal. {@link java.io.Console#isTerminal}
-     * answers for stdin/stdout jointly, and streaming mode always pipes stdin, so ask libc
-     * directly. False on any failure - a missing native-image descriptor degrades to plain line
-     * output, never breaks.
+     * Logs the final text past {@code logged} on a line of its own, up to the last word the next
+     * piece might still continue unless {@code all}; returns how far it has logged.
      */
-    private static boolean terminal(int fd) {
-        try {
-            Linker linker = Linker.nativeLinker();
-            var isatty =
-                    linker.downcallHandle(
-                            linker.defaultLookup().find("isatty").orElseThrow(),
-                            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
-            return (int) isatty.invokeExact(fd) == 1;
-        } catch (Throwable unsupported) {
-            return false;
-        }
+    private static int logWords(StringBuilder text, int logged, boolean all) {
+        int end = all ? text.length() : text.lastIndexOf(" "); // a word starts at its space
+        if (end <= logged) return logged;
+        String words = text.substring(logged, end).strip();
+        if (!words.isEmpty()) System.err.println(words);
+        return end;
     }
 }
