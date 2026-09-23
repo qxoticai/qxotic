@@ -8,9 +8,8 @@
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
 
 An implementation of [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) for
-the JVM: the FastConformer encoder and the TDT transducer decoder, fast on ordinary CPUs and
-competitive with the reference engines on the same checkpoints. No ONNX Runtime, no whisper.cpp,
-no PyTorch, no native library to ship. Just the JVM.
+the JVM: blazing fast on ordinary CPUs, competitive with the native implementations. No ONNX Runtime, no whisper.cpp,
+no Python runtime. Just the JVM.
 
 </div>
 
@@ -24,9 +23,8 @@ no PyTorch, no native library to ship. Just the JVM.
 - **Competitive with the reference engines.** On the same checkpoint and machine it keeps pace
   with parakeet.cpp and sherpa-onnx, word for word identical.
 - **Same words as the reference.** At `F16` the transcript matches parakeet.cpp exactly; the rest
-  is quantization noise, not porting drift.
-- **Streaming, not just files.** Audio in as it arrives, final text out in pieces, with a
-  provisional tail that keeps up with the speaker.
+  is quantization noise, not drift.
+- **Streaming support.** Audio in as it arrives, text out in pieces, with a draft tail that keeps up with the speaker.
 - **Word timings and confidence.** Every token carries its audio span and how sure the decoder was.
 - **Multilingual.** Parakeet v3 transcribes and punctuates without a language flag.
 - **Native Image ready.** No runtime to install, and a 600M checkpoint is mapped and ready in
@@ -50,25 +48,27 @@ two engines heard the same words. [How to reproduce this, step by step](WER.md).
 | | parakeet.cpp | 2.12% | 45.8 | - |
 | v3 int8 ONNX | sherpa-onnx | 2.16% | 18.6 | 1.27% |
 
-RTFx is seconds of audio transcribed per wall second, model load excluded. The small model
+_RTFx_ is seconds of audio transcribed per wall second, model load excluded. The small model
 transcribes an hour of speech in 44 seconds.
 
-## Supported checkpoints
+## Supported models
 
-TDT checkpoints, including the hybrid TDT-CTC ones, whose TDT head is the one that decodes.
-CTC-only and RNN-T checkpoints are refused at load.
+| Checkpoint | Languages | Parameters | GGUF (`Q8_0`) |
+|------------|-----------|------------|---------------|
+| [parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | multilingual | 600M | [tdt-0.6b-v3-q8_0.gguf](https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt-0.6b-v3-q8_0.gguf?download=true) |
+| [parakeet-tdt-0.6b-v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) | English | 600M | [tdt-0.6b-v2-q8_0.gguf](https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt-0.6b-v2-q8_0.gguf?download=true) |
+| [parakeet-tdt-1.1b](https://huggingface.co/nvidia/parakeet-tdt-1.1b) | English | 1.1B | [tdt-1.1b-q8_0.gguf](https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt-1.1b-q8_0.gguf?download=true) |
+| [parakeet-tdt_ctc-1.1b](https://huggingface.co/nvidia/parakeet-tdt_ctc-1.1b) | English | 1.1B | [tdt_ctc-1.1b-q8_0.gguf](https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt_ctc-1.1b-q8_0.gguf?download=true) |
+| [parakeet-tdt_ctc-110m](https://huggingface.co/nvidia/parakeet-tdt_ctc-110m) | English | 110M | [tdt_ctc-110m-q8_0.gguf](https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt_ctc-110m-q8_0.gguf?download=true) |
 
-| Checkpoint | Languages | Parameters |
-|------------|-----------|------------|
-| [parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | multilingual | 600M |
-| [parakeet-tdt-0.6b-v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) | English | 600M |
-| [parakeet-tdt-1.1b](https://huggingface.co/nvidia/parakeet-tdt-1.1b) | English | 1.1B |
-| [parakeet-tdt_ctc-110m](https://huggingface.co/nvidia/parakeet-tdt_ctc-110m) | English | 110M |
+Every checkpoint also ships `Q4_K`, `Q5_K`, `Q6_K` and `F16` in
+[mudler/parakeet-cpp-gguf](https://huggingface.co/mudler/parakeet-cpp-gguf), named the same way:
+swap the quantization in the file name. `Q8_0` balances quality and size, `Q4_K` runs quickest.
+The CLI downloads and caches them by reference, so no manual download is needed:
 
-GGUF conversions of all of them live in
-[mudler/parakeet-cpp-gguf](https://huggingface.co/mudler/parakeet-cpp-gguf). Quantizations:
-`Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `F16`, `F32`. `Q8_0` is the balanced choice, `Q4_K` the fastest
-here.
+```bash
+bin/jinfer pull mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf
+```
 
 ## Transcribe a file
 
