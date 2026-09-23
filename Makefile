@@ -129,6 +129,9 @@ ci-release: ## CI gate 4: the release shape, unsigned, no natives
 release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile a BOM consumer against ONLY it
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-canary.sh
 
+release-deploy: ## Stage ONE project for Central, refusing a version it already holds: make release-deploy PROJECT=jinfer (CHECK=--check to only look)
+	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-deploy.sh $(PROJECT) $(CHECK)
+
 jam-natives: ## Build, stage and stamp every shipped libjam (linux/windows x86-64 here, darwin-aarch64 on JAM_MAC=user@mac over ssh)
 	jam/jam-native/scripts/natives.sh build
 
