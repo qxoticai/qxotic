@@ -10,6 +10,9 @@
   </parent>
 
   <artifactId>jam</artifactId>
+  <!-- This project's own release version; move jam.version in the root POM with it,
+       since that is where everything outside jam resolves it. -->
+  <version>0.2.0</version>
   <packaging>pom</packaging>
 
   <name>JAM Parent</name>

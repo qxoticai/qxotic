@@ -18,12 +18,12 @@ It generates Java kernel sources and relies on compiling and loading those class
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jota-tensor</artifactId>
-  <version>${qxotic.version}</version>
+  <version>${jota.version}</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jota-backend-panama</artifactId>
-  <version>${qxotic.version}</version>
+  <version>${jota.version}</version>
 </dependency>
 ```
 

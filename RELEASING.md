@@ -62,7 +62,7 @@ Smoke-test any native executables intended for distribution on their target plat
 ## Before publishing
 
 - Review [release notes](RELEASE-NOTES.md), supported model families, API documentation and known limitations.
-- Confirm the intended versions and `project.build.outputTimestamp`; do not change them as a side effect of QA. The jinfer tree and the base projects (`qxotic.version`: gguf, json, jota, jam, toknroll, safetensors) version separately, and a project without changes since its last tag is not republished.
+- Confirm the intended versions and `project.build.outputTimestamp`; do not change them as a side effect of QA. Each project (gguf, json, safetensors, jota, jam, toknroll, jinfer) releases on the version its own root POM declares, and a project without changes since its last tag is not republished. A bump is two edits: that POM and the matching `<project>.version` in the root POM, which is where the others resolve it; `jinfer-bom` names the same versions for consumers.
 - Inspect the artifacts that opt into publication, including POM dependencies, source and Javadoc JARs, LICENSE and NOTICE files, and native-library contents.
 - Run the signing-enabled release verification with the configured release key, without `gpg.skip` or native-check bypasses.
 - Resolve failures and document coverage gaps before deciding whether to release.

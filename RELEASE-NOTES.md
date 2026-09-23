@@ -1,5 +1,41 @@
 # Release notes
 
+## 0.3.0
+
+jinfer only: speech recognition, and the CLI on Maven Central.
+Each project now releases on its own version, so gguf, json, safetensors, jota, jam and toknroll stay at 0.2.0, unchanged since that tag.
+`jinfer-bom` names the whole set, jinfer at 0.3.0 and those at 0.2.0, so one import still pins a coherent release.
+
+### Speech recognition
+
+- **NVIDIA Parakeet.** `jinfer-parakeet` runs the Parakeet family: FastConformer encoder, token-and-duration transducer, cased and punctuated text with an audio span and a confidence per token.
+  Five checkpoints, `parakeet-tdt-0.6b-v3` (multilingual, no language flag) through `parakeet-tdt_ctc-110m`, as the GGUF files jinfer and parakeet.cpp share.
+- **Accuracy is the reference's.** 2.04% WER on the LibriSpeech test-clean set parakeet.cpp benchmarks, scored with its own normalization; at `F16` the transcript matches parakeet.cpp word for word, and the quantizations differ from it by 0.04% to 0.34%.
+  Competitive on speed with both native engines: at `Q4_K`, 25.1x realtime against parakeet.cpp's 12.6x and sherpa-onnx's 18.6x on eight cores, and 81.2x with the 110M model. [How to reproduce it](jinfer/jinfer-parakeet/WER.md).
+- **Streaming.** `TranscriptionStream` in `jinfer-core` takes audio as it arrives and returns final pieces that never change, plus a provisional tail for a responsive UI.
+  Decoding follows NeMo's chunking, 10 s of left context, a 2 s chunk and 2 s of right context, with decoder state carried across chunks so words continue over the boundaries.
+  Offline transcription runs the same path in 46 s chunks, so a long recording never holds a long attention matrix.
+- **Every front end.** `JinferTranscriptionModel` for LangChain4j and for Spring AI, `POST /v1/audio/transcriptions` on the server (OpenAI-compatible multipart, `json`, `text` or `verbose_json`), and `jinfer --transcribe <file>` on the CLI.
+- **Live from the microphone.** `--transcribe -` reads 16 kHz mono PCM from stdin and draws a live view on stderr: committed words settling into the scrollback, the draft tail behind them, a waveform on the voice and doubtful words flagged.
+  `--theme mint|nord|catppuccin|ember|frost|mono` picks the palette, which degrades to 256 colors, to 16, and to plain attributes under `NO_COLOR`; the chrome falls back to ASCII outside UTF-8.
+  Redirected, the same run prints plain lines, so it scripts.
+
+### Published artifacts
+
+- **`jinfer-cli` on Maven Central.** An executable fat jar with a dependency-free POM, so `jbang jinfer@qxoticai` is one download: chat, the server and transcription in one command.
+- **`jinfer-parakeet` on Maven Central**, and in `jinfer-models-all` with the other providers.
+
+### Also
+
+- **Audio decoding has limits.** `jinfer-codecs` refuses input past `jinfer.codecs.maxAudioMinutes` (an hour by default) instead of buffering it, and clamps decoded PCM to [-1, 1] so a lossy decoder's overshoot is not an error.
+- **`jinfer-bench` scores transcription.** `--dump` writes a transcript per utterance and `--gate <percent>` turns a WER run into a pass or fail for CI; `jinfer/scripts/score_asr.py` scores jinfer, parakeet.cpp and sherpa-onnx runs the same way.
+- **Kernels.** `layerNorm` is vectorized and parallel, and `Workspace` moved to `jinfer-core`, where scratch is reused across windows rather than reallocated.
+
+### Known limits
+
+- Parakeet takes mono 16 kHz audio and refuses anything else rather than resampling it quietly, since a rate mismatch degrades recognition without an error.
+- Short windows around digital silence can transcribe as nothing ([NVIDIA-NeMo/Speech#15757](https://github.com/NVIDIA-NeMo/Speech/issues/15757)), so a live microphone with a room noise floor does better than padded silence.
+
 ## 0.2.0
 
 First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, toknroll, gguf, json and safetensors, with `jinfer-bom` managing the versions.

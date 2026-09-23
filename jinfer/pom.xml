@@ -10,6 +10,8 @@
   </parent>
 
   <artifactId>jinfer-parent</artifactId>
+  <!-- This project's own release version; every jinfer artifact takes it as ${project.version},
+       and jinfer-bom names it to consumers. -->
   <version>0.3.0</version>
   <packaging>pom</packaging>
 

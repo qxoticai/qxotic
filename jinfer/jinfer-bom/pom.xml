@@ -162,9 +162,10 @@
 
       <!-- Substrate this release was built against. The jinfer ports' transitive graphs resolve
            these already; pinning them here is what keeps a direct jota/jam/gguf/toknroll
-           dependency aligned when a downstream build adds one. It moves on its own version,
-           written out because a property of this build does not resolve in a consumer's:
-           qxotic.version in the root POM is what to keep it in step with. -->
+           dependency aligned when a downstream build adds one. Each of those projects moves on
+           its own version, written out here because a property of this build does not resolve in
+           a consumer's: the root POM's gguf.version and friends are what to keep these in step
+           with. -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-core</artifactId>

@@ -20,12 +20,12 @@ Metal backend for Jota on macOS.
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jota-tensor</artifactId>
-  <version>${qxotic.version}</version>
+  <version>${jota.version}</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jota-backend-metal</artifactId>
-  <version>${qxotic.version}</version>
+  <version>${jota.version}</version>
 </dependency>
 ```
 
