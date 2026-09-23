@@ -85,9 +85,9 @@ Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS,
 audio="Microphone"` on Windows.
 
 <p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.png" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
+  <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.png" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
 </p>
-<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.mp4">Play it with sound.</a></sub>
+<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4">Play it with sound.</a></sub>
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
 piece lands in color and fades into the text, the provisional tail follows in grey italics with a
