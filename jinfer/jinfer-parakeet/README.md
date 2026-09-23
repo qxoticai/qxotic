@@ -7,9 +7,10 @@
   <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache" alt="License: Apache 2.0"></a>
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
 
-[NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) in pure Java: the
-FastConformer encoder and the TDT transducer decoder, on the CPU, with no ONNX Runtime, no PyTorch
-and no native library to ship.
+An implementation of [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) for
+the JVM: the FastConformer encoder and the TDT transducer decoder, fast on ordinary CPUs, faster
+than the reference engines on the same checkpoints. No ONNX Runtime, no whisper.cpp, no PyTorch,
+no native library to ship. Just the JVM.
 
 </div>
 
