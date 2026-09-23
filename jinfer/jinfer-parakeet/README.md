@@ -33,11 +33,12 @@ no Python runtime. Just the JVM.
 ## Benchmarks
 
 LibriSpeech test-clean, first 100 utterances (901 s), 8 threads on an AMD Ryzen 7 PRO 8840U
-laptop, median of 3 runs. Agreement is WER against parakeet.cpp's own transcript, so 0% means the
-two engines heard the same words. [How to reproduce this, step by step](WER.md).
+laptop, median of 3 runs. The last column scores each run against parakeet.cpp's transcript rather
+than against the reference, so 0% means both engines heard exactly the same words.
+[How to reproduce this, step by step](WER.md).
 
-| Model | Engine | WER | RTFx | Agreement |
-|-------|--------|-----|------|-----------|
+| Model | Engine | WER | RTFx | WER vs. parakeet.cpp |
+|-------|--------|-----|------|----------------------|
 | tdt-0.6b-v3 `Q4_K` | **jinfer** | 2.04% | **25.1** | 0.17% |
 | | parakeet.cpp | 2.04% | 12.6 | - |
 | tdt-0.6b-v3 `Q8_0` | **jinfer** | 2.04% | **21.6** | 0.04% |
@@ -86,19 +87,19 @@ the capture flags are the only part that differs:
 ```bash
 # Linux (PulseAudio or PipeWire)
 ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
-  | bin/jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
 ```
 
 ```bash
 # macOS (AVFoundation; ffmpeg -f avfoundation -list_devices true -i "" names the inputs)
 ffmpeg -nostats -loglevel error -f avfoundation -i ":0" -ar 16000 -ac 1 -f s16le - \
-  | bin/jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
 ```
 
 ```bash
 # Windows (DirectShow; ffmpeg -list_devices true -f dshow -i dummy names the inputs)
 ffmpeg -nostats -loglevel error -f dshow -i audio="Microphone" -ar 16000 -ac 1 -f s16le - ^
-  | bin\jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
 ```
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
@@ -113,14 +114,6 @@ Redirected, the same run logs final text and partials as plain lines, so it scri
 
 Through [LangChain4j](../jinfer-langchain4j/README.md), which resolves the model ref and downloads
 it on first use:
-
-```xml
-<dependency>
-  <groupId>com.qxotic</groupId>
-  <artifactId>jinfer-langchain4j</artifactId>
-  <version>0.2.0</version>
-</dependency>
-```
 
 ```java
 try (var transcriber = JinferTranscriptionModel.builder()
@@ -179,8 +172,8 @@ two hour attention matrix.
 
 ## Model notes
 
-Parakeet v3 emits cased, punctuated text and one timing per token. It expects mono 16 kHz audio;
+Parakeet v3 emits cased, punctuated text and one timing per token. It consumes mono 16 kHz audio;
 anything else is refused rather than silently resampled, since a rate mismatch quietly degrades
-recognition. Very short windows around digital silence can blank
-([NVIDIA-NeMo/Speech#15757](https://github.com/NVIDIA-NeMo/Speech/issues/15757)), so live capture
+recognition. Short windows around digital silence can blank
+([NVIDIA-NeMo/Speech#15757](https://github.com/NVIDIA-NeMo/Speech/issues/15757)), so live recording
 with a room noise floor transcribes better than padded silence.
