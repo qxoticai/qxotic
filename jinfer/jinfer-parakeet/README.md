@@ -80,16 +80,26 @@ Any format ffmpeg reads, resampled by `jinfer-codecs`. The transcript goes to st
 
 ## Live transcription
 
-Raw 16 kHz mono PCM on stdin, transcribed as it arrives:
+Raw 16 kHz mono PCM on stdin, transcribed as it arrives. The microphone comes from ffmpeg, so
+the capture flags are the only part that differs:
 
 ```bash
+# Linux (PulseAudio or PipeWire)
 ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
   | bin/jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
 ```
 
-Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS, `-f dshow -i
-audio="Microphone"` on Windows.
+```bash
+# macOS (AVFoundation; ffmpeg -f avfoundation -list_devices true -i "" names the inputs)
+ffmpeg -nostats -loglevel error -f avfoundation -i ":0" -ar 16000 -ac 1 -f s16le - \
+  | bin/jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+```
 
+```bash
+# Windows (DirectShow; ffmpeg -list_devices true -f dshow -i dummy names the inputs)
+ffmpeg -nostats -loglevel error -f dshow -i audio="Microphone" -ar 16000 -ac 1 -f s16le - ^
+  | bin\jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+```
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
 piece lands in color and fades into the text, the provisional tail follows in grey italics with a
