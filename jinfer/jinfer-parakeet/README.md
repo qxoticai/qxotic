@@ -20,15 +20,14 @@ no Python runtime. Just the JVM.
 
 ## Highlights
 
-- **Competitive with the reference engines.** On the same checkpoint and machine it keeps pace
+- **Competitive with the reference engines.** Keeps pace
   with [parakeet.cpp](https://github.com/mudler/parakeet.cpp) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), word for word identical.
-- **Same words as the reference.** At `F16` the transcript matches [parakeet.cpp](https://github.com/mudler/parakeet.cpp) exactly;
+- **Matches the reference with 100% accuracy.** At `F16` the transcript matches [parakeet.cpp](https://github.com/mudler/parakeet.cpp) exactly;
   the rest is quantization noise, not drift.
 - **Streaming support.** Audio in as it arrives, text out in pieces, with a draft tail that keeps up with the speaker.
 - **Word timings and confidence.** Every token carries its audio span and how sure the decoder was.
 - **Multilingual.** Parakeet v3 transcribes and punctuates without a language flag.
-- **Native Image ready.** No runtime to install, and a 600M checkpoint is mapped and ready in
-  about 0.2 s.
+- **First-class support for GraalVM's Native Image.** Low memory footprint, standalone images, fast startup e.g. 600M model is loaded and ready to transcribe in about 0.2 s.
 
 ## Benchmarks
 
