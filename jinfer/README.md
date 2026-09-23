@@ -42,6 +42,7 @@ AI on the JVM, just a Maven dependency away.
 | [NVIDIA Nemotron-H](https://arxiv.org/abs/2504.03624) | chat | `jinfer-nemotronh` |
 | [Owen Song's Inflect](https://github.com/owenawsong/Inflect) | speech synthesis | `jinfer-inflect2` |
 | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) | speech synthesis | `jinfer-kokoro` |
+| [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | speech recognition | `jinfer-parakeet` |
 
 Supported quantizations: `Q4_0`, `Q5_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
 Jinfer recommends `Q8_0` for its balance of quality and performance.
@@ -277,7 +278,15 @@ line per partial instead, so scripts can follow along.
 
 ## Chat CLI
 
-To test different models, a simple CLI is bundled, can chat with all the supported models. 
+To test different models, a simple CLI is bundled, can chat with all the supported models.
+It is published as a single executable jar, so [JBang](https://www.jbang.dev/) runs it without a
+checkout, in this mode and in the server and transcription modes below:
+
+```bash
+jbang jinfer@qxoticai --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 --chat
+```
+
+From a checkout, build it and run the jar:
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
