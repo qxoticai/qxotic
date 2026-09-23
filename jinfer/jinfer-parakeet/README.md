@@ -84,9 +84,10 @@ ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
 Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS, `-f dshow -i
 audio="Microphone"` on Windows.
 
-https://github.com/user-attachments/assets/3211fdd3-d31c-4740-a852-c8292096d4a1
-
-<sub>Live transcription of JFK's 1961 inaugural address, with sound ([mp4](https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.mp4), [gif](https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.gif)).</sub>
+<p align="center">
+  <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.gif" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
+</p>
+<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.mp4">Watch it with sound.</a></sub>
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
 piece lands in color and fades into the text, the provisional tail follows in grey italics with a
