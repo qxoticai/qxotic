@@ -1,6 +1,6 @@
 <h1 align="center">jinfer-parakeet</h1>
 
-<p align="center"><strong>Speech to text on the JVM, faster than the native engines</strong></p>
+<p align="center"><strong>Automatic Speech Recognition for the JVM</strong></p>
 
 <div align="center">
   <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
