@@ -10,6 +10,9 @@
   </parent>
 
   <artifactId>jota-aggregator</artifactId>
+  <!-- This project's own release version; move jota.version in the root POM with it,
+       since that is where everything outside jota resolves it. -->
+  <version>0.2.0</version>
   <packaging>pom</packaging>
   <name>Jota Parent</name>
   <description>JVM Open Tensor Algebra: multi-backend tensor computation with first-class

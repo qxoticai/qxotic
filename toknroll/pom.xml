@@ -10,6 +10,9 @@
   </parent>
 
   <artifactId>toknroll-aggregator</artifactId>
+  <!-- This project's own release version; move toknroll.version in the root POM with it,
+       since that is where everything outside toknroll resolves it. -->
+  <version>0.2.0</version>
   <packaging>pom</packaging>
   <name>Tok'n'Roll Parent</name>
   <description>Customizable tiktoken-compatible and SentencePiece BPE tokenization for

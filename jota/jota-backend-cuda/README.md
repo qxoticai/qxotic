@@ -22,12 +22,12 @@ CUDA backend is unsupported on macOS.
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jota-tensor</artifactId>
-  <version>${qxotic.version}</version>
+  <version>${jota.version}</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jota-backend-cuda</artifactId>
-  <version>${qxotic.version}</version>
+  <version>${jota.version}</version>
 </dependency>
 ```
 

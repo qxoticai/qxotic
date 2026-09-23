@@ -9,6 +9,9 @@
   </parent>
 
   <artifactId>safetensors</artifactId>
+  <!-- This project's own release version; move safetensors.version in the root POM with it,
+       since that is where everything outside safetensors resolves it. -->
+  <version>0.2.0</version>
   <name>Quixotic Safetensors</name>
   <description>Java library for reading and writing Hugging Face Safetensors tensor
     files.</description>

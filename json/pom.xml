@@ -9,6 +9,9 @@
   </parent>
 
   <artifactId>json</artifactId>
+  <!-- This project's own release version; move json.version in the root POM with it,
+       since that is where everything outside json resolves it. -->
+  <version>0.2.0</version>
   <name>Quixotic JSON</name>
   <description>Strict RFC 8259-compliant JSON parser and writer for Java.</description>
   <properties>
