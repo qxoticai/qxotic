@@ -51,6 +51,9 @@ than against the reference, so 0% means both engines heard exactly the same word
 _RTFx_ is seconds of audio transcribed per wall second, model load excluded. The small model
 transcribes an hour of speech in 44 seconds.
 
+For the full matrix - both models, three engines, five quantizations, 1 to 16 threads and three
+JVMs, on a second machine - see [BENCHMARKS.md](BENCHMARKS.md).
+
 ## Supported models
 
 | Checkpoint | Languages | Parameters | GGUF (`Q8_0`) |
