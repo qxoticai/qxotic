@@ -21,9 +21,9 @@ no Python runtime. Just the JVM.
 ## Highlights
 
 - **Competitive with the reference engines.** On the same checkpoint and machine it keeps pace
-  with parakeet.cpp and sherpa-onnx, word for word identical.
-- **Same words as the reference.** At `F16` the transcript matches parakeet.cpp exactly; the rest
-  is quantization noise, not drift.
+  with [parakeet.cpp](https://github.com/mudler/parakeet.cpp) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), word for word identical.
+- **Same words as the reference.** At `F16` the transcript matches [parakeet.cpp](https://github.com/mudler/parakeet.cpp) exactly;
+  the rest is quantization noise, not drift.
 - **Streaming support.** Audio in as it arrives, text out in pieces, with a draft tail that keeps up with the speaker.
 - **Word timings and confidence.** Every token carries its audio span and how sure the decoder was.
 - **Multilingual.** Parakeet v3 transcribes and punctuates without a language flag.
@@ -68,13 +68,13 @@ swap the quantization in the file name. `Q8_0` balances quality and size, `Q4_K`
 The CLI downloads and caches them by reference, so no manual download is needed:
 
 ```bash
-bin/jinfer pull mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf
+jinfer pull mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf
 ```
 
 ## Transcribe a file
 
 ```bash
-bin/jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf --transcribe speech.wav
+jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf --transcribe speech.wav
 ```
 
 Any format ffmpeg reads, resampled by `jinfer-codecs`. The transcript goes to stdout, so it pipes.
