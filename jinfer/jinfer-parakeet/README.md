@@ -8,9 +8,9 @@
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
 
 An implementation of [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) for
-the JVM: the FastConformer encoder and the TDT transducer decoder, fast on ordinary CPUs, faster
-than the reference engines on the same checkpoints. No ONNX Runtime, no whisper.cpp, no PyTorch,
-no native library to ship. Just the JVM.
+the JVM: the FastConformer encoder and the TDT transducer decoder, fast on ordinary CPUs and
+competitive with the reference engines on the same checkpoints. No ONNX Runtime, no whisper.cpp,
+no PyTorch, no native library to ship. Just the JVM.
 
 </div>
 
@@ -21,8 +21,8 @@ no native library to ship. Just the JVM.
 
 ## Highlights
 
-- **Faster than the reference engines.** On the same checkpoint and machine, 2.0x parakeet.cpp at
-  `Q4_K` and 1.35x sherpa-onnx's int8 ONNX export, word for word identical.
+- **Competitive with the reference engines.** On the same checkpoint and machine it keeps pace
+  with parakeet.cpp and sherpa-onnx, word for word identical.
 - **Same words as the reference.** At `F16` the transcript matches parakeet.cpp exactly; the rest
   is quantization noise, not porting drift.
 - **Streaming, not just files.** Audio in as it arrives, final text out in pieces, with a
