@@ -12,12 +12,12 @@ sidebar_position: 3
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-spring-ai</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-lfm2</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 

@@ -4,7 +4,7 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
   </parent>
   <artifactId>jinfer-bailingmoe3</artifactId>
   <name>Jinfer Ling 3 Provider</name>

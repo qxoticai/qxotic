@@ -110,7 +110,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.2.0</version>
+      <version>0.3.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -132,7 +132,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
 `jinfer-models-all` includes the providers used by the examples below, not model weights.
 Only the models you load are downloaded.
 The BOMs manage versions; they do not add dependencies.
-Without them, pin `0.2.0` on each jinfer dependency and `2.0.1` on each Spring AI one.
+Without them, pin `0.3.0` on each jinfer dependency and `2.0.1` on each Spring AI one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
@@ -160,7 +160,7 @@ For scripts that use the core Spring AI provider without Spring Boot:
 //JAVA 25
 //JAVAC_OPTIONS -parameters
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.2.0@pom
+//DEPS com.qxotic:jinfer-bom:0.3.0@pom
 //DEPS com.qxotic:jinfer-spring-ai com.qxotic:jinfer-models-all
 //DEPS org.springframework.ai:spring-ai-client-chat:2.0.1
 //DEPS org.springframework.ai:spring-ai-rag:2.0.1

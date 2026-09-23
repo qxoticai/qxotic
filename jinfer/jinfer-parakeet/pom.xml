@@ -5,7 +5,7 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
   </parent>
 
   <artifactId>jinfer-parakeet</artifactId>
@@ -13,6 +13,9 @@
 
   <name>Jinfer Parakeet Provider</name>
   <description>Local speech recognition for NVIDIA Parakeet models with Jinfer.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>

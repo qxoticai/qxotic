@@ -23,7 +23,9 @@ WORK=${CANARY_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/release-canary.XXXXXX")}
 if [ -z "${CANARY_WORK:-}" ]; then trap 'rm -rf "$WORK"' EXIT; fi
 REPO=$WORK/repo
 
-VERSION=$($MVN -q -B -f "$ROOT/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate -Dexpression=project.version \
+# Every artifact the consumers ask for is a jinfer one, and the jinfer tree carries its own
+# version, which moves independently of the base projects it is built on.
+VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate -Dexpression=project.version \
     -DforceStdout 2>/dev/null | tail -1)
 LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
     -Dexpression=langchain4j.version -DforceStdout 2>/dev/null | tail -1)

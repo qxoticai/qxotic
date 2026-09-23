@@ -14,12 +14,12 @@ Ports use jinfer's hand-written, oracle-validated chat-template codecs; unported
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-langchain4j</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-lfm2</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
