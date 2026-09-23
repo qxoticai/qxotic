@@ -13,6 +13,11 @@ and no native library to ship.
 
 </div>
 
+<p align="center">
+  <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.png" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
+</p>
+<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4">Play it with sound.</a></sub>
+
 ## Highlights
 
 - **Faster than the reference engines.** On the same checkpoint and machine, 2.0x parakeet.cpp at
@@ -84,10 +89,6 @@ ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
 Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS, `-f dshow -i
 audio="Microphone"` on Windows.
 
-<p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.png" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
-</p>
-<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4">Play it with sound.</a></sub>
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
 piece lands in color and fades into the text, the provisional tail follows in grey italics with a
