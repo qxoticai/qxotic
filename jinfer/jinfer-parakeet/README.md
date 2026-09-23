@@ -85,9 +85,9 @@ Capture with `-f pulse -i default` on Linux, `-f avfoundation -i ":0"` on macOS,
 audio="Microphone"` on Windows.
 
 <p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@2040f703c4cf55960233ee42f533ab77dd574fa7/qxotic/parakeet-live-transcription.png" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
+  <img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.gif" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820">
 </p>
-<p align="center"><sub>Live transcription of JFK's 1961 inaugural address; click to play it with sound.</sub>
+<p align="center"><sub>Live transcription of JFK's 1961 inaugural address (<a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@7abc03ca2116bf52bd793876b3d4fbd00983380c/qxotic/parakeet-live-transcription.mp4">with sound</a>).</sub>
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
 piece lands in color and fades into the text, the provisional tail follows in grey italics with a
