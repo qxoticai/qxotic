@@ -6,9 +6,9 @@ first 100 utterances in sorted order (speakers 1089 and 1188, 901 s of audio), a
 normalization (NFKC, lowercase, punctuation to spaces, collapsed whitespace) before a word-level
 edit distance over the reference length.
 
-RTFx is seconds of audio per wall second, model load excluded. Agreement is WER against another
-engine's transcript of the same audio: 0% means both heard the same words, which separates a port
-bug from a model difference.
+RTFx is seconds of audio per wall second, model load excluded. "WER vs. parakeet.cpp" scores a run
+against that engine's transcript instead of the reference: 0% means both heard exactly the same
+words, which separates a port bug from a model difference.
 
 Everything below runs from the repository root.
 
@@ -160,7 +160,7 @@ Model load sits outside the loop, as in the other two harnesses.
 ## 7. Scoring
 
 One scorer for every engine, reading both shapes (`*.tsv` dumps and parakeet.cpp's `*.json`). The
-run named by `--against` is the baseline for agreement:
+run named by `--against` is the transcript the others are scored against:
 
 ```bash
 jinfer/scripts/score_asr.py --references test-fixtures/librispeech/manifest.tsv \
@@ -168,9 +168,9 @@ jinfer/scripts/score_asr.py --references test-fixtures/librispeech/manifest.tsv 
 ```
 
 ```text
-jinfer-q4_k     WER  2.04%   RTFx   25.1   agreement  0.17%
-cpp-q4_k        WER  2.04%   RTFx   11.9   agreement  0.00%
-sherpa          WER  2.16%   RTFx   18.6   agreement  1.36%
+jinfer-q4_k     WER  2.04%   RTFx   25.1   vs. baseline  0.17%
+cpp-q4_k        WER  2.04%   RTFx   11.9   vs. baseline  0.00%
+sherpa          WER  2.16%   RTFx   18.6   vs. baseline  1.36%
 ```
 
 Report the median of at least three runs per configuration, and the spread with it.
@@ -181,8 +181,8 @@ AMD Ryzen 7 PRO 8840U (8 cores, SMT on, laptop, ~75 °C under load), Linux 7.2, 
 8 threads, median of 3 runs, 2026-09-22. Checkpoints from `mudler/parakeet-cpp-gguf`; sherpa-onnx
 runs the int8 ONNX export of the same v3 checkpoint, which is none of these quantizations.
 
-| Model | Engine | WER | RTFx median | Runs min-max | Agreement |
-|-------|--------|-----|-------------|--------------|-----------|
+| Model | Engine | WER | RTFx median | Runs min-max | WER vs. parakeet.cpp |
+|-------|--------|-----|-------------|--------------|----------------------|
 | tdt-0.6b-v3 q4_k | jinfer | 2.04% | **25.1** | 24.1-25.1 | 0.17% |
 | | parakeet.cpp | 2.04% | 12.6 | 11.9-12.9 | - |
 | tdt-0.6b-v3 q8_0 | jinfer | 2.04% | **21.6** | 20.9-22.0 | 0.04% |

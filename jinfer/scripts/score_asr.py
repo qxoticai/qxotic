@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score speech-recognition runs: WER against the reference, RTFx, and agreement between engines.
+"""Score speech-recognition runs: WER against the reference, RTFx, and WER between engines.
 
 Reads what an engine heard, from either shape:
 
@@ -8,11 +8,11 @@ Reads what an engine heard, from either shape:
 
 Normalization matches parakeet.cpp's scripts/asr_metrics.py (NFKC, lowercase, punctuation to
 spaces, collapse whitespace), so every engine is scored on equal terms. WER is the word-level edit
-distance over the reference length; agreement is the same distance against the first run given,
-which is 0 when two engines heard exactly the same words.
+distance over the reference length. With --against, each run is also scored against that run's
+transcript, which is 0 when two engines heard exactly the same words.
 
   score_asr.py run.tsv [more.tsv ...]              # WER and RTFx
-  score_asr.py --against reference.tsv run.json    # plus agreement with that run
+  score_asr.py --against baseline.tsv run.json     # plus WER against that run
   score_asr.py --references manifest.tsv run.json  # references for runs that carry none
 """
 
@@ -80,14 +80,14 @@ def report(name, rows, against=None):
             agreed_words += counted
     line = f"{name:<34} WER {100 * wrong / max(1, words):5.2f}%   RTFx {audio / max(1e-9, decode):6.1f}"
     if against:
-        line += f"   agreement {100 * agreed_wrong / max(1, agreed_words):5.2f}%"
+        line += f"   vs. baseline {100 * agreed_wrong / max(1, agreed_words):5.2f}%"
     print(line)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runs", nargs="+", help="dumps to score (*.tsv or *.json)")
-    parser.add_argument("--against", help="the run to measure agreement with")
+    parser.add_argument("--against", help="the run whose transcript others are scored against")
     parser.add_argument("--references", help="manifest of <audio path>\\t<reference> per line")
     arguments = parser.parse_args()
 
