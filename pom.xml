@@ -95,7 +95,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <!-- Reproducible builds: move this with every release. -->
-    <project.build.outputTimestamp>2026-09-04T00:00:00Z</project.build.outputTimestamp>
+    <project.build.outputTimestamp>2026-09-23T00:00:00Z</project.build.outputTimestamp>
     <maven.compiler.release>11</maven.compiler.release>
 
     <!-- Dependency versions -->
