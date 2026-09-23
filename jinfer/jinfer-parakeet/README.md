@@ -111,37 +111,53 @@ Redirected, the same run logs final text and partials as plain lines, so it scri
 
 ## From Java
 
+Through [LangChain4j](../jinfer-langchain4j/README.md), which resolves the model ref and downloads
+it on first use:
+
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
-  <artifactId>jinfer-parakeet</artifactId>
+  <artifactId>jinfer-langchain4j</artifactId>
   <version>0.2.0</version>
 </dependency>
 ```
 
-A file, with word timings:
-
 ```java
-try (Arena arena = Arena.ofShared()) {
-    TranscriptionModel<?, ?, ?> model =
-            Models.loadTranscription(Path.of("tdt-0.6b-v3-q8_0.gguf"), arena);
-    Transcription transcription = model.transcribe(AudioCodec.load(Path.of("speech.wav")));
+try (var transcriber = JinferTranscriptionModel.builder()
+        .model("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf")
+        .build()) {
+    Transcription transcription = transcriber.transcribe(Path.of("speech.wav"));
     System.out.println(transcription.text());
     for (Transcription.Word word : transcription.words())
-        System.out.printf("%s %.2f %s%n", word.start(), word.confidence(), word.text());
+        System.out.printf("%s  %.2f  %s%n", word.start(), word.confidence(), word.text());
 }
 ```
 
-Live audio: feed samples as they arrive, take the final pieces, poll the provisional tail for a
-responsive UI.
+Or through [Spring AI](../jinfer-spring-ai/README.md), with `jinfer-spring-ai` on the classpath:
 
 ```java
-static <S extends RuntimeState> void live(TranscriptionModel<?, ?, S> model, float[] chunk) {
+try (var transcriber = JinferTranscriptionModel.builder()
+        .model("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf")
+        .build()) {
+    AudioTranscriptionResponse response = transcriber.call(
+            new AudioTranscriptionPrompt(new FileSystemResource("speech.wav")));
+    System.out.println(response.getResult().getOutput());
+}
+```
+
+Live audio needs `jinfer-parakeet` directly: feed samples as they arrive, print the final pieces,
+and poll the provisional tail for a responsive UI.
+
+```java
+static <S extends RuntimeState> void live(TranscriptionModel<?, ?, S> model, float[] pcm) {
     try (S state = model.newState();
             TranscriptionStream stream = model.stream(state)) {
-        Transcription piece = stream.feed(chunk); // final text, often empty
-        Transcription tail = stream.partial(); // provisional, replaced next time
-        System.out.println(piece.text() + " [" + tail.text() + "]");
+        int chunk = model.sampleRate() / 2; // feed half a second at a time
+        for (int at = 0; at < pcm.length; at += chunk) {
+            Transcription piece = stream.feed(pcm, at, Math.min(chunk, pcm.length - at));
+            System.out.print(piece.text()); // final text, often empty, never revised
+            System.err.print("\r" + stream.partial().text()); // provisional, replaced next time
+        }
         System.out.println(stream.finish().text()); // the rest, final
     }
 }
