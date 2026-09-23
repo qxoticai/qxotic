@@ -5,7 +5,7 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
   </parent>
 
   <artifactId>jinfer-bom</artifactId>
@@ -162,61 +162,63 @@
 
       <!-- Substrate this release was built against. The jinfer ports' transitive graphs resolve
            these already; pinning them here is what keeps a direct jota/jam/gguf/toknroll
-           dependency aligned when a downstream build adds one. -->
+           dependency aligned when a downstream build adds one. It moves on its own version,
+           written out because a property of this build does not resolve in a consumer's:
+           qxotic.version in the root POM is what to keep it in step with. -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-core</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-memory</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>gguf</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>json</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-gguf</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-core</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-native</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-scalar</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-vector</artifactId>
-        <version>${project.version}</version>
+        <version>0.2.0</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

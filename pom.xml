@@ -71,7 +71,11 @@
   </ciManagement>
 
   <properties>
-    <qxotic.version>${project.version}</qxotic.version>
+    <!-- The base projects (gguf, json, jota, jam, toknroll, safetensors) version together and
+         independently of the jinfer tree, which carries its own version: a project that did not
+         change is not republished. Bump this with them, and with jinfer-bom, which names the same
+         versions for consumers. -->
+    <qxotic.version>0.2.0</qxotic.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
          (and only) gate, so one switch decides what reaches Maven Central. -->

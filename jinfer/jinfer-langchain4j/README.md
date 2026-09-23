@@ -62,7 +62,7 @@ Every knob here has the same name on the other faces (CLI, server, Spring AI, Ja
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.2.0</version>
+      <version>0.3.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -89,7 +89,7 @@ Every knob here has the same name on the other faces (CLI, server, Spring AI, Ja
 ```
 
 Use `jinfer-models-all` instead of `jinfer-lfm2` for every model family. The `AiServices` examples
-also need `dev.langchain4j:langchain4j`. The BOMs manage versions only. Without them, pin `0.2.0`
+also need `dev.langchain4j:langchain4j`. The BOMs manage versions only. Without them, pin `0.3.0`
 on each jinfer dependency and `1.19.0` on each LangChain4j one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
@@ -115,7 +115,7 @@ Vector one; with neither, it uses its built-in kernels.
 ```java
 //JAVA 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.2.0@pom
+//DEPS com.qxotic:jinfer-bom:0.3.0@pom
 //DEPS com.qxotic:jinfer-langchain4j
 //DEPS com.qxotic:jinfer-lfm2
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector

@@ -5,7 +5,7 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
   </parent>
 
   <artifactId>jinfer-cli</artifactId>
@@ -13,12 +13,14 @@
 
   <name>Jinfer CLI</name>
   <description>Command line for Jinfer: an interactive chat loop and a one-shot
-    instruct mode over any GGUF, in a single jar carrying the model hub and every model provider. Not published to Maven Central.</description>
+    instruct mode over any GGUF, in a single jar carrying the model hub and every model
+    provider.</description>
 
   <properties>
     <jinfer.image.name>jinfer</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.cli.Main</jinfer.image.mainClass>
-    <maven.deploy.skip>true</maven.deploy.skip>
+    <!-- Published: an executable fat jar, so `jbang jinfer@qxoticai` is one download. -->
+    <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
 
   <dependencies>
@@ -115,6 +117,17 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <!-- What ships here carries its dependencies, so the published POM must not ask for them
+             again: jbang and Maven would download every jar a second time. -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>flatten-maven-plugin</artifactId>
+        <configuration>
+          <pomElements>
+            <dependencies>remove</dependencies>
+          </pomElements>
+        </configuration>
       </plugin>
     </plugins>
   </build>

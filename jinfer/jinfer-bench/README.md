@@ -40,7 +40,7 @@ The output is one header line and two tables.
 The following is a real run on a 16-core Zen 5 desktop, on the JVM and then on the native image:
 
 ```text
-jinfer-bench 0.2.0 | runtime: GraalVM JIT | jam: native, vector, scalar | threads: 16 (engine default)
+jinfer-bench 0.3.0 | runtime: GraalVM JIT | jam: native, vector, scalar | threads: 16 (engine default)
 | model            | threads | test   |              t/s |
 | ---------------- | ------: | ------ | ---------------: |
 | LFM2.5-350M-Q8_0 |      16 | pp512  | 8551.38 ± 647.87 |
@@ -52,7 +52,7 @@ jinfer-bench 0.2.0 | runtime: GraalVM JIT | jam: native, vector, scalar | thread
 ```
 
 ```text
-jinfer-bench 0.2.0 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
+jinfer-bench 0.3.0 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
 | model            | threads | test   |              t/s |
 | ---------------- | ------: | ------ | ---------------: |
 | LFM2.5-350M-Q8_0 |      16 | pp512  | 6104.32 ± 416.37 |
@@ -148,7 +148,7 @@ A report contains the machine, the header line, and the tables, verbatim:
 
 ```text
 <CPU> (<cores> cores), <RAM>, <OS>, <JDK>, jinfer commit <sha>, idle
-jinfer-bench 0.2.0 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
+jinfer-bench 0.3.0 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
 <the two tables>
 llama-bench <build>, -t 16: pp512 <t/s>, tg128 <t/s>
 ```

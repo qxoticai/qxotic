@@ -10,6 +10,7 @@
   </parent>
 
   <artifactId>jinfer-parent</artifactId>
+  <version>0.3.0</version>
   <packaging>pom</packaging>
 
   <name>Jinfer Parent</name>
