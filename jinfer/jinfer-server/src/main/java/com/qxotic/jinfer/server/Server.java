@@ -3,6 +3,8 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.sun.net.httpserver.HttpExchange;
@@ -10,6 +12,7 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -160,8 +163,26 @@ public final class Server {
         Sampling sampling = generation.defaults();
         HttpServer server = HttpServer.create(config.bind(), 0);
         String servedId = servedModel;
-        Map<String, Object> modelCard =
-                Map.of("id", servedId, "object", "model", "created", 0, "owned_by", "jinfer");
+        Map<String, Object> modelCard = new LinkedHashMap<>();
+        modelCard.put("id", servedId);
+        modelCard.put("object", "model");
+        modelCard.put("created", 0);
+        modelCard.put("owned_by", "jinfer");
+        // Input capabilities in the two dialects clients probe for - LiteLLM's flat flag and
+        // OpenRouter's structured list - read off the attached projectors (a null-check each,
+        // never an instantiation). Video is omitted: it rides the vision projector but only on
+        // families whose template renders it, which the projectors cannot say.
+        List<String> inputModalities = new ArrayList<>(List.of("text"));
+        boolean supportsImages = false;
+        if (model.model() instanceof Multimodal multimodal) {
+            supportsImages = multimodal.projector(Media.Image.class).isPresent();
+            if (supportsImages) inputModalities.add("image");
+            if (multimodal.projector(Media.Audio.class).isPresent())
+                inputModalities.add("audio");
+        }
+        modelCard.put("supports_image_input", supportsImages);
+        modelCard.put(
+                "architecture", Map.of("input_modalities", List.copyOf(inputModalities)));
         route(
                 server,
                 "/v1/models",

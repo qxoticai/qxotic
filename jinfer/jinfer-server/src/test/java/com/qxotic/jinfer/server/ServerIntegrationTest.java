@@ -34,6 +34,27 @@ import org.junit.jupiter.api.Test;
 class ServerIntegrationTest {
 
     private static final String MODEL = "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
+    private static final String VISION_MODEL =
+            "hf.co/LiquidAI/LFM2.5-VL-450M-GGUF/LFM2.5-VL-450M-Q8_0.gguf";
+    private static final String VISION_PROJECTOR =
+            "hf.co/LiquidAI/LFM2.5-VL-450M-GGUF/mmproj-LFM2.5-VL-450m-Q8_0.gguf";
+
+    @Test
+    void modelCardReportsTheAttachedVisionProjector() throws Exception {
+        Path text = TestModels.require(VISION_MODEL);
+        Path projector = TestModels.require(VISION_PROJECTOR);
+        try (ChatEngine engine =
+                        new ChatEngine(
+                                text,
+                                Map.of("media", projector),
+                                PromptCache.Options.DEFAULTS.withContextCapacity(256));
+                Server.Running server = Server.start(engine, ServerConfig.local(0))) {
+            String models =
+                    get(HttpClient.newHttpClient(), base(server) + "/v1/models").body();
+            assertTrue(models.contains("\"supports_image_input\":true"), models);
+            assertTrue(models.contains("\"input_modalities\":[\"text\",\"image\"]"), models);
+        }
+    }
 
     @Test
     void openAiTransportRunsAgainstARealMemoryViewModel() throws Exception {
@@ -48,6 +69,9 @@ class ServerIntegrationTest {
             HttpClient client = HttpClient.newHttpClient();
 
             assertEquals(200, get(client, base + "/health").statusCode());
+            String models = get(client, base + "/v1/models").body();
+            assertTrue(models.contains("\"supports_image_input\":false"), models);
+            assertTrue(models.contains("\"input_modalities\":[\"text\"]"), models);
             String props = get(client, base + "/props").body();
             assertTrue(props.contains("\"speculation\""));
             assertTrue(props.contains("\"n_ctx\":256"), props);
