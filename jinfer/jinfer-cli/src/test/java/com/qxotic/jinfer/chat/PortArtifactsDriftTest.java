@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.cli.CliModelProvider;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -18,6 +19,7 @@ class PortArtifactsDriftTest {
         Set<String> services =
                 ServiceLoader.load(ModelProvider.class).stream()
                         .map(provider -> provider.type().getName())
+                        .filter(name -> !name.equals(CliModelProvider.class.getName()))
                         .collect(Collectors.toSet());
         assertEquals(Set.copyOf(Models.knownProviderClasses()), services);
     }
@@ -27,6 +29,8 @@ class PortArtifactsDriftTest {
         var architectures = Models.supportedArchitectures();
         assertFalse(architectures.isEmpty(), "no model ports on the CLI test classpath");
         for (String architecture : architectures) {
+            // The CLI workflow fixture is deliberately test-only, not a Maven model port.
+            if (CliModelProvider.ARCHITECTURES.contains(architecture)) continue;
             String artifact = Models.artifactFor(architecture);
             assertNotNull(artifact, "architecture '" + architecture + "' has no artifact hint");
             assertTrue(
