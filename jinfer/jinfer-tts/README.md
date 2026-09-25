@@ -15,9 +15,16 @@ java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
   inflect.gguf --with lexicon=lexicon.bin --play
 ```
 
-`--play` synthesizes the full waveform before playback. `--stream` starts after the first text chunk
-and synthesizes later chunks while earlier ones play. It uses an ordered `afplay` queue on macOS and
-a persistent raw PCM stream through `ffplay` or `aplay` elsewhere.
+`--play` synthesizes the full waveform before playback.
+`--stream` starts after the first text chunk and synthesizes later chunks while earlier ones play.
+Both modes use the same cross-platform playback support as `jinfer-cli`:
+
+- **macOS:** built-in `afplay`, synthesizing one WAV clip ahead when streaming.
+- **Windows:** built-in Windows PowerShell's `.NET SoundPlayer`, with the same clip streaming.
+- **Linux:** install `aplay` (ALSA utilities) or `ffplay` (FFmpeg); streaming uses a persistent PCM pipe.
+
+All platforms can fall back to `ffplay` if the native player cannot be launched.
+Players must be on `PATH`; a player that launches but fails reports its error.
 
 Build the native executable with GraalVM 25 or later:
 

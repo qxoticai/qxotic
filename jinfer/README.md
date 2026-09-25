@@ -280,7 +280,7 @@ line per partial instead, so scripts can follow along.
 
 To test different models, a simple CLI is bundled, can chat with all the supported models.
 It is published as a single executable jar, so [JBang](https://www.jbang.dev/) runs it without a
-checkout, in this mode and in the server and transcription modes below:
+checkout, in this mode and in the server, transcription and speech synthesis modes:
 
 ```bash
 jbang jinfer@qxoticai --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 --chat
@@ -297,6 +297,52 @@ java \
   --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
   --chat
 ```
+
+## Text-to-speech CLI
+
+Use `--speak` with a speech model to write a 16-bit PCM WAV:
+
+```bash
+jbang jinfer@qxoticai -m remixerdec/Inflect-Nano-v2-GGUF:Q8_0 \
+  --speak "Hello world." --output hello.wav --speed 1.2
+
+jbang jinfer@qxoticai -m simonfxr/kokoro.cpp-GGUF/kokoro-82m-q8_0.gguf \
+  --with voice=simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf \
+  --speak "Hello from Kokoro." --output kokoro.wav
+```
+
+Local model and companion paths work too.
+Kokoro requires a `voice` companion; Inflect2 optionally accepts a pronunciation lexicon via `--with lexicon=<path|ref>`.
+`--speed` selects a positive speaking-rate multiplier within the model's supported range; omitted, it uses the model's default.
+The default output is `output.wav`.
+
+To listen directly, use `--play` for playback after synthesis or `--stream` to start with the first clip while later clips are synthesized:
+
+```bash
+jinfer -m inflect.gguf --speak "Hello world." --play
+jinfer -m inflect.gguf --speak "Hello world. Here is the next sentence." --stream
+```
+
+Both playback modes support Linux, macOS and Windows:
+
+| Platform | Playback backend | Requirement |
+|----------|------------------|-------------|
+| Linux | `aplay`, falling back to `ffplay` if unavailable | Install ALSA utilities or FFmpeg with `ffplay` |
+| macOS | `afplay`, falling back to `ffplay` if unavailable | `afplay` is built in |
+| Windows | Windows PowerShell's `.NET SoundPlayer`, falling back to `ffplay` if unavailable | Windows PowerShell is built in |
+
+Streaming feeds continuous PCM on Linux; macOS and Windows play WAV clips while synthesizing one clip ahead.
+Players must be available on `PATH`; a player that launches but fails reports its error.
+Choose playback or `--output`; they cannot be combined.
+`--stream true|false|on|off` is also accepted: speech playback is off by default, while chat still streams tokens by default.
+
+`--speak -` reads UTF-8 text from stdin, and `--output -` writes WAV bytes to stdout, with diagnostics on stderr:
+
+```bash
+jinfer -m inflect.gguf --speak - --output - < story.txt > story.wav
+```
+
+The same flags work with the executable jar shown above.
 
 ## OpenAI-compatible server
 
