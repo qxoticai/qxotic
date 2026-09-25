@@ -52,8 +52,7 @@ class ServerTest {
         assertEquals(Duration.ZERO, c.limits().requestTimeout());
         assertEquals(Duration.ofSeconds(9), c.limits().writeTimeout());
         assertEquals(32, c.defaults().maxOutputTokens());
-        assertEquals(
-                2, Options.parse("serve", "-m", "m", "--queue-capacity", "2").server.queueDepth);
+        assertEquals(2, Options.parse("serve", "-m", "m", "--queue-depth", "2").server.queueDepth);
         assertThrows(Options.Usage.class, () -> Server.validateTranscription(o));
         Server.validateTranscription(Options.parse("server", "-m", "m", "--threads", "2"));
     }
@@ -281,7 +280,6 @@ class ServerTest {
         for (String[] setting :
                 new String[][] {
                     {"--queue-depth", "4"},
-                    {"--queue-capacity", "4"},
                     {"--cache", "c.jkv"},
                     {"--no-grammar"},
                     {"--raw-prompt"},

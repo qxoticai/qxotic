@@ -58,7 +58,6 @@ final class Transcribe {
         Options.require(
                 o.input != null && !o.input.isBlank(),
                 "transcribe requires an audio file or '-' for stdin");
-        if (o.legacy && o.input.equals("-")) o.transcription.rawPcm = true;
         Options.require(
                 !o.transcription.rawPcm || o.input.equals("-"), "--raw-pcm requires '-' for stdin");
         Options.require(
@@ -130,7 +129,7 @@ final class Transcribe {
                   --raw-pcm                  live stdin: 16 kHz mono signed 16-bit little-endian PCM
                   --theme <name>             live-view palette: mint, nord, catppuccin, ember, frost, mono
 
-                '-' reads encoded audio unless --raw-pcm is supplied. Legacy --transcribe - remains raw PCM.
+                '-' reads encoded audio unless --raw-pcm is supplied.
                 Final transcripts go to stdout; live partials and progress go to stderr.
                 """);
         Options.modelHelp(out);

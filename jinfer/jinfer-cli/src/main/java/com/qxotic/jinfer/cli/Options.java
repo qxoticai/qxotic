@@ -28,7 +28,6 @@ final class Options {
     String command;
     boolean help;
     boolean version;
-    boolean legacy = true; // a command word switches to the new syntax
     String input;
     final List<String> operands = new ArrayList<>();
 
@@ -64,8 +63,6 @@ final class Options {
 
     // Presence matters: an explicitly supplied, inapplicable default is still a mistake.
     private final Map<String, Set<String>> used = new LinkedHashMap<>();
-    private String applicationPrefix;
-    private boolean legacyBoolean;
 
     private Options() {}
 
@@ -86,14 +83,7 @@ final class Options {
             if (argv.length == 0) o.help = true;
             if (o.help || o.version) return o;
             if (firstError != null) throw firstError;
-            if (o.command == null) o.command = "instruct";
-            require(
-                    o.legacy || o.applicationPrefix == null,
-                    "%s must follow the command",
-                    o.applicationPrefix);
-            require(
-                    o.legacy || !o.legacyBoolean,
-                    "Boolean switches take no value; use --stream/--no-stream or --echo/--no-echo");
+            if (o.command == null) throw o.usageHelp("missing command");
             o.validate();
             return o;
         } catch (IllegalArgumentException failure) {
@@ -107,24 +97,12 @@ final class Options {
         if (!args.isOption()) {
             if (command != null) operands.add(args.token);
             else if (args.token.equals("help")) help = true;
-            else {
-                select(args.token);
-                legacy = false;
-            }
+            else select(args.token);
             return;
         }
         switch (args.name) {
             case "--help", "-h" -> help = args.flag();
             case "--version" -> version = args.flag();
-            case "--chat", "--interactive", "-i" -> legacyMode("chat", args);
-            case "--instruct" -> legacyMode("instruct", args);
-            case "--server" -> legacyMode("server", args);
-            case "--speak", "--transcribe" -> {
-                String text = args.value();
-                require(legacy, "Use a command or a legacy mode flag, not both");
-                select(args.name.substring(2));
-                input = text;
-            }
             default -> {
                 if (readShared(args)) return;
                 if (!(Instruct.read(this, args)
@@ -132,7 +110,7 @@ final class Options {
                         || Speak.read(this, args)
                         || Transcribe.read(this, args)
                         || Hub.read(this, args))) throw usageHelp("Unknown option: " + args.name);
-                if (command == null && applicationPrefix == null) applicationPrefix = args.name;
+                require(command != null, "%s must follow the command", args.name);
             }
         }
     }
@@ -147,11 +125,6 @@ final class Options {
         if (!MODEL_COMMANDS.contains(selected)
                 && !Set.of("pull", "list", "cache-info").contains(selected))
             throw usageHelp("Unknown command: " + name);
-        require(
-                command == null || command.equals(selected),
-                "Conflicting commands: %s and %s",
-                command,
-                selected);
         command = selected;
     }
 
@@ -159,12 +132,6 @@ final class Options {
         Usage error = new Usage(message);
         error.showHelp = true;
         return error;
-    }
-
-    private void legacyMode(String name, Args args) {
-        args.flag();
-        require(legacy, "Use a command or a legacy mode flag, not both");
-        select(name);
     }
 
     private boolean readModel(Args a) {
@@ -179,7 +146,6 @@ final class Options {
                         attached);
                 attach(attached.substring(0, eq), attached.substring(eq + 1));
             }
-            case "--mmproj" -> attach("media", a.value());
             case "--threads", "-t" -> threads = a.integer();
             case "--color" -> color = a.value().toLowerCase(Locale.ROOT);
             default -> {
@@ -195,8 +161,8 @@ final class Options {
                 !role.isBlank() && !value.isBlank(),
                 "Companions require a non-blank role and reference");
         require(!value.equals("auto"), "Name the '%s' file explicitly instead of 'auto'", role);
+        require(!role.equals("model"), "select the model with --model <path|ref>, not --with");
         switch (role) {
-            case "model" -> modelRef = value;
             case "tokenizer" -> {
                 tokenizerRef = value;
                 use("--with tokenizer", TEXT_COMMANDS);
@@ -223,11 +189,11 @@ final class Options {
             case "--reasoning-cutoff-message" -> reasoningCutoffMessage = a.value();
             case "--think" -> {
                 String mode = a.value().toLowerCase(Locale.ROOT);
-                thinkInline = mode.equals("inline") || mode.equals("stdout");
+                thinkInline = mode.equals("inline");
                 think =
                         switch (mode) {
-                            case "on", "true", "inline", "stdout" -> true;
-                            case "off", "false" -> false;
+                            case "on", "inline" -> true;
+                            case "off" -> false;
                             default ->
                                     throw new Usage("--think expects off|on|inline, got " + mode);
                         };
@@ -244,12 +210,12 @@ final class Options {
         if (readModel(a) || readGeneration(a)) return true;
         Set<String> commands =
                 switch (a.name) {
-                    case "--system-prompt", "-sp" -> {
+                    case "--system-prompt" -> {
                         systemPrompt = a.value();
                         yield CONVERSATION_COMMANDS;
                     }
                     case "--stream" -> {
-                        stream = booleanSwitch(a);
+                        stream = a.flag();
                         yield Set.of("chat", "instruct", "speak");
                     }
                     case "--no-stream" -> {
@@ -258,7 +224,7 @@ final class Options {
                         yield Set.of("chat", "instruct", "speak");
                     }
                     case "--echo" -> {
-                        echo = booleanSwitch(a);
+                        echo = a.flag();
                         yield CONVERSATION_COMMANDS;
                     }
                     case "--no-echo" -> {
@@ -276,14 +242,6 @@ final class Options {
         if (commands == null) return false;
         use(a.name, commands);
         return true;
-    }
-
-    private boolean booleanSwitch(Args args) {
-        if (args.inline != null || (legacy && args.nextIsBoolean())) {
-            legacyBoolean = true;
-            return parseBooleanOption(args.name, args.value());
-        }
-        return args.flag();
     }
 
     void use(String flag, Set<String> commands) {
@@ -316,9 +274,6 @@ final class Options {
                     modelRef != null && !modelRef.isBlank(),
                     "missing model; specify --model <path|ref>");
             require(operands.size() <= 1, "Too many inputs; quote text containing spaces");
-            require(
-                    input == null || operands.isEmpty(),
-                    "Input was supplied both as an argument and an option");
             if (!operands.isEmpty()) input = operands.getFirst();
         }
         require(threads == null || threads >= 1, "--threads must be at least 1; got %s", threads);
@@ -483,14 +438,6 @@ final class Options {
         if (!condition) throw new Usage(message.formatted(args));
     }
 
-    static boolean parseBooleanOption(String name, String value) {
-        return switch (value.toLowerCase(Locale.ROOT)) {
-            case "true", "on" -> true;
-            case "false", "off" -> false;
-            default -> throw new Usage(name + " expects true|false|on|off, got " + value);
-        };
-    }
-
     static String rootMessage(Throwable failure) {
         while (failure.getCause() != null
                 && (failure.getMessage() == null
@@ -544,12 +491,6 @@ final class Options {
         boolean flag() {
             require(inline == null, "%s takes no value; got '%s'", name, inline);
             return true;
-        }
-
-        boolean nextIsBoolean() {
-            return index < argv.length
-                    && Set.of("true", "false", "on", "off")
-                            .contains(argv[index].toLowerCase(Locale.ROOT));
         }
 
         int integer() {
@@ -629,7 +570,6 @@ final class Options {
                 Model options (before or after the command):
                   -m, --model <path|ref>       model file or hub reference; required
                   --with <role>=<path|ref>     attach a companion; repeatable for different roles
-                  --mmproj <path|ref>          shorthand for --with media=<...>
                   -t, --threads <int>          compute workers (default: physical/fast cores)
                   --color <auto|on|off>        terminal colors (default: auto)
 

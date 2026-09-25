@@ -173,8 +173,7 @@ class ArgumentMatrixTest {
         "server,--api-key",
         "server,--queue-depth",
         "server,--request-timeout",
-        "transcribe,--theme",
-        "instruct,--prompt"
+        "transcribe,--theme"
     })
     void missingApplicationValuesNameTheFlag(String command, String flag) {
         var failure =
@@ -200,7 +199,7 @@ class ArgumentMatrixTest {
     }
 
     @Test
-    void explicitBooleanSwitchesAndLegacySpellingsHaveClearPrecedence() {
+    void explicitBooleanSwitchesHaveClearPrecedence() {
         Options modern =
                 Options.parse(
                         "instruct",
@@ -213,34 +212,69 @@ class ArgumentMatrixTest {
                         "--no-echo");
         assertFalse(modern.stream);
         assertFalse(modern.echo);
-        for (String value : List.of("false", "OFF")) {
-            Options old =
-                    Options.parse(
-                            "-m", "m", "--prompt", "hi", "--stream", value, "--echo=" + value);
-            assertFalse(old.stream);
-            assertFalse(old.echo);
-        }
-        assertTrue(Options.parse("-m", "m", "--prompt", "hi", "--echo", "ON").echo);
-        assertThrows(
-                Options.Usage.class,
-                () -> Options.parse("-m", "m", "--prompt", "hi", "--echo=maybe"));
+        Options enabled =
+                Options.parse(
+                        "instruct",
+                        "-m",
+                        "m",
+                        "hi",
+                        "--no-stream",
+                        "--stream",
+                        "--no-echo",
+                        "--echo");
+        assertTrue(enabled.stream);
+        assertTrue(enabled.echo);
     }
 
     @Test
-    void legacyModesRemainTokenAwareAndCannotBeMixedWithVerbs() {
-        for (String flag : List.of("--chat", "--interactive", "-i"))
-            assertEquals("chat", Options.parse("-m", "m", flag).command);
-        assertEquals(
-                "instruct", Options.parse("-m", "m", "--instruct", "--prompt", "hello").command);
-        for (String[] args :
-                new String[][] {
-                    {"chat", "-m", "m", "--chat"},
-                    {"speak", "-m", "m", "--speak", "hi"},
-                    {"-m", "m", "--chat", "--server"},
-                    {"-m", "m", "--transcribe", "-", "--speak", "hi"}
-                }) assertThrows(Options.Usage.class, () -> Options.parse(args));
+    void aCommandIsRequiredAndItsInputRemainsLiteral() {
+        var missing = assertThrows(Options.Usage.class, () -> Options.parse("-m", "m"));
+        assertTrue(missing.getMessage().contains("missing command"));
+        assertThrows(Options.Usage.class, () -> Options.parse("--with", "model=m", "chat"));
         assertEquals("server", Options.parse("instruct", "-m", "m", "server").input);
         assertEquals("--help", Options.parse("speak", "-m", "m", "--", "--help").input);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "--chat",
+                "--interactive",
+                "-i",
+                "--instruct",
+                "--server",
+                "--speak",
+                "--transcribe",
+                "--prompt",
+                "-p",
+                "--mmproj",
+                "-sp",
+                "--queue-capacity"
+            })
+    void removedOptionsAreUnknownInsteadOfTranslated(String option) {
+        var failure =
+                assertThrows(Options.Usage.class, () -> Options.parse("chat", "-m", "m", option));
+        assertTrue(
+                failure.getMessage().contains("Unknown option: " + option), failure.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"true", "false", "on", "off"})
+    void booleanValuesAreNotAcceptedAsSwitchArguments(String value) {
+        assertThrows(
+                Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--stream", value));
+        assertThrows(
+                Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--echo=" + value));
+        assertEquals(
+                value,
+                Options.parse("speak", "-m", "m", "--stream", value).input,
+                "speech text remains a positional argument, even when it spells a boolean");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"true", "false", "stdout"})
+    void thinkingAcceptsOnlyItsDocumentedModes(String value) {
+        assertThrows(Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--think", value));
     }
 
     @Test
@@ -249,7 +283,7 @@ class ArgumentMatrixTest {
                 new String[][] {
                     {"chat", "-m", "m", "hello"},
                     {"server", "-m", "m", "hello"},
-                    {"instruct", "-m", "m", "--prompt", "first", "second"},
+                    {"instruct", "-m", "m", "first", "second"},
                     {"speak", "-m", "m", "first", "second"},
                     {"cache-info", "a", "b"},
                     {"transcribe", "-m", "m", "audio.wav", "--theme", "mint"},

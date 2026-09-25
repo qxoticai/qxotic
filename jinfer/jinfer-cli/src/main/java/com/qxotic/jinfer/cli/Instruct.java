@@ -21,16 +21,9 @@ final class Instruct {
     private Instruct() {}
 
     static boolean read(Options o, Options.Args a) {
-        switch (a.name) {
-            case "--prompt", "-p" -> o.input = a.value();
-            case "--raw-prompt" -> o.rawPrompt = a.flag();
-            default -> {
-                return false;
-            }
-        }
-        o.use(
-                a.name,
-                a.name.equals("--raw-prompt") ? Set.of("instruct", "server") : Set.of("instruct"));
+        if (!a.name.equals("--raw-prompt")) return false;
+        o.rawPrompt = a.flag();
+        o.use(a.name, Set.of("instruct", "server"));
         return true;
     }
 
@@ -49,7 +42,6 @@ final class Instruct {
                   jinfer instruct -m model.gguf "Explain virtual threads."
                   jinfer -m model.gguf --temp 0 instruct - < prompt.txt
 
-                  -p, --prompt <text>         explicit spelling of the input argument
                   --raw-prompt               bypass the conversation template
                   --cache <file>             read and append a persistent prompt cache
                   --cache-ro <file>          serve a prompt cache without changing it

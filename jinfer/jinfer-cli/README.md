@@ -46,14 +46,13 @@ Adding `--help` to a malformed invocation shows help without resolving a model; 
 
 - `-m`, `--model`: a local file or `[host/]owner/repo[@revision][/file][:quant]` reference.
 - `--with role=reference`: attach a companion; split at the first `=`, so paths can contain `=`.
-- `--mmproj`: shorthand for the `media` companion.
 - `--threads`: compute workers, distinct from HTTP concurrency.
 - Language models share context and batch capacity, sampling, output-token limits, thinking, and speculation settings.
 - `--system-prompt` applies to chat and instruct; server clients supply system messages in requests.
 
 Scalar settings use the last supplied value.
 Companion roles must be unique.
-`--with model=...` and `--with tokenizer=...` retain their existing reserved meanings.
+Select the model with `--model`; `--with tokenizer=...` selects a compatible tokenizer override.
 Unspecified sampling settings use the model's recommendations before engine fallbacks.
 `--raw-prompt` bypasses the conversation template, so explicitly supplied system prompts, thinking controls, and reasoning budgets are rejected together with it.
 `--batch-capacity` sets the runtime's default prefill/scratch width; it is not server concurrency or a universal allocation limit.
@@ -110,25 +109,19 @@ The default bind is `127.0.0.1:54154`; `--port 0` selects a free port, reported 
 Non-loopback binds require `--api-key`.
 
 - `--concurrency N`: the existing language server admits up to `2*N` HTTP handlers; the transcription server uses `N` handler threads.
-- `--queue-depth N`: waiting language-generation jobs; default 4, 0 disables waiting. `--queue-capacity` remains an alias.
+- `--queue-depth N`: waiting language-generation jobs; default 4, 0 disables waiting.
 - Language generation currently runs one request at a time; concurrency is not parallel model generation.
 - Transcription servers reject language-generation settings, queue depth, prompt caches, and grammar controls.
 - Sampling and token budgets are request defaults, not HTTP resource limits.
 
-## Compatibility
+## Invocation contract
 
-Legacy mode flags still reach the same applications:
-
-```sh
-jinfer -m model.gguf --chat
-jinfer -m model.gguf --prompt "Hello."
-jinfer -m model.gguf --server
-```
-
-Legacy `--speak` without an output mode still writes `output.wav`.
-Legacy `--transcribe -` still reads raw PCM.
-Legacy `--stream false` and `--echo false` remain accepted.
-Conflicting modes and previously ignored, inapplicable options are rejected.
+A command is required; bare model options do not select an application implicitly.
+Text and audio input are positional arguments.
+Use `--with media=...` for projectors and `--with voice=...` for speech voices.
+Switches such as `--stream` and `--echo` take no values; their negative forms disable them.
+`--think` accepts `on`, `off`, or `inline`.
+Unknown and inapplicable options are rejected.
 
 Exit statuses: 0 success/help, 2 invalid invocation, 1 operational failure, 130 handled interruption.
 A corrupt cache that can be inspected is reported by `cache-info` on stdout; inability to open the file is an operational failure.

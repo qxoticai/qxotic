@@ -26,9 +26,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * The terminal rendering of a reply, without a model: {@code --stream false} must show exactly what
- * {@code --stream true} shows, later. Reasoning goes where {@code --think} sends it and never into
- * the answer.
+ * The terminal rendering of a reply, without a model: {@code --no-stream} must show exactly what
+ * {@code --stream} shows, later. Reasoning goes where {@code --think} sends it and never into the
+ * answer.
  */
 class TurnTest {
 

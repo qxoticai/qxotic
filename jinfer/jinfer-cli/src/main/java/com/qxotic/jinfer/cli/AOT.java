@@ -124,26 +124,6 @@ final class AOT {
         return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
     }
 
-    /**
-     * The old stack's {@code -Djinfer.preTokenizer.*} escape hatch, detected so its presence is
-     * never silent: the hatch moved into toknroll as {@code -Dtoknroll.gguf.pre.<name>=...}
-     * (honored by every tokenizer build, this bake included - the flag applies at bake time, not at
-     * run time), so a leftover old flag is told its new name once.
-     */
-    private static void warnIfPropertyOverrides() {
-        for (String key : System.getProperties().stringPropertyNames()) {
-            if (key.startsWith("jinfer.preTokenizer.")) {
-                LOG.log(
-                        System.Logger.Level.WARNING,
-                        "-D{0} is set, but jinfer.preTokenizer.* moved into toknroll - rename it"
-                                + " to -Dtoknroll.gguf.pre.{1}=<same value>",
-                        key,
-                        key.substring("jinfer.preTokenizer.".length()));
-                return;
-            }
-        }
-    }
-
     /** Package-visible for its test: both digests of {@code [0, length)}, one read pass. */
     static HeaderDigests digestHeader(FileChannel fileChannel, long length) throws IOException {
         CRC32C crc = new CRC32C();
@@ -269,7 +249,6 @@ final class AOT {
     static LoadedModel<?> load(
             Path modelPath, Map<String, Path> companions, Path tokenizerOverride, Arena arena)
             throws IOException {
-        warnIfPropertyOverrides();
         PreloadedFile main = match(PRELOADED, modelPath);
         Tokenizer tokenizer =
                 tokenizerOverride != null

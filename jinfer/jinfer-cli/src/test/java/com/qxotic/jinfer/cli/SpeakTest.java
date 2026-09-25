@@ -41,7 +41,7 @@ final class SpeakTest {
                         " \n",
                         "-m",
                         model.toString(),
-                        "--speak",
+                        "speak",
                         "-",
                         "--output",
                         output.toString()));
@@ -88,7 +88,7 @@ final class SpeakTest {
                         model.toString(),
                         "--with",
                         "voice=" + voice,
-                        "--speak",
+                        "speak",
                         "-",
                         "--output",
                         "-"),
@@ -143,7 +143,7 @@ final class SpeakTest {
                             model.toString(),
                             "--with",
                             "voice=" + voice,
-                            "--speak",
+                            "speak",
                             "Hello world. Another sentence.",
                             mode),
                     diagnostics(captureDir));
@@ -182,7 +182,7 @@ final class SpeakTest {
                 model.toString(),
                 "--with",
                 "voice=" + voice,
-                "--speak",
+                "speak",
                 "Hello world. Another sentence.",
                 mode
             };
