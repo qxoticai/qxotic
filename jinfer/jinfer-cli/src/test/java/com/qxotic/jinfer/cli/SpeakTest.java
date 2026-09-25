@@ -161,7 +161,7 @@ final class SpeakTest {
                 assertTrue(Files.size(captureDir.resolve("stream.pcm")) > 3200);
             }
             assertEquals(
-                    mode.equals("--stream"), diagnostics(captureDir).contains("first audio after"));
+                    mode.equals("--stream"), diagnostics(captureDir).contains("First audio after"));
         }
         for (String player : List.of("afplay", "aplay", "ffplay")) {
             Files.writeString(
@@ -217,6 +217,10 @@ final class SpeakTest {
             assertEquals(mode.equals("--play") ? 1 : 2, player.clips);
             assertEquals(mode.equals("--stream"), player.streamed);
             assertEquals("", capture.out());
+            assertTrue(capture.err().startsWith("Synthesizing speech ..."));
+            assertEquals(mode.equals("--play"), capture.err().contains("Playing speech ..."));
+            assertEquals(mode.equals("--play"), capture.err().contains("RTFx "));
+            assertEquals(mode.equals("--stream"), capture.err().contains("First audio after"));
         }
         assertTrue(Options.parse("speak", "-m", "unused", "Hi").speech.play);
     }

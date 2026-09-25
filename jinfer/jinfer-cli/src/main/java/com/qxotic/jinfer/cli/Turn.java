@@ -46,6 +46,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         this.errorColors = options.colors(io, 2);
         this.io = io;
         this.rawLane = rawLane;
+        if (!stream) io.err().println("Generating response ...");
     }
 
     /**

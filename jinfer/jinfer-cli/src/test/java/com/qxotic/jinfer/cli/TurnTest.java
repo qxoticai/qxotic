@@ -42,7 +42,7 @@ class TurnTest {
         Output streamed = run(options(true, think), reply);
         Output buffered = run(options(false, think), reply);
         assertEquals(streamed.out(), buffered.out(), "stdout");
-        assertEquals(streamed.err(), buffered.err(), "stderr");
+        assertEquals("Generating response ...\n" + streamed.err(), buffered.err(), "stderr");
     }
 
     @Test
