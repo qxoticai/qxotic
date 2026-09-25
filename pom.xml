@@ -74,8 +74,7 @@
     <!-- Every project releases on the version its own root POM declares: one that did not change
          is not republished. These lines are where everything outside a project resolves it, so a
          bump is two edits, that POM and this one (plus jinfer-bom, which names the same versions
-         for consumers). jinfer's own artifacts take ${project.version}, managed in
-         jinfer/pom.xml. -->
+         for consumers). Jinfer library versions are managed in jinfer/pom.xml. -->
     <gguf.version>0.2.0</gguf.version>
     <json.version>0.2.0</json.version>
     <safetensors.version>0.2.0</safetensors.version>

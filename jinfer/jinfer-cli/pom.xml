@@ -9,6 +9,7 @@
   </parent>
 
   <artifactId>jinfer-cli</artifactId>
+  <version>0.3.1</version>
   <packaging>jar</packaging>
 
   <name>Jinfer CLI</name>
@@ -17,6 +18,8 @@
     the model hub and every model provider.</description>
 
   <properties>
+    <!-- Use the parent library release rather than this executable's version. -->
+    <jinfer.version>${project.parent.version}</jinfer.version>
     <jinfer.image.name>jinfer</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.cli.Main</jinfer.image.mainClass>
     <!-- Published: an executable fat jar, so `jbang jinfer@qxoticai` is one download. -->
