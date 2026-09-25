@@ -86,6 +86,8 @@ jinfer speak -m inflect.gguf --output - "Hello." > hello.wav
 Explicit `--play`, `--stream`, and `--output` modes cannot be combined.
 Audio playback uses the existing cross-platform backend: macOS `afplay`, Windows PowerShell SoundPlayer, Linux `aplay`/`ffplay`.
 `--stream` streams generated audio, not incoming text.
+Speech status goes to stderr. Playback and WAV output report synthesis time and RTFx, excluding
+playback time; streaming reports time to first audio.
 
 Transcription treats stdin as encoded audio unless raw PCM is explicit:
 
@@ -98,6 +100,12 @@ Raw PCM must be 16 kHz, mono, signed 16-bit little-endian.
 An odd trailing byte is an error.
 Cancellation closes the transcription stream without requesting another final decode.
 Final results go to stdout; prompts, progress, timings, and errors go to stderr.
+Model loading starts with `Loading model ...`, appends a dot every half-second on terminals, and
+leaves the line in place when finished. Redirected stderr and `TERM=dumb` get one static line.
+Transcription reports when it reads audio, loads the model, and starts transcribing, then prints
+audio duration, elapsed time, and RTFx (audio seconds / elapsed seconds; higher is faster).
+File and encoded-stdin timings exclude audio decoding and model loading. Live raw-PCM timings
+include time waiting for stdin, but exclude model loading and warm-up.
 For binary pipelines on Windows, use `cmd` or PowerShell 7.4 or later; older PowerShell versions can convert native bytes to text.
 Custom in-process streams remain caller-owned.
 The live-input reader is interrupted during cleanup; a borrowed native stdin read may remain blocked until EOF or process exit, so the reader is a daemon.

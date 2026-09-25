@@ -13,6 +13,7 @@ import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Set;
 
 /** Text to speech; playback is the default, and saving audio is explicit. */
@@ -118,6 +119,7 @@ final class Speak {
                 options.speech.speed == null
                         ? SpeechOptions.NONE
                         : SpeechOptions.speed(options.speech.speed);
+        io.err().println("Synthesizing speech ...");
         long start = System.nanoTime();
         if (options.stream) {
             try {
@@ -128,7 +130,8 @@ final class Speak {
                         () ->
                                 io.err()
                                         .printf(
-                                                "first audio after %.2f s%n",
+                                                Locale.ROOT,
+                                                "First audio after %.2f s%n",
                                                 (System.nanoTime() - start) / 1e9));
             } catch (IOException e) {
                 throw Main.failure("cannot stream speech", e);
@@ -136,37 +139,42 @@ final class Speak {
             return;
         }
         Media.Audio audio = model.speak(text, speech);
-        double elapsed = (System.nanoTime() - start) / 1e9;
+        double elapsed = Math.max(1, System.nanoTime() - start) / 1e9;
         if (options.speech.play) {
+            io.err().println("Playing speech ...");
             try {
                 player.play(audio);
             } catch (IOException e) {
                 throw Main.failure("cannot play speech", e);
             }
-            return;
-        }
-        byte[] wav = AudioCodec.wav(audio);
-        Path output = options.speech.output;
-        if (output.toString().equals("-")) {
-            io.out().write(wav);
-            io.out().flush();
-            if (io.out().checkError()) throw new IOException("cannot write WAV to stdout");
         } else {
-            try {
-                Files.write(output, wav);
-            } catch (IOException e) {
-                throw Main.failure(
-                        "cannot write WAV to '"
-                                + output
-                                + "'; choose a writable location with --output",
-                        e);
+            byte[] wav = AudioCodec.wav(audio);
+            Path output = options.speech.output;
+            if (output.toString().equals("-")) {
+                io.out().write(wav);
+                io.out().flush();
+                if (io.out().checkError()) throw new IOException("cannot write WAV to stdout");
+            } else {
+                try {
+                    Files.write(output, wav);
+                } catch (IOException e) {
+                    throw Main.failure(
+                            "cannot write WAV to '"
+                                    + output
+                                    + "'; choose a writable location with --output",
+                            e);
+                }
             }
         }
         double seconds = audio.pcm().length / (double) audio.channels() / audio.sampleRate();
         io.err()
                 .printf(
-                        "wrote %s: %.2f s of audio in %.2f s (%.1fx realtime)%n",
-                        output, seconds, elapsed, seconds / elapsed);
+                        Locale.ROOT,
+                        "%s: %.2f s of audio synthesized in %.2f s (RTFx %.2f)%n",
+                        options.speech.play ? "Played" : "Wrote " + options.speech.output,
+                        seconds,
+                        elapsed,
+                        seconds / elapsed);
     }
 
     static void printHelp(PrintStream out) {

@@ -158,6 +158,9 @@ class WorkflowTest {
             assertEquals(
                     0, run(capture, "transcribe", "-m", path.toString(), input), capture.err());
             assertEquals("heard\n", capture.out().replace("\r\n", "\n"));
+            assertTrue(capture.err().contains("Reading audio "));
+            assertEquals(1, capture.err().lines().filter("Loading model ..."::equals).count());
+            assertTrue(capture.err().contains("RTFx "));
             assertEquals(3, CliModelProvider.transcription.received.length);
             assertEquals(1, CliModelProvider.transcription.closed);
             assertFalse(CliModelProvider.weights.scope().isAlive());
@@ -194,10 +197,11 @@ class WorkflowTest {
         assertNull(CliModelProvider.weights);
         assertEquals("", capture.out());
         assertTrue(
-                capture.err().startsWith("jinfer transcribe: cannot decode audio from stdin"),
+                capture.err().contains("jinfer transcribe: cannot decode audio from stdin"),
                 capture.err());
         assertTrue(capture.err().contains("\n  "), "decoder details follow the summary");
         assertFalse(capture.err().contains("\tat "));
+        assertFalse(capture.err().contains("Transcribed"));
     }
 
     @Test
@@ -232,7 +236,7 @@ class WorkflowTest {
                     "a broken chat model must not continue as if a turn was merely refused");
             assertTrue(
                     capture.err()
-                            .startsWith(
+                            .contains(
                                     "jinfer "
                                             + verb
                                             + ": unexpected failure: fixture internal failure"));
@@ -260,7 +264,7 @@ class WorkflowTest {
                         "--output",
                         destination.toString()));
         assertTrue(
-                capture.err().startsWith("jinfer speak: cannot write WAV to '" + destination + "'"),
+                capture.err().contains("jinfer speak: cannot write WAV to '" + destination + "'"),
                 capture.err());
         assertTrue(capture.err().contains("--output"));
         assertFalse(capture.err().contains("\tat "));

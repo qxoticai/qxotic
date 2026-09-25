@@ -17,6 +17,7 @@ import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -69,6 +70,11 @@ final class Transcribe {
         Media.Audio audio = null;
         if (!options.transcription.rawPcm) {
             boolean stdin = options.input.equals("-");
+            io.err()
+                    .println(
+                            "Reading audio "
+                                    + (stdin ? "from stdin" : "'" + options.input + "'")
+                                    + " ...");
             byte[] encoded = stdin ? io.read("audio") : null;
             try {
                 audio =
@@ -107,14 +113,32 @@ final class Transcribe {
                 options.transcription.rawPcm && io.isTerminal(2)
                         ? Terminal.stderr(io.err(), options.color)
                         : null;
-        Transcription result =
-                options.transcription.rawPcm
-                        ? pump(model, io.in(), terminal, options.transcription.theme, io.err())
-                        : model.transcribe(audio);
+        Transcription result;
+        if (options.transcription.rawPcm) {
+            io.err().println("Transcribing raw PCM from stdin ...");
+            result = pump(model, io.in(), terminal, options.transcription.theme, io.err());
+        } else {
+            double audioSeconds =
+                    (double) audio.pcm().length / audio.channels() / audio.sampleRate();
+            io.err().printf(Locale.ROOT, "Transcribing %.2f s of audio ...%n", audioSeconds);
+            long start = System.nanoTime();
+            result = model.transcribe(audio);
+            printSummary(audioSeconds, System.nanoTime() - start, io.err());
+        }
         // The interactive view has already settled the transcript; redirected stdout always gets
         // it.
         if (terminal == null || !io.isTerminal(1) || result.tokens().isEmpty())
             io.out().println(result.text());
+    }
+
+    static void printSummary(double audioSeconds, long elapsedNanos, PrintStream err) {
+        double seconds = Math.max(1, elapsedNanos) / 1e9;
+        err.printf(
+                Locale.ROOT,
+                "Transcribed %.2f s of audio in %.2f s (RTFx %.2f)%n",
+                audioSeconds,
+                seconds,
+                audioSeconds / seconds);
     }
 
     static void printHelp(PrintStream out) {
@@ -131,6 +155,7 @@ final class Transcribe {
 
                 '-' reads encoded audio unless --raw-pcm is supplied.
                 Final transcripts go to stdout; live partials and progress go to stderr.
+                Completion reports audio duration, elapsed time and RTFx on stderr.
                 """);
         Options.modelHelp(out);
     }
@@ -163,6 +188,7 @@ final class Transcribe {
         if (rate != 16000)
             throw new IllegalArgumentException(
                     "--raw-pcm requires a model accepting 16000 Hz audio");
+        long start = System.nanoTime();
         TranscriptHud view =
                 terminal == null ? null : new TranscriptHud(terminal, Terminal::columns, theme);
         int refreshEvery = rate / 2; // samples of new audio per partial
@@ -242,11 +268,13 @@ final class Transcribe {
             }
             if (readFailure[0] != null) throw readFailure[0];
             Transcription last = stream.finish();
+            long elapsed = System.nanoTime() - start;
             text.append(last.text());
             tokens.addAll(last.tokens());
             Transcription finished = new Transcription(text.toString(), tokens);
             if (view != null) view.finish(finished.words());
             else logWords(text, logged, true, err);
+            printSummary((double) fed / rate, elapsed, err);
             return finished;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();

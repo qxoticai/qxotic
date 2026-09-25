@@ -19,17 +19,53 @@ import org.junit.jupiter.api.Test;
 
 class TranscribeTest {
     @Test
-    void decodedAudioProducesOnlyTheTranscriptAndClosesItsState() throws Exception {
+    void decodedAudioReportsProgressToStderrAndOnlyTheTranscriptToStdout() throws Exception {
         var model = new Transcriber();
         var capture = new CliFixtures.Capture("");
         Options o = Options.parse("transcribe", "-m", "unused", "input.wav");
-        var audio = new Media.Audio(new float[] {0.1f, -0.2f}, 16000, 1);
+        var audio = new Media.Audio(new float[32000], 16000, 1);
+        model.onTranscribe =
+                () -> assertTrue(capture.err().contains("Transcribing 2.00 s of audio"));
         Transcribe.execute(model, audio, o, capture.io);
         assertArrayEquals(audio.pcm(), model.received);
         assertEquals("heard\n", capture.out().replace("\r\n", "\n"));
-        assertEquals("", capture.err());
+        assertTrue(capture.err().contains("Transcribed 2.00 s of audio in "), capture.err());
+        assertTrue(capture.err().contains("RTFx "), capture.err());
         assertEquals(1, model.closed);
         assertFalse(capture.inputClosed);
+    }
+
+    @Test
+    void summaryReportsAudioOverElapsedTimeAndHandlesEmptyAudio() {
+        var capture = new CliFixtures.Capture("");
+        Transcribe.printSummary(30, 2_000_000_000L, capture.io.err());
+        Transcribe.printSummary(0, 0, capture.io.err());
+        assertEquals(
+                "Transcribed 30.00 s of audio in 2.00 s (RTFx 15.00)\n"
+                        + "Transcribed 0.00 s of audio in 0.00 s (RTFx 0.00)\n",
+                capture.err().replace("\r\n", "\n"));
+    }
+
+    @Test
+    void failedTranscriptionDoesNotReportCompletion() {
+        var model = new Transcriber();
+        model.onTranscribe =
+                () -> {
+                    throw new IllegalStateException("decode failed");
+                };
+        var capture = new CliFixtures.Capture("");
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        Transcribe.execute(
+                                model,
+                                new Media.Audio(new float[16000], 16000, 1),
+                                Options.parse("transcribe", "-m", "unused", "input.wav"),
+                                capture.io));
+        assertTrue(capture.err().contains("Transcribing 1.00 s of audio"));
+        assertFalse(capture.err().contains("Transcribed"));
+        assertEquals("", capture.out());
+        assertEquals(1, model.closed);
     }
 
     @Test
@@ -72,6 +108,7 @@ class TranscribeTest {
             assertEquals(1, model.streamClosed);
             assertEquals(1, model.closed);
             assertEquals("", capture.out());
+            assertFalse(capture.err().contains("Transcribed"));
             assertFalse(capture.inputClosed);
         } finally {
             Thread.interrupted();
@@ -98,6 +135,7 @@ class TranscribeTest {
             assertEquals(1, model.streamClosed);
             assertEquals(1, model.closed);
             assertEquals("", capture.out());
+            assertFalse(capture.err().contains("Transcribed"));
         }
     }
 
@@ -130,6 +168,9 @@ class TranscribeTest {
                 model, null, Options.parse("transcribe", "-m", "unused", "-", "--raw-pcm"), io);
         assertEquals(1, model.partials);
         assertTrue(capture.err().contains("partial"));
+        assertTrue(capture.err().contains("Transcribing raw PCM from stdin"));
+        assertTrue(capture.err().contains("Transcribed 0.50 s of audio in "), capture.err());
+        assertTrue(capture.err().contains("RTFx "));
         assertFalse(capture.out().contains("partial"));
         assertEquals("hello hello hello hello done\n", capture.out().replace("\r\n", "\n"));
         assertEquals(1, model.finished);
@@ -166,6 +207,7 @@ class TranscribeTest {
         boolean streaming = true;
         int rate = 16000;
         Runnable onPartial = () -> {};
+        Runnable onTranscribe = () -> {};
 
         private Transcription result(String value) {
             return timestamps ? text(value) : new Transcription(value, List.of());
@@ -192,6 +234,7 @@ class TranscribeTest {
         }
 
         public Transcription transcribe(CliFixtures.State state, float[] pcm) {
+            onTranscribe.run();
             received = pcm.clone();
             return result("heard");
         }
