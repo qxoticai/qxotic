@@ -2,11 +2,11 @@ package com.qxotic.jinfer.tts;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
-import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.SpeechOptions;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.codecs.AudioPlayer;
 import com.qxotic.jinfer.media.Media;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -18,10 +18,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.function.Consumer;
 
 public final class TtsCli {
     private static final String SELF_ARCHIVE = "z://";
@@ -36,9 +32,9 @@ public final class TtsCli {
             System.err.println("jinfer-tts: " + badCommandLine.getMessage());
             Options.usage(System.err);
             System.exit(2);
-        } catch (Player.Failed playerQuit) {
+        } catch (AudioPlayer.Failed playerQuit) {
             System.err.println("jinfer-tts: " + playerQuit.getMessage());
-            System.exit(playerQuit.status);
+            System.exit(playerQuit.status());
         } catch (UncheckedIOException e) {
             System.err.println("jinfer-tts: " + e.getCause().getMessage());
             System.exit(1);
@@ -136,23 +132,25 @@ public final class TtsCli {
         return name;
     }
 
-    private static <S extends RuntimeState> void use(
-            SpeechSynthesisModel<?, ?, S> model, Options options) throws IOException {
-        try (S state = model.newState()) {
-            if (options.stream()) stream(model, state, options);
-            else if (options.play()) play(model, state, options);
-            else write(model, state, options);
-        }
+    private static void use(SpeechSynthesisModel<?, ?, ?> model, Options options)
+            throws IOException {
+        if (options.stream()) {
+            long start = System.nanoTime();
+            AudioPlayer.stream(
+                    model, options.text(), speechOptions(options), () -> printFirstAudio(start));
+        } else if (options.play()) {
+            AudioPlayer.play(model.speak(options.text(), speechOptions(options)));
+        } else write(model, options);
     }
 
     private static SpeechOptions speechOptions(Options options) {
         return options.speed() == null ? SpeechOptions.NONE : SpeechOptions.speed(options.speed());
     }
 
-    private static <S extends RuntimeState> void write(
-            SpeechSynthesisModel<?, ?, S> model, S state, Options options) throws IOException {
+    private static void write(SpeechSynthesisModel<?, ?, ?> model, Options options)
+            throws IOException {
         long start = System.nanoTime();
-        Media.Audio audio = model.speak(state, options.text(), speechOptions(options));
+        Media.Audio audio = model.speak(options.text(), speechOptions(options));
         double elapsed = (System.nanoTime() - start) / 1e9;
         Files.write(options.output(), AudioCodec.wav(audio));
         double seconds = audio.pcm().length / (double) audio.channels() / audio.sampleRate();
@@ -161,127 +159,7 @@ public final class TtsCli {
                 options.output().toAbsolutePath(), seconds, elapsed, seconds / elapsed);
     }
 
-    private static <S extends RuntimeState> void play(
-            SpeechSynthesisModel<?, ?, S> model, S state, Options options) throws IOException {
-        Media.Audio audio = model.speak(state, options.text(), speechOptions(options));
-        Path wav = Files.createTempFile("jinfer-tts-", ".wav");
-        try {
-            Files.write(wav, AudioCodec.wav(audio));
-            Player.play(wav);
-        } finally {
-            Files.deleteIfExists(wav);
-        }
-    }
-
-    private static <S extends RuntimeState> void stream(
-            SpeechSynthesisModel<?, ?, S> model, S state, Options options) throws IOException {
-        int sampleRate = model.sampleRate();
-        if (sampleRate <= 0) throw new IOException("model does not report its audio sample rate");
-        if (Player.isMac()) {
-            streamOnMac(model, state, options, sampleRate);
-            return;
-        }
-
-        Player player = Player.stream(sampleRate);
-        if (player == null) throw new IOException("streaming requires ffplay or aplay");
-        long start = System.nanoTime();
-        boolean[] first = {true};
-        try (player) {
-            model.speak(
-                    state,
-                    options.text(),
-                    speechOptions(options),
-                    clip -> {
-                        checkFormat(clip, sampleRate);
-                        if (first[0]) {
-                            first[0] = false;
-                            printFirstAudio(start);
-                        }
-                        return player.offer(AudioCodec.pcm16(clip));
-                    });
-        }
-    }
-
-    private static <S extends RuntimeState> void streamOnMac(
-            SpeechSynthesisModel<?, ?, S> model, S state, Options options, int sampleRate)
-            throws IOException {
-        List<Future<?>> plays = new ArrayList<>();
-        long start = System.nanoTime();
-        boolean[] first = {true};
-        try (var player = Executors.newSingleThreadExecutor()) {
-            try {
-                Consumer<Media.Audio> queue =
-                        audio -> {
-                            Path wav;
-                            try {
-                                wav = Files.createTempFile("jinfer-tts-", ".wav");
-                                try {
-                                    Files.write(wav, AudioCodec.wav(audio));
-                                } catch (IOException e) {
-                                    Files.deleteIfExists(wav);
-                                    throw e;
-                                }
-                            } catch (IOException e) {
-                                throw new UncheckedIOException(e);
-                            }
-                            plays.add(
-                                    player.submit(
-                                            () -> {
-                                                try {
-                                                    Player.play(wav);
-                                                } finally {
-                                                    Files.deleteIfExists(wav);
-                                                }
-                                                return null;
-                                            }));
-                            if (first[0]) {
-                                first[0] = false;
-                                printFirstAudio(start);
-                            }
-                        };
-                model.speak(
-                        state,
-                        options.text(),
-                        speechOptions(options),
-                        clip -> {
-                            checkFormat(clip, sampleRate);
-                            queue.accept(clip);
-                            return true;
-                        });
-            } catch (UncheckedIOException e) {
-                throw e.getCause();
-            }
-            for (Future<?> play : plays) waitFor(play);
-        }
-    }
-
-    private static void checkFormat(Media.Audio audio, int sampleRate) {
-        if (audio.channels() != 1)
-            throw new IllegalArgumentException(
-                    "playback requires mono audio, got " + audio.channels() + " channels");
-        if (audio.sampleRate() != sampleRate)
-            throw new IllegalArgumentException(
-                    "model reported "
-                            + sampleRate
-                            + " Hz but produced "
-                            + audio.sampleRate()
-                            + " Hz");
-    }
-
     private static void printFirstAudio(long start) {
         System.out.printf("first audio after %.2f s%n", (System.nanoTime() - start) / 1e9);
-    }
-
-    private static void waitFor(Future<?> play) throws IOException {
-        try {
-            play.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("audio playback interrupted", e);
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof IOException io) throw io;
-            if (e.getCause() instanceof RuntimeException runtime) throw runtime;
-            throw new IOException("audio playback failed", e.getCause());
-        }
     }
 }
