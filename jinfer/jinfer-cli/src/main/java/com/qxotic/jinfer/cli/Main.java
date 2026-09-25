@@ -1,309 +1,156 @@
-// jinfer: LLM inference in pure Java
+// jinfer: inference in pure Java
 // Author: Alfonso² Peterssen
-// Based on Andrej Karpathy's llama2.c and minbpe projects
+// Based on Andrej Karpathy's llama2.c and minbpe projects.
 // Related project: https://github.com/mukel/llama3.java
-//
-// Supports GGUF models and multiple tensor formats
-// Matrix-vector kernels use Java's Vector API
-// CLI modes: --chat, --instruct and --server
-//
-// Build/run: `mvn package` then `java -jar target/jinfer.jar --help`.
 package com.qxotic.jinfer.cli;
 
-import com.qxotic.jinfer.RuntimeFlags;
-import com.qxotic.jinfer.cache.FrozenBlocks;
-import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.hub.ModelStore;
-import com.qxotic.jinfer.llm.Sampling;
 import java.io.BufferedOutputStream;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
 
-/**
- * The entry point, and only that: console setup, the verb dispatch ({@code pull}, {@code list},
- * {@code cache-info}), the model load, and the handoff to one of the two modes - {@link Instruct},
- * {@link Chat}. Flags live in {@link Options}; the per-turn terminal rendering they share lives in
- * {@link Turn}; the generation machinery itself is {@link ChatEngine}'s.
- */
-public class Main {
+/** Process setup and dispatch. All work returns through this boundary before the process exits. */
+public final class Main {
+    private Main() {}
 
-    public static void main(String[] args) throws IOException {
-        forceUtf8Console();
-        oneLineLogs();
-        if (args.length > 0 && !args[0].startsWith("-")) {
-            switch (args[0]) {
-                case "list", "pull", "cache-info" -> {
-                    try {
-                        command(args);
-                    } catch (IllegalArgumentException | IOException | UncheckedIOException e) {
-                        // a bad argument or an unreadable file: the message, not a stack trace
-                        System.err.println("ERROR " + Options.rootMessage(e));
-                        System.exit(2);
-                    }
-                    return;
-                }
-                default -> {
-                    System.err.println(
-                            "ERROR unknown command: "
-                                    + args[0]
-                                    + " (commands: pull, list, cache-info)");
-                    System.err.println();
-                    Options.printUsage(System.err);
-                    System.exit(2);
-                    return;
-                }
-            }
-        }
-        Options options;
-        try {
-            options = Options.parse(args);
-        } catch (Options.ResolveFailure e) {
-            System.err.println("ERROR " + Options.rootMessage(e));
-            System.exit(1);
-            return;
-        } catch (IllegalArgumentException e) {
-            System.err.println("ERROR " + e.getMessage());
-            System.err.println();
-            Options.printUsage(System.err);
-            System.exit(1);
-            return;
-        }
-        if (System.getProperty("org.graalvm.nativeimage.imagecode") == null
-                && ModuleLayer.boot().findModule("jdk.incubator.vector").isEmpty()) {
-            System.err.println(
-                    "ERROR jinfer needs the Vector API: run java --add-modules"
-                            + " jdk.incubator.vector -jar jinfer.jar ...");
-            System.exit(1);
-            return;
-        }
-        if (options.threads() != null) {
-            // --threads IS -Djinfer.threads: the compute pool is sized once, when RuntimeFlags
-            // loads, so the flag must land before anything sizes it - and says so if it did not
-            System.setProperty("jinfer.threads", Integer.toString(options.threads()));
-            if (RuntimeFlags.THREADS != options.threads()) {
-                System.err.println(
-                        "ERROR --threads "
-                                + options.threads()
-                                + " came too late: the compute pool was already sized to "
-                                + RuntimeFlags.THREADS
-                                + "; pass -Djinfer.threads="
-                                + options.threads()
-                                + " to the JVM instead");
-                System.exit(1);
-                return;
-            }
-        }
-        if (options.transcribeAudio() != null) {
-            System.exit(Transcribe.run(options));
-            return;
-        }
-        LoadedModel<?> model;
-        // A cold load is seconds of silent work (mmap + parse + weight packing); on a terminal,
-        // show a heartbeat so it never looks hung. Piped/scripted runs stay byte-clean: the
-        // spinner writes only when stderr is a console.
-        LoadSpinner spinner = LoadSpinner.start("Loading model");
-        try {
-            // ONE load path: every file - model and companions - uses its preload when it has
-            // one, parses fresh when it does not; any mix composes
-            model = AOT.load(options.modelPath(), options.companions(), options.tokenizerPath());
-        } catch (IllegalArgumentException
-                | IllegalStateException
-                | UnsupportedOperationException
-                | UncheckedIOException
-                | IOException e) {
-            // load errors carry their remedy in the message (wrong mmproj, unknown architecture,
-            // split GGUF, bad pre-tokenizer flag, ...) - print it, don't bury it in a stack
-            // trace; anything else is a bug and still traces
-            spinner.stop();
-            boolean transcriptionOnly =
-                    e instanceof UnsupportedOperationException
-                            && e.getMessage() != null
-                            && e.getMessage().contains("not a language");
-            if (transcriptionOnly && options.server()) {
-                // a transcription-only checkpoint behind --server serves the audio API instead
-                try {
-                    Serve.runTranscription(options);
-                    return;
-                } catch (IllegalArgumentException
-                        | IllegalStateException
-                        | UnsupportedOperationException
-                        | UncheckedIOException
-                        | IOException audio) {
-                    System.err.println("ERROR " + Options.rootMessage(audio));
-                    System.exit(1);
-                    return;
-                }
-            }
-            System.err.println(
-                    "ERROR "
-                            + Options.rootMessage(e)
-                            + (transcriptionOnly
-                                    ? " (a speech-to-text model? --transcribe <audio> or --server"
-                                            + " serve it)"
-                                    : ""));
-            System.exit(1);
-            return;
-        }
-        spinner.stop();
-        Sampling sampling = options.sampling(model.samplingDefaults());
-        // the engine owns the prompt cache: instruct's --cache file rides the catalog options,
-        // chat gets the in-memory defaults (its own flag validation already refused --cache)
-        PromptCache.Options cacheOptions = PromptCache.Options.DEFAULTS;
-        if (options.contextCapacity() != null) {
-            cacheOptions = cacheOptions.withContextCapacity(options.contextCapacity());
-        }
-        cacheOptions =
-                cacheOptions.withCatalog(options.promptCache(), options.promptCacheReadOnly());
-        ChatEngine engine;
-        try {
-            engine =
-                    new ChatEngine(
-                                    model,
-                                    options.modelPath().getFileName().toString(),
-                                    cacheOptions)
-                            .speculationDepth(options.speculationDepth());
-        } catch (IllegalArgumentException | IllegalStateException | UncheckedIOException e) {
-            // a --cache file that is not a cache, or was cut short, names itself in the message
-            System.err.println("ERROR " + Options.rootMessage(e));
-            System.exit(1);
-            return;
-        }
-        try {
-            if (options.server()) {
-                Serve.run(engine, model, sampling, options);
-            } else if (options.interactive()) {
-                Chat.run(engine, sampling, options);
-            } else {
-                Instruct.run(engine, sampling, options);
-            }
-        } catch (IllegalArgumentException | UnsupportedOperationException e) {
-            // a taken port, a refused option at run time: the message is the remedy
-            System.err.println("ERROR " + e.getMessage());
-            System.exit(1);
-        } finally {
-            engine.close();
-        }
-    }
-
-    /**
-     * Downloads each ref and prints where it landed, one path per line, so the output pipes. The
-     * only thing {@code -m <ref>} does not already do implicitly - it exists to warm a CI image or
-     * a laptop before a flight.
-     */
-    /** The verbs that do not load a model: list, pull, cache-info. */
-    private static void command(String[] args) throws IOException {
-        switch (args[0]) {
-            case "list" -> {
-                Options.require(args.length == 1, "list takes no arguments");
-                list();
-            }
-            case "pull" -> pull(Arrays.copyOfRange(args, 1, args.length));
-            case "cache-info" -> {
-                Options.require(args.length == 2, "cache-info takes one <file.jkv>");
-                Path file = Path.of(args[1]);
-                Options.require(Files.isRegularFile(file), "no such file: " + file);
-                System.out.print(FrozenBlocks.describe(file));
-            }
-            default -> throw new IllegalArgumentException("unknown command " + args[0]);
-        }
-    }
-
-    private static void pull(String[] args) {
-        boolean force = false;
-        List<String> refs = new ArrayList<>();
-        for (String arg : args) {
-            if (arg.equals("--force") || arg.equals("-f")) {
-                force = true;
-            } else {
-                refs.add(arg);
-            }
-        }
-        if (refs.isEmpty()) {
-            System.err.println("ERROR pull needs at least one model ref, e.g.");
-            System.err.println("  jinfer pull unsloth/gemma-4-E2B-it-GGUF:Q4_K_M");
-            System.err.println("  jinfer pull --force <ref>    re-download even if cached");
-            System.exit(2);
-            return;
-        }
-        try {
-            if (force) {
-                refs.forEach(ModelStore.standard()::evict);
-            }
-            // several refs download concurrently; paths print in argument order, so it pipes
-            ModelStore.standard().resolveAll(refs).forEach(System.out::println);
-        } catch (RuntimeException e) {
-            System.err.println("ERROR " + Options.rootMessage(e));
-            System.exit(1);
-        }
-    }
-
-    /**
-     * What the local cache holds, as refs with their sizes. Every line pastes straight back into
-     * {@code --model} or {@code --with}, which is the point: the cache path IS the ref.
-     */
-    private static void list() {
-        List<ModelStore.Cached> models = ModelStore.standard().cached();
-        if (models.isEmpty()) {
-            System.out.println("no models cached in " + ModelStore.standard().root());
-            return;
-        }
-        int width = models.stream().mapToInt(m -> m.ref().length()).max().orElse(0);
-        long total = 0;
-        for (ModelStore.Cached model : models) {
-            total += model.sizeBytes();
-            System.out.printf(
-                    "%-" + width + "s  %10s%n", model.ref(), humanBytes(model.sizeBytes()));
-        }
-        System.out.printf("%-" + width + "s  %10s%n", "total", humanBytes(total));
-    }
-
-    private static String humanBytes(long bytes) {
-        if (bytes < 1024) {
-            return bytes + " B";
-        }
-        String[] units = {"KB", "MB", "GB", "TB"};
-        double value = bytes;
-        int unit = -1;
-        while (value >= 1024 && unit < units.length - 1) {
-            value /= 1024;
-            unit++;
-        }
-        return String.format(Locale.ROOT, value >= 100 ? "%.0f %s" : "%.1f %s", value, units[unit]);
-    }
-
-    /**
-     * Force UTF-8 on the console so multilingual model output/input isn't garbled by a legacy code
-     * page (Windows defaults stdout/stdin to one; Linux/macOS are already UTF-8, so this is a no-op
-     * re-wrap). Raw-byte writes - the streamed token bytes - pass through unchanged; only String
-     * prints are affected. Buffered + auto-flush, matching the default {@code System.out}.
-     */
-    private static void forceUtf8Console() {
+    public static void main(String[] args) {
         System.setOut(utf8Stream(FileDescriptor.out));
         System.setErr(utf8Stream(FileDescriptor.err));
+        String format = "java.util.logging.SimpleFormatter.format";
+        if (System.getProperty(format) == null)
+            System.setProperty(format, "%1$tT %4$-7s %5$s%6$s%n");
+        System.exit(run(args, IO.system(), ModelStore.standard()));
     }
 
-    /**
-     * One line per log record, since this is a console tool: java.util.logging's default is a
-     * two-line record led by a date, the logging class and the method, which buries the message
-     * that matters. Only a default - an explicit {@code -D} wins, and an embedder running its own
-     * backend never reaches java.util.logging at all.
-     */
-    private static void oneLineLogs() {
-        String format = "java.util.logging.SimpleFormatter.format";
-        if (System.getProperty(format) == null) {
-            System.setProperty(format, "%1$tT %4$-7s %5$s%6$s%n");
+    /** Borrowed streams. Custom streams are plain output, never the process's native terminal. */
+    record IO(InputStream in, PrintStream out, PrintStream err) {
+        static IO system() {
+            return new IO(System.in, System.out, System.err);
+        }
+
+        boolean isTerminal(int fd) {
+            boolean system =
+                    switch (fd) {
+                        case 0 -> in == System.in;
+                        case 1 -> out == System.out;
+                        case 2 -> err == System.err;
+                        default -> false;
+                    };
+            return system && Terminal.isTerminal(fd);
+        }
+
+        String text(String input) throws IOException {
+            String text =
+                    "-".equals(input) ? new String(read("text"), StandardCharsets.UTF_8) : input;
+            Options.require(text != null && !text.isBlank(), "Input requires non-blank text");
+            return text;
+        }
+
+        byte[] read(String kind) throws IOException {
+            try {
+                return in.readAllBytes();
+            } catch (IOException e) {
+                throw failure("cannot read " + kind + " from stdin", e);
+            }
+        }
+    }
+
+    static int run(String[] args, IO io, ModelStore store) {
+        Options options = null;
+        try {
+            options = Options.parse(args);
+            int status = 0;
+            if (options.help) {
+                options.printHelp(io.out());
+            } else if (options.version) {
+                String version = Main.class.getPackage().getImplementationVersion();
+                io.out().println("jinfer " + (version == null ? "development" : version));
+            } else if (!Options.MODEL_COMMANDS.contains(options.command)) {
+                status = Hub.run(options, io, store);
+            } else {
+                options.configureRuntime();
+                status =
+                        switch (options.command) {
+                            case "speak" -> Speak.run(options, io, store);
+                            case "transcribe" -> Transcribe.run(options, io, store);
+                            case "server" -> Server.run(options, io, store);
+                            case "chat", "instruct" -> runText(options, io, store);
+                            default -> throw new AssertionError(options.command);
+                        };
+            }
+            if (status == 0 && io.out().checkError())
+                throw new IOException("cannot write to stdout");
+            return status;
+        } catch (Options.Usage e) {
+            String command = options == null ? e.command : options.command;
+            String name = "jinfer" + (command == null ? "" : " " + command);
+            io.err().println(name + ": " + e.getMessage());
+            if (e.showHelp)
+                io.err().println("Run '" + name + " --help' for available commands and options.");
+            return 2;
+        } catch (IOException | UncheckedIOException e) {
+            io.err().println(name(options) + ": " + Options.rootMessage(e));
+            return Thread.currentThread().isInterrupted() ? 130 : 1;
+        } catch (RuntimeException e) {
+            if (Thread.currentThread().isInterrupted()) {
+                io.err().println(name(options) + ": interrupted");
+                return 130;
+            }
+            io.err().println(name(options) + ": unexpected failure: " + Options.rootMessage(e));
+            e.printStackTrace(io.err());
+            return 1;
+        }
+    }
+
+    private static String name(Options options) {
+        return "jinfer" + (options == null || options.command == null ? "" : " " + options.command);
+    }
+
+    /** A useful headline first, backend details below it; retain the cause for diagnostics. */
+    static IOException failure(String summary, Throwable cause) {
+        return new IOException(
+                summary + "\n  " + Options.rootMessage(cause).replace("\n", "\n  "), cause);
+    }
+
+    private static int runText(Options options, IO io, ModelStore store) throws IOException {
+        // Read one-shot stdin before loading weights; an empty pipe should fail immediately.
+        String text = options.command.equals("instruct") ? io.text(options.input) : null;
+        Options.Files files = options.resolve(store);
+        Arena arena = Arenas.newCrossThread();
+        try (ChatEngine engine = openText(options, files, arena, io)) {
+            var sampling = options.sampling(engine.loaded().samplingDefaults());
+            if (options.command.equals("chat")) Chat.run(engine, sampling, options, io);
+            else Instruct.run(engine, sampling, options, io, text);
+            return Thread.currentThread().isInterrupted() ? 130 : 0;
+        } catch (UnsupportedOperationException e) {
+            throw failure(
+                    "cannot run " + options.command + " with model '" + files.model() + "'", e);
+        } finally {
+            Arenas.close(arena);
+        }
+    }
+
+    static ChatEngine openText(Options options, Options.Files files, Arena arena, IO io)
+            throws IOException {
+        try (var spinner = LoadSpinner.start("Loading model", io)) {
+            var model = AOT.load(files.model(), files.companions(), files.tokenizer(), arena);
+            try {
+                return new ChatEngine(
+                                model,
+                                files.model().getFileName().toString(),
+                                options.cacheOptions())
+                        .speculationDepth(options.speculationDepth);
+            } catch (IllegalArgumentException | UncheckedIOException e) {
+                throw failure("cannot initialize model state for '" + files.model() + "'", e);
+            }
         }
     }
 

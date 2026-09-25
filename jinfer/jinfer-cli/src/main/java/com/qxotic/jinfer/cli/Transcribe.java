@@ -7,80 +7,133 @@ import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.TranscriptionStream;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.media.Media;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
+import java.io.InterruptedIOException;
+import java.io.PrintStream;
 import java.lang.foreign.Arena;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 /**
- * {@code --transcribe <audio|->}: the transcript of an audio file, or with {@code -}, live
- * transcription of raw 16 kHz mono s16le PCM streamed on stdin. On a terminal, stderr shows the
- * live view ({@link TranscriptHud}); redirected, or on a terminal that cannot move the cursor, it
- * logs the final text in whole words and each partial on lines of their own. The final transcript
- * alone goes to stdout, so it pipes. Pipe a microphone in with ffmpeg, then {@code ... -ar 16000
- * -ac 1 -f s16le - | jinfer -m parakeet.gguf --transcribe -}, capturing with {@code -f pulse -i
- * default} on Linux, {@code -f avfoundation -i ":0"} on macOS, or {@code -f dshow -i
- * audio="Microphone"} on Windows (cmd, or PowerShell 7.4 and on, which pipe bytes unchanged).
+ * Encoded audio or live 16 kHz mono s16le PCM to text. Only live raw input uses the transcription
+ * HUD; redirected output remains a plain transcript.
  */
 final class Transcribe {
 
     private Transcribe() {}
 
-    static int run(Options options) {
-        boolean stdin = "-".equals(options.transcribeAudio().toString());
-        Media.Audio audio = null;
-        if (!stdin) {
-            try {
-                audio = AudioCodec.load(options.transcribeAudio());
-            } catch (IOException | IllegalArgumentException e) {
-                System.err.println(
-                        "ERROR cannot decode "
-                                + options.transcribeAudio()
-                                + ": "
-                                + Options.rootMessage(e));
-                return 1;
+    static final class Settings {
+        boolean rawPcm;
+        TranscriptHud.Theme theme = TranscriptHud.Theme.BUNDLED.getFirst();
+    }
+
+    static boolean read(Options o, Options.Args a) {
+        switch (a.name) {
+            case "--raw-pcm" -> o.transcription.rawPcm = a.flag();
+            case "--theme" -> {
+                String value = a.value();
+                o.transcription.theme = TranscriptHud.Theme.named(value);
+                Options.require(
+                        o.transcription.theme != null,
+                        "--theme must be one of %s; got '%s'",
+                        TranscriptHud.Theme.names(),
+                        value);
+            }
+            default -> {
+                return false;
             }
         }
-        LoadSpinner spinner = LoadSpinner.start("Loading model");
-        // newCrossThread, not ofShared: a native image degrades to an ofAuto arena it cannot close
+        o.use(a.name, Set.of("transcribe"));
+        return true;
+    }
+
+    static void validate(Options o) {
+        Options.require(
+                o.input != null && !o.input.isBlank(),
+                "transcribe requires an audio file or '-' for stdin");
+        if (o.legacy && o.input.equals("-")) o.transcription.rawPcm = true;
+        Options.require(
+                !o.transcription.rawPcm || o.input.equals("-"), "--raw-pcm requires '-' for stdin");
+        Options.require(
+                !o.supplied("--theme") || o.transcription.rawPcm,
+                "--theme applies only to live --raw-pcm input");
+    }
+
+    static int run(Options options, Main.IO io, ModelStore store) throws IOException {
+        Media.Audio audio = null;
+        if (!options.transcription.rawPcm) {
+            boolean stdin = options.input.equals("-");
+            byte[] encoded = stdin ? io.read("audio") : null;
+            try {
+                audio =
+                        stdin
+                                ? AudioCodec.decode(encoded)
+                                : AudioCodec.load(Path.of(options.input));
+            } catch (IOException | IllegalArgumentException e) {
+                throw Main.failure(
+                        "cannot decode audio " + (stdin ? "from stdin" : "'" + options.input + "'"),
+                        e);
+            }
+        }
+        Options.Files files = options.resolve(store);
         Arena arena = Arenas.newCrossThread();
         try {
             TranscriptionModel<?, ?, ?> model;
-            try {
-                model = Models.loadTranscription(options.modelPath(), arena);
-            } catch (IllegalArgumentException
-                    | IllegalStateException
-                    | UnsupportedOperationException
-                    | UncheckedIOException
-                    | IOException e) {
-                spinner.stop();
-                System.err.println("ERROR " + Options.rootMessage(e));
-                return 1;
+            try (var spinner = LoadSpinner.start("Loading model", io)) {
+                model = Models.loadTranscription(files.model(), arena, files.companions());
+                if (options.transcription.rawPcm
+                        && System.getProperty("org.graalvm.nativeimage.imagecode") == null)
+                    warmUp(model);
+            } catch (IOException | IllegalArgumentException | UnsupportedOperationException e) {
+                throw Main.failure("cannot prepare transcription model '" + files.model() + "'", e);
             }
-            // a native image is compiled ahead of time: nothing to warm
-            if (stdin && System.getProperty("org.graalvm.nativeimage.imagecode") == null)
-                warmUp(model);
-            spinner.stop();
-            Terminal terminal = stdin ? Terminal.stderr() : null;
-            Transcription transcription =
-                    stdin
-                            ? pump(model, System.in, terminal, options.theme())
-                            : model.transcribe(audio.pcm());
-            // the live view already settled the full transcript on this same screen
-            if (terminal == null || !Terminal.isTerminal(1))
-                System.out.println(transcription.text());
-            return 0;
-        } catch (IOException e) {
-            System.err.println("ERROR reading stdin: " + Options.rootMessage(e));
-            return 1;
+            execute(model, audio, options, io);
+            return Thread.currentThread().isInterrupted() ? 130 : 0;
         } finally {
             Arenas.close(arena);
         }
+    }
+
+    static void execute(
+            TranscriptionModel<?, ?, ?> model, Media.Audio audio, Options options, Main.IO io)
+            throws IOException {
+        Terminal terminal =
+                options.transcription.rawPcm && io.isTerminal(2)
+                        ? Terminal.stderr(io.err(), options.color)
+                        : null;
+        Transcription result =
+                options.transcription.rawPcm
+                        ? pump(model, io.in(), terminal, options.transcription.theme, io.err())
+                        : model.transcribe(audio);
+        // The interactive view has already settled the transcript; redirected stdout always gets
+        // it.
+        if (terminal == null || !io.isTerminal(1) || result.tokens().isEmpty())
+            io.out().println(result.text());
+    }
+
+    static void printHelp(PrintStream out) {
+        out.println(
+                """
+                jinfer transcribe - turn audio into text
+                Usage: jinfer [model options] transcribe [options] <audio|->
+                Examples:
+                  jinfer transcribe -m parakeet.gguf recording.wav
+                  jinfer transcribe -m parakeet.gguf - < recording.wav
+
+                  --raw-pcm                  live stdin: 16 kHz mono signed 16-bit little-endian PCM
+                  --theme <name>             live-view palette: mint, nord, catppuccin, ember, frost, mono
+
+                '-' reads encoded audio unless --raw-pcm is supplied. Legacy --transcribe - remains raw PCM.
+                Final transcripts go to stdout; live partials and progress go to stderr.
+                """);
+        Options.modelHelp(out);
     }
 
     /**
@@ -98,18 +151,21 @@ final class Transcribe {
     /**
      * Streams stdin PCM through the model, into the live view on {@code terminal}, else the plain
      * log. Final pieces show as soon as they commit; the partial refreshes after every half second
-     * of new audio, on the live view only while speech comes in, and everything captured meanwhile
-     * is fed before the next one, so a slow decode delays the view but never lets it fall behind.
+     * of new audio. Drain captured input before asking for another partial.
      */
     private static <S extends RuntimeState> Transcription pump(
             TranscriptionModel<?, ?, S> model,
             InputStream in,
             Terminal terminal,
-            TranscriptHud.Theme theme)
+            TranscriptHud.Theme theme,
+            PrintStream err)
             throws IOException {
+        int rate = model.sampleRate();
+        if (rate != 16000)
+            throw new IllegalArgumentException(
+                    "--raw-pcm requires a model accepting 16000 Hz audio");
         TranscriptHud view =
                 terminal == null ? null : new TranscriptHud(terminal, Terminal::columns, theme);
-        int rate = model.sampleRate();
         int refreshEvery = rate / 2; // samples of new audio per partial
         // Decoding pauses for partials and chunk commits, but a live source cannot: if this
         // thread stops reading, the pipe backs up and the capture side drops microphone audio,
@@ -126,6 +182,9 @@ final class Transcribe {
                             try {
                                 int read;
                                 while ((read = in.readNBytes(bytes, 0, bytes.length)) > 0) {
+                                    if ((read & 1) != 0)
+                                        throw new IOException(
+                                                "truncated s16le PCM: odd trailing byte");
                                     int samples = read / 2;
                                     float[] pcm = new float[samples];
                                     for (int i = 0; i < samples; i++) {
@@ -136,7 +195,7 @@ final class Transcribe {
                                     queue.put(pcm);
                                 }
                             } catch (IOException e) {
-                                readFailure[0] = e;
+                                readFailure[0] = Main.failure("cannot read raw PCM from stdin", e);
                             } catch (InterruptedException interrupted) {
                                 Thread.currentThread().interrupt();
                             } finally {
@@ -156,45 +215,30 @@ final class Transcribe {
             List<Transcription.Token> tokens = new ArrayList<>();
             List<Transcription.Token> tail = List.of();
             long fed = 0, fresh = 0; // samples fed in total, and since the last partial
-            long partialAt = Long.MIN_VALUE; // when the last partial started
             int logged = 0; // characters of the final text the plain log has printed
-            boolean ended = false;
-            while (!ended) {
-                float[] pcm;
-                try {
-                    pcm = queue.take();
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+            while (true) {
+                float[] pcm = queue.take();
                 // feed everything captured so far before spending time on a partial
-                while (true) {
-                    if (pcm == eof) {
-                        ended = true;
-                        break;
-                    }
+                while (pcm != eof) {
                     Transcription piece = stream.feed(pcm);
                     fed += pcm.length;
                     fresh += pcm.length;
-                    if (!piece.tokens().isEmpty()) {
+                    if (!piece.text().isEmpty() || !piece.tokens().isEmpty()) {
                         text.append(piece.text());
                         tokens.addAll(piece.tokens());
                         if (view != null) view.show(tokens, tail);
-                        else logged = logWords(text, logged, false);
+                        else logged = logWords(text, logged, false, err);
                     }
                     pcm = queue.poll();
                     if (pcm == null) break;
                 }
-                if (ended) break;
-                // new silence cannot change the partial, so it is not decoded again
-                boolean speech = view == null || view.heardSince(partialAt);
-                if (fresh >= refreshEvery && speech) {
+                if (pcm == eof) break;
+                if (fresh >= refreshEvery) {
                     fresh = 0;
-                    partialAt = System.nanoTime();
                     Transcription partial = stream.partial();
                     tail = partial.tokens();
                     if (view != null) view.show(tokens, tail);
-                    else System.err.printf("… %ds %s%n", fed / rate, partial.text().strip());
+                    else err.printf("… %ds %s%n", fed / rate, partial.text().strip());
                 }
             }
             if (readFailure[0] != null) throw readFailure[0];
@@ -203,8 +247,22 @@ final class Transcribe {
             tokens.addAll(last.tokens());
             Transcription finished = new Transcription(text.toString(), tokens);
             if (view != null) view.finish(finished.words());
-            else logWords(text, logged, true);
+            else logWords(text, logged, true, err);
             return finished;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("transcription interrupted");
+        } finally {
+            reader.interrupt();
+            // Borrowed stdin cannot be closed here. Interruptible sources stop immediately;
+            // ponytail: native stdin may remain blocked until EOF/process exit, so its reader is a
+            // daemon.
+            try {
+                reader.join(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            if (view != null) view.close();
         }
     }
 
@@ -222,11 +280,11 @@ final class Transcribe {
      * Logs the final text past {@code logged} on a line of its own, up to the last word the next
      * piece might still continue unless {@code all}; returns how far it has logged.
      */
-    private static int logWords(StringBuilder text, int logged, boolean all) {
+    private static int logWords(StringBuilder text, int logged, boolean all, PrintStream err) {
         int end = all ? text.length() : text.lastIndexOf(" "); // a word starts at its space
         if (end <= logged) return logged;
         String words = text.substring(logged, end).strip();
-        if (!words.isEmpty()) System.err.println(words);
+        if (!words.isEmpty()) err.println(words);
         return end;
     }
 }

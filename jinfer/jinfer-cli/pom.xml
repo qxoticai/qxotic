@@ -12,9 +12,9 @@
   <packaging>jar</packaging>
 
   <name>Jinfer CLI</name>
-  <description>Command line for Jinfer: chat, one-shot instruct, an OpenAI-compatible server
-    and speech recognition over any GGUF, in a single jar carrying the model hub and every
-    model provider.</description>
+  <description>Command-line applications for Jinfer models: chat, one-shot generation,
+    HTTP serving, speech recognition, and speech synthesis. A single executable jar carrying
+    the model hub and every model provider.</description>
 
   <properties>
     <jinfer.image.name>jinfer</jinfer.image.name>

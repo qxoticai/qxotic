@@ -25,7 +25,7 @@ import java.util.function.IntUnaryOperator;
  * cleanly. Colors go as deep as the terminal does; without any, attributes carry the cues. Each
  * frame is one synchronized write, and the cursor stays hidden while live.
  */
-final class TranscriptHud {
+final class TranscriptHud implements AutoCloseable {
 
     private static final int MAX_LIVE_ROWS = 6, METER_CELLS = 16, WAVE_BARS = 5;
     private static final long FRAME_MILLIS = 33, VOICE_NANOS = 400_000_000L;
@@ -125,6 +125,8 @@ final class TranscriptHud {
     private int width, paintedWidth; // the terminal's columns this frame, and at the last paint
     private double loud, wave; // the level and the waveform's height, eased frame to frame
     private boolean finished;
+    private final Thread restoreHook;
+    private final Thread renderer;
 
     /** {@code columns} reports the terminal's current width. */
     TranscriptHud(Terminal terminal, IntSupplier columns, Theme theme) {
@@ -136,9 +138,9 @@ final class TranscriptHud {
         this.landedAt = this.shownAt = started;
         this.voiceAt = started - VOICE_NANOS; // no speech heard yet
         // an interrupted session must not leave the terminal without a cursor
-        Thread restore = new Thread(() -> out.append(RESET + SHOW_CURSOR).flush());
-        Runtime.getRuntime().addShutdownHook(restore);
-        Thread.ofPlatform().daemon().name("jinfer-transcript-view").start(this::run);
+        restoreHook = new Thread(() -> out.append(RESET + SHOW_CURSOR).flush());
+        Runtime.getRuntime().addShutdownHook(restoreHook);
+        renderer = Thread.ofPlatform().daemon().name("jinfer-transcript-view").start(this::run);
     }
 
     /** Records the RMS of the latest chunk of input. */
@@ -168,11 +170,6 @@ final class TranscriptHud {
         shownAt = System.nanoTime();
     }
 
-    /** Whether speech was heard after {@code nanos}, a {@link System#nanoTime} reading. */
-    synchronized boolean heardSince(long nanos) {
-        return voiceAt > nanos;
-    }
-
     /** Clears the live region, settles the full transcript and closes with a summary line. */
     synchronized void finish(List<Transcription.Word> words) {
         finished = true;
@@ -188,6 +185,32 @@ final class TranscriptHud {
         frame.append('\n').append(grey());
         frame.append(summary.formatted(glyphs.stop(), clock(seconds), glyphs.dash(), words.size()));
         out.append(frame).append(RESET + '\n' + SHOW_CURSOR + SYNC_END).flush();
+        removeHook();
+    }
+
+    @Override
+    public void close() {
+        synchronized (this) {
+            if (!finished) {
+                finished = true;
+                out.append(RESET + SHOW_CURSOR).flush();
+            }
+        }
+        renderer.interrupt();
+        try {
+            renderer.join(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        removeHook();
+    }
+
+    private void removeHook() {
+        try {
+            Runtime.getRuntime().removeShutdownHook(restoreHook);
+        } catch (IllegalStateException shuttingDown) {
+            /* The hook restores the cursor. */
+        }
     }
 
     private void run() {
