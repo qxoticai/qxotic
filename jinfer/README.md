@@ -249,7 +249,7 @@ try (var transcriber = JinferTranscriptionModel.builder()
 }
 ```
 
-The same model behind the CLI (`--transcribe speech.wav`) or `--server` serves an
+The same model behind the CLI's `transcribe` command handles audio files, while `server` serves an
 OpenAI-compatible `POST /v1/audio/transcriptions` (multipart; `response_format` of `json`,
 `text`, or `verbose_json` with word timestamps).
 
@@ -270,7 +270,7 @@ Or from a microphone straight through the CLI, live partials on stderr:
 
 ```bash
 ffmpeg -nostats -loglevel error -f avfoundation -i ":0" -ar 16000 -ac 1 -f s16le - \
-  | jinfer -m parakeet.gguf --transcribe -
+  | jinfer -m parakeet.gguf transcribe - --raw-pcm
 ```
 
 On a terminal the partials render as one status line updated in place; redirected stderr gets one
@@ -283,7 +283,7 @@ It is published as a single executable jar, so [JBang](https://www.jbang.dev/) r
 checkout, in this mode and in the server, transcription and speech synthesis modes:
 
 ```bash
-jbang jinfer@qxoticai --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 --chat
+jbang jinfer@qxoticai chat --model LiquidAI/LFM2.5-350M-GGUF:Q8_0
 ```
 
 From a checkout, build it and run the jar:
@@ -295,32 +295,32 @@ java \
   --add-modules jdk.incubator.vector \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
-  --chat
+  chat
 ```
 
 ## Text-to-speech CLI
 
-Use `--speak` with a speech model to write a 16-bit PCM WAV:
+Use `speak` with a speech model and `--output` to write a 16-bit PCM WAV:
 
 ```bash
 jbang jinfer@qxoticai -m remixerdec/Inflect-Nano-v2-GGUF:Q8_0 \
-  --speak "Hello world." --output hello.wav --speed 1.2
+  speak "Hello world." --output hello.wav --speed 1.2
 
 jbang jinfer@qxoticai -m simonfxr/kokoro.cpp-GGUF/kokoro-82m-q8_0.gguf \
   --with voice=simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf \
-  --speak "Hello from Kokoro." --output kokoro.wav
+  speak "Hello from Kokoro." --output kokoro.wav
 ```
 
 Local model and companion paths work too.
 Kokoro requires a `voice` companion; Inflect2 optionally accepts a pronunciation lexicon via `--with lexicon=<path|ref>`.
 `--speed` selects a positive speaking-rate multiplier within the model's supported range; omitted, it uses the model's default.
-The default output is `output.wav`.
+Without `--output`, speech is played after synthesis.
 
 To listen directly, use `--play` for playback after synthesis or `--stream` to start with the first clip while later clips are synthesized:
 
 ```bash
-jinfer -m inflect.gguf --speak "Hello world." --play
-jinfer -m inflect.gguf --speak "Hello world. Here is the next sentence." --stream
+jinfer -m inflect.gguf speak "Hello world."
+jinfer -m inflect.gguf speak "Hello world. Here is the next sentence." --stream
 ```
 
 Both playback modes support Linux, macOS and Windows:
@@ -334,12 +334,12 @@ Both playback modes support Linux, macOS and Windows:
 Streaming feeds continuous PCM on Linux; macOS and Windows play WAV clips while synthesizing one clip ahead.
 Players must be available on `PATH`; a player that launches but fails reports its error.
 Choose playback or `--output`; they cannot be combined.
-`--stream true|false|on|off` is also accepted: speech playback is off by default, while chat still streams tokens by default.
+Use `--stream` to enable streaming or `--no-stream` to disable it; these switches take no values.
 
-`--speak -` reads UTF-8 text from stdin, and `--output -` writes WAV bytes to stdout, with diagnostics on stderr:
+`speak -` reads UTF-8 text from stdin, and `--output -` writes WAV bytes to stdout, with diagnostics on stderr:
 
 ```bash
-jinfer -m inflect.gguf --speak - --output - < story.txt > story.wav
+jinfer -m inflect.gguf speak - --output - < story.txt > story.wav
 ```
 
 The same flags work with the executable jar shown above.
@@ -347,7 +347,7 @@ The same flags work with the executable jar shown above.
 ## OpenAI-compatible server
 
 A simple OpenAI-compatible server is also provided.  
-Multimodal models can attach their audio/image projector with `--mmproj <clip.gguf>`. Pass `--help` for more details.
+Multimodal models can attach their audio/image projector with `--with media=<clip.gguf>`. Pass `--help` for more details.
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
@@ -357,7 +357,7 @@ java \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model LiquidAI/LFM2.5-2.6B-GGUF:Q8_0 \
   --context-capacity 65536 \
-  --server
+  server
 ```
 
 The server runs by default at `localhost:54154`, to verify it works:
@@ -410,7 +410,7 @@ Check termination before parsing partial output; typed SDK parsers may raise whe
 
 ```bash
 make -C jinfer native
-./bin/jinfer --model ./model.gguf --chat
+./bin/jinfer --model ./model.gguf chat
 ```
 
 One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.3+.

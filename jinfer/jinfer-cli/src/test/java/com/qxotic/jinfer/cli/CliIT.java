@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Real model loading and generation through the new commands and the compatibility syntax. */
+/** Real model loading and generation through commands and their aliases. */
 @Tag("integration")
 class CliIT {
     private static final String REF = "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
@@ -22,7 +22,6 @@ class CliIT {
         String model = TestModels.require(REF).toString();
         var modern = new CliFixtures.Capture("");
         var alias = new CliFixtures.Capture("");
-        var legacy = new CliFixtures.Capture("");
         var store = ModelStore.of(dir);
         assertEquals(
                 0,
@@ -48,16 +47,8 @@ class CliIT {
                         alias.io,
                         store),
                 alias.err());
-        assertEquals(
-                0,
-                Main.run(
-                        new String[] {"-m", model, "--prompt", "Say hi", "--temp", "0", "-n", "16"},
-                        legacy.io,
-                        store),
-                legacy.err());
         assertFalse(modern.out().isBlank());
         assertEquals(modern.out(), alias.out());
-        assertEquals(modern.out(), legacy.out());
         assertTrue(modern.err().contains("tokens/s"));
     }
 

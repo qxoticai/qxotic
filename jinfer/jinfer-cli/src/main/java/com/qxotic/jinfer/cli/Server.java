@@ -54,7 +54,7 @@ final class Server {
             case "--api-key" -> s.apiKey = a.value();
             case "--cors-origin" -> s.origins.add(a.value());
             case "--concurrency" -> s.concurrency = a.integer();
-            case "--queue-depth", "--queue-capacity" -> s.queueDepth = a.integer();
+            case "--queue-depth" -> s.queueDepth = a.integer();
             case "--max-body-mb" -> s.maxBodyBytes = (long) a.integer() << 20;
             case "--write-timeout" -> s.writeTimeout = seconds(a);
             case "--request-timeout" -> s.requestTimeout = seconds(a);
@@ -150,7 +150,7 @@ final class Server {
                 engine = Main.openText(options, files, arena, io);
             } catch (UnsupportedOperationException notLanguage) {
                 // The existing provider API reports unsupported kinds this way; isolate that
-                // compatibility detail here rather than making users select a task themselves.
+                // unsupported-kind detail here rather than making users select a task themselves.
                 if (notLanguage.getMessage() == null
                         || !notLanguage.getMessage().contains("not a language architecture"))
                     throw notLanguage;
@@ -280,7 +280,7 @@ final class Server {
                   --concurrency <int>        default 16; language: admits up to 2*N HTTP handlers;
                                              transcription: N handler threads, not parallel generations
                   --queue-depth <int>        waiting language generations; default 4; 0: no waiting
-                                             legacy spelling: --queue-capacity; not for transcription
+                                             not applicable to transcription models
                   --max-body-mb <int>        request-body limit; default 32
                   --write-timeout <seconds>  body-read/SSE-write timeout; default 30
                   --request-timeout <seconds> generation deadline; default 300; 0 disables

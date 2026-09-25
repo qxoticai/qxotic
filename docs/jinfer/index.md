@@ -24,10 +24,10 @@ java --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
-  --chat
+  chat
 ```
 
-Replace `--chat` with `--prompt "..."` for one-shot generation. `--context-capacity 0` uses the model's declared maximum. Negative values and capacities above the model maximum are rejected.
+Replace `chat` with `instruct "..."` for one-shot generation. `--context-capacity 0` uses the model's declared maximum. Negative values and capacities above the model maximum are rejected.
 
 Use a framework adapter for application code:
 
@@ -43,7 +43,7 @@ java --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
-  --server --port 54154
+  server --port 54154
 ```
 
 Endpoints: `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`, `/v1/detokenize`, `/health`, Prometheus `/metrics`. Chat supports streaming, tools, structured output, reasoning, stop strings, deterministic seeds, and multimodal content when the model has a projector.
@@ -77,7 +77,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | chat / instruct | `jinfer-<model>` | per-architecture port |
 | embeddings | `jinfer-lfm2`, `jinfer-qwen3` | `EmbeddingModel` |
 | reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker` |
-| vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--mmproj <clip.gguf>` |
+| vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4` | E2B conformer |
 | speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
@@ -110,10 +110,10 @@ Attach multimodal projectors by capability:
 jinfer \
   --model unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
   --with media=unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
-  --chat
+  chat
 ```
 
-`--mmproj` is shorthand for `--with media=...`. Other companion roles (e.g. `speculation=<mtp.gguf>`) are declared by the architecture port and validated at load.
+Companion roles (e.g. `media=<clip.gguf>` and `speculation=<mtp.gguf>`) are declared by the architecture port and validated at load.
 
 ## Models from a hub
 
@@ -216,7 +216,7 @@ GraalVM Native Image 25.0.3 or newer:
 
 ```bash
 make native
-./bin/jinfer --model ./model.gguf --chat
+./bin/jinfer --model ./model.gguf chat
 ```
 
 `PRELOAD_GGUF=model.gguf make native` embeds load metadata/tokenizer data for faster startup. Media decoding uses ffmpeg in the native image, so `java.desktop` is not pulled in.

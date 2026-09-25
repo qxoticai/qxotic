@@ -166,12 +166,12 @@ class WorkflowTest {
     }
 
     @Test
-    void rawStdinWarmsAndClosesItsStatesWhileLegacyInputRemainsCompatible() throws Exception {
+    void rawStdinWarmsAndClosesItsStatesInEitherCommandOrder() throws Exception {
         Path path = model("transcription", "");
         for (String[] args :
                 new String[][] {
                     {"transcribe", "-m", path.toString(), "-", "--raw-pcm"},
-                    {"-m", path.toString(), "--transcribe", "-"}
+                    {"-m", path.toString(), "transcribe", "-", "--raw-pcm"}
                 }) {
             var capture = new CliFixtures.Capture(new byte[] {0, 0});
             assertEquals(0, run(capture, args), capture.err());

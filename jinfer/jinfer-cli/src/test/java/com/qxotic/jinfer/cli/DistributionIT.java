@@ -95,6 +95,22 @@ class DistributionIT {
         Result version = run(command, "", "--version");
         assertEquals(0, version.status(), version.err());
         assertTrue(version.out().startsWith("jinfer "));
+        for (String removed :
+                List.of(
+                        "--chat",
+                        "--instruct",
+                        "--server",
+                        "--speak",
+                        "--transcribe",
+                        "--prompt")) {
+            Result rejected = run(command, "", "-m", "missing.gguf", removed);
+            assertEquals(2, rejected.status(), rejected.err());
+            assertTrue(rejected.err().contains("Unknown option: " + removed));
+            assertEquals("", rejected.out());
+        }
+        Result noCommand = run(command, "", "-m", "missing.gguf");
+        assertEquals(2, noCommand.status());
+        assertTrue(noCommand.err().contains("missing command"));
         Result invalid =
                 run(
                         command,

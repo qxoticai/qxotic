@@ -29,7 +29,6 @@ class OptionsTest {
             assertEquals("chat", o.command);
             assertEquals("not-downloaded.gguf", o.modelRef);
             assertEquals(0.3f, o.temperature);
-            assertFalse(o.legacy);
         }
         Options last =
                 Options.parse(
@@ -59,9 +58,9 @@ class OptionsTest {
     void valuesAreNeverMistakenForCommandsOrOptions() {
         assertEquals("chat", Options.parse("-m", "chat", "server").modelRef);
         assertEquals("--server", Options.parse("instruct", "-m", "m", "--", "--server").input);
-        assertEquals("--chat", Options.parse("-m", "m", "--prompt", "--chat").input);
+        assertEquals("--chat", Options.parse("-m", "m", "instruct", "--", "--chat").input);
         assertEquals("false", Options.parse("speak", "-m", "m", "--stream", "false").input);
-        assertEquals("--help", Options.parse("instruct", "-m", "m", "-p", "--help").input);
+        assertEquals("--help", Options.parse("instruct", "-m", "m", "--", "--help").input);
     }
 
     @Test
@@ -69,12 +68,7 @@ class OptionsTest {
         String path = "C:\\Models\\O'Brien こんにちは=a.gguf";
         Options o =
                 Options.parse(
-                        "--with",
-                        "model=repo/model:Q8_0",
-                        "speak",
-                        "--with",
-                        "voice=" + path,
-                        "Hi");
+                        "--model", "repo/model:Q8_0", "speak", "--with", "voice=" + path, "Hi");
         assertEquals("repo/model:Q8_0", o.modelRef);
         assertEquals(path, o.companionRefs.get("voice"));
         assertThrows(
@@ -90,32 +84,29 @@ class OptionsTest {
     }
 
     @Test
-    void mmprojUsesTheSameCompanionValidationAsWithMedia() {
+    void mediaAttachmentsUseTheSharedCompanionSyntax() {
         assertEquals(
-                Options.parse("chat", "-m", "m", "--with", "media=projector.gguf").companionRefs,
-                Options.parse("chat", "-m", "m", "--mmproj", "projector.gguf").companionRefs);
+                "projector.gguf",
+                Options.parse("chat", "-m", "m", "--with", "media=projector.gguf")
+                        .companionRefs
+                        .get("media"));
         for (String value : List.of("", " ", "auto")) {
             assertThrows(
-                    Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--mmproj", value));
+                    Options.Usage.class,
+                    () -> Options.parse("chat", "-m", "m", "--with", "media=" + value));
         }
         assertThrows(
                 Options.Usage.class,
-                () -> Options.parse("chat", "-m", "m", "--with", "media=a", "--mmproj", "b"));
+                () -> Options.parse("chat", "-m", "m", "--with", "media=a", "--with", "media=b"));
     }
 
     @Test
-    void aliasesAndLegacySyntaxShareCommandsButPreserveLegacyAudioDefaults() {
+    void commandAliasesAndAudioDefaultsAreUnambiguous() {
         assertEquals("server", Options.parse("serve", "-m", "m").command);
         assertEquals("instruct", Options.parse("prompt", "-m", "m", "hi").command);
-        assertEquals("chat", Options.parse("-m", "m", "--chat").command);
-        assertEquals("server", Options.parse("-m", "m", "--server").command);
-        assertFalse(Options.parse("-m", "m", "-p", "hi", "--stream", "false").stream);
         Options speech = Options.parse("speak", "-m", "m", "hi");
         assertTrue(speech.speech.play);
         assertNull(speech.speech.output);
-        assertEquals(
-                Path.of("output.wav"), Options.parse("-m", "m", "--speak", "hi").speech.output);
-        assertTrue(Options.parse("-m", "m", "--transcribe", "-").transcription.rawPcm);
         assertFalse(Options.parse("transcribe", "-m", "m", "-").transcription.rawPcm);
         assertTrue(Options.parse("transcribe", "-m", "m", "-", "--raw-pcm").transcription.rawPcm);
         assertEquals(
@@ -294,7 +285,7 @@ class OptionsTest {
     }
 
     @Test
-    void existingMakefileInvocationStillParses() throws Exception {
+    void makefileInvocationsUseTheCommandSyntax() throws Exception {
         Path makefile = Path.of("..", "Makefile");
         int found = 0;
         for (String line : Files.readAllLines(makefile)) {

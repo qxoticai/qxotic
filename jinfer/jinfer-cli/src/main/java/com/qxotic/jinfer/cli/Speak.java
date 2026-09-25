@@ -58,10 +58,7 @@ final class Speak {
         Options.require(
                 s.output == null || (!s.play && !o.stream),
                 "--output cannot combine with --play or --stream");
-        if (s.output == null && !s.play && !o.stream) {
-            if (o.legacy) s.output = Path.of("output.wav");
-            else s.play = true;
-        }
+        if (s.output == null && !o.stream) s.play = true;
     }
 
     /** The external playback boundary. Model behavior is tested through the existing model API. */
@@ -190,7 +187,6 @@ final class Speak {
                 --stream controls audio playback, not incremental text input.
                 Kokoro requires --with voice=<path|ref>; Inflect2 accepts --with lexicon=<path|ref>.
                 Playback: macOS afplay; Windows PowerShell SoundPlayer; Linux aplay/ffplay.
-                Legacy --speak without an output mode still writes output.wav.
                 """);
         Options.modelHelp(out);
     }

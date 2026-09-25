@@ -76,7 +76,7 @@ jinfer pull mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf
 ## Transcribe a file
 
 ```bash
-jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf --transcribe speech.wav
+jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf transcribe speech.wav
 ```
 
 Any format ffmpeg reads, resampled by `jinfer-codecs`. The transcript goes to stdout, so it pipes.
@@ -89,19 +89,19 @@ the capture flags are the only part that differs:
 ```bash
 # Linux (PulseAudio or PipeWire)
 ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
-  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf transcribe - --raw-pcm
 ```
 
 ```bash
 # macOS (AVFoundation; ffmpeg -f avfoundation -list_devices true -i "" names the inputs)
 ffmpeg -nostats -loglevel error -f avfoundation -i ":0" -ar 16000 -ac 1 -f s16le - \
-  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf transcribe - --raw-pcm
 ```
 
 ```bash
 # Windows (DirectShow; ffmpeg -list_devices true -f dshow -i dummy names the inputs)
 ffmpeg -nostats -loglevel error -f dshow -i audio="Microphone" -ar 16000 -ac 1 -f s16le - ^
-  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf --transcribe -
+  | jinfer -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf transcribe - --raw-pcm
 ```
 
 On a terminal, stderr shows the live view: final words settle into the scrollback, each committed
