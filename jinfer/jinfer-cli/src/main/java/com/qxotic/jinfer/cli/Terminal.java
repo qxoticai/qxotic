@@ -1,8 +1,5 @@
 package com.qxotic.jinfer.cli;
 
-import java.io.BufferedOutputStream;
-import java.io.FileDescriptor;
-import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.lang.foreign.AddressLayout;
 import java.lang.foreign.Arena;
@@ -12,7 +9,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -61,9 +57,18 @@ record Terminal(PrintStream out, boolean unicode, TranscriptHud.ColorDepth depth
      * cursor: stderr redirected, {@code TERM=dumb}, or a Windows console that refuses ANSI.
      */
     static Terminal stderr() {
+        return stderr(System.err, "auto");
+    }
+
+    static Terminal stderr(PrintStream out, String color) {
         if (!isTerminal(2) || "dumb".equals(System.getenv("TERM"))) return null;
         boolean unicode;
-        TranscriptHud.ColorDepth depth = TranscriptHud.ColorDepth.of(System.getenv());
+        TranscriptHud.ColorDepth depth =
+                color.equals("off")
+                        ? TranscriptHud.ColorDepth.NONE
+                        : color.equals("on")
+                                ? TranscriptHud.ColorDepth.TRUE
+                                : TranscriptHud.ColorDepth.of(System.getenv());
         if (WINDOWS) {
             if (!enableAnsi()) return null;
             int codePage = outputCodePage();
@@ -78,10 +83,7 @@ record Terminal(PrintStream out, boolean unicode, TranscriptHud.ColorDepth depth
         } else {
             unicode = isUtf8(System.getenv());
         }
-        // one write per frame: a frame goes out whole, not in a burst of small writes
-        var err = new BufferedOutputStream(new FileOutputStream(FileDescriptor.err), 1 << 16);
-        var charset = unicode ? StandardCharsets.UTF_8 : System.err.charset();
-        return new Terminal(new PrintStream(err, false, charset), unicode, depth);
+        return new Terminal(out, unicode, depth);
     }
 
     /** Whether file descriptor 0, 1 or 2 is an interactive terminal; false when unknown. */

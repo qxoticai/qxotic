@@ -108,6 +108,28 @@ class TranscriptHudTest {
         assertTrue(frame.contains("listening"), "noise read as speech: " + frame);
     }
 
+    @Test
+    void resizingAndClosingALiveViewRestoreTheCursor() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        var columns = new java.util.concurrent.atomic.AtomicInteger(80);
+        var committed = List.of(token(" hello", 0, 0.99), token(" world", 1, 0.9));
+        try (var view =
+                new TranscriptHud(
+                        new Terminal(
+                                new PrintStream(bytes, true, StandardCharsets.UTF_8),
+                                true,
+                                ColorDepth.NONE),
+                        columns::get,
+                        TranscriptHud.Theme.BUNDLED.getFirst())) {
+            view.show(committed, List.of(token(" provisional", 2, 0.9)));
+            awaitOutput(bytes, "provisional");
+            columns.set(12);
+            view.show(committed, List.of(token(" resized", 2, 0.9)));
+            awaitOutput(bytes, "resized");
+        }
+        assertTrue(bytes.toString(StandardCharsets.UTF_8).endsWith("\u001b[0m\u001b[?25h"));
+    }
+
     private static String fg(ColorDepth depth, int rgb) {
         TranscriptHud hud = hud(new ByteArrayOutputStream(), depth);
         String escape = hud.fg(rgb);

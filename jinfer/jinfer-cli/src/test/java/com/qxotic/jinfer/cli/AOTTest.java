@@ -1,9 +1,14 @@
 package com.qxotic.jinfer.cli;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.format.gguf.Builder;
+import com.qxotic.format.gguf.GGUF;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -80,5 +85,50 @@ final class AOTTest {
         AOT.PreloadedFile entry = entryFor(Files.writeString(dir.resolve("model.gguf"), "weights"));
 
         assertNull(AOT.match(List.of(entry), dir.resolve("no-such-file.gguf")));
+    }
+
+    @Test
+    void preloadRejectsMissingFilesAndModelsWithoutVocabulary(@TempDir Path dir) throws Exception {
+        assertEquals(List.of(), AOT.preload(""));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AOT.preload(dir.resolve("missing.gguf").toString()));
+        Path file = dir.resolve("speech.gguf");
+        GGUF.write(
+                Builder.newBuilder().putString("general.architecture", "cli_test_speech").build(),
+                file);
+        var error =
+                assertThrows(IllegalArgumentException.class, () -> AOT.preload(file.toString()));
+        assertTrue(error.getMessage().contains("no vocabulary"));
+    }
+
+    @Test
+    void shaMismatchAndTruncatedHeaderBothFallBack(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("model.gguf"), "weights");
+        AOT.PreloadedFile actual = entryFor(file);
+        var differentSha =
+                new AOT.PreloadedFile(
+                        actual.fileName(),
+                        actual.fileSize(),
+                        actual.headerLength(),
+                        actual.headerCrc32c(),
+                        "0".repeat(64),
+                        null,
+                        null);
+        assertNull(
+                AOT.match(List.of(differentSha), file),
+                "CRC agreement alone must never select stale metadata");
+        var truncated =
+                new AOT.PreloadedFile(
+                        actual.fileName(),
+                        actual.fileSize(),
+                        actual.headerLength() + 1,
+                        actual.headerCrc32c(),
+                        actual.headerSha256(),
+                        null,
+                        null);
+        assertNull(AOT.match(List.of(truncated), file));
+        Files.writeString(file, "new and longer weights");
+        assertNull(AOT.match(List.of(actual), file), "same filename is not an identity");
     }
 }

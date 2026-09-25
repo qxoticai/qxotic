@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.cli;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.toknroll.Tokenizer;
@@ -253,6 +254,8 @@ final class AOT {
         }
         try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
             return tokenizerFrom(readGguf(fileChannel));
+        } catch (IOException | GGUFFormatException | IllegalArgumentException e) {
+            throw Main.failure("cannot load tokenizer from '" + path + "'", e);
         }
     }
 
@@ -261,9 +264,10 @@ final class AOT {
      * (their ports parse them), and {@code tokenizerOverride} - the file named by {@code --with
      * tokenizer=} - outranks everything when present. Otherwise the baked tokenizer serves. That
      * precedence - explicit file, then bake, then the GGUF's own - is this caller's policy, not the
-     * library's. The weights arena is the process's: a CLI loads once and exits.
+     * library's. The caller owns the cross-thread weights arena and closes it after the engine.
      */
-    static LoadedModel<?> load(Path modelPath, Map<String, Path> companions, Path tokenizerOverride)
+    static LoadedModel<?> load(
+            Path modelPath, Map<String, Path> companions, Path tokenizerOverride, Arena arena)
             throws IOException {
         warnIfPropertyOverrides();
         PreloadedFile main = match(PRELOADED, modelPath);
@@ -271,6 +275,10 @@ final class AOT {
                 tokenizerOverride != null
                         ? tokenizerFrom(tokenizerOverride)
                         : main == null ? null : main.tokenizer();
-        return Models.load(modelPath, Arena.global(), companions, tokenizer);
+        try {
+            return Models.load(modelPath, arena, companions, tokenizer);
+        } catch (IOException | IllegalArgumentException e) {
+            throw Main.failure("cannot load model '" + modelPath + "'", e);
+        }
     }
 }

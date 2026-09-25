@@ -7,7 +7,9 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -19,24 +21,30 @@ import java.util.Locale;
  * summary. The PARSE is the engine's ({@link ChatEngine.ReplySink} deltas arrive UTF-8-safe and
  * channel-tagged); what remains here is pure presentation, which is all a terminal ever wanted.
  *
- * <p>{@code --stream false} is the same rendering, replayed in {@link #finish}: one path decides
- * what goes where, so the two modes cannot disagree.
+ * <p>{@code --no-stream} is the same rendering, replayed in {@link #finish}: one path decides what
+ * goes where, so the two modes cannot disagree.
  */
-final class Turn implements ChatEngine.ReplySink {
+final class Turn implements ChatEngine.ReplySink, AutoCloseable {
 
     private static final String ANSI_GREY = "\033[90m";
     private static final String ANSI_CYAN = "\033[36m";
     private static final String ANSI_RESET = "\033[0m";
 
     private final Tokenizer tokenizer;
-    private final Options options;
+    private final boolean stream, echo, thinkInline, thoughtColors, errorColors;
+    private final Main.IO io;
     private final boolean rawLane;
-    private final List<ChatEngine.Delta> buffered = new ArrayList<>(); // --stream false
+    private final List<ChatEngine.Delta> buffered = new ArrayList<>(); // --no-stream
     private boolean inReasoning;
 
-    Turn(Tokenizer tokenizer, Options options, boolean rawLane) {
+    Turn(Tokenizer tokenizer, Options options, boolean rawLane, Main.IO io) {
         this.tokenizer = tokenizer;
-        this.options = options;
+        this.stream = options.stream;
+        this.echo = options.echo;
+        this.thinkInline = options.thinkInline;
+        this.thoughtColors = options.colors(io, thinkInline ? 1 : 2);
+        this.errorColors = options.colors(io, 2);
+        this.io = io;
         this.rawLane = rawLane;
     }
 
@@ -44,10 +52,11 @@ final class Turn implements ChatEngine.ReplySink {
      * A turn over one prepared request: echoes the prompt when {@code --echo}, then serves as the
      * generation's {@link ChatEngine.ReplySink}.
      */
-    static Turn start(Tokenizer tokenizer, ChatEngine.Prepared prepared, Options options) {
-        Turn turn = new Turn(tokenizer, options, false);
-        if (options.echo()) {
-            echoPrompt(tokenizer, Batch.tokenIds(prepared.encoded().prompt()));
+    static Turn start(
+            Tokenizer tokenizer, ChatEngine.Prepared prepared, Options options, Main.IO io) {
+        Turn turn = new Turn(tokenizer, options, false, io);
+        if (options.echo) {
+            echoPrompt(tokenizer, Batch.tokenIds(prepared.encoded().prompt()), io.err());
         }
         return turn;
     }
@@ -58,24 +67,23 @@ final class Turn implements ChatEngine.ReplySink {
      * generator feeds to its listener before the stop check) arrive as literal spellings; this lane
      * filters them from display, exactly like the old CLI's printer did.
      */
-    static Turn startRaw(Tokenizer tokenizer, int[] promptTokens, Options options) {
-        Turn turn = new Turn(tokenizer, options, true);
-        if (options.echo()) {
-            echoPrompt(tokenizer, promptTokens);
+    static Turn startRaw(Tokenizer tokenizer, int[] promptTokens, Options options, Main.IO io) {
+        Turn turn = new Turn(tokenizer, options, true, io);
+        if (options.echo) {
+            echoPrompt(tokenizer, promptTokens, io.err());
         }
         return turn;
     }
 
     @Override
     public void on(ChatEngine.Delta delta) {
-        if (options.echo()) {
-            delta.tokens()
-                    .forEachInt(t -> System.err.print(escape(tokenizer.decode(new int[] {t}))));
+        if (echo) {
+            delta.tokens().forEachInt(t -> io.err().print(escape(tokenizer.decode(new int[] {t}))));
         }
         if (rawLane && isControl(delta)) {
             return; // a parser-less delta of pure special tokens is control, not content
         }
-        if (options.stream()) emit(delta);
+        if (stream) emit(delta);
         else buffered.add(delta);
     }
 
@@ -87,14 +95,11 @@ final class Turn implements ChatEngine.ReplySink {
                 inReasoning = true;
             }
             thoughtOut().print(delta.text());
-            return;
+        } else {
+            close();
+            io.out().print(delta.text());
         }
-        if (inReasoning) {
-            onThinkingEnd();
-            inReasoning = false;
-        }
-        System.out.print(delta.text());
-        System.out.flush();
+        checkOutput();
     }
 
     /**
@@ -103,12 +108,13 @@ final class Turn implements ChatEngine.ReplySink {
      * streamed.
      */
     void finish(ChatEngine.Completion completion, int contextCapacity) {
-        if (!options.stream()) buffered.forEach(this::emit);
-        if (inReasoning) {
-            onThinkingEnd();
-            inReasoning = false;
+        if (!stream) {
+            buffered.forEach(this::emit);
+            buffered.clear();
         }
-        System.out.println(); // the reply's line ends on stdout, streamed or not
+        close();
+        io.out().println(); // the reply's line ends on stdout, streamed or not
+        checkOutput();
         Generator.GenerationResult result = completion.result();
         if (result != null) {
             int promptTokens = completion.promptTokens();
@@ -116,23 +122,40 @@ final class Turn implements ChatEngine.ReplySink {
             int generated = result.completionTokens() + (result.stopToken().isPresent() ? 1 : 0);
             long promptNanos = Math.max(1, result.promptTime().toNanos());
             long decodeNanos = Math.max(1, result.decodeTime().toNanos());
-            String prefix = options.colors() ? ANSI_CYAN : "";
-            String suffix = options.colors() ? ANSI_RESET : "";
-            System.err.printf(
-                    "%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)"
-                            + " cache: %s, %d restored%s%s%n",
-                    prefix,
-                    promptTokens + generated,
-                    contextCapacity,
-                    evaluated / (promptNanos / 1e9),
-                    evaluated,
-                    generated / (decodeNanos / 1e9),
-                    generated,
-                    completion.tier().name().toLowerCase(Locale.ROOT),
-                    completion.restoredTokens(),
-                    acceptance(completion),
-                    suffix);
+            String prefix = errorColors ? ANSI_CYAN : "";
+            String suffix = errorColors ? ANSI_RESET : "";
+            io.err()
+                    .printf(
+                            "%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s"
+                                    + " (%d) cache: %s, %d restored%s%s%n",
+                            prefix,
+                            promptTokens + generated,
+                            contextCapacity,
+                            evaluated / (promptNanos / 1e9),
+                            evaluated,
+                            generated / (decodeNanos / 1e9),
+                            generated,
+                            completion.tier().name().toLowerCase(Locale.ROOT),
+                            completion.restoredTokens(),
+                            acceptance(completion),
+                            suffix);
         }
+    }
+
+    /** Restore reasoning framing even when generation throws before finish(). */
+    @Override
+    public void close() {
+        if (inReasoning) {
+            onThinkingEnd();
+            inReasoning = false;
+        }
+    }
+
+    private void checkOutput() {
+        // checkError flushes, so this is also the streaming flush point.
+        if (io.out().checkError())
+            throw new UncheckedIOException(
+                    new IOException("cannot write generated text to stdout"));
     }
 
     /** " accept: A/D (P%)" when the pass speculated, "" otherwise. */
@@ -163,11 +186,11 @@ final class Turn implements ChatEngine.ReplySink {
     }
 
     private PrintStream thoughtOut() {
-        return options.thinkInline() ? System.out : System.err;
+        return thinkInline ? io.out() : io.err();
     }
 
     private void onThinkingStart() {
-        if (options.colors()) {
+        if (thoughtColors) {
             thoughtOut().print(ANSI_GREY);
         }
         thoughtOut().println("[Start thinking]");
@@ -176,16 +199,16 @@ final class Turn implements ChatEngine.ReplySink {
     private void onThinkingEnd() {
         thoughtOut().println();
         thoughtOut().println("[End thinking]");
-        if (options.colors()) {
+        if (thoughtColors) {
             thoughtOut().print(ANSI_RESET);
         }
         thoughtOut().println();
     }
 
     /** {@code --echo}: the prompt tokens to stderr, control characters escaped. */
-    static void echoPrompt(Tokenizer tokenizer, int[] promptTokens) {
+    static void echoPrompt(Tokenizer tokenizer, int[] promptTokens, PrintStream out) {
         for (int token : promptTokens) {
-            System.err.print(escape(tokenizer.decode(new int[] {token})));
+            out.print(escape(tokenizer.decode(new int[] {token})));
         }
     }
 
