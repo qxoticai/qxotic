@@ -25,6 +25,19 @@ These bounds are the *expected* magnitude of int8-activation quantization, not s
 ~`1e-2·sumAbs` will fail correct kernels. The F32/F16/BF16 dense paths keep activations in float and stay at
 the `~1e-3·sumAbs` floor.
 
+## Activation scale granularity per path
+
+The activation scale is what sets the int8 error, and it differs by weight family and ISA:
+
+| path | activation scale | matches |
+|---|---|---|
+| 32-block weights (Q8_0/Q4_0/Q5_0/MXFP4), every ISA | one per 32 elements | llama.cpp's Q8_0 activations |
+| K-quant weights (Q4_K/Q5_K/Q6_K), AVX-512-VNNI band (`jam_kernels_kq_avx512.c`) | one per 256 elements | llama.cpp's Q8_K activations |
+| K-quant weights, AVX2 / AVX-VNNI / SSE3 / ARM | one per 32 elements | (finer than llama.cpp) |
+
+The AVX-512 K-quant band keeps the sub-block scales in the integer domain (`vpmulld`), which needs one activation scale per 256-block; that is exactly llama.cpp's precision model for the K-quants, and the C suite's `RP` (per-256 requant) reference is the one it is measured against.
+The band is still bounded by the same `1e-2·sumAbs` tolerance as the per-32 paths.
+
 ## History: the seq=7 Q8_0 bug (FIXED)
 
 libjam's Q8_0 gemm was once ~2% wrong at `n == 7` only, a token-remainder edge in the sign-trick weight
