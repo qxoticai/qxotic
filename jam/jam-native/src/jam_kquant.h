@@ -1,11 +1,10 @@
-/* GGML K-quant shared bits (ported from jinferjni.c), for the AVX-512-VNNI K-quant kernels.
+/* GGML block-format constants and the exact scalar dots shared by the int8 kernels.
  *
  * K-quants are 256-element super-blocks with a hierarchy of scales - too big for the 32-block decode×dot
- * engine, so they get dedicated kernels using the jinferjni.c scheme: repack 16 weight rows into a VNNI
- * layout so ONE vpdpbusd accumulates 16 rows across the 16 i32 lanes, with the activation broadcast as
- * the signed operand. Activations are quantized to PLAIN s8 (the weight nibbles 0..15 / q6+32 are the
- * UNSIGNED vpdpbusd operand), plus exact per-16 f32 sums so the Q4_K `dmin·min` and Q6_K `-32` terms stay
- * out of the integer dot and are corrected in float. */
+ * engine, so they get dedicated bands: 16 weight rows repacked so ONE vpdpbusd accumulates 16 rows across
+ * the 16 i32 lanes against a broadcast activation group. The AVX-512 bands (jam_kernels_kq_avx512.c) keep
+ * the sub-block scales integer; the AVX2 8-row bands quantize activations to plain s8 with exact per-16
+ * f32 sums so the Q4_K `dmin·min` and Q6_K `-32` terms are corrected in float. */
 #ifndef JAM_KQUANT_H
 #define JAM_KQUANT_H
 

@@ -171,7 +171,7 @@ void jam_mm_nvfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /
 void jam_mm_q1_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (Q1_0) */
 void jam_mm_q4k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
 
-/* ---- Q4_K @ F32 (AVX-512-VNNI; ported from jinferjni.c). repack scratch is PER WORKER (jam tid). ---- */
+/* ---- the VNNI band job (AVX-512): phase-1 activation scratch + PER WORKER (jam tid) repack scratch ---- */
 typedef struct {
     const uint8_t* w; int64_t w_stride;   /* Q4_K weights, bytes per row = (k/256)*144 */
     const float* rhs; int rhs_stride;     /* F32 activations [seq×k], stride in elements */
@@ -179,17 +179,25 @@ typedef struct {
     float* out; int out_stride;           /* feature-major C[dim0×seq], ldc = out_stride */
     int dim0, dim1, seq, kblocks;
     jam_repack* repack;                   /* [ctx->nthreads] */
+    _Atomic int next_tile;                /* dynamic tile claim for bands that ignore their static range */
 } jam_q4k_job;
 #ifdef JAM_HAVE_AVX512
-void jam_q4k_quant(void* job, int s0, int s1, int tid);   /* phase 1: quantize activations to s8 (SHARED) */
-void jam_q4k_band(void* job, int t0, int t1, int tid);    /* phase 2: Q4_K repack + VNNI matmul */
-void jam_q6k_band(void* job, int t0, int t1, int tid);    /* phase 2: Q6_K repack + VNNI matmul */
-void jam_q8_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q8_0 16-row VNNI repack matmul */
-void jam_q1_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q1_0 packed-sign-bit VNNI band */
-void jam_q4_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q4_0 16-row VNNI repack matmul */
-void jam_q5_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q5_0 16-row VNNI repack (Q8_0's s8 band) */
-void jam_mxfp4_repack_band(void* job, int t0, int t1, int tid); /* phase 2: MXFP4 16-row VNNI repack matmul */
-void jam_q5k_repack_band(void* job, int t0, int t1, int tid);  /* phase 2: Q5_K 16-row VNNI repack matmul */
+void jam_q4k_quant(void* job, int s0, int s1, int tid);   /* phase 1 (s8 + per-32 scale + per-16 sums): the Q1_0 band */
+void jam_q1_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q1_0 packed-sign-bit 16-row VNNI band */
+/* The 32x4-tile VNNI bands (jam_kernels_kq_avx512.c): a 32-row band shares every activation broadcast
+ * between two 16-row weight vectors. K-quants: per-256 u8 activations (jam_kq_quant) and integer
+ * sub-block scales; 32-block quants: per-32 u8 activations (jam_kq_quant32) and float block scales.
+ * Both phase-1 layouts live in the same xq/dx/xsum scratch as jam_q4k_quant's. */
+#define JAM_KQ_BLOB 5568                                  /* repack bytes per 16-row group per 256-block */
+void jam_kq_quant(void* job, int s0, int s1, int tid);
+void jam_kq_quant32(void* job, int s0, int s1, int tid);
+void jam_kq_band_q4k(void* job, int t0, int t1, int tid);
+void jam_kq_band_q5k(void* job, int t0, int t1, int tid);
+void jam_kq_band_q6k(void* job, int t0, int t1, int tid);
+void jam_kq_band_q8_0(void* job, int t0, int t1, int tid);
+void jam_kq_band_q4_0(void* job, int t0, int t1, int tid);
+void jam_kq_band_q5_0(void* job, int t0, int t1, int tid);
+void jam_kq_band_mxfp4(void* job, int t0, int t1, int tid);
 #endif
 /* 256-bit AVX-VNNI Q8_0 band (8-row groups) - the no-AVX-512 client path. Defined in the avxvnni TU;
  * shares the jam_q4k_job + per-worker repack scratch with the AVX-512 band. */

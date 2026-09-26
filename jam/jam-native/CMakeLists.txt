@@ -129,7 +129,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     # The AVX-512-VNNI 16-row repack bands: K-quants (Q4_K/Q5_K/Q6_K) + the 32-block quants (Q8_0/Q4_0/
     # MXFP4) + Q1_0, ported from jinferjni.c. Dispatcher symbols come via JAM_HAVE_AVX512 (already set).
     jam_isa_tu(jam_q4k JAM_HAVE_AVX512 OFF "-mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mfma -mf16c"
-        src/kernels/jam_kernels_q4k_avx512.c)
+        src/kernels/jam_kernels_q4k_avx512.c src/kernels/jam_kernels_kq_avx512.c)
 endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")

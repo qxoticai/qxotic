@@ -31,6 +31,21 @@ The same int8 kernels span the whole x86 ladder, from the pre-AVX2 floor up to A
   <img alt="jinfer (native jam) prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa.png">
 </picture>
 
+## 2026-09-26: the 32x4 VNNI band vs llama.cpp's tiled mul_mat
+
+llama.cpp PR #27851 (merged 2026-09-26) replaced its K-quant `vec_dot` prefill with a tiled VNNI GEMM (2.9-3.7x on the K-quants above), and jam's AVX-512-VNNI bands were rewritten the same day ([design.md](design.md), "Prefill bands").
+Same box, same pure quants, `avx512_vnni` tier, 16 threads, llama.cpp master `86a24a182` built with `GGML_NATIVE=ON`;
+`--repack 0` disables llama.cpp's x86 repack layouts so the K-quants take the new tiled path (Q4_0 loses its repack kernel with it):
+
+| pp512 t/s | Q4_0 | Q8_0 | Q4_K | Q5_K | Q6_K |
+|---|---|---|---|---|---|
+| jinfer (native jam) | 1497 | 1457 | 1525 | 1467 | 1510 |
+| llama.cpp, default | 991 | 622 | 891 | 1209 | 1157 |
+| llama.cpp, `--repack 0` (tiled) | 531 | 621 | 1241 | 1211 | 1150 |
+
+At the matmul level (`jam_bench 4096 512 4096`, 8 threads, GMAC/s) the bands went Q4_K 2027 -> 3098, Q5_K 1433 -> 3155, Q6_K 1268 -> 3297, Q8_0 1764 -> 3155, Q4_0 2059 -> 3052 (session-to-session variance on this CPU is about 20%, so compare rows measured together).
+Logs: `bench-results/2026-09-26-vnni-band-vs-llama-tiled` (gitignored, local).
+
 ## Method
 
 - Weights are pure quants of Gemma 4 E2B, each made from the BF16 checkpoint with
