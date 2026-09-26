@@ -89,8 +89,8 @@ class ProviderContractTest {
                 unimplemented.add(
                         () -> call(() -> provider.loadSpeech(null, gguf, none, null, Map.of())));
             for (Runnable load : unimplemented) {
-                UnsupportedOperationException refused =
-                        assertThrows(UnsupportedOperationException.class, load::run);
+                var refused =
+                        assertThrows(ModelProvider.IncompatibleModelException.class, load::run);
                 assertTrue(
                         refused.getMessage().matches("'" + arch + "' is not an? \\w+ architecture"),
                         provider.getClass().getName() + ": " + refused.getMessage());

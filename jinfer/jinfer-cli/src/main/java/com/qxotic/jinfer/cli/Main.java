@@ -6,6 +6,7 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.io.BufferedOutputStream;
 import java.io.FileDescriptor;
@@ -130,9 +131,9 @@ public final class Main {
             if (options.command.equals("chat")) Chat.run(engine, sampling, options, io);
             else Instruct.run(engine, sampling, options, io, text);
             return Thread.currentThread().isInterrupted() ? 130 : 0;
-        } catch (UnsupportedOperationException e) {
+        } catch (ModelProvider.IncompatibleModelException | UnsupportedOperationException e) {
             throw failure(
-                    "cannot run " + options.command + " with model '" + files.model() + "'", e);
+                    "cannot run " + options.command + " with model '" + options.modelRef + "'", e);
         } finally {
             Arenas.close(arena);
         }
