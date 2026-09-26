@@ -273,8 +273,7 @@ class ModelsTest {
                         () -> speechOnly.loadEmbedder(null, gguf, none, null, null),
                         () -> speechOnly.loadReranker(null, gguf, none, null, null),
                         () -> speechOnly.loadSpeech(null, gguf, none, null, Map.of()))) {
-            UnsupportedOperationException refused =
-                    assertThrows(UnsupportedOperationException.class, load);
+            var refused = assertThrows(ModelProvider.IncompatibleModelException.class, load);
             assertTrue(
                     refused.getMessage().matches("'kokoro' is not an? \\w+ architecture"),
                     refused.getMessage());

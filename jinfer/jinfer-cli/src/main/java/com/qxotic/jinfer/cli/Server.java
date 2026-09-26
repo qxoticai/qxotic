@@ -2,6 +2,7 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
@@ -148,12 +149,9 @@ final class Server {
             ChatEngine engine;
             try {
                 engine = Main.openText(options, files, arena, io);
-            } catch (UnsupportedOperationException notLanguage) {
-                // The existing provider API reports unsupported kinds this way; isolate that
-                // unsupported-kind detail here rather than making users select a task themselves.
-                if (notLanguage.getMessage() == null
-                        || !notLanguage.getMessage().contains("not a language architecture"))
-                    throw notLanguage;
+            } catch (ModelProvider.IncompatibleModelException notLanguage) {
+                // The model selects the API: a non-language model is offered to transcription
+                // rather than making users select a task themselves.
                 validateTranscription(options);
                 return runTranscription(files, arena, io, config);
             }
@@ -168,8 +166,8 @@ final class Server {
                             engine.savePrompts();
                         });
             }
-        } catch (UnsupportedOperationException e) {
-            throw Main.failure("model '" + files.model() + "' cannot be served", e);
+        } catch (ModelProvider.IncompatibleModelException | UnsupportedOperationException e) {
+            throw Main.failure("model '" + options.modelRef + "' cannot be served", e);
         } finally {
             Arenas.close(arena);
         }
@@ -201,6 +199,8 @@ final class Server {
                             model, files.model().getFileName().toString(), config);
         } catch (BindException e) {
             throw bindFailure(config, e);
+        } catch (ModelProvider.IncompatibleModelException neither) {
+            throw neither; // neither language nor transcription: run() reports it
         } catch (IOException | IllegalArgumentException e) {
             throw Main.failure("cannot prepare transcription model '" + files.model() + "'", e);
         }

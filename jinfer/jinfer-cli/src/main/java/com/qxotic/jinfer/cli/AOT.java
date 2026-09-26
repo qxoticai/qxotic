@@ -3,6 +3,7 @@ package com.qxotic.jinfer.cli;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -256,6 +257,8 @@ final class AOT {
                         : main == null ? null : main.tokenizer();
         try {
             return Models.load(modelPath, arena, companions, tokenizer);
+        } catch (ModelProvider.IncompatibleModelException notLanguage) {
+            throw notLanguage; // the file is fine; the command asked for the wrong kind
         } catch (IOException | IllegalArgumentException e) {
             throw Main.failure("cannot load model '" + modelPath + "'", e);
         }

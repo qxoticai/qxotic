@@ -97,7 +97,8 @@ final class Transcribe {
                         && System.getProperty("org.graalvm.nativeimage.imagecode") == null)
                     warmUp(model);
             } catch (IOException | IllegalArgumentException | UnsupportedOperationException e) {
-                throw Main.failure("cannot prepare transcription model '" + files.model() + "'", e);
+                throw Main.failure(
+                        "cannot prepare transcription model '" + options.modelRef + "'", e);
             }
             execute(model, audio, options, io);
             return Thread.currentThread().isInterrupted() ? 130 : 0;
