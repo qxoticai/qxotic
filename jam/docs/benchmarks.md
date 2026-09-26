@@ -42,6 +42,7 @@ Same box, same pure quants, `avx512_vnni` tier, 16 threads, llama.cpp master `86
 | jinfer (native jam) | 1497 | 1457 | 1525 | 1467 | 1510 |
 | llama.cpp, default | 991 | 622 | 891 | 1209 | 1157 |
 | llama.cpp, `--repack 0` (tiled) | 531 | 621 | 1241 | 1211 | 1150 |
+| llama.cpp, `GGML_CPU_TILED_MM=0` (the pre-#27851 `vec_dot` path, best of both repack modes) | 984 | 621 | 882 | 317 | 428 |
 
 At the matmul level (`jam_bench 4096 512 4096`, 8 threads, GMAC/s) the bands went Q4_K 2027 -> 3098, Q5_K 1433 -> 3155, Q6_K 1268 -> 3297, Q8_0 1764 -> 3155, Q4_0 2059 -> 3052 (session-to-session variance on this CPU is about 20%, so compare rows measured together).
 Logs: `bench-results/2026-09-26-vnni-band-vs-llama-tiled` (gitignored, local).
