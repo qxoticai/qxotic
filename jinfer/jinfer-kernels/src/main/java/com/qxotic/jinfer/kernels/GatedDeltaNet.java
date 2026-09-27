@@ -21,26 +21,39 @@ public final class GatedDeltaNet {
             int heads,
             int headDim) {
         Raw in = Raw.f32(packed, "packed"), qo = Raw.f32(q, "q"), go = Raw.f32(gate, "gate");
-        for (int row = 0; row < rows; row++) {
-            int srcRow = row * 2 * heads * headDim, dstRow = row * heads * headDim;
-            for (int head = 0; head < heads; head++) {
-                int src = srcRow + 2 * head * headDim, dst = dstRow + head * headDim;
-                for (int d = 0; d < headDim; d++) {
-                    set(qo, dst + d, get(in, src + d));
-                    set(go, dst + d, get(in, src + headDim + d));
-                }
-            }
-        }
+        Parallel.forLoop(
+                rows,
+                row -> {
+                    int srcRow = row * 2 * heads * headDim, dstRow = row * heads * headDim;
+                    for (int head = 0; head < heads; head++) {
+                        int src = srcRow + 2 * head * headDim, dst = dstRow + head * headDim;
+                        for (int d = 0; d < headDim; d++) {
+                            set(qo, dst + d, get(in, src + d));
+                            set(go, dst + d, get(in, src + headDim + d));
+                        }
+                    }
+                });
     }
 
-    /** {@code values *= sigmoid(gate)} using the legacy scalar Math.exp arithmetic. */
+    /**
+     * {@code values *= sigmoid(gate)} over {@code rows} rows of {@code rowDim} lanes, one row per
+     * job, using the legacy scalar Math.exp arithmetic.
+     */
     public static void sigmoidMultiply(
-            MemoryView<MemorySegment> values, MemoryView<MemorySegment> gate, int size) {
+            MemoryView<MemorySegment> values,
+            MemoryView<MemorySegment> gate,
+            int rows,
+            int rowDim) {
         Raw v = Raw.f32(values, "values"), g = Raw.f32(gate, "gate");
-        for (int i = 0; i < size; i++) {
-            float x = get(g, i);
-            set(v, i, get(v, i) * (1.0f / (1.0f + (float) Math.exp(-x))));
-        }
+        Parallel.forLoop(
+                rows,
+                row -> {
+                    long end = (long) (row + 1) * rowDim;
+                    for (long i = (long) row * rowDim; i < end; i++) {
+                        float x = get(g, i);
+                        set(v, i, get(v, i) * (1.0f / (1.0f + (float) Math.exp(-x))));
+                    }
+                });
     }
 
     /** Grouped Q/K L2 normalization, group expansion, and V extraction from convolved QKV. */
