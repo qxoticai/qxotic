@@ -84,8 +84,20 @@ By prompt length, a separate session, jinfer / llama.cpp's best mode (`-r 10` fo
 
 A 16-token prompt on 16 threads is where jam loses: llama.cpp is ahead by 17% to 28% on Q4_0, Q8_0 and Q4_K.
 On one thread the same prompt is ahead on every format, and from 64 tokens up jam leads everywhere.
-The cause is not isolated yet.
-The candidates are the band's per-call repack, a fixed cost worth about 10 columns of dots that 16 columns no longer amortize (llama.cpp repacks Q4_0 and Q4_K once, at load), and the two fan-outs per matmul across 16 workers.
+
+That pass is memory-bound, not compute-bound.
+Its 277 matmuls stream about 1.05 GB of Q4_K weights, plus 226 MB for the output head: 18 ms at the 70 GB/s this machine reaches, of a pass that takes 28 ms in jinfer and 24 ms in llama.cpp.
+jam is about 60% of jinfer's pass and its bands stream within 20% of that wall; the remainder is the engine outside jam.
+By thread count, pp16, jinfer / llama.cpp's best mode:
+
+| threads | 4 | 6 | 8 | 12 | 16 |
+|---|---|---|---|---|---|
+| Q4_K | 348 / 294 | 430 / 407 | 480 / 511 | 570 / 616 | 544 / 645 |
+| Q8_0 | 266 / 153 | 307 / 214 | 336 / 267 | 361 / 347 | 366 / 394 |
+
+jinfer saturates near 12 threads where llama.cpp still scales.
+What was tried in jam against that, at n = 16 on 16 threads: quantizing the activations without a fan-out (flat), prefetching a worker's next tile during the repack (15% to 25% slower) or during the dots (flat), and touching each 16-row group in address order before the repack walks its rows in lockstep (+4% to +10%, kept).
+The tables above predate that last change, which is worth about 6% on Q4_K end to end.
 
 What #27851 changed inside llama.cpp, the tiled path against the kernels before it:
 
