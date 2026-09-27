@@ -83,9 +83,9 @@ By prompt length, a separate session, jinfer / llama.cpp's best mode (`-r 10` fo
 | Q6_K | 102 / 55 | 170 / 108 | 186 / 127 |
 
 A 16-token prompt on 16 threads is where jam loses: llama.cpp is ahead by 17% to 28% on Q4_0, Q8_0 and Q4_K.
-jam repacks every weight band on every call, a fixed cost worth about 10 columns of dots, and at 16 columns it is no longer amortized; llama.cpp's repack kernels for Q4_0 and Q4_K pay theirs once, at load.
-On one thread the same prompt is ahead on every format, so the rest of the gap is the per-call fan-out across 16 workers.
-From 64 tokens up jam leads everywhere.
+On one thread the same prompt is ahead on every format, and from 64 tokens up jam leads everywhere.
+The cause is not isolated yet.
+The candidates are the band's per-call repack, a fixed cost worth about 10 columns of dots that 16 columns no longer amortize (llama.cpp repacks Q4_0 and Q4_K once, at load), and the two fan-outs per matmul across 16 workers.
 
 What #27851 changed inside llama.cpp, the tiled path against the kernels before it:
 
