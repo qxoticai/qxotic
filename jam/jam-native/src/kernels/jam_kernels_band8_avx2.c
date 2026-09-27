@@ -90,7 +90,7 @@ static void quantize_row_q8s_avx2(const float* x, int kblocks, int8_t* xq, float
 
 void jam_q4k_quant_avx2(void* arg, int s0, int s1, int tid) {
     (void) tid;
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     for (int s = s0; s < s1; s++)
         quantize_row_q8s_avx2(J->rhs + (size_t) s * J->rhs_stride, J->kblocks,
                               J->xq + (size_t) s * J->kblocks * JAM_QK,
@@ -118,27 +118,10 @@ static void repack_q4k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
                 const uint8_t* qg = q + g * 32;
                 uint8_t* dst = qs + (int64_t) pairIdx * 256 + r * 4;
                 for (int k = 0; k < 8; k++)
-                    *(uint32_t*) (dst + k * 32) = *(const uint32_t*) (qg + k * 4);
+                    memcpy(dst + k * 32, qg + k * 4, 4);
             }
         }
     }
-}
-
-static float q4k_dot_scalar(const uint8_t* w, const float* x, int sblocks) {   /* <8-row tail: exact */
-    float acc = 0.0f;
-    for (int B = 0; B < sblocks; B++, w += JAM_Q4K_BYTES, x += JAM_QKK) {
-        float d = b8_h2f(*(const uint16_t*) w), dmin = b8_h2f(*(const uint16_t*) (w + 2));
-        uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
-        const uint8_t* q = w + 16;
-        for (int g = 0; g < 4; g++) {
-            float dl = d*sc[g*2], ml = dmin*mn[g*2], dh = d*sc[g*2+1], mh = dmin*mn[g*2+1];
-            for (int i = 0; i < 32; i++) {
-                acc += (dl * (q[g*32+i] & 0xF) - ml) * x[g*64+i];
-                acc += (dh * (q[g*32+i] >> 4) - mh) * x[g*64+32+i];
-            }
-        }
-    }
-    return acc;
 }
 
 /* single activation column: 8-row partials for the seq tail */
@@ -208,7 +191,7 @@ static inline void q4k_block8_nr(const uint8_t* qs, const float* dw, const float
 }
 
 void jam_q4k_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -234,7 +217,7 @@ void jam_q4k_band8_avx2(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)          /* <8-row tail: scalar */
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q4k_dot_scalar(J->w + (int64_t) r * J->w_stride, J->rhs + (int64_t) s * J->rhs_stride, sblocks);
+                    jam_q4k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -262,26 +245,6 @@ static void repack_q5k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
             }
         }
     }
-}
-
-static float q5k_dot_scalar(const uint8_t* w, const float* x, int sblocks) {
-    float acc = 0.0f;
-    for (int B = 0; B < sblocks; B++, w += JAM_Q5K_BYTES, x += JAM_QKK) {
-        float d = b8_h2f(*(const uint16_t*) w), dmin = b8_h2f(*(const uint16_t*) (w + 2));
-        uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
-        const uint8_t* qh = w + 16; const uint8_t* q5 = w + 48;
-        for (int g = 0; g < 4; g++) {
-            float dl=d*sc[g*2], ml=dmin*mn[g*2], dh=d*sc[g*2+1], mh=dmin*mn[g*2+1];
-            const uint8_t* q = q5 + g*32; const float* xlo = x + g*64; const float* xhi = xlo + 32;
-            for (int i = 0; i < 32; i++) {
-                int qlo = (q[i] & 0xF) | (((qh[i] >> (2*g))   & 1) << 4);
-                int qhi = (q[i] >> 4)  | (((qh[i] >> (2*g+1)) & 1) << 4);
-                acc += (dl * qlo - ml) * xlo[i];
-                acc += (dh * qhi - mh) * xhi[i];
-            }
-        }
-    }
-    return acc;
 }
 
 static inline __m256 q5k_block8(const uint8_t* qs, const float* dw, const float* mw,
@@ -340,7 +303,7 @@ static inline void q5k_block8_nr(const uint8_t* qs, const float* dw, const float
 }
 
 void jam_q5k_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -365,7 +328,7 @@ void jam_q5k_band8_avx2(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q5k_dot_scalar(J->w + (int64_t) r * J->w_stride, J->rhs + (int64_t) s * J->rhs_stride, sblocks);
+                    jam_q5k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -396,27 +359,6 @@ static void repack_q6k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
             }
         }
     }
-}
-
-static float q6k_dot_scalar(const uint8_t* w, const float* x, int sblocks) {
-    float acc = 0.0f;
-    for (int B = 0; B < sblocks; B++, w += JAM_Q6K_BYTES, x += JAM_QKK) {
-        const uint8_t* ql = w; const uint8_t* qh = w + 128;
-        const int8_t* sc = (const int8_t*) (w + 192);
-        float d = b8_h2f(*(const uint16_t*) (w + 208));
-        for (int h = 0; h < 2; h++) {
-            const uint8_t* qlb = ql + h * 64; const uint8_t* qhb = qh + h * 32;
-            for (int j = 0; j < 4; j++)
-                for (int l = 0; l < 32; l++) {
-                    int qv;
-                    switch (j) { case 0: qv = qlb[l] & 0xF; break; case 1: qv = qlb[32+l] & 0xF; break;
-                                 case 2: qv = qlb[l] >> 4; break; default: qv = qlb[32+l] >> 4; break; }
-                    qv |= ((qhb[l] >> (2 * j)) & 3) << 4;
-                    acc += d * sc[h*8 + j*2 + l/16] * (qv - 32) * x[h*128 + j*32 + l];
-                }
-        }
-    }
-    return acc;
 }
 
 static inline __m256 q6k_block8(const uint8_t* qs, const float* dw,
@@ -467,7 +409,7 @@ static inline void q6k_block8_nr(const uint8_t* qs, const float* dw, const int8_
 }
 
 void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, subs16 = J->dim1 / 16, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -492,7 +434,7 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q6k_dot_scalar(J->w + (int64_t) r * J->w_stride, J->rhs + (int64_t) s * J->rhs_stride, sblocks);
+                    jam_q6k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -507,8 +449,6 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
  *   MXFP4: signed codes |w| <= 12, so the a+128 scheme is safe (peak 255*12*2 = 6120):
  *          u = x^0x80 broadcast, s = w; corrected per row/block via cw = d*128*sum(w). */
 
-#define JAM_MXFP4_BYTES 17   /* 1 shared E8M0 exponent + 16 packed FP4 bytes */
-
 /* ---- Q8_0: repack 8 rows (raw signed bytes, 256 B/block/group8) + per-row scale ---- */
 static void repack_q8s_group8(const uint8_t* wbase, int64_t w_stride, int nb, uint8_t* qs, float* dw) {
     for (int r = 0; r < 8; r++) {
@@ -517,7 +457,7 @@ static void repack_q8s_group8(const uint8_t* wbase, int64_t w_stride, int nb, ui
             dw[(int64_t) B * 8 + r] = b8_h2f(*(const uint16_t*) w);
             const int8_t* q = (const int8_t*) (w + 2);
             for (int g = 0; g < 8; g++)
-                *(uint32_t*) (qs + (int64_t) B * 256 + g * 32 + r * 4) = *(const uint32_t*) (q + g * 4);
+                memcpy(qs + (int64_t) B * 256 + g * 32 + r * 4, q + g * 4, 4);
         }
     }
 }
@@ -571,20 +511,8 @@ static inline void q8s_block8_nr(const uint8_t* qs, const float* dw, const int8_
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-static float q8s_dot_scalar(const uint8_t* w, int nb, const float* x) {   /* <8-row tail: exact */
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES, x += JAM_QK) {
-        float d = b8_h2f(*(const uint16_t*) w);
-        const int8_t* q = (const int8_t*) (w + 2);
-        float s = 0.0f;
-        for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
-        acc += d * s;
-    }
-    return acc;
-}
-
 void jam_q8_0_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -607,7 +535,7 @@ void jam_q8_0_band8_avx2(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q8s_dot_scalar(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                    jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -625,7 +553,7 @@ static void repack_q5_0s_group8(const uint8_t* wbase, int64_t w_stride, int nb, 
 }
 
 void jam_q5_0_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -718,23 +646,8 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-static float q4_0_dot_scalar(const uint8_t* w, int nb, const float* x) {
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES, x += JAM_QK) {
-        float d = b8_h2f(*(const uint16_t*) w);
-        const uint8_t* q = w + 2;
-        float s = 0.0f;
-        for (int e = 0; e < 16; e++) {
-            s += (float) ((q[e] & 0xF) - 8) * x[e];
-            s += (float) ((q[e] >> 4) - 8) * x[16 + e];
-        }
-        acc += d * s;
-    }
-    return acc;
-}
-
 void jam_q4_0_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -759,7 +672,7 @@ void jam_q4_0_band8_avx2(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    q4_0_dot_scalar(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                    jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }
 
@@ -840,23 +753,8 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-static float mxfp4_dot_scalar(const uint8_t* w, int nb, const float* x) {
-    float acc = 0.0f;
-    for (int B = 0; B < nb; B++, w += JAM_MXFP4_BYTES, x += JAM_QK) {
-        float d = jam_mxfp4_dhalf(w[0]);
-        const uint8_t* q = w + 1;
-        float s = 0.0f;
-        for (int e = 0; e < 16; e++) {
-            s += (float) b8_mxfp4_lut[q[e] & 0xF] * x[e];
-            s += (float) b8_mxfp4_lut[q[e] >> 4] * x[16 + e];
-        }
-        acc += d * s;
-    }
-    return acc;
-}
-
 void jam_mxfp4_band8_avx2(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -880,6 +778,6 @@ void jam_mxfp4_band8_avx2(void* arg, int t0, int t1, int tid) {
         for (int r = row + group * 8; r < row_end; r++)
             for (int s = 0; s < seq; s++)
                 J->out[(int64_t) s * ldc + r] =
-                    mxfp4_dot_scalar(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
+                    jam_mxfp4_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
     }
 }

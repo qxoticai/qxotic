@@ -483,7 +483,7 @@ void jam_mm_q8_0_gemv_avx512(void* arg, int rb, int re, int tid) {
     }
 }
 
-/* ---- F16 / BF16 DENSE weight @ F32 -> F32 (ported from jinferjni.c run_dense_gemm). 4×4 register
+/* ---- F16 / BF16 DENSE weight @ F32 -> F32. 4×4 register
  * tile, 16-wide; the weight is converted to f32 on the fly (cvtph for F16, <<16 for BF16). Output is
  * token-major C[s*ldc + r] - already jam's layout. k must be a multiple of 16 (else the generic floor). */
 static inline __m512 jam_loadw_f16(const uint16_t* p)  { return _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i*) p)); }

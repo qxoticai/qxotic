@@ -102,7 +102,7 @@ void jam_mm_mxfp4_f32_generic(void* arg, int rb, int re, int tid) {
     const char*  W = (const char*)  J->a;     /* MXFP4 weights */
     const float* A = (const float*) J->b;     /* F32 activations */
     float* C = (float*) J->c;
-    const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k, nb = J->nb;
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, nb = J->nb;
     const size_t wrow = (size_t)(J->lda / 32);
     for (int i = rb; i < re; ++i) {
         const jam_mxfp4_blk* wr = (const jam_mxfp4_blk*) (W + (size_t) i * wrow * sizeof(jam_mxfp4_blk));
@@ -251,7 +251,7 @@ void jam_mm_q6k_f32_generic(void* arg, int rb, int re, int tid) {
     }
 }
 
-/* Q5_K weight @ F32 -> F32, portable floor (jinferjni.c has no VNNI path for Q5_K). 5-bit quant =
+/* Q5_K weight @ F32 -> F32, portable floor. 5-bit quant =
  * qs nibble | (qh bit << 4); value = d·sc·q5 - dmin·min. Block = d dmin scales[12] qh[32] qs[128] = 176B. */
 void jam_mm_q5k_f32_generic(void* arg, int rb, int re, int tid) {
     (void) tid;
