@@ -180,6 +180,22 @@ public final class Convert {
     }
 
     /**
+     * Per-row {@link #f32ToF16}: {@code rows} rows of {@code rowDim} lanes from the start of {@code
+     * src} to {@code dst} at {@code dstElemOff}, one row per job - a batch's commit to a linear KV
+     * cache.
+     */
+    public static void f32ToF16Rows(
+            MemoryView<MemorySegment> src,
+            MemoryView<MemorySegment> dst,
+            long dstElemOff,
+            int rows,
+            int rowDim) {
+        Parallel.forLoop(
+                rows,
+                r -> f32ToF16(src, (long) r * rowDim, dst, dstElemOff + (long) r * rowDim, rowDim));
+    }
+
+    /**
      * Q8_0 → F32 over an element span (the embedding gather-dequant, old Q8_0 {@code copyTo} via
      * {@code copyRow}): one scale read per 32-element block, {@code byte * scale} per element -
      * bit-identical to the old per-element {@code getFloat}.

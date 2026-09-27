@@ -181,10 +181,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             LayerWeights lw = w.layers()[l];
             Norms.rmsnormRows(state.normed, state.residual, lw.attnNorm(), seqLen, dim, eps);
             attention(state, l, startPos, seqLen);
-            Ops.addScaled(state.residual, state.normed, seqLen * dim, residScale);
+            Ops.addScaledRows(state.residual, state.normed, seqLen, dim, residScale);
             Norms.rmsnormRows(state.normed, state.residual, lw.ffnNorm(), seqLen, dim, eps);
             feedForward(state, l, seqLen);
-            Ops.addScaled(state.residual, state.normed, seqLen * dim, residScale);
+            Ops.addScaledRows(state.residual, state.normed, seqLen, dim, residScale);
             if (Trace.ENABLED) {
                 Trace.sum("l_out-" + l, state.residual, seqLen * dim);
             }
@@ -205,10 +205,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
      */
     private void commitKv(State state, int l, int startPos, int seqLen) {
         int kvDim = configuration.kvDim();
-        int count = Math.multiplyExact(seqLen, kvDim);
         long cacheOffset = Math.multiplyExact((long) startPos, kvDim);
-        Convert.f32ToF16(state.batchK, 0, state.keyCache[l], cacheOffset, count);
-        Convert.f32ToF16(state.batchV, 0, state.valueCache[l], cacheOffset, count);
+        Convert.f32ToF16Rows(state.batchK, state.keyCache[l], cacheOffset, seqLen, kvDim);
+        Convert.f32ToF16Rows(state.batchV, state.valueCache[l], cacheOffset, seqLen, kvDim);
     }
 
     /**
@@ -318,7 +317,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 state.th, state.residual, (long) i * dim, state.tailScratch, dim, residScale);
         Norms.rmsnorm(state.tailScratch, 0, state.th, 0, lw.ffnNorm(), dim, eps);
         feedForwardRow(state, L, state.tailScratch); // SwiGLU, one row, in place on tailScratch
-        Ops.addScaled(state.th, state.tailScratch, dim, residScale); // FFN residual -> th finished
+        Ops.addScaledRows(
+                state.th, state.tailScratch, 1, dim, residScale); // FFN residual -> th finished
     }
 
     /**
@@ -431,8 +431,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         MatMul.gemm(lw.w3(), state.normed, state.hidden2, seqLen);
         addBias(state.hidden, lw.b1(), seqLen, hiddenDim);
         addBias(state.hidden2, lw.b3(), seqLen, hiddenDim);
-        Activations.siluMultiply(
-                state.hidden, 0, state.hidden2, 0, Math.multiplyExact(seqLen, hiddenDim));
+        Activations.siluMultiplyRows(state.hidden, state.hidden2, seqLen, hiddenDim);
         MatMul.gemm(lw.w2(), state.hidden, state.normed, seqLen);
         addBias(state.normed, lw.b2(), seqLen, dim);
     }
