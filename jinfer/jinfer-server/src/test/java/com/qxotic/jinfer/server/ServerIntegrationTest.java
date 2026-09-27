@@ -49,8 +49,7 @@ class ServerIntegrationTest {
                                 Map.of("media", projector),
                                 PromptCache.Options.DEFAULTS.withContextCapacity(256));
                 Server.Running server = Server.start(engine, ServerConfig.local(0))) {
-            String models =
-                    get(HttpClient.newHttpClient(), base(server) + "/v1/models").body();
+            String models = get(HttpClient.newHttpClient(), base(server) + "/v1/models").body();
             assertTrue(models.contains("\"supports_image_input\":true"), models);
             assertTrue(models.contains("\"input_modalities\":[\"text\",\"image\"]"), models);
         }

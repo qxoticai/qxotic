@@ -177,12 +177,10 @@ public final class Server {
         if (model.model() instanceof Multimodal multimodal) {
             supportsImages = multimodal.projector(Media.Image.class).isPresent();
             if (supportsImages) inputModalities.add("image");
-            if (multimodal.projector(Media.Audio.class).isPresent())
-                inputModalities.add("audio");
+            if (multimodal.projector(Media.Audio.class).isPresent()) inputModalities.add("audio");
         }
         modelCard.put("supports_image_input", supportsImages);
-        modelCard.put(
-                "architecture", Map.of("input_modalities", List.copyOf(inputModalities)));
+        modelCard.put("architecture", Map.of("input_modalities", List.copyOf(inputModalities)));
         route(
                 server,
                 "/v1/models",
