@@ -39,20 +39,22 @@ public final class KimiDeltaAttention {
         Raw g = Raw.f32(gate, "gate");
         Raw b = Raw.f32(beta, "beta");
         int inner = heads * headDim;
-        for (int row = 0; row < rows; row++) {
-            for (int head = 0; head < heads; head++) {
-                float ah = get(av, head);
-                set(b, row * heads + head, sigmoid(get(bp, row * heads + head)));
-                int base = row * inner + head * headDim;
-                for (int d = 0; d < headDim; d++) {
-                    float value = get(p, base + d) + get(dt, head * headDim + d);
-                    set(
-                            g,
-                            base + d,
-                            safe ? lowerBound * sigmoid(value * ah) : ah * softplus(value));
-                }
-            }
-        }
+        Parallel.forLoop(
+                rows,
+                row -> {
+                    for (int head = 0; head < heads; head++) {
+                        float ah = get(av, head);
+                        set(b, row * heads + head, sigmoid(get(bp, row * heads + head)));
+                        int base = row * inner + head * headDim;
+                        for (int d = 0; d < headDim; d++) {
+                            float value = get(p, base + d) + get(dt, head * headDim + d);
+                            set(
+                                    g,
+                                    base + d,
+                                    safe ? lowerBound * sigmoid(value * ah) : ah * softplus(value));
+                        }
+                    }
+                });
     }
 
     private static float softplus(float x) {
