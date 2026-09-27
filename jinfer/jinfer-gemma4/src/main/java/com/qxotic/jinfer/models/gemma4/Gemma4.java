@@ -582,16 +582,28 @@ public final class Gemma4
     }
 
     private void commitKv(State state, int startPos, int seqLen) {
-        for (int l = 0; l < configuration.ownKvLayers; l++) {
-            int kvDim = configuration.kvDim(l);
-            for (int s = 0; s < seqLen; s++) {
-                long pos = configuration.kvCacheIndex(l, startPos + s);
-                Convert.f32ToF16(
-                        state.batchK[l], (long) s * kvDim, state.keyCache[l], pos * kvDim, kvDim);
-                Convert.f32ToF16(
-                        state.batchV[l], (long) s * kvDim, state.valueCache[l], pos * kvDim, kvDim);
-            }
-        }
+        // a job per layer, not per token: a batch longer than a layer's window wraps its ring,
+        // and the rows that land on one slot must be written in order
+        Parallel.forLoop(
+                configuration.ownKvLayers,
+                l -> {
+                    int kvDim = configuration.kvDim(l);
+                    for (int s = 0; s < seqLen; s++) {
+                        long pos = configuration.kvCacheIndex(l, startPos + s);
+                        Convert.f32ToF16(
+                                state.batchK[l],
+                                (long) s * kvDim,
+                                state.keyCache[l],
+                                pos * kvDim,
+                                kvDim);
+                        Convert.f32ToF16(
+                                state.batchV[l],
+                                (long) s * kvDim,
+                                state.valueCache[l],
+                                pos * kvDim,
+                                kvDim);
+                    }
+                });
     }
 
     public record Configuration(

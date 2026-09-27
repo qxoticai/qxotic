@@ -13,6 +13,7 @@ import static com.qxotic.jinfer.Segments.writeFloat;
 import static com.qxotic.jinfer.Segments.writeShort;
 
 import com.oracle.svm.shared.AlwaysInline;
+import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
@@ -321,7 +322,7 @@ public final class Convert {
      * (each {@code rowLen} elements), dequantized consecutively into {@code dst} at {@code
      * dstElemOff}. One dtype dispatch per table - the hoisted form of {@code n} per-row {@link
      * #copyToF32} calls - and the Q8_0 arm additionally vectorizes the row dequant. Every other
-     * dtype falls back to the per-row spans (bit-identical either way).
+     * dtype falls back to the per-row spans (bit-identical either way), one row per job.
      */
     public static void gatherToF32(
             MemoryView<MemorySegment> table,
@@ -335,14 +336,15 @@ public final class Convert {
             dequantQ8_0Rows(table, rows, rowsOff, n, dst, dstElemOff, rowLen);
             return;
         }
-        for (int r = 0; r < n; r++) {
-            copyToF32(
-                    table,
-                    (long) rows[rowsOff + r] * rowLen,
-                    dst,
-                    dstElemOff + (long) r * rowLen,
-                    rowLen);
-        }
+        Parallel.forLoop(
+                n,
+                r ->
+                        copyToF32(
+                                table,
+                                (long) rows[rowsOff + r] * rowLen,
+                                dst,
+                                dstElemOff + (long) r * rowLen,
+                                rowLen));
     }
 
     /**
