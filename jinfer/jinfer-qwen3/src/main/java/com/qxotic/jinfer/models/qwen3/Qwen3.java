@@ -216,17 +216,7 @@ public final class Qwen3
     private void embedTokens(State state, int[] tokens, int seqLen) {
         Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings"); // fail-fast on freed weights
         int dim = configuration.embeddingLength;
-        // per-row dispatch via Convert.copyToF32 (the cost profile of the old per-row
-        // virtual copyTo it replaces); the batched gather-dequant - dispatch hoisted once per
-        // table - is a planned, separately-benchmarked commit, not a polish
-        for (int s = 0; s < seqLen; s++) {
-            Convert.copyToF32(
-                    weights.tokenEmbeddings,
-                    (long) tokens[s] * dim,
-                    state.residual,
-                    (long) s * dim,
-                    dim);
-        }
+        Convert.gatherToF32(weights.tokenEmbeddings, tokens, 0, seqLen, state.residual, 0, dim);
     }
 
     // --- attention (GQA) ---
@@ -362,7 +352,7 @@ public final class Qwen3
     private void attentionFinish(State state, int l, int seqLen) {
         int dim = configuration.embeddingLength;
         MatMul.gemm(weights.layers[l].wo(), state.attnOut, state.branchOut, seqLen);
-        Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.branchOut, seqLen, dim);
     }
 
     /** Per-head RMS-norm then NeoX RoPE over each row (shared by Q and K). */
@@ -415,7 +405,7 @@ public final class Qwen3
                                 s * hiddenDim,
                                 hiddenDim));
         MatMul.gemm(lw.w2(), state.hidden, state.normed, seqLen);
-        Ops.addInPlace(state.residual, 0, state.normed, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.normed, seqLen, dim);
     }
 
     /**
@@ -426,10 +416,9 @@ public final class Qwen3
      */
     private void commitKv(State state, int l, int startPos, int seqLen) {
         int kvDim = configuration.kvDim;
-        int elements = Math.multiplyExact(seqLen, kvDim);
         long cacheOffset = (long) startPos * kvDim;
-        Convert.f32ToF16(state.batchK, 0, state.keyCache[l], cacheOffset, elements);
-        Convert.f32ToF16(state.batchV, 0, state.valueCache[l], cacheOffset, elements);
+        Convert.f32ToF16Rows(state.batchK, state.keyCache[l], cacheOffset, seqLen, kvDim);
+        Convert.f32ToF16Rows(state.batchV, state.valueCache[l], cacheOffset, seqLen, kvDim);
     }
 
     // --- heads ---
@@ -531,7 +520,7 @@ public final class Qwen3
                 configuration.rmsNormEps);
         float ss = Norms.sumOfSquares(out, 0, dim);
         float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
-        Ops.mapInPlace(out, 0, dim, v -> v * inv);
+        Ops.multiplyInPlace(out, 0, dim, inv);
         return out;
     }
 

@@ -304,7 +304,7 @@ public final class Lfm2
                 configuration.shortConvLCache,
                 SHORTCONV_PARTS);
         MatMul.gemm(sc.outProj(), state.branchOut, state.shortConvOut, seqLen);
-        Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.shortConvOut, seqLen, dim);
     }
 
     // --- attention (GQA) ---
@@ -405,7 +405,7 @@ public final class Lfm2
                     seqLen,
                     dim,
                     configuration.rmsNormEps);
-        Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.branchOut, seqLen, dim);
     }
 
     /** Per-head RMS-norm then NeoX RoPE over each row (shared by Q and K). */
@@ -476,7 +476,7 @@ public final class Lfm2
                     seqLen,
                     dim,
                     configuration.rmsNormEps);
-        Ops.addInPlace(state.residual, 0, state.normed, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.normed, seqLen, dim);
     }
 
     /**
@@ -576,10 +576,9 @@ public final class Lfm2
         for (int l = 0; l < configuration.numberOfLayers; l++) {
             if (state.keyCache[l] == null) continue; // recurrent layer
             int kvDim = configuration.kvDim(l);
-            int elements = Math.multiplyExact(seqLen, kvDim);
             long cacheOffset = (long) startPos * kvDim;
-            Convert.f32ToF16(state.batchK[l], 0, state.keyCache[l], cacheOffset, elements);
-            Convert.f32ToF16(state.batchV[l], 0, state.valueCache[l], cacheOffset, elements);
+            Convert.f32ToF16Rows(state.batchK[l], state.keyCache[l], cacheOffset, seqLen, kvDim);
+            Convert.f32ToF16Rows(state.batchV[l], state.valueCache[l], cacheOffset, seqLen, kvDim);
         }
     }
 
@@ -637,7 +636,7 @@ public final class Lfm2
                 configuration.shortConvLCache,
                 SHORTCONV_PARTS);
         MatMul.gemm(sc.outProj(), state.branchOut, state.shortConvOut, seqLen);
-        Ops.addInPlace(state.residual, 0, state.shortConvOut, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.shortConvOut, seqLen, dim);
     }
 
     /**
@@ -707,7 +706,7 @@ public final class Lfm2
                 dim,
                 configuration.rmsNormEps);
         float inv = l2Inv(out, dim);
-        Ops.mapInPlace(out, 0, dim, v -> v * inv);
+        Ops.multiplyInPlace(out, 0, dim, inv);
         return out;
     }
 
@@ -744,7 +743,7 @@ public final class Lfm2
                 configuration.rmsNormEps);
         MatMul.gemv(weights.dense2(), es.embOut, es.colbertOut);
         float inv = l2Inv(es.colbertOut, outDim);
-        Ops.mapInPlace(es.colbertOut, 0, outDim, v -> v * inv);
+        Ops.multiplyInPlace(es.colbertOut, 0, outDim, inv);
         return es.colbertOut;
     }
 
