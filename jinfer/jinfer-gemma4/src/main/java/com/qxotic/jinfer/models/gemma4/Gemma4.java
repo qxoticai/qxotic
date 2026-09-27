@@ -419,9 +419,23 @@ public final class Gemma4
                     null,
                     state.decodeScratch);
         MatMul.gemm(w.wo, state.attnOut, state.branchOut, seqLen);
-        Norms.rmsnormRows(
-                state.branchOut, state.branchOut, w.postAttnNorm, seqLen, dim, c.rmsNormEps);
-        Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
+        normThenAddRows(state.residual, state.branchOut, w.postAttnNorm, seqLen);
+    }
+
+    /** A branch's closing idiom, one pass per row: post-norm it, then add it to {@code sum}. */
+    private void normThenAddRows(
+            MemoryView<MemorySegment> sum,
+            MemoryView<MemorySegment> branch,
+            MemoryView<MemorySegment> norm,
+            int seqLen) {
+        int dim = configuration.embeddingLength;
+        Parallel.forLoop(
+                seqLen,
+                s -> {
+                    long row = (long) s * dim;
+                    Norms.rmsnorm(branch, row, branch, row, norm, dim, configuration.rmsNormEps);
+                    Ops.addInPlace(sum, row, branch, row, dim);
+                });
     }
 
     // Rows are addressed at the view's own stride: shared scratch (query, attnOut) is sized to
@@ -453,17 +467,12 @@ public final class Gemma4
             moeFeedForward(state, l, seqLen);
             return;
         }
-        denseMlp(state, l, w, seqLen, state.normed, w.postFfnNorm);
-        Ops.addInPlace(state.residual, 0, state.normed, 0, seqLen * configuration.embeddingLength);
+        denseMlp(state, l, w, seqLen, state.normed);
+        normThenAddRows(state.residual, state.normed, w.postFfnNorm, seqLen);
     }
 
     private void denseMlp(
-            State state,
-            int layer,
-            LayerWeights w,
-            int seqLen,
-            MemoryView<MemorySegment> output,
-            MemoryView<MemorySegment> postNorm) {
+            State state, int layer, LayerWeights w, int seqLen, MemoryView<MemorySegment> output) {
         int dim = configuration.embeddingLength, hidden = configuration.feedForwardLength[layer];
         Norms.rmsnormRows(
                 state.normed, state.residual, w.ffnNorm, seqLen, dim, configuration.rmsNormEps);
@@ -479,14 +488,13 @@ public final class Gemma4
                         Activations.geluMultiply(
                                 state.hidden, s * gateStride, state.hidden2, s * upStride, hidden));
         MatMul.gemm(w.down, state.hidden, output, seqLen);
-        Norms.rmsnormRows(output, output, postNorm, seqLen, dim, configuration.rmsNormEps);
     }
 
     private void mergePerLayerInput(State state, int l, int seqLen) {
         Configuration c = configuration;
         int plDim = c.embeddingLengthPerLayer;
         if (plDim == 0 || weights.layers[l].inputGate == null) return;
-        int dim = c.embeddingLength, total = plDim * c.numberOfLayers;
+        int total = plDim * c.numberOfLayers;
         LayerWeights w = weights.layers[l];
         MatMul.gemm(w.inputGate, state.residual, state.plGate, seqLen);
         Parallel.forLoop(
@@ -499,14 +507,7 @@ public final class Gemma4
                                 s * total + l * plDim,
                                 plDim));
         MatMul.gemm(w.projection, state.plGate, state.plProjection, seqLen);
-        Norms.rmsnormRows(
-                state.plProjection,
-                state.plProjection,
-                w.postProjectionNorm,
-                seqLen,
-                dim,
-                c.rmsNormEps);
-        Ops.addInPlace(state.residual, 0, state.plProjection, 0, seqLen * dim);
+        normThenAddRows(state.residual, state.plProjection, w.postProjectionNorm, seqLen);
     }
 
     private void moeFeedForward(State state, int l, int seqLen) {
@@ -517,7 +518,9 @@ public final class Gemma4
         int experts = c.expertCount, topK = c.expertUsedCount;
         int expertFf = c.expertFeedForwardLength, gateUp = 2 * expertFf;
 
-        denseMlp(state, l, w, seqLen, state.moeShared, moe.postNorm1);
+        denseMlp(state, l, w, seqLen, state.moeShared);
+        Norms.rmsnormRows(
+                state.moeShared, state.moeShared, moe.postNorm1, seqLen, dim, c.rmsNormEps);
 
         float invSqrtDim = 1f / (float) Math.sqrt(dim);
         Parallel.forLoop(
@@ -574,11 +577,8 @@ public final class Gemma4
                                             expertFf));
                     MatMul.gemm(moe.down[e], state.moeHidden, out, n);
                 });
-        Norms.rmsnormRows(state.moeOut, state.moeOut, moe.postNorm2, seqLen, dim, c.rmsNormEps);
-        Ops.addInPlace(state.moeShared, 0, state.moeOut, 0, seqLen * dim);
-        Norms.rmsnormRows(
-                state.moeShared, state.moeShared, w.postFfnNorm, seqLen, dim, c.rmsNormEps);
-        Ops.addInPlace(state.residual, 0, state.moeShared, 0, seqLen * dim);
+        normThenAddRows(state.moeShared, state.moeOut, moe.postNorm2, seqLen);
+        normThenAddRows(state.residual, state.moeShared, w.postFfnNorm, seqLen);
     }
 
     private void commitKv(State state, int startPos, int seqLen) {
