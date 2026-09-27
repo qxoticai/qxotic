@@ -262,7 +262,7 @@ public final class GptOss
 
         MatMul.gemm(attn.wo, state.attnOut, state.branchOut, seqLen);
         Ops.addRowBiasInPlace(state.branchOut, 0, attn.oBias, 0, seqLen, dim);
-        Ops.addInPlace(state.residual, 0, state.branchOut, 0, seqLen * dim);
+        Ops.addRows(state.residual, state.branchOut, seqLen, dim);
         commitKv(state, l, startPos, seqLen);
     }
 
@@ -307,7 +307,7 @@ public final class GptOss
                     MatMul.gemm(moe.downExps[e], state.hidden, out, n);
                     Ops.addRowBiasInPlace(out, 0, moe.downBias, (long) e * dim, n, dim);
                 });
-        Ops.addInPlace(residual, 0, state.moeOut, 0, seqLen * dim);
+        Ops.addRows(residual, state.moeOut, seqLen, dim);
     }
 
     private void selectExperts(State state, int seqLen) {

@@ -234,7 +234,7 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     state.decodeScratch);
 
         MatMul.gemm(w.o, state.attnOut, state.branch, rows);
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * dim);
+        Ops.addRows(state.residual, state.branch, rows, dim);
         commitKv(state, layer, startPos, rows);
     }
 
@@ -298,10 +298,10 @@ public final class Maple implements LanguageModel<Maple.Configuration, Maple.Wei
                     Ops.clampInPlace(
                             state.hidden, 0, count * expertFf, Float.NEGATIVE_INFINITY, clamp);
                     Ops.clampInPlace(state.hidden2, 0, count * expertFf, -clamp, clamp);
-                    Activations.siluMultiply(state.hidden, 0, state.hidden2, 0, count * expertFf);
+                    Activations.siluMultiplyRows(state.hidden, state.hidden2, count, expertFf);
                     MatMul.gemm(w.downExperts[expert], state.hidden, out, count);
                 });
-        Ops.addInPlace(state.residual, 0, state.moeOut, 0, rows * dim);
+        Ops.addRows(state.residual, state.moeOut, rows, dim);
     }
 
     @Override

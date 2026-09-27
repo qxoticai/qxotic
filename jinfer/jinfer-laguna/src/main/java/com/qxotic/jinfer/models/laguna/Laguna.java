@@ -149,12 +149,12 @@ public final class Laguna
         Norms.rmsnormRowsGgml(
                 state.normed, state.residual, w.attnNorm, rows, c.embeddingLength, c.rmsNormEps);
         attention(state, layer, startPos, rows);
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+        Ops.addRows(state.residual, state.branch, rows, c.embeddingLength);
         Norms.rmsnormRowsGgml(
                 state.normed, state.residual, w.ffnNorm, rows, c.embeddingLength, c.rmsNormEps);
         if (layer < c.denseLeadingLayers) denseFfn(state, w.dense, rows);
         else moe(state, w.moe, rows);
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+        Ops.addRows(state.residual, state.branch, rows, c.embeddingLength);
         if (Trace.ENABLED) Trace.sum("l_out-" + layer, state.residual, rows * c.embeddingLength);
     }
 
@@ -266,8 +266,8 @@ public final class Laguna
         Configuration c = configuration;
         MatMul.gemm(w.gate, state.normed, state.denseHidden, rows);
         MatMul.gemm(w.up, state.normed, state.denseHidden2, rows);
-        Activations.siluMultiply(
-                state.denseHidden, 0, state.denseHidden2, 0, rows * c.feedForwardLength);
+        Activations.siluMultiplyRows(
+                state.denseHidden, state.denseHidden2, rows, c.feedForwardLength);
         MatMul.gemm(w.down, state.denseHidden, state.branch, rows);
     }
 
@@ -303,20 +303,16 @@ public final class Laguna
                 (expert, count, gather, output) -> {
                     MatMul.gemm(w.expertGate[expert], gather, state.moeHidden, count);
                     MatMul.gemm(w.expertUp[expert], gather, state.moeHidden2, count);
-                    Activations.siluMultiply(
-                            state.moeHidden,
-                            0,
-                            state.moeHidden2,
-                            0,
-                            count * c.expertFeedForwardLength);
+                    Activations.siluMultiplyRows(
+                            state.moeHidden, state.moeHidden2, count, c.expertFeedForwardLength);
                     MatMul.gemm(w.expertDown[expert], state.moeHidden, output, count);
                 });
         MatMul.gemm(w.sharedGate, state.normed, state.sharedHidden, rows);
         MatMul.gemm(w.sharedUp, state.normed, state.sharedHidden2, rows);
-        Activations.siluMultiply(
-                state.sharedHidden, 0, state.sharedHidden2, 0, rows * c.sharedFeedForwardLength);
+        Activations.siluMultiplyRows(
+                state.sharedHidden, state.sharedHidden2, rows, c.sharedFeedForwardLength);
         MatMul.gemm(w.sharedDown, state.sharedHidden, state.sharedOut, rows);
-        Ops.addInPlace(state.branch, 0, state.sharedOut, 0, rows * c.embeddingLength);
+        Ops.addRows(state.branch, state.sharedOut, rows, c.embeddingLength);
     }
 
     @Override
