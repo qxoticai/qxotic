@@ -8,6 +8,7 @@ import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContextConfiguration;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
@@ -148,7 +149,7 @@ public final class BailingMoe3
                 c.rmsNormEps);
         if (c.isAttention[layer]) mla(s, layer, startPos, rows);
         else kda(s, layer, rows);
-        Ops.addInPlace(s.residual, 0, s.branch, 0, rows * c.embeddingLength);
+        Ops.addRows(s.residual, s.branch, rows, c.embeddingLength);
         Norms.rmsnormRows(
                 s.normed,
                 s.residual,
@@ -158,7 +159,7 @@ public final class BailingMoe3
                 c.rmsNormEps);
         if (layer < c.denseLeadingLayers) denseFfn(s, layer, rows);
         else moe(s, layer, rows);
-        Ops.addInPlace(s.residual, 0, s.branch, 0, rows * c.embeddingLength);
+        Ops.addRows(s.residual, s.branch, rows, c.embeddingLength);
         if (Trace.ENABLED) Trace.sum("l_out-" + layer, s.residual, rows * c.embeddingLength);
     }
 
@@ -349,13 +350,12 @@ public final class BailingMoe3
                         c.ropeDimensionCount);
             }
         }
-        for (int row = 0; row < rows; row++)
-            Convert.f32ToF16(
-                    s.mlaKvAll,
-                    (long) row * c.mlaCacheDim(),
-                    s.attentionCache[layer],
-                    (long) (startPos + row) * c.mlaCacheDim(),
-                    c.mlaCacheDim());
+        Convert.f32ToF16Rows(
+                s.mlaKvAll,
+                s.attentionCache[layer],
+                (long) startPos * c.mlaCacheDim(),
+                rows,
+                c.mlaCacheDim());
         FlashAttention.causalPrefill(
                 s.mlaQPacked,
                 s.mlaAttentionOut,
@@ -397,8 +397,8 @@ public final class BailingMoe3
         FfnWeights w = weights.ffn[layer];
         MatMul.gemm(w.gate, s.normed, s.denseHidden, rows);
         MatMul.gemm(w.up, s.normed, s.denseHidden2, rows);
-        Activations.siluMultiply(
-                s.denseHidden, 0, s.denseHidden2, 0, rows * configuration.feedForwardLength);
+        Activations.siluMultiplyRows(
+                s.denseHidden, s.denseHidden2, rows, configuration.feedForwardLength);
         MatMul.gemm(w.down, s.denseHidden, s.branch, rows);
     }
 
@@ -440,7 +440,8 @@ public final class BailingMoe3
                     swiglu(
                             s.moeHidden,
                             s.moeHidden2,
-                            n * c.expertFeedForwardLength,
+                            n,
+                            c.expertFeedForwardLength,
                             c.expertSwiGluClamp[layer]);
                     MatMul.gemm(w.expertDown[expert], s.moeHidden, out, n);
                 });
@@ -449,25 +450,32 @@ public final class BailingMoe3
         swiglu(
                 s.sharedHidden,
                 s.sharedHidden2,
-                rows * c.sharedFeedForwardLength,
+                rows,
+                c.sharedFeedForwardLength,
                 c.sharedSwiGluClamp[layer]);
         MatMul.gemm(w.sharedDown, s.sharedHidden, s.sharedOut, rows);
-        Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * c.embeddingLength);
+        Ops.addRows(s.branch, s.sharedOut, rows, c.embeddingLength);
     }
 
     private static void swiglu(
             MemoryView<MemorySegment> gate,
             MemoryView<MemorySegment> up,
-            int elements,
+            int rows,
+            int rowDim,
             float clamp) {
         if (!(clamp > 1e-6f)) {
-            Activations.siluMultiply(gate, 0, up, 0, elements);
+            Activations.siluMultiplyRows(gate, up, rows, rowDim);
             return;
         }
-        Ops.siluInPlace(gate, 0, elements);
-        Ops.clampInPlace(gate, 0, elements, Float.NEGATIVE_INFINITY, clamp);
-        Ops.clampInPlace(up, 0, elements, -clamp, clamp);
-        Ops.multiplyInPlace(gate, 0, up, 0, elements);
+        Parallel.forLoop(
+                rows,
+                r -> {
+                    long row = (long) r * rowDim;
+                    Ops.siluInPlace(gate, row, rowDim);
+                    Ops.clampInPlace(gate, row, rowDim, Float.NEGATIVE_INFINITY, clamp);
+                    Ops.clampInPlace(up, row, rowDim, -clamp, clamp);
+                    Ops.multiplyInPlace(gate, row, up, row, rowDim);
+                });
     }
 
     @Override
