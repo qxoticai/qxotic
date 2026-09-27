@@ -5,6 +5,7 @@ import static com.qxotic.jinfer.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
+import com.qxotic.jinfer.Parallel;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -253,6 +254,12 @@ public final class Activations {
             int upOff,
             int n) {
         Ops.siluMultiplyInPlace(gate, gateOff, up, upOff, n);
+    }
+
+    /** Per-row {@link #siluMultiply} over {@code rows} rows of {@code rowDim} lanes. */
+    public static void siluMultiplyRows(
+            MemoryView<MemorySegment> gate, MemoryView<MemorySegment> up, int rows, int rowDim) {
+        Parallel.forLoop(rows, r -> siluMultiply(gate, r * rowDim, up, r * rowDim, rowDim));
     }
 
     /** The WaveNet gate {@code tanh(filter) * sigmoid(gate)} - the scalar-fallback oracle. */

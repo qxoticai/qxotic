@@ -399,6 +399,15 @@ public final class Ops {
         }
     }
 
+    /**
+     * Per-row {@link #addInPlace} over {@code rows} rows of {@code rowDim} lanes: a block's
+     * residual add, one row per job like {@link Norms#rmsnormRows}.
+     */
+    public static void addRows(
+            MemoryView<MemorySegment> x, MemoryView<MemorySegment> y, int rows, int rowDim) {
+        Parallel.forLoop(rows, r -> addInPlace(x, (long) r * rowDim, y, (long) r * rowDim, rowDim));
+    }
+
     /** Add one {@code cols}-element bias row to each of {@code rows} dense rows in place. */
     public static void addRowBiasInPlace(
             MemoryView<MemorySegment> view,
@@ -451,13 +460,23 @@ public final class Ops {
     }
 
     /**
-     * Scaled residual add {@code x += scale * xb} over {@code n} elements. Note {@code xb} is
-     * scaled in place when {@code scale != 1}, so it is consumed, not merely read.
+     * Scaled residual add {@code x += scale * xb} over {@code rows} rows of {@code rowDim} lanes,
+     * one row per job. Note {@code xb} is scaled in place when {@code scale != 1}, so it is
+     * consumed, not merely read.
      */
-    public static void addScaled(
-            MemoryView<MemorySegment> x, MemoryView<MemorySegment> xb, int n, float scale) {
-        if (scale != 1.0f) mapInPlace(xb, 0, n, v -> v * scale);
-        addInPlace(x, 0, xb, 0, n);
+    public static void addScaledRows(
+            MemoryView<MemorySegment> x,
+            MemoryView<MemorySegment> xb,
+            int rows,
+            int rowDim,
+            float scale) {
+        Parallel.forLoop(
+                rows,
+                r -> {
+                    long row = (long) r * rowDim;
+                    if (scale != 1.0f) multiplyInPlace(xb, row, rowDim, scale);
+                    addInPlace(x, row, xb, row, rowDim);
+                });
     }
 
     /**
