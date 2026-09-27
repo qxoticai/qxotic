@@ -60,6 +60,33 @@ jam leads at every thread count and format: by 1.2x to 1.45x on the K-quants, 1.
 The lead is widest per core and narrows with threads: from 1 to 16 threads jinfer scales 8.4x on Q4_K where llama.cpp's tiled path scales 9.3x.
 llama.cpp's numbers repeat within 1%, jinfer's within 2% to 5%.
 
+By prompt length, a separate session, jinfer / llama.cpp's best mode (`-r 10` for pp16 and pp64).
+
+16 threads:
+
+| t/s | pp16 | pp64 | pp512 |
+|---|---|---|---|
+| Q4_0 | 543 / 655 | 1098 / 862 | 1575 / 978 |
+| Q8_0 | 342 / 399 | 877 / 554 | 1441 / 620 |
+| Q4_K | 511 / 656 | 1034 / 842 | 1480 / 1205 |
+| Q5_K | 502 / 476 | 1032 / 836 | 1416 / 1226 |
+| Q6_K | 443 / 394 | 990 / 745 | 1468 / 1153 |
+
+1 thread:
+
+| t/s | pp16 | pp64 | pp512 |
+|---|---|---|---|
+| Q4_0 | 102 / 91 | 164 / 93 | 176 / 91 |
+| Q8_0 | 91 / 43 | 157 / 49 | 177 / 49 |
+| Q4_K | 101 / 85 | 166 / 127 | 178 / 132 |
+| Q5_K | 96 / 77 | 160 / 124 | 178 / 132 |
+| Q6_K | 102 / 55 | 170 / 108 | 186 / 127 |
+
+A 16-token prompt on 16 threads is where jam loses: llama.cpp is ahead by 17% to 28% on Q4_0, Q8_0 and Q4_K.
+jam repacks every weight band on every call, a fixed cost worth about 10 columns of dots, and at 16 columns it is no longer amortized; llama.cpp's repack kernels for Q4_0 and Q4_K pay theirs once, at load.
+On one thread the same prompt is ahead on every format, so the rest of the gap is the per-call fan-out across 16 workers.
+From 64 tokens up jam leads everywhere.
+
 What #27851 changed inside llama.cpp, the tiled path against the kernels before it:
 
 | threads | Q4_K | Q5_K | Q6_K |
@@ -79,7 +106,7 @@ At the matmul level (`jam_bench`, m = 4096, k = 4096, GMAC/s), the new band agai
 
 These two rows are from 2026-09-26 and were measured a few hours apart, so read them as the size of the change, not to the percent.
 This CPU drifts by about 20% between sessions (thread placement, the V-cache CCD, sustained clocks); the pp512 tables above are one session each.
-Logs: `bench-results/2026-09-27-vnni-band-polished` (gitignored, local).
+Logs: `bench-results/2026-09-27-vnni-band-polished`, the prompt-length runs under `by-prompt` (gitignored, local).
 
 ## Method
 
