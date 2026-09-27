@@ -77,7 +77,8 @@ At the matmul level (`jam_bench`, m = 4096, k = 4096, GMAC/s), the new band agai
 | n = 512, 8 threads, before | 2059 | 1764 | 2027 | 1433 | 1268 |
 | n = 512, 8 threads, after | 3052 | 3155 | 3098 | 3155 | 3297 |
 
-This CPU drifts by about 20% between sessions (thread placement, the V-cache CCD, sustained clocks), so only rows measured together compare.
+These two rows are from 2026-09-26 and were measured a few hours apart, so read them as the size of the change, not to the percent.
+This CPU drifts by about 20% between sessions (thread placement, the V-cache CCD, sustained clocks); the pp512 tables above are one session each.
 Logs: `bench-results/2026-09-27-vnni-band-polished` (gitignored, local).
 
 ## Method
