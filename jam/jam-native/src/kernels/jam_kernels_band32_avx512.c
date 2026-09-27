@@ -393,8 +393,10 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
 
 /* ================= the band: claim a 32-row tile, repack it, sweep the columns ================= */
 
-INLINE void band(const jam_band_job* J, int tid, const band_kind kind, band_decode decode) {
+INLINE void band(const jam_band_job* J, int tid, const band_kind kind, band_decode decode,
+                 const int bytes256) {             /* weight bytes per 256 elements */
     const int m = J->dim0, k = J->dim1, n = J->seq, nb = k / JAM_QK;
+    const int row_bytes = nb * bytes256 / 8;
     const int64_t ldc = J->out_stride;
     const int64_t xd_stride = kind == KIND_F32 ? nb : nb / 8;
     uint8_t* b0 = J->repack[tid].qs;
@@ -407,9 +409,19 @@ INLINE void band(const jam_band_job* J, int tid, const band_kind kind, band_deco
         const int ng = (rows + 15) / 16;
         const __mmask16 rows0 = (__mmask16) ((1u << (rows < 16 ? rows : 16)) - 1);
         const __mmask16 rows1 = (__mmask16) ((1u << (rows < 16 ? 0 : rows - 16)) - 1);
-        for (int g = 0; g < ng; g++)
-            repack16(J->w + (int64_t) (row + g * 16) * J->w_stride, J->w_stride,
-                     rows - g * 16 < 16 ? rows - g * 16 : 16, nb, g ? b1 : b0, kind, decode);
+        for (int g = 0; g < ng; g++) {
+            const uint8_t* w = J->w + (int64_t) (row + g * 16) * J->w_stride;
+            const int nrows = rows - g * 16 < 16 ? rows - g * 16 : 16;
+            /* A short prompt is memory-bound, and the repack walks its 16 rows in lockstep: 16
+             * interleaved streams, which hardware prefetchers follow badly. Rows are contiguous, so
+             * touching them in order first brings the group in as one stream (n = 16: +4% to +10%).
+             * ponytail: a touch pass, not a row-major repack; that would save the second read. */
+            unsigned touched = 0;
+            for (int r = 0; r < nrows; r++)
+                for (int o = 0; o < row_bytes; o += 64) touched += w[r * J->w_stride + o];
+            __asm__ volatile("" : : "r"(touched));
+            repack16(w, J->w_stride, nrows, nb, g ? b1 : b0, kind, decode);
+        }
         for (int c = 0; c < n; c += 4) {
             const int nc = n - c < 4 ? n - c : 4;
             #define TILE(NG, NC) tile(NG, NC, kind, b0, b1, nb, (const uint8_t*) J->xq + (size_t) c * k, k, \
@@ -422,16 +434,16 @@ INLINE void band(const jam_band_job* J, int tid, const band_kind kind, band_deco
     }
 }
 
-#define BAND(NAME, KIND, DECODE) \
+#define BAND(NAME, KIND, DECODE, BYTES256) \
     void NAME(void* job, int t0, int t1, int tid) { \
         (void) t0; (void) t1; \
-        band((const jam_band_job*) job, tid, KIND, DECODE); \
+        band((const jam_band_job*) job, tid, KIND, DECODE, BYTES256); \
     }
-BAND(jam_q4k_band32_avx512,   KIND_K32, decode_q4k)
-BAND(jam_q5k_band32_avx512,   KIND_K32, decode_q5k)
-BAND(jam_q6k_band32_avx512,   KIND_K16, decode_q6k)
-BAND(jam_q8_0_band32_avx512,  KIND_F32, decode_q8_0)
-BAND(jam_q4_0_band32_avx512,  KIND_F32, decode_q4_0)
-BAND(jam_q5_0_band32_avx512,  KIND_F32, decode_q5_0)
-BAND(jam_mxfp4_band32_avx512, KIND_F32, decode_mxfp4)
-BAND(jam_q1_0_band32_avx512,  KIND_F32, decode_q1_0)
+BAND(jam_q4k_band32_avx512,   KIND_K32, decode_q4k,   JAM_Q4K_BYTES)
+BAND(jam_q5k_band32_avx512,   KIND_K32, decode_q5k,   JAM_Q5K_BYTES)
+BAND(jam_q6k_band32_avx512,   KIND_K16, decode_q6k,   JAM_Q6K_BYTES)
+BAND(jam_q8_0_band32_avx512,  KIND_F32, decode_q8_0,  8 * JAM_Q8_0_BYTES)
+BAND(jam_q4_0_band32_avx512,  KIND_F32, decode_q4_0,  8 * JAM_Q4_0_BYTES)
+BAND(jam_q5_0_band32_avx512,  KIND_F32, decode_q5_0,  8 * JAM_Q5_0_BYTES)
+BAND(jam_mxfp4_band32_avx512, KIND_F32, decode_mxfp4, 8 * JAM_MXFP4_BYTES)
+BAND(jam_q1_0_band32_avx512,  KIND_F32, decode_q1_0,  2 * JAM_Q1_0_BYTES)
