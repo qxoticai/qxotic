@@ -301,28 +301,31 @@ public final class Gemma4
         float projectionScale = (float) (1.0 / Math.sqrt(dim));
         float tokenScale = (float) Math.sqrt(plDim);
         float inputScale = (float) (1.0 / Math.sqrt(2.0));
-        Ops.multiplyInPlace(state.perLayerInputs, 0, seqLen * total, projectionScale);
-        for (int s = 0; s < seqLen; s++) {
-            long base = (long) s * total;
-            for (int l = 0; l < c.numberOfLayers; l++)
-                Norms.rmsnorm(
-                        state.perLayerInputs,
-                        base + (long) l * plDim,
-                        state.perLayerInputs,
-                        base + (long) l * plDim,
-                        weights.perLayerProjectionNorm,
-                        plDim,
-                        c.rmsNormEps);
-            Convert.copyToF32(
-                    weights.perLayerTokenEmbeddings,
-                    (long) tokens[tokenOffset + s] * total,
-                    state.perLayerTokenRow,
-                    0,
-                    total);
-            Ops.multiplyInPlace(state.perLayerTokenRow, 0, total, tokenScale);
-            Ops.addInPlace(state.perLayerInputs, base, state.perLayerTokenRow, 0, total);
-            Ops.multiplyInPlace(state.perLayerInputs, base, total, inputScale);
-        }
+        // one token per job: its projection, its table row and their sum stay on one core
+        Parallel.forLoop(
+                seqLen,
+                (s, slot) -> {
+                    long base = (long) s * total, row = (long) slot * total;
+                    Ops.multiplyInPlace(state.perLayerInputs, base, total, projectionScale);
+                    for (int l = 0; l < c.numberOfLayers; l++)
+                        Norms.rmsnorm(
+                                state.perLayerInputs,
+                                base + (long) l * plDim,
+                                state.perLayerInputs,
+                                base + (long) l * plDim,
+                                weights.perLayerProjectionNorm,
+                                plDim,
+                                c.rmsNormEps);
+                    Convert.copyToF32(
+                            weights.perLayerTokenEmbeddings,
+                            (long) tokens[tokenOffset + s] * total,
+                            state.perLayerTokenRows,
+                            row,
+                            total);
+                    Ops.multiplyInPlace(state.perLayerTokenRows, row, total, tokenScale);
+                    Ops.addInPlace(state.perLayerInputs, base, state.perLayerTokenRows, row, total);
+                    Ops.multiplyInPlace(state.perLayerInputs, base, total, inputScale);
+                });
     }
 
     private void layer(State state, int l, int startPos, int seqLen, boolean bidirectional) {
@@ -710,7 +713,7 @@ public final class Gemma4
         final FlashAttention.DecodeScratch decodeScratch =
                 new FlashAttention.DecodeScratch(memoryArena());
         final MemoryView<MemorySegment>[] keyCache, valueCache, batchK, batchV;
-        final MemoryView<MemorySegment> perLayerInputs, perLayerTokenRow, plGate, plProjection;
+        final MemoryView<MemorySegment> perLayerInputs, perLayerTokenRows, plGate, plProjection;
         final MemoryView<MemorySegment> moeShared,
                 moeInput,
                 moeRouterInput,
@@ -780,7 +783,11 @@ public final class Gemma4
             }
             int plDim = c.embeddingLengthPerLayer, plTotal = plDim * c.numberOfLayers;
             perLayerInputs = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows, plTotal);
-            perLayerTokenRow = plDim == 0 ? null : Views.allocateF32(memoryArena(), plTotal);
+            // one scratch row per participant
+            perLayerTokenRows =
+                    plDim == 0
+                            ? null
+                            : Views.allocateF32(memoryArena(), Parallel.threads() * plTotal);
             plGate = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows, plDim);
             plProjection = plDim == 0 ? null : Views.allocateF32(memoryArena(), rows, dim);
             if (c.isMoe()) {
