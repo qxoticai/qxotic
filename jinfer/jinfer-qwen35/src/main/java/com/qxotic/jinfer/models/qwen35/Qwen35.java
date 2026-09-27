@@ -297,7 +297,7 @@ public final class Qwen35
                 c.rmsNormEps);
         if (c.isFullAttention[layer]) attention(state, layer, startPos, rows);
         else delta(state, layer, rows);
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+        Ops.addRows(state.residual, state.branch, rows, c.embeddingLength);
         Norms.rmsnormRows(
                 state.normed,
                 state.residual,
@@ -307,7 +307,7 @@ public final class Qwen35
                 c.rmsNormEps);
         if (c.isMoE()) moe(state, layer, rows);
         else denseFfn(state, layer, rows);
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+        Ops.addRows(state.residual, state.branch, rows, c.embeddingLength);
         if (Trace.ENABLED) Trace.sum("l_out-" + layer, state.residual, rows * c.embeddingLength);
     }
 
@@ -436,10 +436,9 @@ public final class Qwen35
                                     s.k, off, row, s.ropeCos, s.ropeSin, weights.ropeHalf);
                     }
                 });
-        int elements = Math.multiplyExact(rows, kvDim);
         long cacheOffset = (long) startPos * kvDim;
-        Convert.f32ToF16(s.k, 0, s.keyCache[layer], cacheOffset, elements);
-        Convert.f32ToF16(s.v, 0, s.valueCache[layer], cacheOffset, elements);
+        Convert.f32ToF16Rows(s.k, s.keyCache[layer], cacheOffset, rows, kvDim);
+        Convert.f32ToF16Rows(s.v, s.valueCache[layer], cacheOffset, rows, kvDim);
         FlashAttention.causalPrefill(
                 s.q,
                 s.attentionOut,
@@ -452,7 +451,7 @@ public final class Qwen35
                 kvDim,
                 qDim,
                 c.numberOfHeads / c.numberOfKeyValueHeads);
-        GatedDeltaNet.sigmoidMultiply(s.attentionOut, s.attentionGate, rows * qDim);
+        GatedDeltaNet.sigmoidMultiply(s.attentionOut, s.attentionGate, rows, qDim);
         MatMul.gemm(weights.attnOutput[layer], s.attentionOut, s.branch, rows);
     }
 
@@ -523,7 +522,7 @@ public final class Qwen35
         Configuration c = configuration;
         MatMul.gemm(weights.ffnGate[layer], s.normed, s.hidden, rows);
         MatMul.gemm(weights.ffnUp[layer], s.normed, s.hidden2, rows);
-        Activations.siluMultiply(s.hidden, 0, s.hidden2, 0, rows * c.hiddenDim);
+        Activations.siluMultiplyRows(s.hidden, s.hidden2, rows, c.hiddenDim);
         MatMul.gemm(weights.ffnDown[layer], s.hidden, s.branch, rows);
     }
 
@@ -547,17 +546,17 @@ public final class Qwen35
                 (expert, n, gather, out) -> {
                     MatMul.gemm(weights.moeExpertGate[layer][expert], gather, s.moeHidden, n);
                     MatMul.gemm(weights.moeExpertUp[layer][expert], gather, s.moeHidden2, n);
-                    Activations.siluMultiply(s.moeHidden, 0, s.moeHidden2, 0, n * expertFfn);
+                    Activations.siluMultiplyRows(s.moeHidden, s.moeHidden2, n, expertFfn);
                     MatMul.gemm(weights.moeExpertDown[layer][expert], s.moeHidden, out, n);
                 });
         if (c.expertSharedFeedForwardLength > 0 && weights.moeSharedGate[layer] != null) {
             int shared = c.expertSharedFeedForwardLength;
             MatMul.gemm(weights.moeSharedGate[layer], s.normed, s.sharedGate, rows);
             MatMul.gemm(weights.moeSharedUp[layer], s.normed, s.sharedUp, rows);
-            Activations.siluMultiply(s.sharedGate, 0, s.sharedUp, 0, rows * shared);
+            Activations.siluMultiplyRows(s.sharedGate, s.sharedUp, rows, shared);
             MatMul.gemm(weights.moeSharedDown[layer], s.sharedGate, s.sharedOut, rows);
             if (weights.moeSharedInputGate[layer] == null) {
-                Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * dim);
+                Ops.addRows(s.branch, s.sharedOut, rows, dim);
             } else {
                 MatMul.gemm(weights.moeSharedInputGate[layer], s.normed, s.sharedScale, rows);
                 // sigmoid scalars read on the OWNING thread (checked access; a confined arena
