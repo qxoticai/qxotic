@@ -212,7 +212,7 @@ public final class Mellum
                     null,
                     state.decodeScratch);
         MatMul.gemm(w.output, state.attentionOut, state.branch, rows);
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * dim);
+        Ops.addRows(state.residual, state.branch, rows, dim);
 
         for (int row = 0; row < rows; row++) {
             long slot = (long) c.kvCacheIndex(layer, startPos + row) * kvDim;
@@ -269,11 +269,11 @@ public final class Mellum
                 (expert, count, gather, out) -> {
                     MatMul.gemm(w.expertGate[expert], gather, state.moeHidden, count);
                     MatMul.gemm(w.expertUp[expert], gather, state.moeHidden2, count);
-                    Activations.siluMultiply(
-                            state.moeHidden, 0, state.moeHidden2, 0, count * expertFf);
+                    Activations.siluMultiplyRows(
+                            state.moeHidden, state.moeHidden2, count, expertFf);
                     MatMul.gemm(w.expertDown[expert], state.moeHidden, out, count);
                 });
-        Ops.addInPlace(state.residual, 0, state.branch, 0, rows * dim);
+        Ops.addRows(state.residual, state.branch, rows, dim);
     }
 
     @Override

@@ -142,7 +142,7 @@ public final class NemotronH
                 case ATTENTION -> attention(state, layer, startPos, rows);
                 case MOE -> moe(state, layer, rows);
             }
-            Ops.addInPlace(state.residual, 0, state.branch, 0, rows * c.embeddingLength);
+            Ops.addRows(state.residual, state.branch, rows, c.embeddingLength);
             if (Trace.ENABLED)
                 Trace.sum(
                         "l" + layer + "-" + c.layerTypes[layer],
@@ -158,11 +158,21 @@ public final class NemotronH
         int heads = c.ssmTimeStepRank, projection = c.ssmInProjSize();
         MatMul.gemm(w.inProj, s.normed, s.ssmProjection, rows);
         float[] dtValues = s.ssmDtValues;
+        Parallel.forLoop(
+                rows,
+                row -> {
+                    long source = (long) row * projection;
+                    Convert.copyF32(s.ssmProjection, source, s.ssmZ, (long) row * inner, inner);
+                    Convert.copyF32(
+                            s.ssmProjection,
+                            source + inner,
+                            s.ssmXbc,
+                            (long) row * channels,
+                            channels);
+                });
+        // the time steps are read on the owning thread: checked access
         for (int row = 0; row < rows; row++) {
             long source = (long) row * projection;
-            Convert.copyF32(s.ssmProjection, source, s.ssmZ, (long) row * inner, inner);
-            Convert.copyF32(
-                    s.ssmProjection, source + inner, s.ssmXbc, (long) row * channels, channels);
             for (int h = 0; h < heads; h++) {
                 long index = (long) row * heads + h;
                 float value =
@@ -213,20 +223,8 @@ public final class NemotronH
         MatMul.gemm(w.wq, s.normed, s.q, rows);
         MatMul.gemm(w.wk, s.normed, s.k, rows);
         MatMul.gemm(w.wv, s.normed, s.v, rows);
-        for (int row = 0; row < rows; row++) {
-            Convert.f32ToF16(
-                    s.k,
-                    (long) row * kvDim,
-                    s.keyCache[layer],
-                    (long) (startPos + row) * kvDim,
-                    kvDim);
-            Convert.f32ToF16(
-                    s.v,
-                    (long) row * kvDim,
-                    s.valueCache[layer],
-                    (long) (startPos + row) * kvDim,
-                    kvDim);
-        }
+        Convert.f32ToF16Rows(s.k, s.keyCache[layer], (long) startPos * kvDim, rows, kvDim);
+        Convert.f32ToF16Rows(s.v, s.valueCache[layer], (long) startPos * kvDim, rows, kvDim);
         FlashAttention.causalPrefill(
                 s.q,
                 s.attentionOut,
@@ -305,7 +303,7 @@ public final class NemotronH
             Parallel.forLoop(
                     rows, row -> Activations.reluSqr(s.sharedHidden, row * shared, shared));
             MatMul.gemm(w.downShared, s.sharedHidden, s.sharedOut, rows);
-            Ops.addInPlace(s.branch, 0, s.sharedOut, 0, rows * dim);
+            Ops.addRows(s.branch, s.sharedOut, rows, dim);
         }
     }
 
