@@ -242,20 +242,20 @@ void jam_mm_bf16p_avx512bf16(void* arg, int rb, int re, int tid) {
                 const uint16_t* xr = xp + (size_t)(t / 2) * 64;
                 __m512bh xa = (__m512bh) _mm512_loadu_si512((const void*) xr);
                 __m512bh xb = (__m512bh) _mm512_loadu_si512((const void*) (xr + 32));
-                __m512bh b0 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[0] + t));
-                __m512bh b1 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[1] + t));
+                __m512bh b0 = (__m512bh) _mm512_set1_epi32(jam_load32(w[0] + t));
+                __m512bh b1 = (__m512bh) _mm512_set1_epi32(jam_load32(w[1] + t));
                 c0a = _mm512_dpbf16_ps(c0a, b0, xa); c0b = _mm512_dpbf16_ps(c0b, b0, xb);
                 c1a = _mm512_dpbf16_ps(c1a, b1, xa); c1b = _mm512_dpbf16_ps(c1b, b1, xb);
-                __m512bh b2 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[2] + t));
-                __m512bh b3 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[3] + t));
+                __m512bh b2 = (__m512bh) _mm512_set1_epi32(jam_load32(w[2] + t));
+                __m512bh b3 = (__m512bh) _mm512_set1_epi32(jam_load32(w[3] + t));
                 c2a = _mm512_dpbf16_ps(c2a, b2, xa); c2b = _mm512_dpbf16_ps(c2b, b2, xb);
                 c3a = _mm512_dpbf16_ps(c3a, b3, xa); c3b = _mm512_dpbf16_ps(c3b, b3, xb);
-                __m512bh b4 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[4] + t));
-                __m512bh b5 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[5] + t));
+                __m512bh b4 = (__m512bh) _mm512_set1_epi32(jam_load32(w[4] + t));
+                __m512bh b5 = (__m512bh) _mm512_set1_epi32(jam_load32(w[5] + t));
                 c4a = _mm512_dpbf16_ps(c4a, b4, xa); c4b = _mm512_dpbf16_ps(c4b, b4, xb);
                 c5a = _mm512_dpbf16_ps(c5a, b5, xa); c5b = _mm512_dpbf16_ps(c5b, b5, xb);
-                __m512bh b6 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[6] + t));
-                __m512bh b7 = (__m512bh) _mm512_set1_epi32(*(const int*) (w[7] + t));
+                __m512bh b6 = (__m512bh) _mm512_set1_epi32(jam_load32(w[6] + t));
+                __m512bh b7 = (__m512bh) _mm512_set1_epi32(jam_load32(w[7] + t));
                 c6a = _mm512_dpbf16_ps(c6a, b6, xa); c6b = _mm512_dpbf16_ps(c6b, b6, xb);
                 c7a = _mm512_dpbf16_ps(c7a, b7, xa); c7b = _mm512_dpbf16_ps(c7b, b7, xb);
             }
@@ -280,7 +280,7 @@ void jam_mm_bf16p_avx512bf16(void* arg, int rb, int re, int tid) {
             __m512 ca = _mm512_setzero_ps(), cb = ca;
             for (long t = 0; t + 2 <= k; t += 2) {
                 const uint16_t* xr = xp + (size_t)(t / 2) * 64;
-                __m512bh b = (__m512bh) _mm512_set1_epi32(*(const int*) (w + t));
+                __m512bh b = (__m512bh) _mm512_set1_epi32(jam_load32(w + t));
                 ca = _mm512_dpbf16_ps(ca, b, (__m512bh) _mm512_loadu_si512((const void*) xr));
                 cb = _mm512_dpbf16_ps(cb, b, (__m512bh) _mm512_loadu_si512((const void*) (xr + 32)));
             }

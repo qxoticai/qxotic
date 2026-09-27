@@ -5,6 +5,10 @@
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* int8_t / int32_t */
 #include <stdlib.h>
+#include <string.h>
+
+/* A 32-bit read at any alignment: GGUF blocks put their payload at odd offsets. One mov either way. */
+static inline int32_t jam_load32(const void* p) { int32_t v; memcpy(&v, p, 4); return v; }
 
 /* Portable 64-byte-aligned alloc/free. POSIX uses C11 aligned_alloc (size rounded up to a multiple of the
  * alignment, as C11 requires) freed with free(); Windows uses _aligned_malloc, which MUST pair with
@@ -26,8 +30,11 @@ jam_pool* jam_pool_create(int nthreads);   /* nthreads participants including th
 void      jam_pool_destroy(jam_pool* pool);
 void      jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg);  /* blocks till done */
 
-/* Per-worker K-quant weight-repack scratch (VNNI layout). One per pool worker, indexed by jam tid. */
+/* Per-worker weight-repack scratch of the prefill bands. One per pool worker, indexed by jam tid.
+ * qs holds the repacked codes (the AVX-512 band keeps its scales there too: JAM_BAND32_BLOB bytes per
+ * 16-row group per 256 elements); dw / mw are the 8-row bands' float scales and corrections. */
 typedef struct { uint8_t* qs; float* dw; float* mw; int cap_blocks; } jam_repack;
+#define JAM_BAND32_BLOB 5568
 
 /* Per-4-row-group byte size of the packed weight layouts (jam.h JAM_PACK_ABI); 0 = not packable.
  * The ONE C-side source for these formulas (jam.c dispatch + the Metal router both use it). */
@@ -94,7 +101,7 @@ struct jam_ctx {
     float*  kq_dx;  size_t kq_dx_cap;     /* xsum cap = 2*kq_dx_cap */
     float*  kq_xsum;
     jam_repack* kq_repack; int kq_repack_n;
-    int     q4k_avail;                    /* AVX-512-VNNI Q4_K kernel bound */
+    int     avx512_vnni;                    /* AVX-512-VNNI Q4_K kernel bound */
 };
 
 /* A matmul job handed to the row-range kernels. The kernel computes output rows [begin, end).
@@ -171,36 +178,37 @@ void jam_mm_nvfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /
 void jam_mm_q1_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (Q1_0) */
 void jam_mm_q4k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
 
-/* ---- the VNNI band job (AVX-512): phase-1 activation scratch + PER WORKER (jam tid) repack scratch ---- */
+/* ---- the prefill band job: phase 1 quantizes the activations into the shared scratch, phase 2 runs
+ * the band kernel over 32-row tiles with PER WORKER (jam tid) repack scratch ---- */
 typedef struct {
-    const uint8_t* w; int64_t w_stride;   /* Q4_K weights, bytes per row = (k/256)*144 */
-    const float* rhs; int rhs_stride;     /* F32 activations [seq×k], stride in elements */
-    int8_t* xq; float* dx; float* xsum;   /* phase-1 s8 activations + per-32 scales + per-16 sums */
-    float* out; int out_stride;           /* feature-major C[dim0×seq], ldc = out_stride */
-    int dim0, dim1, seq, kblocks;
+    const uint8_t* w; int64_t w_stride;   /* weights [dim0 x dim1], bytes per row */
+    const float* rhs; int rhs_stride;     /* F32 activations [seq x dim1], stride in elements */
+    int8_t* xq; float* dx; float* xsum;   /* phase-1 output: codes, scales, sums (layout per band family) */
+    float* out; int out_stride;           /* token-major C[seq][dim0], ldc = out_stride */
+    int dim0, dim1, seq, kblocks;         /* m, k, n, k / 32 */
     jam_repack* repack;                   /* [ctx->nthreads] */
-    _Atomic int next_tile;                /* dynamic tile claim for bands that ignore their static range */
-} jam_q4k_job;
+    _Atomic int next_tile;                /* the AVX-512 band claims its tiles here, not from its range */
+} jam_band_job;
 #ifdef JAM_HAVE_AVX512
-void jam_q4k_quant(void* job, int s0, int s1, int tid);   /* phase 1 (s8 + per-32 scale + per-16 sums): the Q1_0 band */
-void jam_q1_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q1_0 packed-sign-bit 16-row VNNI band */
-/* The 32x4-tile VNNI bands (jam_kernels_kq_avx512.c): a 32-row band shares every activation broadcast
- * between two 16-row weight vectors. K-quants: per-256 u8 activations (jam_kq_quant) and integer
- * sub-block scales; 32-block quants: per-32 u8 activations (jam_kq_quant32) and float block scales.
- * Both phase-1 layouts live in the same xq/dx/xsum scratch as jam_q4k_quant's. */
-#define JAM_KQ_BLOB 5568                                  /* repack bytes per 16-row group per 256-block */
-void jam_kq_quant(void* job, int s0, int s1, int tid);
-void jam_kq_quant32(void* job, int s0, int s1, int tid);
-void jam_kq_band_q4k(void* job, int t0, int t1, int tid);
-void jam_kq_band_q5k(void* job, int t0, int t1, int tid);
-void jam_kq_band_q6k(void* job, int t0, int t1, int tid);
-void jam_kq_band_q8_0(void* job, int t0, int t1, int tid);
-void jam_kq_band_q4_0(void* job, int t0, int t1, int tid);
-void jam_kq_band_q5_0(void* job, int t0, int t1, int tid);
-void jam_kq_band_mxfp4(void* job, int t0, int t1, int tid);
+/* The 32x4 VNNI band (jam_kernels_band32_avx512.c). Phase 1 per family: the K-quants quantize the
+ * activations per 256 elements, the 32-block quants per 32. */
+void jam_band32_quant256_avx512(void* job, int s0, int s1, int tid);
+void jam_band32_quant32_avx512(void* job, int s0, int s1, int tid);
+void jam_q4k_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q5k_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q6k_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q8_0_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q4_0_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q5_0_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_mxfp4_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q1_0_band32_avx512(void* job, int t0, int t1, int tid);
+/* K-quant rows against one s8 column, no repack (jam_kernels_kquant_avx512.c): decode and n < 8. */
+void jam_mm_q4k_avx512vnni(void* job, int rb, int re, int tid);
+void jam_mm_q5k_avx512vnni(void* job, int rb, int re, int tid);
+void jam_mm_q6k_avx512vnni(void* job, int rb, int re, int tid);
 #endif
 /* 256-bit AVX-VNNI Q8_0 band (8-row groups) - the no-AVX-512 client path. Defined in the avxvnni TU;
- * shares the jam_q4k_job + per-worker repack scratch with the AVX-512 band. */
+ * shares the jam_band_job + per-worker repack scratch with the AVX-512 band. */
 void jam_q8_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);
 void jam_q8_0_requant_256(void* job, int s0, int s1, int tid);   /* pure-256 phase-1 requant for the band */
 void jam_q4_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);
@@ -216,7 +224,7 @@ void jam_mm_q5_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
 /* 8-row K-quant repack bands (ymm + maddubs; jam_kernels_band8_avx2.c) - the K-quant prefill
- * fast path below avx512-vnni. Same jam_q4k_job/jam_repack machinery as the VNNI bands. */
+ * fast path below avx512-vnni. Same jam_band_job/jam_repack machinery as the VNNI bands. */
 void jam_q4k_quant_avx2(void* job, int s0, int s1, int tid);   /* phase 1: F32 -> s8 + per-16 raw sums */
 void jam_q4k_band8_avx2(void* job, int t0, int t1, int tid);
 void jam_q5k_band8_avx2(void* job, int t0, int t1, int tid);
@@ -243,9 +251,6 @@ void jam_mm_q4_0_sse3(void* job, int rb, int re, int tid);                 /* + 
 void jam_mm_q5_0_sse3(void* job, int rb, int re, int tid);                 /* + scalar 5-bit decode */
 void jam_mm_mxfp4_sse3(void* job, int rb, int re, int tid);               /* + scalar FP4-LUT decode (no pshufb) */
 void jam_mm_q4k_sse3(void* job, int rb, int re, int tid);                 /* K-quant int8 dot (sign-extend+madd, SSE3 floor) */
-void jam_mm_q4k_avx512vnni(void* job, int rb, int re, int tid);           /* K-quant int8 dot, 512-bit VNNI (decode floor) */
-void jam_mm_q5k_avx512vnni(void* job, int rb, int re, int tid);
-void jam_mm_q6k_avx512vnni(void* job, int rb, int re, int tid);
 void jam_mm_q5k_sse3(void* job, int rb, int re, int tid);
 void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
 #endif

@@ -35,10 +35,11 @@ drift between jam versions.
 
 ## Prefill bands (AVX-512-VNNI)
 
-Every quantized prefill (`n >= 8`) on AVX-512-VNNI runs one tile kernel, `jam_kernels_kq_avx512.c`: a band of 32 weight rows is repacked per call into two 16-row vectors (lanes = rows, 4 consecutive k per byte group), and each activation broadcast feeds both vectors, so the dot loop issues one `vpdpbusd` per half broadcast.
+Every quantized prefill (`n >= 8`) on AVX-512-VNNI runs one tile kernel, `jam_kernels_band32_avx512.c`: a band of 32 weight rows is repacked per call into two 16-row vectors (lanes = rows, 4 consecutive k per byte group), and each activation broadcast feeds both vectors, so the dot loop issues one `vpdpbusd` per half broadcast.
 That ratio is the design law: on Zen 5 a 512-bit `vpdpbusd` costs 2 of the 4 vector pipe slots per cycle, a memory broadcast half a slot and a 512-bit ALU op 2 slots, so the tile's efficiency is set by the non-dot ops per dot, not by cache bandwidth (k-chunking the band into L1 measured flat).
 The K-quants keep their sub-block scales integer (`vpmulld` + `vpaddd` per 32 k, one float conversion per 256-block) against activations quantized per 256 elements, llama.cpp's Q8_K precision; the 32-block quants keep a float scale and a per-32 activation scale.
 Tiles are claimed from an atomic counter, so a worker on an SMT sibling or the slower CCD takes fewer of them.
+A group short of 16 rows is padded with zero rows and stored under a mask, and a k that is not a multiple of 256 ends in a shorter stretch, so no shape falls back to a scalar tail.
 Every other ISA keeps its own bands (the AVX2 8-row bands, the AVX-VNNI 256-bit bands, the ARM tiles).
 
 ## Threading

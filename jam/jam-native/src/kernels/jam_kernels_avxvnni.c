@@ -51,8 +51,8 @@
 
 #undef JAM_DOT
 
-/* ================= Q8_0 8-row 256-bit AVX-VNNI repack band - the AVX-512 jam_q8_0_repack_band ported to
- * ymm (8 i32 lanes = 8 rows/group, _mm256_dpbusd_avx_epi32). Same scheme: weight s8 is the signed operand,
+/* ================= Q8_0 8-row 256-bit AVX-VNNI repack band: 8 i32 lanes = 8 rows/group,
+ * _mm256_dpbusd_avx_epi32. Weight s8 is the signed operand,
  * activation a+128 the unsigned one, +128 bias corrected per row via cw = d·128·Σw. The per-worker repack
  * scratch is byte-for-byte the AVX-512 one (4 groups of 8 == 2 groups of 16). ================= */
 #ifndef JAM_VNNI_NR
@@ -126,7 +126,7 @@ static inline void q8_block8_nr(const uint8_t* qs, const float* dw, const float*
 }
 
 void jam_q8_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -175,7 +175,7 @@ static void repack_q5_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
 }
 
 void jam_q5_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
@@ -207,7 +207,7 @@ void jam_q5_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
  * AVX2-vectorize the max-abs + convert if it ever shows up in a profile. Q8_0 ignores xsum. */
 void jam_q8_0_requant_256(void* arg, int s0, int s1, int tid) {
     (void) tid;
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     int nb = J->kblocks;
     for (int s = s0; s < s1; s++) {
         const float* row = J->rhs + (int64_t) s * J->rhs_stride;
@@ -230,7 +230,7 @@ void jam_q8_0_requant_256(void* arg, int s0, int s1, int tid) {
     }
 }
 
-/* ================= Q4_0 8-row 256-bit AVX-VNNI repack band (mirror of jam_q4_0_repack_band). PACKED
+/* ================= Q4_0 8-row 256-bit AVX-VNNI repack band. PACKED
  * nibbles (128 B/block for 8 rows); nibble (0..15) is the UNSIGNED vpdpbusd operand, activation the signed
  * one, -8 offset corrected via mw=8·d and the per-16 activation sums (xsum). ================= */
 static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
@@ -303,7 +303,7 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
 }
 
 void jam_q4_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
-    const jam_q4k_job* J = (const jam_q4k_job*) arg;
+    const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq; const int64_t ldc = J->out_stride;
     jam_repack* rp = &J->repack[tid];
     for (int tile = t0; tile < t1; tile++) {

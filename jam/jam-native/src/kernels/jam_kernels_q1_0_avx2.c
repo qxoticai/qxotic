@@ -17,7 +17,7 @@
 
 /* Expand sub-block K's 4 sign bytes to a 32-lane negate mask (0xFF where bit clear). */
 #define Q1_SM(qs32, K, shuf, masks, zero) \
-    _mm256_cmpeq_epi8(_mm256_and_si256(_mm256_shuffle_epi8(_mm256_set1_epi32((int) (qs32)[K]), (shuf)), (masks)), (zero))
+    _mm256_cmpeq_epi8(_mm256_and_si256(_mm256_shuffle_epi8(_mm256_set1_epi32(jam_load32((qs32) + (K))), (shuf)), (masks)), (zero))
 
 #define Q1_SIGNED(qy, sm) _mm256_sub_epi8(_mm256_xor_si256((qy), (sm)), (sm))
 
