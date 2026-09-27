@@ -289,7 +289,7 @@ public final class Gemma4
         Convert.gatherToF32(
                 weights.tokenEmbeddings, tokens, tokenOffset, seqLen, state.residual, 0, dim);
         float scale = (float) Math.sqrt(dim);
-        Ops.mapInPlace(state.residual, 0, seqLen * dim, v -> v * scale);
+        Ops.multiplyInPlace(state.residual, 0, seqLen * dim, scale);
     }
 
     private void buildPerLayerInputs(State state, int[] tokens, int tokenOffset, int seqLen) {
@@ -301,7 +301,7 @@ public final class Gemma4
         float projectionScale = (float) (1.0 / Math.sqrt(dim));
         float tokenScale = (float) Math.sqrt(plDim);
         float inputScale = (float) (1.0 / Math.sqrt(2.0));
-        Ops.mapInPlace(state.perLayerInputs, 0, seqLen * total, value -> value * projectionScale);
+        Ops.multiplyInPlace(state.perLayerInputs, 0, seqLen * total, projectionScale);
         for (int s = 0; s < seqLen; s++) {
             long base = (long) s * total;
             for (int l = 0; l < c.numberOfLayers; l++)
@@ -319,9 +319,9 @@ public final class Gemma4
                     state.perLayerTokenRow,
                     0,
                     total);
-            Ops.mapInPlace(state.perLayerTokenRow, 0, total, value -> value * tokenScale);
+            Ops.multiplyInPlace(state.perLayerTokenRow, 0, total, tokenScale);
             Ops.addInPlace(state.perLayerInputs, base, state.perLayerTokenRow, 0, total);
-            Ops.mapInPlace(state.perLayerInputs, base, total, value -> value * inputScale);
+            Ops.multiplyInPlace(state.perLayerInputs, base, total, inputScale);
         }
     }
 
@@ -331,11 +331,7 @@ public final class Gemma4
         mergePerLayerInput(state, l, seqLen);
         float scale = weights.layers[l].outputScale;
         if (scale != 1f)
-            Ops.mapInPlace(
-                    state.residual,
-                    0,
-                    seqLen * configuration.embeddingLength,
-                    value -> value * scale);
+            Ops.multiplyInPlace(state.residual, 0, seqLen * configuration.embeddingLength, scale);
         if (Trace.ENABLED)
             Trace.sum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength);
     }
