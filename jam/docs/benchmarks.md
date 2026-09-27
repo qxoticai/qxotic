@@ -31,34 +31,54 @@ The same int8 kernels span the whole x86 ladder, from the pre-AVX2 floor up to A
   <img alt="jinfer (native jam) prefill by instruction set" src="https://raw.githubusercontent.com/qxoticai/assets/main/jam/bench-isa.png">
 </picture>
 
-## 2026-09-26: the 32x4 VNNI band vs llama.cpp's tiled mul_mat
+## 2026-09-27: the 32x4 VNNI band vs llama.cpp's tiled mul_mat
 
-llama.cpp PR #27851 (merged 2026-09-26) replaced its K-quant `vec_dot` prefill with a tiled VNNI GEMM (2.9-3.7x on the K-quants above), and jam's AVX-512-VNNI bands were rewritten the same day ([design.md](design.md), "Prefill bands").
-Same box, same pure quants, `avx512_vnni` tier, 16 threads, llama.cpp master `86a24a182` built with `GGML_NATIVE=ON`;
-`--repack 0` disables llama.cpp's x86 repack layouts so the K-quants take the new tiled path (Q4_0 loses its repack kernel with it):
+llama.cpp PR #27851 (merged 2026-09-26) replaced its K-quant `vec_dot` prefill with a tiled VNNI GEMM, and jam's AVX-512-VNNI bands were rewritten in response ([design.md](design.md), "Prefill bands").
+Everything below is one session: the same box, the same pure quants, the `avx512_vnni` tier, qxotic `ea22debad`, llama.cpp master `86a24a182` built with `GGML_NATIVE=ON`.
+llama.cpp runs in three modes: its defaults, `--repack 0` (no x86 repack layouts, so the K-quants take the new tiled path and Q4_0 loses its repack kernel), and `GGML_CPU_TILED_MM=0` (the tiled path off, the kernels before #27851).
+
+At 16 threads:
 
 | pp512 t/s | Q4_0 | Q8_0 | Q4_K | Q5_K | Q6_K |
 |---|---|---|---|---|---|
-| jinfer (native jam) | 1497 | 1457 | 1525 | 1467 | 1510 |
-| llama.cpp, default | 991 | 622 | 891 | 1209 | 1157 |
-| llama.cpp, `--repack 0` (tiled) | 531 | 621 | 1241 | 1211 | 1150 |
-| llama.cpp, `GGML_CPU_TILED_MM=0` (the pre-#27851 `vec_dot` path, best of both repack modes) | 984 | 621 | 882 | 317 | 428 |
+| jinfer (native jam) | 1563 | 1487 | 1502 | 1499 | 1507 |
+| llama.cpp, default | 982 | 617 | 879 | 1228 | 1157 |
+| llama.cpp, `--repack 0` (tiled) | 534 | 613 | 1241 | 1228 | 1143 |
+| llama.cpp, `GGML_CPU_TILED_MM=0` (before #27851) | 986 | 618 | 883 | 318 | 428 |
 
-The same sweep by thread count (pp512 t/s, jinfer / llama.cpp default / llama.cpp `--repack 0`; the default is the repack kernel for Q4_0 and Q4_K and the tiled path otherwise):
+By thread count, jinfer / llama.cpp's best mode for the format (the repack kernel for Q4_0, the tiled path for the K-quants):
 
 | threads | Q4_0 | Q8_0 | Q4_K | Q5_K | Q6_K |
 |---|---|---|---|---|---|
-| 1 | 175 / 91 / 41 | 181 / 49 / 49 | 179 / 84 / 133 | 177 / 132 / 132 | 184 / 127 / 127 |
-| 2 | 337 / 177 / 80 | 335 / 96 / 96 | 333 / 163 / 258 | 326 / 258 / 255 | 344 / 249 / 249 |
-| 4 | 591 / 340 / 154 | 594 / 185 / 186 | 591 / 310 / 480 | 625 / 475 / 478 | 609 / 453 / 454 |
-| 8 | 1079 / 639 / 297 | 1083 / 357 / 358 | 1056 / 583 / 886 | 1059 / 876 / 875 | 1107 / 835 / 834 |
-| 16 | 1497 / 991 / 531 | 1457 / 622 / 621 | 1525 / 891 / 1241 | 1467 / 1209 / 1211 | 1510 / 1157 / 1150 |
+| 1 | 176 / 91 | 175 / 49 | 179 / 133 | 178 / 132 | 185 / 127 |
+| 2 | 323 / 176 | 321 / 96 | 325 / 259 | 330 / 258 | 339 / 248 |
+| 4 | 606 / 339 | 614 / 186 | 607 / 480 | 586 / 477 | 643 / 456 |
+| 8 | 1078 / 639 | 1063 / 357 | 1047 / 881 | 1049 / 875 | 1073 / 836 |
+| 16 | 1563 / 986 | 1487 / 618 | 1502 / 1241 | 1499 / 1228 | 1507 / 1157 |
 
-jam's lead is widest per core (1 thread: 1.35x llama.cpp's tiled Q4_K, 3.7x its Q8_0) and narrows with threads: from 1 to 16 threads jinfer scales 8.5x on Q4_K where llama.cpp's tiled path scales 9.3x, the L3-side effect noted in [design.md](design.md).
-The pre-#27851 `vec_dot` kernels at 8 threads: Q4_0 639, Q8_0 355, Q4_K 585, Q5_K 173, Q6_K 240.
+jam leads at every thread count and format: by 1.2x to 1.45x on the K-quants, 1.6x to 1.9x on Q4_0 and 2.4x to 3.6x on Q8_0.
+The lead is widest per core and narrows with threads: from 1 to 16 threads jinfer scales 8.4x on Q4_K where llama.cpp's tiled path scales 9.3x.
+llama.cpp's numbers repeat within 1%, jinfer's within 2% to 5%.
 
-At the matmul level (`jam_bench 4096 512 4096`, 8 threads, GMAC/s) the bands went Q4_K 2027 -> 3098, Q5_K 1433 -> 3155, Q6_K 1268 -> 3297, Q8_0 1764 -> 3155, Q4_0 2059 -> 3052 (session-to-session variance on this CPU is about 20%, so compare rows measured together).
-Logs: `bench-results/2026-09-26-vnni-band-vs-llama-tiled` (gitignored, local).
+What #27851 changed inside llama.cpp, the tiled path against the kernels before it:
+
+| threads | Q4_K | Q5_K | Q6_K |
+|---|---|---|---|
+| 1 | 84 -> 133 | 24 -> 132 | 33 -> 126 |
+| 8 | 581 -> 881 | 173 -> 874 | 239 -> 836 |
+| 16 | 883 -> 1241 | 318 -> 1228 | 428 -> 1143 |
+
+Its default mode keeps the repack kernel for Q4_K, so a Q4_K run only sees the tiled path with `--repack 0`.
+
+At the matmul level (`jam_bench`, m = 4096, k = 4096, GMAC/s), the new band against jam's previous 16-row bands:
+
+| | Q4_0 | Q8_0 | Q4_K | Q5_K | Q6_K |
+|---|---|---|---|---|---|
+| n = 512, 8 threads, before | 2059 | 1764 | 2027 | 1433 | 1268 |
+| n = 512, 8 threads, after | 3052 | 3155 | 3098 | 3155 | 3297 |
+
+This CPU drifts by about 20% between sessions (thread placement, the V-cache CCD, sustained clocks), so only rows measured together compare.
+Logs: `bench-results/2026-09-27-vnni-band-polished` (gitignored, local).
 
 ## Method
 
