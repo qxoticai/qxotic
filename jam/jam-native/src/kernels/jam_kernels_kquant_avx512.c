@@ -150,7 +150,7 @@ INLINE void rows(const jam_q8_job* J, int j, int i, const int nr, const int byte
     const size_t w_stride = (size_t) (J->lda / JAM_QKK) * bytes;
     const int8_t* aq = J->aq + (size_t) j * k;
     const float* ad = J->ad + (size_t) j * nb;
-    const float* as = J->asum ? J->asum + (size_t) j * nb : ad;
+    const float* as = J->asum ? J->asum + (size_t) j * nb : ad;   /* Q6_K has no sums, and reads none */
     const uint8_t* w[4];
     kq_acc acc[4];
     for (int t = 0; t < nr; t++) {

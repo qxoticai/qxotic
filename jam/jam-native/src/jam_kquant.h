@@ -1,15 +1,15 @@
 /* GGML block-format constants and the exact scalar dots shared by the int8 kernels.
  *
- * K-quants are 256-element super-blocks with a hierarchy of scales - too big for the 32-block decode×dot
- * engine, so they get dedicated bands: 16 weight rows repacked so ONE vpdpbusd accumulates 16 rows across
- * the 16 i32 lanes against a broadcast activation group. The AVX-512 bands (jam_kernels_kq_avx512.c) keep
- * the sub-block scales integer; the AVX2 8-row bands quantize activations to plain s8 with exact per-16
- * f32 sums so the Q4_K `dmin·min` and Q6_K `-32` terms are corrected in float. */
+ * A 32-block quant (Q8_0, Q4_0, Q5_0) is one fp16 scale per 32 elements. A K-quant is a 256-element
+ * super-block with a hierarchy of scales: one fp16 d (and dmin) over 8 or 16 integer sub-block scales.
+ * Prefill repacks weight rows into bands, so that one dot instruction accumulates a row per lane
+ * against a broadcast activation group: 32 rows on AVX-512-VNNI (jam_kernels_band32_avx512.c, integer
+ * sub-block scales), 8 rows on AVX2 and AVX-VNNI (float corrections from exact per-16 sums). */
 #ifndef JAM_KQUANT_H
 #define JAM_KQUANT_H
 
 #include <stdint.h>
-#include "kernels/jam_fp16.h"   /* jam_half2float (for the scalar tail dots below) */
+#include "kernels/jam_fp16.h"   /* jam_half_at (for the scalar tail dots below) */
 
 #define JAM_QK          32     /* elements per 32-block (activation quant granularity) */
 #define JAM_Q8_0_BYTES  34     /* fp16 d + 32 int8 */
@@ -20,7 +20,7 @@
 #define JAM_Q5K_BYTES   176    /* d(f16) dmin(f16) scales[12] qh[32] qs[128] */
 #define JAM_Q6K_BYTES   210    /* ql[128] qh[64] scales[16] d(f16) */
 #define JAM_VNNI_BAND   32     /* weight rows per parallel work unit (2 groups of 16) */
-#define JAM_VNNI_MIN_SEQ 8     /* below this, activation quant + repack don't amortize -> generic floor */
+#define JAM_VNNI_MIN_SEQ 8     /* columns from which a band amortizes its repack; below, the row kernels */
 
 /* The 8 6-bit (scale, min) pairs of a Q4_K / Q5_K super-block, 12 packed bytes -> one byte each.
  * Branch- and loop-free (llama.cpp's three-mask word trick): scales 0-3 and mins 0-3 are the low 6
@@ -34,12 +34,12 @@ static inline void jam_q4k_scales_mins(const uint8_t* b, uint8_t* sc, uint8_t* m
     __builtin_memcpy(sc, s, 8); __builtin_memcpy(mn, m, 8);
 }
 
-/* Exact scalar Q8_0 / Q4_0 · f32 dots over nb consecutive 32-blocks - the VNNI bands' partial-row
- * tails (dequant-on-the-fly; the SIMD kernels use the int8 pipeline). Same pattern as jam_q1_0_dot_f32. */
+/* Exact scalar Q8_0 / Q4_0 / Q5_0 · f32 dots over nb consecutive 32-blocks: the 8-row bands'
+ * partial-row tails (dequant on the fly; the SIMD kernels use the int8 pipeline). */
 static inline float jam_q8_0_dot_f32(const uint8_t* w, int nb, const float* x) {
     float acc = 0.0f;
     for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES, x += JAM_QK) {
-        float d = jam_half2float(*(const uint16_t*) w);
+        float d = jam_half_at(w);
         const int8_t* q = (const int8_t*) (w + 2);
         float s = 0.0f;
         for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
@@ -60,7 +60,7 @@ static inline void jam_q5_0_unpack(const uint8_t* w, int8_t* q) {
 static inline float jam_q5_0_dot_f32(const uint8_t* w, int nb, const float* x) {
     float acc = 0.0f;
     for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES, x += JAM_QK) {
-        float d = jam_half2float(*(const uint16_t*) w);
+        float d = jam_half_at(w);
         int8_t q[32]; jam_q5_0_unpack(w, q);
         float s = 0.0f;
         for (int e = 0; e < 32; e++) s += (float) q[e] * x[e];
@@ -71,7 +71,7 @@ static inline float jam_q5_0_dot_f32(const uint8_t* w, int nb, const float* x) {
 static inline float jam_q4_0_dot_f32(const uint8_t* w, int nb, const float* x) {
     float acc = 0.0f;
     for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES, x += JAM_QK) {
-        float d = jam_half2float(*(const uint16_t*) w);
+        float d = jam_half_at(w);
         const uint8_t* q = w + 2;
         float s = 0.0f;
         for (int e = 0; e < 16; e++) {
@@ -83,11 +83,11 @@ static inline float jam_q4_0_dot_f32(const uint8_t* w, int nb, const float* x) {
     return acc;
 }
 
-/* Exact scalar K-quant · f32 dots over sb consecutive 256-blocks: the bands' partial-row tails. */
+/* Exact scalar K-quant · f32 dots over sb consecutive 256-blocks: the 8-row bands' partial-row tails. */
 static inline float jam_q4k_dot_f32(const uint8_t* w, int sb, const float* x) {
     float acc = 0.0f;
     for (int B = 0; B < sb; B++, w += JAM_Q4K_BYTES, x += JAM_QKK) {
-        float d = jam_half2float(*(const uint16_t*) w), dmin = jam_half2float(*(const uint16_t*) (w + 2));
+        float d = jam_half_at(w), dmin = jam_half_at(w + 2);
         uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
         const uint8_t* q = w + 16;
         for (int g = 0; g < 4; g++) {
@@ -104,7 +104,7 @@ static inline float jam_q4k_dot_f32(const uint8_t* w, int sb, const float* x) {
 static inline float jam_q5k_dot_f32(const uint8_t* w, int sb, const float* x) {
     float acc = 0.0f;
     for (int B = 0; B < sb; B++, w += JAM_Q5K_BYTES, x += JAM_QKK) {
-        float d = jam_half2float(*(const uint16_t*) w), dmin = jam_half2float(*(const uint16_t*) (w + 2));
+        float d = jam_half_at(w), dmin = jam_half_at(w + 2);
         uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
         const uint8_t* qh = w + 16; const uint8_t* q = w + 48;
         for (int g = 0; g < 4; g++) {
@@ -125,7 +125,7 @@ static inline float jam_q6k_dot_f32(const uint8_t* w, int sb, const float* x) {
     float acc = 0.0f;
     for (int B = 0; B < sb; B++, w += JAM_Q6K_BYTES, x += JAM_QKK) {
         const uint8_t* ql = w; const uint8_t* qh = w + 128; const int8_t* sc = (const int8_t*) (w + 192);
-        float d = jam_half2float(*(const uint16_t*) (w + 208));
+        float d = jam_half_at(w + 208);
         for (int e = 0; e < JAM_QKK; e++) {
             int h = e >> 7, j = (e >> 5) & 3, l = e & 31;
             int lo = ql[h * 64 + (j & 1) * 32 + l];

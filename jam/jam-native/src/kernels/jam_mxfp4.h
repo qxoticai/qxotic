@@ -24,7 +24,7 @@ static inline float jam_mxfp4_dhalf(uint8_t e) {
     return 0.5f * s;
 }
 
-/* Exact scalar MXFP4 · f32 dot over nb consecutive 32-blocks: the bands' partial-row tails. */
+/* Exact scalar MXFP4 · f32 dot over nb consecutive 32-blocks: the 8-row bands' partial-row tails. */
 static inline float jam_mxfp4_dot_f32(const uint8_t* w, int nb, const float* x) {
     static const int8_t codes[16] = { JAM_MXFP4_CODES };
     float acc = 0.0f;

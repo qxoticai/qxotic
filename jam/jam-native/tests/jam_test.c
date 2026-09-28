@@ -781,7 +781,7 @@ int main(void) {
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_BF16, "BF16", DN[s][0],DN[s][1],DN[s][2]);
 
     /* Layout contract (strided ldw>k · padded ldc>m · re-run) for every dtype, with a partial m=37 (last
-     * 8-feature group nf<8, last 16-row band partial) at n=16 (prefill: int8 kernels + avx512 VNNI band) and
+     * 8-feature group nf<8, last band partial) at n=16 (prefill: int8 kernels + avx512 VNNI band) and
      * n=1 (the float floor on the generic context). This is the coverage whose absence let the drift in. */
     for (int ni=0; ni<2; ni++) { int nn = ni ? 1 : 16;
         suite_layout(JAM_Q8_0,  "Q8_0",  37, nn, 64);

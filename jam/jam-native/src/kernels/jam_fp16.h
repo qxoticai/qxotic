@@ -26,4 +26,9 @@ static inline float jam_half2float(uint16_t h) {
     float r; __builtin_memcpy(&r, &f, sizeof r); return r;
 }
 
+/* The half at p, at any alignment: a GGUF block's scale need not sit on an even address. */
+static inline float jam_half_at(const void* p) {
+    uint16_t h; __builtin_memcpy(&h, p, sizeof h); return jam_half2float(h);
+}
+
 #endif /* JAM_FP16_H */
