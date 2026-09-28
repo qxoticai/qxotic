@@ -316,7 +316,7 @@ Kokoro requires a `voice` companion; Inflect2 optionally accepts a pronunciation
 `--speed` selects a positive speaking-rate multiplier within the model's supported range; omitted, it uses the model's default.
 Without `--output`, speech is played after synthesis.
 
-To listen directly, use `--play` for playback after synthesis or `--stream` to start with the first clip while later clips are synthesized:
+Use `--stream` to start playback with the first clip while later clips are synthesized:
 
 ```bash
 jinfer -m inflect.gguf speak "Hello world."

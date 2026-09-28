@@ -188,7 +188,7 @@ class ArgumentMatrixTest {
     void switchesNeverAcceptAccidentalAssignments() {
         for (String[] args :
                 new String[][] {
-                    {"speak", "-m", "m", "hello", "--play=false"},
+                    {"speak", "-m", "m", "hello", "--stream=false"},
                     {"server", "-m", "m", "--no-grammar=false"},
                     {"transcribe", "-m", "m", "-", "--raw-pcm=false"},
                     {"instruct", "-m", "m", "hi", "--no-stream=true"},

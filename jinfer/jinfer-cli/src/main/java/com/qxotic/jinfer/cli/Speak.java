@@ -23,12 +23,10 @@ final class Speak {
     static final class Settings {
         Path output;
         Double speed;
-        boolean play;
     }
 
     static boolean read(Options o, Options.Args a) {
         switch (a.name) {
-            case "--play" -> o.speech.play = a.flag();
             case "--output", "-o" -> o.speech.output = Path.of(a.value());
             case "--speed" -> {
                 String value = a.value();
@@ -55,11 +53,7 @@ final class Speak {
                 s.speed == null || (Double.isFinite(s.speed) && s.speed > 0),
                 "--speed must be positive and finite; got %s",
                 s.speed);
-        Options.require(!s.play || !o.stream, "--play and --stream cannot be used together");
-        Options.require(
-                s.output == null || (!s.play && !o.stream),
-                "--output cannot combine with --play or --stream");
-        if (s.output == null && !o.stream) s.play = true;
+        Options.require(s.output == null || !o.stream, "--output cannot combine with --stream");
     }
 
     /** The external playback boundary. Model behavior is tested through the existing model API. */
@@ -140,7 +134,7 @@ final class Speak {
         }
         Media.Audio audio = model.speak(text, speech);
         double elapsed = Math.max(1, System.nanoTime() - start) / 1e9;
-        if (options.speech.play) {
+        if (options.speech.output == null) {
             io.err().println("Playing speech ...");
             try {
                 player.play(audio);
@@ -171,7 +165,7 @@ final class Speak {
                 .printf(
                         Locale.ROOT,
                         "%s: %.2f s of audio synthesized in %.2f s (RTFx %.2f)%n",
-                        options.speech.play ? "Played" : "Wrote " + options.speech.output,
+                        options.speech.output == null ? "Played" : "Wrote " + options.speech.output,
                         seconds,
                         elapsed,
                         seconds / elapsed);
@@ -186,13 +180,13 @@ final class Speak {
                   jinfer speak -m inflect.gguf "Hello world."
                   jinfer speak -m kokoro.gguf --with voice=af_heart.gguf --output hello.wav "Hello."
 
-                  --play                     synthesize fully, then play (default)
                   --stream                   play clips during synthesis
                   -o, --output <file|->      write WAV instead of playing; '-' writes stdout
                   --speed <number>           positive speaking-rate multiplier; default: model's rate
 
-                Explicit output modes are mutually exclusive. '-' reads UTF-8 text to EOF;
-                --stream controls audio playback, not incremental text input.
+                Speech plays after synthesis unless --stream or --output is given; those two
+                exclude each other. '-' reads UTF-8 text to EOF; --stream controls audio
+                playback, not incremental text input.
                 Kokoro requires --with voice=<path|ref>; Inflect2 accepts --with lexicon=<path|ref>.
                 Playback: macOS afplay; Windows PowerShell SoundPlayer; Linux aplay/ffplay.
                 """);
