@@ -105,7 +105,7 @@ class OptionsTest {
         assertEquals("server", Options.parse("serve", "-m", "m").command);
         assertEquals("instruct", Options.parse("prompt", "-m", "m", "hi").command);
         Options speech = Options.parse("speak", "-m", "m", "hi");
-        assertTrue(speech.speech.play);
+        assertFalse(speech.stream);
         assertNull(speech.speech.output);
         assertFalse(Options.parse("transcribe", "-m", "m", "-").transcription.rawPcm);
         assertTrue(Options.parse("transcribe", "-m", "m", "-", "--raw-pcm").transcription.rawPcm);
@@ -130,8 +130,7 @@ class OptionsTest {
                     {"--port", "9000", "server", "-m", "m"},
                     {"chat", "-m", "m", "--server"},
                     {"instruct", "-m", "m", "hello", "world"},
-                    {"speak", "-m", "m", "hi", "--play", "--stream"},
-                    {"speak", "-m", "m", "hi", "--play", "--output", "-"},
+                    {"speak", "-m", "m", "hi", "--play"},
                     {"speak", "-m", "m", "hi", "--stream", "--output", "out.wav"},
                     {"speak", "-m", "m", " "},
                     {"transcribe", "-m", "m", "file.wav", "--raw-pcm"},

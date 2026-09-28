@@ -2,6 +2,7 @@ package com.qxotic.jinfer.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -131,7 +132,7 @@ final class SpeakTest {
             Path script = Files.writeString(players.resolve(player), capture);
             assertTrue(script.toFile().setExecutable(true));
         }
-        for (String mode : List.of("--play", "--stream")) {
+        for (String mode : List.of("--no-stream", "--stream")) {
             Path captureDir = Files.createDirectory(dir.resolve(mode.substring(2)));
             assertEquals(
                     0,
@@ -148,12 +149,12 @@ final class SpeakTest {
                             mode),
                     diagnostics(captureDir));
             assertEquals(0, Files.size(captureDir.resolve("stdout.wav")));
-            if (mode.equals("--play") || System.getProperty("os.name").startsWith("Mac")) {
+            if (mode.equals("--no-stream") || System.getProperty("os.name").startsWith("Mac")) {
                 try (var files = Files.list(captureDir)) {
                     var clips =
                             files.filter(p -> p.getFileName().toString().startsWith("clip-"))
                                     .toList();
-                    assertEquals(mode.equals("--play") ? 1 : 2, clips.size());
+                    assertEquals(mode.equals("--no-stream") ? 1 : 2, clips.size());
                     for (Path clip : clips) assertSpeech(clip);
                 }
                 assertTemporaryWavsDeleted(captureDir);
@@ -175,7 +176,7 @@ final class SpeakTest {
                     exit 7
                     """);
         }
-        for (String mode : List.of("--play", "--stream")) {
+        for (String mode : List.of("--no-stream", "--stream")) {
             Path failed = Files.createDirectory(dir.resolve("failed-" + mode.substring(2)));
             String[] args = {
                 "-m",
@@ -188,7 +189,7 @@ final class SpeakTest {
             };
             assertEquals(1, run(failed, "", players, args), diagnostics(failed));
             assertTrue(diagnostics(failed).contains("audio player exited with status 7"));
-            if (mode.equals("--play") || System.getProperty("os.name").startsWith("Mac")) {
+            if (mode.equals("--no-stream") || System.getProperty("os.name").startsWith("Mac")) {
                 assertEquals(
                         1,
                         Files.readAllLines(failed.resolve("temporary-wavs.txt")).size(),
@@ -205,7 +206,7 @@ final class SpeakTest {
 
     @Test
     void defaultPlaybackAndStreamingForwardTheModelSettings() throws Exception {
-        for (String mode : List.of("--play", "--stream")) {
+        for (String mode : List.of("--no-stream", "--stream")) {
             var model = new Speech();
             var player = new RecordingPlayback();
             var capture = new CliFixtures.Capture("");
@@ -214,15 +215,17 @@ final class SpeakTest {
             assertEquals("Hello.", model.text);
             assertEquals(1.2, model.speed);
             assertEquals(1, model.closed);
-            assertEquals(mode.equals("--play") ? 1 : 2, player.clips);
+            assertEquals(mode.equals("--no-stream") ? 1 : 2, player.clips);
             assertEquals(mode.equals("--stream"), player.streamed);
             assertEquals("", capture.out());
             assertTrue(capture.err().startsWith("Synthesizing speech ..."));
-            assertEquals(mode.equals("--play"), capture.err().contains("Playing speech ..."));
-            assertEquals(mode.equals("--play"), capture.err().contains("RTFx "));
+            assertEquals(mode.equals("--no-stream"), capture.err().contains("Playing speech ..."));
+            assertEquals(mode.equals("--no-stream"), capture.err().contains("RTFx "));
             assertEquals(mode.equals("--stream"), capture.err().contains("First audio after"));
         }
-        assertTrue(Options.parse("speak", "-m", "unused", "Hi").speech.play);
+        Options plain = Options.parse("speak", "-m", "unused", "Hi");
+        assertFalse(plain.stream);
+        assertNull(plain.speech.output);
     }
 
     @Test
