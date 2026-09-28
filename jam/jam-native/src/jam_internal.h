@@ -101,7 +101,7 @@ struct jam_ctx {
     float*  kq_dx;  size_t kq_dx_cap;     /* xsum cap = 2*kq_dx_cap */
     float*  kq_xsum;
     jam_repack* kq_repack; int kq_repack_n;
-    int     avx512_vnni;                    /* AVX-512-VNNI Q4_K kernel bound */
+    int     avx512_vnni;                  /* the CPU runs the AVX-512-VNNI kernels */
 };
 
 /* A matmul job handed to the row-range kernels. The kernel computes output rows [begin, end).

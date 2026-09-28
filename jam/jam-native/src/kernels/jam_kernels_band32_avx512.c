@@ -27,8 +27,8 @@
  *
  * Repack: one blob per 16-row group per 256 elements.
  *   W     [64][16][4] s8   lanes = rows, a byte group = 4 consecutive k
- *   S     K-quants: sc [nsub][16] i32      32-blocks: d [8][16] f32, then C [8][16] f32
- *         (Q4_K, Q5_K: the second half of S holds the mins as i32, the source of MN)
+ *   S     K-quants: sc [nsub][16] i32      32-blocks: d [8][16] f32
+ *   S2    the second half of S. 32-blocks: C [8][16] f32      Q4_K, Q5_K: mn [8][16] i32, MN's source
  *   MN    [4][16][2] i16   min pairs (2p, 2p + 1)                           Q4_K, Q5_K
  *   K     [16] i32
  *   D, DMIN  [16] f32 each
@@ -45,7 +45,11 @@
 #include <stdint.h>
 #include <string.h>
 
-enum { W_OFF = 0, S_OFF = 4096, MN_OFF = 5120, K_OFF = 5376, D_OFF = 5440, DMIN_OFF = 5504 };
+enum {
+    W_OFF = 0, W_BYTES = 1024,   /* per 64 codes of a row: 16 dwords x 16 rows */
+    S_OFF = 4096, S2_OFF = 4608, /* S2: the second half of S (C, or the raw mins) */
+    MN_OFF = 5120, K_OFF = 5376, D_OFF = 5440, DMIN_OFF = 5504
+};
 _Static_assert(DMIN_OFF + 64 == JAM_BAND32_BLOB, "blob layout");
 
 typedef enum {
@@ -78,6 +82,9 @@ INLINE float absmax(const float* x, int n) {                  /* n a multiple of
     return _mm512_reduce_max_ps(m);
 }
 
+/* what maps [-amax, amax] onto the s8 codes; an all-zero stretch quantizes to zeros */
+INLINE float to_codes(float amax) { return amax > 0.0f ? 127.0f / amax : 0.0f; }
+
 /* K-quants: one scale per 256 elements, plus the per-32 code sums for the min term. */
 void jam_band32_quant256_avx512(void* job, int s0, int s1, int tid) {
     (void) tid;
@@ -89,10 +96,10 @@ void jam_band32_quant256_avx512(void* job, int s0, int s1, int tid) {
         float* xd = J->dx + (size_t) s * sblocks;
         int16_t* xs = (int16_t*) J->xsum + (size_t) s * sblocks * 8;
         for (int sb = 0; sb < sblocks; sb++, x += JAM_QKK, xq += JAM_QKK, xs += 8) {
-            float amax = absmax(x, JAM_QKK);
+            const float amax = absmax(x, JAM_QKK), inv = to_codes(amax);
             xd[sb] = amax / 127.0f;
             for (int b = 0; b < 8; b++)
-                xs[b] = (int16_t) quant32(x + b * JAM_QK, amax > 0.0f ? 127.0f / amax : 0.0f, xq + b * JAM_QK);
+                xs[b] = (int16_t) quant32(x + b * JAM_QK, inv, xq + b * JAM_QK);
         }
     }
 }
@@ -107,9 +114,9 @@ void jam_band32_quant32_avx512(void* job, int s0, int s1, int tid) {
         uint8_t* xq = (uint8_t*) J->xq + (size_t) s * k;
         float* xd = J->dx + (size_t) s * nb;
         for (int b = 0; b < nb; b++, x += JAM_QK, xq += JAM_QK) {
-            float amax = absmax(x, JAM_QK);
+            const float amax = absmax(x, JAM_QK);
             xd[b] = amax / 127.0f;
-            quant32(x, amax > 0.0f ? 127.0f / amax : 0.0f, xq);
+            quant32(x, to_codes(amax), xq);
         }
     }
 }
@@ -122,6 +129,8 @@ void jam_band32_quant32_avx512(void* job, int s0, int s1, int tid) {
  * The K-quants also return the block's d (and dmin). */
 typedef void (*band_decode)(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales,
                             float* d, float* dmin);
+#define DECODER(NAME) \
+    INLINE void NAME(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin)
 
 /* 32 packed bytes -> 32 low nibbles, 32 high nibbles */
 INLINE void nibbles64(const uint8_t* q, __m256i* lo, __m256i* hi) {
@@ -139,7 +148,8 @@ INLINE __m256i nibbles32(const uint8_t* q) {
 }
 /* the bits `mask` of every byte of qh at bit `shift`, moved up to bit 4 (above a nibble) */
 INLINE __m256i plane(__m256i qh, int shift, int mask) {
-    return _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh, shift), _mm256_set1_epi8((char) mask)), 4);
+    const __m256i bits = _mm256_and_si256(_mm256_srli_epi16(qh, shift), _mm256_set1_epi8((char) mask));
+    return _mm256_slli_epi16(bits, 4);
 }
 INLINE void put(uint8_t* codes, __m256i v) { _mm256_store_si256((__m256i*) codes, v); }
 
@@ -150,7 +160,7 @@ INLINE void k32_header(const uint8_t* w, void* scales, float* d, float* dmin) { 
     *d = h2f(w); *dmin = h2f(w + 2);
 }
 
-INLINE void decode_q4k(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q4k) {
     (void) nbs;
     w += (size_t) sb * JAM_Q4K_BYTES;
     k32_header(w, scales, d, dmin);
@@ -161,7 +171,7 @@ INLINE void decode_q4k(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* 
     }
 }
 
-INLINE void decode_q5k(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q5k) {
     (void) nbs;
     w += (size_t) sb * JAM_Q5K_BYTES;
     k32_header(w, scales, d, dmin);
@@ -174,7 +184,7 @@ INLINE void decode_q5k(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* 
     }
 }
 
-INLINE void decode_q6k(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q6k) {
     (void) nbs; (void) dmin;
     w += (size_t) sb * JAM_Q6K_BYTES;              /* ql[128] qh[64] scales[16] d */
     _mm512_store_si512(scales, _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) (w + 192))));
@@ -185,12 +195,14 @@ INLINE void decode_q6k(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* 
         __m256i q[4];
         nibbles64(w + h * 64,      &q[0], &q[2]);
         nibbles64(w + h * 64 + 32, &q[1], &q[3]);
-        for (int j = 0; j < 4; j++)
-            put(codes + h * 128 + j * 32, _mm256_sub_epi8(_mm256_or_si256(q[j], plane(qh, 2 * j, 3)), b32));
+        for (int j = 0; j < 4; j++) {
+            const __m256i code = _mm256_or_si256(q[j], plane(qh, 2 * j, 3));
+            put(codes + h * 128 + j * 32, _mm256_sub_epi8(code, b32));
+        }
     }
 }
 
-INLINE void decode_q8_0(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q8_0) {
     (void) d; (void) dmin;
     w += (size_t) sb * 8 * JAM_Q8_0_BYTES;
     for (int b = 0; b < nbs; b++, w += JAM_Q8_0_BYTES) {
@@ -199,7 +211,7 @@ INLINE void decode_q8_0(const uint8_t* w, int sb, int nbs, uint8_t* codes, void*
     }
 }
 
-INLINE void decode_q4_0(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q4_0) {
     (void) d; (void) dmin;
     w += (size_t) sb * 8 * JAM_Q4_0_BYTES;
     for (int b = 0; b < nbs; b++, w += JAM_Q4_0_BYTES) {
@@ -208,17 +220,19 @@ INLINE void decode_q4_0(const uint8_t* w, int sb, int nbs, uint8_t* codes, void*
     }
 }
 
-INLINE void decode_q5_0(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q5_0) {
     (void) d; (void) dmin;
     w += (size_t) sb * 8 * JAM_Q5_0_BYTES;
     for (int b = 0; b < nbs; b++, w += JAM_Q5_0_BYTES) {
         ((float*) scales)[b] = h2f(w);
-        __m256i bit4 = _mm256_and_si256(_mm256_movm_epi8((__mmask32) jam_load32(w + 2)), _mm256_set1_epi8(0x10));
-        put(codes + b * 32, _mm256_sub_epi8(_mm256_or_si256(nibbles32(w + 6), bit4), _mm256_set1_epi8(16)));
+        const __m256i high = _mm256_movm_epi8((__mmask32) jam_load32(w + 2));   /* bit e: element e */
+        const __m256i bit4 = _mm256_and_si256(high, _mm256_set1_epi8(0x10));
+        const __m256i code = _mm256_or_si256(nibbles32(w + 6), bit4);
+        put(codes + b * 32, _mm256_sub_epi8(code, _mm256_set1_epi8(16)));
     }
 }
 
-INLINE void decode_mxfp4(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_mxfp4) {
     (void) d; (void) dmin;
     static const int8_t lut[16] = { JAM_MXFP4_CODES };
     const __m256i t = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) lut));
@@ -229,15 +243,16 @@ INLINE void decode_mxfp4(const uint8_t* w, int sb, int nbs, uint8_t* codes, void
     }
 }
 
-INLINE void decode_q1_0(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin) {
+DECODER(decode_q1_0) {
     (void) d; (void) dmin;
     for (int b = 0; b < nbs; b++) {                /* a 128-element block spans four 32-blocks */
         const int b32 = sb * 8 + b;
         const uint8_t* blk = w + (size_t) (b32 >> 2) * JAM_Q1_0_BYTES;
         ((float*) scales)[b] = h2f(blk);
-        __m256i set = _mm256_movm_epi8((__mmask32) jam_load32(blk + 2 + (b32 & 3) * 4));
-        put(codes + b * 32, _mm256_or_si256(_mm256_xor_si256(set, _mm256_set1_epi8(-1)), _mm256_set1_epi8(1)));
-    }                                              /* bit set: +1, clear: -1 */
+        const __m256i set = _mm256_movm_epi8((__mmask32) jam_load32(blk + 2 + (b32 & 3) * 4));
+        const __m256i clear = _mm256_xor_si256(set, _mm256_set1_epi8(-1));
+        put(codes + b * 32, _mm256_or_si256(clear, _mm256_set1_epi8(1)));   /* bit set: +1, clear: -1 */
+    }
 }
 
 /* ================= repack: up to 16 rows -> blobs ================= */
@@ -286,22 +301,25 @@ INLINE void repack16(const uint8_t* w, int64_t w_stride, int nrows, int nb, uint
     ALIGN64 uint8_t scales[16 * 64] = { 0 };       /* of a short group, the blocks past a ragged k */
     for (int sb = 0; sb * 8 < nb; sb++, blob += JAM_BAND32_BLOB) {
         const int nbs = nb - sb * 8 < 8 ? nb - sb * 8 : 8;
-        memset(blob + D_OFF, 0, 128);              /* d, dmin */
+        memset(blob + D_OFF, 0, JAM_BAND32_BLOB - D_OFF);   /* d, dmin of the padding rows */
         for (int r = 0; r < nrows; r++)
             decode(w + r * w_stride, sb, nbs, codes + r * JAM_QKK, scales + r * 64,
                    (float*) (blob + D_OFF) + r, (float*) (blob + DMIN_OFF) + r);
         for (int c = 0; c * 2 < nbs; c++)          /* 64 codes = 16 dwords per row per transpose */
-            transpose16(codes + c * 64, JAM_QKK, blob + W_OFF + c * 1024);
-        transpose16(scales, 64, blob + S_OFF);     /* S = lane 0..15 of every row; Q4_K/Q5_K: 8..15 = mn */
+            transpose16(codes + c * 64, JAM_QKK, blob + W_OFF + c * W_BYTES);
+        transpose16(scales, 64, blob + S_OFF);     /* a row's 16 lanes: S, and S2 from lane 8 */
 
         __m512i bias = _mm512_setzero_si512();
         for (int sub = 0; sub < (kind == KIND_F32 ? nbs : nsub); sub++) {
             __m512i sum = _mm512_setzero_si512();  /* the codes' sum per row: every byte against 1 */
-            for (int i = sub * ni; i < (sub + 1) * ni; i++)
-                sum = _mm512_dpbusd_epi32(sum, ones, _mm512_load_si512((const void*) (blob + W_OFF + i * 64)));
-            if (kind == KIND_F32) {
-                __m512 c128 = _mm512_mul_ps(_mm512_load_ps(blob + S_OFF + sub * 64), _mm512_set1_ps(128.0f));
-                _mm512_store_ps(blob + S_OFF + 512 + sub * 64, _mm512_mul_ps(c128, _mm512_cvtepi32_ps(sum)));
+            for (int i = sub * ni; i < (sub + 1) * ni; i++) {
+                const __m512i w4 = _mm512_load_si512((const void*) (blob + W_OFF + i * 64));
+                sum = _mm512_dpbusd_epi32(sum, ones, w4);
+            }
+            if (kind == KIND_F32) {                /* C = 128 d sum w */
+                const __m512 d128 = _mm512_mul_ps(_mm512_load_ps(blob + S_OFF + sub * 64),
+                                                  _mm512_set1_ps(128.0f));
+                _mm512_store_ps(blob + S2_OFF + sub * 64, _mm512_mul_ps(d128, _mm512_cvtepi32_ps(sum)));
             } else {
                 __m512i sc = _mm512_load_si512((const void*) (blob + S_OFF + sub * 64));
                 bias = _mm512_add_epi32(bias, _mm512_mullo_epi32(sc, sum));
@@ -311,9 +329,10 @@ INLINE void repack16(const uint8_t* w, int64_t w_stride, int nrows, int nb, uint
         _mm512_store_si512((void*) (blob + K_OFF), _mm512_slli_epi32(bias, 7));
         if (kind == KIND_K16) continue;
         for (int p = 0; p < 4; p++) {              /* mn (2p, 2p + 1) -> one s16 pair per lane */
-            __m512i lo = _mm512_load_si512((const void*) (blob + S_OFF + (8 + 2 * p) * 64));
-            __m512i hi = _mm512_load_si512((const void*) (blob + S_OFF + (9 + 2 * p) * 64));
-            _mm512_store_si512((void*) (blob + MN_OFF + p * 64), _mm512_or_si512(lo, _mm512_slli_epi32(hi, 16)));
+            const __m512i lo = _mm512_load_si512((const void*) (blob + S2_OFF + 2 * p * 64));
+            const __m512i hi = _mm512_load_si512((const void*) (blob + S2_OFF + (2 * p + 1) * 64));
+            _mm512_store_si512((void*) (blob + MN_OFF + p * 64),
+                               _mm512_or_si512(lo, _mm512_slli_epi32(hi, 16)));
         }
     }
 }
@@ -349,17 +368,19 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
                 }
             }
             for (int g = 0; g < ng; g++) {
-                const uint8_t* s = (g ? b1 : b0) + S_OFF + sub * 64;
+                const uint8_t* b = g ? b1 : b0;
                 if (kind == KIND_F32) {            /* f += xd (d acc - C) */
-                    __m512 d = _mm512_load_ps(s), cw = _mm512_load_ps(s + 512);
+                    const __m512 d = _mm512_load_ps(b + S_OFF + sub * 64);
+                    const __m512 cw = _mm512_load_ps(b + S2_OFF + sub * 64);
                     #pragma GCC unroll 4
                     for (int c = 0; c < nc; c++) {
-                        __m512 xdv = _mm512_set1_ps(xd[c * xd_stride + sb * 8 + sub]);
-                        f[g][c] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(acc[g][c]), _mm512_mul_ps(d, xdv), f[g][c]);
+                        const __m512 xdv = _mm512_set1_ps(xd[c * xd_stride + sb * 8 + sub]);
+                        const __m512 dot = _mm512_cvtepi32_ps(acc[g][c]);
+                        f[g][c] = _mm512_fmadd_ps(dot, _mm512_mul_ps(d, xdv), f[g][c]);
                         f[g][c] = _mm512_fnmadd_ps(cw, xdv, f[g][c]);
                     }
                 } else {                           /* s1 += sc acc, exact */
-                    __m512i sc = _mm512_load_si512((const void*) s);
+                    const __m512i sc = _mm512_load_si512((const void*) (b + S_OFF + sub * 64));
                     #pragma GCC unroll 4
                     for (int c = 0; c < nc; c++)
                         s1[g][c] = _mm512_add_epi32(s1[g][c], _mm512_mullo_epi32(acc[g][c], sc));
@@ -378,9 +399,10 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
                 if (kind == KIND_K32) {            /* s2 = sum_sub mn qsum: 4 pairs of s16 x s16 */
                     const int16_t* qsum = xs + c * nb + sb * 8;
                     __m512i s2 = _mm512_setzero_si512();
-                    for (int p = 0; p < 4; p++)
-                        s2 = _mm512_dpwssd_epi32(s2, _mm512_load_si512((const void*) (b + MN_OFF + p * 64)),
-                                                 _mm512_set1_epi32(jam_load32(qsum + p * 2)));
+                    for (int p = 0; p < 4; p++) {
+                        const __m512i mn = _mm512_load_si512((const void*) (b + MN_OFF + p * 64));
+                        s2 = _mm512_dpwssd_epi32(s2, mn, _mm512_set1_epi32(jam_load32(qsum + p * 2)));
+                    }
                     v = _mm512_fnmadd_ps(_mm512_load_ps(b + DMIN_OFF), _mm512_cvtepi32_ps(s2), v);
                 }
                 f[g][c] = _mm512_fmadd_ps(v, _mm512_set1_ps(xd[c * xd_stride + sb]), f[g][c]);
@@ -388,23 +410,37 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
         }
     }
     for (int g = 0; g < ng; g++)
-        for (int c = 0; c < nc; c++) _mm512_mask_storeu_ps(out + c * ldc + g * 16, g ? rows1 : rows0, f[g][c]);
+        for (int c = 0; c < nc; c++)
+            _mm512_mask_storeu_ps(out + c * ldc + g * 16, g ? rows1 : rows0, f[g][c]);
 }
 
 /* ================= the band: claim a 32-row tile, repack it, sweep the columns ================= */
 
-INLINE void band(const jam_band_job* J, int tid, const band_kind kind, band_decode decode,
+/* Reads one byte per cache line of nrows contiguous rows, in address order. A short prompt is
+ * memory-bound and the repack walks its rows in lockstep: 16 interleaved streams, which hardware
+ * prefetchers follow badly. Touched first, the group arrives as one stream (n = 16: +4% to +10%).
+ * ponytail: a touch pass, not a row-major repack; that would save the second read. */
+INLINE void touch_rows(const uint8_t* w, int64_t w_stride, int nrows, int row_bytes) {
+    unsigned seen = 0;
+    for (int r = 0; r < nrows; r++)
+        for (int o = 0; o < row_bytes; o += 64) seen += w[r * w_stride + o];
+    __asm__ volatile("" : : "r"(seen));            /* the reads are the point: keep them */
+}
+
+INLINE void band(jam_band_job* J, int tid, const band_kind kind, band_decode decode,
                  const int bytes256) {             /* weight bytes per 256 elements */
     const int m = J->dim0, k = J->dim1, n = J->seq, nb = k / JAM_QK;
     const int row_bytes = nb * bytes256 / 8;
     const int64_t ldc = J->out_stride;
     const int64_t xd_stride = kind == KIND_F32 ? nb : nb / 8;
+    const uint8_t* xq = (const uint8_t*) J->xq;
+    const int16_t* xs = (const int16_t*) J->xsum;
     uint8_t* b0 = J->repack[tid].qs;
     uint8_t* b1 = b0 + (size_t) ((nb + 7) / 8) * JAM_BAND32_BLOB;
     /* Tiles are claimed from a shared counter, not taken from the caller's static slice: a worker on
      * an SMT sibling or the slower CCD then takes fewer tiles instead of stalling the call. */
     const int ntiles = (m + JAM_VNNI_BAND - 1) / JAM_VNNI_BAND;
-    for (int t; (t = atomic_fetch_add_explicit(&((jam_band_job*) J)->next_tile, 1, memory_order_relaxed)) < ntiles; ) {
+    for (int t; (t = atomic_fetch_add_explicit(&J->next_tile, 1, memory_order_relaxed)) < ntiles; ) {
         const int row = t * JAM_VNNI_BAND, rows = m - row < JAM_VNNI_BAND ? m - row : JAM_VNNI_BAND;
         const int ng = (rows + 15) / 16;
         const __mmask16 rows0 = (__mmask16) ((1u << (rows < 16 ? rows : 16)) - 1);
@@ -412,32 +448,26 @@ INLINE void band(const jam_band_job* J, int tid, const band_kind kind, band_deco
         for (int g = 0; g < ng; g++) {
             const uint8_t* w = J->w + (int64_t) (row + g * 16) * J->w_stride;
             const int nrows = rows - g * 16 < 16 ? rows - g * 16 : 16;
-            /* A short prompt is memory-bound, and the repack walks its 16 rows in lockstep: 16
-             * interleaved streams, which hardware prefetchers follow badly. Rows are contiguous, so
-             * touching them in order first brings the group in as one stream (n = 16: +4% to +10%).
-             * ponytail: a touch pass, not a row-major repack; that would save the second read. */
-            unsigned touched = 0;
-            for (int r = 0; r < nrows; r++)
-                for (int o = 0; o < row_bytes; o += 64) touched += w[r * J->w_stride + o];
-            __asm__ volatile("" : : "r"(touched));
+            touch_rows(w, J->w_stride, nrows, row_bytes);
             repack16(w, J->w_stride, nrows, nb, g ? b1 : b0, kind, decode);
         }
+        /* ng and nc as constants keep the tile's accumulators in registers; nc < 4 is the column tail */
+        #define TILE(NG, NC) tile(NG, NC, kind, b0, b1, nb, xq + (size_t) c * k, k, \
+                                  J->dx + (size_t) c * xd_stride, xs + (size_t) c * nb, \
+                                  J->out + c * ldc + row, ldc, rows0, rows1)
         for (int c = 0; c < n; c += 4) {
             const int nc = n - c < 4 ? n - c : 4;
-            #define TILE(NG, NC) tile(NG, NC, kind, b0, b1, nb, (const uint8_t*) J->xq + (size_t) c * k, k, \
-                                      J->dx + (size_t) c * xd_stride, (const int16_t*) J->xsum + (size_t) c * nb, \
-                                      J->out + c * ldc + row, ldc, rows0, rows1)
-            if (nc == 4) { if (ng == 2) TILE(2, 4); else TILE(1, 4); }   /* constants: accumulators in registers */
-            else         { if (ng == 2) TILE(2, nc); else TILE(1, nc); } /* the column tail, < 4 */
-            #undef TILE
+            if (nc == 4) { if (ng == 2) TILE(2, 4); else TILE(1, 4); }
+            else         { if (ng == 2) TILE(2, nc); else TILE(1, nc); }
         }
+        #undef TILE
     }
 }
 
 #define BAND(NAME, KIND, DECODE, BYTES256) \
     void NAME(void* job, int t0, int t1, int tid) { \
         (void) t0; (void) t1; \
-        band((const jam_band_job*) job, tid, KIND, DECODE, BYTES256); \
+        band((jam_band_job*) job, tid, KIND, DECODE, BYTES256); \
     }
 BAND(jam_q4k_band32_avx512,   KIND_K32, decode_q4k,   JAM_Q4K_BYTES)
 BAND(jam_q5k_band32_avx512,   KIND_K32, decode_q5k,   JAM_Q5K_BYTES)
