@@ -235,12 +235,14 @@ final class Transcribe {
                         "jinfer-stdin-reader");
         reader.setDaemon(true);
         reader.start();
+        long fed = 0, elapsed;
+        Transcription finished;
         try (S state = model.newState();
                 TranscriptionStream stream = model.stream(state)) {
             StringBuilder text = new StringBuilder(); // the final pieces so far
             List<Transcription.Token> tokens = new ArrayList<>();
             List<Transcription.Token> tail = List.of();
-            long fed = 0, fresh = 0; // samples fed in total, and since the last partial
+            long fresh = 0; // samples fed since the last partial
             int logged = 0; // characters of the final text the plain log has printed
             while (true) {
                 float[] pcm = queue.take();
@@ -269,14 +271,12 @@ final class Transcribe {
             }
             if (readFailure[0] != null) throw readFailure[0];
             Transcription last = stream.finish();
-            long elapsed = System.nanoTime() - start;
+            elapsed = System.nanoTime() - start;
             text.append(last.text());
             tokens.addAll(last.tokens());
-            Transcription finished = new Transcription(text.toString(), tokens);
+            finished = new Transcription(text.toString(), tokens);
             if (view != null) view.finish(finished.words());
             else logWords(text, logged, true, err);
-            printSummary((double) fed / rate, elapsed, err);
-            return finished;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new InterruptedIOException("transcription interrupted");
@@ -292,6 +292,8 @@ final class Transcribe {
             }
             if (view != null) view.close();
         }
+        printSummary((double) fed / rate, elapsed, err);
+        return finished;
     }
 
     /** RMS about the mean, so a microphone's DC offset does not read as a constant level. */
