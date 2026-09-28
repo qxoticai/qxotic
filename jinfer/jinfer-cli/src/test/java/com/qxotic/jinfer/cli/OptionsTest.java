@@ -72,14 +72,14 @@ class OptionsTest {
         assertEquals("repo/model:Q8_0", o.modelRef);
         assertEquals(path, o.companionRefs.get("voice"));
         assertThrows(
-                Options.Usage.class,
+                Options.UsageException.class,
                 () ->
                         Options.parse(
                                 "speak", "-m", "m", "Hi", "--with", "voice=a", "--with",
                                 "voice=b"));
         for (String bad : List.of("voice", "=file", "voice=", "voice=auto"))
             assertThrows(
-                    Options.Usage.class,
+                    Options.UsageException.class,
                     () -> Options.parse("speak", "-m", "m", "Hi", "--with", bad));
     }
 
@@ -92,11 +92,11 @@ class OptionsTest {
                         .get("media"));
         for (String value : List.of("", " ", "auto")) {
             assertThrows(
-                    Options.Usage.class,
+                    Options.UsageException.class,
                     () -> Options.parse("chat", "-m", "m", "--with", "media=" + value));
         }
         assertThrows(
-                Options.Usage.class,
+                Options.UsageException.class,
                 () -> Options.parse("chat", "-m", "m", "--with", "media=a", "--with", "media=b"));
     }
 
@@ -144,7 +144,10 @@ class OptionsTest {
                     {"instruct", "-m", "m", "hi", "--raw-prompt", "--cache", "c.jkv"},
                     {"instruct", "-m", "m", "hi", "--raw-prompt", "--system-prompt", "terse"}
                 })
-            assertThrows(Options.Usage.class, () -> Options.parse(argv), String.join(" ", argv));
+            assertThrows(
+                    Options.UsageException.class,
+                    () -> Options.parse(argv),
+                    String.join(" ", argv));
     }
 
     @Test
@@ -160,7 +163,8 @@ class OptionsTest {
                 var invalid = new java.util.ArrayList<>(args);
                 invalid.addAll(List.of(conflict));
                 assertThrows(
-                        Options.Usage.class, () -> Options.parse(invalid.toArray(String[]::new)));
+                        Options.UsageException.class,
+                        () -> Options.parse(invalid.toArray(String[]::new)));
             }
             args.addAll(List.of("--cache-ro", "existing.jkv"));
             assertDoesNotThrow(() -> Options.parse(args.toArray(String[]::new)));
@@ -174,7 +178,7 @@ class OptionsTest {
                     {"chat", "--temp", "oops", "--model", "--help"},
                     {"instruct", "-m", "unused", "--temp", "oops", "--", "--help"}
                 }) {
-            var error = assertThrows(Options.Usage.class, () -> Options.parse(args));
+            var error = assertThrows(Options.UsageException.class, () -> Options.parse(args));
             assertTrue(error.getMessage().contains("--temp"));
         }
     }
@@ -193,7 +197,7 @@ class OptionsTest {
     void invalidSpeechSpeedNamesItsFlag(String speed) {
         var e =
                 assertThrows(
-                        Options.Usage.class,
+                        Options.UsageException.class,
                         () -> Options.parse("speak", "-m", "m", "Hi", "--speed", speed));
         assertTrue(e.getMessage().contains("--speed"));
     }
@@ -201,21 +205,22 @@ class OptionsTest {
     @Test
     void errorsNameUnknownOptionsAndMissingValues() {
         assertTrue(
-                assertThrows(Options.Usage.class, () -> Options.parse("chat", "--wat"))
+                assertThrows(Options.UsageException.class, () -> Options.parse("chat", "--wat"))
                         .getMessage()
-                        .contains("Unknown option: --wat"));
+                        .contains("unknown option: --wat"));
         assertTrue(
-                assertThrows(Options.Usage.class, () -> Options.parse("chat", "--model"))
+                assertThrows(Options.UsageException.class, () -> Options.parse("chat", "--model"))
                         .getMessage()
-                        .contains("Missing argument for option --model"));
+                        .contains("missing argument for option --model"));
         assertTrue(
                 assertThrows(
-                                Options.Usage.class,
+                                Options.UsageException.class,
                                 () -> Options.parse("chat", "-m", "m", "--top-k", "many"))
                         .getMessage()
                         .contains("--top-k"));
         assertThrows(
-                Options.Usage.class, () -> Options.parse("server", "-m", "m", "--task", "chat"));
+                Options.UsageException.class,
+                () -> Options.parse("server", "-m", "m", "--task", "chat"));
     }
 
     @Test

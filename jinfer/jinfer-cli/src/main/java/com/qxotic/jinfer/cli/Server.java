@@ -155,7 +155,8 @@ final class Server {
                     // The model selects the API: a non-language model is offered to transcription
                     // rather than making users select a task themselves.
                     validateTranscription(options);
-                    TranscriptionModel<?, ?, ?> transcription = loadTranscription(files, arena);
+                    TranscriptionModel<?, ?, ?> transcription =
+                            loadTranscription(options, files, arena);
                     spinner.close(); // one load line; the server runs outside it
                     return serveTranscription(transcription, files, io, config);
                 }
@@ -194,14 +195,14 @@ final class Server {
         return running;
     }
 
-    private static TranscriptionModel<?, ?, ?> loadTranscription(Options.Files files, Arena arena)
-            throws IOException {
+    private static TranscriptionModel<?, ?, ?> loadTranscription(
+            Options options, Options.Files files, Arena arena) throws IOException {
         try {
             return Models.loadTranscription(files.model(), arena, files.companions());
         } catch (ModelProvider.IncompatibleModelException neither) {
             throw neither; // neither language nor transcription: run() reports it
         } catch (IOException | IllegalArgumentException e) {
-            throw Main.failure("cannot prepare transcription model '" + files.model() + "'", e);
+            throw Main.failure("cannot prepare transcription model '" + options.modelRef + "'", e);
         }
     }
 

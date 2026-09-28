@@ -53,14 +53,14 @@ class ServerTest {
         assertEquals(Duration.ofSeconds(9), c.limits().writeTimeout());
         assertEquals(32, c.defaults().maxOutputTokens());
         assertEquals(2, Options.parse("serve", "-m", "m", "--queue-depth", "2").server.queueDepth);
-        assertThrows(Options.Usage.class, () -> Server.validateTranscription(o));
+        assertThrows(Options.UsageException.class, () -> Server.validateTranscription(o));
         Server.validateTranscription(Options.parse("server", "-m", "m", "--threads", "2"));
     }
 
     @Test
     void authenticationAndInvalidLimitsFailClearly() {
         Options insecure = Options.parse("server", "-m", "unused", "--host", "0.0.0.0");
-        assertThrows(Options.Usage.class, () -> Server.config(insecure, null));
+        assertThrows(Options.UsageException.class, () -> Server.config(insecure, null));
         assertDoesNotThrow(
                 () ->
                         Server.config(
@@ -82,7 +82,7 @@ class ServerTest {
                     {"--write-timeout", "0"}
                 }) {
             String[] args = {"server", "-m", "unused", tail[0], tail[1]};
-            assertThrows(Options.Usage.class, () -> Options.parse(args));
+            assertThrows(Options.UsageException.class, () -> Options.parse(args));
         }
     }
 
@@ -292,7 +292,7 @@ class ServerTest {
             args.addAll(List.of(setting));
             Options o = Options.parse(args.toArray(String[]::new));
             assertThrows(
-                    Options.Usage.class,
+                    Options.UsageException.class,
                     () -> Server.validateTranscription(o),
                     String.join(" ", setting));
         }
