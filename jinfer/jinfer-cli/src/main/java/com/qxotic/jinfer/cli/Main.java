@@ -142,16 +142,20 @@ public final class Main {
     static ChatEngine openText(Options options, Options.Files files, Arena arena, IO io)
             throws IOException {
         try (var spinner = LoadSpinner.start("Loading model", io)) {
-            var model = AOT.load(files.model(), files.companions(), files.tokenizer(), arena);
-            try {
-                return new ChatEngine(
-                                model,
-                                files.model().getFileName().toString(),
-                                options.cacheOptions())
-                        .speculationDepth(options.speculationDepth);
-            } catch (IllegalArgumentException | UncheckedIOException e) {
-                throw failure("cannot initialize model state for '" + files.model() + "'", e);
-            }
+            return loadText(options, files, arena);
+        }
+    }
+
+    /** As {@link #openText} without the spinner, for a caller that shows its own. */
+    static ChatEngine loadText(Options options, Options.Files files, Arena arena)
+            throws IOException {
+        var model = AOT.load(files.model(), files.companions(), files.tokenizer(), arena);
+        try {
+            return new ChatEngine(
+                            model, files.model().getFileName().toString(), options.cacheOptions())
+                    .speculationDepth(options.speculationDepth);
+        } catch (IllegalArgumentException | UncheckedIOException e) {
+            throw failure("cannot initialize model state for '" + files.model() + "'", e);
         }
     }
 

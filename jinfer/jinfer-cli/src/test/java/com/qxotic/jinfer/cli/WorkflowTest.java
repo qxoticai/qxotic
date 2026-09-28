@@ -443,6 +443,10 @@ class WorkflowTest {
                 assertTrue(ready.await(10, TimeUnit.SECONDS), capture.err());
                 assertNull(failure.get());
                 assertTrue(capture.err().contains("listening"), capture.err());
+                assertEquals(
+                        1,
+                        capture.err().lines().filter("Loading model ..."::equals).count(),
+                        capture.err());
                 assertTrue(
                         capture.err()
                                 .contains(
