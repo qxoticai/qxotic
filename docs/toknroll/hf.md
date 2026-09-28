@@ -55,7 +55,7 @@ The loader is intentionally strict. Unsupported features fail fast.
 **Pre-tokenizers:**
 - `Split` (Regex / String pattern)
 - `Sequence` (composed pre-tokenizers)
-- `ByteLevel` (GPT-2 byte-level encoding)
+- `ByteLevel` (GPT-2 byte-level encoding; `use_regex` defaults to true and applies the GPT-2 split pattern before merging, and an explicit `use_regex: false` leaves the input unsplit for a preceding `Split` step)
 - `Metaspace` (SentencePiece ▁ replacement)
 
 **Special tokens** from `added_tokens` with `special: true`.
