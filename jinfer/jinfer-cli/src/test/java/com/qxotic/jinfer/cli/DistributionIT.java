@@ -105,7 +105,7 @@ class DistributionIT {
                         "--prompt")) {
             Result rejected = run(command, "", "-m", "missing.gguf", removed);
             assertEquals(2, rejected.status(), rejected.err());
-            assertTrue(rejected.err().contains("Unknown option: " + removed));
+            assertTrue(rejected.err().contains("unknown option: " + removed));
             assertEquals("", rejected.out());
         }
         Result noCommand = run(command, "", "-m", "missing.gguf");

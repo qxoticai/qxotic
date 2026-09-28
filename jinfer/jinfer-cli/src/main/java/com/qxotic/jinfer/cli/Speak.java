@@ -33,7 +33,7 @@ final class Speak {
                 try {
                     o.speech.speed = Double.parseDouble(value);
                 } catch (NumberFormatException e) {
-                    throw new Options.Usage("--speed expects a number, got " + value);
+                    throw new Options.UsageException("--speed expects a number, got " + value);
                 }
             }
             default -> {

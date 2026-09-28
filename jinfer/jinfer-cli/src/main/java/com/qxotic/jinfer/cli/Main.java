@@ -51,7 +51,7 @@ public final class Main {
         String text(String input) throws IOException {
             String text =
                     "-".equals(input) ? new String(read("text"), StandardCharsets.UTF_8) : input;
-            Options.require(text != null && !text.isBlank(), "Input requires non-blank text");
+            Options.require(text != null && !text.isBlank(), "input requires non-blank text");
             return text;
         }
 
@@ -90,7 +90,7 @@ public final class Main {
             if (status == 0 && io.out().checkError())
                 throw new IOException("cannot write to stdout");
             return status;
-        } catch (Options.Usage e) {
+        } catch (Options.UsageException e) {
             String command = options == null ? e.command : options.command;
             String name = "jinfer" + (command == null ? "" : " " + command);
             io.err().println(name + ": " + e.getMessage());

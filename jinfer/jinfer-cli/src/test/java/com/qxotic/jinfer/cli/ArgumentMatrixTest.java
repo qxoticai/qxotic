@@ -53,7 +53,9 @@ class ArgumentMatrixTest {
         var args = new ArrayList<>(List.of(command, "-m", "unused", option, value));
         if (command.equals("instruct")) args.add("hello");
         var failure =
-                assertThrows(Options.Usage.class, () -> Options.parse(args.toArray(String[]::new)));
+                assertThrows(
+                        Options.UsageException.class,
+                        () -> Options.parse(args.toArray(String[]::new)));
         assertTrue(failure.getMessage().contains(option), failure.getMessage());
         assertTrue(
                 failure.getMessage().contains(value),
@@ -158,9 +160,10 @@ class ArgumentMatrixTest {
     void missingSharedValuesAreReportedBeforeAnyModelWork(String flag) {
         var failure =
                 assertThrows(
-                        Options.Usage.class, () -> Options.parse("chat", "-m", "unused", flag));
+                        Options.UsageException.class,
+                        () -> Options.parse("chat", "-m", "unused", flag));
         assertTrue(
-                failure.getMessage().contains("Missing argument for option " + flag),
+                failure.getMessage().contains("missing argument for option " + flag),
                 failure.getMessage());
     }
 
@@ -178,9 +181,10 @@ class ArgumentMatrixTest {
     void missingApplicationValuesNameTheFlag(String command, String flag) {
         var failure =
                 assertThrows(
-                        Options.Usage.class, () -> Options.parse(command, "-m", "unused", flag));
+                        Options.UsageException.class,
+                        () -> Options.parse(command, "-m", "unused", flag));
         assertTrue(
-                failure.getMessage().contains("Missing argument for option " + flag),
+                failure.getMessage().contains("missing argument for option " + flag),
                 failure.getMessage());
     }
 
@@ -195,7 +199,10 @@ class ArgumentMatrixTest {
                     {"instruct", "-m", "m", "hi", "--stream=off"},
                     {"pull", "--force=false", "owner/repo:Q8_0"}
                 })
-            assertThrows(Options.Usage.class, () -> Options.parse(args), String.join(" ", args));
+            assertThrows(
+                    Options.UsageException.class,
+                    () -> Options.parse(args),
+                    String.join(" ", args));
     }
 
     @Test
@@ -228,9 +235,10 @@ class ArgumentMatrixTest {
 
     @Test
     void aCommandIsRequiredAndItsInputRemainsLiteral() {
-        var missing = assertThrows(Options.Usage.class, () -> Options.parse("-m", "m"));
+        var missing = assertThrows(Options.UsageException.class, () -> Options.parse("-m", "m"));
         assertTrue(missing.getMessage().contains("missing command"));
-        assertThrows(Options.Usage.class, () -> Options.parse("--with", "model=m", "chat"));
+        assertThrows(
+                Options.UsageException.class, () -> Options.parse("--with", "model=m", "chat"));
         assertEquals("server", Options.parse("instruct", "-m", "m", "server").input);
         assertEquals("--help", Options.parse("speak", "-m", "m", "--", "--help").input);
     }
@@ -253,18 +261,22 @@ class ArgumentMatrixTest {
             })
     void removedOptionsAreUnknownInsteadOfTranslated(String option) {
         var failure =
-                assertThrows(Options.Usage.class, () -> Options.parse("chat", "-m", "m", option));
+                assertThrows(
+                        Options.UsageException.class,
+                        () -> Options.parse("chat", "-m", "m", option));
         assertTrue(
-                failure.getMessage().contains("Unknown option: " + option), failure.getMessage());
+                failure.getMessage().contains("unknown option: " + option), failure.getMessage());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"true", "false", "on", "off"})
     void booleanValuesAreNotAcceptedAsSwitchArguments(String value) {
         assertThrows(
-                Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--stream", value));
+                Options.UsageException.class,
+                () -> Options.parse("chat", "-m", "m", "--stream", value));
         assertThrows(
-                Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--echo=" + value));
+                Options.UsageException.class,
+                () -> Options.parse("chat", "-m", "m", "--echo=" + value));
         assertEquals(
                 value,
                 Options.parse("speak", "-m", "m", "--stream", value).input,
@@ -274,7 +286,9 @@ class ArgumentMatrixTest {
     @ParameterizedTest
     @ValueSource(strings = {"true", "false", "stdout"})
     void thinkingAcceptsOnlyItsDocumentedModes(String value) {
-        assertThrows(Options.Usage.class, () -> Options.parse("chat", "-m", "m", "--think", value));
+        assertThrows(
+                Options.UsageException.class,
+                () -> Options.parse("chat", "-m", "m", "--think", value));
     }
 
     @Test
@@ -294,6 +308,9 @@ class ArgumentMatrixTest {
                     {"chat", "--model="},
                     {"server", "-m", "m", "--host="}
                 })
-            assertThrows(Options.Usage.class, () -> Options.parse(args), String.join(" ", args));
+            assertThrows(
+                    Options.UsageException.class,
+                    () -> Options.parse(args),
+                    String.join(" ", args));
     }
 }

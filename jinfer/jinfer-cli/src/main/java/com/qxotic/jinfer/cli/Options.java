@@ -87,7 +87,10 @@ final class Options {
             o.validate();
             return o;
         } catch (IllegalArgumentException failure) {
-            Usage usage = failure instanceof Usage u ? u : new Usage(failure.getMessage());
+            UsageException usage =
+                    failure instanceof UsageException u
+                            ? u
+                            : new UsageException(failure.getMessage());
             usage.command = o.command;
             throw usage;
         }
@@ -109,7 +112,7 @@ final class Options {
                         || Server.read(this, args)
                         || Speak.read(this, args)
                         || Transcribe.read(this, args)
-                        || Hub.read(this, args))) throw usageHelp("Unknown option: " + args.name);
+                        || Hub.read(this, args))) throw usageHelp("unknown option: " + args.name);
                 require(command != null, "%s must follow the command", args.name);
             }
         }
@@ -124,12 +127,12 @@ final class Options {
                 };
         if (!MODEL_COMMANDS.contains(selected)
                 && !Set.of("pull", "list", "cache-info").contains(selected))
-            throw usageHelp("Unknown command: " + name);
+            throw usageHelp("unknown command: " + name);
         command = selected;
     }
 
-    private Usage usageHelp(String message) {
-        Usage error = new Usage(message);
+    private UsageException usageHelp(String message) {
+        UsageException error = new UsageException(message);
         error.showHelp = true;
         return error;
     }
@@ -159,8 +162,8 @@ final class Options {
     private void attach(String role, String value) {
         require(
                 !role.isBlank() && !value.isBlank(),
-                "Companions require a non-blank role and reference");
-        require(!value.equals("auto"), "Name the '%s' file explicitly instead of 'auto'", role);
+                "companions require a non-blank role and reference");
+        require(!value.equals("auto"), "name the '%s' file explicitly instead of 'auto'", role);
         require(!role.equals("model"), "select the model with --model <path|ref>, not --with");
         switch (role) {
             case "tokenizer" -> {
@@ -168,7 +171,7 @@ final class Options {
                 use("--with tokenizer", TEXT_COMMANDS);
             }
             default -> {
-                require(!companionRefs.containsKey(role), "Companion given twice: %s", role);
+                require(!companionRefs.containsKey(role), "companion given twice: %s", role);
                 companionRefs.put(role, value);
             }
         }
@@ -195,7 +198,8 @@ final class Options {
                             case "on", "inline" -> true;
                             case "off" -> false;
                             default ->
-                                    throw new Usage("--think expects off|on|inline, got " + mode);
+                                    throw new UsageException(
+                                            "--think expects off|on|inline, got " + mode);
                         };
             }
             default -> {
@@ -273,7 +277,7 @@ final class Options {
             require(
                     modelRef != null && !modelRef.isBlank(),
                     "missing model; specify --model <path|ref>");
-            require(operands.size() <= 1, "Too many inputs; quote text containing spaces");
+            require(operands.size() <= 1, "too many inputs; quote text containing spaces");
             if (!operands.isEmpty()) input = operands.getFirst();
         }
         require(threads == null || threads >= 1, "--threads must be at least 1; got %s", threads);
@@ -425,17 +429,17 @@ final class Options {
                 && !"dumb".equals(System.getenv("TERM"));
     }
 
-    static final class Usage extends IllegalArgumentException {
+    static final class UsageException extends IllegalArgumentException {
         String command;
         boolean showHelp;
 
-        Usage(String message) {
+        UsageException(String message) {
             super(message);
         }
     }
 
     static void require(boolean condition, String message, Object... args) {
-        if (!condition) throw new Usage(message.formatted(args));
+        if (!condition) throw new UsageException(message.formatted(args));
     }
 
     static String rootMessage(Throwable failure) {
@@ -484,7 +488,7 @@ final class Options {
 
         String value() {
             if (inline != null) return inline;
-            require(index < argv.length, "Missing argument for option %s", name);
+            require(index < argv.length, "missing argument for option %s", name);
             return argv[index++];
         }
 
@@ -498,7 +502,7 @@ final class Options {
             try {
                 return Integer.parseInt(value);
             } catch (NumberFormatException e) {
-                throw new Usage(name + " expects an integer, got " + value);
+                throw new UsageException(name + " expects an integer, got " + value);
             }
         }
 
@@ -507,7 +511,7 @@ final class Options {
             try {
                 return Long.parseLong(value);
             } catch (NumberFormatException e) {
-                throw new Usage(name + " expects an integer, got " + value);
+                throw new UsageException(name + " expects an integer, got " + value);
             }
         }
 
@@ -518,7 +522,7 @@ final class Options {
                 require(Float.isFinite(number), "%s must be finite; got '%s'", name, value);
                 return number;
             } catch (NumberFormatException e) {
-                throw new Usage(name + " expects a number, got " + value);
+                throw new UsageException(name + " expects a number, got " + value);
             }
         }
     }
@@ -591,7 +595,7 @@ final class Options {
                   -c, --context-capacity <int> state capacity; default min(4096, model); 0: model maximum
                   --batch-capacity <int>      default prefill/scratch width (runtime default: 512)
                   -n, --max-output-tokens <int> generated-token budget; -1: remaining context
-                  --think <off|on>           off: do not reason; on: allow model reasoning
+                  --think <off|on|inline>     off: no reasoning; on: reason on stderr; inline: on stdout
                   --max-reasoning-tokens <int> reasoning budget; -1: uncapped
                   --reasoning-cutoff-message <text> forced text when the reasoning budget runs out
                   --speculation-depth <int>   draft depth in [0, 8]; default 4
@@ -605,7 +609,6 @@ final class Options {
         out.println(
                 """
                   --system-prompt <text>      conversation instructions
-                  --think inline             send thoughts to stdout instead of stderr
                   --stream / --no-stream     stream generated text (default: on)
                   --echo / --no-echo         echo token spellings to stderr (default: off)
                 """);

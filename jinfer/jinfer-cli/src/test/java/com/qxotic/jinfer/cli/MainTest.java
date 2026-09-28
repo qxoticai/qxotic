@@ -149,7 +149,7 @@ class MainTest {
     void unknownCommandsGetAConciseErrorInsteadOfARuntimeTrace() {
         var capture = new CliFixtures.Capture("");
         assertEquals(2, Main.run(new String[] {"chta"}, capture.io, ModelStore.of(dir)));
-        assertTrue(capture.err().contains("Unknown command: chta"));
+        assertTrue(capture.err().contains("unknown command: chta"));
         assertTrue(capture.err().lines().count() <= 3);
         assertEquals("", capture.out());
     }
