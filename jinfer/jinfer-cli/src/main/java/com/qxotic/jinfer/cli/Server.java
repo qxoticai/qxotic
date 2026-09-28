@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
@@ -147,13 +148,17 @@ final class Server {
         Arena arena = Arenas.newCrossThread();
         try {
             ChatEngine engine;
-            try {
-                engine = Main.openText(options, files, arena, io);
-            } catch (ModelProvider.IncompatibleModelException notLanguage) {
-                // The model selects the API: a non-language model is offered to transcription
-                // rather than making users select a task themselves.
-                validateTranscription(options);
-                return runTranscription(files, arena, io, config);
+            try (var spinner = LoadSpinner.start("Loading model", io)) {
+                try {
+                    engine = Main.loadText(options, files, arena);
+                } catch (ModelProvider.IncompatibleModelException notLanguage) {
+                    // The model selects the API: a non-language model is offered to transcription
+                    // rather than making users select a task themselves.
+                    validateTranscription(options);
+                    TranscriptionModel<?, ?, ?> transcription = loadTranscription(files, arena);
+                    spinner.close(); // one load line; the server runs outside it
+                    return serveTranscription(transcription, files, io, config);
+                }
             }
             try (engine) {
                 var sampling = options.sampling(engine.loaded().samplingDefaults());
@@ -189,20 +194,27 @@ final class Server {
         return running;
     }
 
-    private static int runTranscription(
-            Options.Files files, Arena arena, Main.IO io, ServerConfig config) throws IOException {
+    private static TranscriptionModel<?, ?, ?> loadTranscription(Options.Files files, Arena arena)
+            throws IOException {
+        try {
+            return Models.loadTranscription(files.model(), arena, files.companions());
+        } catch (ModelProvider.IncompatibleModelException neither) {
+            throw neither; // neither language nor transcription: run() reports it
+        } catch (IOException | IllegalArgumentException e) {
+            throw Main.failure("cannot prepare transcription model '" + files.model() + "'", e);
+        }
+    }
+
+    private static int serveTranscription(
+            TranscriptionModel<?, ?, ?> model, Options.Files files, Main.IO io, ServerConfig config)
+            throws IOException {
         TranscriptionServer.Running running;
-        try (var spinner = LoadSpinner.start("Loading model", io)) {
-            var model = Models.loadTranscription(files.model(), arena, files.companions());
+        try {
             running =
                     TranscriptionServer.start(
                             model, files.model().getFileName().toString(), config);
         } catch (BindException e) {
             throw bindFailure(config, e);
-        } catch (ModelProvider.IncompatibleModelException neither) {
-            throw neither; // neither language nor transcription: run() reports it
-        } catch (IOException | IllegalArgumentException e) {
-            throw Main.failure("cannot prepare transcription model '" + files.model() + "'", e);
         }
         listening(io.err(), running.address(), "POST /v1/audio/transcriptions");
         return await(running::await, running::close);
