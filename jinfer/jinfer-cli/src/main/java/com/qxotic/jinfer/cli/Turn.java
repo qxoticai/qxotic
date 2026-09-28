@@ -127,6 +127,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
             String suffix = errorColors ? ANSI_RESET : "";
             io.err()
                     .printf(
+                            Locale.ROOT,
                             "%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s"
                                     + " (%d) cache: %s, %d restored%s%s%n",
                             prefix,

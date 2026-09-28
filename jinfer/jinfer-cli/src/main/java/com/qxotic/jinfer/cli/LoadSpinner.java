@@ -35,8 +35,11 @@ final class LoadSpinner implements AutoCloseable {
                                 } catch (InterruptedException done) {
                                     return;
                                 }
-                                out.print('.');
-                                out.flush();
+                                synchronized (out) {
+                                    if (Thread.currentThread().isInterrupted()) return;
+                                    out.print('.');
+                                    out.flush();
+                                }
                             }
                         },
                         "jinfer-load-spinner");
@@ -53,12 +56,10 @@ final class LoadSpinner implements AutoCloseable {
         }
         closed = true;
         ticker.interrupt();
-        try {
-            ticker.join(500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        // Finish after the last dot, even when the caller is interrupted.
+        synchronized (out) {
+            out.println();
+            out.flush();
         }
-        out.println();
-        out.flush();
     }
 }

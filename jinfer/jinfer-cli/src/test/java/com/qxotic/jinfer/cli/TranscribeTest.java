@@ -83,6 +83,22 @@ class TranscribeTest {
     }
 
     @Test
+    void failedStreamCleanupDoesNotReportSuccessfulTranscription() {
+        var model = new Transcriber();
+        model.failStreamClose = true;
+        var capture = new CliFixtures.Capture(new byte[] {0, 0});
+        var options = Options.parse("transcribe", "-m", "unused", "-", "--raw-pcm");
+        assertThrows(
+                IllegalStateException.class,
+                () -> Transcribe.execute(model, null, options, capture.io));
+        assertEquals(1, model.finished);
+        assertEquals(1, model.streamClosed);
+        assertEquals(1, model.closed);
+        assertEquals("", capture.out());
+        assertFalse(capture.err().contains("Transcribed"));
+    }
+
+    @Test
     void streamingTextDoesNotRequireTokenTimestamps() throws Exception {
         var model = new Transcriber();
         model.timestamps = false;
@@ -205,6 +221,7 @@ class TranscribeTest {
         int closed, finished, streamClosed, partials;
         boolean timestamps = true;
         boolean streaming = true;
+        boolean failStreamClose;
         int rate = 16000;
         Runnable onPartial = () -> {};
         Runnable onTranscribe = () -> {};
@@ -264,6 +281,7 @@ class TranscribeTest {
 
                 public void close() {
                     streamClosed++;
+                    if (failStreamClose) throw new IllegalStateException("stream close failed");
                 }
             };
         }
