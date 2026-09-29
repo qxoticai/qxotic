@@ -8,10 +8,8 @@ import com.qxotic.jinfer.llm.Sampling;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.AccessDeniedException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
-import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -464,8 +462,6 @@ final class Options {
                     + switch (e) {
                         case NoSuchFileException x -> "no such file or directory";
                         case AccessDeniedException x -> "permission denied";
-                        case NotDirectoryException x -> "not a directory";
-                        case FileAlreadyExistsException x -> "already exists";
                         default -> e.getClass().getSimpleName();
                     };
         return failure.getMessage() == null

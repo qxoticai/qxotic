@@ -234,7 +234,7 @@ final class AOT {
         try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
             return tokenizerFrom(readGguf(fileChannel));
         } catch (IllegalArgumentException | EOFException e) {
-            // the GGUF reader names the fault, not the file; truncation is as much "not a GGUF"
+            // the reader names the fault, not the file; a truncated file is not a GGUF either
             throw new IllegalArgumentException(
                     "cannot load tokenizer from '" + path + "': " + e.getMessage(), e);
         }
