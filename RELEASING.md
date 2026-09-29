@@ -62,11 +62,17 @@ Smoke-test any native executables intended for distribution on their target plat
 ## Before publishing
 
 - Review [release notes](RELEASE-NOTES.md), supported model families, API documentation and known limitations.
-- Confirm the intended versions and `project.build.outputTimestamp`; do not change them as a side effect of QA. Each project (gguf, json, safetensors, jota, jam, toknroll, jinfer) releases on the version its own root POM declares, and a project without changes since its last tag is not republished. A bump is two edits: that POM and the matching `<project>.version` in the root POM, which is where the others resolve it; `jinfer-bom` names the same versions for consumers.
-  An artifact can also release on a version of its own inside its project: it declares the version in its own POM, and a `<artifactId>.version` property names it for the rest (`jam-native.version` in the root POM, the jinfer ones in `jinfer/pom.xml`).
-  `make release-deploy PROJECT=jam/jam-native` stages one alone.
-  A new `jinfer-bom` is how consumers receive an artifact that moved alone, without the libraries being released again.
-  That only works while a published artifact keeps every public member its last release had: a newer `jinfer-kernels` has to run under the model jars compiled against the older one.
+- Confirm the intended versions and `project.build.outputTimestamp`; do not change them as a side effect of QA.
+  Run `make release-plan`: it lists every published artifact with its version, whether Maven Central holds it and whether its code changed, and fails when the versions disagree.
+- Versions follow one rule with one exception.
+  The rule: a project (gguf, json, safetensors, jota, jam, toknroll, jinfer) is released as a whole, and every artifact in it takes the project's version.
+  The exception: between two releases of a project, an artifact whose code changed is released alone, on a version of its own.
+  The next release of the project ends the exception: every artifact takes the new project version, and the versions declared for single artifacts are removed.
+- A version of its own is declared in three places, and `make release-plan` checks that they agree: the artifact's POM, the `<artifactId>.version` property that names it for the rest of its project (in `jinfer/pom.xml`, or the root POM for the jam artifacts), and its entry in `jinfer-bom`.
+  `jinfer-bom` writes every version out, since the published catalog has no parent and no properties.
+  A project's own version is two edits: its root POM and the matching `<project>.version` in the root POM.
+- An artifact released alone has to run under the artifacts already published: it keeps every public member its last release had.
+  A newer `jinfer-kernels` runs under the model jars compiled against the older one.
 - Inspect the artifacts that opt into publication, including POM dependencies, source and Javadoc JARs, LICENSE and NOTICE files, and native-library contents.
 - Run the signing-enabled release verification with the configured release key, without `gpg.skip` or native-check bypasses.
 - Resolve failures and document coverage gaps before deciding whether to release.
