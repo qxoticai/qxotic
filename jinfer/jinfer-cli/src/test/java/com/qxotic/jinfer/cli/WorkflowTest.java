@@ -563,4 +563,27 @@ class WorkflowTest {
         assertEquals("", capture.out());
         assertFalse(CliModelProvider.weights.scope().isAlive(), "a refused load releases weights");
     }
+
+    /**
+     * Past the window, chat drops its oldest exchanges instead of refusing every turn from then on.
+     * The fixture tokenizes a byte per token and renders "role:text" lines: turn three would need
+     * 71 tokens of 64, so from there each turn costs the oldest exchange.
+     */
+    @Test
+    void chatDropsTheOldestExchangesWhenTheContextIsFull() throws Exception {
+        Path path = model("language", "");
+        var capture = new CliFixtures.Capture("hello\nhello\nhello\nhello\n/exit\n");
+        assertEquals(
+                0,
+                run(capture, "chat", "-m", path.toString(), "-c", "64", "-n", "2"),
+                capture.err());
+        assertEquals("xx\nxx\nxx\nxx\n", capture.out().replace("\r\n", "\n"));
+        assertTrue(
+                capture.err().contains("context full: dropped the oldest exchange"), capture.err());
+        assertFalse(capture.err().contains("shorten the prompt"), capture.err());
+        assertEquals(
+                3,
+                CliModelProvider.template.conversations.getLast().messages().size(),
+                "user, assistant, user");
+    }
 }

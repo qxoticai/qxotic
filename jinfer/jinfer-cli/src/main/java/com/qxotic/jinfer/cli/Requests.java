@@ -10,14 +10,13 @@ final class Requests {
 
     private Requests() {}
 
-    static ChatEngine.Prepared prepare(
-            ChatEngine engine, List<Message> messages, Sampling sampling, Options options) {
-        return checked(engine.prepare(of(messages, sampling, options)), engine.contextCapacity());
+    static boolean fits(ChatEngine.Prepared prepared, int capacity) {
+        return prepared.promptTokens() <= capacity;
     }
 
     /** The prompt must fit: refused as the library refuses input, so chat can drop the turn. */
     static ChatEngine.Prepared checked(ChatEngine.Prepared prepared, int capacity) {
-        if (prepared.promptTokens() > capacity) {
+        if (!fits(prepared, capacity)) {
             try (prepared) {
                 throw new IllegalArgumentException(
                         "prompt needs "
