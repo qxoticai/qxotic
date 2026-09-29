@@ -80,6 +80,8 @@
     <safetensors.version>0.2.0</safetensors.version>
     <jota.version>0.2.0</jota.version>
     <jam.version>0.2.0</jam.version>
+    <!-- jam-native releases independently of the other jam artifacts. -->
+    <jam-native.version>0.3.1</jam-native.version>
     <toknroll.version>0.2.0</toknroll.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
@@ -291,7 +293,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-native</artifactId>
-        <version>${jam.version}</version>
+        <version>${jam-native.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

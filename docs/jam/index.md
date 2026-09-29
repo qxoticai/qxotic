@@ -127,7 +127,7 @@ Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 2
 **Maven** runs cmake, javac, and tests in one step:
 
 ```sh
-mvn package      # -> target/jam-native-0.2.0.jar with this host's library
+mvn package      # -> target/jam-native-0.3.1.jar with this host's library
 mvn test         # configure + build + JUnit
 ```
 
