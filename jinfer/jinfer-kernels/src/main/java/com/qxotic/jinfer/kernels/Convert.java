@@ -292,6 +292,10 @@ public final class Convert {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             int count) {
+        if (src.dataType() instanceof JamPacked p) {
+            dequantLegacy(p.canonical(), srcElemOff, dst, dstElemOff, count);
+            return;
+        }
         Raw s = Raw.of(src, src.dataType(), "src");
         Raw d = Raw.f32(dst, "dst");
         DataType dt = src.dataType();
@@ -316,6 +320,11 @@ public final class Convert {
             long dstElemOff,
             int count) {
         DataType dt = src.dataType();
+        if (dt instanceof JamPacked p) {
+            // MatMul reads the slab; every other reader sees the canonical bytes
+            copyToF32(p.canonical(), srcElemOff, dst, dstElemOff, count);
+            return;
+        }
         if (dt == DataType.Q8_0) {
             dequantQ8_0(src, srcElemOff, dst, dstElemOff, count);
         } else if (dt == DataType.MXFP4) {
@@ -348,6 +357,10 @@ public final class Convert {
             MemoryView<MemorySegment> dst,
             long dstElemOff,
             int rowLen) {
+        if (table.dataType() instanceof JamPacked p) {
+            gatherToF32(p.canonical(), rows, rowsOff, n, dst, dstElemOff, rowLen);
+            return;
+        }
         if (table.dataType() == DataType.Q8_0 && rowLen % 32 == 0 && USE_VECTOR_API) {
             dequantQ8_0Rows(table, rows, rowsOff, n, dst, dstElemOff, rowLen);
             return;
