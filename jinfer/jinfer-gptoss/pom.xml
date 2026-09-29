@@ -9,6 +9,7 @@
   </parent>
 
   <artifactId>jinfer-gptoss</artifactId>
+  <version>0.3.1</version>
   <packaging>jar</packaging>
 
   <name>Jinfer gpt-oss Provider</name>
