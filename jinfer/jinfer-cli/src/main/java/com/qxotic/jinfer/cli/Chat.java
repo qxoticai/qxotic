@@ -75,8 +75,8 @@ final class Chat {
             } catch (IllegalArgumentException
                     | IllegalStateException
                     | UnsupportedOperationException e) {
-                // The library refusing this turn's input (the types Main.run reads as one line):
-                // drop the turn and keep the session. A bug during generation is not recoverable.
+                // the library refusing this turn (what Main.run prints as one line): drop the
+                // turn, keep the session; a bug is not caught here and ends it
                 history.removeLast();
                 io.err().println("jinfer chat: " + e.getMessage());
                 continue;
