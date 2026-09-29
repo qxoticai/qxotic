@@ -184,20 +184,27 @@ For this example, clients send `Authorization: Bearer local-demo-key`.
 
 ## Model downloads: `pull`
 
-Download one or more models and print their local paths:
+Check upstream for one or more models and print their local paths:
 
 ```sh
 jinfer pull "$LM" "$TTS" "$ASR"
+jinfer pull --force "$LM"
 ```
 
-Use `--force` to re-download a model. Set `JINFER_OFFLINE=1` to run using cached files only:
+`pull` checks for updates and reuses unchanged files when possible.
+Use `--force` to download again, even if cached.
+If an update fails, the previously usable model remains available.
+
+Inference uses an installed model without checking upstream.
+Set `JINFER_OFFLINE=1` to use cached models only:
 
 ```sh
-jinfer pull --force "$LM"
 JINFER_OFFLINE=1 jinfer instruct -m "$LM" "Hello."
 ```
 
 Set `JINFER_MODELS` to choose a different model-cache directory.
+Update checks and forced downloads require network access.
+An exact cached file pinned to a full commit can be pulled offline.
 
 ## Cached models: `list`
 

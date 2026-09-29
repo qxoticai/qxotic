@@ -8,6 +8,8 @@ import com.qxotic.jinfer.hub.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,11 @@ class HubTest {
     @Test
     void pullCachesInArgumentOrderAndForceRefreshes() throws Exception {
         AtomicInteger fetches = new AtomicInteger();
+        String sha256 =
+                HexFormat.of()
+                        .formatHex(
+                                MessageDigest.getInstance("SHA-256")
+                                        .digest(new byte[] {'G', 'G', 'U', 'F'}));
         var source =
                 new ModelSource() {
                     public boolean supports(ModelRef ref) {
@@ -26,7 +33,7 @@ class HubTest {
                     }
 
                     public List<RemoteFile> list(ModelRef ref, String directory) {
-                        return List.of(new RemoteFile("model-Q8_0.gguf", 4, null));
+                        return List.of(new RemoteFile("model-Q8_0.gguf", 4, sha256));
                     }
 
                     public void fetch(ModelRef ref, RemoteFile file, Path into) throws IOException {
@@ -54,6 +61,38 @@ class HubTest {
         assertTrue(listing.out().contains("first"));
         assertTrue(listing.out().contains("second"));
         assertEquals(3, fetches.get(), "listing never fetches");
+    }
+
+    @Test
+    void failedForcePullPreservesTheFlatCache() throws Exception {
+        Path cached = dir.resolve("hf.co/owner/repo/model-Q8_0.gguf");
+        Files.createDirectories(cached.getParent());
+        Files.writeString(cached, "working model");
+        var source =
+                new ModelSource() {
+                    public boolean supports(ModelRef ref) {
+                        return true;
+                    }
+
+                    public List<RemoteFile> list(ModelRef ref, String directory)
+                            throws IOException {
+                        throw new IOException("repository unavailable");
+                    }
+
+                    public void fetch(ModelRef ref, RemoteFile file, Path into) {
+                        throw new AssertionError("listing failed");
+                    }
+                };
+        ModelStore store = ModelStore.of(dir, source);
+        var capture = new CliFixtures.Capture("");
+        assertEquals(
+                1,
+                Main.run(new String[] {"pull", "--force", "owner/repo:Q8_0"}, capture.io, store));
+        assertEquals("", capture.out());
+        assertTrue(capture.err().contains("repository unavailable"), capture.err());
+        assertTrue(Files.exists(cached), "failed refresh deleted the working model");
+        assertEquals("working model", Files.readString(cached));
+        assertEquals(cached, store.resolve("owner/repo:Q8_0"));
     }
 
     @Test

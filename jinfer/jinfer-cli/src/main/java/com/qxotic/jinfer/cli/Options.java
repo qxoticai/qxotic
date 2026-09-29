@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * One parsing pass, followed by validation. Resolution and runtime setup are explicit operations.
@@ -393,6 +394,16 @@ final class Options {
     }
 
     static List<Path> resolveFiles(ModelStore store, List<String> refs) throws IOException {
+        return resolveFiles(refs, () -> store.resolveAll(refs));
+    }
+
+    static List<Path> pullFiles(ModelStore store, List<String> refs, boolean force)
+            throws IOException {
+        return resolveFiles(refs, () -> store.pullAll(refs, force));
+    }
+
+    private static List<Path> resolveFiles(List<String> refs, Supplier<List<Path>> resolve)
+            throws IOException {
         try {
             for (String ref : refs) {
                 String lower = ref.toLowerCase(Locale.ROOT);
@@ -405,7 +416,7 @@ final class Options {
                 if (!java.nio.file.Files.isRegularFile(path))
                     throw new IOException("no such file: '" + ref + "'");
             }
-            return store.resolveAll(refs);
+            return resolve.get();
         } catch (IllegalArgumentException | IllegalStateException | UncheckedIOException e) {
             // Cache/ref/offline errors are expected here, not during model execution.
             throw Main.failure("cannot resolve model files", e);
