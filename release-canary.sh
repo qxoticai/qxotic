@@ -52,8 +52,9 @@ echo "==> installing the $VERSION release build (catalog $BOM_VERSION) into thro
 # jam.natives.check.skip: the canary exercises pom/artifact resolution, not the native libraries
 # (the release profile itself never runs cmake; it packages the staged, verified set).
 # shellcheck disable=SC2086
+# The whole reactor, not only what the consumers below compile against: the catalog names every
+# published artifact, and each of those names is checked against what this build produced.
 $MVN -B -q -f "$ROOT/pom.xml" -Prelease install \
-    -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-spring-ai,jinfer/jinfer-spring-ai-autoconfigure,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-lfm2,jinfer/jinfer-models-all -am \
     -DskipTests -Dspotless.check.skip=true -Dgpg.skip=true -Djam.natives.check.skip=true \
     -Dmaven.repo.local="$REPO"
 
@@ -382,12 +383,52 @@ final class Canary {
 }
 EOF
 
+# A consumer that asks for everything the catalog manages, so that every name in it is resolved.
+mkdir -p "$WORK/catalog"
+{
+    cat <<EOF
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>canary</groupId>
+  <artifactId>catalog-canary</artifactId>
+  <version>0</version>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-bom</artifactId>
+        <version>$BOM_VERSION</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+EOF
+    sed -n '/<dependencyManagement>/,/<\/dependencyManagement>/ s|.*<artifactId>\(.*\)</artifactId>.*|    <dependency><groupId>com.qxotic</groupId><artifactId>\1</artifactId></dependency>|p' \
+        "$REPO/com/qxotic/jinfer-bom/$BOM_VERSION/jinfer-bom-$BOM_VERSION.pom"
+    printf '  </dependencies>\n</project>\n'
+} > "$WORK/catalog/pom.xml"
+
 echo "==> compiling isolated consumers against only the throwaway repository"
+# shellcheck disable=SC2086
+( cd "$WORK/catalog" && $MVN -B -q dependency:resolve -Dmaven.repo.local="$REPO" )
 # shellcheck disable=SC2086
 ( cd "$WORK/consumer" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
 # shellcheck disable=SC2086
 ( cd "$WORK/no-bom-providers" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
 # shellcheck disable=SC2086
 ( cd "$WORK/no-bom-boot" && $MVN -B -q compile -Dmaven.repo.local="$REPO" )
+
+# The throwaway repository is not offline: a com.qxotic version this build does not produce is
+# fetched from Central, and the consumers then compile against the last release instead of this
+# one. The resolver marks what it fetched (">central=") apart from what was installed (">=").
+FETCHED=$({ grep -rlE '>[^=]+=' --include=_remote.repositories "$REPO/com/qxotic" 2>/dev/null || true; } |
+    sed "s|^$REPO/com/qxotic/||; s|/_remote.repositories$||; s|/|:|" | sort)
+if [ -n "$FETCHED" ]; then
+    echo "canary: resolved from a remote, not from this build:" $FETCHED >&2
+    echo "canary: a POM or the catalog names a version the reactor does not build" >&2
+    exit 1
+fi
 
 echo "==> canary green: published integration POMs resolve with and without BOMs"
