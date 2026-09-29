@@ -782,10 +782,7 @@ public final class ChatEngine implements AutoCloseable {
                 == ChatTemplate.ThinkingPolicy.ALWAYS;
     }
 
-    /**
-     * The conversation a request encodes - the one place that decides whether it thinks, so a
-     * prompt pinned for it ({@link #definePrompt(Request)}) and the prompt served for it agree.
-     */
+    /** The conversation a request encodes: one decision on thinking, shared by pin and pass. */
     private Conversation conversation(Request request) {
         // a completion budget under THINK_FLOOR switches thinking off, except where off cannot be
         // rendered: there the span stays open and the reasoning cap (half the budget) bounds it
@@ -1595,20 +1592,17 @@ public final class ChatEngine implements AutoCloseable {
         }
     }
 
-    /**
-     * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
-     * batch (turn boundaries), or one block for the reusable prefix when its fixed checkpoint
-     * overhead exceeds the configured limit, then discards the working state: the blocks hold the
-     * KV.
-     */
+    /** Pins exactly the prompt {@link #prepare} would encode for {@code request}. */
     public void definePrompt(Request request) {
         definePrompt(conversation(request));
     }
 
     /**
-     * As {@link #definePrompt(Request)} for a bare prefix. A caller that will later {@link
-     * #prepare} a request pins with the request instead: the thinking budget and floor can render a
-     * different prompt than the flag alone.
+     * Defines (prefills) a cached prompt: dedups against the tree, commits one block per encoded
+     * batch (turn boundaries), or one block for the reusable prefix when its fixed checkpoint
+     * overhead exceeds the configured limit, then discards the working state: the blocks hold the
+     * KV. A caller that will {@link #prepare} a request pins with {@link #definePrompt(Request)}
+     * instead: the thinking floor can render a different prompt than the flag alone.
      */
     public void definePrompt(Conversation prefix) {
         Arena memory = Arenas.newCrossThread();
