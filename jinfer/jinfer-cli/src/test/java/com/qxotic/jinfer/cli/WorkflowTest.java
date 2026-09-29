@@ -375,6 +375,11 @@ class WorkflowTest {
                         "--cache",
                         cache.toString()),
                 first.err());
+        // -n 2 is under the thinking floor: the pinned prompt and the generated one must still
+        // agree on thinking, or nothing ever restores
+        var encoded = CliModelProvider.template.conversations;
+        assertEquals(2, encoded.size(), "one pin, one pass");
+        assertEquals(encoded.get(0).thinking(), encoded.get(1).thinking());
         long size = Files.size(cache);
         var second = new CliFixtures.Capture("");
         assertEquals(
