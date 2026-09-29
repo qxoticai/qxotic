@@ -105,8 +105,7 @@ final class Instruct {
 
         // --cache: pin the prompt BEFORE generating - the artifact is the point of --cache, and a
         // generation failure must not lose it. The engine's cache then serves the longest cached
-        // prefix on the complete() below, on its own. Pinned from the same request that generates,
-        // so the two prompts cannot differ.
+        // prefix on the complete() below, on its own.
         if (options.promptCache != null && !options.promptCacheReadOnly) {
             int before = engine.cacheSample().blocks();
             try {
