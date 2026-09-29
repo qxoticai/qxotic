@@ -459,6 +459,12 @@ public final class Ops {
         }
     }
 
+    /** {@link #addScaledRows} over one span of {@code n} elements, on the calling thread. */
+    public static void addScaled(
+            MemoryView<MemorySegment> x, MemoryView<MemorySegment> xb, int n, float scale) {
+        addScaledRows(x, xb, 1, n, scale);
+    }
+
     /**
      * Scaled residual add {@code x += scale * xb} over {@code rows} rows of {@code rowDim} lanes,
      * one row per job. Note {@code xb} is scaled in place when {@code scale != 1}, so it is
