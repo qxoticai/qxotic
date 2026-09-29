@@ -2,6 +2,7 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.llm.Sampling;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -71,7 +72,7 @@ final class Chat {
             history.add(Message.user(userText));
             ChatEngine.Prepared prepared;
             try {
-                prepared = Requests.prepare(engine, List.copyOf(history), sampling, options);
+                prepared = prepare(engine, history, sampling, options, io);
             } catch (IllegalArgumentException
                     | IllegalStateException
                     | UnsupportedOperationException e) {
@@ -92,6 +93,40 @@ final class Chat {
                 // keeps generated turns inside the cache's common prefix
                 history.add(completion.reply());
             }
+        }
+    }
+
+    /**
+     * The turn prepared to fit the context: past the window, the oldest exchanges are dropped from
+     * {@code history} until it does, keeping the system prompt and the message just typed, and
+     * stderr says so. A message that does not fit on its own is refused as any other.
+     */
+    private static ChatEngine.Prepared prepare(
+            ChatEngine engine,
+            List<Message> history,
+            Sampling sampling,
+            Options options,
+            Main.IO io) {
+        int dropped = 0;
+        while (true) {
+            ChatEngine.Prepared prepared =
+                    engine.prepare(Requests.of(List.copyOf(history), sampling, options));
+            if (Requests.fits(prepared, engine.contextCapacity())) {
+                if (dropped > 0)
+                    io.err()
+                            .println(
+                                    "context full: dropped the oldest "
+                                            + (dropped == 1 ? "exchange" : dropped + " exchanges"));
+                return prepared;
+            }
+            int oldest = options.systemPrompt == null ? 0 : 1;
+            if (history.size() - oldest == 1) {
+                Requests.checked(prepared, engine.contextCapacity()); // refuses; closes prepared
+            }
+            prepared.close();
+            history.remove(oldest); // the oldest user turn, and its reply with it
+            if (history.get(oldest).role().equals(Role.ASSISTANT)) history.remove(oldest);
+            dropped++;
         }
     }
 }
