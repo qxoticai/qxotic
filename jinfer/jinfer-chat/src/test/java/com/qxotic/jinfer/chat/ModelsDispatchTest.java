@@ -125,9 +125,9 @@ class ModelsDispatchTest {
     void aKindThePortDoesNotImplementIsRefusedByName() throws IOException {
         Path model = write(fake(), "m.gguf");
 
-        UnsupportedOperationException refused =
+        ModelProvider.IncompatibleModelException refused =
                 assertThrows(
-                        UnsupportedOperationException.class,
+                        ModelProvider.IncompatibleModelException.class,
                         () -> Models.loadEmbedder(model, Arena.ofAuto()));
 
         assertEquals("'fake' is not an embedding architecture", refused.getMessage());
