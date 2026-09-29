@@ -3,6 +3,7 @@
 // no transport, no generation logic.
 package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.llm.Generator;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -174,9 +175,27 @@ final class OpenAiSchema {
      * empty text while {@code response.completed} carried function_call items, so a client
      * following the item events saw an empty answer and never learned a tool had been called.
      */
+    /**
+     * Why a Responses reply is incomplete; null when the model or a tool call ended it. The chat
+     * finish reason already knows what "ended" means (a stop string and a tool call both come from
+     * the generator as ABORT); the generator's reason splits its "other" into the deadline and a
+     * cancel. {@code timeout} and {@code cancelled} are not among OpenAI's documented reasons, but
+     * a truncated reply reported as completed would be worse than a reason a client does not know.
+     */
+    private static String incompleteReason(Reply result) {
+        return switch (result.finishReason()) {
+            case "length" -> "max_output_tokens";
+            case "other" ->
+                    result.result().finishReason() == Generator.FinishReason.TIMEOUT
+                            ? "timeout"
+                            : "cancelled";
+            default -> null;
+        };
+    }
+
     static List<Map<String, Object>> responseOutputItems(String id, Reply result) {
         String text = result.text() == null ? "" : result.text();
-        String status = "length".equals(result.finishReason()) ? "incomplete" : "completed";
+        String status = incompleteReason(result) == null ? "completed" : "incomplete";
         if (result.toolCalls().isEmpty()) {
             return List.of(responseMessageItem("msg_" + id, status, text));
         }
@@ -208,16 +227,16 @@ final class OpenAiSchema {
             long created,
             Reply result,
             List<Map<String, Object>> output) {
+        String reason = incompleteReason(result);
         Map<String, Object> response =
                 responseEnvelope(
                         id,
                         modelId,
                         created,
-                        "length".equals(result.finishReason()) ? "incomplete" : "completed",
+                        reason == null ? "completed" : "incomplete",
                         output,
                         responseUsage(result));
-        if ("length".equals(result.finishReason()))
-            response.put("incomplete_details", Map.of("reason", "max_output_tokens"));
+        if (reason != null) response.put("incomplete_details", Map.of("reason", reason));
         response.put("timings", timings(result));
         return response;
     }

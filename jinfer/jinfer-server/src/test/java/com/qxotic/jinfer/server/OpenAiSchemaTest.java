@@ -57,6 +57,33 @@ class OpenAiSchemaTest {
         assertEquals("completed", OpenAiSchema.responseResponse("id", "m", stopped).get("status"));
     }
 
+    /** A deadline cuts the reply like the budget does; a client must be able to tell. */
+    @Test
+    void responsesReportADeadlineAsIncomplete() {
+        for (var cut :
+                Map.of(
+                                Generator.FinishReason.TIMEOUT,
+                                "timeout",
+                                Generator.FinishReason.ABORT,
+                                "cancelled")
+                        .entrySet()) {
+            var generation =
+                    new Generator.GenerationResult(
+                            new int[] {1, 2, 3},
+                            OptionalInt.empty(),
+                            cut.getKey(),
+                            Duration.ZERO,
+                            Duration.ZERO);
+            var partial = new Reply(generation, 3, 0, "part", null, List.of(), "other", null);
+            Map<String, Object> response = OpenAiSchema.responseResponse("id", "m", partial);
+            assertEquals("incomplete", response.get("status"), cut.getValue());
+            assertEquals(Map.of("reason", cut.getValue()), response.get("incomplete_details"));
+            assertEquals(
+                    "incomplete",
+                    OpenAiSchema.responseOutputItems("id", partial).getFirst().get("status"));
+        }
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void textAlongsideToolCallsIsContentInEveryShape() {
