@@ -5,9 +5,12 @@ import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -19,6 +22,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 
 /**
@@ -560,23 +564,48 @@ public final class ModelStore {
         if (!Files.isDirectory(root)) {
             return List.of();
         }
-        try (var walk = Files.walk(root)) {
-            return walk.filter(Files::isRegularFile)
-                    .filter(file -> isCachedModel(root.relativize(file)))
-                    .map(file -> new Cached(asRefOrPath(root, root.relativize(file)), sizeOf(file)))
-                    .toList();
+        List<Cached> found = new ArrayList<>();
+        try {
+            visitFiles(
+                    root,
+                    (file, attrs) -> {
+                        Path relative = root.relativize(file);
+                        if (isCachedModel(relative))
+                            found.add(new Cached(asRefOrPath(root, relative), attrs.size()));
+                    });
         } catch (IOException e) {
             throw new UncheckedIOException(
                     "could not read the model cache at " + root + ": " + e, e);
         }
+        return found;
     }
 
-    static long sizeOf(Path file) {
-        try {
-            return Files.size(file);
-        } catch (IOException unreadable) {
-            return 0; // a size the filesystem will not state is not worth failing a listing over
-        }
+    /**
+     * Every regular file under {@code start}, with its attributes. An entry the walk cannot read is
+     * logged and skipped, so one locked directory does not cost a listing its siblings; only {@code
+     * start} itself failing throws.
+     */
+    static void visitFiles(Path start, BiConsumer<Path, BasicFileAttributes> onFile)
+            throws IOException {
+        Files.walkFileTree(
+                start,
+                new SimpleFileVisitor<>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        if (attrs.isRegularFile()) onFile.accept(file, attrs);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException e) {
+                        LOG.log(
+                                Level.WARNING,
+                                "skipped {0}: {1}",
+                                file,
+                                e.getClass().getSimpleName());
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
     }
 
     /** A ref when the first segment is a host we know, else the absolute path. Never a guess. */
