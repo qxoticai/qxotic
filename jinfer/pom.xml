@@ -10,7 +10,7 @@
   </parent>
 
   <artifactId>jinfer-parent</artifactId>
-  <!-- Default Jinfer release version; executables may release independently. -->
+  <!-- The version of a jinfer release, and of every artifact that declares none of its own. -->
   <version>0.3.0</version>
   <packaging>pom</packaging>
 
@@ -54,19 +54,19 @@
   </modules>
 
   <properties>
-    <!-- Library dependencies follow this version, unless the artifact released on its own since.
-         Written out, and moved with this POM's version: an artifact that declares its own version
-         inherits this property, where ${project.version} would mean that artifact's. -->
+    <!-- The version the artifacts without one of their own carry. Written out, and moved with
+         this POM's version: an artifact that declares its own version inherits this property,
+         where ${project.version} would mean that artifact's. -->
     <jinfer.version>0.3.0</jinfer.version>
-    <!-- Artifacts that released on their own since: each declares its version in its POM, and
-         this is where the rest of jinfer, and jinfer-bom, resolve it. -->
-    <jinfer-kernels.version>0.3.1</jinfer-kernels.version>
+    <!-- Released alone since jinfer 0.3.0. Each declares its version in its POM, this names it
+         for the rest of jinfer, and the next release of jinfer removes both. -->
+    <jinfer-bailingmoe3.version>0.3.1</jinfer-bailingmoe3.version>
     <jinfer-chat.version>0.3.1</jinfer-chat.version>
     <jinfer-codecs.version>0.3.1</jinfer-codecs.version>
-    <jinfer-hub.version>0.3.1</jinfer-hub.version>
-    <jinfer-bailingmoe3.version>0.3.1</jinfer-bailingmoe3.version>
     <jinfer-gemma4.version>0.3.1</jinfer-gemma4.version>
     <jinfer-gptoss.version>0.3.1</jinfer-gptoss.version>
+    <jinfer-hub.version>0.3.1</jinfer-hub.version>
+    <jinfer-kernels.version>0.3.1</jinfer-kernels.version>
     <jinfer-laguna.version>0.3.1</jinfer-laguna.version>
     <jinfer-lfm2.version>0.3.1</jinfer-lfm2.version>
     <jinfer-llama.version>0.3.1</jinfer-llama.version>

@@ -9,6 +9,7 @@
   </parent>
 
   <artifactId>jinfer-gptoss</artifactId>
+  <!-- Its own version until the next release of jinfer (RELEASING.md). -->
   <version>0.3.1</version>
   <packaging>jar</packaging>
 

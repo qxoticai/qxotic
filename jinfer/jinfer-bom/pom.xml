@@ -9,8 +9,8 @@
   </parent>
 
   <artifactId>jinfer-bom</artifactId>
-  <!-- Releases independently: a new catalog is how consumers receive an artifact that moved alone
-       (jam-native, say) without the jinfer libraries being released again. -->
+  <!-- Its own version until the next release of jinfer (RELEASING.md). A new catalog is how
+       consumers receive the artifacts that were released alone. -->
   <version>0.3.1</version>
   <packaging>pom</packaging>
 
@@ -21,10 +21,6 @@
   </properties>
 
   <!--
-    Every version below is written out: the published catalog has no parent and no properties, so
-    an expression in it would not resolve in a consumer's build. Each follows the version its
-    artifact declares, and the release canary fails when one does not.
-
     a BOM is a dependencyManagement section with no jars behind it. This one manages the
     jinfer artifacts that are meant to be depended on (excluded: the shaded executables, which
     jinfer-cli ships as and nobody consumes as a library, with jinfer-bench and jinfer-tts;
@@ -32,6 +28,10 @@
     the substrate versions jinfer's transitive graph resolves against. Keeping the substrate here,
     rather than letting each jinfer artifact's own POM float it, is what makes "one import, one
     coherent release" true for downstream builds that also add a jam accelerator or jota directly.
+
+    Every version is written out: the published catalog has no parent and no properties, so an
+    expression would not resolve in a consumer's build. `make release-plan` fails when one of
+    them is not the version its artifact declares.
   -->
   <dependencyManagement>
     <dependencies>
