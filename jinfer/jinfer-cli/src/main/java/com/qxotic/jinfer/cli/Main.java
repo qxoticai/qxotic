@@ -6,7 +6,6 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.io.BufferedOutputStream;
 import java.io.FileDescriptor;
@@ -64,6 +63,12 @@ public final class Main {
         }
     }
 
+    /**
+     * The exit status of one invocation. The library refuses the user's input with the JDK's own
+     * types - {@link IllegalArgumentException}, {@link IllegalStateException}, {@link
+     * UnsupportedOperationException} - and those read as one line, like an I/O failure. Any other
+     * runtime exception is a bug and keeps its stack trace.
+     */
     static int run(String[] args, IO io, ModelStore store) {
         Options options = null;
         try {
@@ -97,7 +102,11 @@ public final class Main {
             if (e.showHelp)
                 io.err().println("Run '" + name + " --help' for available commands and options.");
             return 2;
-        } catch (IOException | UncheckedIOException e) {
+        } catch (IOException
+                | UncheckedIOException
+                | IllegalArgumentException
+                | IllegalStateException
+                | UnsupportedOperationException e) {
             io.err().println(name(options) + ": " + Options.rootMessage(e));
             return Thread.currentThread().isInterrupted() ? 130 : 1;
         } catch (RuntimeException e) {
@@ -115,8 +124,11 @@ public final class Main {
         return "jinfer" + (options == null || options.command == null ? "" : " " + options.command);
     }
 
-    /** A useful headline first, backend details below it; retain the cause for diagnostics. */
-    static IOException failure(String summary, Throwable cause) {
+    /**
+     * An I/O failure with the context the JDK's message lacks - the operation, the file, a remedy -
+     * and the details below it. Only for I/O: a refusal keeps its own type (see {@link #run}).
+     */
+    static IOException failure(String summary, IOException cause) {
         return new IOException(
                 summary + "\n  " + Options.rootMessage(cause).replace("\n", "\n  "), cause);
     }
@@ -131,9 +143,6 @@ public final class Main {
             if (options.command.equals("chat")) Chat.run(engine, sampling, options, io);
             else Instruct.run(engine, sampling, options, io, text);
             return Thread.currentThread().isInterrupted() ? 130 : 0;
-        } catch (ModelProvider.IncompatibleModelException | UnsupportedOperationException e) {
-            throw failure(
-                    "cannot run " + options.command + " with model '" + options.modelRef + "'", e);
         } finally {
             Arenas.close(arena);
         }
@@ -150,13 +159,8 @@ public final class Main {
     static ChatEngine loadText(Options options, Options.Files files, Arena arena)
             throws IOException {
         var model = AOT.load(files.model(), files.companions(), files.tokenizer(), arena);
-        try {
-            return new ChatEngine(
-                            model, files.model().getFileName().toString(), options.cacheOptions())
-                    .speculationDepth(options.speculationDepth);
-        } catch (IllegalArgumentException | UncheckedIOException e) {
-            throw failure("cannot initialize model state for '" + files.model() + "'", e);
-        }
+        return new ChatEngine(model, files.model().getFileName().toString(), options.cacheOptions())
+                .speculationDepth(options.speculationDepth);
     }
 
     private static PrintStream utf8Stream(FileDescriptor fd) {

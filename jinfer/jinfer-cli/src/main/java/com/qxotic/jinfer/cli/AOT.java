@@ -1,9 +1,7 @@
 package com.qxotic.jinfer.cli;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.format.gguf.GGUFFormatException;
 import com.qxotic.jinfer.chat.LoadedModel;
-import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
@@ -235,8 +233,10 @@ final class AOT {
         }
         try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
             return tokenizerFrom(readGguf(fileChannel));
-        } catch (IOException | GGUFFormatException | IllegalArgumentException e) {
-            throw Main.failure("cannot load tokenizer from '" + path + "'", e);
+        } catch (IllegalArgumentException | EOFException e) {
+            // the GGUF reader names the fault, not the file; truncation is as much "not a GGUF"
+            throw new IllegalArgumentException(
+                    "cannot load tokenizer from '" + path + "': " + e.getMessage(), e);
         }
     }
 
@@ -255,12 +255,6 @@ final class AOT {
                 tokenizerOverride != null
                         ? tokenizerFrom(tokenizerOverride)
                         : main == null ? null : main.tokenizer();
-        try {
-            return Models.load(modelPath, arena, companions, tokenizer);
-        } catch (ModelProvider.IncompatibleModelException notLanguage) {
-            throw notLanguage; // the file is fine; the command asked for the wrong kind
-        } catch (IOException | IllegalArgumentException e) {
-            throw Main.failure("cannot load model '" + modelPath + "'", e);
-        }
+        return Models.load(modelPath, arena, companions, tokenizer);
     }
 }

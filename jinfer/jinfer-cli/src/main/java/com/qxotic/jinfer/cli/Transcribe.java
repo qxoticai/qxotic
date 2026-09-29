@@ -76,16 +76,7 @@ final class Transcribe {
                                     + (stdin ? "from stdin" : "'" + options.input + "'")
                                     + " ...");
             byte[] encoded = stdin ? io.read("audio") : null;
-            try {
-                audio =
-                        stdin
-                                ? AudioCodec.decode(encoded)
-                                : AudioCodec.load(Path.of(options.input));
-            } catch (IOException | IllegalArgumentException e) {
-                throw Main.failure(
-                        "cannot decode audio " + (stdin ? "from stdin" : "'" + options.input + "'"),
-                        e);
-            }
+            audio = stdin ? AudioCodec.decode(encoded) : AudioCodec.load(Path.of(options.input));
         }
         Options.Files files = options.resolve(store);
         Arena arena = Arenas.newCrossThread();
@@ -96,9 +87,6 @@ final class Transcribe {
                 if (options.transcription.rawPcm
                         && System.getProperty("org.graalvm.nativeimage.imagecode") == null)
                     warmUp(model);
-            } catch (IOException | IllegalArgumentException | UnsupportedOperationException e) {
-                throw Main.failure(
-                        "cannot prepare transcription model '" + options.modelRef + "'", e);
             }
             execute(model, audio, options, io);
             return Thread.currentThread().isInterrupted() ? 130 : 0;

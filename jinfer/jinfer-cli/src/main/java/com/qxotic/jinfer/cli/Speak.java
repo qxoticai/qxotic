@@ -92,8 +92,6 @@ final class Speak {
             SpeechSynthesisModel<?, ?, ?> model;
             try (var spinner = LoadSpinner.start("Loading model", io)) {
                 model = Models.loadSpeech(files.model(), arena, files.companions());
-            } catch (IOException | IllegalArgumentException | UnsupportedOperationException e) {
-                throw Main.failure("cannot load speech model '" + options.modelRef + "'", e);
             }
             execute(model, text, options, io, PLAYER);
             return 0;
