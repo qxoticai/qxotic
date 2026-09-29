@@ -22,6 +22,23 @@
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
 
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- The published POM has no parent and no properties: write the versions out in it. -->
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>flatten-maven-plugin</artifactId>
+          <configuration>
+            <pomElements>
+              <dependencyManagement>interpolate</dependencyManagement>
+            </pomElements>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
   <!--
     a BOM is a dependencyManagement section with no jars behind it. This one manages the
     jinfer artifacts that are meant to be depended on (excluded: the shaded executables, which
