@@ -1,5 +1,6 @@
 package com.qxotic.jinfer;
 
+import com.oracle.svm.core.NeverInline;
 import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -243,6 +244,12 @@ public final class Parallel implements AutoCloseable {
         }
     }
 
+    @NeverInline("keep diagnostics out of pool startup")
+    private void warnIfOversubscribed() {
+        if (!closed && width > Runtime.getRuntime().availableProcessors())
+            PerformanceCliff.THREAD_OVERSUBSCRIPTION.report();
+    }
+
     private Worker[] pool() {
         Worker[] p = workers;
         if (p == null) {
@@ -250,8 +257,7 @@ public final class Parallel implements AutoCloseable {
             try {
                 p = workers;
                 if (p == null) {
-                    if (!closed && width > Runtime.getRuntime().availableProcessors())
-                        PerformanceCliff.THREAD_OVERSUBSCRIPTION.report();
+                    warnIfOversubscribed();
                     p = new Worker[closed ? 0 : width - 1];
                     for (int i = 0; i < p.length; i++) {
                         p[i] = new Worker(this, name + "-" + i, i);

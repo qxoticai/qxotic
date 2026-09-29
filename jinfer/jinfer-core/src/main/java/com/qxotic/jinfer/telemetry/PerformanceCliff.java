@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.telemetry;
 
+import com.oracle.svm.core.NeverInline;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -100,7 +101,12 @@ public enum PerformanceCliff {
      * cost one eliminable plain read. Safe to call from any thread.
      */
     public void report() {
-        if (!reported.getPlain() && reported.compareAndSet(false, true)) {
+        if (!reported.getPlain()) reportOnce();
+    }
+
+    @NeverInline("keep the first-report path out of callers")
+    private void reportOnce() {
+        if (reported.compareAndSet(false, true)) {
             CliffEvent.emit(name(), message);
             LOG.log(level, "perf cliff [{0}]: {1} (reported once per JVM run)", name(), message);
         }
