@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -13,6 +14,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -598,6 +600,8 @@ public final class ModelStore {
             throws IOException {
         Files.walkFileTree(
                 start,
+                EnumSet.of(FileVisitOption.FOLLOW_LINKS), // the hub cache is links into blobs/
+                Integer.MAX_VALUE,
                 new SimpleFileVisitor<>() {
                     @Override
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
@@ -607,6 +611,8 @@ public final class ModelStore {
 
                     @Override
                     public FileVisitResult visitFileFailed(Path file, IOException e) {
+                        // a dangling link is not a model; skipped without a word, as always
+                        if (Files.isSymbolicLink(file)) return FileVisitResult.CONTINUE;
                         LOG.log(
                                 Level.WARNING,
                                 "skipped {0}: {1}",

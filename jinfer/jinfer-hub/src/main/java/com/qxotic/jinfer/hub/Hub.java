@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -98,6 +99,7 @@ final class Hub {
             throw new UncheckedIOException(
                     "could not read the HuggingFace hub cache at " + hubCache + ": " + e, e);
         }
+        refs.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
         return refs;
     }
 

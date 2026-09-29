@@ -310,7 +310,14 @@ class ModelRefTest {
         Files.createDirectories(snapshot.resolve("sub"));
         Files.createDirectories(repo.resolve("refs"));
         Files.writeString(repo.resolve("refs/main"), commit);
-        Files.writeString(snapshot.resolve("model-Q8_0.gguf"), "weights");
+        // as the hub lays it out: a snapshot entry is a relative link into blobs/
+        Files.createDirectories(repo.resolve("blobs"));
+        Files.writeString(repo.resolve("blobs").resolve("a".repeat(64)), "weights");
+        Files.createSymbolicLink(
+                snapshot.resolve("model-Q8_0.gguf"), Path.of("../../blobs/" + "a".repeat(64)));
+        // a link whose blob is gone is not a model: skipped, quietly
+        Files.createSymbolicLink(
+                snapshot.resolve("stale.gguf"), Path.of("../../blobs/" + "b".repeat(64)));
         Files.writeString(snapshot.resolve("sub/mmproj-f16.gguf"), "projector");
         Files.writeString(snapshot.resolve("config.json"), "{}"); // the Python stack's litter
         // a snapshot refs/ no longer names is history, not the cache's current answer
@@ -320,11 +327,13 @@ class ModelRefTest {
         // a repository with no refs cannot say which snapshot is current: skipped, not guessed
         Files.createDirectories(hub.resolve("models--who--else/snapshots"));
 
+        List<ModelStore.Cached> listed = Hub.cached(hub);
         assertEquals(
                 List.of(
                         "hf.co/ggml-org/stories15M_MOE/model-Q8_0.gguf",
                         "hf.co/ggml-org/stories15M_MOE/sub/mmproj-f16.gguf"),
-                Hub.cached(hub).stream().map(ModelStore.Cached::ref).toList());
+                listed.stream().map(ModelStore.Cached::ref).toList());
+        assertEquals(7, listed.getFirst().sizeBytes(), "the blob's size, through the link");
     }
 
     @Test
