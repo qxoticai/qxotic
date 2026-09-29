@@ -41,6 +41,12 @@ public enum PerformanceCliff {
                     + " could otherwise skip; --enable-native-access=ALL-UNNAMED lifts that small"
                     + " but uniform tax"),
 
+    /** A compute pool has more participants than the JVM's available processor count. */
+    THREAD_OVERSUBSCRIPTION(
+            Level.WARNING,
+            "compute threads exceed JVM-visible processors and may reduce throughput; consider"
+                    + " fewer threads (--threads or -Djinfer.threads for the shared pool)"),
+
     /** A parallel loop was submitted from inside a region of the same pool and ran inline. */
     NESTED_REGION(
             Level.WARNING,

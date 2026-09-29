@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.ref.WeakReference;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -28,6 +30,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -72,6 +75,68 @@ class ParallelTest {
             assertEquals(0, slots.get(), "slot 0 everywhere");
         }
         assertNoNewJinferThreads(before);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3})
+    void oversubscriptionWarnsOnceWithoutChangingTheThreadCount(int width, @TempDir Path dir)
+            throws Exception {
+        Path out = dir.resolve("stdout.txt"), err = dir.resolve("stderr.txt");
+        Process process =
+                new ProcessBuilder(
+                                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                                "--add-modules",
+                                "jdk.incubator.vector",
+                                "--enable-native-access=ALL-UNNAMED",
+                                "-XX:ActiveProcessorCount=2",
+                                "-Djinfer.threads=" + width,
+                                "-cp",
+                                System.getProperty("java.class.path"),
+                                OversubscriptionProbe.class.getName())
+                        .redirectOutput(out.toFile())
+                        .redirectError(err.toFile())
+                        .start();
+        try {
+            assertTrue(process.waitFor(20, TimeUnit.SECONDS), "pool probe timed out");
+            String diagnostics = Files.readString(err);
+            assertEquals(0, process.exitValue(), diagnostics);
+            assertEquals(width + ":24", Files.readString(out).strip());
+            assertEquals(
+                    width > 2 ? 1L : 0L,
+                    diagnostics
+                            .lines()
+                            .filter(line -> line.contains("[THREAD_OVERSUBSCRIPTION]"))
+                            .count(),
+                    diagnostics);
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+    public static class OversubscriptionProbe {
+        public static void main(String[] args) {
+            // A closed oversized pool runs inline and must not report oversubscription.
+            try (Parallel closed = Parallel.of(3)) {
+                closed.close();
+                closed.run(8, (index, slot) -> {});
+            }
+            AtomicInteger visits = new AtomicInteger();
+            try (Parallel shared = Parallel.shared();
+                    Parallel other = Parallel.of(shared.width())) {
+                // All requested participants must run, not just remain in the width metadata.
+                CountDownLatch started = new CountDownLatch(shared.width());
+                shared.run(
+                        8,
+                        (index, slot) -> {
+                            started.countDown();
+                            assertTrue(await(started, 5), "requested participants did not start");
+                            visits.incrementAndGet();
+                        });
+                shared.run(8, (index, slot) -> visits.incrementAndGet());
+                other.run(8, (index, slot) -> visits.incrementAndGet());
+                System.out.println(shared.width() + ":" + visits.get());
+            }
+        }
     }
 
     // ---- ranges ----
