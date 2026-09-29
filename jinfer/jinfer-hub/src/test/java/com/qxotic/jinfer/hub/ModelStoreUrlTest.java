@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,6 +71,23 @@ class ModelStoreUrlTest {
             assertFalse(
                     Files.exists(cachePath(root, server.url("/models/page.gguf"))),
                     "the page does not stay in the cache");
+        }
+    }
+
+    @Test
+    void explicitUrlPullRefreshesButNeverPublishesAnHtmlResponse(@TempDir Path root)
+            throws IOException {
+        try (FileServer server = FileServer.start().serve("/model.gguf", "before")) {
+            ModelStore store = ModelStore.of(root);
+            String url = server.url("/model.gguf");
+            Path file = store.resolve(url);
+            server.serve("/model.gguf", "after!");
+            assertEquals(file, store.pullAll(List.of(url), false).getFirst());
+            assertEquals("after!", Files.readString(file));
+            server.serve("/model.gguf", "<!DOCTYPE html><html>login</html>");
+            assertThrows(IllegalArgumentException.class, () -> store.pullAll(List.of(url), true));
+            assertEquals("after!", Files.readString(file));
+            assertEquals(file, store.resolve(url));
         }
     }
 

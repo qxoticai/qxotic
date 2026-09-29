@@ -4,8 +4,8 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](../LICENSE)
 [![GraalVM Native Image](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
-`jinfer-hub` resolves model references into cached local files. It downloads only missing files and
-supports Hugging Face and ModelScope repositories.
+`jinfer-hub` resolves model references into cached local files and supports Hugging Face and ModelScope repositories.
+Ordinary resolution downloads only missing files; explicit pull checks for updates.
 
 ## Add the library
 
@@ -99,22 +99,28 @@ the repository directory as `repo@revision`.
 
 ## Downloads
 
-- **Resumable.** Downloads use a sibling `.part` file and chunk map. An interrupted download resumes
-  from completed chunks. Files larger than 64 MB use 4 to 8 parallel range requests.
-- **Checksum-verified.** The file is verified against the repository's `sha256` before it is
-  renamed into place. A mismatch deletes the partial file and restarts the download. The resolver
-  never returns an unverified file.
-- **Concurrent.** `resolveAll` downloads missing files in parallel. Cached files require no work.
-- **Process-safe.** Threads and separate JVMs downloading the same file queue on a lock file
-  instead of corrupting each other's partial download.
+- **Resumable.** Interrupted downloads can resume when the server supports it.
+- **Verified.** Downloads are checked against repository-provided checksums when available.
+- **Concurrent.** Download several files in parallel with `resolveAll` or `pullAll`.
+- **Safe updates.** Failed updates leave the previously usable model available.
+
+## Use, update, repair
+
+| Operation | Behavior |
+|---|---|
+| `resolve` / `resolveAll` | Use cached files without network access; download on a miss |
+| `pullAll(refs, false)` / `jinfer pull` | Check upstream; reuse matching content, download changed or missing files |
+| `pullAll(refs, true)` / `jinfer pull --force` | Download again, even if cached |
+
+Existing local paths are returned as-is, including with force enabled.
 
 ## Environment
 
 | Variable | Effect |
 |----------|--------|
 | `JINFER_MODELS` | Moves the cache root (property: `-Djinfer.models`) |
-| `JINFER_OFFLINE=1` | Forbids network access; anything uncached fails fast (property: `-Djinfer.offline`) |
-| `JINFER_DOWNLOAD_THREADS` | Sets parallel range connections per file, 4 to 8 by CPU count (property: `-Djinfer.downloadThreads`); a multi-file pull resolves up to 4 files at once, so up to 4x this many connections |
+| `JINFER_OFFLINE=1` | Forbids network access (property: `-Djinfer.offline`) |
+| `JINFER_DOWNLOAD_THREADS` | Sets parallel download connections per file (property: `-Djinfer.downloadThreads`) |
 | `JINFER_SKIP_DISK_CHECK=1` | Skips the free-space check (some network mounts report no free space) |
 | `HF_TOKEN` | Authenticates access to gated Hugging Face repositories |
 | `HF_ENDPOINT` | Points Hugging Face at a mirror |
@@ -122,6 +128,9 @@ the repository directory as `repo@revision`.
 | `MODELSCOPE_ENDPOINT` | Points ModelScope at a mirror |
 
 The Hugging Face token may also be read from `$HF_TOKEN_PATH`, then `$HF_HOME/token`.
+
+Update checks and forced downloads require network access.
+An exact cached file pinned to a full commit can be pulled offline.
 
 Warm resolution makes no request. A cached reference resolves locally. In offline mode, a missing
 file reports its expected cache path:
@@ -150,8 +159,15 @@ Optional<Path> hit = ModelStore.standard().find(ref);            // cached file 
 List<ModelStore.Cached> cached = ModelStore.standard().cached();  // list what the cache holds
 ```
 
-`ModelStore.isRef(...)` and `requireRef(...)` implement the grammar; `evict(...)` removes a cached
-file. The CLI's `jinfer pull` and `jinfer list` run over the same store.
+To update explicitly or repair a cached file:
+
+```java
+List<Path> updated = ModelStore.standard().pullAll(List.of(ref), false);
+List<Path> repaired = ModelStore.standard().pullAll(List.of(ref), true);
+```
+
+`ModelStore.isRef(...)` and `requireRef(...)` implement the grammar; `evict(...)` explicitly deletes a cached file.
+The CLI's `jinfer pull` and `jinfer list` run over the same store.
 
 Resolution happens before loading, and inference never fetches: the path returned here is what
 `Models.load(path, arena)` and the framework builders (`model(...)` / `companion(...)`) consume.
@@ -159,10 +175,7 @@ Resolution happens before loading, and inference never fetches: the path returne
 ## A plain URL is not a model reference
 
 A URL does not provide a repository listing, quant, revision or published checksum.
-Jinfer checks the reported size and range responses, and warns that no checksum is available.
-Parallel downloads and resumes require a strong ETag or an expected SHA-256 checksum.
-Without either, Jinfer downloads in one stream and restarts from zero after interruption.
-Conflicting validators or invalid ranges discard the partial transfer before retrying.
+Jinfer checks the reported size and reports when no checksum is available.
 `https://example.org/models/x.gguf` is cached at `<root>/example.org/models/x.gguf`. Model builders
 accept a reference through `model(...)` or a local file through `modelPath(...)`. Download a URL
 first, then pass its local path.
@@ -171,4 +184,4 @@ first, then pass its local path.
 
 - [Models from a hub](https://qxotic.ai/jinfer#models-from-a-hub): how the framework builders accept refs and
   companions
-- [CLI](../README.md#chat-cli): `jinfer pull` and `jinfer list` on the same store
+- [CLI guide](../jinfer-cli/README.md): commands and examples

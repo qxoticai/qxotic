@@ -50,7 +50,12 @@ class RepositorySource implements ModelSource {
     @Override
     public void fetch(ModelRef ref, RemoteFile file, Path into) throws IOException {
         Fetch.download(
-                fileUrl(ref, file.path()), into, file.sizeBytes(), file.sha256(), headers(host));
+                fileUrl(ref, file.path()),
+                into,
+                ModelStore.nameOf(file.path()),
+                file.sizeBytes(),
+                file.sha256(),
+                headers(host));
     }
 
     /** {@code <base><prefix>/owner/repo/resolve/<revision>/<file>} - a 302 to a signed CDN URL. */

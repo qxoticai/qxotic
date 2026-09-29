@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpExchange;
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URI;
@@ -22,7 +24,9 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,6 +47,231 @@ class FetchDownloadTest {
 
     private static final String PAYLOAD =
             "weights, but long enough to have a middle worth resuming from";
+
+    @Test
+    void housekeepingFailureAfterPublicationDoesNotFailTheDownload(@TempDir Path dir)
+            throws Exception {
+        Path dest = dir.resolve("model.gguf");
+        try (FileServer server =
+                FileServer.start()
+                        .respond(
+                                "/model",
+                                exchange -> {
+                                    Path metadata = dir.resolve("model.gguf.part.map");
+                                    Files.createDirectories(metadata);
+                                    Files.writeString(
+                                            metadata.resolve("keep"), "prevents deletion");
+                                    exchange.sendResponseHeaders(200, 6);
+                                    try (var out = exchange.getResponseBody()) {
+                                        out.write("after!".getBytes(StandardCharsets.UTF_8));
+                                    }
+                                })) {
+            Fetch.download(server.url("/model"), dest, 6, null, Map.of());
+            assertEquals("after!", Files.readString(dest));
+            assertTrue(Files.exists(dir.resolve("model.gguf.part.map/keep")));
+        }
+    }
+
+    @Test
+    void replacementValidatesBeforePublishingAndReleasesItsLocks(@TempDir Path dir)
+            throws Exception {
+        Path dest = Files.writeString(dir.resolve("model.gguf"), "before");
+        for (String bad : new String[] {"short", "broken"}) {
+            assertThrows(
+                    IOException.class,
+                    () ->
+                            Fetch.replace(
+                                    dest,
+                                    6,
+                                    sha256("after!"),
+                                    stage -> {
+                                        Files.writeString(stage, bad);
+                                        assertEquals("before", Files.readString(dest));
+                                    }));
+            assertEquals("before", Files.readString(dest));
+        }
+        assertThrows(
+                IOException.class,
+                () ->
+                        Fetch.replace(
+                                dest,
+                                6,
+                                null,
+                                stage -> {
+                                    Files.writeString(stage, "half");
+                                    throw new IOException("connection lost");
+                                }));
+        assertEquals("before", Files.readString(dest));
+        Fetch.replace(
+                dest,
+                6,
+                sha256("after!"),
+                stage -> {
+                    Files.writeString(stage, "after!");
+                    assertEquals("before", Files.readString(dest));
+                });
+        assertEquals("after!", Files.readString(dest));
+    }
+
+    @Test
+    void interruptedAndFailedPublicationsPreserveTheDestination(@TempDir Path dir)
+            throws Exception {
+        Path dest = Files.writeString(dir.resolve("model.gguf"), "before");
+        try {
+            assertThrows(
+                    IOException.class,
+                    () ->
+                            Fetch.replace(
+                                    dest,
+                                    6,
+                                    null,
+                                    stage -> {
+                                        Files.writeString(stage, "after!");
+                                        Thread.currentThread().interrupt();
+                                    }));
+        } finally {
+            Thread.interrupted();
+        }
+        assertEquals("before", Files.readString(dest));
+        Path directory = Files.createDirectory(dir.resolve("non-empty.gguf"));
+        Files.writeString(directory.resolve("keep"), "before");
+        assertThrows(
+                IOException.class,
+                () ->
+                        Fetch.replace(
+                                directory, 6, null, stage -> Files.writeString(stage, "after!")));
+        assertEquals("before", Files.readString(directory.resolve("keep")));
+    }
+
+    @Test
+    void httpFailuresDuringReplacementKeepTheOldBytes(@TempDir Path dir) throws Exception {
+        Path dest = Files.writeString(dir.resolve("model.gguf"), "before");
+        try (FileServer server =
+                FileServer.start().serve("/model", "after!").deny("/denied", 403)) {
+            assertThrows(
+                    IOException.class,
+                    () ->
+                            Fetch.replace(
+                                    dest,
+                                    6,
+                                    sha256("other!"),
+                                    stage ->
+                                            Fetch.download(
+                                                    server.url("/model"),
+                                                    stage,
+                                                    6,
+                                                    sha256("other!"),
+                                                    Map.of())));
+            assertEquals("before", Files.readString(dest));
+            assertThrows(
+                    IOException.class,
+                    () ->
+                            Fetch.replace(
+                                    dest,
+                                    100,
+                                    null,
+                                    stage ->
+                                            Fetch.download(
+                                                    server.url("/model"),
+                                                    stage,
+                                                    100,
+                                                    null,
+                                                    Map.of())));
+            assertEquals("before", Files.readString(dest));
+            assertThrows(
+                    IOException.class,
+                    () ->
+                            Fetch.replace(
+                                    dest,
+                                    6,
+                                    null,
+                                    stage ->
+                                            Fetch.download(
+                                                    server.url("/denied"),
+                                                    stage,
+                                                    6,
+                                                    null,
+                                                    Map.of())));
+            assertEquals(1, server.hits("/denied"));
+            assertEquals("before", Files.readString(dest));
+            // A subsequent valid transfer must not mix the failed replacement's bytes into it.
+            Fetch.replace(
+                    dest,
+                    6,
+                    sha256("after!"),
+                    stage ->
+                            Fetch.download(
+                                    server.url("/model"), stage, 6, sha256("after!"), Map.of()));
+            assertEquals("after!", Files.readString(dest));
+        }
+    }
+
+    @Test
+    void separateProcessesSerializeReplacementWhileReadersKeepWorking(@TempDir Path dir)
+            throws Exception {
+        Path dest = Files.writeString(dir.resolve("model.gguf"), "before");
+        Process first = replacementProcess(dest, "first!");
+        Process second = null;
+        try {
+            var firstOut = first.inputReader();
+            assertEquals("starting", line(firstOut));
+            assertEquals("staging", line(firstOut));
+            second = replacementProcess(dest, "second");
+            var secondOut = second.inputReader();
+            assertEquals("starting", line(secondOut));
+            assertEquals("before", Files.readString(dest));
+            first.getOutputStream().close();
+            assertTrue(first.waitFor(10, TimeUnit.SECONDS));
+            assertEquals(0, first.exitValue());
+            assertEquals("staging", line(secondOut));
+            assertEquals("first!", Files.readString(dest));
+            second.getOutputStream().close();
+            assertTrue(second.waitFor(10, TimeUnit.SECONDS));
+            assertEquals(0, second.exitValue());
+            assertEquals("second", Files.readString(dest));
+        } finally {
+            first.destroyForcibly();
+            if (second != null) second.destroyForcibly();
+        }
+    }
+
+    private static String line(BufferedReader reader) throws Exception {
+        var worker = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            return worker.submit((Callable<String>) reader::readLine).get(10, TimeUnit.SECONDS);
+        } finally {
+            worker.shutdownNow(); // process cleanup unblocks a reader if the child failed to answer
+        }
+    }
+
+    private static Process replacementProcess(Path dest, String value) throws Exception {
+        String classes =
+                Path.of(Fetch.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                        .toString();
+        return new ProcessBuilder(
+                        Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                        "-cp",
+                        classes + File.pathSeparator + System.getProperty("java.class.path"),
+                        FetchDownloadTest.class.getName(),
+                        dest.toString(),
+                        value)
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .start();
+    }
+
+    public static void main(String[] args) throws Exception {
+        System.out.println("starting");
+        Fetch.replace(
+                Path.of(args[0]),
+                6,
+                null,
+                stage -> {
+                    Files.writeString(stage, args[1]);
+                    System.out.println("staging");
+                    System.in.read(); // parent releases this process after checking the published
+                    // bytes
+                });
+    }
 
     @AfterEach
     void pathLocksAreReleased() throws ReflectiveOperationException {

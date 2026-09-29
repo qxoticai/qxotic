@@ -52,6 +52,17 @@ class ModelStoreFindTest {
     }
 
     @Test
+    void aFolderIsNotTheFileInsideItWithTheSameName() throws IOException {
+        Path nested = plant("sub/sub");
+        ModelStore store = ModelStore.standard();
+        String ref = "hf.co/jinfer-tests/stories15M_MOE/sub";
+        assertEquals(Optional.empty(), store.find(ref));
+        assertEquals(Optional.of(nested), store.find(ref + "/sub"));
+        Path model = plant("sub/model-Q8_0.gguf");
+        assertEquals(Optional.of(model), store.find(ref));
+    }
+
+    @Test
     void aMissIsEmptyWithoutAnyListing() {
         System.setProperty("jinfer.models", root.toString());
         assertEquals(Optional.empty(), ModelStore.standard().find(REF));
