@@ -98,7 +98,7 @@ class InstructTest {
         try (var engine = CliFixtures.engine(new CliFixtures.Template())) {
             var error =
                     assertThrows(
-                            java.io.IOException.class,
+                            IllegalArgumentException.class,
                             () ->
                                     Instruct.run(
                                             engine,

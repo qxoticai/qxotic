@@ -69,8 +69,9 @@ public final class CliModelProvider implements ModelProvider {
         record(gguf, arena, companions);
         template = new CliFixtures.Template();
         if (gguf.getStringOrDefault("test.failure", "").equals("bug")) {
+            // a plain RuntimeException: the CLI reads the JDK's refusal types as the user's error
             template.failure =
-                    new IllegalStateException(
+                    new RuntimeException(
                             "fixture internal failure", new IOException("original cause"));
             template.failure.addSuppressed(new IOException("cleanup detail"));
         }

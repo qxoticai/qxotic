@@ -9,7 +9,6 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -117,8 +116,6 @@ final class Instruct {
                 // cached prompts are a prefix-stability bet only a native codec can honor; a
                 // Jinja-only model warns and serves without appending, exactly like the old CLI
                 io.err().println("cache: " + noCodec.getMessage() + " - serving read-only");
-            } catch (IllegalArgumentException | UncheckedIOException e) {
-                throw Main.failure("cannot cache prompt in '" + options.promptCache + "'", e);
             }
             int added = engine.cacheSample().blocks() - before;
             if (added > 0) {

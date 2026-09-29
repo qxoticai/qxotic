@@ -156,7 +156,7 @@ final class Server {
                     // rather than making users select a task themselves.
                     validateTranscription(options);
                     TranscriptionModel<?, ?, ?> transcription =
-                            loadTranscription(options, files, arena);
+                            Models.loadTranscription(files.model(), arena, files.companions());
                     spinner.close(); // one load line; the server runs outside it
                     return serveTranscription(transcription, files, io, config);
                 }
@@ -172,8 +172,12 @@ final class Server {
                             engine.savePrompts();
                         });
             }
-        } catch (ModelProvider.IncompatibleModelException | UnsupportedOperationException e) {
-            throw Main.failure("model '" + options.modelRef + "' cannot be served", e);
+        } catch (ModelProvider.IncompatibleModelException neither) {
+            throw new IllegalArgumentException(
+                    "model '"
+                            + options.modelRef
+                            + "' is neither a language nor a transcription model",
+                    neither);
         } finally {
             Arenas.close(arena);
         }
@@ -193,17 +197,6 @@ final class Server {
                         engine.modelName(), engine.contextCapacity());
         listening(io.err(), running.address(), "OpenAI-compatible");
         return running;
-    }
-
-    private static TranscriptionModel<?, ?, ?> loadTranscription(
-            Options options, Options.Files files, Arena arena) throws IOException {
-        try {
-            return Models.loadTranscription(files.model(), arena, files.companions());
-        } catch (ModelProvider.IncompatibleModelException neither) {
-            throw neither; // neither language nor transcription: run() reports it
-        } catch (IOException | IllegalArgumentException e) {
-            throw Main.failure("cannot prepare transcription model '" + options.modelRef + "'", e);
-        }
     }
 
     private static int serveTranscription(

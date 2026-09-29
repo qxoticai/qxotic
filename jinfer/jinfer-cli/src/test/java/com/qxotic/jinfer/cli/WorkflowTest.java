@@ -196,11 +196,10 @@ class WorkflowTest {
         assertEquals(0, CliModelProvider.transcriptionLoads);
         assertNull(CliModelProvider.weights);
         assertEquals("", capture.out());
-        assertTrue(
-                capture.err().contains("jinfer transcribe: cannot decode audio from stdin"),
-                capture.err());
-        assertTrue(capture.err().contains("\n  "), "decoder details follow the summary");
-        assertFalse(capture.err().contains("\tat "));
+        assertTrue(capture.err().startsWith("Reading audio from stdin"), capture.err());
+        assertTrue(capture.err().contains("jinfer transcribe: "), capture.err());
+        assertFalse(capture.err().contains("unexpected failure"), capture.err());
+        assertFalse(capture.err().contains("\tat "), capture.err());
         assertFalse(capture.err().contains("Transcribed"));
     }
 
@@ -240,7 +239,7 @@ class WorkflowTest {
                                     "jinfer "
                                             + verb
                                             + ": unexpected failure: fixture internal failure"));
-            assertTrue(capture.err().contains("java.lang.IllegalStateException"));
+            assertTrue(capture.err().contains("java.lang.RuntimeException"));
             assertTrue(capture.err().contains("\tat "));
             assertTrue(capture.err().contains("Caused by: java.io.IOException: original cause"));
             assertTrue(capture.err().contains("Suppressed: java.io.IOException: cleanup detail"));
@@ -527,7 +526,36 @@ class WorkflowTest {
         Path path = model("speech", "");
         var capture = new CliFixtures.Capture("");
         assertEquals(1, run(capture, "server", "-m", path.toString(), "--port", "0"));
-        assertTrue(capture.err().contains("cannot be served"));
+        assertTrue(
+                capture.err().contains("is neither a language nor a transcription model"),
+                capture.err());
         assertEquals(0, CliModelProvider.speechLoads, "serving must never synthesize speech");
+    }
+
+    /**
+     * The library refuses bad input with plain runtime exceptions; the CLI reports them as one
+     * line, never as a bug with a stack trace.
+     */
+    @Test
+    void aFileThatIsNotACacheIsReportedWithoutAStackTrace() throws Exception {
+        Path path = model("language", "");
+        Path garbage = Files.writeString(dir.resolve("garbage.jkv"), "not a cache");
+        var capture = new CliFixtures.Capture("");
+        assertEquals(
+                1,
+                run(
+                        capture,
+                        "instruct",
+                        "-m",
+                        path.toString(),
+                        "--cache-ro",
+                        garbage.toString(),
+                        "hi"),
+                capture.err());
+        assertTrue(capture.err().contains("not a frozen prompt cache"), capture.err());
+        assertFalse(capture.err().contains("unexpected failure"), capture.err());
+        assertFalse(capture.err().contains("\tat "), capture.err());
+        assertEquals("", capture.out());
+        assertFalse(CliModelProvider.weights.scope().isAlive(), "a refused load releases weights");
     }
 }

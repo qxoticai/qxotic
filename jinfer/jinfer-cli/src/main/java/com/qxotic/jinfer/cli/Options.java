@@ -7,7 +7,11 @@ import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.io.UncheckedIOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -404,23 +408,18 @@ final class Options {
 
     private static List<Path> resolveFiles(List<String> refs, Supplier<List<Path>> resolve)
             throws IOException {
-        try {
-            for (String ref : refs) {
-                String lower = ref.toLowerCase(Locale.ROOT);
-                if (ModelStore.isRef(ref)
-                        || lower.startsWith("http://")
-                        || lower.startsWith("https://")) continue;
-                Path path = Path.of(ref);
-                if (java.nio.file.Files.isDirectory(path))
-                    throw new IOException("expected a file, got a directory: '" + ref + "'");
-                if (!java.nio.file.Files.isRegularFile(path))
-                    throw new IOException("no such file: '" + ref + "'");
-            }
-            return resolve.get();
-        } catch (IllegalArgumentException | IllegalStateException | UncheckedIOException e) {
-            // Cache/ref/offline errors are expected here, not during model execution.
-            throw Main.failure("cannot resolve model files", e);
+        for (String ref : refs) {
+            String lower = ref.toLowerCase(Locale.ROOT);
+            if (ModelStore.isRef(ref)
+                    || lower.startsWith("http://")
+                    || lower.startsWith("https://")) continue;
+            Path path = Path.of(ref);
+            if (java.nio.file.Files.isDirectory(path))
+                throw new IOException("expected a file, got a directory: '" + ref + "'");
+            if (!java.nio.file.Files.isRegularFile(path))
+                throw new IOException("no such file: '" + ref + "'");
         }
+        return resolve.get();
     }
 
     Sampling sampling(LoadedModel.SamplingDefaults defaults) {
@@ -458,6 +457,17 @@ final class Options {
                 && (failure.getMessage() == null
                         || failure.getMessage().equals(failure.getCause().toString())))
             failure = failure.getCause();
+        // NIO's message is the bare path when the OS gave no reason; say what went wrong with it
+        if (failure instanceof FileSystemException e && e.getReason() == null)
+            return e.getFile()
+                    + ": "
+                    + switch (e) {
+                        case NoSuchFileException x -> "no such file or directory";
+                        case AccessDeniedException x -> "permission denied";
+                        case NotDirectoryException x -> "not a directory";
+                        case FileAlreadyExistsException x -> "already exists";
+                        default -> e.getClass().getSimpleName();
+                    };
         return failure.getMessage() == null
                 ? failure.getClass().getSimpleName()
                 : failure.getMessage();
