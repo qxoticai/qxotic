@@ -782,8 +782,11 @@ public final class ChatEngine implements AutoCloseable {
                 == ChatTemplate.ThinkingPolicy.ALWAYS;
     }
 
-    private Prepared prepare(Request request, Arena memory) {
-        requireThinkingRenderable(request.thinking());
+    /**
+     * The conversation a request encodes - the one place that decides whether it thinks, so a
+     * prompt pinned for it ({@link #definePrompt(Request)}) and the prompt served for it agree.
+     */
+    private Conversation conversation(Request request) {
         // a completion budget under THINK_FLOOR switches thinking off, except where off cannot be
         // rendered: there the span stays open and the reasoning cap (half the budget) bounds it
         boolean think =
@@ -792,14 +795,19 @@ public final class ChatEngine implements AutoCloseable {
                         && (request.maxOutputTokens() < 0
                                 || request.maxOutputTokens() >= THINK_FLOOR
                                 || alwaysReasons());
-        Conversation conversation = new Conversation(request.messages(), request.tools(), think);
+        return new Conversation(request.messages(), request.tools(), think);
+    }
+
+    private Prepared prepare(Request request, Arena memory) {
+        requireThinkingRenderable(request.thinking());
+        Conversation conversation = conversation(request);
         Encoded encoded =
                 encode(conversation, request.templateKwargs(), MemoryAllocators.ofArena(memory));
         if (request.tools().isEmpty()) encoded.parser().disableToolCalls();
         Sampler sampler =
                 sampler(
                         request.sampling(),
-                        think,
+                        conversation.thinking(),
                         request.maxOutputTokens(),
                         request.maxReasoningTokens(),
                         request.reasoningCutoffMessage(),
@@ -1592,6 +1600,15 @@ public final class ChatEngine implements AutoCloseable {
      * batch (turn boundaries), or one block for the reusable prefix when its fixed checkpoint
      * overhead exceeds the configured limit, then discards the working state: the blocks hold the
      * KV.
+     */
+    public void definePrompt(Request request) {
+        definePrompt(conversation(request));
+    }
+
+    /**
+     * As {@link #definePrompt(Request)} for a bare prefix. A caller that will later {@link
+     * #prepare} a request pins with the request instead: the thinking budget and floor can render a
+     * different prompt than the flag alone.
      */
     public void definePrompt(Conversation prefix) {
         Arena memory = Arenas.newCrossThread();

@@ -2,7 +2,6 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
-import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -102,15 +101,16 @@ final class Instruct {
             turns.add(Message.system(options.systemPrompt));
         }
         turns.add(Message.user(prompt));
-        Conversation conversation = new Conversation(turns, List.of(), options.think);
+        ChatEngine.Request request = Requests.of(turns, sampling, options);
 
         // --cache: pin the prompt BEFORE generating - the artifact is the point of --cache, and a
         // generation failure must not lose it. The engine's cache then serves the longest cached
-        // prefix on the complete() below, on its own.
+        // prefix on the complete() below, on its own. Pinned from the same request that generates,
+        // so the two prompts cannot differ.
         if (options.promptCache != null && !options.promptCacheReadOnly) {
             int before = engine.cacheSample().blocks();
             try {
-                engine.definePrompt(conversation);
+                engine.definePrompt(request);
                 engine.savePrompts();
             } catch (UnsupportedOperationException noCodec) {
                 // cached prompts are a prefix-stability bet only a native codec can honor; a
@@ -127,7 +127,7 @@ final class Instruct {
         }
 
         try (ChatEngine.Prepared prepared =
-                        Requests.prepare(engine, conversation.messages(), sampling, options);
+                        Requests.checked(engine.prepare(request), engine.contextCapacity());
                 Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options, io)) {
             turn.finish(engine.complete(prepared, turn), engine.contextCapacity());
         }

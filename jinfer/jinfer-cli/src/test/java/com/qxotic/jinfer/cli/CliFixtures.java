@@ -87,7 +87,8 @@ final class CliFixtures {
             if (conversation.messages().getLast().text().equals("reject"))
                 throw new IllegalArgumentException("rejected test turn");
             conversations.add(conversation);
-            StringBuilder text = new StringBuilder();
+            // the flag renders, as a reasoning template's does: a pin and a pass must agree on it
+            StringBuilder text = new StringBuilder("think:" + conversation.thinking() + '\n');
             for (Message message : conversation.messages())
                 text.append(message.role()).append(':').append(message.text()).append('\n');
             sink.accept(Batch.prefill(TestLanguageModel.TOKENIZER.encode(text).toArray()));
