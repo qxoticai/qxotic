@@ -45,7 +45,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-codecs</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <!-- internal: managed for version alignment only, not an API -->
       <dependency>
@@ -61,12 +61,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-chat</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

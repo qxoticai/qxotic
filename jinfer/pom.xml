@@ -61,6 +61,9 @@
     <!-- Artifacts that released on their own since: each declares its version in its POM, and
          this is where the rest of jinfer, and jinfer-bom, resolve it. -->
     <jinfer-kernels.version>0.3.1</jinfer-kernels.version>
+    <jinfer-chat.version>0.3.1</jinfer-chat.version>
+    <jinfer-codecs.version>0.3.1</jinfer-codecs.version>
+    <jinfer-hub.version>0.3.1</jinfer-hub.version>
     <jinfer-bailingmoe3.version>0.3.1</jinfer-bailingmoe3.version>
     <jinfer-gemma4.version>0.3.1</jinfer-gemma4.version>
     <jinfer-gptoss.version>0.3.1</jinfer-gptoss.version>
@@ -144,7 +147,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-codecs</artifactId>
-        <version>${jinfer.version}</version>
+        <version>${jinfer-codecs.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -224,7 +227,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-chat</artifactId>
-        <version>${jinfer.version}</version>
+        <version>${jinfer-chat.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -239,7 +242,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
-        <version>${jinfer.version}</version>
+        <version>${jinfer-hub.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
