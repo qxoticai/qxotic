@@ -9,7 +9,6 @@
   </parent>
 
   <artifactId>jam-native</artifactId>
-  <!-- Its own version until the next release of jam (RELEASING.md). -->
   <version>0.3.1</version>
   <packaging>jar</packaging>
 

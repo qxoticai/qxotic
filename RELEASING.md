@@ -63,21 +63,14 @@ Smoke-test any native executables intended for distribution on their target plat
 
 - Review [release notes](RELEASE-NOTES.md), supported model families, API documentation and known limitations.
 - Confirm the intended versions and `project.build.outputTimestamp`; do not change them as a side effect of QA.
-- Versions follow one rule with one exception.
-  The rule: a project (gguf, json, safetensors, jota, jam, toknroll, jinfer) is released as a whole, and every artifact in it takes the project's version.
-  The exception: between two releases of a project, an artifact whose code changed is released alone, on a version of its own.
-  The next release of the project ends the exception: every artifact takes the new project version, and the versions declared for single artifacts are removed.
-- A project's version is two edits: its root POM and the matching `<project>.version` in the root POM, where the other projects resolve it.
-  A version for a single artifact is three: the `<version>` in its own POM, the `<artifactId>.version` property that names it for the rest of its project (in `jinfer/pom.xml`, or the root POM for a jam artifact), and its entry in `jinfer-bom`.
-  `jinfer-bom` writes every version out, since the published catalog has no parent and no properties.
-- Run `make release-plan`.
-  It lists every published artifact with its version, whether Maven Central holds it, and whether its code changed since the tag it was released under.
-  It fails when the places above disagree, and when code changed under a version Maven Central already holds.
-  It ends with the artifacts to stage, the catalog last.
-- An artifact released alone has to run with the artifacts already published, so it keeps every public member its last release had.
-  A newer `jinfer-kernels` runs under the model jars compiled against the older one.
-- Tag what was published: `<artifactId>-v<version>` for an artifact released alone, `<project>-v<version>` for a project.
-  The tag is what `make release-plan` compares the code against.
+- A project (gguf, json, safetensors, jota, jam, toknroll, jinfer) is released as a whole, and every artifact in it takes the project's version.
+  Between two releases of a project, an artifact whose code changed is released alone, on a version of its own.
+  The next release of the project removes those versions again.
+- A project's version is two edits: its root POM and the matching `<project>.version` in the root POM.
+  An artifact's own version is three: its POM, the `<artifactId>.version` property next to its project's, and its entry in `jinfer-bom`.
+- Run `make release-plan`: it fails when those edits disagree or when code changed under a version Maven Central holds, and it lists what to stage.
+- An artifact released alone keeps every public member its last release had: a newer `jinfer-kernels` runs under the model jars compiled against the older one.
+- Tag what was published, `<artifactId>-v<version>` or `<project>-v<version>`: the tag is what `make release-plan` compares the code against.
 - Inspect the artifacts that opt into publication, including POM dependencies, source and Javadoc JARs, LICENSE and NOTICE files, and native-library contents.
 - Run the signing-enabled release verification with the configured release key, without `gpg.skip` or native-check bypasses.
 - Resolve failures and document coverage gaps before deciding whether to release.

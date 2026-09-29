@@ -54,12 +54,10 @@
   </modules>
 
   <properties>
-    <!-- The version the artifacts without one of their own carry. Written out, and moved with
-         this POM's version: an artifact that declares its own version inherits this property,
-         where ${project.version} would mean that artifact's. -->
+    <!-- This POM's version, written out: in an artifact that declares its own,
+         ${project.version} would mean that one. -->
     <jinfer.version>0.3.0</jinfer.version>
-    <!-- Released alone since jinfer 0.3.0. Each declares its version in its POM, this names it
-         for the rest of jinfer, and the next release of jinfer removes both. -->
+    <!-- Released alone since (RELEASING.md); the next release of jinfer removes these. -->
     <jinfer-bailingmoe3.version>0.3.1</jinfer-bailingmoe3.version>
     <jinfer-chat.version>0.3.1</jinfer-chat.version>
     <jinfer-codecs.version>0.3.1</jinfer-codecs.version>
