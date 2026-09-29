@@ -9,6 +9,7 @@
   </parent>
 
   <artifactId>jinfer-chat</artifactId>
+  <version>0.3.1</version>
   <packaging>jar</packaging>
   <name>Jinfer Chat</name>
   <description>Chat messages, prompt templates, and structured response parsing for Jinfer.</description>
