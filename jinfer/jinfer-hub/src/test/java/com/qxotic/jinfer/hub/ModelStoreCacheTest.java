@@ -84,6 +84,29 @@ class ModelStoreCacheTest {
         }
     }
 
+    /**
+     * A ref in both caches lists once, as the copy the store serves: its own, whatever the hub's
+     * size.
+     */
+    @Test
+    void mergedListsEachRefOnceTheStoresOwnCopyFirst() {
+        var own =
+                List.of(
+                        new ModelStore.Cached("hf.co/acme/thing/thing-Q8_0.gguf", 7),
+                        new ModelStore.Cached("/models/local.gguf", 1));
+        var hub =
+                List.of(
+                        new ModelStore.Cached("hf.co/acme/thing/thing-Q8_0.gguf", 9),
+                        new ModelStore.Cached("hf.co/other/thing/thing-Q4_0.gguf", 3));
+        assertEquals(
+                List.of(
+                        new ModelStore.Cached("/models/local.gguf", 1),
+                        new ModelStore.Cached("hf.co/acme/thing/thing-Q8_0.gguf", 7),
+                        new ModelStore.Cached("hf.co/other/thing/thing-Q4_0.gguf", 3)),
+                ModelStore.merged(own, hub),
+                "one line per ref, sorted, the served copy's size");
+    }
+
     @Test
     void cachedOnAMissingRootListsNothingOfOurs(@TempDir Path root) {
         List<ModelStore.Cached> all = ModelStore.of(root.resolve("absent")).cached();

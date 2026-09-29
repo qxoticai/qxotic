@@ -157,17 +157,27 @@ class HubTest {
         assertTrue(capture.err().contains("offline test failure"), capture.err());
     }
 
+    /** Sizes lead in a fixed column; a name of any width follows, so nothing can misalign. */
     @Test
     void humanSizesAndReferencesRemainUsableInAListing() {
         var capture = new CliFixtures.Capture("");
         Hub.list(
                 List.of(
                         new ModelStore.Cached("owner/small/model.gguf", 512),
-                        new ModelStore.Cached("owner/big/model.gguf", 2L << 30)),
+                        new ModelStore.Cached("owner/big/model.gguf", 2L << 30),
+                        new ModelStore.Cached("hf.co/団体/モデル/量子化-Q4_0.gguf", 3L << 20),
+                        new ModelStore.Cached("/models/Édouard's café.gguf", 1)),
                 dir,
                 capture.io.out());
-        assertTrue(capture.out().contains("512 B"));
+        List<String> lines = capture.out().replace("\r\n", "\n").lines().toList();
+        assertEquals(5, lines.size(), capture.out());
+        for (String line : lines) {
+            assertTrue(line.substring(0, 10).matches(" *[0-9.]+ [KMGT]?B"), line);
+            assertEquals("  ", line.substring(10, 12), line);
+        }
+        assertTrue(lines.get(0).endsWith("  owner/small/model.gguf"), lines.get(0));
+        assertTrue(lines.get(2).endsWith("  hf.co/団体/モデル/量子化-Q4_0.gguf"), lines.get(2));
         assertTrue(capture.out().contains("2.0 GB"), capture.out());
-        assertTrue(capture.out().contains("owner/big/model.gguf"));
+        assertTrue(lines.getLast().endsWith("  total"), lines.getLast());
     }
 }
