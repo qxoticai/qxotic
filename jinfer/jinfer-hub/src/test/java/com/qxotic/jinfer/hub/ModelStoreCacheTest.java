@@ -8,8 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -57,6 +60,28 @@ class ModelStoreCacheTest {
                 mine,
                 "a ref when the first segment is a known host, the absolute path otherwise,"
                         + " sorted, with scaffolding left out");
+    }
+
+    /** One directory the walk cannot enter costs the listing nothing but that directory. */
+    @Test
+    void cachedSkipsWhatItCannotReadAndListsTheRest(@TempDir Path root) throws IOException {
+        Path model = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
+        Files.createDirectories(model.getParent());
+        Files.writeString(model, "weights");
+        Path locked = Files.createDirectories(root.resolve("hf.co/other/locked"));
+        Assumptions.assumeTrue(
+                Files.getFileStore(root).supportsFileAttributeView("posix"), "POSIX permissions");
+        Files.setPosixFilePermissions(locked, Set.of());
+        Assumptions.assumeFalse(Files.isReadable(locked), "root can read anything");
+        try {
+            assertEquals(
+                    List.of(new ModelStore.Cached("hf.co/acme/thing/thing-Q8_0.gguf", 7)),
+                    ModelStore.of(root).cached().stream()
+                            .filter(c -> c.ref().contains("acme") || c.ref().contains("other"))
+                            .toList());
+        } finally {
+            Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x"));
+        }
     }
 
     @Test

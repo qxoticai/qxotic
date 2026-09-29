@@ -83,19 +83,16 @@ final class Hub {
                 if (snapshot == null || !Files.isDirectory(snapshot)) {
                     continue;
                 }
-                try (var walk = Files.walk(snapshot)) {
-                    for (Path file :
-                            walk.filter(Files::isRegularFile) // a broken symlink cannot resolve
-                                    .filter(p -> ModelStore.isGguf(p.getFileName().toString()))
-                                    .sorted()
-                                    .toList()) {
-                        StringBuilder ref = new StringBuilder("hf.co/").append(repoId);
-                        for (Path segment : snapshot.relativize(file)) {
-                            ref.append('/').append(segment);
-                        }
-                        refs.add(new ModelStore.Cached(ref.toString(), ModelStore.sizeOf(file)));
-                    }
-                }
+                ModelStore.visitFiles(
+                        snapshot,
+                        (file, attrs) -> {
+                            if (!ModelStore.isGguf(file.getFileName().toString())) return;
+                            StringBuilder ref = new StringBuilder("hf.co/").append(repoId);
+                            for (Path segment : snapshot.relativize(file)) {
+                                ref.append('/').append(segment);
+                            }
+                            refs.add(new ModelStore.Cached(ref.toString(), attrs.size()));
+                        });
             }
         } catch (IOException e) {
             throw new UncheckedIOException(
