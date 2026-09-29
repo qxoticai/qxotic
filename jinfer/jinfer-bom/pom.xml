@@ -9,8 +9,7 @@
   </parent>
 
   <artifactId>jinfer-bom</artifactId>
-  <!-- Its own version until the next release of jinfer (RELEASING.md). A new catalog is how
-       consumers receive the artifacts that were released alone. -->
+  <!-- A new catalog is how consumers receive the artifacts that were released alone. -->
   <version>0.3.1</version>
   <packaging>pom</packaging>
 
@@ -29,9 +28,8 @@
     rather than letting each jinfer artifact's own POM float it, is what makes "one import, one
     coherent release" true for downstream builds that also add a jam accelerator or jota directly.
 
-    Every version is written out: the published catalog has no parent and no properties, so an
-    expression would not resolve in a consumer's build. `make release-plan` fails when one of
-    them is not the version its artifact declares.
+    Versions are written out: the published catalog has no parent and no properties to resolve
+    an expression with. `make release-plan` checks them against the artifacts.
   -->
   <dependencyManagement>
     <dependencies>

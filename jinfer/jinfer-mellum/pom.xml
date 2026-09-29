@@ -7,7 +7,6 @@
     <version>0.3.0</version>
   </parent>
   <artifactId>jinfer-mellum</artifactId>
-  <!-- Its own version until the next release of jinfer (RELEASING.md). -->
   <version>0.3.1</version>
   <name>Jinfer Mellum Provider</name>
   <description>Local chat inference for JetBrains Mellum 2 with Jinfer.</description>

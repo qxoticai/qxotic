@@ -129,7 +129,7 @@ ci-release: ## CI gate 4: the release shape, unsigned, no natives
 release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile a BOM consumer against ONLY it
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-canary.sh
 
-release-plan: ## What a release would publish: versions, what Maven Central holds, what changed; fails when versions disagree
+release-plan: ## What a release would publish, and whether the versions agree
 	./release-plan.sh
 
 release-deploy: ## Stage ONE project for Central, refusing a version it already holds: make release-deploy PROJECT=jinfer (CHECK=--check to only look)
