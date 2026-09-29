@@ -127,7 +127,7 @@ final class JamPack {
                 Parallel.forLoop(
                         j.rows / 4,
                         g -> packGroup(j.dt, src, srcBase, srcRowBytes, slab, j.off, gb, g, j.k));
-                JamPacked packed = JamPacked.of(j.dt, j.k, gb / 4);
+                JamPacked packed = JamPacked.of(j.dt, j.k, gb / 4, j.view);
                 Shape logical = j.dt.logicalShape(j.view.shape());
                 views.put(
                         j.name,

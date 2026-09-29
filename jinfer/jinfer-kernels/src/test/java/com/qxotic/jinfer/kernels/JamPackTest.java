@@ -114,6 +114,48 @@ class JamPackTest {
         assertArrayEquals(
                 new long[] {m, k}, packed.logicalShape(v.shape()).toArray(), "shape roundtrip");
         assertParity(canon, 0, v, dt, m, k);
+        assertDequantsAsCanonical(
+                v, Views.wrap(canon, dt, Shape.flat(m, k / dt.elementsPerBlock())), m, k);
+    }
+
+    /**
+     * The other reader: a port dequantizing a packed weight at load (Inflect's convolutions, an
+     * embedding gather) gets the canonical bytes, bit for bit, at any element offset - a packed
+     * q4_0 model once failed to load because this path had no packed arm.
+     */
+    private void assertDequantsAsCanonical(
+            MemoryView<MemorySegment> packed, MemoryView<MemorySegment> canonical, int m, int k) {
+        assertSame(
+                canonical.memory().base(),
+                ((JamPacked) packed.dataType()).canonical().memory().base());
+        long off = k + 5,
+                count = 2L * k - 7; // straddles rows, so offsets are forwarded, not mapped
+        MemorySegment a = arena.allocate(4 * count), b = arena.allocate(4 * count);
+        Convert.copyToF32(
+                packed, off, Views.wrap(a, DataType.FP32, Shape.flat(count)), 0, (int) count);
+        Convert.copyToF32(
+                canonical, off, Views.wrap(b, DataType.FP32, Shape.flat(count)), 0, (int) count);
+        assertEquals(-1, a.mismatch(b), "copyToF32 through the packed view");
+        int[] rows = {3, 0, m - 1};
+        MemorySegment c = arena.allocate(4L * rows.length * k),
+                d = arena.allocate(4L * rows.length * k);
+        Convert.gatherToF32(
+                packed,
+                rows,
+                0,
+                rows.length,
+                Views.wrap(c, DataType.FP32, Shape.flat((long) rows.length * k)),
+                0,
+                k);
+        Convert.gatherToF32(
+                canonical,
+                rows,
+                0,
+                rows.length,
+                Views.wrap(d, DataType.FP32, Shape.flat((long) rows.length * k)),
+                0,
+                k);
+        assertEquals(-1, c.mismatch(d), "gatherToF32 through the packed view");
     }
 
     /** A 3D (expert-sliced) tensor: flattened rows pack, group addressing exact per expert. */
