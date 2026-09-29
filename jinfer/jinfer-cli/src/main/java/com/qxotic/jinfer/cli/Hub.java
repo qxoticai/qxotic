@@ -4,7 +4,6 @@ import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -49,12 +48,7 @@ final class Hub {
 
     static void pull(List<String> refs, boolean force, ModelStore store, PrintStream out)
             throws IOException {
-        try {
-            if (force) refs.forEach(store::evict);
-        } catch (IllegalArgumentException | UncheckedIOException e) {
-            throw Main.failure("cannot refresh cached model files", e);
-        }
-        Options.resolveFiles(store, refs).forEach(out::println);
+        Options.pullFiles(store, refs, force).forEach(out::println);
     }
 
     static void list(ModelStore store, PrintStream out) {
@@ -101,11 +95,14 @@ final class Hub {
                 switch (command) {
                     case "pull" ->
                             """
-                            jinfer pull - download model files and print their local paths
+                            jinfer pull - check upstream and download changed or missing files
                             Usage: jinfer pull [--force] <ref>...
                             Example: jinfer pull LiquidAI/LFM2.5-350M-GGUF:Q8_0
 
-                              -f, --force  re-download even if cached
+                              -f, --force  download again even when a completed file is cached
+
+                            Prints local paths. A failed refresh preserves the previous cached file.
+                            Mutable references require network access, even when cached.
                             """;
                     case "list" ->
                             """
