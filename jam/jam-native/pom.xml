@@ -9,6 +9,9 @@
   </parent>
 
   <artifactId>jam-native</artifactId>
+  <!-- Releases independently of the other jam artifacts: the native kernels move faster than the
+       API. The root POM's jam-native.version and jinfer-bom name this version for the rest. -->
+  <version>0.3.1</version>
   <packaging>jar</packaging>
 
   <name>JAM Native Backend</name>

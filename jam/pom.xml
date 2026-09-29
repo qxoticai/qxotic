@@ -11,7 +11,7 @@
 
   <artifactId>jam</artifactId>
   <!-- This project's own release version; move jam.version in the root POM with it,
-       since that is where everything outside jam resolves it. -->
+       since that is where everything outside jam resolves it. jam-native releases independently. -->
   <version>0.2.0</version>
   <packaging>pom</packaging>
 
