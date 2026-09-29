@@ -27,12 +27,19 @@ REPO=$WORK/repo
 # version, which moves independently of the base projects it is built on.
 VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate -Dexpression=project.version \
     -DforceStdout 2>/dev/null | tail -1)
+# The catalog releases on a version of its own: importing the libraries' version would quietly
+# fetch an older catalog from Central and test that one.
+BOM_VERSION=$($MVN -q -B -f "$ROOT/jinfer/jinfer-bom/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
+    -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1)
 LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
     -Dexpression=langchain4j.version -DforceStdout 2>/dev/null | tail -1)
 SPRING_AI_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
     -Dexpression=spring-ai.version -DforceStdout 2>/dev/null | tail -1)
 case "$VERSION" in
     ''|*' '*) echo "canary: could not determine project version (got '$VERSION')" >&2; exit 1 ;;
+esac
+case "$BOM_VERSION" in
+    ''|*' '*) echo "canary: could not determine the BOM version (got '$BOM_VERSION')" >&2; exit 1 ;;
 esac
 case "$LANGCHAIN4J_VERSION" in
     ''|*' '*) echo "canary: could not determine LangChain4j version" >&2; exit 1 ;;
@@ -41,7 +48,7 @@ case "$SPRING_AI_VERSION" in
     ''|*' '*) echo "canary: could not determine Spring AI version" >&2; exit 1 ;;
 esac
 
-echo "==> installing the $VERSION release build into throwaway repo $REPO"
+echo "==> installing the $VERSION release build (catalog $BOM_VERSION) into throwaway repo $REPO"
 # jam.natives.check.skip: the canary exercises pom/artifact resolution, not the native libraries
 # (the release profile itself never runs cmake; it packages the staged, verified set).
 # shellcheck disable=SC2086
@@ -82,7 +89,7 @@ cat > "$WORK/consumer/pom.xml" <<EOF
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-bom</artifactId>
-        <version>$VERSION</version>
+        <version>$BOM_VERSION</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
