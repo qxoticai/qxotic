@@ -479,25 +479,114 @@ final class Fetch {
             Map<String, String> headers)
             throws IOException {
         Files.createDirectories(dest.getParent());
+        locked(
+                dest,
+                () -> {
+                    if (!Files.exists(dest))
+                        transfer(url, dest, label, expectedSize, sha256, headers);
+                    return null;
+                });
+    }
+
+    @FunctionalInterface
+    interface IOCall<T> {
+        T run() throws IOException;
+    }
+
+    /** One lock implementation for payloads and the references publishing them. */
+    static <T> T locked(Path dest, IOCall<T> operation) throws IOException {
         Path path = dest.toAbsolutePath().normalize();
         PathLock local = retain(path);
-        local.lock.lock();
         try {
-            Path lockFile = lockFileFor(path);
-            // NOT delete-on-close: on Windows a pending delete makes another process's open of the
-            // same lock file fail outright, turning "wait your turn" into "crash"
-            try (FileChannel channel =
-                            FileChannel.open(
-                                    lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                    FileLock fileLock = channel.lock()) {
-                if (Files.exists(dest)) {
-                    return; // whoever held the lock finished it
+            local.lock.lockInterruptibly();
+            try {
+                Path lockFile = lockFileFor(path);
+                // Never delete-on-close: Windows refuses another opener while deletion is pending.
+                try (FileChannel channel =
+                                FileChannel.open(
+                                        lockFile,
+                                        StandardOpenOption.CREATE,
+                                        StandardOpenOption.WRITE);
+                        FileLock fileLock = channel.lock()) {
+                    return operation.run();
                 }
-                transfer(url, dest, label, expectedSize, sha256, headers);
+            } finally {
+                local.lock.unlock();
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted waiting for " + dest, e);
         } finally {
-            local.lock.unlock();
             release(path, local);
+        }
+    }
+
+    @FunctionalInterface
+    interface StagedDownload {
+        void fetch(Path into) throws IOException;
+    }
+
+    /**
+     * A source never sees the published destination. Even a source that writes directly can only
+     * damage its staging file; the old entry survives every failure before atomic publication.
+     */
+    static void replace(Path dest, long size, String sha256, StagedDownload download)
+            throws IOException {
+        locked(
+                dest,
+                () -> {
+                    Files.createDirectories(dest.getParent());
+                    Path stage = replacementStage(dest);
+                    // Remove an unpublished stage left by a failed promotion, never the model.
+                    Files.deleteIfExists(stage);
+                    try {
+                        download.fetch(stage);
+                        if (size >= 0 && Files.size(stage) != size)
+                            throw new IOException("size mismatch for " + dest.getFileName());
+                        if (sha256 != null && !matches(stage, size, sha256))
+                            throw new IOException("sha256 mismatch for " + dest.getFileName());
+                        if (Thread.currentThread().isInterrupted())
+                            throw new IOException("interrupted before publishing " + dest);
+                        publish(stage, dest);
+                    } finally {
+                        cleanup(stage);
+                    }
+                    return null;
+                });
+    }
+
+    static long replacementRemainingBytes(Path dest, long size) {
+        return remainingBytes(replacementStage(dest), size);
+    }
+
+    private static Path replacementStage(Path dest) {
+        return sibling(dest, ".refresh.part");
+    }
+
+    /** Explicit pull checks content, not just a filename or an equal byte count. */
+    static boolean matches(Path file, long size, String sha256) throws IOException {
+        if (sha256 == null || !Files.isRegularFile(file) || (size >= 0 && Files.size(file) != size))
+            return false;
+        MessageDigest digest = sha256Digest();
+        digestFile(file, digest, null);
+        return HexFormat.of().formatHex(digest.digest()).equalsIgnoreCase(sha256);
+    }
+
+    /** No delete-then-move fallback: inability to replace atomically preserves the old entry. */
+    static void publish(Path stage, Path dest) throws IOException {
+        Files.move(
+                stage, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /** Housekeeping cannot turn a completed publication into a reported failed refresh. */
+    static void cleanup(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            LOG.log(
+                    System.Logger.Level.WARNING,
+                    "could not remove download staging file " + file,
+                    e);
         }
     }
 
@@ -551,10 +640,10 @@ final class Fetch {
                 if (!parallel) {
                     sequential(url, part, expectedSize, sha256, headers, progress);
                 }
+                publish(part, dest);
                 progress.finish();
-                Files.move(part, dest, StandardCopyOption.ATOMIC_MOVE);
-                Files.deleteIfExists(sibling(part, ".map"));
-                Files.deleteIfExists(sibling(part, ".etag"));
+                cleanup(sibling(part, ".map"));
+                cleanup(sibling(part, ".etag"));
                 return;
             } catch (IOException e) {
                 if (e instanceof InvalidTransfer) {
@@ -900,6 +989,8 @@ final class Fetch {
             byte[] buffer = new byte[BUFFER];
             long hashed = 0;
             for (int n; (n = in.read(buffer)) > 0; ) {
+                if (Thread.currentThread().isInterrupted())
+                    throw new IOException("interrupted while checking " + file);
                 digest.update(buffer, 0, n);
                 hashed += n;
                 if (progress != null) {

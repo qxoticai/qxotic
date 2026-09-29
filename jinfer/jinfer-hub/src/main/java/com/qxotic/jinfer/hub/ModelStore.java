@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -73,6 +74,12 @@ import java.util.regex.Pattern;
  * <p>Pair with {@code Models.load(model, arena)} to run the resolved file.
  */
 public final class ModelStore {
+
+    private enum Policy {
+        USE_CACHE,
+        REFRESH,
+        REDOWNLOAD
+    }
 
     private static final System.Logger LOG = System.getLogger(ModelStore.class.getName());
 
@@ -248,11 +255,15 @@ public final class ModelStore {
      * bytes to download; everything else is a file on this machine.
      */
     public Path resolve(String pathOrRef) {
+        return resolve(pathOrRef, Policy.USE_CACHE);
+    }
+
+    private Path resolve(String pathOrRef, Policy policy) {
         if (ModelRef.isRef(pathOrRef)) {
-            return resolveRef(ModelRef.parse(pathOrRef)); // a repository a source may talk to
+            return resolveRef(ModelRef.parse(pathOrRef), policy);
         }
         if (isHttpUrl(pathOrRef)) {
-            return url(pathOrRef); // any other URL: bytes, and nothing else
+            return url(pathOrRef, policy);
         }
         Path local = localFile(pathOrRef);
         if (local == null) {
@@ -270,20 +281,34 @@ public final class ModelStore {
      * {@link #resolve} for several arguments at once, downloading the missing ones CONCURRENTLY - a
      * cold start with a model plus an mmproj pays the slower download, not the sum. Paths return in
      * input order; the first failure cancels the rest (their partial state resumes later) and is
-     * the one thrown. Warm entries never spawn anything: one argument short-circuits entirely.
+     * the one thrown. A single argument resolves on the calling thread.
      */
     // no dedup, no aggregate progress bar (concurrent downloads print named lines, see
     // Fetch.Progress), no shared disk-space budget. Add each when someone actually hits it.
     public List<Path> resolveAll(List<String> pathOrRefs) {
+        return resolveAll(pathOrRefs, Policy.USE_CACHE);
+    }
+
+    /**
+     * Checks upstream for updates, reusing content only when its published checksum matches. {@code
+     * force} bypasses completed-file reuse. A failed refresh preserves the published file; each
+     * input is independent. Mutable pulls require network access, even when cached. See
+     * PULL-REFRESH.md for publication and offline invariants.
+     */
+    public List<Path> pullAll(List<String> pathOrRefs, boolean force) {
+        return resolveAll(pathOrRefs, force ? Policy.REDOWNLOAD : Policy.REFRESH);
+    }
+
+    private List<Path> resolveAll(List<String> pathOrRefs, Policy policy) {
         if (pathOrRefs.size() <= 1 || Fetch.oneAtATime()) {
-            return pathOrRefs.stream().map(this::resolve).toList();
+            return pathOrRefs.stream().map(ref -> resolve(ref, policy)).toList();
         }
         // at most 4 files in flight (x up to 8 chunk connections each, see
         // JINFER_DOWNLOAD_THREADS). A fixed constant, not a knob - add the env var when a real
         // pull is throttled by it.
         try (var pool = Executors.newFixedThreadPool(Math.min(4, pathOrRefs.size()))) {
             List<Future<Path>> futures =
-                    pathOrRefs.stream().map(r -> pool.submit(() -> resolve(r))).toList();
+                    pathOrRefs.stream().map(r -> pool.submit(() -> resolve(r, policy))).toList();
             List<Path> paths = new ArrayList<>(futures.size());
             try {
                 for (var future : futures) {
@@ -316,7 +341,7 @@ public final class ModelStore {
      * _8000} to the host directory. The URL is used VERBATIM for the request - a query may be a
      * signature - while the cache path excludes its query.
      */
-    private Path url(String url) {
+    private Path url(String url, Policy policy) {
         URI uri;
         try {
             uri = URI.create(url);
@@ -337,7 +362,7 @@ public final class ModelStore {
                         || (scheme.equals("https") && port == 443);
         String ref = defaultPort ? repositoryRef(uri) : null;
         if (ref != null) {
-            return resolveRef(ModelRef.parse(ref)); // a repository page pasted from the browser
+            return resolveRef(ModelRef.parse(ref), policy);
         }
         String path = uri.getPath() == null ? "" : uri.getPath();
         require(
@@ -353,15 +378,15 @@ public final class ModelStore {
                 dest = dest.resolve(segment);
             }
         }
-        if (Files.isRegularFile(dest)) {
+        if (policy == Policy.USE_CACHE && Files.isRegularFile(dest)) {
             return dest;
         }
         // before the SIZE probe, not just the download: offline means no request at all
-        requireOnlineFor(url, dest);
+        requireOnlineFor(url, dest, policy);
         Map<String, String> headers = Map.of("User-Agent", "jinfer-hub");
         long size = Fetch.sizeOf(url, headers);
         requireWritable(dest);
-        requireDiskSpace(dest, Fetch.remainingBytes(dest, size));
+        requireDiskSpace(dest, Fetch.replacementRemainingBytes(dest, size));
         tagCacheDirectory(root);
         Fetch.announce(
                 "download "
@@ -371,8 +396,14 @@ public final class ModelStore {
                         + host
                         + " publishes no checksum - verifying size only");
         try {
-            Fetch.download(url, dest, size, null, headers);
-            rejectWebPage(dest, url);
+            Fetch.replace(
+                    dest,
+                    size,
+                    null,
+                    stage -> {
+                        Fetch.download(url, stage, nameOf(uri.getPath()), size, null, headers);
+                        rejectWebPage(stage, url);
+                    });
         } catch (IOException e) {
             throw new UncheckedIOException("could not fetch " + url + ": " + e, e);
         }
@@ -422,9 +453,9 @@ public final class ModelStore {
     }
 
     /**
-     * A URL that answers with HTML is a page, never a model: the file leaves the cache and the
-     * caller learns what to write instead (an hf.co page has already been turned into a ref above,
-     * so this is the mirror or the private server that redirected to a login page).
+     * A URL that answers with HTML is a page, never a model: reject the staged file and the caller
+     * learns what to write instead (an hf.co page has already been turned into a ref above, so this
+     * is the mirror or the private server that redirected to a login page).
      */
     static void rejectWebPage(Path file, String url) throws IOException {
         byte[] head;
@@ -434,7 +465,6 @@ public final class ModelStore {
         String text = new String(head, StandardCharsets.ISO_8859_1).stripLeading();
         if (text.regionMatches(true, 0, "<!doctype", 0, 9)
                 || text.regionMatches(true, 0, "<html", 0, 5)) {
-            Files.deleteIfExists(file);
             throw new IllegalArgumentException(
                     "'"
                             + url
@@ -483,10 +513,17 @@ public final class ModelStore {
         }
     }
 
-    private static void requireOnlineFor(String what, Path dest) {
+    private static void requireOnlineFor(String what, Path dest, Policy policy) {
         if (offline()) {
             throw new IllegalStateException(
-                    what + " is not cached at " + dest + " and JINFER_OFFLINE forbids downloading");
+                    policy == Policy.USE_CACHE
+                            ? what
+                                    + " is not cached at "
+                                    + dest
+                                    + " and JINFER_OFFLINE forbids downloading"
+                            : "cannot refresh "
+                                    + what
+                                    + ": JINFER_OFFLINE forbids remote checks and downloads");
         }
     }
 
@@ -570,11 +607,8 @@ public final class ModelStore {
     }
 
     /**
-     * Forgets the cached file a ref resolves to, so the next resolve downloads it again. What
-     * {@code pull --force} is for: this cache is pinned by name and never revalidates, which is
-     * what makes a warm resolve cost zero requests, so a repository that re-uploads a quant under
-     * the same name needs one way to say "fetch it again". A ref pinned to a commit never needs
-     * this, because a commit is immutable.
+     * Explicitly deletes the cached file a ref resolves to. For a non-destructive refresh, use
+     * {@link #pullAll}; the CLI never evicts as part of a pull.
      */
     public boolean evict(String pathOrRef) {
         if (!ModelRef.isRef(pathOrRef)) {
@@ -606,24 +640,38 @@ public final class ModelStore {
     // ---- resolution ----
 
     /** The cached file for {@code ref}, fetching it from the first source that can. */
-    private Path resolveRef(ModelRef ref) {
+    private Path resolveRef(ModelRef ref, Policy policy) {
         try {
-            Path cached = cachedFile(ref);
-            if (cached != null) {
-                return cached;
+            if (policy == Policy.USE_CACHE) {
+                Path cached = cachedFile(ref);
+                if (cached != null) return cached;
+            } else if (policy == Policy.REFRESH
+                    && Hub.isCommit(ref.revisionOrDefault())
+                    && !ref.path().isEmpty()
+                    && ref.quant() == null) {
+                Path cached = cachedExact(ref);
+                if (cached != null) return cached;
             }
+            // Before creating lock files, requesting metadata, or touching a published entry.
+            requireOnlineFor(ref.toString(), folderDir(ref), policy);
+            Path key =
+                    hubShare && ref.host().equals(ModelRef.Host.HF.name)
+                            ? Hub.publicationKey(ref, Hub.cache())
+                            : repoDir(ref);
+            return Fetch.locked(key, () -> fetchRef(ref, policy));
         } catch (IOException e) {
             // the cause carries the only actionable part (refused proxy, DNS, TLS, timeout)
             throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
         }
-        // before the LISTING, not just the download: offline means no request at all
-        requireOnline(ref, folderDir(ref));
+    }
+
+    private Path fetchRef(ModelRef ref, Policy policy) {
         List<ModelSource> serving = sources.stream().filter(s -> s.supports(ref)).toList();
         if (serving.isEmpty()) {
             throw new UncheckedIOException(
                     new IOException(
                             ref
-                                    + " is not cached, and no source in this store serves "
+                                    + ": no source in this store serves "
                                     + ref.host()
                                     + (sources.isEmpty()
                                             ? " (this store was built with no sources -"
@@ -634,7 +682,7 @@ public final class ModelStore {
             ModelSource source = serving.get(i);
             boolean last = i == serving.size() - 1;
             try {
-                Path path = fetchPipeline(ref, source);
+                Path path = fetchPipeline(ref, source, policy);
                 if (i > 0) {
                     LOG.log(Level.INFO, "{0} resolved by {1}", ref, source);
                 }
@@ -671,8 +719,20 @@ public final class ModelStore {
         LOG.log(Level.WARNING, "{0} could not serve {1}: {2}", source, ref, e.getMessage());
     }
 
-    private Path fetchPipeline(ModelRef ref, ModelSource source) throws IOException {
-        RemoteFile file = select(ref, source);
+    private Path fetchPipeline(ModelRef ref, ModelSource source, Policy policy) throws IOException {
+        String commit =
+                source instanceof RepositorySource repository ? Hub.commit(ref, repository) : null;
+        ModelRef downloadRef =
+                commit == null
+                        ? ref
+                        : new ModelRef(
+                                ref.host(),
+                                ref.owner(),
+                                ref.repo(),
+                                commit,
+                                ref.path(),
+                                ref.quant());
+        RemoteFile file = select(downloadRef, source);
         if (SPLIT_PART.matcher(file.path()).matches()) {
             throw new UnsupportedOperationException(
                     nameOf(file.path())
@@ -680,23 +740,94 @@ public final class ModelStore {
                             + " parts first with llama.cpp's llama-gguf-split --merge, or pick a"
                             + " quant that fits in one file.");
         }
-        if (hubShare
-                && source instanceof RepositorySource hf
-                && ref.host().equals(ModelRef.Host.HF.name)
-                && Hub.isSha256(file.sha256())) {
-            String commit = Hub.commit(ref, hf);
-            if (commit != null) {
-                return Hub.fetchInto(ref, file, commit, Hub.cache(), hf);
-            }
-            // no commit means no snapshot directory to link under; the flat layout still works
-        }
         Path dest = pathOf(ref, file.path());
+        boolean shared =
+                hubShare
+                        && !Files.exists(dest)
+                        && source instanceof RepositorySource
+                        && ref.host().equals(ModelRef.Host.HF.name)
+                        && Hub.isSha256(file.sha256())
+                        && commit != null;
+        if (policy != Policy.USE_CACHE) {
+            requireSelectableIn(ref, file, folderDir(ref));
+            Fetch.announce("checking " + ref);
+        }
+        if (!shared && policy == Policy.REFRESH) {
+            ModelRef exact =
+                    new ModelRef(
+                            ref.host(), ref.owner(), ref.repo(), ref.revision(), file.path(), null);
+            Path cached = cachedExact(exact);
+            if (cached != null
+                    && cached.equals(cachedFile(ref))
+                    && Fetch.matches(cached, file.sizeBytes(), file.sha256())) {
+                Fetch.announce("up to date: " + ref);
+                return cached;
+            }
+        }
+        if (shared) {
+            Path snapshot =
+                    Hub.cache()
+                            .resolve("models--" + ref.owner() + "--" + ref.repo())
+                            .resolve("snapshots")
+                            .resolve(commit);
+            requireSelectableIn(ref, file, under(snapshot, parentOf(file.path())));
+            return Hub.fetchInto(
+                    ref,
+                    file,
+                    commit,
+                    Hub.cache(),
+                    (RepositorySource) source,
+                    policy == Policy.REDOWNLOAD);
+        }
         requireWritable(dest);
-        requireDiskSpace(dest, Fetch.remainingBytes(dest, file.sizeBytes()));
+        requireDiskSpace(
+                dest,
+                policy == Policy.USE_CACHE
+                        ? Fetch.remainingBytes(dest, file.sizeBytes())
+                        : Fetch.replacementRemainingBytes(dest, file.sizeBytes()));
         tagCacheDirectory(root);
         Fetch.announce("download " + ref.host() + "/" + ref.repoId() + "/" + file.path());
-        source.fetch(ref, file, dest);
+        if (policy == Policy.USE_CACHE) source.fetch(downloadRef, file, dest);
+        else
+            Fetch.replace(
+                    dest,
+                    file.sizeBytes(),
+                    file.sha256(),
+                    stage -> source.fetch(downloadRef, file, stage));
         return dest;
+    }
+
+    /** An exact filename must not fall through to quant selection when it is absent. */
+    private Path cachedExact(ModelRef ref) throws IOException {
+        Path own = pathOf(ref, ref.path());
+        if (Files.isRegularFile(own)) return own;
+        Path shared = Hub.cachedPath(ref, Hub.cache());
+        return shared != null && Files.isRegularFile(shared) ? shared : null;
+    }
+
+    /** Refuse a rename/alias collision rather than succeed and keep serving a stale shadow. */
+    private static void requireSelectableIn(ModelRef ref, RemoteFile selected, Path dir)
+            throws IOException {
+        if (ref.quant() == null && ref.path().equals(selected.path())) return;
+        if (!Files.isDirectory(dir)) return;
+        try (var entries = Files.list(dir)) {
+            var names = new TreeSet<String>();
+            entries.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(ModelStore::isModelGguf)
+                    .forEach(names::add);
+            String selectedName = nameOf(selected.path());
+            names.add(selectedName);
+            require(
+                    selectedName.equals(selectCachedModel(ref, List.copyOf(names))),
+                    ref
+                            + " would not uniquely select "
+                            + selectedName
+                            + " from cached files "
+                            + names
+                            + " - name the intended repository file explicitly: "
+                            + selected.path());
+        }
     }
 
     /**
@@ -875,46 +1006,39 @@ public final class ModelStore {
      * there too ({@link Hub#fetchInto}).
      */
     private Path cachedFile(ModelRef ref) throws IOException {
+        Path named = pathOf(ref, ref.path());
+        if (!ref.path().isEmpty() && Files.isRegularFile(named)) return named;
         Path own = cachedIn(ref, folderDir(ref));
         if (own != null) {
             return own;
         }
-        Path shared = Hub.snapshot(ref);
-        return shared == null ? null : cachedIn(ref, shared);
+        Path shared = Hub.cachedPath(ref, Hub.cache());
+        if (!ref.path().isEmpty() && shared != null && Files.isRegularFile(shared)) return shared;
+        return cachedIn(ref, shared);
     }
 
     private static Path cachedIn(ModelRef ref, Path dir) throws IOException {
         if (dir == null || !Files.isDirectory(dir)) {
             return null;
         }
-        if (!ref.path().isEmpty()) {
-            Path named = dir.resolve(nameOf(ref.path()));
-            if (Files.isRegularFile(named)) {
-                return named; // the ref named a file outright
-            }
-        }
         try (var entries = Files.list(dir)) {
-            List<Path> models =
-                    entries.filter(p -> Files.isRegularFile(p))
-                            .filter(p -> isModelGguf(p.getFileName().toString()))
+            List<String> models =
+                    entries.filter(Files::isRegularFile)
+                            .map(p -> p.getFileName().toString())
+                            .filter(ModelStore::isModelGguf)
                             .sorted()
                             .toList();
-            if (models.size() == 1 && ref.quant() == null) {
-                return models.get(0);
-            }
-            List<Path> matches =
-                    models.stream()
-                            .filter(p -> matchesQuant(p.getFileName().toString(), quantOf(ref)))
-                            .toList();
-            return matches.size() == 1 ? matches.get(0) : null; // ambiguity goes to the listing
+            String selected = selectCachedModel(ref, models);
+            return selected == null ? null : dir.resolve(selected);
         }
     }
 
-    private static void requireOnline(ModelRef ref, Path dest) {
-        if (offline()) {
-            throw new IllegalStateException(
-                    ref + " is not cached at " + dest + " and JINFER_OFFLINE forbids downloading");
-        }
+    /** The same selection rule for current lookup and the cache a pull would publish. */
+    private static String selectCachedModel(ModelRef ref, List<String> models) {
+        if (models.size() == 1 && ref.quant() == null) return models.getFirst();
+        List<String> matches =
+                models.stream().filter(name -> matchesQuant(name, quantOf(ref))).toList();
+        return matches.size() == 1 ? matches.getFirst() : null;
     }
 
     /**

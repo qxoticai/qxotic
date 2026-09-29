@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -25,12 +26,15 @@ final class Hub {
      * every HF client reads, and resolves a branch through {@code refs/} exactly as they do - a ref
      * pinned to a commit needs no indirection at all.
      */
-    static Path snapshot(ModelRef ref) throws IOException {
-        return snapshot(ref, cache());
+    static Path snapshot(ModelRef ref, Path hubCache) throws IOException {
+        Path located = cachedPath(ref, hubCache);
+        if (located == null) return null;
+        if (Files.isRegularFile(located)) return located.getParent();
+        return Files.isDirectory(located) ? located : null;
     }
 
-    /** Package-visible for its test: the env lookup is the only part a test cannot drive. */
-    static Path snapshot(ModelRef ref, Path hubCache) throws IOException {
+    /** The exact requested path, before deciding whether it names a file or a folder. */
+    static Path cachedPath(ModelRef ref, Path hubCache) throws IOException {
         if (!ref.host().equals(ModelRef.Host.HF.name)) {
             return null; // ModelScope's own cache is a different layout; not ours to read
         }
@@ -41,9 +45,7 @@ final class Hub {
             revision = Files.readString(branch, StandardCharsets.UTF_8).strip();
         }
         Path snapshot = repo.resolve("snapshots").resolve(revision);
-        Path located = snapshot.resolve(ref.path());
-        if (Files.isRegularFile(located)) return located.getParent();
-        return Files.isDirectory(located) ? located : null;
+        return snapshot.resolve(ref.path());
     }
 
     static Path cache() {
@@ -181,56 +183,89 @@ final class Hub {
      * Downloads {@code file} into the hub cache the way every HF client lays it out: bytes in
      * {@code blobs/<sha256>} - the same sha256 the download already verifies - and a relative
      * symlink from {@code snapshots/<commit>/<path>}, so llama.cpp and {@code hf download} see the
-     * file as their own. Concurrent writers need no lock here: blobs are content-addressed, so two
-     * tools racing on one file write identical bytes, each behind its own temp-and-rename.
+     * file as their own. The store serializes revision selection and publication; payload
+     * replacement also holds its destination lock. Other clients publish content-addressed blobs
+     * independently, so their complete bytes at the same hash are interchangeable.
      */
     static Path fetchInto(
             ModelRef ref, RemoteFile file, String commit, Path hubCache, RepositorySource source)
             throws IOException {
+        return fetchInto(ref, file, commit, hubCache, source, false);
+    }
+
+    /** The caller holds the publication-key lock before resolving the revision. */
+    static Path fetchInto(
+            ModelRef ref,
+            RemoteFile file,
+            String commit,
+            Path hubCache,
+            RepositorySource source,
+            boolean force)
+            throws IOException {
         Path repo = hubCache.resolve("models--" + ref.owner() + "--" + ref.repo());
         Path blob = repo.resolve("blobs").resolve(file.sha256());
         Path dest = ModelStore.under(repo.resolve("snapshots").resolve(commit), file.path());
-        if (!Files.isRegularFile(blob)) {
-            ModelStore.requireDiskSpace(blob, Fetch.remainingBytes(blob, file.sizeBytes()));
+        boolean reuse = !force && Fetch.matches(blob, file.sizeBytes(), file.sha256());
+        if (!reuse) {
+            ModelStore.requireDiskSpace(
+                    blob, Fetch.replacementRemainingBytes(blob, file.sizeBytes()));
             Fetch.announce("download " + ref.host() + "/" + ref.repoId() + "/" + file.path());
-            // download at the COMMIT, not the branch: the listing that chose this file and the
-            // fetch must not straddle a push
-            // through the SOURCE that listed the file: a mirror configured on the store serves
-            // the bytes too, instead of only the listing
+            // Pin the same commit and source used by the listing, including configured mirrors.
             String url = source.fileUrl(ref, commit, file.path());
-            Fetch.download(
-                    url,
+            Fetch.replace(
                     blob,
-                    ModelStore.nameOf(file.path()),
                     file.sizeBytes(),
                     file.sha256(),
-                    RepositorySource.headers(ModelRef.Host.HF));
+                    stage ->
+                            Fetch.download(
+                                    url,
+                                    stage,
+                                    ModelStore.nameOf(file.path()),
+                                    file.sizeBytes(),
+                                    file.sha256(),
+                                    RepositorySource.headers(ModelRef.Host.HF)));
         }
+        Path published = link(blob, dest);
         if (!isCommit(ref.revisionOrDefault())) {
             writeRef(repo.resolve("refs").resolve(ref.revisionOrDefault()), commit);
         }
-        return link(blob, dest);
+        if (reuse) Fetch.announce("up to date: " + ref);
+        return published;
+    }
+
+    static Path publicationKey(ModelRef ref, Path hubCache) {
+        return hubCache.resolve("models--" + ref.owner() + "--" + ref.repo())
+                .resolve("refs")
+                .resolve(ref.revisionOrDefault());
     }
 
     /**
      * Publishes {@code blob} at {@code dest} as a relative symlink, the hub cache's own idiom. On a
-     * filesystem that refuses symlinks (Windows without developer mode) the blob MOVES to {@code
-     * dest} instead - dedup is lost, correctness is not, and that is the same degraded mode
-     * llama.cpp and huggingface_hub fall back to.
+     * filesystem that refuses symlinks the entry is a copy. Never move a shared blob out from under
+     * another snapshot's link. Publish before changing the branch ref (PULL-REFRESH.md).
      */
     static Path link(Path blob, Path dest) throws IOException {
-        if (Files.isSymbolicLink(dest) || Files.exists(dest)) {
-            return dest; // the blob it points at was just ensured
+        if (Files.isSymbolicLink(dest)
+                && dest.getParent()
+                        .resolve(Files.readSymbolicLink(dest))
+                        .toAbsolutePath()
+                        .normalize()
+                        .equals(blob.toAbsolutePath().normalize())) {
+            return dest;
         }
         Files.createDirectories(dest.getParent());
+        Path tmp = Files.createTempFile(dest.getParent(), ".jinfer-link-", ".part");
         try {
             Path target = dest.getParent().toAbsolutePath().relativize(blob.toAbsolutePath());
-            Files.createSymbolicLink(dest, target);
-        } catch (IOException | UnsupportedOperationException noSymlinks) {
-            // a racing writer (hf download, another JVM) may have linked it meanwhile: that is
-            // not "no symlinks", and moving the blob out from under its link would orphan it
-            if (Files.exists(dest)) return dest;
-            Files.move(blob, dest);
+            Files.delete(tmp);
+            try {
+                Files.createSymbolicLink(tmp, target);
+            } catch (IOException | UnsupportedOperationException noSymlinks) {
+                Files.copy(blob, tmp, StandardCopyOption.REPLACE_EXISTING);
+            }
+            Fetch.publish(tmp, dest);
+        } finally {
+            Fetch.cleanup(tmp);
         }
         return dest;
     }
@@ -239,11 +274,17 @@ final class Hub {
      * Writes a {@code refs/<branch>} file the way the hub does: content is the commit, atomically.
      */
     private static void writeRef(Path refFile, String commit) throws IOException {
+        byte[] bytes = commit.getBytes(StandardCharsets.UTF_8);
+        if (Files.isRegularFile(refFile) && Arrays.equals(Files.readAllBytes(refFile), bytes))
+            return;
         Files.createDirectories(refFile.getParent());
-        Path tmp = refFile.resolveSibling(refFile.getFileName() + ".tmp");
-        Files.writeString(tmp, commit, StandardCharsets.UTF_8);
-        Files.move(
-                tmp, refFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        Path tmp = Files.createTempFile(refFile.getParent(), ".jinfer-ref-", ".part");
+        try {
+            Files.write(tmp, bytes);
+            Fetch.publish(tmp, refFile);
+        } finally {
+            Fetch.cleanup(tmp);
+        }
     }
 
     /** A git commit hash, fit to be a snapshot directory name. */
