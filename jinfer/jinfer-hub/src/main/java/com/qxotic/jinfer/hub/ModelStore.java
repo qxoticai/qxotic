@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -552,9 +553,17 @@ public final class ModelStore {
      * and config the Python stack ever fetched, none of which is a {@code --model}.
      */
     public List<Cached> cached() {
-        List<Cached> all = new ArrayList<>(ownCached());
-        all.addAll(Hub.cached(Hub.cache()));
-        return all.stream().distinct().sorted(Comparator.comparing(Cached::ref)).toList();
+        return merged(ownCached(), Hub.cached(Hub.cache()));
+    }
+
+    /**
+     * One entry per ref, the copy {@link #resolve} would serve: the store's own before the hub's.
+     */
+    static List<Cached> merged(List<Cached> own, List<Cached> hub) {
+        Map<String, Cached> byRef = new TreeMap<>();
+        for (Cached c : own) byRef.putIfAbsent(c.ref(), c);
+        for (Cached c : hub) byRef.putIfAbsent(c.ref(), c);
+        return List.copyOf(byRef.values());
     }
 
     /** One cache entry: the ref (or path) to ask for it again, and its size on disk. */

@@ -60,13 +60,13 @@ final class Hub {
             out.println("no models cached in " + root);
             return;
         }
-        int width = models.stream().mapToInt(m -> m.ref().length()).max().orElse(0);
+        // the fixed-width column first: a name's display width is not its length (CJK, accents)
         long total = 0;
         for (var model : models) {
             total += model.sizeBytes();
-            out.printf("%-" + width + "s  %10s%n", model.ref(), humanBytes(model.sizeBytes()));
+            out.printf("%10s  %s%n", humanBytes(model.sizeBytes()), model.ref());
         }
-        out.printf("%-" + width + "s  %10s%n", "total", humanBytes(total));
+        out.printf("%10s  total%n", humanBytes(total));
     }
 
     static void cacheInfo(Path file, PrintStream out) throws IOException {
