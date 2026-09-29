@@ -4,7 +4,7 @@ package com.qxotic.format.gguf;
  * Unchecked exception thrown when GGUF content violates the format specification, e.g. bad magic
  * number, unsupported version, or invalid metadata types.
  */
-public class GGUFFormatException extends RuntimeException {
+public class GGUFFormatException extends IllegalArgumentException {
 
     public GGUFFormatException(String message) {
         super(message);
