@@ -35,6 +35,12 @@ public final class GatedDeltaNet {
                 });
     }
 
+    /** {@link #sigmoidMultiply(MemoryView, MemoryView, int, int)} over one span of {@code size}. */
+    public static void sigmoidMultiply(
+            MemoryView<MemorySegment> values, MemoryView<MemorySegment> gate, int size) {
+        sigmoidMultiply(values, gate, 1, size);
+    }
+
     /**
      * {@code values *= sigmoid(gate)} over {@code rows} rows of {@code rowDim} lanes, one row per
      * job, using the legacy scalar Math.exp arithmetic.
