@@ -44,7 +44,7 @@ final class BitSplit {
         return rules >= Kernels.CL100K && rules <= Kernels.TEKKEN ? new BitSplit(rules) : null;
     }
 
-    // ── one block's class streams ────────────────────────────────────────────────────────────
+    // ---- one block's class streams ----
 
     /** One 64-byte block's bitmaps, bit i for byte i of the block. */
     private static final class Block {
@@ -266,7 +266,7 @@ final class BitSplit {
         return (1 << 24) | 0xFFFD;
     }
 
-    // ── bitstream primitives ─────────────────────────────────────────────────────────────────
+    // ---- bitstream primitives ----
 
     /** Markers of {@code m} moved past the run of {@code c} each sits in, landing excluded. */
     private static long scanthru(long m, long c) {
@@ -317,7 +317,7 @@ final class BitSplit {
         return b ? 1 : 0;
     }
 
-    // ── the programs ─────────────────────────────────────────────────────────────────────────
+    // ---- the programs ----
 
     /**
      * One split call's registers: the blocks in flight, the starts not yet popped, and the carries
@@ -362,7 +362,7 @@ final class BitSplit {
         /** The starts of the block in hand; the driver keeps the leads and opens position 0. */
         abstract long rule();
 
-        // ── shared rules
+        // ---- shared rules
 
         /**
          * Each bit of {@code x} moved back to the lead byte of its character, at most three steps;
@@ -646,7 +646,7 @@ final class BitSplit {
             st &= ~nlSpan;
             st |= nlE;
 
-            // ── carries
+            // ---- carries
             nlRun = nlCarries;
             commitDigits(digitCap, groups);
             commitRetractable(afterNl, nlE);
@@ -833,7 +833,7 @@ final class BitSplit {
             st &= ~sfx; // nothing inside a contraction suffix opens a piece
             st |= sfxOpen;
 
-            // ── carries
+            // ---- carries
             nlRun = nlCarries;
             prevAbsorbed = ((nlSpan >>> (len - 1)) & 1) != 0;
             commitDigits(digitCap, groups);
@@ -927,7 +927,7 @@ final class BitSplit {
         }
     }
 
-    // ── driving the blocks and popping the pieces ─────────────────────────────────────────────
+    // ---- driving the blocks and popping the pieces ----
 
     /** Whether the whitespace run open at {@code i} has a newline from there on. */
     private static boolean newlineInRun(byte[] text, int i, int end) {
@@ -951,13 +951,12 @@ final class BitSplit {
      * boundary; nothing past {@code end} is read.
      */
     int split(byte[] text, int start, int end, int[] ends) {
-        int length = end - start;
-        if (length <= 0) {
+        if (end <= start) {
             return 0;
         }
         Run run = run(text, start, end);
-        int nblk = (length + 63) >>> 6;
-        run.seed = classify(text, start, Math.min(64, length), end, 0, run.cur);
+        int nblk = (end - start + 63) >>> 6;
+        run.seed = classify(text, start, Math.min(64, end - start), end, 0, run.cur);
         int n = 0;
         int popped = 0; // blocks whose starts are out
         for (int bi = 0; bi < nblk; bi++) {
@@ -988,10 +987,10 @@ final class BitSplit {
             if (bi > 0) {
                 run.starts[(bi - 1) & (RING - 1)] |= run.stealPatch;
             }
-            // The starts of a block are final once the next block has run, except one a newline
+            // A block's starts are final once the next block has run, except one a newline
             // further on may still retract: nothing from it on is popped until it is decided.
             if (run.retractable >= 0 && bi + 2 - popped > RING) {
-                // the whitespace run is longer than the ring: decide it by looking ahead by hand
+                // the whitespace run outgrew the ring: decide it by looking ahead by hand
                 if (newlineInRun(text, base + len, end)) {
                     int p = run.retractable - start;
                     run.starts[(p >>> 6) & (RING - 1)] &= ~(1L << (p & 63));

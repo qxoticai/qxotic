@@ -110,11 +110,18 @@ final class TiktokenSplitter implements Splitter {
                         && otherTail == NEWLINES
                         && newlineRun
                         && (contraction == FOLD || contraction == ASCII_BOTH);
-        if (!family || (numbers != UP_TO_THREE && numbers != ONE)) {
+        if (!family) {
             return -1;
         }
-        int rules = numbers == UP_TO_THREE ? Kernels.CL100K : Kernels.QWEN2;
-        return contraction == FOLD ? rules : rules + 1;
+        boolean fold = contraction == FOLD;
+        switch (numbers) {
+            case UP_TO_THREE:
+                return fold ? Kernels.CL100K : Kernels.CL100K_ASCII;
+            case ONE:
+                return fold ? Kernels.QWEN2 : Kernels.QWEN2_ASCII;
+            default:
+                return -1;
+        }
     }
 
     /**
