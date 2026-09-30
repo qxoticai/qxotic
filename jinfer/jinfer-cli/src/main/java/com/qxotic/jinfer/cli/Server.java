@@ -30,7 +30,6 @@ final class Server {
         String apiKey;
         final Set<String> origins = new LinkedHashSet<>();
         int concurrency = ServerConfig.Limits.DEFAULTS.threads();
-        Integer queueDepth;
         long maxBodyBytes = ServerConfig.Limits.DEFAULTS.maxBodyBytes();
         Duration writeTimeout = ServerConfig.Limits.DEFAULTS.writeTimeout();
         Duration requestTimeout = ServerConfig.Limits.DEFAULTS.requestTimeout();
@@ -39,7 +38,6 @@ final class Server {
         ServerConfig.Limits limits() {
             return new ServerConfig.Limits(
                     concurrency,
-                    queueDepth == null ? ServerConfig.Limits.DEFAULTS.queueCapacity() : queueDepth,
                     maxBodyBytes,
                     !noGrammar,
                     writeTimeout,
@@ -56,7 +54,6 @@ final class Server {
             case "--api-key" -> s.apiKey = a.value();
             case "--cors-origin" -> s.origins.add(a.value());
             case "--concurrency" -> s.concurrency = a.integer();
-            case "--queue-depth" -> s.queueDepth = a.integer();
             case "--max-body-mb" -> s.maxBodyBytes = (long) a.integer() << 20;
             case "--write-timeout" -> s.writeTimeout = seconds(a);
             case "--request-timeout" -> s.requestTimeout = seconds(a);
@@ -90,10 +87,6 @@ final class Server {
                 Integer.MAX_VALUE / 2,
                 s.concurrency);
         Options.require(
-                s.queueDepth == null || s.queueDepth >= 0,
-                "--queue-depth must be non-negative; got %s",
-                s.queueDepth);
-        Options.require(
                 s.maxBodyBytes > 0, "--max-body-mb must be positive; got %s", s.maxBodyBytes >> 20);
         Options.require(
                 !s.writeTimeout.isZero(),
@@ -106,9 +99,6 @@ final class Server {
     static void validateTranscription(Options o) {
         o.rejectLanguageOptions("a transcription server");
         Options.require(!o.rawPrompt, "--raw-prompt does not apply to a transcription server");
-        Options.require(
-                o.server.queueDepth == null,
-                "--queue-depth does not apply to a transcription server");
         Options.require(
                 !o.server.noGrammar, "--no-grammar does not apply to a transcription server");
         Options.require(
@@ -283,10 +273,8 @@ final class Server {
                   --port <int>               default 54154; 0 selects an available port
                   --api-key <token>          required for non-loopback binds
                   --cors-origin <origin>     repeatable; default *
-                  --concurrency <int>        default 16; language: admits up to 2*N HTTP handlers;
-                                             transcription: N requests admitted at once; the model serves them one by one
-                  --queue-depth <int>        waiting language generations; default 4; 0: no waiting
-                                             not applicable to transcription models
+                  --concurrency <int>        requests held at once; default 16. One is served, the
+                                             rest wait their turn; past that: 503 + Retry-After
                   --max-body-mb <int>        request-body limit; default 32
                   --write-timeout <seconds>  body-read/SSE-write timeout; default 30
                   --request-timeout <seconds> generation deadline; default 300; 0 disables

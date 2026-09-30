@@ -46,9 +46,10 @@ public final class Server {
     private Server(ChatEngine engine, ServerConfig config) {
         this.generation = new Generation(engine, config, metrics);
         this.servedModel = engine.modelName();
-        this.worker = new Worker(config.limits().queueCapacity());
+        // the gate admits threads requests; the queue holds the admitted ones not being served
+        this.worker = new Worker(config.limits().threads() - 1);
         this.config = config;
-        this.admissions = new Semaphore(2 * config.limits().threads());
+        this.admissions = new Semaphore(config.limits().threads());
     }
 
     /**
@@ -329,7 +330,7 @@ public final class Server {
 
     /** Work: admitted through the gate, so at most {@code 2 x threads} handlers run model work. */
     private void route(HttpServer server, String path, HttpHandler handler) {
-        server.createContext(path, gated(handler, admissions, config.limits().retryAfterSeconds()));
+        server.createContext(path, gated(handler, admissions, config.limits()));
     }
 
     /**
@@ -341,16 +342,25 @@ public final class Server {
         server.createContext(path, handler);
     }
 
+    /** The one refusal, naming the limit that tripped and when to come back. */
+    static String busy(ServerConfig.Limits limits) {
+        return "Server busy: "
+                + limits.threads()
+                + " requests in flight; retry after "
+                + limits.retryAfterSeconds()
+                + " s";
+    }
+
     /** Owns the exchange and its permit through cleanup; excess requests get 503 + Retry-After. */
-    static HttpHandler gated(HttpHandler handler, Semaphore admissions, int retryAfterSeconds) {
+    static HttpHandler gated(
+            HttpHandler handler, Semaphore admissions, ServerConfig.Limits limits) {
         return exchange -> {
             boolean admitted = admissions.tryAcquire();
             try (exchange) {
                 if (!admitted) {
                     exchange.getResponseHeaders()
-                            .set("Retry-After", String.valueOf(retryAfterSeconds));
-                    Http.sendErrorQuietly(
-                            exchange, 503, "Server busy: too many concurrent requests");
+                            .set("Retry-After", String.valueOf(limits.retryAfterSeconds()));
+                    Http.sendErrorQuietly(exchange, 503, busy(limits));
                     return;
                 }
                 handler.handle(exchange);
@@ -976,10 +986,7 @@ public final class Server {
             }
             String message =
                     switch (result) {
-                        case FULL ->
-                                "Server busy: "
-                                        + config.limits().queueCapacity()
-                                        + " requests already queued";
+                        case FULL -> busy(config.limits()); // a race with the gate; the same answer
                         case INTERRUPTED -> "Request interrupted";
                         default -> "Server is shutting down";
                     };

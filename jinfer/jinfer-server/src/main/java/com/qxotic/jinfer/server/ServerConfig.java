@@ -56,10 +56,13 @@ public record ServerConfig(
         }
     }
 
-    /** Resource limits; {@code writeTimeout} bounds body reads and SSE writes. */
+    /**
+     * Resource limits. {@code threads} is how many requests the server holds at once: one is
+     * served, the others wait their turn, and past that a request is refused with 503 and
+     * Retry-After. {@code writeTimeout} bounds body reads and SSE writes.
+     */
     public record Limits(
             int threads,
-            int queueCapacity,
             long maxBodyBytes,
             boolean grammar,
             Duration writeTimeout,
@@ -68,7 +71,6 @@ public record ServerConfig(
         public static final Limits DEFAULTS =
                 new Limits(
                         16,
-                        4,
                         32L << 20,
                         true,
                         Duration.ofSeconds(30),
@@ -77,8 +79,6 @@ public record ServerConfig(
 
         public Limits {
             if (threads < 1) throw new IllegalArgumentException("threads " + threads);
-            if (queueCapacity < 0)
-                throw new IllegalArgumentException("queueCapacity " + queueCapacity);
             if (maxBodyBytes < 1)
                 throw new IllegalArgumentException("maxBodyBytes " + maxBodyBytes);
             requirePositive(writeTimeout, "writeTimeout");
@@ -87,51 +87,22 @@ public record ServerConfig(
         }
 
         int retryAfterSeconds() {
-            return Math.max(1, 2 * (queueCapacity + 1));
+            return 2 * threads;
         }
 
         public Limits withThreads(int threads) {
             return new Limits(
-                    threads,
-                    queueCapacity,
-                    maxBodyBytes,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout,
-                    shutdownTimeout);
-        }
-
-        public Limits withQueueCapacity(int queueCapacity) {
-            return new Limits(
-                    threads,
-                    queueCapacity,
-                    maxBodyBytes,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout,
-                    shutdownTimeout);
+                    threads, maxBodyBytes, grammar, writeTimeout, requestTimeout, shutdownTimeout);
         }
 
         public Limits withGrammar(boolean grammar) {
             return new Limits(
-                    threads,
-                    queueCapacity,
-                    maxBodyBytes,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout,
-                    shutdownTimeout);
+                    threads, maxBodyBytes, grammar, writeTimeout, requestTimeout, shutdownTimeout);
         }
 
         public Limits withRequestTimeout(Duration requestTimeout) {
             return new Limits(
-                    threads,
-                    queueCapacity,
-                    maxBodyBytes,
-                    grammar,
-                    writeTimeout,
-                    requestTimeout,
-                    shutdownTimeout);
+                    threads, maxBodyBytes, grammar, writeTimeout, requestTimeout, shutdownTimeout);
         }
 
         private static void requirePositive(Duration value, String name) {

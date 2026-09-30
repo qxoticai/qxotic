@@ -35,7 +35,6 @@ class ServerConfigTest {
                 () ->
                         new ServerConfig.Limits(
                                 0,
-                                d.queueCapacity(),
                                 d.maxBodyBytes(),
                                 d.grammar(),
                                 Duration.ofSeconds(1),
@@ -57,14 +56,12 @@ class ServerConfigTest {
                         .withLimits(
                                 ServerConfig.Limits.DEFAULTS
                                         .withThreads(3)
-                                        .withQueueCapacity(1)
                                         .withGrammar(false)
                                         .withRequestTimeout(Duration.ofSeconds(2)))
                         .withAccess(
                                 new ServerConfig.Access("secret", Set.of("https://example.test")));
 
         assertEquals(3, config.limits().threads());
-        assertEquals(1, config.limits().queueCapacity());
         assertFalse(config.limits().grammar());
         assertEquals(Duration.ofSeconds(2), config.limits().requestTimeout());
         assertEquals("secret", config.access().bearerToken());

@@ -101,7 +101,7 @@ class HttpAccessTest {
                             }
                         },
                         admissions,
-                        1));
+                        ServerConfig.Limits.DEFAULTS.withThreads(1)));
         server.start();
         int port = server.getAddress().getPort();
 

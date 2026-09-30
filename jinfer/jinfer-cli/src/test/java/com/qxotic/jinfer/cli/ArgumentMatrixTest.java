@@ -41,7 +41,6 @@ class ArgumentMatrixTest {
         "server,--port,65536",
         "server,--concurrency,0",
         "server,--concurrency,2147483647",
-        "server,--queue-depth,-1",
         "server,--max-body-mb,0",
         "server,--max-body-mb,-1",
         "server,--write-timeout,0",
@@ -174,7 +173,6 @@ class ArgumentMatrixTest {
         "server,--host",
         "server,--port",
         "server,--api-key",
-        "server,--queue-depth",
         "server,--request-timeout",
         "transcribe,--theme"
     })
