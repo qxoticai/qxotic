@@ -1,6 +1,9 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.Splitter;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -425,7 +428,22 @@ final class TiktokenSplitter implements Splitter {
     private static int upperThenLower(byte[] text, int j, int end) {
         int u = j;
         int lastLower = -1;
-        while (u < end) {
+        while (true) {
+            if (end - u >= 8) {
+                // Eight ASCII capitals at a time; an ASCII byte of any other class ends the run.
+                long v = (long) LONGS.get(text, u);
+                long stop = (v | ~ascii(v, CharClasses.UPPER)) & HIGH_BITS;
+                if (stop == 0) {
+                    u += 8;
+                    continue;
+                }
+                u += Long.numberOfTrailingZeros(stop) >>> 3;
+                if (text[u] >= 0) {
+                    break;
+                }
+            } else if (u >= end) {
+                break;
+            }
             int c = at(text, u, end);
             int k = CharClasses.of(cp(c));
             if ((k & CharClasses.UPPER) == 0) {
@@ -496,13 +514,30 @@ final class TiktokenSplitter implements Splitter {
             return -1;
         }
         int e = j;
-        do {
+        while (true) {
+            if (end - e >= 8) {
+                // Eight ASCII bytes at a time; an ASCII blank, letter or digit ends the run.
+                long v = (long) LONGS.get(text, e);
+                long stop =
+                        (v | ascii(v, CharClasses.SPACE | CharClasses.LETTER | CharClasses.NUMBER))
+                                & HIGH_BITS;
+                if (stop == 0) {
+                    e += 8;
+                    continue;
+                }
+                e += Long.numberOfTrailingZeros(stop) >>> 3;
+                if (text[e] >= 0) {
+                    break;
+                }
+            } else if (e >= end) {
+                break;
+            }
             int c = at(text, e, end);
             if (!isOther(CharClasses.of(cp(c)))) {
                 break;
             }
             e += len(c);
-        } while (e < end);
+        }
         if (otherTail != NO_TAIL) {
             while (e < end) {
                 byte c = text[e];
@@ -531,14 +566,75 @@ final class TiktokenSplitter implements Splitter {
 
     /** The end of the run of code points in {@code classes} that starts at {@code j}. */
     private static int run(byte[] text, int j, int end, int classes) {
-        while (j < end) {
+        while (true) {
+            if (end - j >= 8) {
+                // Eight ASCII bytes at a time; an ASCII byte outside the classes ends the run.
+                long v = (long) LONGS.get(text, j);
+                long stop = (v | ~ascii(v, classes)) & HIGH_BITS;
+                if (stop == 0) {
+                    j += 8;
+                    continue;
+                }
+                j += Long.numberOfTrailingZeros(stop) >>> 3;
+                if (text[j] >= 0) {
+                    return j;
+                }
+            } else if (j >= end) {
+                return j;
+            }
+            // A non-ASCII byte, or one of the last seven: the code point decides.
             int c = at(text, j, end);
             if ((CharClasses.of(cp(c)) & classes) == 0) {
-                break;
+                return j;
             }
             j += len(c);
         }
-        return j;
+    }
+
+    private static final VarHandle LONGS =
+            MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
+    private static final long LOW_BYTES = 0x0101010101010101L;
+    private static final long HIGH_BITS = 0x8080808080808080L;
+
+    /**
+     * Of eight bytes, which are in {@code classes} if ASCII: a flag in each byte's high bit. Bytes
+     * with the high bit set are non-ASCII and get whatever the arithmetic yields; the caller
+     * excludes them. Marks do not occur in ASCII.
+     */
+    private static long ascii(long v, int classes) {
+        long a = v & ~HIGH_BITS;
+        long in = 0;
+        if ((classes & CharClasses.LETTER) != 0) {
+            long folded = a | 0x2020202020202020L;
+            in |= atLeast(folded, 'a') & ~atLeast(folded, 'z' + 1);
+        }
+        if ((classes & CharClasses.UPPER) != 0) {
+            in |= atLeast(a, 'A') & ~atLeast(a, 'Z' + 1);
+        }
+        if ((classes & CharClasses.LOWER) != 0) {
+            in |= atLeast(a, 'a') & ~atLeast(a, 'z' + 1);
+        }
+        if ((classes & CharClasses.NUMBER) != 0) {
+            in |= atLeast(a, '0') & ~atLeast(a, '9' + 1);
+        }
+        if ((classes & CharClasses.SPACE) != 0) {
+            in |= is(a, ' ') | (atLeast(a, 0x9) & ~atLeast(a, 0xE));
+        }
+        if ((classes & CharClasses.NEWLINE) != 0) {
+            in |= is(a, '\n') | is(a, '\r');
+        }
+        return in & HIGH_BITS;
+    }
+
+    /** Per byte of {@code a} (all under 0x80): the high bit when the byte is at least {@code c}. */
+    private static long atLeast(long a, int c) {
+        return (a + (0x80 - c) * LOW_BYTES) & HIGH_BITS;
+    }
+
+    /** Per byte of {@code a} (all under 0x80): the high bit when the byte equals {@code c}. */
+    private static long is(long a, int c) {
+        long x = a ^ (c * LOW_BYTES);
+        return (x - LOW_BYTES) & ~x & HIGH_BITS;
     }
 
     // A decoded position packs the code point in the low 21 bits and its byte length above them.
