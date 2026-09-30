@@ -787,14 +787,17 @@ public final class FrozenBlocksTest {
     }
 
     @Test
-    void describeSaysWhatIsWrongInsteadOfThrowing() throws Exception {
+    void describeRefusesWhatNeverWasACacheAndDescribesTheRest() throws Exception {
         Path stub = Files.createTempFile("frozen", ".jkv");
         stub.toFile().deleteOnExit();
         Files.write(stub, new byte[] {1, 2, 3});
-        assertTrue(FrozenBlocks.describe(stub).contains("truncated header"));
+        var truncated =
+                assertThrows(IllegalStateException.class, () -> FrozenBlocks.describe(stub));
+        assertTrue(truncated.getMessage().contains("truncated header"), truncated.getMessage());
 
         Files.write(stub, new byte[FrozenBlocks.HEADER_BYTES]);
-        assertTrue(FrozenBlocks.describe(stub).contains("bad magic"));
+        var magic = assertThrows(IllegalStateException.class, () -> FrozenBlocks.describe(stub));
+        assertTrue(magic.getMessage().contains("bad magic"), magic.getMessage());
 
         Path empty = Files.createTempFile("frozen", ".jkv");
         empty.toFile().deleteOnExit();

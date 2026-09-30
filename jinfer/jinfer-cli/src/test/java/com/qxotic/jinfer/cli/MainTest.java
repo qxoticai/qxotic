@@ -33,7 +33,7 @@ class MainTest {
         var direct = new CliFixtures.Capture("");
         var alternate = new CliFixtures.Capture("");
         assertEquals(0, Main.run(new String[] {verb, "--help"}, direct.io, store));
-        assertEquals(0, Main.run(new String[] {"help", verb}, alternate.io, store));
+        assertEquals(0, Main.run(new String[] {verb, "-h"}, alternate.io, store));
         assertEquals(direct.out(), alternate.out());
         assertTrue(direct.out().contains("Usage:"));
         assertEquals("", direct.err());
