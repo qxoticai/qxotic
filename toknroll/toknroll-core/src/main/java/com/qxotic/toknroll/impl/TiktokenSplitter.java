@@ -165,6 +165,11 @@ final class TiktokenSplitter implements Splitter {
         return KNOWN.keySet();
     }
 
+    /**
+     * Piece ends per batch: the model consumes them from an array, not from a callback per word.
+     */
+    static final int BATCH = 1024;
+
     @Override
     public void splitAll(
             CharSequence text, int startInclusive, int endExclusive, SplitConsumer consumer) {
@@ -179,17 +184,93 @@ final class TiktokenSplitter implements Splitter {
                             + ") for text length "
                             + text.length());
         }
-        int i = startInclusive;
-        while (i < endExclusive) {
-            int next = match(text, i, endExclusive);
-            consumer.accept(text, i, next);
-            i = next;
+        // The scanner reads UTF-8; a piece's end comes back to chars by counting its code points,
+        // and the four-byte ones twice.
+        byte[] utf8 = utf8(text, startInclusive, endExclusive);
+        int[] ends = new int[BATCH];
+        int cursor = 0;
+        int charCursor = startInclusive;
+        while (cursor < utf8.length) {
+            int n = split(utf8, cursor, utf8.length, ends);
+            for (int k = 0; k < n; k++) {
+                int end = ends[k];
+                int chars = 0;
+                for (int i = cursor; i < end; i++) {
+                    int b = utf8[i] & 0xFF;
+                    if ((b & 0xC0) != 0x80) {
+                        chars += b >= 0xF0 ? 2 : 1;
+                    }
+                }
+                consumer.accept(text, charCursor, charCursor + chars);
+                charCursor += chars;
+                cursor = end;
+            }
         }
     }
 
+    /**
+     * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
+     * until the array is full or the text ends. Returns how many.
+     */
+    int split(byte[] text, int start, int end, int[] ends) {
+        int n = 0;
+        int i = start;
+        while (i < end && n < ends.length) {
+            i = match(text, i, end);
+            ends[n++] = i;
+        }
+        return n;
+    }
+
+    /** The UTF-8 of {@code text[start, end)}; a surrogate without its partner becomes U+FFFD. */
+    static byte[] utf8(CharSequence text, int start, int end) {
+        int length = 0;
+        for (int i = start; i < end; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                length++;
+            } else if (c < 0x800) {
+                length += 2;
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < end
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                length += 4;
+                i++;
+            } else {
+                length += 3;
+            }
+        }
+        byte[] out = new byte[length];
+        int o = 0;
+        for (int i = start; i < end; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                out[o++] = (byte) c;
+            } else if (c < 0x800) {
+                out[o++] = (byte) (0xC0 | (c >> 6));
+                out[o++] = (byte) (0x80 | (c & 0x3F));
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < end
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                int cp = Character.toCodePoint(c, text.charAt(++i));
+                out[o++] = (byte) (0xF0 | (cp >> 18));
+                out[o++] = (byte) (0x80 | ((cp >> 12) & 0x3F));
+                out[o++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
+                out[o++] = (byte) (0x80 | (cp & 0x3F));
+            } else {
+                int cp = Character.isSurrogate(c) ? 0xFFFD : c;
+                out[o++] = (byte) (0xE0 | (cp >> 12));
+                out[o++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
+                out[o++] = (byte) (0x80 | (cp & 0x3F));
+            }
+        }
+        return out;
+    }
+
     /** The end of the piece that starts at {@code i}: the alternatives in the regex's order. */
-    private int match(CharSequence text, int i, int end) {
-        int cp = codePointAt(text, i, end);
+    private int match(byte[] text, int i, int end) {
+        int at = at(text, i, end);
+        int cp = cp(at);
         int cls = CharClasses.of(cp);
         int e;
         if (contraction != NO_CONTRACTION && cp == '\'') {
@@ -198,11 +279,11 @@ final class TiktokenSplitter implements Splitter {
                 return e;
             }
         }
-        e = word(text, i, end, cp, cls);
+        e = word(text, i, end, at, cls);
         if (e > 0) {
             return e;
         }
-        e = number(text, i, end, cp, cls);
+        e = number(text, i, end, at, cls);
         if (e > 0) {
             return e;
         }
@@ -211,15 +292,17 @@ final class TiktokenSplitter implements Splitter {
             return e;
         }
         // Only whitespace is left: '\s*[\r\n]+', then '\s+(?!\S)', then '\s+'.
-        int run = i + Character.charCount(cp);
+        int run = i + len(at);
+        int last = len(at);
         int lastNewline = (cls & CharClasses.NEWLINE) != 0 ? run : -1;
         while (run < end) {
-            int c = codePointAt(text, run, end);
-            int k = CharClasses.of(c);
+            int c = at(text, run, end);
+            int k = CharClasses.of(cp(c));
             if ((k & CharClasses.SPACE) == 0) {
                 break;
             }
-            run += Character.charCount(c);
+            last = len(c);
+            run += last;
             if ((k & CharClasses.NEWLINE) != 0) {
                 lastNewline = run;
             }
@@ -227,30 +310,32 @@ final class TiktokenSplitter implements Splitter {
         if (newlineRun && lastNewline > 0) {
             return lastNewline;
         }
-        if (run == end || run - i == 1) {
+        if (run == end || run - i == len(at)) {
             return run;
         }
-        return run - 1; // the last blank goes with what follows it
+        return run - last; // the last blank goes with what follows it
     }
 
-    private static int contraction(CharSequence text, int i, int end, int mode) {
+    private static int contraction(byte[] text, int i, int end, int mode) {
         int p1 = i + 1;
         if (p1 >= end) {
             return -1;
         }
-        int c1 = codePointAt(text, p1, end);
+        int a1 = at(text, p1, end);
+        int c1 = cp(a1);
         if (is(c1, 's', mode) || is(c1, 't', mode) || is(c1, 'm', mode) || is(c1, 'd', mode)) {
-            return p1 + Character.charCount(c1);
+            return p1 + len(a1);
         }
-        int p2 = p1 + Character.charCount(c1);
+        int p2 = p1 + len(a1);
         if (p2 >= end) {
             return -1;
         }
-        int c2 = codePointAt(text, p2, end);
+        int a2 = at(text, p2, end);
+        int c2 = cp(a2);
         if ((is(c1, 'r', mode) && is(c2, 'e', mode))
                 || (is(c1, 'v', mode) && is(c2, 'e', mode))
                 || (is(c1, 'l', mode) && is(c2, 'l', mode))) {
-            return p2 + Character.charCount(c2);
+            return p2 + len(a2);
         }
         return -1;
     }
@@ -269,17 +354,17 @@ final class TiktokenSplitter implements Splitter {
         }
     }
 
-    private int word(CharSequence text, int i, int end, int cp, int cls) {
-        int after = i + Character.charCount(cp);
+    private int word(byte[] text, int i, int end, int at, int cls) {
+        int after = i + len(at);
         switch (word) {
             case SPACE_LETTERS:
                 if ((cls & CharClasses.LETTER) != 0) {
                     return run(text, after, end, CharClasses.LETTER);
                 }
-                if (cp == ' ' && after < end) {
-                    int c = codePointAt(text, after, end);
-                    if ((CharClasses.of(c) & CharClasses.LETTER) != 0) {
-                        return run(text, after + Character.charCount(c), end, CharClasses.LETTER);
+                if (cp(at) == ' ' && after < end) {
+                    int c = at(text, after, end);
+                    if ((CharClasses.of(cp(c)) & CharClasses.LETTER) != 0) {
+                        return run(text, after + len(c), end, CharClasses.LETTER);
                     }
                 }
                 return -1;
@@ -293,9 +378,9 @@ final class TiktokenSplitter implements Splitter {
                     return run(text, after, end, letters);
                 }
                 if (prefixable(cls) && after < end) {
-                    int c = codePointAt(text, after, end);
-                    if ((CharClasses.of(c) & letters) != 0) {
-                        return run(text, after + Character.charCount(c), end, letters);
+                    int c = at(text, after, end);
+                    if ((CharClasses.of(cp(c)) & letters) != 0) {
+                        return run(text, after + len(c), end, letters);
                     }
                 }
                 return -1;
@@ -309,7 +394,7 @@ final class TiktokenSplitter implements Splitter {
      * (Lm, Lo and marks are in both). {@code U*L+} backtracks to the last L-class char of the U run
      * when nothing L-class follows it.
      */
-    private int cased(CharSequence text, int i, int end, int cls, int after) {
+    private int cased(byte[] text, int i, int end, int cls, int after) {
         boolean prefixed = prefixable(cls);
         int e;
         if (prefixed && (e = upperThenLower(text, after, end)) > 0) {
@@ -328,16 +413,16 @@ final class TiktokenSplitter implements Splitter {
     }
 
     /** {@code U*L+} from {@code j}, or -1. */
-    private static int upperThenLower(CharSequence text, int j, int end) {
+    private static int upperThenLower(byte[] text, int j, int end) {
         int u = j;
         int lastLower = -1;
         while (u < end) {
-            int c = codePointAt(text, u, end);
-            int k = CharClasses.of(c);
+            int c = at(text, u, end);
+            int k = CharClasses.of(cp(c));
             if ((k & CharClasses.UPPER) == 0) {
                 break;
             }
-            u += Character.charCount(c);
+            u += len(c);
             if ((k & CharClasses.LOWER) != 0) {
                 lastLower = u;
             }
@@ -347,13 +432,13 @@ final class TiktokenSplitter implements Splitter {
     }
 
     /** {@code U+L*} from {@code j}, or -1. */
-    private static int upperMaybeLower(CharSequence text, int j, int end) {
+    private static int upperMaybeLower(byte[] text, int j, int end) {
         int u = run(text, j, end, CharClasses.UPPER);
         return u > j ? run(text, u, end, CharClasses.LOWER) : -1;
     }
 
-    private int suffixed(CharSequence text, int e, int end) {
-        if (wordSuffix && e < end && text.charAt(e) == '\'') {
+    private int suffixed(byte[] text, int e, int end) {
+        if (wordSuffix && e < end && text[e] == '\'') {
             int s = contraction(text, e, end, FOLD);
             if (s > 0) {
                 return s;
@@ -362,13 +447,13 @@ final class TiktokenSplitter implements Splitter {
         return e;
     }
 
-    private int number(CharSequence text, int i, int end, int cp, int cls) {
-        int after = i + Character.charCount(cp);
+    private int number(byte[] text, int i, int end, int at, int cls) {
+        int after = i + len(at);
         if ((cls & CharClasses.NUMBER) == 0) {
-            if (numbers == SPACE_RUN && cp == ' ' && after < end) {
-                int c = codePointAt(text, after, end);
-                if ((CharClasses.of(c) & CharClasses.NUMBER) != 0) {
-                    return run(text, after + Character.charCount(c), end, CharClasses.NUMBER);
+            if (numbers == SPACE_RUN && cp(at) == ' ' && after < end) {
+                int c = at(text, after, end);
+                if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) != 0) {
+                    return run(text, after + len(c), end, CharClasses.NUMBER);
                 }
             }
             return -1;
@@ -379,11 +464,11 @@ final class TiktokenSplitter implements Splitter {
             case UP_TO_THREE:
                 int e = after;
                 for (int n = 1; n < 3 && e < end; n++) {
-                    int c = codePointAt(text, e, end);
-                    if ((CharClasses.of(c) & CharClasses.NUMBER) == 0) {
+                    int c = at(text, e, end);
+                    if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) == 0) {
                         break;
                     }
-                    e += Character.charCount(c);
+                    e += len(c);
                 }
                 return e;
             default:
@@ -391,10 +476,10 @@ final class TiktokenSplitter implements Splitter {
         }
     }
 
-    private int other(CharSequence text, int i, int end, int cp, int cls) {
+    private int other(byte[] text, int i, int end, int cp, int cls) {
         int j = i;
         if (cp == ' ') {
-            if (i + 1 >= end || !isOther(CharClasses.of(codePointAt(text, i + 1, end)))) {
+            if (i + 1 >= end || !isOther(CharClasses.of(cp(at(text, i + 1, end))))) {
                 return -1;
             }
             j = i + 1;
@@ -403,15 +488,15 @@ final class TiktokenSplitter implements Splitter {
         }
         int e = j;
         do {
-            int c = codePointAt(text, e, end);
-            if (!isOther(CharClasses.of(c))) {
+            int c = at(text, e, end);
+            if (!isOther(CharClasses.of(cp(c)))) {
                 break;
             }
-            e += Character.charCount(c);
+            e += len(c);
         } while (e < end);
         if (otherTail != NO_TAIL) {
             while (e < end) {
-                char c = text.charAt(e);
+                byte c = text[e];
                 if (c == '\r' || c == '\n' || (otherTail == NEWLINES_SLASHES && c == '/')) {
                     e++;
                 } else {
@@ -436,29 +521,53 @@ final class TiktokenSplitter implements Splitter {
     }
 
     /** The end of the run of code points in {@code classes} that starts at {@code j}. */
-    private static int run(CharSequence text, int j, int end, int classes) {
+    private static int run(byte[] text, int j, int end, int classes) {
         while (j < end) {
-            int c = codePointAt(text, j, end);
-            if ((CharClasses.of(c) & classes) == 0) {
+            int c = at(text, j, end);
+            if ((CharClasses.of(cp(c)) & classes) == 0) {
                 break;
             }
-            j += Character.charCount(c);
+            j += len(c);
         }
         return j;
     }
 
+    // A decoded position packs the code point in the low 21 bits and its byte length above them.
+
+    private static int cp(int at) {
+        return at & 0x1FFFFF;
+    }
+
+    private static int len(int at) {
+        return at >>> 24;
+    }
+
     /**
-     * The code point at {@code i}; a surrogate without its partner before {@code end} is itself.
+     * The code point at {@code i}. Any ill-formed byte, which {@link #utf8} never writes, stands
+     * for U+FFFD and is one byte long.
      */
-    private static int codePointAt(CharSequence text, int i, int end) {
-        char c = text.charAt(i);
-        if (Character.isHighSurrogate(c) && i + 1 < end) {
-            char d = text.charAt(i + 1);
-            if (Character.isLowSurrogate(d)) {
-                return Character.toCodePoint(c, d);
-            }
+    private static int at(byte[] text, int i, int end) {
+        int b = text[i];
+        if (b >= 0) {
+            return (1 << 24) | b;
         }
-        return c;
+        if ((b & 0xE0) == 0xC0 && i + 1 < end) {
+            return (2 << 24) | ((b & 0x1F) << 6) | (text[i + 1] & 0x3F);
+        }
+        if ((b & 0xF0) == 0xE0 && i + 2 < end) {
+            return (3 << 24)
+                    | ((b & 0x0F) << 12)
+                    | ((text[i + 1] & 0x3F) << 6)
+                    | (text[i + 2] & 0x3F);
+        }
+        if ((b & 0xF8) == 0xF0 && i + 3 < end) {
+            return (4 << 24)
+                    | ((b & 0x07) << 18)
+                    | ((text[i + 1] & 0x3F) << 12)
+                    | ((text[i + 2] & 0x3F) << 6)
+                    | (text[i + 3] & 0x3F);
+        }
+        return (1 << 24) | 0xFFFD;
     }
 
     /**

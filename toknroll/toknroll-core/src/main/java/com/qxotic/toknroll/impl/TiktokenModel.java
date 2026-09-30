@@ -235,23 +235,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return 0;
         }
         int byteLength = utf8EncodeRange(source, startInclusive, endExclusive, s);
-        if (byteLength == 0) {
-            return 0;
-        }
-        if (shouldTryExactLookup(byteLength)) {
-            int exactTokenId = exactTokenLookup.find(s.utf8Bytes, byteLength);
-            if (exactTokenId >= 0) {
-                out.add(exactTokenId);
-                return 1;
-            }
-        }
-        if (byteLength <= TINY_CHUNK_THRESHOLD) {
-            return encodeTiny(s.utf8Bytes, byteLength, out);
-        }
-        if (byteLength < LARGE_CHUNK_THRESHOLD) {
-            return mergeSmall(s.utf8Bytes, byteLength, out, s);
-        }
-        return mergeLarge(s.utf8Bytes, byteLength, out, s);
+        return encodeWord(s.utf8Bytes, 0, byteLength, out, s);
     }
 
     private int countChunkRange(
@@ -264,22 +248,69 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return encodeChunkRange(source, startInclusive, endExclusive, tmp, s);
     }
 
+    /**
+     * Every pre-token of {@code text[start, end)} as {@code splitter} cuts them, in one call: the
+     * scratch is taken once, the output grown once, and the pieces come from an array rather than a
+     * callback per word.
+     */
+    void encode(
+            byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
+        Scratch s = acquireScratch();
+        try {
+            out.ensureCapacity(out.size() + estimateInitialTokenCapacity(end - start));
+            int[] ends = s.pieceEnds;
+            int cursor = start;
+            while (cursor < end) {
+                int n = splitter.split(text, cursor, end, ends);
+                for (int k = 0; k < n; k++) {
+                    int e = ends[k];
+                    encodeWord(text, cursor, e, out, s);
+                    cursor = e;
+                }
+            }
+        } finally {
+            releaseScratch(s);
+        }
+    }
+
+    /** One pre-token, as the UTF-8 bytes {@code [start, end)} of {@code text}. */
+    int encodeWord(byte[] text, int start, int end, IntSequence.Builder out, Scratch s) {
+        int byteLength = end - start;
+        if (byteLength <= 0) {
+            return 0;
+        }
+        if (shouldTryExactLookup(byteLength)) {
+            int exactTokenId = exactTokenLookup.find(text, start, byteLength);
+            if (exactTokenId >= 0) {
+                out.add(exactTokenId);
+                return 1;
+            }
+        }
+        if (byteLength <= TINY_CHUNK_THRESHOLD) {
+            return encodeTiny(text, start, byteLength, out);
+        }
+        if (byteLength < LARGE_CHUNK_THRESHOLD) {
+            return mergeSmall(text, start, byteLength, out, s);
+        }
+        return mergeLarge(text, start, byteLength, out, s);
+    }
+
     private boolean shouldTryExactLookup(int byteLength) {
         return byteLength > 0 && (ignoreMerges || byteLength > TINY_CHUNK_THRESHOLD);
     }
 
     // ---- Tiny / small path ----
 
-    private int encodeTiny(byte[] bytes, int byteLength, IntSequence.Builder out) {
+    private int encodeTiny(byte[] bytes, int off, int byteLength, IntSequence.Builder out) {
         if (byteLength == 1) {
-            int t0 = singleByteTokenId[bytes[0] & 0xFF];
+            int t0 = singleByteTokenId[bytes[off] & 0xFF];
             out.add(t0);
             return 1;
         }
         if (byteLength == 3) {
-            int t0 = singleByteTokenId[bytes[0] & 0xFF];
-            int t1 = singleByteTokenId[bytes[1] & 0xFF];
-            int t2 = singleByteTokenId[bytes[2] & 0xFF];
+            int t0 = singleByteTokenId[bytes[off] & 0xFF];
+            int t1 = singleByteTokenId[bytes[off + 1] & 0xFF];
+            int t2 = singleByteTokenId[bytes[off + 2] & 0xFF];
             long merge01 = merges.getPair(t0, t1);
             long merge12 = merges.getPair(t1, t2);
             int merge01Rank = mergeRank(merge01);
@@ -314,8 +345,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
             out.add(merge12Id);
             return 2;
         }
-        int t0 = singleByteTokenId[bytes[0] & 0xFF];
-        int t1 = singleByteTokenId[bytes[1] & 0xFF];
+        int t0 = singleByteTokenId[bytes[off] & 0xFF];
+        int t1 = singleByteTokenId[bytes[off + 1] & 0xFF];
         long mergedValue = merges.getPair(t0, t1);
         if (mergeRank(mergedValue) >= 0) {
             out.add(mergeId(mergedValue));
@@ -362,7 +393,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
     }
 
-    private int mergeSmall(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
+    private int mergeSmall(
+            byte[] bytes, int off, int byteLength, IntSequence.Builder out, Scratch s) {
         if (byteLength == 0) {
             return 0;
         }
@@ -375,13 +407,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
         int i = 0;
         int unrollLimit = size & ~3;
         for (; i < unrollLimit; i += 4) {
-            tokens[i + 3] = singleByteTokenId[bytes[i + 3] & 0xFF];
-            tokens[i + 2] = singleByteTokenId[bytes[i + 2] & 0xFF];
-            tokens[i + 1] = singleByteTokenId[bytes[i + 1] & 0xFF];
-            tokens[i] = singleByteTokenId[bytes[i] & 0xFF];
+            tokens[i + 3] = singleByteTokenId[bytes[off + i + 3] & 0xFF];
+            tokens[i + 2] = singleByteTokenId[bytes[off + i + 2] & 0xFF];
+            tokens[i + 1] = singleByteTokenId[bytes[off + i + 1] & 0xFF];
+            tokens[i] = singleByteTokenId[bytes[off + i] & 0xFF];
         }
         for (; i < size; i++) {
-            tokens[i] = singleByteTokenId[bytes[i] & 0xFF];
+            tokens[i] = singleByteTokenId[bytes[off + i] & 0xFF];
         }
 
         for (i = 0; i + 1 < size; i++) {
@@ -459,7 +491,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     // ---- Large path ----
 
-    private int mergeLarge(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
+    private int mergeLarge(
+            byte[] bytes, int off, int byteLength, IntSequence.Builder out, Scratch s) {
         int n = byteLength;
         s.ensureNodes(n);
 
@@ -471,7 +504,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         int[] edgeRank = s.edgeRank;
         int[] edgeMergeId = s.edgeMergeId;
 
-        initLargeNodes(bytes, n, token, prev, next, edgeStamp);
+        initLargeNodes(bytes, off, n, token, prev, next, edgeStamp);
 
         s.heapSize = 0;
         for (int left = 0; left + 1 < n; left++) {
@@ -519,32 +552,32 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private void initLargeNodes(
-            byte[] bytes, int n, int[] token, int[] prev, int[] next, int[] edgeStamp) {
+            byte[] bytes, int off, int n, int[] token, int[] prev, int[] next, int[] edgeStamp) {
         int i = 0;
         int unrollLimit = n & ~3;
         for (; i < unrollLimit; i += 4) {
-            token[i] = singleByteTokenId[bytes[i] & 0xFF];
+            token[i] = singleByteTokenId[bytes[off + i] & 0xFF];
             prev[i] = i - 1;
             next[i] = i + 1;
             edgeStamp[i] = 0;
 
-            token[i + 1] = singleByteTokenId[bytes[i + 1] & 0xFF];
+            token[i + 1] = singleByteTokenId[bytes[off + i + 1] & 0xFF];
             prev[i + 1] = i;
             next[i + 1] = i + 2;
             edgeStamp[i + 1] = 0;
 
-            token[i + 2] = singleByteTokenId[bytes[i + 2] & 0xFF];
+            token[i + 2] = singleByteTokenId[bytes[off + i + 2] & 0xFF];
             prev[i + 2] = i + 1;
             next[i + 2] = i + 3;
             edgeStamp[i + 2] = 0;
 
-            token[i + 3] = singleByteTokenId[bytes[i + 3] & 0xFF];
+            token[i + 3] = singleByteTokenId[bytes[off + i + 3] & 0xFF];
             prev[i + 3] = i + 2;
             next[i + 3] = i + 4;
             edgeStamp[i + 3] = 0;
         }
         for (; i < n; i++) {
-            token[i] = singleByteTokenId[bytes[i] & 0xFF];
+            token[i] = singleByteTokenId[bytes[off + i] & 0xFF];
             prev[i] = i - 1;
             next[i] = (i + 1 < n) ? i + 1 : NO_INDEX;
             edgeStamp[i] = 0;
@@ -855,6 +888,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     // ---- Scratch + exact-token lookup ----
 
     private static final class Scratch {
+        final int[] pieceEnds = new int[TiktokenSplitter.BATCH];
         byte[] utf8Bytes = new byte[0];
         int[] tokens = new int[0];
         long[] pairMergeIdRank = new long[0];
@@ -1000,12 +1034,12 @@ final class TiktokenModel extends AbstractTokenizationModel {
                     maxTokenBytes = tokenBytes.length;
                 }
 
-                int hash = hashBytes(tokenBytes, tokenBytes.length);
+                int hash = hashBytes(tokenBytes, 0, tokenBytes.length);
                 int slot = hash & mask;
                 while (ids[slot] != NO_TOKEN) {
                     byte[] existing = keys[slot];
                     if (hashes[slot] == hash
-                            && bytesEqual(existing, tokenBytes, tokenBytes.length)) {
+                            && bytesEqual(existing, tokenBytes, 0, tokenBytes.length)) {
                         break;
                     }
                     slot = (slot + 1) & mask;
@@ -1018,14 +1052,14 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return new ExactTokenLookup(keys, ids, hashes, mask, maxTokenBytes);
         }
 
-        int find(byte[] bytes, int length) {
+        int find(byte[] bytes, int off, int length) {
             if (length <= 0 || length > maxTokenBytes || ids.length == 0) {
                 return NO_TOKEN;
             }
-            int hash = hashBytes(bytes, length);
+            int hash = hashBytes(bytes, off, length);
             int slot = hash & mask;
             while (ids[slot] != NO_TOKEN) {
-                if (hashes[slot] == hash && bytesEqual(keys[slot], bytes, length)) {
+                if (hashes[slot] == hash && bytesEqual(keys[slot], bytes, off, length)) {
                     return ids[slot];
                 }
                 slot = (slot + 1) & mask;
@@ -1033,34 +1067,35 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return NO_TOKEN;
         }
 
-        private static int hashBytes(byte[] bytes, int length) {
+        private static int hashBytes(byte[] bytes, int off, int length) {
             // Hot path favors short ASCII-ish chunks; specialize tiny lengths to reduce loop
             // overhead.
             switch (length) {
                 case 1:
-                    return 31 + bytes[0];
+                    return 31 + bytes[off];
                 case 2:
-                    return ((31 + bytes[0]) * 31) + bytes[1];
+                    return ((31 + bytes[off]) * 31) + bytes[off + 1];
                 case 3:
-                    return (((31 + bytes[0]) * 31) + bytes[1]) * 31 + bytes[2];
+                    return (((31 + bytes[off]) * 31) + bytes[off + 1]) * 31 + bytes[off + 2];
                 case 4:
-                    return ((((31 + bytes[0]) * 31) + bytes[1]) * 31 + bytes[2]) * 31 + bytes[3];
+                    return ((((31 + bytes[off]) * 31) + bytes[off + 1]) * 31 + bytes[off + 2]) * 31
+                            + bytes[off + 3];
                 default:
                     int h = 1;
                     for (int i = 0; i < length; i++) {
-                        h = 31 * h + bytes[i];
+                        h = 31 * h + bytes[off + i];
                     }
                     return h;
             }
         }
 
-        private static boolean bytesEqual(byte[] a, byte[] b, int length) {
+        private static boolean bytesEqual(byte[] a, byte[] b, int off, int length) {
             if (a == null || a.length != length) {
                 return false;
             }
 
             for (int i = 0; i < length; i++) {
-                if (a[i] != b[i]) {
+                if (a[i] != b[off + i]) {
                     return false;
                 }
             }
