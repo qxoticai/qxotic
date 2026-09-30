@@ -159,8 +159,24 @@ public final class Main {
     static ChatEngine loadText(Options options, Options.Files files, Arena arena)
             throws IOException {
         var model = AOT.load(files.model(), files.companions(), files.tokenizer(), arena);
-        return new ChatEngine(model, files.model().getFileName().toString(), options.cacheOptions())
-                .speculationDepth(options.speculationDepth);
+        ChatEngine engine =
+                new ChatEngine(
+                                model,
+                                files.model().getFileName().toString(),
+                                options.cacheOptions())
+                        .speculationDepth(options.speculationDepth);
+        // an explicit depth on a model that cannot draft would be accepted and do nothing; 0 is
+        // "off", meaningful everywhere, and the default stays a default
+        if (options.supplied("--speculation-depth")
+                && options.speculationDepth > 0
+                && !engine.speculationReady()) {
+            engine.close();
+            throw new IllegalArgumentException(
+                    "--speculation-depth needs a draft head, which this model does not have;"
+                            + " --with speculation=<file> attaches one where the architecture"
+                            + " offers it");
+        }
+        return engine;
     }
 
     private static PrintStream utf8Stream(FileDescriptor fd) {
