@@ -147,9 +147,12 @@ final class Http {
             throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", contentType);
-        exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream out = exchange.getResponseBody()) {
+            // JDK 25 can leak its active-exchange count when a fixed-length write fails.
+            // HTTP/1.1 chunked close completes the exchange even after a failed write.
+            exchange.sendResponseHeaders(status, 0);
             out.write(bytes);
+            out.flush(); // surface write failures; the JDK's chunked close is best-effort
         }
     }
 

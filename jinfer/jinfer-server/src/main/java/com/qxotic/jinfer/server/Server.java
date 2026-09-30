@@ -330,18 +330,21 @@ public final class Server {
         server.createContext(path, gated(handler, admissions, config.limits().retryAfterSeconds()));
     }
 
-    /** Admits {@code handler} while a permit is free; otherwise 503 + Retry-After, quietly. */
+    /** Owns the exchange and its permit through cleanup; excess requests get 503 + Retry-After. */
     static HttpHandler gated(HttpHandler handler, Semaphore admissions, int retryAfterSeconds) {
         return exchange -> {
-            if (!admissions.tryAcquire()) {
-                exchange.getResponseHeaders().set("Retry-After", String.valueOf(retryAfterSeconds));
-                Http.sendErrorQuietly(exchange, 503, "Server busy: too many concurrent requests");
-                return;
-            }
-            try {
+            boolean admitted = admissions.tryAcquire();
+            try (exchange) {
+                if (!admitted) {
+                    exchange.getResponseHeaders()
+                            .set("Retry-After", String.valueOf(retryAfterSeconds));
+                    Http.sendErrorQuietly(
+                            exchange, 503, "Server busy: too many concurrent requests");
+                    return;
+                }
                 handler.handle(exchange);
             } finally {
-                admissions.release();
+                if (admitted) admissions.release();
             }
         };
     }
