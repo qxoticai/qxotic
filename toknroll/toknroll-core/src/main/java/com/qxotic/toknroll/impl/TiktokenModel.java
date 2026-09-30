@@ -49,7 +49,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
             LongLongMap merges,
             int[] singleByteTokenId,
             byte[][] tokenBytesById,
-            ExactTokenLookup exactTokenLookup,
             boolean ignoreMerges,
             float expectedTokensPerChar) {
         super(vocabulary, expectedTokensPerChar);
@@ -59,8 +58,30 @@ final class TiktokenModel extends AbstractTokenizationModel {
             throw new IllegalArgumentException("singleByteTokenId length must be 256");
         }
         this.tokenBytesById = Objects.requireNonNull(tokenBytesById, "tokenBytesById");
-        this.exactTokenLookup = Objects.requireNonNull(exactTokenLookup, "exactTokenLookup");
         this.ignoreMerges = ignoreMerges;
+        // Last, since proving which tokens fold runs the merge loop above.
+        this.exactTokenLookup =
+                ExactTokenLookup.fromVocabulary(
+                        vocabulary, ignoreMerges ? null : provenFolds(), tokenBytesById);
+    }
+
+    /**
+     * Which tokens the merge loop gives back whole from their own bytes: those a word can be taken
+     * for without merging. Proven by merging each once, so the probe never disagrees with the loop.
+     */
+    private boolean[] provenFolds() {
+        boolean[] folds = new boolean[tokenBytesById.length];
+        Scratch s = new Scratch();
+        for (int id = 0; id < folds.length; id++) {
+            byte[] bytes = tokenBytesById[id];
+            if (bytes == null || bytes.length == 0) {
+                continue;
+            }
+            IntSequence.Builder out = IntSequence.newBuilder(4);
+            merge(bytes, 0, bytes.length, out, s);
+            folds[id] = out.size() == 1 && out.asSequenceView().intAt(0) == id;
+        }
+        return folds;
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
@@ -90,19 +111,12 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
         int[] singleByteTokenId = buildSingleByteTokenMap(vocabulary);
         byte[][] tokenBytesById = buildTokenBytesById(vocabulary);
-        ExactTokenLookup exactTokenLookup =
-                ignoreMerges
-                        ? ExactTokenLookup.fromVocabulary(vocabulary)
-                        : ExactTokenLookup.fromVocabulary(
-                                vocabulary,
-                                buildMergeReachableMask(singleByteTokenId, tokenBytesById, merges));
 
         return new TiktokenModel(
                 vocabulary,
                 merges,
                 singleByteTokenId,
                 tokenBytesById,
-                exactTokenLookup,
                 ignoreMerges,
                 estimateTokensPerChar(vocabulary.size()));
     }
@@ -279,13 +293,21 @@ final class TiktokenModel extends AbstractTokenizationModel {
         if (byteLength <= 0) {
             return 0;
         }
-        if (shouldTryExactLookup(byteLength)) {
-            int exactTokenId = exactTokenLookup.find(text, start, byteLength);
-            if (exactTokenId >= 0) {
-                out.add(exactTokenId);
-                return 1;
-            }
+        if (byteLength == 1) {
+            out.add(singleByteTokenId[text[start] & 0xFF]);
+            return 1;
         }
+        int exactTokenId = exactTokenLookup.find(text, start, byteLength);
+        if (exactTokenId >= 0) {
+            out.add(exactTokenId);
+            return 1;
+        }
+        return merge(text, start, end, out, s);
+    }
+
+    /** The merge loop for a word of {@code text[start, end)}, by its length. */
+    private int merge(byte[] text, int start, int end, IntSequence.Builder out, Scratch s) {
+        int byteLength = end - start;
         if (byteLength <= TINY_CHUNK_THRESHOLD) {
             return encodeTiny(text, start, byteLength, out);
         }
@@ -293,10 +315,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return mergeSmall(text, start, byteLength, out, s);
         }
         return mergeLarge(text, start, byteLength, out, s);
-    }
-
-    private boolean shouldTryExactLookup(int byteLength) {
-        return byteLength > 0 && (ignoreMerges || byteLength > TINY_CHUNK_THRESHOLD);
     }
 
     // ---- Tiny / small path ----
@@ -799,24 +817,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return new IllegalArgumentException("Missing singleton byte token for value " + value);
     }
 
-    private static boolean[] buildMergeReachableMask(
-            int[] singleByteTokenId, byte[][] tokenBytesById, LongLongMap merges) {
-        boolean[] include = new boolean[tokenBytesById.length];
-        for (int id : singleByteTokenId) {
-            if (id >= 0 && id < include.length) {
-                include[id] = true;
-            }
-        }
-        merges.forEachValue(
-                value -> {
-                    int mergedId = IntPair.left(value);
-                    if (mergedId >= 0 && mergedId < include.length) {
-                        include[mergedId] = true;
-                    }
-                });
-        return include;
-    }
-
     private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
         int maxId = -1;
         for (Map.Entry<String, Integer> e : vocabulary) {
@@ -983,41 +983,39 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
     }
 
+    /**
+     * The tokens a word may be taken for whole, found with one probe. A word of up to seven bytes
+     * is its own key, packed into a long with its length; a longer one is keyed by a hash and
+     * confirmed against the token's bytes. Keys and ids interleave in one array, so a probe touches
+     * one cache line, and the slot comes from the key's high bits after a multiply.
+     */
     private static final class ExactTokenLookup {
+        private static final int INLINE_BYTES = 7;
+        private static final long HASHED = Long.MIN_VALUE; // a packed key never has this bit
 
-        private final byte[][] keys;
-        private final int[] ids;
-        private final int[] hashes;
-        private final int mask;
+        private final long[] table; // key, id, key, id, ...; key 0 is an empty slot
+        private final int shift;
         private final int maxTokenBytes;
+        private final byte[][] tokenBytesById;
 
         private ExactTokenLookup(
-                byte[][] keys, int[] ids, int[] hashes, int mask, int maxTokenBytes) {
-            this.keys = keys;
-            this.ids = ids;
-            this.hashes = hashes;
-            this.mask = mask;
+                long[] table, int shift, int maxTokenBytes, byte[][] tokenBytesById) {
+            this.table = table;
+            this.shift = shift;
             this.maxTokenBytes = maxTokenBytes;
+            this.tokenBytesById = tokenBytesById;
         }
 
-        static ExactTokenLookup fromVocabulary(Vocabulary vocabulary) {
-            return fromVocabulary(vocabulary, null);
-        }
-
-        static ExactTokenLookup fromVocabulary(Vocabulary vocabulary, boolean[] includeTokenId) {
-            int capacity = 1;
-            int needed = Math.max(16, vocabulary.size() * 2);
-            while (capacity < needed) {
-                capacity <<= 1;
+        /** Every token, or with {@code includeTokenId} only those it says. */
+        static ExactTokenLookup fromVocabulary(
+                Vocabulary vocabulary, boolean[] includeTokenId, byte[][] tokenBytesById) {
+            int slots = 16;
+            while (slots < vocabulary.size() * 2) {
+                slots <<= 1;
             }
-
-            byte[][] keys = new byte[capacity][];
-            int[] ids = new int[capacity];
-            int[] hashes = new int[capacity];
-            Arrays.fill(ids, NO_TOKEN);
-            int mask = capacity - 1;
+            int shift = Long.numberOfLeadingZeros(slots) + 1;
+            long[] table = new long[slots * 2];
             int maxTokenBytes = 0;
-
             for (Map.Entry<String, Integer> entry : vocabulary) {
                 int tokenId = entry.getValue();
                 if (includeTokenId != null
@@ -1030,76 +1028,57 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 if (tokenBytes.length == 0) {
                     continue;
                 }
-                if (tokenBytes.length > maxTokenBytes) {
-                    maxTokenBytes = tokenBytes.length;
+                maxTokenBytes = Math.max(maxTokenBytes, tokenBytes.length);
+                long key = key(tokenBytes, 0, tokenBytes.length);
+                int slot = slot(key, shift);
+                while (table[2 * slot] != 0) {
+                    slot = (slot + 1) & (slots - 1);
                 }
-
-                int hash = hashBytes(tokenBytes, 0, tokenBytes.length);
-                int slot = hash & mask;
-                while (ids[slot] != NO_TOKEN) {
-                    byte[] existing = keys[slot];
-                    if (hashes[slot] == hash
-                            && bytesEqual(existing, tokenBytes, 0, tokenBytes.length)) {
-                        break;
-                    }
-                    slot = (slot + 1) & mask;
-                }
-                keys[slot] = tokenBytes;
-                ids[slot] = tokenId;
-                hashes[slot] = hash;
+                table[2 * slot] = key;
+                table[2 * slot + 1] = tokenId;
             }
-
-            return new ExactTokenLookup(keys, ids, hashes, mask, maxTokenBytes);
+            return new ExactTokenLookup(table, shift, maxTokenBytes, tokenBytesById);
         }
 
         int find(byte[] bytes, int off, int length) {
-            if (length <= 0 || length > maxTokenBytes || ids.length == 0) {
+            if (length <= 0 || length > maxTokenBytes) {
                 return NO_TOKEN;
             }
-            int hash = hashBytes(bytes, off, length);
-            int slot = hash & mask;
-            while (ids[slot] != NO_TOKEN) {
-                if (hashes[slot] == hash && bytesEqual(keys[slot], bytes, off, length)) {
-                    return ids[slot];
+            long key = key(bytes, off, length);
+            int mask = (table.length >> 1) - 1;
+            for (int slot = slot(key, shift); ; slot = (slot + 1) & mask) {
+                long k = table[2 * slot];
+                if (k == 0) {
+                    return NO_TOKEN;
                 }
-                slot = (slot + 1) & mask;
-            }
-            return NO_TOKEN;
-        }
-
-        private static int hashBytes(byte[] bytes, int off, int length) {
-            // Hot path favors short ASCII-ish chunks; specialize tiny lengths to reduce loop
-            // overhead.
-            switch (length) {
-                case 1:
-                    return 31 + bytes[off];
-                case 2:
-                    return ((31 + bytes[off]) * 31) + bytes[off + 1];
-                case 3:
-                    return (((31 + bytes[off]) * 31) + bytes[off + 1]) * 31 + bytes[off + 2];
-                case 4:
-                    return ((((31 + bytes[off]) * 31) + bytes[off + 1]) * 31 + bytes[off + 2]) * 31
-                            + bytes[off + 3];
-                default:
-                    int h = 1;
-                    for (int i = 0; i < length; i++) {
-                        h = 31 * h + bytes[off + i];
+                if (k == key) {
+                    int id = (int) table[2 * slot + 1];
+                    if (length <= INLINE_BYTES
+                            || Arrays.equals(
+                                    tokenBytesById[id], 0, length, bytes, off, off + length)) {
+                        return id;
                     }
-                    return h;
+                }
             }
         }
 
-        private static boolean bytesEqual(byte[] a, byte[] b, int off, int length) {
-            if (a == null || a.length != length) {
-                return false;
-            }
-
-            for (int i = 0; i < length; i++) {
-                if (a[i] != b[off + i]) {
-                    return false;
+        private static long key(byte[] bytes, int off, int length) {
+            if (length <= INLINE_BYTES) {
+                long key = length;
+                for (int i = 0; i < length; i++) {
+                    key = (key << 8) | (bytes[off + i] & 0xFF);
                 }
+                return key;
             }
-            return true;
+            long h = 0xCBF29CE484222325L ^ length;
+            for (int i = 0; i < length; i++) {
+                h = (h ^ (bytes[off + i] & 0xFF)) * 0x100000001B3L;
+            }
+            return h | HASHED;
+        }
+
+        private static int slot(long key, int shift) {
+            return (int) ((key * 0x9E3779B97F4A7C15L) >>> shift);
         }
     }
 }
