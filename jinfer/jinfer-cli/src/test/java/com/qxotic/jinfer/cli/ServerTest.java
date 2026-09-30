@@ -322,4 +322,80 @@ class ServerTest {
                         l.requestTimeout(),
                         Duration.ZERO));
     }
+
+    /** Probes answer while every admission permit is held; only generation waits or is refused. */
+    @Test
+    void probesAnswerWhileTheGateIsSaturated() throws Exception {
+        Options o =
+                Options.parse(
+                        "server",
+                        "-m",
+                        "unused",
+                        "--port",
+                        "0",
+                        "--concurrency",
+                        "1",
+                        "--write-timeout",
+                        "5");
+        var capture = new CliFixtures.Capture("");
+        var config =
+                Server.config(
+                        o, o.sampling(com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE));
+        var limits = config.limits(); // no shutdown grace: the held requests never complete
+        config =
+                config.withLimits(
+                        new ServerConfig.Limits(
+                                limits.threads(),
+                                limits.queueCapacity(),
+                                limits.maxBodyBytes(),
+                                limits.grammar(),
+                                limits.writeTimeout(),
+                                limits.requestTimeout(),
+                                Duration.ZERO));
+        try (var engine = CliFixtures.engine(new CliFixtures.Template());
+                var running = Server.startLanguage(engine, config, capture.io);
+                var client =
+                        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            String base = "http://127.0.0.1:" + running.address().getPort();
+            // two requests that announce a body and never send it: each holds a permit inside
+            // the gate, reading until the write timeout - both permits, at concurrency 1
+            var held = new java.util.ArrayList<java.net.Socket>();
+            try {
+                for (int i = 0; i < 2; i++) {
+                    var socket = new java.net.Socket("127.0.0.1", running.address().getPort());
+                    socket.getOutputStream()
+                            .write(
+                                    ("POST /v1/completions HTTP/1.1\r\nHost: localhost\r\n"
+                                                    + "Content-Type: application/json\r\n"
+                                                    + "Content-Length: 64\r\n\r\n")
+                                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                    socket.getOutputStream().flush();
+                    held.add(socket);
+                }
+                Thread.sleep(500);
+                var refused =
+                        client.send(
+                                HttpRequest.newBuilder(URI.create(base + "/v1/completions"))
+                                        .timeout(Duration.ofSeconds(5))
+                                        .header("Content-Type", "application/json")
+                                        .POST(
+                                                HttpRequest.BodyPublishers.ofString(
+                                                        "{\"prompt\":\"Hi\",\"max_tokens\":1}"))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString());
+                assertEquals(503, refused.statusCode(), "the gate is saturated: " + refused.body());
+                for (String probe : List.of("/health", "/props", "/v1/models", "/metrics")) {
+                    var answer =
+                            client.send(
+                                    HttpRequest.newBuilder(URI.create(base + probe))
+                                            .timeout(Duration.ofSeconds(5))
+                                            .build(),
+                                    HttpResponse.BodyHandlers.ofString());
+                    assertEquals(200, answer.statusCode(), probe + ": " + answer.body());
+                }
+            } finally {
+                for (var socket : held) socket.close();
+            }
+        }
+    }
 }

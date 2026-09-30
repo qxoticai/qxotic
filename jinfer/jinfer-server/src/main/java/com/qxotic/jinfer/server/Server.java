@@ -181,7 +181,7 @@ public final class Server {
         }
         modelCard.put("supports_image_input", supportsImages);
         modelCard.put("architecture", Map.of("input_modalities", List.copyOf(inputModalities)));
-        route(
+        probe(
                 server,
                 "/v1/models",
                 exchange -> { // also serves /v1/models/{id} -> card or 404
@@ -216,13 +216,13 @@ public final class Server {
         route(server, "/v1/responses", exchange -> handleResponse(exchange, config));
         // liveness probes carry no key: /health is open (llama.cpp's is too); it says nothing
         // a probe should not know (up, busy, queue depth)
-        jsonRoute(
+        jsonProbe(
                 server,
                 "/health",
                 "GET",
                 request -> Map.of("status", "ok", "busy", worker.busy(), "queued", worker.queued()),
                 new ServerConfig.Access(null, config.access().allowedOrigins()));
-        jsonRoute(
+        jsonProbe(
                 server,
                 "/props",
                 "GET",
@@ -248,7 +248,8 @@ public final class Server {
                                                 "top_k", sampling.topK(),
                                                 "min_p", trim(sampling.minP())),
                                 "prompt_cache", promptCacheProps(),
-                                "media_cache", mediaCacheProps()));
+                                "media_cache", mediaCacheProps()),
+                config.access());
         Function<Map<String, Object>, Object> tokenize =
                 request -> {
                     // present-but-empty is a legitimate question (the answer is []); ABSENT is a
@@ -297,8 +298,8 @@ public final class Server {
         jsonRoute(server, "/v1/tokenize", "POST", tokenize); // /v1-prefixed aliases
         jsonRoute(server, "/detokenize", "POST", detokenize);
         jsonRoute(server, "/v1/detokenize", "POST", detokenize);
-        route(server, "/metrics", this::handleMetrics);
-        route(
+        probe(server, "/metrics", this::handleMetrics);
+        probe(
                 server,
                 "/",
                 exchange -> {
@@ -326,8 +327,18 @@ public final class Server {
         return Executors.newCachedThreadPool();
     }
 
+    /** Work: admitted through the gate, so at most {@code 2 x threads} handlers run model work. */
     private void route(HttpServer server, String path, HttpHandler handler) {
         server.createContext(path, gated(handler, admissions, config.limits().retryAfterSeconds()));
+    }
+
+    /**
+     * Observability: never gated. A probe runs no model work, and a load balancer or a scrape needs
+     * it most in exactly the saturated state the gate reports - a 503 there would hide the busy and
+     * queued figures /health exists to show.
+     */
+    private static void probe(HttpServer server, String path, HttpHandler handler) {
+        server.createContext(path, handler);
     }
 
     /** Owns the exchange and its permit through cleanup; excess requests get 503 + Retry-After. */
@@ -359,55 +370,59 @@ public final class Server {
             String path,
             String method,
             Function<Map<String, Object>, Object> body) {
-        jsonRoute(server, path, method, body, config.access());
+        route(server, path, jsonHandler(path, method, body, config.access()));
     }
 
-    private void jsonRoute(
+    private void jsonProbe(
             HttpServer server,
             String path,
             String method,
             Function<Map<String, Object>, Object> body,
             ServerConfig.Access access) {
-        route(
-                server,
-                path,
-                exchange -> {
-                    if (Http.preamble(exchange, access)) return;
-                    // contexts match by longest PREFIX: /v1/models/garbage would land here - 404 it
-                    if (!exchange.getRequestURI().getPath().equals(path)) {
-                        Http.sendError(exchange, 404, "Not found");
-                        return;
-                    }
-                    if (method != null && Http.requireMethod(exchange, method)) return;
-                    Map<String, Object> request = Map.of();
-                    if ("POST".equals(method)) {
-                        byte[] raw =
-                                Http.readBody(
-                                        exchange,
-                                        config.limits().maxBodyBytes(),
-                                        config.limits().writeTimeout());
-                        if (raw == null) return;
-                        try {
-                            request = Values.asObject(JsonCodec.parse(raw), "request");
-                        } catch (RuntimeException e) {
-                            Http.sendError(exchange, 400, Http.errorMessage(e));
-                            return;
-                        }
-                    }
-                    try {
-                        Http.sendJson(exchange, 200, body.apply(request));
-                    } catch (IllegalArgumentException | UnsupportedOperationException e) {
-                        // the SAME rule the generation endpoints use: only the two types a
-                        // validator throws are the client's fault. A blanket RuntimeException ->
-                        // 400 here told clients their request was malformed whenever this server
-                        // had a defect, and echoed the JVM's own text while doing it
-                        Http.sendError(exchange, clientStatus(e), Http.errorMessage(e));
-                    } catch (RuntimeException e) {
-                        Log.LOG.log(
-                                System.Logger.Level.ERROR, "unhandled fault serving " + path, e);
-                        Http.sendErrorQuietly(exchange, 500, "Internal server error");
-                    }
-                });
+        probe(server, path, jsonHandler(path, method, body, access));
+    }
+
+    private HttpHandler jsonHandler(
+            String path,
+            String method,
+            Function<Map<String, Object>, Object> body,
+            ServerConfig.Access access) {
+        return exchange -> {
+            if (Http.preamble(exchange, access)) return;
+            // contexts match by longest PREFIX: /v1/models/garbage would land here - 404 it
+            if (!exchange.getRequestURI().getPath().equals(path)) {
+                Http.sendError(exchange, 404, "Not found");
+                return;
+            }
+            if (method != null && Http.requireMethod(exchange, method)) return;
+            Map<String, Object> request = Map.of();
+            if ("POST".equals(method)) {
+                byte[] raw =
+                        Http.readBody(
+                                exchange,
+                                config.limits().maxBodyBytes(),
+                                config.limits().writeTimeout());
+                if (raw == null) return;
+                try {
+                    request = Values.asObject(JsonCodec.parse(raw), "request");
+                } catch (RuntimeException e) {
+                    Http.sendError(exchange, 400, Http.errorMessage(e));
+                    return;
+                }
+            }
+            try {
+                Http.sendJson(exchange, 200, body.apply(request));
+            } catch (IllegalArgumentException | UnsupportedOperationException e) {
+                // the SAME rule the generation endpoints use: only the two types a
+                // validator throws are the client's fault. A blanket RuntimeException ->
+                // 400 here told clients their request was malformed whenever this server
+                // had a defect, and echoed the JVM's own text while doing it
+                Http.sendError(exchange, clientStatus(e), Http.errorMessage(e));
+            } catch (RuntimeException e) {
+                Log.LOG.log(System.Logger.Level.ERROR, "unhandled fault serving " + path, e);
+                Http.sendErrorQuietly(exchange, 500, "Internal server error");
+            }
+        };
     }
 
     private interface RequestJob {
