@@ -56,10 +56,10 @@ final class Chat {
             } catch (IOException e) {
                 throw Main.failure("cannot read chat input from stdin", e);
             }
-            if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) {
-                break;
-            }
-            if (userText.isBlank()) {
+            if (userText == null) break;
+            userText = userText.strip();
+            if ("/quit".equals(userText) || "/exit".equals(userText)) break;
+            if (userText.isEmpty()) {
                 continue; // an empty turn would scaffold a reply to nothing
             }
             if ("/context".equals(userText)) {

@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.cli;
 
-import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.hub.ModelStore;
@@ -102,7 +101,6 @@ final class Options {
     private void read(Args args) {
         if (!args.isOption()) {
             if (command != null) operands.add(args.token);
-            else if (args.token.equals("help")) help = true;
             else select(args.token);
             return;
         }
@@ -348,9 +346,7 @@ final class Options {
         }
     }
 
-    /**
-     * All properties land before touching RuntimeFlags: accessing either field initializes both.
-     */
+    /** Runs before anything touches RuntimeFlags: the properties must land first. */
     void configureRuntime() throws IOException {
         if (System.getProperty("org.graalvm.nativeimage.imagecode") == null
                 && ModuleLayer.boot().findModule("jdk.incubator.vector").isEmpty())
@@ -359,17 +355,6 @@ final class Options {
         if (threads != null) System.setProperty("jinfer.threads", threads.toString());
         if (batchCapacity != null)
             System.setProperty("jinfer.batchCapacity", batchCapacity.toString());
-        if (threads != null && RuntimeFlags.THREADS != threads)
-            throw new IOException(
-                    "--threads came too late: runtime already initialized; pass -Djinfer.threads="
-                            + threads
-                            + " to the JVM");
-        if (batchCapacity != null && RuntimeFlags.BATCH_CAPACITY != batchCapacity)
-            throw new IOException(
-                    "--batch-capacity came too late: runtime already initialized; pass"
-                            + " -Djinfer.batchCapacity="
-                            + batchCapacity
-                            + " to the JVM");
     }
 
     record Files(Path model, Map<String, Path> companions, Path tokenizer) {}

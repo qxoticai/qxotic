@@ -215,7 +215,8 @@ public final class FrozenBlocks {
      * Everything the file says about itself, for a reader with no model in hand: format, the
      * recorded identity and whether it matches the stored digest, both commit slots and which one
      * serves, the index, and every block - all checksums verified, since a report that skipped them
-     * would be a guess. Never throws on a bad file: what could not be read is said in place.
+     * would be a guess. A damaged cache is described, not refused: what could not be read is said
+     * in place. A file that never was one is refused as {@link #open} refuses it.
      */
     public static String describe(Path file) throws IOException {
         StringBuilder out = new StringBuilder();
@@ -223,17 +224,11 @@ public final class FrozenBlocks {
             long size = ch.size();
             out.append("frozen prompt cache ").append(file).append('\n');
             out.append(row("file", bytes(size)));
-            if (size < HEADER_BYTES) {
-                return out.append(row("format", "not a frozen prompt cache (truncated header)"))
-                        .toString();
-            }
+            if (size < HEADER_BYTES) throw corrupt(file, "truncated header");
             ByteBuffer header = ByteBuffer.allocate(PAGE_BYTES).order(ByteOrder.LITTLE_ENDIAN);
             readFully(ch, header, 0);
             header.flip();
-            if (header.getInt(0) != MAGIC) {
-                return out.append(row("format", "not a frozen prompt cache (bad magic)"))
-                        .toString();
-            }
+            if (header.getInt(0) != MAGIC) throw corrupt(file, "bad magic");
             out.append(
                     row(
                             "format",

@@ -119,14 +119,15 @@ class HubTest {
                         ModelStore.of(dir)),
                 capture.err());
         assertEquals(FrozenBlocks.describe(file), capture.out());
+        // a file that never was a cache is refused with the exit code a script can act on
         Files.writeString(file, "corrupt");
+        var junk = new CliFixtures.Capture("");
         assertEquals(
-                0,
+                1,
                 Main.run(
-                        new String[] {"cache-info", file.toString()},
-                        capture.io,
-                        ModelStore.of(dir)));
-        assertTrue(capture.out().contains("not a frozen prompt cache"));
+                        new String[] {"cache-info", file.toString()}, junk.io, ModelStore.of(dir)));
+        assertEquals("", junk.out());
+        assertTrue(junk.err().contains("not a valid frozen prompt cache"), junk.err());
     }
 
     @Test

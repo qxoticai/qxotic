@@ -38,7 +38,7 @@ class ChatTest {
 
     @Test
     void eofAndExitDoNotGenerate() throws Exception {
-        for (String input : new String[] {"", "/exit\n"}) {
+        for (String input : new String[] {"", "/exit\n", "  /quit  \n"}) {
             var template = new CliFixtures.Template();
             var capture = new CliFixtures.Capture(input);
             Options o = Options.parse("chat", "-m", "unused");
