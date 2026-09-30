@@ -130,13 +130,24 @@ final class TiktokenSplitter implements Splitter {
         return kernel;
     }
 
+    /**
+     * The sample covers every kind of piece and the rare shapes a kernel handles by hand (a run
+     * longer than its lookahead, a character or a contraction cut by a block edge), so the check
+     * means something and, as a side effect, every path has run once before the JIT compiles.
+     */
     private boolean agrees(Kernels candidate) {
         StringBuilder sample = new StringBuilder();
         for (int i = 0; i < 40; i++) {
             sample.append("I'd say it's 12345 pieces!! \n\n  \r\n x  \t y ")
                     .append("naïve 東京 ٣٤٥ 𝐀𝐁 'ſ 'LL'VE (?!)  \u00a0\u2028\n\n\n  z");
             sample.append(" ".repeat(i * 7)).append(i % 3 == 0 ? "\n" : "a").append('\'');
+            sample.append("x".repeat(60 + i)).append("'s Q!́a !!́A ʰABC 中Qz aB McDonald /\n/#\r\n");
         }
+        sample.append("\n").append(" ".repeat(5000)).append("\n x\n").append("\t".repeat(5000));
+        sample.append("a".repeat(200)).append("B").append("c".repeat(200)).append("D");
+        sample.append("E".repeat(200)).append("ʰ").append("F".repeat(200)).append("g");
+        sample.append("١".repeat(100)).append("7".repeat(100)).append(" ").append("é".repeat(70));
+        sample.append("😀".repeat(70)).append("\u0301".repeat(70)).append("\uD800\uDC00");
         byte[] text = utf8(sample, 0, sample.length());
         int end = text.length - PADDING;
         try {
