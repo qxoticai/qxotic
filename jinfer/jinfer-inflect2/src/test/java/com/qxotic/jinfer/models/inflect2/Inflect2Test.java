@@ -289,6 +289,39 @@ class Inflect2Test {
     }
 
     @Test
+    void aPhonemeRunPastTheLimitIsCutAtSpacesAndClosedWithCommas() {
+        List<int[]> pieces = InflectTTS.pieces(ids("ab cd ef gh"), 5);
+        assertEquals(2, pieces.size());
+        assertArrayEquals(ids("ab cd,"), pieces.get(0), "the last space inside the limit");
+        assertArrayEquals(ids("ef gh"), pieces.get(1), "the rest, the cutting space dropped");
+
+        pieces = InflectTTS.pieces(ids("abcdefg"), 3);
+        assertEquals(3, pieces.size(), "no space: hard cuts");
+        assertArrayEquals(ids("abc,"), pieces.get(0));
+        assertArrayEquals(ids("def,"), pieces.get(1));
+        assertArrayEquals(ids("g"), pieces.get(2));
+
+        pieces = InflectTTS.pieces(ids("ab cd"), 5);
+        assertEquals(1, pieces.size(), "under the limit: untouched");
+        assertArrayEquals(ids("ab cd"), pieces.get(0));
+        assertTrue(InflectTTS.pieces(new int[0], 5).isEmpty(), "nothing to say, no piece");
+    }
+
+    @Test
+    @Tag("integration")
+    void aRunOfHexIsSpokenNotRefused() throws IOException {
+        // 280 characters of hex are 1649 phonemes once every letter is spelled: cut on the text
+        // alone the chunk needs 6937 frames at speed 1, over the model's ceiling, twice that at
+        // half speed
+        InflectTTS tts = InflectTTS.load(TestModels.require(REF), Arena.ofAuto());
+        try (Inflect2.State state = tts.newState()) {
+            String hex = "3f9a2c7be14d6058".repeat(19);
+            Media.Audio audio = tts.speak(state, hex, SpeechOptions.speed(0.5));
+            assertTrue(audio.pcm().length > 24000 * 60, "a minute of hex at least");
+        }
+    }
+
+    @Test
     @Tag("integration")
     void aRunOfIdentifiersIsSpokenNotRefused() throws IOException {
         // 277 raw characters, 1174 once every digit is a word: chunked on the raw text the

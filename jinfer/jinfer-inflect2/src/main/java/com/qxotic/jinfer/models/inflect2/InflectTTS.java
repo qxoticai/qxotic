@@ -7,6 +7,7 @@
 //
 // Long text is split into sentence-sized chunks, each synthesized separately and faded at its
 // edges, with a punctuation-dependent pause between them (as in the reference implementation).
+// A chunk the model cannot fit in one pass is cut again, by phoneme count, at word spaces.
 package com.qxotic.jinfer.models.inflect2;
 
 import com.qxotic.format.gguf.GGUF;
@@ -25,6 +26,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -45,6 +47,18 @@ public final class InflectTTS
 
     /** Marks the model can rest on - anything here ends a chunk. */
     private static final String MARKS = ".!?;:,";
+
+    private static final int SPACE = Inflect2.SYMBOLS.indexOf(" ");
+    private static final int COMMA = Inflect2.SYMBOLS.indexOf(",");
+
+    /**
+     * Frames the duration predictor spends per phoneme at speed 1, rounded up, which turns the
+     * model's frame ceiling into a phoneme count. Characters are the wrong unit for that ceiling: a
+     * spelled-out run (hex, an identifier) costs six phonemes per character where prose costs one.
+     * ponytail: 4.2-5.1 measured over prose, digits, hex and identifiers; the model still refuses a
+     * chunk past its ceiling, so a wilder run is a loud refusal, not a crash.
+     */
+    private static final int FRAMES_PER_PHONEME = 6;
 
     /** Edge fade applied to every chunk, to keep the joins from clicking. */
     private static final double FADE_MILLIS = 5;
@@ -245,10 +259,16 @@ public final class InflectTTS
         state.exclusively(
                 () -> {
                     for (int i = 0; i < chunks.size(); i++) {
-                        if (i > 0 && !sink.test(silence(pauseSamples(chunks.get(i - 1))))) return;
-                        int[] phonemes = phonemizer.phonemize(chunks.get(i));
-                        if (phonemes.length == 0) continue;
-                        if (!sink.test(synthesize(state, phonemes, options))) return;
+                        List<int[]> pieces =
+                                pieces(phonemizer.phonemize(chunks.get(i)), phonemeLimit(options));
+                        for (int j = 0; j < pieces.size(); j++) {
+                            if (i > 0 || j > 0) {
+                                // a chunk rests by its own mark; a cut inside one rests on a comma
+                                String before = j == 0 ? chunks.get(i - 1) : ",";
+                                if (!sink.test(silence(pauseSamples(before)))) return;
+                            }
+                            if (!sink.test(synthesize(state, pieces.get(j), options))) return;
+                        }
                     }
                 });
     }
@@ -261,6 +281,34 @@ public final class InflectTTS
             throw new IllegalArgumentException(
                     "speed must be in [" + MIN_SPEED + ", " + MAX_SPEED + "]: " + speed);
         return speed;
+    }
+
+    /** The frame ceiling in phonemes at this rate: a slower rate spends more frames per phoneme. */
+    private int phonemeLimit(SpeechOptions options) {
+        return (int)
+                (model.configuration().maxContextLength() / FRAMES_PER_PHONEME * speed(options));
+    }
+
+    /**
+     * A phoneme run in pieces of at most {@code limit}: cut at the last space inside the limit,
+     * else hard, the cutting space dropped. Every piece but the last is closed with a comma, as
+     * {@link #terminated} closes a mid-sentence text chunk, so its final phoneme is rendered.
+     */
+    static List<int[]> pieces(int[] phonemes, int limit) {
+        List<int[]> pieces = new ArrayList<>();
+        int from = 0;
+        while (phonemes.length - from > limit) {
+            int end = from + limit;
+            while (end > from && phonemes[end] != SPACE) end--;
+            boolean hard = end == from; // no space inside the limit
+            if (hard) end = from + limit;
+            int[] piece = Arrays.copyOfRange(phonemes, from, end + 1); // one past: the comma's slot
+            piece[end - from] = COMMA;
+            pieces.add(piece);
+            from = hard ? end : end + 1; // the cutting space is dropped
+        }
+        if (from < phonemes.length) pieces.add(Arrays.copyOfRange(phonemes, from, phonemes.length));
+        return pieces;
     }
 
     private Media.Audio silence(int samples) {
