@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.loaders;
 
 import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.impl.FastSplitters;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -71,6 +70,18 @@ public final class ModelSplitters {
         "[0-9][0-9][0-9]"
     };
 
+    private static final String TEKKEN_PATTERN =
+            "[^\\r"
+                + "\\n"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r"
+                + "\\n"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}|"
+                + " ?[^\\s\\p{L}\\p{N}]+[\\r"
+                + "\\n"
+                + "/]*|\\s*[\\r"
+                + "\\n"
+                + "]+|\\s+(?!\\S)|\\s+";
+
     private static final Pattern LLAMA3_COMPILED =
             Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern QWEN2_COMPILED =
@@ -78,10 +89,12 @@ public final class ModelSplitters {
 
     public static final Splitter LLAMA3 = Splitter.regex(LLAMA3_COMPILED);
     public static final Splitter QWEN2 = Splitter.regex(QWEN2_COMPILED);
-    public static final Splitter QWEN35 = FastSplitters.qwen35();
+    public static final Splitter QWEN35 =
+            Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
     public static final Splitter SMOLLM2 = sequence(SMOLLM2_PATTERNS);
     public static final Splitter REFACT = sequence(REFACT_PATTERNS);
-    public static final Splitter TEKKEN = FastSplitters.tekken();
+    public static final Splitter TEKKEN =
+            Splitter.regex(Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
     public static final Splitter MISTRAL_TEKKEN = TEKKEN;
     public static final Splitter DEEPSEEK_LATEST = QWEN35;
     public static final Splitter KIMI_25 = QWEN35;

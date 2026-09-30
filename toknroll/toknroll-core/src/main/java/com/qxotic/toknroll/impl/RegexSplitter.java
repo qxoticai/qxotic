@@ -8,13 +8,20 @@ import java.util.regex.Pattern;
 final class RegexSplitter implements Splitter {
 
     private final Pattern pattern;
+    private final boolean emitGaps;
 
-    private RegexSplitter(Pattern pattern) {
+    private RegexSplitter(Pattern pattern, boolean emitGaps) {
         this.pattern = pattern;
+        this.emitGaps = emitGaps;
     }
 
     public static RegexSplitter create(Pattern pattern) {
-        return new RegexSplitter(Objects.requireNonNull(pattern, "pattern"));
+        return create(pattern, true);
+    }
+
+    /** With {@code emitGaps} false, text between two matches is dropped instead of emitted. */
+    public static RegexSplitter create(Pattern pattern, boolean emitGaps) {
+        return new RegexSplitter(Objects.requireNonNull(pattern, "pattern"), emitGaps);
     }
 
     @Override
@@ -39,14 +46,14 @@ final class RegexSplitter implements Splitter {
         int lastEnd = startInclusive;
         while (matcher.find()) {
             int matchStart = matcher.start();
-            if (matchStart > lastEnd) {
+            if (emitGaps && matchStart > lastEnd) {
                 consumer.accept(text, lastEnd, matchStart);
             }
             int matchEnd = matcher.end();
             consumer.accept(text, matchStart, matchEnd);
             lastEnd = matchEnd;
         }
-        if (lastEnd < endExclusive) {
+        if (emitGaps && lastEnd < endExclusive) {
             consumer.accept(text, lastEnd, endExclusive);
         }
     }

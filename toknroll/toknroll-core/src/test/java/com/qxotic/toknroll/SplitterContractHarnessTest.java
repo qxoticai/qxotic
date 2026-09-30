@@ -1,6 +1,5 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.SplitterContractHarness;
 import com.qxotic.toknroll.testkit.TestCorpora;
@@ -34,11 +33,6 @@ class SplitterContractHarnessTest {
                         "regex",
                         Splitter.regex(
                                 Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS))),
-                new SplitterCase("fast-r50k", FastSplitters.r50k()),
-                new SplitterCase("fast-llama3", FastSplitters.llama3()),
-                new SplitterCase("fast-cl100k", FastSplitters.cl100k()),
-                new SplitterCase("fast-qwen35", FastSplitters.qwen35()),
-                new SplitterCase("fast-o200k", FastSplitters.o200k()),
                 new SplitterCase("model-llama3", ModelSplitters.LLAMA3),
                 new SplitterCase("model-qwen2", ModelSplitters.QWEN2),
                 new SplitterCase("model-qwen35", ModelSplitters.QWEN35),

@@ -948,6 +948,15 @@ public final class HuggingFaceTokenizerLoader {
         if (regex instanceof String) {
             String regexPattern = (String) regex;
             Pattern pattern = Pattern.compile(regexPattern, UNICODE_REGEX_FLAGS);
+            // The two spellings of "each match is a piece": Isolated also keeps the text between
+            // matches, Removed with invert drops it. Both take the core splitter, and a known
+            // pattern its scanner.
+            if ("Isolated".equals(behavior) && !invert) {
+                return ImplAccessor.createRegexSplitter(pattern, true);
+            }
+            if ("Removed".equals(behavior) && invert) {
+                return ImplAccessor.createRegexSplitter(pattern, false);
+            }
             return (text, startInclusive, endExclusive, consumer) -> {
                 CharSequence source = text.subSequence(startInclusive, endExclusive);
                 for (Span span : splitByPatternWithBehavior(source, pattern, behavior, invert)) {
