@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.spi.CharClasses;
 import com.qxotic.toknroll.testkit.SplitterParityHarness;
 import java.util.ArrayList;
 import java.util.List;
@@ -133,8 +134,7 @@ class TiktokenSplitterTest {
                     expected |= 1 << i;
                 }
             }
-            assertEquals(
-                    expected, TiktokenSplitter.CharClasses.of(cp), "U+" + Integer.toHexString(cp));
+            assertEquals(expected, CharClasses.of(cp), "U+" + Integer.toHexString(cp));
         }
     }
 

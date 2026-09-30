@@ -16,6 +16,31 @@ public interface Kernels {
      */
     byte[] utf8(CharSequence text, int start, int end, int padding);
 
+    /**
+     * The pre-tokenization regex of cl100k and Llama 3: {@code (?i:'s|'t|'re|'ve|'m|'ll|'d)|
+     * [^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+| \s+(?!\S)|\s+}, a
+     * rule set for {@link #split}.
+     */
+    int CL100K = 0;
+
+    /** {@link #CL100K} with the contraction spelled {@code '[sS]|'[tT]|...}: no long s. */
+    int CL100K_ASCII = 1;
+
+    /** {@link #CL100K} with one digit at a time, {@code \p{N}}: Qwen2 and its descendants. */
+    int QWEN2 = 2;
+
+    /** {@link #QWEN2} with the contraction spelled {@code '[sS]|'[tT]|...}. */
+    int QWEN2_ASCII = 3;
+
+    /**
+     * Cuts pieces from {@code text[start, end)} under one of the rule sets above, in the order the
+     * regex finds them: each entry of {@code ends} the end of one piece, until the array is full or
+     * the text ends. Returns how many, 0 when the kernel cannot cut a piece here (the caller then
+     * scans by hand), or -1 when it does not implement {@code rules}. {@code start} must be a piece
+     * boundary, the text UTF-8, and readable for 16 bytes past {@code end}.
+     */
+    int split(int rules, byte[] text, int start, int end, int[] ends);
+
     /** Core's own implementation. */
     static Kernels scalar() {
         return ScalarKernels.INSTANCE;

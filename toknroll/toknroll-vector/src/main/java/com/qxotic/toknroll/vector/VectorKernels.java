@@ -24,6 +24,22 @@ public final class VectorKernels implements Kernels {
     /** Chars copied out of the text at a time: in L1, and a surrogate pair is never cut. */
     private static final int CHUNK = 4096;
 
+    /** The bitstream engine per rule set of {@link Kernels#split}. */
+    private static final BitSplit[] SPLITS = {
+        BitSplit.forRules(CL100K),
+        BitSplit.forRules(CL100K_ASCII),
+        BitSplit.forRules(QWEN2),
+        BitSplit.forRules(QWEN2_ASCII)
+    };
+
+    @Override
+    public int split(int rules, byte[] text, int start, int end, int[] ends) {
+        if (rules < 0 || rules >= SPLITS.length) {
+            return -1;
+        }
+        return SPLITS[rules].split(text, start, end, ends);
+    }
+
     @Override
     public byte[] utf8(CharSequence text, int start, int end, int padding) {
         char[] chunk = new char[CHUNK];
