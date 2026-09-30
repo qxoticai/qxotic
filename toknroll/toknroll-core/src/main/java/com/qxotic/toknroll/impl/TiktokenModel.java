@@ -276,6 +276,10 @@ final class TiktokenModel extends AbstractTokenizationModel {
         Scratch s = acquireScratch();
         try {
             out.ensureCapacity(out.size() + estimateInitialTokenCapacity(end - start));
+            if (out instanceof IntSequenceBuilder) {
+                encode(text, start, end, splitter, (IntSequenceBuilder) out, s);
+                return;
+            }
             int[] ends = s.pieceEnds;
             int cursor = start;
             while (cursor < end) {
@@ -288,6 +292,58 @@ final class TiktokenModel extends AbstractTokenizationModel {
             }
         } finally {
             releaseScratch(s);
+        }
+    }
+
+    /**
+     * {@link #encode} into the model's own builder: a single byte and a cached word write their ids
+     * straight into its array, with the room for a batch of them made once, and only a miss goes
+     * through the builder.
+     */
+    private void encode(
+            byte[] text,
+            int start,
+            int end,
+            TiktokenSplitter splitter,
+            IntSequenceBuilder out,
+            Scratch s) {
+        int[] ends = s.pieceEnds;
+        WordCache cache = s.kept ? s.wordCache() : null;
+        int cursor = start;
+        while (cursor < end) {
+            int n = splitter.split(text, cursor, end, ends);
+            out.ensureCapacity(out.size() + n * WordCache.MAX_IDS);
+            int[] ids = out.data();
+            int size = out.size();
+            for (int k = 0; k < n; k++) {
+                int e = ends[k];
+                int length = e - cursor;
+                if (length == 1) {
+                    ids[size++] = singleByteTokenId[text[cursor] & 0xFF];
+                } else {
+                    int hit =
+                            cache != null && length <= WordCache.MAX_BYTES
+                                    ? cache.lookup(text, cursor, e, ids, size)
+                                    : 0;
+                    if (hit > 0) {
+                        size += hit;
+                    } else {
+                        out.size(size);
+                        encodeMiss(
+                                text,
+                                cursor,
+                                e,
+                                out,
+                                s,
+                                cache != null && length <= WordCache.MAX_BYTES ? cache : null);
+                        out.ensureCapacity(out.size() + (n - k) * WordCache.MAX_IDS);
+                        ids = out.data();
+                        size = out.size();
+                    }
+                }
+                cursor = e;
+            }
+            out.size(size);
         }
     }
 
@@ -308,9 +364,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 return cached;
             }
         }
+        return encodeMiss(text, start, end, out, s, cache);
+    }
+
+    /**
+     * A word of two bytes or more that {@code cache} does not hold, looked up just before: a token
+     * as it is, else merged; then recorded in the cache when it takes few enough ids.
+     */
+    private int encodeMiss(
+            byte[] text, int start, int end, IntSequence.Builder out, Scratch s, WordCache cache) {
         int first = out.size();
         int count;
-        int exactTokenId = exactTokenLookup.find(text, start, byteLength);
+        int exactTokenId = exactTokenLookup.find(text, start, end - start);
         if (exactTokenId >= 0) {
             out.add(exactTokenId);
             count = 1;
@@ -457,48 +522,19 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
 
         while (size >= 2) {
-            int bestRank = Integer.MAX_VALUE;
-            int bestPos = NO_INDEX;
+            // The lowest rank and where it sits, in one long each: no branch per pair, so the
+            // scan runs at the speed of the loads. A pair without a merge scores the maximum.
+            long best = Long.MAX_VALUE;
             int pairCount = size - 1;
-
-            int scan = 0;
-            int scanLimit = pairCount & ~3;
-            for (; scan < scanLimit; scan += 4) {
-                int mergedRank = (int) pairMergeIdRank[scan];
-                if (mergedRank >= 0 && mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan;
-                }
-                mergedRank = (int) pairMergeIdRank[scan + 1];
-                if (mergedRank >= 0 && mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan + 1;
-                }
-                mergedRank = (int) pairMergeIdRank[scan + 2];
-                if (mergedRank >= 0 && mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan + 2;
-                }
-                mergedRank = (int) pairMergeIdRank[scan + 3];
-                if (mergedRank >= 0 && mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan + 3;
-                }
+            for (int scan = 0; scan < pairCount; scan++) {
+                long rank = (int) pairMergeIdRank[scan];
+                long keyed = (rank << 8) | scan;
+                best = Math.min(best, rank < 0 ? Long.MAX_VALUE : keyed);
             }
-            for (; scan < pairCount; scan++) {
-                int mergedRank = (int) pairMergeIdRank[scan];
-                if (mergedRank < 0) {
-                    continue;
-                }
-                if (mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan;
-                }
-            }
-
-            if (bestPos == NO_INDEX) {
+            if (best == Long.MAX_VALUE) {
                 break;
             }
+            int bestPos = (int) (best & 0xFF);
 
             tokens[bestPos] = (int) (pairMergeIdRank[bestPos] >>> 32);
             int tail = size - bestPos - 2;
