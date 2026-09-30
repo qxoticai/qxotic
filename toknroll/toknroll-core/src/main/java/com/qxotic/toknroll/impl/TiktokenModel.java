@@ -82,7 +82,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             }
             IntSequence.Builder out = IntSequence.newBuilder(4);
             merge(bytes, 0, bytes.length, out, s);
-            folds[id] = out.size() == 1 && out.asSequenceView().intAt(0) == id;
+            folds[id] = out.size() == 1 && ((IntSequenceBuilder) out).get(0) == id;
         }
         return folds;
     }

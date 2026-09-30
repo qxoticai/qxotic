@@ -83,6 +83,14 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         return new BuilderSequenceView(this, 0, 0, true);
     }
 
+    /** The element at {@code index}, for a caller in this package that must not allocate a view. */
+    int get(int index) {
+        if (index < 0 || index >= size) {
+            throw new IndexOutOfBoundsException("index " + index + " of " + size);
+        }
+        return data[index];
+    }
+
     private static final class BuilderSequenceView extends AbstractIntSequence {
         private final IntSequenceBuilder builder;
         private final int offset;

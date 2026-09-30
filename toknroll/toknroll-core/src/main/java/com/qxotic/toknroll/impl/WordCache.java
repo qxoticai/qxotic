@@ -42,6 +42,7 @@ final class WordCache {
     private long lo;
     private long hi;
     private byte tag;
+    private int victim;
     private int slot; // where the last lookup found its word, or where it should go
 
     /**
@@ -80,7 +81,12 @@ final class WordCache {
             same &= same - 1;
         }
         long empty = zeroBytes(row);
-        this.slot = empty != 0 ? home + (Long.numberOfTrailingZeros(empty) >>> 3) : home;
+        // A full window evicts a rotating slot, not always the home one: two frequent words with
+        // one home would otherwise take turns evicting each other.
+        this.slot =
+                empty != 0
+                        ? home + (Long.numberOfTrailingZeros(empty) >>> 3)
+                        : home + (victim++ & (WINDOW - 1));
         this.tag = (byte) tag;
         return 0;
     }
@@ -89,14 +95,19 @@ final class WordCache {
     void insert(IntSequence.Builder out, int first, int count) {
         int slot = this.slot;
         tags[slot] = tag;
-        IntSequence added = out.asSequenceView();
         int at = 4 * slot + 2;
         slots[at] = lo;
         slots[at + 1] = hi | ((long) count << 60);
         slots[at + 2] =
-                (added.intAt(first) & 0xFFFFFFFFL)
-                        | (count > 1 ? (long) added.intAt(first + 1) << 32 : 0);
-        slots[at + 3] = count > 2 ? added.intAt(first + 2) : 0;
+                (id(out, first) & 0xFFFFFFFFL) | (count > 1 ? (long) id(out, first + 1) << 32 : 0);
+        slots[at + 3] = count > 2 ? id(out, first + 2) : 0;
+    }
+
+    /** An id already appended to {@code out}, without a view object for the model's own builder. */
+    private static int id(IntSequence.Builder out, int index) {
+        return out instanceof IntSequenceBuilder
+                ? ((IntSequenceBuilder) out).get(index)
+                : out.asSequenceView().intAt(index);
     }
 
     /** The bytes of a long that are zero, as their high bits. */
