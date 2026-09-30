@@ -1104,14 +1104,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
         private static final long HASHED = Long.MIN_VALUE; // a packed key never has this bit
 
-        private final long[] table; // key, id, key, id, ...; key 0 is an empty slot
+        // The keys alone in one array, so a probe walks a table half the size and only a hit,
+        // one word in ten of those that come here, reads the id beside it.
+        private final long[] keys; // 0 is an empty slot
+        private final int[] ids;
         private final int shift;
         private final int maxTokenBytes;
         private final byte[][] tokenBytesById;
 
         private ExactTokenLookup(
-                long[] table, int shift, int maxTokenBytes, byte[][] tokenBytesById) {
-            this.table = table;
+                long[] keys, int[] ids, int shift, int maxTokenBytes, byte[][] tokenBytesById) {
+            this.keys = keys;
+            this.ids = ids;
             this.shift = shift;
             this.maxTokenBytes = maxTokenBytes;
             this.tokenBytesById = tokenBytesById;
@@ -1125,7 +1129,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 slots <<= 1;
             }
             int shift = Long.numberOfLeadingZeros(slots) + 1;
-            long[] table = new long[slots * 2];
+            long[] keys = new long[slots];
+            int[] ids = new int[slots];
             int maxTokenBytes = 0;
             for (Map.Entry<String, Integer> entry : vocabulary) {
                 int tokenId = entry.getValue();
@@ -1143,13 +1148,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 long key =
                         key(Arrays.copyOf(tokenBytes, tokenBytes.length + 8), 0, tokenBytes.length);
                 int slot = slot(key, shift);
-                while (table[2 * slot] != 0) {
+                while (keys[slot] != 0) {
                     slot = (slot + 1) & (slots - 1);
                 }
-                table[2 * slot] = key;
-                table[2 * slot + 1] = tokenId;
+                keys[slot] = key;
+                ids[slot] = tokenId;
             }
-            return new ExactTokenLookup(table, shift, maxTokenBytes, tokenBytesById);
+            return new ExactTokenLookup(keys, ids, shift, maxTokenBytes, tokenBytesById);
         }
 
         int find(byte[] bytes, int off, int length) {
@@ -1157,14 +1162,15 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 return NO_TOKEN;
             }
             long key = key(bytes, off, length);
-            int mask = (table.length >> 1) - 1;
+            long[] keys = this.keys;
+            int mask = keys.length - 1;
             for (int slot = slot(key, shift); ; slot = (slot + 1) & mask) {
-                long k = table[2 * slot];
+                long k = keys[slot];
                 if (k == 0) {
                     return NO_TOKEN;
                 }
                 if (k == key) {
-                    int id = (int) table[2 * slot + 1];
+                    int id = ids[slot];
                     if (length <= INLINE_BYTES
                             || Arrays.equals(
                                     tokenBytesById[id], 0, length, bytes, off, off + length)) {
