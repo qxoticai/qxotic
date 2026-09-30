@@ -6,7 +6,9 @@ import com.qxotic.toknroll.Vocabulary;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -1023,6 +1025,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
      */
     private static final class ExactTokenLookup {
         private static final int INLINE_BYTES = 7;
+        private static final VarHandle LONGS =
+                MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
         private static final long HASHED = Long.MIN_VALUE; // a packed key never has this bit
 
         private final long[] table; // key, id, key, id, ...; key 0 is an empty slot
@@ -1061,7 +1065,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
                     continue;
                 }
                 maxTokenBytes = Math.max(maxTokenBytes, tokenBytes.length);
-                long key = key(tokenBytes, 0, tokenBytes.length);
+                long key =
+                        key(Arrays.copyOf(tokenBytes, tokenBytes.length + 8), 0, tokenBytes.length);
                 int slot = slot(key, shift);
                 while (table[2 * slot] != 0) {
                     slot = (slot + 1) & (slots - 1);
@@ -1096,11 +1101,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
         private static long key(byte[] bytes, int off, int length) {
             if (length <= INLINE_BYTES) {
-                long key = length;
-                for (int i = 0; i < length; i++) {
-                    key = (key << 8) | (bytes[off + i] & 0xFF);
-                }
-                return key;
+                // One load; the bytes past the word are readable, see TiktokenSplitter.PADDING.
+                long word = (long) LONGS.get(bytes, off) & ((1L << (8 * length)) - 1);
+                return word | ((long) length << 56);
             }
             long h = 0xCBF29CE484222325L ^ length;
             for (int i = 0; i < length; i++) {
