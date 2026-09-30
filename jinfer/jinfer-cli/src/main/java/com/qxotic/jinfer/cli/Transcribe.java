@@ -140,7 +140,8 @@ final class Transcribe {
                   jinfer transcribe -m parakeet.gguf - < recording.wav
 
                   --raw-pcm                  live stdin: 16 kHz mono signed 16-bit little-endian PCM
-                  --theme <name>             live-view palette: mint, nord, catppuccin, ember, frost, mono
+                  --theme <name>             live-view palette with --raw-pcm: mint, nord, catppuccin, ember, frost, mono
+                  --color <auto|on|off>      live-view colors (default: auto)
 
                 '-' reads encoded audio unless --raw-pcm is supplied.
                 Final transcripts go to stdout; live partials and progress go to stderr.

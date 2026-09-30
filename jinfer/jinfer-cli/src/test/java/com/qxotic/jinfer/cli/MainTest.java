@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -223,5 +224,53 @@ class MainTest {
             assertTrue(capture.err().contains("\n  input device closed"));
             assertFalse(capture.err().contains("\tat "));
         }
+    }
+
+    /**
+     * Every option a command's help names is one that command accepts, and a command's help names
+     * nothing it refuses: the help and the parser cannot drift apart.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"chat", "instruct", "server", "speak", "transcribe"})
+    void helpNamesOnlyOptionsTheCommandAccepts(String verb) {
+        var help = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {verb, "--help"}, help.io, ModelStore.of(dir)));
+        String operand =
+                switch (verb) {
+                    case "instruct", "speak" -> "hi";
+                    case "transcribe" -> "-";
+                    default -> null;
+                };
+        var flags =
+                help.out()
+                        .lines()
+                        .filter(line -> line.startsWith("  -"))
+                        .flatMap(
+                                line ->
+                                        java.util.regex.Pattern.compile("--[a-z-]+")
+                                                .matcher(line)
+                                                .results())
+                        .map(java.util.regex.MatchResult::group)
+                        .distinct()
+                        .toList();
+        assertFalse(flags.isEmpty(), verb + " help lists options");
+        for (String flag : flags) {
+            var args = new java.util.ArrayList<>(List.of(verb, "-m", "m"));
+            if (operand != null) args.add(operand);
+            args.addAll(List.of(flag, "1"));
+            try {
+                Options.parse(args.toArray(String[]::new));
+            } catch (Options.UsageException e) {
+                // a value or a switch may be wrong here; the option itself must be in scope
+                for (String scope : List.of("does not apply", "unknown option", "must follow"))
+                    assertFalse(
+                            e.getMessage().contains(scope),
+                            verb + " " + flag + ": " + e.getMessage());
+            }
+        }
+        if (verb.equals("server"))
+            assertFalse(help.out().contains("inline"), "server cannot route thoughts inline");
+        if (verb.equals("speak") || verb.equals("server"))
+            assertFalse(help.out().contains("--color"), verb + " never reads --color");
     }
 }

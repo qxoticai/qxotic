@@ -153,7 +153,11 @@ final class Options {
                 attach(attached.substring(0, eq), attached.substring(eq + 1));
             }
             case "--threads", "-t" -> threads = a.integer();
-            case "--color" -> color = a.value().toLowerCase(Locale.ROOT);
+            case "--color" -> {
+                color = a.value().toLowerCase(Locale.ROOT);
+                use(a.name, Set.of("chat", "instruct", "transcribe")); // read by Turn and the HUD
+                return true;
+            }
             default -> {
                 return false;
             }
@@ -592,7 +596,6 @@ final class Options {
                   -m, --model <path|ref>       model file or hub reference; required
                   --with <role>=<path|ref>     attach a companion; repeatable for different roles
                   -t, --threads <int>          compute workers (default: physical/fast cores)
-                  --color <auto|on|off>        terminal colors (default: auto)
 
                 References: [host/]owner/repo[@revision][/file][:quant]. Default host: hf.co.
                 Existing local files win. Remote files are downloaded once and cached.
@@ -612,11 +615,11 @@ final class Options {
                   -c, --context-capacity <int> state capacity; default min(4096, model); 0: model maximum
                   --batch-capacity <int>      default prefill/scratch width (runtime default: 512)
                   -n, --max-output-tokens <int> generated-token budget; -1: remaining context
-                  --think <off|on|inline>     off: no reasoning; on: reason on stderr; inline: on stdout
+                  --think <off|on>            off: do not reason; on: allow model reasoning
                   --max-reasoning-tokens <int> reasoning budget; -1: uncapped
                   --reasoning-cutoff-message <text> forced text when the reasoning budget runs out
                   --speculation-depth <int>   draft depth in [0, 8]; default 4
-                  --with tokenizer=<path|ref> use another GGUF's compatible tokenizer
+                  --with tokenizer=<path|ref> use another GGUF's tokenizer; refused at load if its ids differ
 
                 Unspecified sampling settings use the model's recommendations, then engine defaults.
                 """);
@@ -625,9 +628,12 @@ final class Options {
     static void conversationHelp(PrintStream out) {
         out.println(
                 """
+                Conversation options (before or after the command):
                   --system-prompt <text>      conversation instructions
-                  --stream / --no-stream     stream generated text (default: on)
-                  --echo / --no-echo         echo token spellings to stderr (default: off)
+                  --think inline              send thoughts to stdout instead of stderr
+                  --stream / --no-stream      stream generated text (default: on)
+                  --echo / --no-echo          echo token spellings to stderr (default: off)
+                  --color <auto|on|off>       terminal colors (default: auto)
                 """);
     }
 }
