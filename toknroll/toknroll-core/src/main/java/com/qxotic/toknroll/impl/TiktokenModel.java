@@ -268,31 +268,64 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /**
      * Every pre-token of {@code text[start, end)} as {@code splitter} cuts them, in one call: the
      * scratch is taken once, the output grown once, and the pieces come from an array rather than a
-     * callback per word. The text must have {@link TiktokenSplitter#PADDING} readable bytes past
-     * {@code end}.
+     * callback per word. A word is read eight bytes at a time, so the last pieces, those ending
+     * within {@link TiktokenSplitter#PADDING} bytes of the array's end, are encoded from a padded
+     * copy.
      */
     void encode(
             byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
         Scratch s = acquireScratch();
         try {
-            out.ensureCapacity(out.size() + estimateInitialTokenCapacity(end - start));
             if (out instanceof IntSequenceBuilder) {
+                // grown a batch at a time: a caller's estimate from the chars is not second-guessed
                 encode(text, start, end, splitter, (IntSequenceBuilder) out, s);
                 return;
             }
+            out.ensureCapacity(out.size() + estimateInitialTokenCapacity(end - start));
             int[] ends = s.pieceEnds;
             int cursor = start;
             while (cursor < end) {
                 int n = splitter.split(text, cursor, end, ends);
-                for (int k = 0; k < n; k++) {
+                int inPlace = inPlace(text, ends, n);
+                for (int k = 0; k < inPlace; k++) {
                     int e = ends[k];
                     encodeWord(text, cursor, e, out, s);
                     cursor = e;
+                }
+                if (inPlace < n) {
+                    byte[] tail = paddedTail(text, cursor, end, s);
+                    encode(tail, 0, end - cursor, splitter, out);
+                    return;
                 }
             }
         } finally {
             releaseScratch(s);
         }
+    }
+
+    /**
+     * How many of the batch's pieces can be read where they are: all but the last few of a text.
+     */
+    private static int inPlace(byte[] text, int[] ends, int n) {
+        int limit = text.length - TiktokenSplitter.PADDING;
+        if (ends[n - 1] <= limit) {
+            return n;
+        }
+        int k = 0;
+        while (ends[k] <= limit) {
+            k++;
+        }
+        return k;
+    }
+
+    /** {@code text[cursor, end)} in the scratch, followed by readable zero bytes. */
+    private static byte[] paddedTail(byte[] text, int cursor, int end, Scratch s) {
+        int length = end - cursor;
+        s.ensureUtf8(length);
+        byte[] tail = s.utf8Bytes;
+        System.arraycopy(text, cursor, tail, 0, length);
+        java.util.Arrays.fill(tail, length, length + TiktokenSplitter.PADDING, (byte) 0);
+        return tail;
     }
 
     /**
@@ -312,10 +345,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
         int cursor = start;
         while (cursor < end) {
             int n = splitter.split(text, cursor, end, ends);
+            int inPlace = inPlace(text, ends, n);
             out.ensureCapacity(out.size() + n * WordCache.MAX_IDS);
             int[] ids = out.data();
             int size = out.size();
-            for (int k = 0; k < n; k++) {
+            for (int k = 0; k < inPlace; k++) {
                 int e = ends[k];
                 int length = e - cursor;
                 if (length == 1) {
@@ -344,6 +378,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 cursor = e;
             }
             out.size(size);
+            if (inPlace < n) {
+                byte[] tail = paddedTail(text, cursor, end, s);
+                encode(tail, 0, end - cursor, splitter, out, s);
+                return;
+            }
         }
     }
 

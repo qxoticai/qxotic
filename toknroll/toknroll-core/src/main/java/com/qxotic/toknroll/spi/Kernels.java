@@ -54,7 +54,7 @@ public interface Kernels {
      * regex finds them: each entry of {@code ends} the end of one piece, until the array is full or
      * the text ends. Returns how many, 0 when the kernel cannot cut a piece here (the caller then
      * scans by hand), or -1 when it does not implement {@code rules}. {@code start} must be a piece
-     * boundary, the text UTF-8, and readable for 16 bytes past {@code end}.
+     * boundary and the text UTF-8; nothing past {@code end} is read.
      */
     int split(int rules, byte[] text, int start, int end, int[] ends);
 
