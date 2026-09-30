@@ -83,10 +83,30 @@ final class TiktokenSplitter implements Splitter {
 
     /** Which of the rule sets a kernel may implement this scanner is, or -1. */
     private int kernelRules() {
+        if (otherExcludesMarks) {
+            return -1;
+        }
+        if (word == SPACE_LETTERS) {
+            boolean r50k =
+                    contraction == LOWER
+                            && !wordSuffix
+                            && numbers == SPACE_RUN
+                            && otherTail == NO_TAIL
+                            && !newlineRun;
+            return r50k ? Kernels.R50K : -1;
+        }
+        if (word == CASED) {
+            if (contraction != NO_CONTRACTION || otherTail != NEWLINES_SLASHES || !newlineRun) {
+                return -1;
+            }
+            if (wordSuffix && numbers == UP_TO_THREE) {
+                return Kernels.O200K;
+            }
+            return !wordSuffix && numbers == ONE ? Kernels.TEKKEN : -1;
+        }
         boolean family =
                 word == PREFIX_LETTERS
                         && !wordSuffix
-                        && !otherExcludesMarks
                         && otherTail == NEWLINES
                         && newlineRun
                         && (contraction == FOLD || contraction == ASCII_BOTH);

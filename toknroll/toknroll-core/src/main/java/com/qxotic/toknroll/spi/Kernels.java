@@ -33,6 +33,23 @@ public interface Kernels {
     int QWEN2_ASCII = 3;
 
     /**
+     * The regex of r50k and GPT-2's byte level pre-tokenizer: {@code 's|'t|'re|'ve|'m|'ll|'d|
+     * ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+}.
+     */
+    int R50K = 4;
+
+    /**
+     * The regex of o200k, gpt-4o and gpt-oss: {@code [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}
+     * \p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|} the same with {@code
+     * +} and {@code *} swapped {@code |\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|
+     * \s*[\r\n]+|\s+(?!\S)|\s+}.
+     */
+    int O200K = 5;
+
+    /** {@link #O200K} without the contraction suffix and with one digit at a time: Tekken. */
+    int TEKKEN = 6;
+
+    /**
      * Cuts pieces from {@code text[start, end)} under one of the rule sets above, in the order the
      * regex finds them: each entry of {@code ends} the end of one piece, until the array is full or
      * the text ends. Returns how many, 0 when the kernel cannot cut a piece here (the caller then

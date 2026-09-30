@@ -29,7 +29,10 @@ public final class VectorKernels implements Kernels {
         BitSplit.forRules(CL100K),
         BitSplit.forRules(CL100K_ASCII),
         BitSplit.forRules(QWEN2),
-        BitSplit.forRules(QWEN2_ASCII)
+        BitSplit.forRules(QWEN2_ASCII),
+        BitSplit.forRules(R50K),
+        BitSplit.forRules(O200K),
+        BitSplit.forRules(TEKKEN)
     };
 
     @Override
