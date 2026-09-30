@@ -71,47 +71,25 @@ final class BitSplit {
         }
 
         /**
-         * Every stream of {@code c} one position later, carrying in the previous block's last bit.
+         * The streams the rules read one position later ("what held just before here"), carrying in
+         * the previous block's last bit. The rest are left alone.
          */
         void back(Block c, Block p) {
-            lead = (c.lead << 1) | (p.lead >>> 63);
-            cont = (c.cont << 1) | (p.cont >>> 63);
-            lu = (c.lu << 1) | (p.lu >>> 63);
-            ll = (c.ll << 1) | (p.ll >>> 63);
-            lc = (c.lc << 1) | (p.lc >>> 63);
-            mark = (c.mark << 1) | (p.mark >>> 63);
             letters = (c.letters << 1) | (p.letters >>> 63);
-            word = (c.word << 1) | (p.word >>> 63);
             n = (c.n << 1) | (p.n >>> 63);
             nl = (c.nl << 1) | (p.nl >>> 63);
             sp = (c.sp << 1) | (p.sp >>> 63);
             ws = (c.ws << 1) | (p.ws >>> 63);
-            oth = (c.oth << 1) | (p.oth >>> 63);
             other = (c.other << 1) | (p.other >>> 63);
-            apo = (c.apo << 1) | (p.apo >>> 63);
-            slash = (c.slash << 1) | (p.slash >>> 63);
         }
 
         /**
-         * Every stream of {@code c} one position earlier, carrying in the next block's first bit.
+         * The streams the rules read one position earlier ("what holds just after here"), carrying
+         * in the next block's first bit. The rest are left alone.
          */
         void forward(Block c, Block x) {
             lead = (c.lead >>> 1) | (x.lead << 63);
-            cont = (c.cont >>> 1) | (x.cont << 63);
-            lu = (c.lu >>> 1) | (x.lu << 63);
-            ll = (c.ll >>> 1) | (x.ll << 63);
-            lc = (c.lc >>> 1) | (x.lc << 63);
-            mark = (c.mark >>> 1) | (x.mark << 63);
-            letters = (c.letters >>> 1) | (x.letters << 63);
-            word = (c.word >>> 1) | (x.word << 63);
-            n = (c.n >>> 1) | (x.n << 63);
-            nl = (c.nl >>> 1) | (x.nl << 63);
-            sp = (c.sp >>> 1) | (x.sp << 63);
             ws = (c.ws >>> 1) | (x.ws << 63);
-            oth = (c.oth >>> 1) | (x.oth << 63);
-            other = (c.other >>> 1) | (x.other << 63);
-            apo = (c.apo >>> 1) | (x.apo << 63);
-            slash = (c.slash >>> 1) | (x.slash << 63);
         }
     }
 
