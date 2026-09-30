@@ -3,15 +3,26 @@ package com.qxotic.toknroll.impl;
 import java.util.function.LongConsumer;
 
 /**
- * Immutable open-addressing hash map from {@code long} keys (packed {@link IntPair}) to {@code
- * long} values. Backed by flat primitive arrays with no object overhead.
+ * Immutable map from {@code long} keys (packed {@link IntPair}) to {@code long} values, built for
+ * the merge table of a BPE model.
+ *
+ * <p>Two stores. Pairs whose halves are both under {@link #GRID} live in a dense grid: one index
+ * load and one value load, no hashing. Token ids follow merge rank closely in a BPE vocabulary, so
+ * the grid holds the merges between the alphabet and the earliest products, which is where three
+ * quarters of the lookups of a merge loop land. Every other pair goes to an open-addressing table
+ * with the key and the value side by side, so a probe touches one cache line.
  */
 final class LongLongMap {
 
+    /** Pairs with both halves under this take the grid. */
+    private static final int GRID = 512;
+
+    private static final char NO_GRID_ENTRY = Character.MAX_VALUE;
     private static final long EMPTY = 0L;
 
-    private final long[] table;
-    private final int capacity;
+    private final char[] gridIndex; // [left << 9 | right] -> index into gridValues
+    private final long[] gridValues;
+    private final long[] table; // biased key, value, biased key, value, ...
     private final int mask;
     private final int maxProbe;
 
@@ -20,60 +31,75 @@ final class LongLongMap {
         if (keys.length != values.length) {
             throw new IllegalArgumentException("keys and values must have the same length");
         }
-        this.capacity = tableSizeFor(keys.length);
+        int gridEntries = 0;
+        for (long key : keys) {
+            if (inGrid(key)) {
+                gridEntries++;
+            }
+        }
+        if (gridEntries >= NO_GRID_ENTRY) {
+            throw new IllegalStateException(gridEntries + " grid entries exceed a char index");
+        }
+        this.gridIndex = new char[GRID * GRID];
+        java.util.Arrays.fill(gridIndex, NO_GRID_ENTRY);
+        this.gridValues = new long[gridEntries];
+
+        int capacity = tableSizeFor(keys.length - gridEntries);
         this.mask = capacity - 1;
         this.table = new long[capacity << 1];
-
         int observedMaxProbe = 0;
-
+        int nextGridEntry = 0;
         for (int i = 0; i < keys.length; i++) {
             long currentRawKey = keys[i];
-            long currentBiasedKey = currentRawKey + 1;
             long currentValue = values[i];
+            if (inGrid(currentRawKey)) {
+                gridIndex[gridSlot(currentRawKey)] = (char) nextGridEntry;
+                gridValues[nextGridEntry++] = currentValue;
+                continue;
+            }
+            long currentBiasedKey = currentRawKey + 1;
             int slot = hash(currentRawKey) & mask;
             int probe = 0;
-
             while (true) {
-                long stored = table[slot];
+                long stored = table[slot << 1];
                 if (stored == EMPTY) {
-                    table[slot] = currentBiasedKey;
-                    table[capacity + slot] = currentValue;
-                    if (probe > observedMaxProbe) {
-                        observedMaxProbe = probe;
-                    }
+                    table[slot << 1] = currentBiasedKey;
+                    table[(slot << 1) + 1] = currentValue;
                     break;
                 }
-
+                // Robin Hood: the entry further from home keeps the slot.
                 int residentProbe = (slot - (hash(stored - 1) & mask)) & mask;
                 if (residentProbe < probe) {
                     long tmpKey = stored;
-                    long tmpValue = table[capacity + slot];
-                    table[slot] = currentBiasedKey;
-                    table[capacity + slot] = currentValue;
+                    long tmpValue = table[(slot << 1) + 1];
+                    table[slot << 1] = currentBiasedKey;
+                    table[(slot << 1) + 1] = currentValue;
                     currentBiasedKey = tmpKey;
                     currentValue = tmpValue;
                     probe = residentProbe;
                 }
-
                 slot = (slot + 1) & mask;
                 probe++;
             }
         }
-
-        // Compute actual max probe after all insertions, since Robin Hood swaps can
-        // displace items to larger probe distances than observed during insertion.
-        int actualMaxProbe = 0;
-        for (int i = 0; i < capacity; i++) {
-            long stored = table[i];
+        // Swaps can push an entry further than any insertion saw, so measure at the end.
+        for (int slot = 0; slot <= mask; slot++) {
+            long stored = table[slot << 1];
             if (stored != EMPTY) {
-                int ideal = hash(stored - 1) & mask;
-                int probe = (i - ideal) & mask;
-                if (probe > actualMaxProbe) {
-                    actualMaxProbe = probe;
-                }
+                int probe = (slot - (hash(stored - 1) & mask)) & mask;
+                observedMaxProbe = Math.max(observedMaxProbe, probe);
             }
         }
-        this.maxProbe = actualMaxProbe;
+        this.maxProbe = observedMaxProbe;
+    }
+
+    private static boolean inGrid(long key) {
+        return (IntPair.left(key) | IntPair.right(key)) >= 0
+                && (IntPair.left(key) | IntPair.right(key)) < GRID;
+    }
+
+    private static int gridSlot(long key) {
+        return (IntPair.left(key) << 9) | IntPair.right(key);
     }
 
     /**
@@ -81,50 +107,46 @@ final class LongLongMap {
      * absent.
      */
     final long get(long key) {
-        long biasedKey = key + 1;
-        long[] t = table;
-        int c = capacity;
-        int m = mask;
-        int slot = hash(key) & m;
-        int remaining = maxProbe;
-        while (true) {
-            long stored = t[slot];
-            if (stored == EMPTY) {
-                return IntPair.NONE;
-            }
-            if (stored == biasedKey) {
-                return t[c + slot];
-            }
-            if (remaining-- == 0) {
-                return IntPair.NONE;
-            }
-
-            slot = (slot + 1) & m;
-            stored = t[slot];
-            if (stored == EMPTY) {
-                return IntPair.NONE;
-            }
-            if (stored == biasedKey) {
-                return t[c + slot];
-            }
-            if (remaining-- == 0) {
-                return IntPair.NONE;
-            }
-
-            slot = (slot + 1) & m;
+        if (inGrid(key)) {
+            int entry = gridIndex[gridSlot(key)];
+            return entry == NO_GRID_ENTRY ? IntPair.NONE : gridValues[entry];
         }
+        return getHashed(key);
     }
 
     /** Convenience overload for packed int pair keys. */
     final long getPair(int left, int right) {
-        long key = ((long) left << 32) | (right & 0xFFFFFFFFL);
-        return get(key);
+        if ((left | right) < GRID && (left | right) >= 0) {
+            int entry = gridIndex[(left << 9) | right];
+            return entry == NO_GRID_ENTRY ? IntPair.NONE : gridValues[entry];
+        }
+        return getHashed(((long) left << 32) | (right & 0xFFFFFFFFL));
+    }
+
+    private long getHashed(long key) {
+        long biasedKey = key + 1;
+        long[] t = table;
+        int m = mask;
+        int slot = hash(key) & m;
+        for (int remaining = maxProbe; ; remaining--) {
+            long stored = t[slot << 1];
+            if (stored == biasedKey) {
+                return t[(slot << 1) + 1];
+            }
+            if (stored == EMPTY || remaining == 0) {
+                return IntPair.NONE;
+            }
+            slot = (slot + 1) & m;
+        }
     }
 
     final void forEachValue(LongConsumer consumer) {
-        for (int i = 0; i < capacity; i++) {
-            if (table[i] != EMPTY) {
-                consumer.accept(table[capacity + i]);
+        for (long value : gridValues) {
+            consumer.accept(value);
+        }
+        for (int slot = 0; slot <= mask; slot++) {
+            if (table[slot << 1] != EMPTY) {
+                consumer.accept(table[(slot << 1) + 1]);
             }
         }
     }
