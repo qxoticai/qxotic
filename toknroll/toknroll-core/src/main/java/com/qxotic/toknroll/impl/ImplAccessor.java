@@ -102,6 +102,26 @@ public final class ImplAccessor {
         return SentencePieceBpeModel.fromVocabulary(vocabulary, scores);
     }
 
+    /**
+     * Encodes {@code text[start, end)} on the UTF-8 path, which a tiktoken model and a hand-written
+     * scanner share: the text is converted once and split and merged as bytes. False when the pair
+     * is anything else, and the caller takes the general path.
+     */
+    public static boolean encodeUtf8(
+            TokenizationModel model,
+            Splitter splitter,
+            CharSequence text,
+            int start,
+            int end,
+            IntSequence.Builder out) {
+        if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
+            return false;
+        }
+        byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
+        ((TiktokenModel) model).encode(utf8, 0, utf8.length, (TiktokenSplitter) splitter, out);
+        return true;
+    }
+
     public static Splitter createRegexSplitter(Pattern pattern) {
         return createRegexSplitter(pattern, true);
     }
