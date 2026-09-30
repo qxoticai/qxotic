@@ -45,42 +45,21 @@ final class WordCache {
      */
     private long[] slots = new long[4 * (FIRST_SLOTS + WINDOW) + 2];
 
+    private final int[] scratch = new int[MAX_IDS];
     private int inserted; // since the last doubling
+    private int victim;
+
+    // The last lookup's word: its key, its tag, and the slot an insert of it takes.
     private long lo;
     private long hi;
     private byte tag;
-    private int victim;
-    private int slot; // where the last lookup found its word, or where it should go
+    private int slot;
 
     /**
-     * The ids of {@code text[start, end)} appended to {@code out} and their count, or 0 when the
-     * cache does not hold the word. Then {@link #insert} may follow, for the same word. The text
-     * must have {@link TiktokenSplitter#PADDING} readable bytes past {@code end}.
-     */
-    int lookup(byte[] text, int start, int end, IntSequence.Builder out) {
-        int at = find(text, start, end);
-        if (at < 0) {
-            return 0;
-        }
-        int count = (int) (slots[at + 1] >>> 60);
-        long first = slots[at + 2];
-        out.add((int) first);
-        if (count > 1) {
-            out.add((int) (first >>> 32));
-            if (count > 2) {
-                long second = slots[at + 3];
-                out.add((int) second);
-                if (count > 3) {
-                    out.add((int) (second >>> 32));
-                }
-            }
-        }
-        return count;
-    }
-
-    /**
-     * {@link #lookup} writing the ids to {@code ids[at, at + count)}, which must have room for
-     * {@link #MAX_IDS}.
+     * The ids of {@code text[start, end)} written to {@code ids[at, at + count)}, which must have
+     * room for {@link #MAX_IDS}, and their count; 0 when the cache does not hold the word, and then
+     * {@link #insert} may follow for it. The text must have {@link TiktokenSplitter#PADDING}
+     * readable bytes past {@code end}.
      */
     int lookup(byte[] text, int start, int end, int[] ids, int at) {
         int slot = find(text, start, end);
@@ -98,6 +77,16 @@ final class WordCache {
         return count;
     }
 
+    /** {@link #lookup} appending the ids to {@code out}. */
+    int lookup(byte[] text, int start, int end, IntSequence.Builder out) {
+        int[] ids = scratch;
+        int count = lookup(text, start, end, ids, 0);
+        for (int k = 0; k < count; k++) {
+            out.add(ids[k]);
+        }
+        return count;
+    }
+
     /** The index in {@link #slots} of the word's slot, or -1 with the slot an insert would take. */
     private int find(byte[] text, int start, int end) {
         int length = end - start;
@@ -106,8 +95,7 @@ final class WordCache {
         hi |= (long) length << 56;
         this.lo = lo;
         this.hi = hi;
-        long hash = (lo * 0x9E3779B97F4A7C15L) ^ (hi * 0xC2B2AE3D27D4EB4FL);
-        hash ^= hash >>> 29;
+        long hash = hash(lo, hi);
         int home = (int) hash & mask;
         long tag = (hash >>> 56) | 1;
         long row = (long) LONGS.get(tags, home);
@@ -120,15 +108,21 @@ final class WordCache {
             }
             same &= same - 1;
         }
-        long empty = zeroBytes(row);
-        // A full window evicts a rotating slot, not always the home one: two frequent words with
-        // one home would otherwise take turns evicting each other.
-        this.slot =
-                empty != 0
-                        ? home + (Long.numberOfTrailingZeros(empty) >>> 3)
-                        : home + (victim++ & (WINDOW - 1));
+        this.slot = free(home, row);
         this.tag = (byte) tag;
         return -1;
+    }
+
+    /**
+     * The slot an insert takes in the window at {@code home}, whose tags are {@code row}: the first
+     * empty one, else a rotating one. A full window evicts a rotating slot, not always the home
+     * one, or two frequent words with one home would take turns evicting each other.
+     */
+    private int free(int home, long row) {
+        long empty = zeroBytes(row);
+        return empty != 0
+                ? home + (Long.numberOfTrailingZeros(empty) >>> 3)
+                : home + (victim++ & (WINDOW - 1));
     }
 
     /** Records the word of the last {@link #lookup} as {@code count} ids taken from {@code out}. */
@@ -167,25 +161,24 @@ final class WordCache {
             int at = 4 * from + 2;
             long lo = oldSlots[at];
             long hi = oldSlots[at + 1];
-            int to = place(lo, hi & ~COUNT_MASK, oldTags[from]);
+            int to = place(lo, hi & ~COUNT_MASK);
             tags[to] = oldTags[from];
             System.arraycopy(oldSlots, at, slots, 4 * to + 2, 4);
             inserted++;
         }
         // the word being inserted was placed against the old table
-        this.slot = place(lo, hi, tag);
+        this.slot = place(lo, hi);
     }
 
-    /** The slot a word with this key and tag takes in the current table. */
-    private int place(long lo, long hi, byte tag) {
+    /** The slot a word with this key takes in the current table. */
+    private int place(long lo, long hi) {
+        int home = (int) hash(lo, hi) & mask;
+        return free(home, (long) LONGS.get(tags, home));
+    }
+
+    private static long hash(long lo, long hi) {
         long hash = (lo * 0x9E3779B97F4A7C15L) ^ (hi * 0xC2B2AE3D27D4EB4FL);
-        hash ^= hash >>> 29;
-        int home = (int) hash & mask;
-        long row = (long) LONGS.get(tags, home);
-        long empty = zeroBytes(row);
-        return empty != 0
-                ? home + (Long.numberOfTrailingZeros(empty) >>> 3)
-                : home + (victim++ & (WINDOW - 1));
+        return hash ^ (hash >>> 29);
     }
 
     /** An id already appended to {@code out}, without a view object for the model's own builder. */
@@ -195,7 +188,10 @@ final class WordCache {
                 : out.asSequenceView().intAt(index);
     }
 
-    /** The bytes of a long that are zero, as their high bits. */
+    /**
+     * The bytes of a long that are zero, as their high bits. Only the lowest set bit is exact: a
+     * byte above a true zero may be flagged too, which costs a key compare, never a wrong answer.
+     */
     private static long zeroBytes(long x) {
         return (x - LOW_BYTES) & ~x & HIGH_BITS;
     }

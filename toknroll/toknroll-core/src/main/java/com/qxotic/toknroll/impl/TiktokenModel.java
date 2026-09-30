@@ -20,9 +20,9 @@ import java.util.Objects;
  * <p>Dual-path merge strategy:
  *
  * <ul>
- *   <li>Tiny chunks (≤3 bytes): hardcoded merge logic for 1–3 bytes.
- *   <li>Small chunks (4–95 bytes): in-place scan/merge over primitive arrays.
- *   <li>Large chunks (≥96 bytes): min-heap + intrusive linked list.
+ *   <li>Tiny chunks (up to 3 bytes): hardcoded merge logic.
+ *   <li>Small chunks (4 to 95 bytes): in-place scan and merge over primitive arrays.
+ *   <li>Large chunks (96 bytes and up): min-heap and intrusive linked list.
  * </ul>
  */
 final class TiktokenModel extends AbstractTokenizationModel {
@@ -266,37 +266,21 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Every pre-token of {@code text[start, end)} as {@code splitter} cuts them, in one call: the
-     * scratch is taken once, the output grown once, and the pieces come from an array rather than a
-     * callback per word. A word is read eight bytes at a time, so the last pieces, those ending
-     * within {@link TiktokenSplitter#PADDING} bytes of the array's end, are encoded from a padded
-     * copy.
+     * Encodes every piece of {@code text[start, end)} as {@code splitter} cuts them. Words are read
+     * eight bytes at a time, so the pieces ending within {@link TiktokenSplitter#PADDING} bytes of
+     * the array's end are encoded from a padded copy.
      */
     void encode(
             byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
         Scratch s = acquireScratch();
         try {
             if (out instanceof IntSequenceBuilder) {
-                // grown a batch at a time: a caller's estimate from the chars is not second-guessed
                 encode(text, start, end, splitter, (IntSequenceBuilder) out, s);
-                return;
-            }
-            out.ensureCapacity(out.size() + estimateInitialTokenCapacity(end - start));
-            int[] ends = s.pieceEnds;
-            int cursor = start;
-            while (cursor < end) {
-                int n = splitter.split(text, cursor, end, ends);
-                int inPlace = inPlace(text, ends, n);
-                for (int k = 0; k < inPlace; k++) {
-                    int e = ends[k];
-                    encodeWord(text, cursor, e, out, s);
-                    cursor = e;
-                }
-                if (inPlace < n) {
-                    byte[] tail = paddedTail(text, cursor, end, s);
-                    encode(tail, 0, end - cursor, splitter, out);
-                    return;
-                }
+            } else {
+                IntSequenceBuilder ids =
+                        new IntSequenceBuilder(estimateInitialTokenCapacity(end - start));
+                encode(text, start, end, splitter, ids, s);
+                out.addAll(ids);
             }
         } finally {
             releaseScratch(s);
@@ -304,34 +288,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * How many of the batch's pieces can be read where they are: all but the last few of a text.
-     */
-    private static int inPlace(byte[] text, int[] ends, int n) {
-        int limit = text.length - TiktokenSplitter.PADDING;
-        if (ends[n - 1] <= limit) {
-            return n;
-        }
-        int k = 0;
-        while (ends[k] <= limit) {
-            k++;
-        }
-        return k;
-    }
-
-    /** {@code text[cursor, end)} in the scratch, followed by readable zero bytes. */
-    private static byte[] paddedTail(byte[] text, int cursor, int end, Scratch s) {
-        int length = end - cursor;
-        s.ensureUtf8(length);
-        byte[] tail = s.utf8Bytes;
-        System.arraycopy(text, cursor, tail, 0, length);
-        java.util.Arrays.fill(tail, length, length + TiktokenSplitter.PADDING, (byte) 0);
-        return tail;
-    }
-
-    /**
-     * {@link #encode} into the model's own builder: a single byte and a cached word write their ids
-     * straight into its array, with the room for a batch of them made once, and only a miss goes
-     * through the builder.
+     * The batch loop. A single byte and a cached word write their ids straight into the builder's
+     * array, room for a batch of them made once; only a miss goes through the builder.
      */
     private void encode(
             byte[] text,
@@ -355,21 +313,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 if (length == 1) {
                     ids[size++] = singleByteTokenId[text[cursor] & 0xFF];
                 } else {
-                    int hit =
-                            cache != null && length <= WordCache.MAX_BYTES
-                                    ? cache.lookup(text, cursor, e, ids, size)
-                                    : 0;
+                    WordCache c = cache != null && length <= WordCache.MAX_BYTES ? cache : null;
+                    int hit = c == null ? 0 : c.lookup(text, cursor, e, ids, size);
                     if (hit > 0) {
                         size += hit;
                     } else {
                         out.size(size);
-                        encodeMiss(
-                                text,
-                                cursor,
-                                e,
-                                out,
-                                s,
-                                cache != null && length <= WordCache.MAX_BYTES ? cache : null);
+                        encodeMiss(text, cursor, e, out, s, c);
                         out.ensureCapacity(out.size() + (n - k) * WordCache.MAX_IDS);
                         ids = out.data();
                         size = out.size();
@@ -379,44 +329,63 @@ final class TiktokenModel extends AbstractTokenizationModel {
             }
             out.size(size);
             if (inPlace < n) {
-                byte[] tail = paddedTail(text, cursor, end, s);
-                encode(tail, 0, end - cursor, splitter, out, s);
+                encode(paddedTail(text, cursor, end, s), 0, end - cursor, splitter, out, s);
                 return;
             }
         }
     }
 
-    /** One pre-token, as the UTF-8 bytes {@code [start, end)} of {@code text}. */
+    /** How many of the batch's pieces can be read where they are: all but a text's last few. */
+    private static int inPlace(byte[] text, int[] ends, int n) {
+        int limit = text.length - TiktokenSplitter.PADDING;
+        int k = n;
+        while (k > 0 && ends[k - 1] > limit) {
+            k--;
+        }
+        return k;
+    }
+
+    /** {@code text[cursor, end)} in the scratch, followed by readable zero bytes. */
+    private static byte[] paddedTail(byte[] text, int cursor, int end, Scratch s) {
+        int length = end - cursor;
+        s.ensureUtf8(length);
+        byte[] tail = s.utf8Bytes;
+        System.arraycopy(text, cursor, tail, 0, length);
+        Arrays.fill(tail, length, length + TiktokenSplitter.PADDING, (byte) 0);
+        return tail;
+    }
+
+    /** One pre-token, the UTF-8 bytes {@code text[start, end)}, with PADDING readable past them. */
     int encodeWord(byte[] text, int start, int end, IntSequence.Builder out, Scratch s) {
-        int byteLength = end - start;
-        if (byteLength <= 0) {
+        int length = end - start;
+        if (length <= 0) {
             return 0;
         }
-        if (byteLength == 1) {
+        if (length == 1) {
             out.add(singleByteTokenId[text[start] & 0xFF]);
             return 1;
         }
-        WordCache cache = s.kept && byteLength <= WordCache.MAX_BYTES ? s.wordCache() : null;
+        WordCache cache = s.kept && length <= WordCache.MAX_BYTES ? s.wordCache() : null;
         if (cache != null) {
-            int cached = cache.lookup(text, start, end, out);
-            if (cached > 0) {
-                return cached;
+            int hit = cache.lookup(text, start, end, out);
+            if (hit > 0) {
+                return hit;
             }
         }
         return encodeMiss(text, start, end, out, s, cache);
     }
 
     /**
-     * A word of two bytes or more that {@code cache} does not hold, looked up just before: a token
-     * as it is, else merged; then recorded in the cache when it takes few enough ids.
+     * A word of two bytes or more that {@code cache} (if any) was just probed for and does not
+     * hold: a token as it is, else merged; then cached when it takes few enough ids.
      */
     private int encodeMiss(
             byte[] text, int start, int end, IntSequence.Builder out, Scratch s, WordCache cache) {
         int first = out.size();
         int count;
-        int exactTokenId = exactTokenLookup.find(text, start, end - start);
-        if (exactTokenId >= 0) {
-            out.add(exactTokenId);
+        int token = exactTokenLookup.find(text, start, end - start);
+        if (token >= 0) {
+            out.add(token);
             count = 1;
         } else {
             count = merge(text, start, end, out, s);
@@ -535,9 +504,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     private int mergeSmall(
             byte[] bytes, int off, int byteLength, IntSequence.Builder out, Scratch s) {
-        if (byteLength == 0) {
-            return 0;
-        }
         s.ensureTokens(byteLength);
         s.ensurePairData(byteLength - 1);
         int[] tokens = s.tokens;
@@ -561,19 +527,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
 
         while (size >= 2) {
-            // The lowest rank and where it sits, in one long each: no branch per pair, so the
-            // scan runs at the speed of the loads. A pair without a merge scores the maximum.
+            // The lowest rank and its position in one long, so the scan has no branch per pair.
+            // A pair without a merge scores the maximum.
             long best = Long.MAX_VALUE;
             int pairCount = size - 1;
             for (int scan = 0; scan < pairCount; scan++) {
                 long rank = (int) pairMergeIdRank[scan];
-                long keyed = (rank << 8) | scan;
-                best = Math.min(best, rank < 0 ? Long.MAX_VALUE : keyed);
+                best = Math.min(best, rank < 0 ? Long.MAX_VALUE : (rank << 32) | scan);
             }
             if (best == Long.MAX_VALUE) {
                 break;
             }
-            int bestPos = (int) (best & 0xFF);
+            int bestPos = (int) best;
 
             tokens[bestPos] = (int) (pairMergeIdRank[bestPos] >>> 32);
             int tail = size - bestPos - 2;
