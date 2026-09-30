@@ -26,6 +26,11 @@
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-core</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

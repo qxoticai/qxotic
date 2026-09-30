@@ -50,4 +50,9 @@ final class ScalarKernels implements Kernels {
         }
         return out;
     }
+
+    @Override
+    public int split(int rules, byte[] text, int start, int end, int[] ends) {
+        return -1; // the scanner in core is the reference
+    }
 }
