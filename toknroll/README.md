@@ -71,8 +71,9 @@ files and `toknroll-gguf` loads tokenizers straight out of llama.cpp model files
 details and advanced usage: [toknroll-hf](toknroll-hf/), [toknroll-gguf](toknroll-gguf/).
 
 `toknroll-vector` is optional and needs Java 25.
-Add it as a runtime dependency and run with `--add-modules jdk.incubator.vector`, and core's hot loops take their Java Vector API versions.
+Add it as a runtime dependency and run with `--add-modules jdk.incubator.vector`, and core's hot loops take their Java Vector API versions: the UTF-8 conversion, and the pre-tokenization split of the tiktoken family (GPT-2, GPT-4, Llama 3, Qwen2, GPT-4o, Tekken) as bitstream programs.
 Same API, same token ids, checked against the plain versions when it loads.
+Details in [toknroll-vector](toknroll-vector/).
 
 ## Build a tokenizer from scratch
 
