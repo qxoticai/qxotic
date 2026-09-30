@@ -586,4 +586,33 @@ class WorkflowTest {
                 CliModelProvider.template.conversations.getLast().messages().size(),
                 "user, assistant, user");
     }
+
+    /** A flag that cannot act is refused, not accepted in silence; 0 means off and always can. */
+    @Test
+    void speculationDepthIsRefusedWhereNoDraftHeadCanUseIt() throws Exception {
+        Path path = model("language", "");
+        var refused = new CliFixtures.Capture("");
+        assertEquals(
+                1,
+                run(refused, "instruct", "-m", path.toString(), "hi", "--speculation-depth", "2"),
+                refused.err());
+        assertTrue(refused.err().contains("needs a draft head"), refused.err());
+        assertEquals("", refused.out());
+        assertFalse(CliModelProvider.weights.scope().isAlive(), "a refused load releases weights");
+        var off = new CliFixtures.Capture("");
+        assertEquals(
+                0,
+                run(
+                        off,
+                        "instruct",
+                        "-m",
+                        path.toString(),
+                        "hi",
+                        "-n",
+                        "2",
+                        "--speculation-depth",
+                        "0"),
+                off.err());
+        assertEquals("xx\n", off.out().replace("\r\n", "\n"));
+    }
 }
