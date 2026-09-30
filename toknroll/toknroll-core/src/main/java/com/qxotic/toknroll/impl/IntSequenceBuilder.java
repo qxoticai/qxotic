@@ -73,6 +73,16 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         return size;
     }
 
+    /** The backing array, for a writer that has ensured the capacity and will set the size. */
+    int[] data() {
+        return data;
+    }
+
+    /** Sets the size, after writing to {@link #data} within the capacity. */
+    void size(int size) {
+        this.size = size;
+    }
+
     @Override
     public IntSequence snapshot() {
         return new BuilderSequenceView(this, 0, size, false);
