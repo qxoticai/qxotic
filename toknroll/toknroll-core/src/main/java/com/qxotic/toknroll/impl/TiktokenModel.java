@@ -42,7 +42,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private final byte[][] tokenBytesById;
     private final ExactTokenLookup exactTokenLookup;
     private final boolean ignoreMerges;
-    private final ThreadLocal<Scratch> scratchThreadLocal = ThreadLocal.withInitial(Scratch::new);
+    private final ThreadLocal<Scratch> scratchThreadLocal =
+            ThreadLocal.withInitial(() -> new Scratch(true));
 
     TiktokenModel(
             Vocabulary vocabulary,
@@ -71,7 +72,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
      */
     private boolean[] provenFolds() {
         boolean[] folds = new boolean[tokenBytesById.length];
-        Scratch s = new Scratch();
+        Scratch s = new Scratch(false);
         for (int id = 0; id < folds.length; id++) {
             byte[] bytes = tokenBytesById[id];
             if (bytes == null || bytes.length == 0) {
@@ -265,7 +266,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /**
      * Every pre-token of {@code text[start, end)} as {@code splitter} cuts them, in one call: the
      * scratch is taken once, the output grown once, and the pieces come from an array rather than a
-     * callback per word.
+     * callback per word. The text must have {@link TiktokenSplitter#PADDING} readable bytes past
+     * {@code end}.
      */
     void encode(
             byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
@@ -297,12 +299,26 @@ final class TiktokenModel extends AbstractTokenizationModel {
             out.add(singleByteTokenId[text[start] & 0xFF]);
             return 1;
         }
+        WordCache cache = s.kept && byteLength <= WordCache.MAX_BYTES ? s.wordCache() : null;
+        if (cache != null) {
+            int cached = cache.lookup(text, start, end, out);
+            if (cached > 0) {
+                return cached;
+            }
+        }
+        int first = out.size();
+        int count;
         int exactTokenId = exactTokenLookup.find(text, start, byteLength);
         if (exactTokenId >= 0) {
             out.add(exactTokenId);
-            return 1;
+            count = 1;
+        } else {
+            count = merge(text, start, end, out, s);
         }
-        return merge(text, start, end, out, s);
+        if (cache != null && count <= WordCache.MAX_IDS) {
+            cache.insert(out, first, count);
+        }
+        return count;
     }
 
     /** The merge loop for a word of {@code text[start, end)}, by its length. */
@@ -377,7 +393,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     private Scratch acquireScratch() {
         if (isCurrentThreadVirtual()) {
-            return new Scratch();
+            return new Scratch(false);
         }
         return scratchThreadLocal.get();
     }
@@ -888,7 +904,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
     // ---- Scratch + exact-token lookup ----
 
     private static final class Scratch {
+        /** A scratch a thread keeps is worth a word cache; a one-call scratch gets none. */
+        final boolean kept;
+
         final int[] pieceEnds = new int[TiktokenSplitter.BATCH];
+        private WordCache wordCache;
         byte[] utf8Bytes = new byte[0];
         int[] tokens = new int[0];
         long[] pairMergeIdRank = new long[0];
@@ -908,7 +928,19 @@ final class TiktokenModel extends AbstractTokenizationModel {
         int popLeft;
         int popMergeId;
 
+        Scratch(boolean kept) {
+            this.kept = kept;
+        }
+
+        WordCache wordCache() {
+            if (wordCache == null) {
+                wordCache = new WordCache();
+            }
+            return wordCache;
+        }
+
         void ensureUtf8(int needed) {
+            needed += TiktokenSplitter.PADDING;
             if (utf8Bytes.length < needed) {
                 utf8Bytes = new byte[grow(utf8Bytes.length, needed)];
             }
