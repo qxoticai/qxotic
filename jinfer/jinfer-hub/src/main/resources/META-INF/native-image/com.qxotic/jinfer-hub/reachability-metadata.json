@@ -1,5 +1,5 @@
 {
-  "comment": "Terminal, for the live transcription view: on Linux and macOS libc isatty (int)int and ioctl(TIOCGWINSZ) (int, long, ...)int; on Windows kernel32 GetStdHandle (int)void*, GetConsoleMode and GetConsoleScreenBufferInfo (void*, void*)int, SetConsoleMode (void*, int)int, GetConsoleOutputCP ()int and SetConsoleOutputCP (int)int.",
+  "comment": "TerminalSupport, shared by download progress and the CLI: libc isatty/ioctl on Linux and macOS; kernel32 console handles, modes, width and code page on Windows.",
   "foreign": {
     "downcalls": [
       {

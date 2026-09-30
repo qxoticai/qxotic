@@ -12,7 +12,6 @@ import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -135,7 +134,6 @@ final class Fetch {
         private static final int PREFIX = 3; // " " + spinner + " ", before the name column
         private static int painted; // lines the live region occupies on screen right now
         private static int stickyLabel; // the name column, monotonic while the region lives
-        private static int columns = -1;
         private static long lastPaint;
         private static Thread ticker;
 
@@ -191,7 +189,7 @@ final class Fetch {
                 return;
             }
             lastPaint = now;
-            int cols = columns();
+            int cols = TerminalSupport.columns(2);
             String[] bodies = new String[rows.size()];
             int labelWidth = stickyLabel, body = 0;
             for (int i = 0; i < rows.size(); i++) {
@@ -225,43 +223,6 @@ final class Fetch {
             if (rows.isEmpty()) {
                 stickyLabel = 0; // the next batch sizes its own column
             }
-        }
-
-        /** Stderr's terminal width (asked once), then {@code COLUMNS}, then 80. */
-        private static int columns() {
-            if (columns > 0) {
-                return columns;
-            }
-            int c = 0;
-            try {
-                // Measure the descriptor we paint. Copy stderr to stty's stdin before silencing
-                // probe errors; the download's stdin may be a pipe or a file.
-                Process stty =
-                        new ProcessBuilder("/bin/sh", "-c", "stty size <&2 2>/dev/null")
-                                .redirectError(ProcessBuilder.Redirect.INHERIT)
-                                .start();
-                String[] parts;
-                try (InputStream out = stty.getInputStream()) {
-                    parts =
-                            new String(out.readAllBytes(), StandardCharsets.UTF_8)
-                                    .strip()
-                                    .split("\\s+");
-                }
-                if (stty.waitFor() == 0 && parts.length == 2) c = Integer.parseInt(parts[1]);
-            } catch (IOException | NumberFormatException unknowable) {
-                // No POSIX terminal probe: use the environment below.
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-            }
-            if (c <= 0) {
-                try {
-                    c = Integer.parseInt(System.getenv().getOrDefault("COLUMNS", "").strip());
-                } catch (NumberFormatException unset) {
-                    // No usable measurement or environment setting.
-                }
-            }
-            columns = c > 0 ? c : 80;
-            return columns;
         }
     }
 
@@ -1381,12 +1342,14 @@ final class Fetch {
         /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
         private static final String EIGHTHS = "\u258f\u258e\u258d\u258c\u258b\u258a\u2589";
 
-        // Progress writes to stderr; Console.isTerminal() checks stdin/stdout instead.
+        // Detect and prepare the descriptor we paint, including Windows virtual-terminal mode.
         private static final boolean BOARD =
-                stderrTerminal()
-                        && System.getenv("NO_COLOR") == null
-                        && !"dumb".equals(System.getenv("TERM"));
-        private static final boolean UNICODE = utf8Console();
+                System.getenv("NO_COLOR") == null
+                        && !"dumb".equals(System.getenv("TERM"))
+                        && TerminalSupport.enableAnsi(2);
+        private static final boolean UNICODE =
+                progress().charset().contains(StandardCharsets.UTF_8)
+                        && (!BOARD || TerminalSupport.enableUtf8());
 
         final String label;
         private final long total;
@@ -1550,34 +1513,6 @@ final class Fetch {
             }
             bar.append(String.valueOf(unicode ? ' ' : '-').repeat(width - bar.length()));
             return bar.toString();
-        }
-
-        private static boolean utf8Console() {
-            Charset charset =
-                    System.console() != null
-                            ? System.console().charset()
-                            : Charset.defaultCharset();
-            return charset.contains(StandardCharsets.UTF_8);
-        }
-
-        private static boolean stderrTerminal() {
-            if (System.getProperty("os.name").startsWith("Windows")) {
-                // Java has no stderr-specific Windows probe; preserve the existing console check.
-                var console = System.console();
-                return console != null && console.isTerminal();
-            }
-            try {
-                return new ProcessBuilder("/bin/test", "-t", "2")
-                                .redirectError(ProcessBuilder.Redirect.INHERIT)
-                                .start()
-                                .waitFor()
-                        == 0;
-            } catch (IOException e) {
-                return false;
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
         }
 
         private static String eta(long seconds) {
