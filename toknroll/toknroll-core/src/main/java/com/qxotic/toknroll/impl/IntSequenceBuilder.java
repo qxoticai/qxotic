@@ -54,7 +54,8 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         if (newCapacity > MAX_ARRAY_SIZE) {
             newCapacity = hugeCapacity(minCapacity);
         }
-        data = Arrays.copyOf(data, newCapacity);
+        // an empty builder has nothing to carry over: a fresh array, not a copy of zeros
+        data = size == 0 ? new int[newCapacity] : Arrays.copyOf(data, newCapacity);
     }
 
     private static int hugeCapacity(int minCapacity) {
@@ -65,6 +66,11 @@ final class IntSequenceBuilder implements IntSequence.Builder {
     }
 
     public IntSequence build() {
+        // The sequence keeps the array when most of it is in use: nothing here ever writes below
+        // the size again, so the sequence stays what it was. A sparse array is copied down.
+        if (size >= (data.length >>> 1)) {
+            return new ArrayIntSequence(data, 0, size);
+        }
         return new ArrayIntSequence(Arrays.copyOf(this.data, size));
     }
 

@@ -970,7 +970,7 @@ final class BitSplit {
     /**
      * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
      * until the array is full or the text ends; returns how many. {@code start} must be a piece
-     * boundary, and the text readable for 16 bytes past {@code end}.
+     * boundary; nothing past {@code end} is read.
      */
     int split(byte[] text, int start, int end, int[] ends) {
         int length = end - start;
