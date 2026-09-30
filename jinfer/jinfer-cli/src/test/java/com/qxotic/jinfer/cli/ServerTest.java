@@ -29,8 +29,6 @@ class ServerTest {
                         "0",
                         "--concurrency",
                         "7",
-                        "--queue-depth",
-                        "2",
                         "--max-body-mb",
                         "5",
                         "--request-timeout",
@@ -47,12 +45,10 @@ class ServerTest {
         assertEquals(8, o.threads);
         assertEquals(0, c.bind().getPort());
         assertEquals(7, c.limits().threads());
-        assertEquals(2, c.limits().queueCapacity());
         assertEquals(5L << 20, c.limits().maxBodyBytes());
         assertEquals(Duration.ZERO, c.limits().requestTimeout());
         assertEquals(Duration.ofSeconds(9), c.limits().writeTimeout());
         assertEquals(32, c.defaults().maxOutputTokens());
-        assertEquals(2, Options.parse("serve", "-m", "m", "--queue-depth", "2").server.queueDepth);
         assertThrows(Options.UsageException.class, () -> Server.validateTranscription(o));
         Server.validateTranscription(Options.parse("server", "-m", "m", "--threads", "2"));
     }
@@ -77,7 +73,6 @@ class ServerTest {
                 new String[][] {
                     {"--port", "65536"},
                     {"--concurrency", "0"},
-                    {"--queue-depth", "-1"},
                     {"--max-body-mb", "0"},
                     {"--write-timeout", "0"}
                 }) {
@@ -108,7 +103,6 @@ class ServerTest {
                 config.withLimits(
                         new com.qxotic.jinfer.server.ServerConfig.Limits(
                                 limits.threads(),
-                                limits.queueCapacity(),
                                 limits.maxBodyBytes(),
                                 limits.grammar(),
                                 limits.writeTimeout(),
@@ -279,7 +273,6 @@ class ServerTest {
     void transcriptionRejectsEveryUnsupportedSettingEvenWhenItEqualsADefault() {
         for (String[] setting :
                 new String[][] {
-                    {"--queue-depth", "4"},
                     {"--cache", "c.jkv"},
                     {"--no-grammar"},
                     {"--raw-prompt"},
@@ -315,7 +308,6 @@ class ServerTest {
         return config.withLimits(
                 new ServerConfig.Limits(
                         l.threads(),
-                        l.queueCapacity(),
                         l.maxBodyBytes(),
                         l.grammar(),
                         l.writeTimeout(),
@@ -346,7 +338,6 @@ class ServerTest {
                 config.withLimits(
                         new ServerConfig.Limits(
                                 limits.threads(),
-                                limits.queueCapacity(),
                                 limits.maxBodyBytes(),
                                 limits.grammar(),
                                 limits.writeTimeout(),
@@ -357,11 +348,11 @@ class ServerTest {
                 var client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
             String base = "http://127.0.0.1:" + running.address().getPort();
-            // two requests that announce a body and never send it: each holds a permit inside
-            // the gate, reading until the write timeout - both permits, at concurrency 1
+            // a request that announces a body and never sends it holds its permit inside the
+            // gate, reading until the write timeout - the only permit, at concurrency 1
             var held = new java.util.ArrayList<java.net.Socket>();
             try {
-                for (int i = 0; i < 2; i++) {
+                for (int i = 0; i < 1; i++) {
                     var socket = new java.net.Socket("127.0.0.1", running.address().getPort());
                     socket.getOutputStream()
                             .write(
@@ -421,7 +412,6 @@ class ServerTest {
                 config.withLimits(
                         new ServerConfig.Limits(
                                 limits.threads(),
-                                limits.queueCapacity(),
                                 limits.maxBodyBytes(),
                                 limits.grammar(),
                                 limits.writeTimeout(),
@@ -517,6 +507,77 @@ class ServerTest {
                                 get.apply("/health").build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(200, busy.statusCode(), busy.body());
                 assertTrue(busy.body().contains("\"busy\":true"), busy.body());
+            }
+        }
+    }
+
+    /** One limit: --concurrency requests are held, the next is refused naming that number. */
+    @Test
+    void concurrencyIsTheOnlyLimitAndTheRefusalNamesIt() throws Exception {
+        Options o =
+                Options.parse(
+                        "server",
+                        "-m",
+                        "unused",
+                        "--port",
+                        "0",
+                        "--concurrency",
+                        "3",
+                        "--write-timeout",
+                        "5");
+        var capture = new CliFixtures.Capture("");
+        var config =
+                Server.config(
+                        o, o.sampling(com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE));
+        var limits = config.limits();
+        config =
+                config.withLimits(
+                        new ServerConfig.Limits(
+                                limits.threads(),
+                                limits.maxBodyBytes(),
+                                limits.grammar(),
+                                limits.writeTimeout(),
+                                limits.requestTimeout(),
+                                Duration.ZERO));
+        try (var engine = CliFixtures.engine(new CliFixtures.Template());
+                var running = Server.startLanguage(engine, config, capture.io);
+                var client =
+                        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            String base = "http://127.0.0.1:" + running.address().getPort();
+            var held = new java.util.ArrayList<java.net.Socket>();
+            try {
+                for (int i = 0; i < 3; i++) { // every one of the three is admitted and waits
+                    var socket = new java.net.Socket("127.0.0.1", running.address().getPort());
+                    socket.getOutputStream()
+                            .write(
+                                    ("POST /v1/completions HTTP/1.1\r\nHost: localhost\r\n"
+                                                    + "Content-Type: application/json\r\n"
+                                                    + "Content-Length: 64\r\n\r\n")
+                                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                    socket.getOutputStream().flush();
+                    held.add(socket);
+                }
+                Thread.sleep(500);
+                var refused =
+                        client.send(
+                                HttpRequest.newBuilder(URI.create(base + "/v1/completions"))
+                                        .timeout(Duration.ofSeconds(5))
+                                        .header("Content-Type", "application/json")
+                                        .POST(
+                                                HttpRequest.BodyPublishers.ofString(
+                                                        "{\"prompt\":\"Hi\",\"max_tokens\":1}"))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString());
+                assertEquals(503, refused.statusCode(), refused.body());
+                assertTrue(
+                        refused.body()
+                                .contains("Server busy: 3 requests in flight; retry after 6 s"),
+                        refused.body());
+                assertEquals("6", refused.headers().firstValue("Retry-After").orElse(null));
+                for (var socket : held)
+                    assertFalse(socket.isClosed(), "an admitted request is still being read");
+            } finally {
+                for (var socket : held) socket.close();
             }
         }
     }

@@ -192,7 +192,6 @@ class ValidationTest {
                         local.defaults(),
                         new ServerConfig.Limits(
                                 defaults.threads(),
-                                defaults.queueCapacity(),
                                 defaults.maxBodyBytes(),
                                 false,
                                 defaults.writeTimeout(),

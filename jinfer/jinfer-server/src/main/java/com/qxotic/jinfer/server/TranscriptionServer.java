@@ -183,7 +183,7 @@ public final class TranscriptionServer {
                             }
                         },
                         admissions,
-                        config.limits().retryAfterSeconds()));
+                        config.limits()));
         // every exchange gets a thread at once; the gate above bounds the work, not the probes
         server.setExecutor(
                 Executors.newCachedThreadPool(

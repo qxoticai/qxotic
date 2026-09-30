@@ -31,7 +31,11 @@ class ServerExecutorTest {
         // the socket with no status; the gate answers like every other overload path
         AtomicInteger served = new AtomicInteger();
         Semaphore admissions = new Semaphore(1);
-        var gated = Server.gated(exchange -> served.incrementAndGet(), admissions, 7);
+        var gated =
+                Server.gated(
+                        exchange -> served.incrementAndGet(),
+                        admissions,
+                        ServerConfig.Limits.DEFAULTS.withThreads(1));
 
         TestExchange ok = new TestExchange(new byte[0]);
         gated.handle(ok);
@@ -43,7 +47,9 @@ class ServerExecutorTest {
         TestExchange busy = new TestExchange(new byte[0]);
         gated.handle(busy);
         assertEquals(503, busy.getResponseCode());
-        assertEquals("7", busy.getResponseHeaders().getFirst("Retry-After"));
+        assertEquals(
+                String.valueOf(ServerConfig.Limits.DEFAULTS.withThreads(1).retryAfterSeconds()),
+                busy.getResponseHeaders().getFirst("Retry-After"));
         assertTrue(busy.closed());
         assertEquals(
                 0, admissions.availablePermits(), "a refused request owns no permit to release");
@@ -70,7 +76,7 @@ class ServerExecutorTest {
                             throw new IOException("response failed");
                         },
                         admissions,
-                        1);
+                        ServerConfig.Limits.DEFAULTS.withThreads(1));
         assertThrows(IOException.class, () -> gated.handle(exchange));
         assertTrue(exchange.closed());
         assertEquals(0, permitsOnClose.get(), "cleanup still belongs to the admitted request");
@@ -104,7 +110,7 @@ class ServerExecutorTest {
                             }
                         },
                         new Semaphore(1),
-                        1));
+                        ServerConfig.Limits.DEFAULTS.withThreads(1)));
         server.start();
         try (Socket client = new Socket("127.0.0.1", server.getAddress().getPort())) {
             client.getOutputStream()
