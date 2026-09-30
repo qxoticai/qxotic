@@ -8,12 +8,13 @@ import java.nio.ByteOrder;
 /**
  * The token ids of the words one thread has encoded, so a repeat costs a probe instead of a merge.
  *
- * <p>A word of up to {@link #MAX_BYTES} bytes is its own key, packed into two longs with its
- * length, so a hit is exact by construction; longer words, and words of more than {@link #MAX_IDS}
- * ids, are not cached. A hash of the key picks a home slot and a one-byte tag. The tags live in a
- * row of their own: a lookup loads the eight tags from the home slot in one go and tests them
- * against the tag at once, then confirms a candidate against its key. A miss inserts into the first
- * empty slot of that window, or the home slot when the window is full.
+ * <p>A word of up to {@link #MAX_BYTES} bytes is its own key, packed with its length into one long
+ * when it is short and two when it is not, so a hit is exact by construction; longer words, and
+ * words of more than {@link #MAX_IDS} ids, are not cached. A hash of the key picks a home slot and
+ * a one-byte tag. The tags live in a row of their own: a lookup loads the eight tags from the home
+ * slot in one go and tests them against the tag at once, then confirms a candidate against its key.
+ * A miss inserts into the first empty slot of that window, or the home slot when the window is
+ * full.
  *
  * <p>The table starts small and doubles, up to {@link #MAX_SLOTS}, each time it has taken as many
  * words as it has slots: a thread that encodes a few documents keeps a few megabytes, one that
@@ -62,19 +63,79 @@ final class WordCache {
      * readable bytes past {@code end}.
      */
     int lookup(byte[] text, int start, int end, int[] ids, int at) {
-        int slot = find(text, start, end);
-        if (slot < 0) {
-            return 0;
+        int length = end - start;
+        long lo;
+        long hi;
+        if (length < 8) {
+            // one long: the bytes, the length in the top byte
+            lo = ((long) LONGS.get(text, start) & mask(length)) | ((long) length << 56);
+            hi = 0;
+        } else {
+            lo = (long) LONGS.get(text, start);
+            hi = ((long) LONGS.get(text, start + 8) & mask(length - 8)) | ((long) length << 56);
         }
-        int count = (int) (slots[slot + 1] >>> 60);
-        long first = slots[slot + 2];
-        long second = slots[slot + 3];
-        // four stores, no branch: the count says how many are meant
-        ids[at] = (int) first;
-        ids[at + 1] = (int) (first >>> 32);
-        ids[at + 2] = (int) second;
-        ids[at + 3] = (int) (second >>> 32);
-        return count;
+        long hash = hash(lo, hi);
+        int home = (int) hash & mask;
+        long tag = (hash >>> 56) | 1;
+        long row = (long) LONGS.get(tags, home);
+        long same = zeroBytes(row ^ (tag * LOW_BYTES));
+        long[] s = slots;
+        while (same != 0) {
+            int slot = 4 * (home + (Long.numberOfTrailingZeros(same) >>> 3)) + 2;
+            long counted = s[slot + 1];
+            if (s[slot] == lo && (counted & ~COUNT_MASK) == hi) {
+                long first = s[slot + 2];
+                long second = s[slot + 3];
+                // four stores, no branch: the count says how many are meant
+                ids[at] = (int) first;
+                ids[at + 1] = (int) (first >>> 32);
+                ids[at + 2] = (int) second;
+                ids[at + 3] = (int) (second >>> 32);
+                return (int) (counted >>> 60);
+            }
+            same &= same - 1;
+        }
+        this.lo = lo;
+        this.hi = hi;
+        this.tag = (byte) tag;
+        this.slot = free(home, row);
+        return 0;
+    }
+
+    /**
+     * Encodes the pieces of a batch from {@code k} on, {@code ends[k]} the end of each and {@code
+     * cursor} the start of the first, as far as this cache and the {@code singleByte} table answer
+     * them, writing the ids to {@code ids} from {@code size} on (room for {@link #MAX_IDS} per
+     * piece). Returns the index of the first piece it could not answer, or {@code n}, in the high
+     * half and the size reached in the low half.
+     *
+     * <p>This loop is a method of its own so that the JIT compiles it with the merge out of sight:
+     * inlined next to the miss path it spilled a third of its values to the stack.
+     */
+    long run(
+            byte[] text,
+            int[] ends,
+            int k,
+            int n,
+            int cursor,
+            int[] ids,
+            int size,
+            int[] singleByte) {
+        for (; k < n; k++) {
+            int e = ends[k];
+            int length = e - cursor;
+            if (length == 1) {
+                ids[size++] = singleByte[text[cursor] & 0xFF];
+            } else {
+                int hit = length <= MAX_BYTES ? lookup(text, cursor, e, ids, size) : 0;
+                if (hit == 0) {
+                    break;
+                }
+                size += hit;
+            }
+            cursor = e;
+        }
+        return ((long) k << 32) | size;
     }
 
     /** {@link #lookup} appending the ids to {@code out}. */
@@ -85,32 +146,6 @@ final class WordCache {
             out.add(ids[k]);
         }
         return count;
-    }
-
-    /** The index in {@link #slots} of the word's slot, or -1 with the slot an insert would take. */
-    private int find(byte[] text, int start, int end) {
-        int length = end - start;
-        long lo = (long) LONGS.get(text, start) & mask(length);
-        long hi = length > 8 ? (long) LONGS.get(text, start + 8) & mask(length - 8) : 0;
-        hi |= (long) length << 56;
-        this.lo = lo;
-        this.hi = hi;
-        long hash = hash(lo, hi);
-        int home = (int) hash & mask;
-        long tag = (hash >>> 56) | 1;
-        long row = (long) LONGS.get(tags, home);
-        long same = zeroBytes(row ^ (tag * LOW_BYTES));
-        while (same != 0) {
-            int slot = home + (Long.numberOfTrailingZeros(same) >>> 3);
-            int at = 4 * slot + 2;
-            if (slots[at] == lo && (slots[at + 1] & ~COUNT_MASK) == hi) {
-                return at;
-            }
-            same &= same - 1;
-        }
-        this.slot = free(home, row);
-        this.tag = (byte) tag;
-        return -1;
     }
 
     /**
@@ -176,6 +211,7 @@ final class WordCache {
         return free(home, (long) LONGS.get(tags, home));
     }
 
+    /** For a short word hi is zero and this is one multiply, which the JIT sees. */
     private static long hash(long lo, long hi) {
         long hash = (lo * 0x9E3779B97F4A7C15L) ^ (hi * 0xC2B2AE3D27D4EB4FL);
         return hash ^ (hash >>> 29);
