@@ -3,7 +3,9 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Map;
@@ -29,7 +31,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private static final int SCRATCH_MAX_RETAINED_ELEMENTS = 128 * 1024;
     private static final int NO_TOKEN = -1;
     private static final int NO_INDEX = -1;
-    private static final Method THREAD_IS_VIRTUAL_METHOD = resolveThreadIsVirtualMethod();
+
+    /**
+     * Thread.isVirtual, which Java 11 cannot name; a constant handle inlines like a direct call.
+     */
+    private static final MethodHandle THREAD_IS_VIRTUAL = resolveThreadIsVirtual();
 
     private final LongLongMap merges;
     private final int[] singleByteTokenId;
@@ -336,23 +342,23 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
     }
 
-    private static Method resolveThreadIsVirtualMethod() {
+    private static MethodHandle resolveThreadIsVirtual() {
         try {
-            return Thread.class.getMethod("isVirtual");
-        } catch (NoSuchMethodException e) {
-            return null;
+            return MethodHandles.publicLookup()
+                    .findVirtual(Thread.class, "isVirtual", MethodType.methodType(boolean.class));
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            return null; // Java < 21: there are no virtual threads
         }
     }
 
     private static boolean isCurrentThreadVirtual() {
-        if (THREAD_IS_VIRTUAL_METHOD == null) {
+        if (THREAD_IS_VIRTUAL == null) {
             return false;
         }
         try {
-            return Boolean.TRUE.equals(THREAD_IS_VIRTUAL_METHOD.invoke(Thread.currentThread()));
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            // Thread.isVirtual() may not exist on Java < 19. Assume virtual threads aren't in use.
-            return false;
+            return (boolean) THREAD_IS_VIRTUAL.invokeExact(Thread.currentThread());
+        } catch (Throwable e) {
+            throw new IllegalStateException(e);
         }
     }
 
