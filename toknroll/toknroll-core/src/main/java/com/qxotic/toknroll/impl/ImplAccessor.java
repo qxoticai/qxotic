@@ -128,10 +128,7 @@ public final class ImplAccessor {
         return true;
     }
 
-    /**
-     * {@link #encodeUtf8} for text that is UTF-8 already. The model reads a few bytes past the
-     * range, so a range that ends near the array's end is copied into a padded buffer first.
-     */
+    /** {@link #encodeUtf8} for text that is UTF-8 already. */
     public static boolean encodeUtf8Bytes(
             TokenizationModel model,
             Splitter splitter,
@@ -141,14 +138,6 @@ public final class ImplAccessor {
             IntSequence.Builder out) {
         if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
             return false;
-        }
-        if (utf8.length - end < TiktokenSplitter.PADDING) {
-            byte[] padded =
-                    java.util.Arrays.copyOfRange(utf8, start, end + TiktokenSplitter.PADDING);
-            java.util.Arrays.fill(padded, end - start, padded.length, (byte) 0);
-            utf8 = padded;
-            end -= start;
-            start = 0;
         }
         ((TiktokenModel) model).encode(utf8, start, end, (TiktokenSplitter) splitter, out);
         return true;
