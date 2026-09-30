@@ -152,7 +152,7 @@ final class Metrics {
         return sb.toString();
     }
 
-    private static void metric(StringBuilder sb, String name, String type, Number value) {
+    static void metric(StringBuilder sb, String name, String type, Number value) {
         type(sb, name, type);
         sb.append(name).append(' ').append(value).append('\n');
     }
