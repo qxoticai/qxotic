@@ -23,6 +23,7 @@
     <module>toknroll-core</module>
     <module>toknroll-gguf</module>
     <module>toknroll-hf</module>
+    <module>toknroll-vector</module>
     <module>toknroll-incubator</module>
     <module>toknroll-benchmarks</module>
   </modules>
@@ -47,6 +48,11 @@
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
         <version>${toknroll.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-vector</artifactId>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
