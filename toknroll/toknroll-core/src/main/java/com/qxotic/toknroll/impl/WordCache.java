@@ -13,8 +13,12 @@ import java.nio.ByteOrder;
  * ids, are not cached. A hash of the key picks a home slot and a one-byte tag. The tags live in a
  * row of their own: a lookup loads the eight tags from the home slot in one go and tests them
  * against the tag at once, then confirms a candidate against its key. A miss inserts into the first
- * empty slot of that window, or the home slot when the window is full. Nothing here allocates after
- * construction.
+ * empty slot of that window, or the home slot when the window is full.
+ *
+ * <p>The table starts small and doubles, up to {@link #MAX_SLOTS}, each time it has taken as many
+ * words as it has slots: a thread that encodes a few documents keeps a few megabytes, one that
+ * works through a corpus grows into the tens, where a Zipf vocabulary's tail still hits. A doubling
+ * rehashes what the table holds; nothing else here allocates.
  *
  * <p>After Swiss tables (the tag row) and the cache of tokenizers 1.0 (the packed keys, the ids
  * inline).
@@ -23,7 +27,8 @@ final class WordCache {
     static final int MAX_BYTES = 15;
     static final int MAX_IDS = 4;
 
-    private static final int SLOTS = 1 << 17;
+    private static final int FIRST_SLOTS = 1 << 16;
+    private static final int MAX_SLOTS = 1 << 20;
     private static final int WINDOW = 8;
     private static final VarHandle LONGS =
             MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
@@ -31,14 +36,16 @@ final class WordCache {
     private static final long HIGH_BITS = 0x8080808080808080L;
     private static final long COUNT_MASK = 7L << 60; // the id count rides in the key's spare bits
 
-    private final byte[] tags = new byte[SLOTS + WINDOW]; // 0 is empty
+    private int mask = FIRST_SLOTS - 1;
+    private byte[] tags = new byte[FIRST_SLOTS + WINDOW]; // 0 is empty
 
     /**
      * Four longs per slot: the key, then the four ids packed in two. A long array's data starts 16
      * bytes into its cache line, so the two leading longs put every 32-byte slot inside one line.
      */
-    private final long[] slots = new long[4 * (SLOTS + WINDOW) + 2];
+    private long[] slots = new long[4 * (FIRST_SLOTS + WINDOW) + 2];
 
+    private int inserted; // since the last doubling
     private long lo;
     private long hi;
     private byte tag;
@@ -101,7 +108,7 @@ final class WordCache {
         this.hi = hi;
         long hash = (lo * 0x9E3779B97F4A7C15L) ^ (hi * 0xC2B2AE3D27D4EB4FL);
         hash ^= hash >>> 29;
-        int home = (int) hash & (SLOTS - 1);
+        int home = (int) hash & mask;
         long tag = (hash >>> 56) | 1;
         long row = (long) LONGS.get(tags, home);
         long same = zeroBytes(row ^ (tag * LOW_BYTES));
@@ -126,6 +133,9 @@ final class WordCache {
 
     /** Records the word of the last {@link #lookup} as {@code count} ids taken from {@code out}. */
     void insert(IntSequence.Builder out, int first, int count) {
+        if (++inserted > mask && mask < MAX_SLOTS - 1) {
+            grow();
+        }
         int slot = this.slot;
         tags[slot] = tag;
         int at = 4 * slot + 2;
@@ -138,6 +148,44 @@ final class WordCache {
                         ? (id(out, first + 2) & 0xFFFFFFFFL)
                                 | (count > 3 ? (long) id(out, first + 3) << 32 : 0)
                         : 0;
+    }
+
+    /** Twice the slots, the words rehashed into them; the pending insert keeps its place. */
+    private void grow() {
+        byte[] oldTags = tags;
+        long[] oldSlots = slots;
+        int oldSlotCount = mask + 1;
+        int slotCount = oldSlotCount << 1;
+        mask = slotCount - 1;
+        tags = new byte[slotCount + WINDOW];
+        slots = new long[4 * (slotCount + WINDOW) + 2];
+        inserted = 0;
+        for (int from = 0; from < oldSlotCount + WINDOW; from++) {
+            if (oldTags[from] == 0) {
+                continue;
+            }
+            int at = 4 * from + 2;
+            long lo = oldSlots[at];
+            long hi = oldSlots[at + 1];
+            int to = place(lo, hi & ~COUNT_MASK, oldTags[from]);
+            tags[to] = oldTags[from];
+            System.arraycopy(oldSlots, at, slots, 4 * to + 2, 4);
+            inserted++;
+        }
+        // the word being inserted was placed against the old table
+        this.slot = place(lo, hi, tag);
+    }
+
+    /** The slot a word with this key and tag takes in the current table. */
+    private int place(long lo, long hi, byte tag) {
+        long hash = (lo * 0x9E3779B97F4A7C15L) ^ (hi * 0xC2B2AE3D27D4EB4FL);
+        hash ^= hash >>> 29;
+        int home = (int) hash & mask;
+        long row = (long) LONGS.get(tags, home);
+        long empty = zeroBytes(row);
+        return empty != 0
+                ? home + (Long.numberOfTrailingZeros(empty) >>> 3)
+                : home + (victim++ & (WINDOW - 1));
     }
 
     /** An id already appended to {@code out}, without a view object for the model's own builder. */
