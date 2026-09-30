@@ -118,7 +118,13 @@ public final class ImplAccessor {
             return false;
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
-        ((TiktokenModel) model).encode(utf8, 0, utf8.length, (TiktokenSplitter) splitter, out);
+        ((TiktokenModel) model)
+                .encode(
+                        utf8,
+                        0,
+                        utf8.length - TiktokenSplitter.PADDING,
+                        (TiktokenSplitter) splitter,
+                        out);
         return true;
     }
 

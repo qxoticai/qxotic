@@ -170,6 +170,11 @@ final class TiktokenSplitter implements Splitter {
      */
     static final int BATCH = 1024;
 
+    /**
+     * Readable bytes {@link #utf8} leaves past the text, so a word can be loaded eight at a time.
+     */
+    static final int PADDING = 16;
+
     @Override
     public void splitAll(
             CharSequence text, int startInclusive, int endExclusive, SplitConsumer consumer) {
@@ -187,11 +192,12 @@ final class TiktokenSplitter implements Splitter {
         // The scanner reads UTF-8; a piece's end comes back to chars by counting its code points,
         // and the four-byte ones twice.
         byte[] utf8 = utf8(text, startInclusive, endExclusive);
+        int length = utf8.length - PADDING;
         int[] ends = new int[BATCH];
         int cursor = 0;
         int charCursor = startInclusive;
-        while (cursor < utf8.length) {
-            int n = split(utf8, cursor, utf8.length, ends);
+        while (cursor < length) {
+            int n = split(utf8, cursor, length, ends);
             for (int k = 0; k < n; k++) {
                 int end = ends[k];
                 int chars = 0;
@@ -222,7 +228,10 @@ final class TiktokenSplitter implements Splitter {
         return n;
     }
 
-    /** The UTF-8 of {@code text[start, end)}; a surrogate without its partner becomes U+FFFD. */
+    /**
+     * The UTF-8 of {@code text[start, end)}, with {@link #PADDING} zero bytes after it; a surrogate
+     * without its partner becomes U+FFFD.
+     */
     static byte[] utf8(CharSequence text, int start, int end) {
         int length = 0;
         for (int i = start; i < end; i++) {
@@ -240,7 +249,7 @@ final class TiktokenSplitter implements Splitter {
                 length += 3;
             }
         }
-        byte[] out = new byte[length];
+        byte[] out = new byte[length + PADDING];
         int o = 0;
         for (int i = start; i < end; i++) {
             char c = text.charAt(i);
