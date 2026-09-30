@@ -23,7 +23,7 @@ final class WordCache {
     static final int MAX_BYTES = 15;
     static final int MAX_IDS = 3;
 
-    private static final int SLOTS = 1 << 16;
+    private static final int SLOTS = 1 << 17;
     private static final int WINDOW = 8;
     private static final VarHandle LONGS =
             MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
@@ -32,8 +32,12 @@ final class WordCache {
     private static final long COUNT_MASK = 3L << 60; // the id count rides in the key's spare bits
 
     private final byte[] tags = new byte[SLOTS + WINDOW]; // 0 is empty
-    private final long[] keys = new long[2 * (SLOTS + WINDOW)];
-    private final int[] ids = new int[MAX_IDS * (SLOTS + WINDOW)];
+
+    /**
+     * Four longs per slot: the key, then the three ids packed in two. A long array's data starts 16
+     * bytes into its cache line, so the two leading longs put every 32-byte slot inside one line.
+     */
+    private final long[] slots = new long[4 * (SLOTS + WINDOW) + 2];
 
     private long lo;
     private long hi;
@@ -60,14 +64,15 @@ final class WordCache {
         long same = zeroBytes(row ^ (tag * LOW_BYTES));
         while (same != 0) {
             int slot = home + (Long.numberOfTrailingZeros(same) >>> 3);
-            if (keys[2 * slot] == lo && (keys[2 * slot + 1] & ~COUNT_MASK) == hi) {
-                int count = (int) (keys[2 * slot + 1] >>> 60);
-                int at = MAX_IDS * slot;
-                out.add(ids[at]);
+            int at = 4 * slot + 2;
+            if (slots[at] == lo && (slots[at + 1] & ~COUNT_MASK) == hi) {
+                int count = (int) (slots[at + 1] >>> 60);
+                long first = slots[at + 2];
+                out.add((int) first);
                 if (count > 1) {
-                    out.add(ids[at + 1]);
+                    out.add((int) (first >>> 32));
                     if (count > 2) {
-                        out.add(ids[at + 2]);
+                        out.add((int) slots[at + 3]);
                     }
                 }
                 return count;
@@ -84,13 +89,14 @@ final class WordCache {
     void insert(IntSequence.Builder out, int first, int count) {
         int slot = this.slot;
         tags[slot] = tag;
-        keys[2 * slot] = lo;
-        keys[2 * slot + 1] = hi | ((long) count << 60);
         IntSequence added = out.asSequenceView();
-        int at = MAX_IDS * slot;
-        for (int i = 0; i < count; i++) {
-            ids[at + i] = added.intAt(first + i);
-        }
+        int at = 4 * slot + 2;
+        slots[at] = lo;
+        slots[at + 1] = hi | ((long) count << 60);
+        slots[at + 2] =
+                (added.intAt(first) & 0xFFFFFFFFL)
+                        | (count > 1 ? (long) added.intAt(first + 1) << 32 : 0);
+        slots[at + 3] = count > 2 ? added.intAt(first + 2) : 0;
     }
 
     /** The bytes of a long that are zero, as their high bits. */
