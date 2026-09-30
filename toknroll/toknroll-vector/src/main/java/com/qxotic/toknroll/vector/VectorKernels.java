@@ -3,6 +3,7 @@ package com.qxotic.toknroll.vector;
 import com.qxotic.toknroll.spi.Kernels;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.ShortVector;
+import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
@@ -86,14 +87,28 @@ public final class VectorKernels implements Kernels {
         int lanes = CHARS.length();
         while (i + lanes <= n) {
             ShortVector v = ShortVector.fromCharArray(CHARS, chunk, i);
-            if (v.compare(VectorOperators.ULT, (short) 0x80).allTrue()) {
+            VectorMask<Short> wide = v.compare(VectorOperators.UGE, (short) 0x80);
+            if (!wide.anyTrue()) {
                 length += lanes;
                 i += lanes;
-            } else {
+                continue;
+            }
+            // a char is one byte, two from 0x80, three from 0x800; a surrogate pair is four for
+            // its two chars but a lone one three, so a vector with any surrogate is counted by hand
+            VectorMask<Short> surrogate =
+                    v.compare(VectorOperators.UGE, (short) 0xD800)
+                            .and(v.compare(VectorOperators.ULT, (short) 0xE000));
+            if (surrogate.anyTrue()) {
                 long r = scalar(chunk, i, i + lanes, n, null, 0);
                 length += (int) (r >>> 32);
                 i += (int) r;
+                continue;
             }
+            length +=
+                    lanes
+                            + wide.trueCount()
+                            + v.compare(VectorOperators.UGE, (short) 0x800).trueCount();
+            i += lanes;
         }
         return length + (int) (scalar(chunk, i, n, n, null, 0) >>> 32);
     }
