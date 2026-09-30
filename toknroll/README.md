@@ -70,6 +70,10 @@ See [toknroll-native](toknroll-native/).
 files and `toknroll-gguf` loads tokenizers straight out of llama.cpp model files. Per-module
 details and advanced usage: [toknroll-hf](toknroll-hf/), [toknroll-gguf](toknroll-gguf/).
 
+`toknroll-vector` is optional and needs Java 25.
+Add it as a runtime dependency and run with `--add-modules jdk.incubator.vector`, and core's hot loops take their Java Vector API versions.
+Same API, same token ids, checked against the plain versions when it loads.
+
 ## Build a tokenizer from scratch
 
 ```java
