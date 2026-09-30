@@ -95,9 +95,9 @@ public final class FrozenBlocks {
 
     private final Path file;
     private final ContentKey modelSeed;
-    private volatile List<Entry> entries; // immutable BFS snapshot: parents precede children
-    private volatile Set<BlockTree.BlockKey> keys;
-    private volatile Commit commit;
+    private final List<Entry> entries; // the mount: immutable BFS snapshot, parents first
+    private final Commit commit; // the mount's generation; a write-back reads the disk's own
+    private volatile Set<BlockTree.BlockKey> keys; // on disk as far as this mount has seen
 
     private FrozenBlocks(Path file, ContentKey modelSeed, List<Entry> entries, Commit commit) {
         this.file = file;
@@ -663,39 +663,45 @@ public final class FrozenBlocks {
     }
 
     private void appendUnderJvmLock(List<Entry> fresh) throws IOException {
-        // The index is a tree, one entry per key, and open() refuses anything else; enforce it
-        // where the index is written. Entries already on disk are skipped, not rewritten: the key
-        // names the same bytes.
-        List<Entry> unseen = new ArrayList<>(fresh.size());
-        Set<BlockTree.BlockKey> batch = new HashSet<>();
-        for (Entry e : fresh) if (!keys.contains(e.key()) && batch.add(e.key())) unseen.add(e);
-        fresh = unseen;
-        if (fresh.isEmpty()) return;
+        // The class monitor serializes this JVM and the file lock serializes processes. The
+        // write-back builds on the disk's own view, never this mount's: another writer's blocks
+        // stay, ours land after them, and a key already there names the same bytes.
         try (FileChannel ch =
-                FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
-            // The class monitor serializes this JVM and the file lock serializes processes. Offsets
-            // come from THIS instance's parsed view, so selecting the disk commit turns a stale
-            // view into a loud refusal instead of silent last-writer-wins.
-            try (FileLock ignored = ch.lock()) {
-                FrozenBlocks disk = open(file, modelSeed, ch);
-                if (!sameCommit(disk.commit, commit)) {
-                    throw new IOException(
-                            "catalog "
-                                    + file
-                                    + " changed since it was mounted ("
-                                    + disk.commit.blockCount()
-                                    + " blocks on disk, "
-                                    + entries.size()
-                                    + " mounted): another writer appended; refusing to overwrite");
-                }
-                appendLocked(ch, fresh, disk.commit);
-            }
+                        FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE);
+                FileLock ignored = ch.lock()) {
+            FrozenBlocks disk = open(file, modelSeed, ch);
+            disk.appendLocked(ch, disk.unseen(fresh));
+            keys = disk.keys;
         }
     }
 
-    private void appendLocked(FileChannel ch, List<Entry> fresh, Commit current)
-            throws IOException {
-        long off = align(current.committedLength());
+    /**
+     * {@code fresh} minus what is already on disk, one entry per key. The index is a tree and
+     * open() refuses anything else, so a block whose parent is on neither side is refused here: the
+     * catalog was rebuilt since it was mounted, and appending would publish a generation the next
+     * mount silently rolls back from.
+     */
+    private List<Entry> unseen(List<Entry> fresh) throws IOException {
+        BlockTree.BlockKey root = BlockTree.chainRoot(modelSeed);
+        List<Entry> unseen = new ArrayList<>(fresh.size());
+        Set<BlockTree.BlockKey> batch = new HashSet<>();
+        for (Entry e : fresh) {
+            if (keys.contains(e.key()) || !batch.add(e.key())) continue;
+            BlockTree.BlockKey parent = e.parentKey();
+            if (!parent.equals(root) && !keys.contains(parent) && !batch.contains(parent)) {
+                throw new IOException(
+                        "catalog "
+                                + file
+                                + " was rebuilt since it was mounted; refusing to append");
+            }
+            unseen.add(e);
+        }
+        return unseen;
+    }
+
+    private void appendLocked(FileChannel ch, List<Entry> fresh) throws IOException {
+        if (fresh.isEmpty()) return;
+        long off = align(commit.committedLength());
         long[] offsets = new long[fresh.size()];
         List<Entry> nextEntries = new ArrayList<>(Math.addExact(entries.size(), fresh.size()));
         nextEntries.addAll(entries);
@@ -710,8 +716,8 @@ public final class FrozenBlocks {
         ByteBuffer idx = encodeIndex(nextEntries);
         Commit nextCommit =
                 new Commit(
-                        1 - current.slot(),
-                        Math.incrementExact(current.generation()),
+                        1 - commit.slot(),
+                        Math.incrementExact(commit.generation()),
                         nextEntries.size(),
                         newIndexOffset,
                         crc32c(idx));
@@ -724,9 +730,7 @@ public final class FrozenBlocks {
         ch.force(true); // blobs and index durable before publication
         writeFully(ch, encodeCommit(nextCommit), slotOffset(nextCommit.slot()));
         ch.force(true);
-        entries = nextEntries;
         keys = nextKeys;
-        commit = nextCommit;
     }
 
     /**

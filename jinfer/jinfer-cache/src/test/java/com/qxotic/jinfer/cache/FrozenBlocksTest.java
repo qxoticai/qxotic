@@ -240,8 +240,8 @@ public final class FrozenBlocksTest {
         third.appendTo(file);
         assertEquals(3, FrozenBlocks.open(file, seed).blockCount(), "three boots, three blocks");
 
-        // SINGLE-WRITER LAW: a mount whose view went stale (another writer appended since) must
-        // refuse loudly instead of overwriting the other writer's blocks
+        // a mount whose view went stale (another writer appended since) rebases its write-back
+        // on the disk's generation: both writers' blocks survive
         BlockTree<BlockResumeTest.FakeState> stale =
                 new BlockTree<>(
                         codec, CacheStore.inMemory(), 1 << 20, seed, FrozenBlocks.open(file, seed));
@@ -263,19 +263,21 @@ public final class FrozenBlocksTest {
         rv.ingestTo(13);
         rival.commit(rTip, e, 12, 1, rv);
         rival.appendTo(file);
-        var refused = assertThrows(IOException.class, () -> stale.appendTo(file));
-        assertTrue(
-                refused.getMessage().contains("another writer"),
-                "stale append must refuse, not overwrite: " + refused.getMessage());
-        assertEquals(
-                4,
-                FrozenBlocks.open(file, seed).blockCount(),
-                "the rival's append survives untouched");
+        byte[] afterRival = Files.readAllBytes(file);
+        stale.appendTo(file);
+        FrozenBlocks both = FrozenBlocks.open(file, seed);
+        assertEquals(5, both.blockCount(), "the rival's block and the stale mount's both land");
+        for (long[] prompt : new long[][] {d, e}) {
+            BlockTree<BlockResumeTest.FakeState> serve =
+                    new BlockTree<>(codec, CacheStore.inMemory(), 0, seed, both);
+            BlockResumeTest.FakeState r = new BlockResumeTest.FakeState();
+            serve.resume(prompt, 13, r);
+            assertEquals(13, r.position(), "prompt " + prompt[12] + " serves from the catalog");
+        }
 
         // Every torn prefix of the newly published slot opens as one complete generation, never a
         // mixed count/offset pair. Once every checksummed field is present, the new generation is
         // already a valid publication even if unwritten reserved bytes remain.
-        byte[] afterRival = Files.readAllBytes(file);
         int publishedSlot = activeSlot(afterRival);
         int slotOffset = slotOffset(publishedSlot);
         for (int cut = 0; cut < FrozenBlocks.SLOT_BYTES; cut++) {
@@ -406,16 +408,39 @@ public final class FrozenBlocksTest {
             var b = writers.submit(() -> appendAfter(ready, start, right, 14));
             ready.await();
             start.countDown();
-            IOException leftFailure = a.get(), rightFailure = b.get();
-            assertTrue(
-                    (leftFailure == null) != (rightFailure == null),
-                    "exactly one stale mount must win");
-            IOException stale = leftFailure != null ? leftFailure : rightFailure;
-            assertTrue(
-                    stale.getMessage().contains("changed since it was mounted"),
-                    stale.getMessage());
+            assertEquals(null, a.get(), "the second writer rebases, it does not refuse");
+            assertEquals(null, b.get(), "the second writer rebases, it does not refuse");
         }
-        assertEquals(3, FrozenBlocks.open(file, seed).blockCount());
+        assertEquals(4, FrozenBlocks.open(file, seed).blockCount(), "both appends land");
+        // the later writer adopted the earlier one's block: a recommit of it is not fresh
+        BlockTree.BlockKey ofLeft = new BlockTree.BlockKey(13, 13, 13, 13);
+        BlockTree.BlockKey ofRight = new BlockTree.BlockKey(14, 14, 14, 14);
+        assertTrue(left.contains(ofRight) || right.contains(ofLeft));
+    }
+
+    @Test
+    void twoMountsAppendingTheSameBlockStoreItOnce() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {15});
+        Path file = artifactWithTwoBlocks(seed);
+        FrozenBlocks left = FrozenBlocks.open(file, seed);
+        FrozenBlocks right = FrozenBlocks.open(file, seed);
+        left.append(List.of(child(left, 13)));
+        right.append(List.of(child(right, 13)));
+        assertEquals(3, FrozenBlocks.open(file, seed).blockCount(), "one key, one block");
+    }
+
+    @Test
+    void appendToACatalogRebuiltSinceTheMountIsRefused() throws Exception {
+        ContentKey seed = ContentKey.sha256(new byte[] {16});
+        Path file = artifactWithTwoBlocks(seed);
+        FrozenBlocks mounted = FrozenBlocks.open(file, seed);
+        FrozenBlocks.createEmpty(file, seed); // the mounted blocks are gone from disk
+        var refused =
+                assertThrows(IOException.class, () -> mounted.append(List.of(child(mounted, 13))));
+        assertTrue(
+                refused.getMessage().contains("rebuilt since it was mounted"),
+                refused.getMessage());
+        assertEquals(0, FrozenBlocks.open(file, seed).blockCount(), "nothing was written");
     }
 
     @Test
