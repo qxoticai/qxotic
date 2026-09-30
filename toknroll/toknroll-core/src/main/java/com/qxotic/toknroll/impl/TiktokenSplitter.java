@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.spi.CharClasses;
 import com.qxotic.toknroll.spi.Kernels;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -58,6 +59,10 @@ final class TiktokenSplitter implements Splitter {
     private final int otherTail;
     private final boolean newlineRun; // '\s*[\r\n]+' before the whitespace rules
 
+    private final int kernelRules; // the rule set of Kernels.split this scanner is, or -1
+    private Kernels kernel; // the kernel that splits like this scanner, resolved on first use
+    private boolean kernelResolved; // a benign race: every resolution has the same outcome
+
     private TiktokenSplitter(
             int contraction,
             int word,
@@ -73,6 +78,70 @@ final class TiktokenSplitter implements Splitter {
         this.otherExcludesMarks = otherExcludesMarks;
         this.otherTail = otherTail;
         this.newlineRun = newlineRun;
+        this.kernelRules = kernelRules();
+    }
+
+    /** Which of the rule sets a kernel may implement this scanner is, or -1. */
+    private int kernelRules() {
+        boolean family =
+                word == PREFIX_LETTERS
+                        && !wordSuffix
+                        && !otherExcludesMarks
+                        && otherTail == NEWLINES
+                        && newlineRun
+                        && (contraction == FOLD || contraction == ASCII_BOTH);
+        if (!family || (numbers != UP_TO_THREE && numbers != ONE)) {
+            return -1;
+        }
+        int rules = numbers == UP_TO_THREE ? Kernels.CL100K : Kernels.QWEN2;
+        return contraction == FOLD ? rules : rules + 1;
+    }
+
+    /**
+     * The kernel to split with, checked once against this scanner on a sample: one that cuts a
+     * single piece differently is passed over.
+     */
+    private Kernels kernel() {
+        if (!kernelResolved) {
+            Kernels candidate = kernelRules < 0 ? null : Kernels.current();
+            kernel = candidate != null && agrees(candidate) ? candidate : null;
+            kernelResolved = true;
+        }
+        return kernel;
+    }
+
+    private boolean agrees(Kernels candidate) {
+        StringBuilder sample = new StringBuilder();
+        for (int i = 0; i < 40; i++) {
+            sample.append("I'd say it's 12345 pieces!! \n\n  \r\n x  \t y ")
+                    .append("naïve 東京 ٣٤٥ 𝐀𝐁 'ſ 'LL'VE (?!)  \u00a0\u2028\n\n\n  z");
+            sample.append(" ".repeat(i * 7)).append(i % 3 == 0 ? "\n" : "a").append('\'');
+        }
+        byte[] text = utf8(sample, 0, sample.length());
+        int end = text.length - PADDING;
+        try {
+            for (int batch : new int[] {BATCH, 3}) {
+                int[] expected = new int[batch];
+                int[] actual = new int[batch];
+                int cursor = 0;
+                while (cursor < end) {
+                    int n = scan(text, cursor, end, expected);
+                    int m = candidate.split(kernelRules, text, cursor, end, actual);
+                    if (m <= 0) {
+                        return false;
+                    }
+                    for (int k = 0; k < m; k++) {
+                        if (k >= n || actual[k] != expected[k]) {
+                            return false;
+                        }
+                    }
+                    cursor = actual[m - 1];
+                }
+            }
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** The regex strings the loaders compile, each with the scanner that splits like it. */
@@ -223,6 +292,18 @@ final class TiktokenSplitter implements Splitter {
      * until the array is full or the text ends. Returns how many.
      */
     int split(byte[] text, int start, int end, int[] ends) {
+        Kernels kernel = kernel();
+        if (kernel != null) {
+            int n = kernel.split(kernelRules, text, start, end, ends);
+            if (n > 0) {
+                return n;
+            }
+        }
+        return scan(text, start, end, ends);
+    }
+
+    /** {@link #split} by hand. */
+    private int scan(byte[] text, int start, int end, int[] ends) {
         int n = 0;
         int i = start;
         while (i < end && n < ends.length) {
@@ -637,75 +718,5 @@ final class TiktokenSplitter implements Splitter {
                     | (text[i + 3] & 0x3F);
         }
         return (1 << 24) | 0xFFFD;
-    }
-
-    /**
-     * The character classes of the patterns, as java.util.regex defines them under
-     * UNICODE_CHARACTER_CLASS: a bit per class, tabulated for the BMP.
-     */
-    static final class CharClasses {
-        static final int SPACE = 1; // \s
-        static final int LETTER = 2; // \p{L}
-        static final int NUMBER = 4; // \p{N}
-        static final int MARK = 8; // \p{M}
-        static final int UPPER = 16; // [\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]
-        static final int LOWER = 32; // [\p{Ll}\p{Lm}\p{Lo}\p{M}]
-        static final int NEWLINE = 64; // [\r\n]
-
-        private static final byte[] BMP = new byte[0x10000];
-
-        static {
-            for (int c = 0; c < BMP.length; c++) {
-                BMP[c] = (byte) compute(c);
-            }
-        }
-
-        private CharClasses() {}
-
-        static int of(int codePoint) {
-            return codePoint < 0x10000 ? BMP[codePoint] : compute(codePoint);
-        }
-
-        static int compute(int cp) {
-            int type = Character.getType(cp);
-            int cls = 0;
-            switch (type) {
-                case Character.UPPERCASE_LETTER:
-                case Character.TITLECASE_LETTER:
-                    cls = LETTER | UPPER;
-                    break;
-                case Character.LOWERCASE_LETTER:
-                    cls = LETTER | LOWER;
-                    break;
-                case Character.MODIFIER_LETTER:
-                case Character.OTHER_LETTER:
-                    cls = LETTER | UPPER | LOWER;
-                    break;
-                case Character.NON_SPACING_MARK:
-                case Character.ENCLOSING_MARK:
-                case Character.COMBINING_SPACING_MARK:
-                    cls = MARK | UPPER | LOWER;
-                    break;
-                case Character.DECIMAL_DIGIT_NUMBER:
-                case Character.LETTER_NUMBER:
-                case Character.OTHER_NUMBER:
-                    cls = NUMBER;
-                    break;
-                case Character.SPACE_SEPARATOR:
-                case Character.LINE_SEPARATOR:
-                case Character.PARAGRAPH_SEPARATOR:
-                    cls = SPACE;
-                    break;
-                default:
-                    break;
-            }
-            if ((cp >= 0x9 && cp <= 0xD) || cp == 0x85) {
-                cls |= SPACE;
-            }
-            if (cp == '\r' || cp == '\n') {
-                cls |= NEWLINE;
-            }
-            return cls;
-        }
     }
 }
