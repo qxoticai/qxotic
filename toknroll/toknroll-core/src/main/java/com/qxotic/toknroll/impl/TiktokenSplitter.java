@@ -631,10 +631,13 @@ final class TiktokenSplitter implements Splitter {
         return (a + (0x80 - c) * LOW_BYTES) & HIGH_BITS;
     }
 
-    /** Per byte of {@code a} (all under 0x80): the high bit when the byte equals {@code c}. */
+    /**
+     * Per byte of {@code a} (all under 0x80): the high bit when the byte equals {@code c}. Exact in
+     * every byte: no borrow crosses a byte, unlike the subtract-and-mask trick.
+     */
     private static long is(long a, int c) {
         long x = a ^ (c * LOW_BYTES);
-        return (x - LOW_BYTES) & ~x & HIGH_BITS;
+        return ~((x + ~HIGH_BITS) | x) & HIGH_BITS;
     }
 
     // A decoded position packs the code point in the low 21 bits and its byte length above them.
