@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class TiktokenSplitterTest {
 
     /** Every kind of character the patterns tell apart, and the ones that fooled a scanner once. */
-    private static final String[] PIECES = {
+    static final String[] PIECES = {
         "a", "b", "Z", "Q", "hello", "World", " ", "  ", "\t", "\n", "\r", "\r\n", "\n\n", "'",
         "'s", "'S", "'ſ", "'re", "'LL", "'d", "'x", "1", "23", "456", "7890", "٣", "Ⅻ", "²", "é",
         "É", "ß", "ǅ", "ʰ", "中", "文", "ア", "́", "ः", "⃝", "!", ".", ",", "/", "\\", "-", "#", " ",
