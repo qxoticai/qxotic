@@ -288,8 +288,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * The batch loop. A single byte and a cached word write their ids straight into the builder's
-     * array, room for a batch of them made once; only a miss goes through the builder.
+     * The batches. A single byte and a cached word write their ids straight into the builder's
+     * array, room for a batch of them made once, in a loop of their own inside the cache; only a
+     * miss goes through the builder.
      */
     private void encode(
             byte[] text,
@@ -304,35 +305,64 @@ final class TiktokenModel extends AbstractTokenizationModel {
         while (cursor < end) {
             int n = splitter.split(text, cursor, end, ends);
             int inPlace = inPlace(text, ends, n);
-            out.ensureCapacity(out.size() + n * WordCache.MAX_IDS);
-            int[] ids = out.data();
-            int size = out.size();
-            for (int k = 0; k < inPlace; k++) {
-                int e = ends[k];
-                int length = e - cursor;
-                if (length == 1) {
-                    ids[size++] = singleByteTokenId[text[cursor] & 0xFF];
-                } else {
-                    WordCache c = cache != null && length <= WordCache.MAX_BYTES ? cache : null;
-                    int hit = c == null ? 0 : c.lookup(text, cursor, e, ids, size);
-                    if (hit > 0) {
-                        size += hit;
-                    } else {
-                        out.size(size);
-                        encodeMiss(text, cursor, e, out, s, c);
-                        out.ensureCapacity(out.size() + (n - k) * WordCache.MAX_IDS);
-                        ids = out.data();
-                        size = out.size();
-                    }
-                }
-                cursor = e;
-            }
-            out.size(size);
+            cursor = encodeBatch(text, cursor, ends, inPlace, n, cache, out, s);
             if (inPlace < n) {
                 encode(paddedTail(text, cursor, end, s), 0, end - cursor, splitter, out, s);
                 return;
             }
         }
+    }
+
+    /**
+     * One batch: the first {@code count} pieces of {@code ends}, from {@code cursor}; returns the
+     * cursor after them. A method of its own, called once per batch, so that the JIT compiles it
+     * early and on a profile with every path in it: the text-sized loop above runs a handful of
+     * times per process, and a compile taken mid-way through it speculated wrong and cost a third
+     * of a pass.
+     */
+    private int encodeBatch(
+            byte[] text,
+            int cursor,
+            int[] ends,
+            int count,
+            int n,
+            WordCache cache,
+            IntSequenceBuilder out,
+            Scratch s) {
+        out.ensureCapacity(out.size() + n * WordCache.MAX_IDS);
+        int[] ids = out.data();
+        int size = out.size();
+        int k = 0;
+        while (k < count) {
+            if (cache != null) {
+                long ran = cache.run(text, ends, k, count, cursor, ids, size, singleByteTokenId);
+                int next = (int) (ran >>> 32);
+                size = (int) ran;
+                if (next > k) {
+                    cursor = ends[next - 1];
+                    k = next;
+                }
+                if (k == count) {
+                    break;
+                }
+            }
+            int e = ends[k];
+            int length = e - cursor;
+            if (length == 1) {
+                ids[size++] = singleByteTokenId[text[cursor] & 0xFF];
+            } else {
+                out.size(size);
+                WordCache c = cache != null && length <= WordCache.MAX_BYTES ? cache : null;
+                encodeMiss(text, cursor, e, out, s, c);
+                out.ensureCapacity(out.size() + (n - k) * WordCache.MAX_IDS);
+                ids = out.data();
+                size = out.size();
+            }
+            cursor = e;
+            k++;
+        }
+        out.size(size);
+        return cursor;
     }
 
     /** How many of the batch's pieces can be read where they are: all but a text's last few. */
