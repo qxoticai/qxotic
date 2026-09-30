@@ -53,7 +53,7 @@ LM=LiquidAI/LFM2.5-350M-GGUF:Q8_0
 jinfer instruct -m "$LM" "Explain virtual threads in two sentences."
 ```
 
-Model and generation options can precede or follow the command. Command-specific options follow it.
+Options shared by several commands may precede or follow the command; an option of one command follows it.
 Use `jinfer <command> --help` for the full option reference:
 
 ```sh
