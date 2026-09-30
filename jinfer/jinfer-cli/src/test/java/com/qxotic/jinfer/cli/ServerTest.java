@@ -398,4 +398,126 @@ class ServerTest {
             }
         }
     }
+
+    /** The transcription server offers the language server's probes, under the same rules. */
+    @Test
+    void transcriptionServerProbesMatchTheLanguageServers() throws Exception {
+        Options o =
+                Options.parse(
+                        "server",
+                        "-m",
+                        "unused",
+                        "--port",
+                        "0",
+                        "--api-key",
+                        "k",
+                        "--concurrency",
+                        "1",
+                        "--write-timeout",
+                        "5");
+        var config = Server.config(o, null);
+        var limits = config.limits();
+        config =
+                config.withLimits(
+                        new ServerConfig.Limits(
+                                limits.threads(),
+                                limits.queueCapacity(),
+                                limits.maxBodyBytes(),
+                                limits.grammar(),
+                                limits.writeTimeout(),
+                                limits.requestTimeout(),
+                                Duration.ZERO));
+        var model = new TranscribeTest.Transcriber();
+        try (var running =
+                        com.qxotic.jinfer.server.TranscriptionServer.start(
+                                model, "asr.gguf", config);
+                var client =
+                        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            String base = "http://127.0.0.1:" + running.address().getPort();
+            java.util.function.Function<String, HttpRequest.Builder> get =
+                    path ->
+                            HttpRequest.newBuilder(URI.create(base + path))
+                                    .timeout(Duration.ofSeconds(5));
+            // the liveness probe carries no key; the model card and the scrape do
+            var health =
+                    client.send(get.apply("/health").build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, health.statusCode(), health.body());
+            assertTrue(health.body().contains("\"busy\":false"), health.body());
+            assertEquals(
+                    401,
+                    client.send(
+                                    get.apply("/v1/models").build(),
+                                    HttpResponse.BodyHandlers.ofString())
+                            .statusCode());
+            var card =
+                    client.send(
+                            get.apply("/v1/models").header("Authorization", "Bearer k").build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertTrue(card.body().contains("\"input_modalities\":[\"audio\"]"), card.body());
+            // one transcription, then the scrape counts it
+            var body = new java.io.ByteArrayOutputStream();
+            body.write(
+                    "--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
+                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            body.write(
+                    com.qxotic.jinfer.codecs.AudioCodec.wav(
+                            new com.qxotic.jinfer.media.Media.Audio(new float[16000], 16000, 1)));
+            body.write("\r\n--b--\r\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            var heard =
+                    client.send(
+                            HttpRequest.newBuilder(URI.create(base + "/v1/audio/transcriptions"))
+                                    .timeout(Duration.ofSeconds(10))
+                                    .header("Authorization", "Bearer k")
+                                    .header("Content-Type", "multipart/form-data; boundary=b")
+                                    .POST(
+                                            HttpRequest.BodyPublishers.ofByteArray(
+                                                    body.toByteArray()))
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, heard.statusCode(), heard.body());
+            var metrics =
+                    client.send(
+                            get.apply("/metrics").header("Authorization", "Bearer k").build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, metrics.statusCode(), metrics.body());
+            assertTrue(
+                    metrics.body().contains("jinfer_transcriptions_completed_total 1\n"),
+                    metrics.body());
+            assertTrue(
+                    metrics.body().contains("jinfer_transcribed_audio_seconds_total 1.0\n"),
+                    metrics.body());
+            // one request holding the single permit: the next is refused, the probe still answers
+            try (var held = new java.net.Socket("127.0.0.1", running.address().getPort())) {
+                held.getOutputStream()
+                        .write(
+                                ("POST /v1/audio/transcriptions HTTP/1.1\r\n"
+                                     + "Host: localhost\r\n"
+                                     + "Authorization: Bearer k\r\n"
+                                     + "Content-Type: multipart/form-data; boundary=b\r\n"
+                                     + "Content-Length: 64\r\n\r\n")
+                                        .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                held.getOutputStream().flush();
+                Thread.sleep(500);
+                var refused =
+                        client.send(
+                                HttpRequest.newBuilder(
+                                                URI.create(base + "/v1/audio/transcriptions"))
+                                        .timeout(Duration.ofSeconds(5))
+                                        .header("Authorization", "Bearer k")
+                                        .header("Content-Type", "multipart/form-data; boundary=b")
+                                        .POST(
+                                                HttpRequest.BodyPublishers.ofByteArray(
+                                                        body.toByteArray()))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString());
+                assertEquals(503, refused.statusCode(), refused.body());
+                assertNotNull(refused.headers().firstValue("Retry-After").orElse(null));
+                var busy =
+                        client.send(
+                                get.apply("/health").build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, busy.statusCode(), busy.body());
+                assertTrue(busy.body().contains("\"busy\":true"), busy.body());
+            }
+        }
+    }
 }

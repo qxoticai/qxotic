@@ -18,6 +18,8 @@ import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -35,12 +37,35 @@ public final class TranscriptionServer {
     private final String servedModel;
     private final ServerConfig config;
     private final ReentrantLock compute = new ReentrantLock(true);
+    // --concurrency handlers admitted at once (the compute lock still serializes the model); the
+    // rest get 503 + Retry-After, and the probes below answer regardless, as the language server's
+    private final Semaphore admissions;
+    private final long startNanos = System.nanoTime();
+    private final AtomicLong transcriptions = new AtomicLong(), audioMillis = new AtomicLong();
 
     private TranscriptionServer(
             TranscriptionModel<?, ?, ?> model, String servedModel, ServerConfig config) {
         this.model = model;
         this.servedModel = servedModel;
         this.config = config;
+        this.admissions = new Semaphore(config.limits().threads());
+    }
+
+    private int inFlight() {
+        return config.limits().threads() - admissions.availablePermits();
+    }
+
+    /** The scrape's view, in the language server's format and names where the meaning is shared. */
+    private String exposition() {
+        StringBuilder sb = new StringBuilder();
+        Metrics.metric(
+                sb, "jinfer_uptime_seconds", "gauge", (System.nanoTime() - startNanos) / 1e9);
+        Metrics.metric(
+                sb, "jinfer_transcriptions_completed_total", "counter", transcriptions.get());
+        Metrics.metric(
+                sb, "jinfer_transcribed_audio_seconds_total", "counter", audioMillis.get() / 1e3);
+        Metrics.metric(sb, "jinfer_transcriptions_in_flight", "gauge", inFlight());
+        return sb.toString();
     }
 
     /** A running transport; the caller retains ownership of the model. */
@@ -86,12 +111,38 @@ public final class TranscriptionServer {
     private Running serve() throws IOException {
         HttpServer server = HttpServer.create(config.bind(), 0);
         Map<String, Object> modelCard =
-                Map.of("id", servedModel, "object", "model", "created", 0, "owned_by", "jinfer");
+                Map.of(
+                        "id",
+                        servedModel,
+                        "object",
+                        "model",
+                        "created",
+                        0,
+                        "owned_by",
+                        "jinfer",
+                        "architecture",
+                        Map.of("input_modalities", List.of("audio")));
+        // a liveness probe carries no key and answers under load, as the language server's does
+        ServerConfig.Access probe = new ServerConfig.Access(null, config.access().allowedOrigins());
         server.createContext(
                 "/health",
                 exchange -> {
+                    if (Http.preamble(exchange, probe)) return;
+                    Http.sendJson(
+                            exchange,
+                            200,
+                            Map.of("status", "ok", "busy", inFlight() > 0, "queued", 0));
+                });
+        server.createContext(
+                "/metrics",
+                exchange -> {
                     if (Http.preamble(exchange, config.access())) return;
-                    Http.sendJson(exchange, 200, Map.of("status", "ok"));
+                    if (!"/metrics".equals(exchange.getRequestURI().getPath())) {
+                        Http.sendError(exchange, 404, "Not found");
+                        return;
+                    }
+                    if (Http.requireMethod(exchange, "GET")) return;
+                    Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, exposition());
                 });
         server.createContext(
                 "/v1/models",
@@ -111,27 +162,31 @@ public final class TranscriptionServer {
                 });
         server.createContext(
                 "/v1/audio/transcriptions",
-                exchange -> {
-                    if (Http.preamble(exchange, config.access())) return;
-                    if (!"/v1/audio/transcriptions".equals(exchange.getRequestURI().getPath())) {
-                        Http.sendError(
-                                exchange,
-                                404,
-                                "unknown path " + exchange.getRequestURI().getPath());
-                        return;
-                    }
-                    if (Http.requireMethod(exchange, "POST")) return;
-                    try {
-                        handleTranscription(exchange);
-                    } catch (IllegalArgumentException | IllegalStateException e) {
-                        Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
-                    } catch (RuntimeException e) {
-                        Http.sendErrorQuietly(exchange, 500, Http.errorMessage(e));
-                    }
-                });
+                Server.gated(
+                        exchange -> {
+                            if (Http.preamble(exchange, config.access())) return;
+                            if (!"/v1/audio/transcriptions"
+                                    .equals(exchange.getRequestURI().getPath())) {
+                                Http.sendError(
+                                        exchange,
+                                        404,
+                                        "unknown path " + exchange.getRequestURI().getPath());
+                                return;
+                            }
+                            if (Http.requireMethod(exchange, "POST")) return;
+                            try {
+                                handleTranscription(exchange);
+                            } catch (IllegalArgumentException | IllegalStateException e) {
+                                Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
+                            } catch (RuntimeException e) {
+                                Http.sendErrorQuietly(exchange, 500, Http.errorMessage(e));
+                            }
+                        },
+                        admissions,
+                        config.limits().retryAfterSeconds()));
+        // every exchange gets a thread at once; the gate above bounds the work, not the probes
         server.setExecutor(
-                Executors.newFixedThreadPool(
-                        config.limits().threads(),
+                Executors.newCachedThreadPool(
                         runnable -> {
                             Thread thread = new Thread(runnable, "jinfer-transcription-handler");
                             thread.setDaemon(true);
@@ -189,6 +244,8 @@ public final class TranscriptionServer {
         } finally {
             compute.unlock();
         }
+        transcriptions.incrementAndGet();
+        audioMillis.addAndGet(audio.pcm().length * 1000L / model.sampleRate());
         switch (format) {
             case "text" -> Http.sendText(exchange, 200, "text/plain", transcription.text() + "\n");
             case "json" -> Http.sendJson(exchange, 200, Map.of("text", transcription.text()));

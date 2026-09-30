@@ -284,7 +284,7 @@ final class Server {
                   --api-key <token>          required for non-loopback binds
                   --cors-origin <origin>     repeatable; default *
                   --concurrency <int>        default 16; language: admits up to 2*N HTTP handlers;
-                                             transcription: N handler threads, not parallel generations
+                                             transcription: N requests admitted at once; the model serves them one by one
                   --queue-depth <int>        waiting language generations; default 4; 0: no waiting
                                              not applicable to transcription models
                   --max-body-mb <int>        request-body limit; default 32
