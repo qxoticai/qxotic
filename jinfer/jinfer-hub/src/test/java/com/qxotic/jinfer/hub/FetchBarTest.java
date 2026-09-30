@@ -101,6 +101,7 @@ class FetchBarTest {
                         .toString();
         return List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "--enable-native-access=ALL-UNNAMED",
                 "-cp",
                 classes + File.pathSeparator + System.getProperty("java.class.path"),
                 ProgressProbe.class.getName());
@@ -137,15 +138,39 @@ class FetchBarTest {
     public static class ProgressProbe {
         public static void main(String[] args) throws Exception {
             if (args.length > 0) {
-                var columns = Fetch.Board.class.getDeclaredMethod("columns");
-                columns.setAccessible(true);
-                System.out.println(columns.invoke(null));
+                System.out.println(TerminalSupport.columns(2));
                 return;
             }
             Fetch.Progress progress = new Fetch.Progress("model-Q8_0.gguf", 1000);
             progress.start(0);
             progress.at(500);
             progress.finish();
+        }
+    }
+
+    @Test
+    void nativeAccessIsOptionalForPlainOutput(@TempDir Path dir) throws Exception {
+        List<String> command = new ArrayList<>(probeCommand());
+        command.remove("--enable-native-access=ALL-UNNAMED");
+        command.add(1, "--illegal-native-access=deny");
+        command.add("columns");
+        Path output = dir.resolve("width.txt"), error = dir.resolve("stderr.txt");
+        var builder =
+                new ProcessBuilder(command)
+                        .redirectOutput(output.toFile())
+                        .redirectError(error.toFile());
+        // This probe intentionally denies access, independent of the test runner's launch flags.
+        for (String variable : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"))
+            builder.environment().remove(variable);
+        builder.environment().put("COLUMNS", "17");
+        Process process = builder.start();
+        try {
+            assertTrue(process.waitFor(20, TimeUnit.SECONDS));
+            assertEquals(0, process.exitValue(), Files.readString(error));
+            assertEquals("17", Files.readString(output).strip());
+            assertEquals("", Files.readString(error));
+        } finally {
+            process.destroyForcibly();
         }
     }
 

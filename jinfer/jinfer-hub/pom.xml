@@ -16,6 +16,7 @@
   <description>Resolves and downloads GGUF model files from Hugging Face and ModelScope.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <hub.test.flags>${jinfer.jvm.flags} --enable-native-access=com.qxotic.jinfer.hub --add-reads com.qxotic.jinfer.hub=jdk.httpserver</hub.test.flags>
   </properties>
 
   <dependencies>
@@ -33,7 +34,7 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <argLine>@{argLine} ${jinfer.jvm.flags} --add-reads com.qxotic.jinfer.hub=jdk.httpserver</argLine>
+          <argLine>@{argLine} ${hub.test.flags}</argLine>
         </configuration>
         <executions>
           <execution>
@@ -54,7 +55,7 @@
               <includes>
                 <include>**/StallGuardTest.java</include>
               </includes>
-              <argLine>@{argLine} ${jinfer.jvm.flags} --add-reads com.qxotic.jinfer.hub=jdk.httpserver -Djinfer.downloadStallSeconds=1</argLine>
+              <argLine>@{argLine} ${hub.test.flags} -Djinfer.downloadStallSeconds=1</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/stall</reportsDirectory>
             </configuration>
           </execution>
