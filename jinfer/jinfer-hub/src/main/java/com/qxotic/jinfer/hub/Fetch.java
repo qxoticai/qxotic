@@ -227,39 +227,40 @@ final class Fetch {
             }
         }
 
-        /** {@code COLUMNS} > {@code stty size} (asked once) > 80, floored at 40. */
+        /** Stderr's terminal width (asked once), then {@code COLUMNS}, then 80. */
         private static int columns() {
             if (columns > 0) {
                 return columns;
             }
             int c = 0;
-            String env = System.getenv("COLUMNS");
-            if (env != null) {
-                try {
-                    c = Integer.parseInt(env.strip());
-                } catch (NumberFormatException ignored) {
-                    // an unparseable width is not worth failing a repaint over
+            try {
+                // Measure the descriptor we paint. Copy stderr to stty's stdin before silencing
+                // probe errors; the download's stdin may be a pipe or a file.
+                Process stty =
+                        new ProcessBuilder("/bin/sh", "-c", "stty size <&2 2>/dev/null")
+                                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                                .start();
+                String[] parts;
+                try (InputStream out = stty.getInputStream()) {
+                    parts =
+                            new String(out.readAllBytes(), StandardCharsets.UTF_8)
+                                    .strip()
+                                    .split("\\s+");
                 }
+                if (stty.waitFor() == 0 && parts.length == 2) c = Integer.parseInt(parts[1]);
+            } catch (IOException | NumberFormatException unknowable) {
+                // No POSIX terminal probe: use the environment below.
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
             }
             if (c <= 0) {
                 try {
-                    Process stty =
-                            new ProcessBuilder("stty", "size")
-                                    .redirectInput(ProcessBuilder.Redirect.INHERIT)
-                                    .start();
-                    String[] parts =
-                            new String(stty.getInputStream().readAllBytes(), StandardCharsets.UTF_8)
-                                    .strip()
-                                    .split("\\s+");
-                    stty.waitFor();
-                    if (parts.length == 2) {
-                        c = Integer.parseInt(parts[1]);
-                    }
-                } catch (Exception unknowable) {
-                    // no stty (Windows), no tty on stdin - the 80-column default is the answer
+                    c = Integer.parseInt(System.getenv().getOrDefault("COLUMNS", "").strip());
+                } catch (NumberFormatException unset) {
+                    // No usable measurement or environment setting.
                 }
             }
-            columns = c >= 40 ? c : 80;
+            columns = c > 0 ? c : 80;
             return columns;
         }
     }
