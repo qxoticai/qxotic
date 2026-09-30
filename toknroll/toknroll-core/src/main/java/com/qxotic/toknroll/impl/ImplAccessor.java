@@ -103,7 +103,16 @@ public final class ImplAccessor {
     }
 
     public static Splitter createRegexSplitter(Pattern pattern) {
-        return RegexSplitter.create(pattern);
+        return createRegexSplitter(pattern, true);
+    }
+
+    /**
+     * Every match is a piece; with {@code emitGaps}, so is the text between two matches. A known
+     * pattern gets its hand-written scanner; such a pattern matches all text, so it has no gaps.
+     */
+    public static Splitter createRegexSplitter(Pattern pattern, boolean emitGaps) {
+        Splitter scanner = TiktokenSplitter.forPattern(pattern);
+        return scanner != null ? scanner : RegexSplitter.create(pattern, emitGaps);
     }
 
     public static Specials specialsNone() {
