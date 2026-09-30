@@ -221,7 +221,11 @@ public final class HuggingFaceTokenizerLoader {
 
         Map<String, Object> root = parseObject(tokenizerJson);
         Map<String, Object> model = asObject(root.get("model"), "tokenizer.json:model");
-        String modelType = asString(model.get("type"), "tokenizer.json:model.type");
+        // Files written before tokenizers tagged its models (gpt2) carry no type: merges mean BPE.
+        String modelType =
+                model.get("type") == null && model.containsKey("merges")
+                        ? "BPE"
+                        : asString(model.get("type"), "tokenizer.json:model.type");
         if (!"BPE".equals(modelType)) {
             throw unsupported("tokenizer.json:model.type", modelType, "BPE");
         }
