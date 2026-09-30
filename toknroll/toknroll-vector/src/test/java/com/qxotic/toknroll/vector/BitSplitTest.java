@@ -106,8 +106,27 @@ class BitSplitTest {
         "12345678"
     };
 
+    private static final String UPPER = "[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]";
+    private static final String LOWER = "[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]";
+    private static final String PREFIX = "[^\\r\\n\\p{L}\\p{N}]?";
+    private static final String CASED =
+            PREFIX + UPPER + "*" + LOWER + "+%s|" + PREFIX + UPPER + "+" + LOWER + "*%s";
+    private static final String O200K_REST =
+            "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+    private static final String R50K =
+            CONTRACTION + "| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
+
     static Stream<Object[]> rules() {
+        String suffix = "(?i:" + CONTRACTION + ")?";
         return Stream.of(
+                new Object[] {Kernels.R50K, R50K},
+                new Object[] {
+                    Kernels.O200K,
+                    String.format(CASED, suffix, suffix) + "|\\p{N}{1,3}" + O200K_REST
+                },
+                new Object[] {
+                    Kernels.TEKKEN, String.format(CASED, "", "") + "|\\p{N}" + O200K_REST
+                },
                 new Object[] {
                     Kernels.CL100K, "(?i:" + CONTRACTION + ")|" + String.format(REST, "\\p{N}{1,3}")
                 },
