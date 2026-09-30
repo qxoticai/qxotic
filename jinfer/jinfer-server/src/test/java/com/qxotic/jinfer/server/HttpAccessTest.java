@@ -113,7 +113,10 @@ class HttpAccessTest {
             stalled.getOutputStream().flush();
 
             assertTrue(finished.await(2, TimeUnit.SECONDS), "stalled body read did not expire");
-            assertEquals(1, admissions.availablePermits());
+            assertTrue(
+                    admissions.tryAcquire(2, TimeUnit.SECONDS),
+                    "cleanup did not return the permit");
+            admissions.release();
             assertEquals(
                     200,
                     HttpClient.newHttpClient()
