@@ -557,7 +557,7 @@ class WorkflowTest {
                         garbage.toString(),
                         "hi"),
                 capture.err());
-        assertTrue(capture.err().contains("not a frozen prompt cache"), capture.err());
+        assertTrue(capture.err().contains("not a valid frozen prompt cache"), capture.err());
         assertFalse(capture.err().contains("unexpected failure"), capture.err());
         assertFalse(capture.err().contains("\tat "), capture.err());
         assertEquals("", capture.out());

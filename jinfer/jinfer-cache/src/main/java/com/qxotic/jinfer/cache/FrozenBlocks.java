@@ -139,16 +139,11 @@ public final class FrozenBlocks {
     private static FrozenBlocks open(Path file, ContentKey modelSeed, FileChannel ch)
             throws IOException {
         long size = ch.size();
-        if (size < 8) {
-            throw new IllegalStateException(
-                    file + " is not a frozen prompt cache (truncated header)");
-        }
+        if (size < 8) throw corrupt(file, "truncated header");
         ByteBuffer prefix = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
         readFully(ch, prefix, 0);
         prefix.flip();
-        if (prefix.getInt() != MAGIC) {
-            throw new IllegalStateException(file + " is not a frozen prompt cache (bad magic)");
-        }
+        if (prefix.getInt() != MAGIC) throw corrupt(file, "bad magic");
         int version = prefix.getInt();
         if (version != FORMAT_VERSION) {
             throw new IllegalStateException(
@@ -159,10 +154,7 @@ public final class FrozenBlocks {
                             + FORMAT_VERSION
                             + "; rebuild the cache");
         }
-        if (size < HEADER_BYTES) {
-            throw new IllegalStateException(
-                    file + " is not a frozen prompt cache (truncated header)");
-        }
+        if (size < HEADER_BYTES) throw corrupt(file, "truncated header");
         ByteBuffer header = ByteBuffer.allocate(PAGE_BYTES).order(ByteOrder.LITTLE_ENDIAN);
         readFully(ch, header, 0);
         header.flip();
@@ -216,7 +208,7 @@ public final class FrozenBlocks {
      * recorded identity and whether it matches the stored digest, both commit slots and which one
      * serves, the index, and every block - all checksums verified, since a report that skipped them
      * would be a guess. A damaged cache is described, not refused: what could not be read is said
-     * in place. A file that never was one is refused as {@link #open} refuses it.
+     * in place. A file that never was one is refused, with the words {@link #open} uses.
      */
     public static String describe(Path file) throws IOException {
         StringBuilder out = new StringBuilder();
