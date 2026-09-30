@@ -1,5 +1,6 @@
 package com.qxotic.toknroll;
 
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.Optional;
@@ -78,6 +79,10 @@ public final class TokenizationPipeline implements Tokenizer {
             model.encodeInto(normalizedText, out);
             return;
         }
+        if (ImplAccessor.encodeUtf8(
+                model, splitter, normalizedText, 0, normalizedText.length(), out)) {
+            return;
+        }
         splitter.splitAll(
                 normalizedText,
                 0,
@@ -97,6 +102,12 @@ public final class TokenizationPipeline implements Tokenizer {
         CharSequence current = normalizeSlice(text, startInclusive, endExclusive);
         if (!hasSplitter) {
             return model.countTokens(current, 0, current.length());
+        }
+        IntSequence.Builder counted =
+                IntSequence.newBuilder(
+                        Tokenizer.estimateTokenCapacity(current.length(), expectedTokensPerChar()));
+        if (ImplAccessor.encodeUtf8(model, splitter, current, 0, current.length(), counted)) {
+            return counted.size();
         }
         int[] total = {0};
         splitter.splitAll(
