@@ -1,6 +1,5 @@
-package com.qxotic.toknroll.impl;
+package com.qxotic.toknroll.vector;
 
-import com.qxotic.toknroll.IntSequence;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
@@ -46,7 +45,6 @@ final class WordCache {
      */
     private long[] slots = new long[4 * (FIRST_SLOTS + WINDOW) + 2];
 
-    private final int[] scratch = new int[MAX_IDS];
     private int inserted; // since the last doubling
     private int victim;
 
@@ -59,8 +57,8 @@ final class WordCache {
     /**
      * The ids of {@code text[start, end)} written to {@code ids[at, at + count)}, which must have
      * room for {@link #MAX_IDS}, and their count; 0 when the cache does not hold the word, and then
-     * {@link #insert} may follow for it. The text must have {@link TiktokenSplitter#PADDING}
-     * readable bytes past {@code end}.
+     * {@link #insert} may follow for it. The text must have {@link FastEncoder#PADDING} readable
+     * bytes past {@code end}.
      */
     int lookup(byte[] text, int start, int end, int[] ids, int at) {
         int length = end - start;
@@ -138,16 +136,6 @@ final class WordCache {
         return ((long) k << 32) | size;
     }
 
-    /** {@link #lookup} appending the ids to {@code out}. */
-    int lookup(byte[] text, int start, int end, IntSequence.Builder out) {
-        int[] ids = scratch;
-        int count = lookup(text, start, end, ids, 0);
-        for (int k = 0; k < count; k++) {
-            out.add(ids[k]);
-        }
-        return count;
-    }
-
     /**
      * The slot an insert takes in the window at {@code home}, whose tags are {@code row}: the first
      * empty one, else a rotating one. A full window evicts a rotating slot, not always the home
@@ -160,8 +148,10 @@ final class WordCache {
                 : home + (victim++ & (WINDOW - 1));
     }
 
-    /** Records the word of the last {@link #lookup} as {@code count} ids taken from {@code out}. */
-    void insert(IntSequence.Builder out, int first, int count) {
+    /**
+     * Records the word of the last {@link #lookup} as the {@code count} ids at {@code ids[first]}.
+     */
+    void insert(int[] ids, int first, int count) {
         if (++inserted > mask && mask < MAX_SLOTS - 1) {
             grow();
         }
@@ -170,12 +160,11 @@ final class WordCache {
         int at = 4 * slot + 2;
         slots[at] = lo;
         slots[at + 1] = hi | ((long) count << 60);
-        slots[at + 2] =
-                (id(out, first) & 0xFFFFFFFFL) | (count > 1 ? (long) id(out, first + 1) << 32 : 0);
+        slots[at + 2] = (ids[first] & 0xFFFFFFFFL) | (count > 1 ? (long) ids[first + 1] << 32 : 0);
         slots[at + 3] =
                 count > 2
-                        ? (id(out, first + 2) & 0xFFFFFFFFL)
-                                | (count > 3 ? (long) id(out, first + 3) << 32 : 0)
+                        ? (ids[first + 2] & 0xFFFFFFFFL)
+                                | (count > 3 ? (long) ids[first + 3] << 32 : 0)
                         : 0;
     }
 
@@ -215,13 +204,6 @@ final class WordCache {
     private static long hash(long lo, long hi) {
         long hash = (lo * 0x9E3779B97F4A7C15L) ^ (hi * 0xC2B2AE3D27D4EB4FL);
         return hash ^ (hash >>> 29);
-    }
-
-    /** An id already appended to {@code out}, without a view object for the model's own builder. */
-    private static int id(IntSequence.Builder out, int index) {
-        return out instanceof IntSequenceBuilder
-                ? ((IntSequenceBuilder) out).get(index)
-                : out.asSequenceView().intAt(index);
     }
 
     /**

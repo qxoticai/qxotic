@@ -84,8 +84,9 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         return data;
     }
 
-    /** Sets the size, after writing to {@link #data} within the capacity. */
-    void size(int size) {
+    /** Takes {@code data} over as the backing array, its first {@code size} ids in use. */
+    void adopt(int[] data, int size) {
+        this.data = data;
         this.size = size;
     }
 

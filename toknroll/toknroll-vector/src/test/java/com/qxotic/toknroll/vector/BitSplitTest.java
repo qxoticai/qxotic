@@ -3,7 +3,7 @@ package com.qxotic.toknroll.vector;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.spi.Kernels;
+import com.qxotic.toknroll.spi.TiktokenEngine;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -119,25 +119,28 @@ class BitSplitTest {
     static Stream<Object[]> rules() {
         String suffix = "(?i:" + CONTRACTION + ")?";
         return Stream.of(
-                new Object[] {Kernels.R50K, R50K},
+                new Object[] {TiktokenEngine.R50K, R50K},
                 new Object[] {
-                    Kernels.O200K,
+                    TiktokenEngine.O200K,
                     String.format(CASED, suffix, suffix) + "|\\p{N}{1,3}" + O200K_REST
                 },
                 new Object[] {
-                    Kernels.TEKKEN, String.format(CASED, "", "") + "|\\p{N}" + O200K_REST
+                    TiktokenEngine.TEKKEN, String.format(CASED, "", "") + "|\\p{N}" + O200K_REST
                 },
                 new Object[] {
-                    Kernels.CL100K, "(?i:" + CONTRACTION + ")|" + String.format(REST, "\\p{N}{1,3}")
+                    TiktokenEngine.CL100K,
+                    "(?i:" + CONTRACTION + ")|" + String.format(REST, "\\p{N}{1,3}")
                 },
                 new Object[] {
-                    Kernels.CL100K_ASCII, ASCII_BOTH + "|" + String.format(REST, "\\p{N}{1,3}")
+                    TiktokenEngine.CL100K_ASCII,
+                    ASCII_BOTH + "|" + String.format(REST, "\\p{N}{1,3}")
                 },
                 new Object[] {
-                    Kernels.QWEN2, "(?i:" + CONTRACTION + ")|" + String.format(REST, "\\p{N}")
+                    TiktokenEngine.QWEN2,
+                    "(?i:" + CONTRACTION + ")|" + String.format(REST, "\\p{N}")
                 },
                 new Object[] {
-                    Kernels.QWEN2_ASCII, ASCII_BOTH + "|" + String.format(REST, "\\p{N}")
+                    TiktokenEngine.QWEN2_ASCII, ASCII_BOTH + "|" + String.format(REST, "\\p{N}")
                 });
     }
 
@@ -193,16 +196,16 @@ class BitSplitTest {
                                                 ? random.nextInt(256)
                                                 : r < 8 ? ' ' : r < 9 ? '\n' : '1');
             }
-            check(Kernels.CL100K, pattern, bytes, bytes.length - 16, 1024);
+            check(TiktokenEngine.CL100K, pattern, bytes, bytes.length - 16, 1024);
         }
     }
 
     private static void check(int rules, Pattern pattern, String text, int batch) {
-        byte[] utf8 = Kernels.scalar().utf8(text, 0, text.length(), 16);
+        byte[] utf8 = Utf8Reference.encode(text, 0, text.length(), 16);
         check(rules, pattern, utf8, utf8.length - 16, batch);
     }
 
-    /** The kernel's piece ends against the regex over the text as the scanner decodes it. */
+    /** The splitter's piece ends against the regex over the text as the scanner decodes it. */
     private static void check(int rules, Pattern pattern, byte[] utf8, int end, int batch) {
         // decode as the scanner does: a lead claims its length, anything else is U+FFFD
         StringBuilder chars = new StringBuilder();

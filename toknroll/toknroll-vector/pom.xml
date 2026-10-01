@@ -10,9 +10,10 @@
   </parent>
 
   <artifactId>toknroll-vector</artifactId>
-  <name>Tok'n'Roll Vector API Kernels</name>
-  <description>Tok'n'Roll's hot loops written with the Java Vector API. A runtime dependency: core
-    finds it and uses it when the JVM runs with --add-modules jdk.incubator.vector.</description>
+  <name>Tok'n'Roll Vector</name>
+  <description>Tok'n'Roll's fast encoder for the tiktoken family, written with the Java Vector API.
+    A runtime dependency: core finds it and uses it when the JVM runs with
+    --add-modules jdk.incubator.vector.</description>
 
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
