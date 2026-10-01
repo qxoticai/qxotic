@@ -263,6 +263,45 @@ class ServerTest {
     }
 
     @Test
+    void theBindAddressKeepsTheHostAsTyped() {
+        // resolved alone, :: is named 0:0:0:0:0:0:0:0 - the port-in-use message printed that
+        for (String host : List.of("::", "::1", "0.0.0.0", "localhost", "127.0.0.1")) {
+            var o = Options.parse("server", "-m", "x", "--host", host, "--api-key", "k");
+            assertEquals(host, Server.config(o, null).bind().getHostString());
+        }
+        // a scoped link-local keeps its scope, which a Linux bind requires
+        var o = Options.parse("server", "-m", "x", "--host", "fe80::1%1", "--api-key", "k");
+        var bind = Server.config(o, null).bind();
+        assertEquals("fe80::1%1", bind.getHostString());
+        assertEquals(1, ((java.net.Inet6Address) bind.getAddress()).getScopeId());
+    }
+
+    @Test
+    void occupiedPortNamesTheHostAsTyped() throws Exception {
+        try (var socket = new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("::"));
+                var engine = CliFixtures.engine(new CliFixtures.Template())) {
+            Options o =
+                    Options.parse(
+                            "server",
+                            "-m",
+                            "unused",
+                            "--host",
+                            "::",
+                            "--api-key",
+                            "k",
+                            "--port",
+                            Integer.toString(socket.getLocalPort()));
+            var error =
+                    assertThrows(
+                            IOException.class,
+                            () ->
+                                    Server.startLanguage(
+                                            engine, fastConfig(o), new CliFixtures.Capture("").io));
+            assertTrue(error.getMessage().contains(" on :: is already in use"), error.getMessage());
+        }
+    }
+
+    @Test
     void occupiedPortReportsTheRemedyAndLeavesTheEngineOwnedByTheCaller() throws Exception {
         try (var socket =
                         new java.net.ServerSocket(

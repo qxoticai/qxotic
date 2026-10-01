@@ -14,7 +14,9 @@ import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.net.BindException;
 import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -109,8 +111,19 @@ final class Server {
     /** DNS and binding policy are execution work, not argument parsing. */
     static ServerConfig config(Options o, Sampling sampling) {
         Settings s = o.server;
-        var address = new InetSocketAddress(s.host, s.port);
-        Options.require(!address.isUnresolved(), "--host %s does not resolve", s.host);
+        InetSocketAddress address;
+        try {
+            // Named as typed: a literal's own name is its expanded form (0:0:0:0:0:0:0:0 for ::).
+            // A link-local scope (fe80::1%eth0) is kept, or Linux refuses the bind.
+            InetAddress resolved = InetAddress.getByName(s.host);
+            InetAddress named =
+                    resolved instanceof Inet6Address v6 && v6.getScopeId() != 0
+                            ? Inet6Address.getByAddress(s.host, v6.getAddress(), v6.getScopeId())
+                            : InetAddress.getByAddress(s.host, resolved.getAddress());
+            address = new InetSocketAddress(named, s.port);
+        } catch (UnknownHostException e) {
+            throw new Options.UsageException("--host " + s.host + " does not resolve");
+        }
         Options.require(
                 address.getAddress().isLoopbackAddress()
                         || (s.apiKey != null && !s.apiKey.isBlank()),
