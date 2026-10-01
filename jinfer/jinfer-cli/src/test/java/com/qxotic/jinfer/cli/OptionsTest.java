@@ -109,12 +109,13 @@ class OptionsTest {
         assertNull(speech.speech.output);
         assertFalse(Options.parse("transcribe", "-m", "m", "-").transcription.rawPcm);
         assertTrue(Options.parse("transcribe", "-m", "m", "-", "--raw-pcm").transcription.rawPcm);
-        assertEquals(
-                "nord",
-                Options.parse("transcribe", "-m", "m", "-", "--raw-pcm", "--theme", "nord")
-                        .transcription
-                        .theme
-                        .name());
+        for (String theme : List.of("nord", "NORD", "Nord"))
+            assertEquals(
+                    "nord",
+                    Options.parse("transcribe", "-m", "m", "-", "--raw-pcm", "--theme", theme)
+                            .transcription
+                            .theme
+                            .name());
     }
 
     @Test
@@ -190,6 +191,12 @@ class OptionsTest {
                 "missing file",
                 Options.rootMessage(
                         new java.io.UncheckedIOException(new java.io.IOException("missing file"))));
+        assertEquals(
+                "failed to open cache missing.jkv: missing.jkv: no such file or directory",
+                Options.rootMessage(
+                        new java.io.UncheckedIOException(
+                                "failed to open cache missing.jkv",
+                                new java.nio.file.NoSuchFileException("missing.jkv"))));
     }
 
     @ParameterizedTest
@@ -263,6 +270,8 @@ class OptionsTest {
         var command = CliFixtures.javaCommand();
         command.addAll(
                 List.of(
+                        "-Djinfer.threads=7",
+                        "-Djinfer.batchCapacity=19",
                         "-cp",
                         System.getProperty("java.class.path"),
                         RuntimeProbe.class.getName()));

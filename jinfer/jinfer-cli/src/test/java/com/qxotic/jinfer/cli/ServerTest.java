@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.server.ServerConfig;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -16,6 +17,23 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class ServerTest {
+    @Test
+    void listeningUrlsUseTheRequestedHostAndTheActualPort() {
+        for (String[] hosts :
+                new String[][] {
+                    {"0.0.0.0", "127.0.0.1", "; bound to 0.0.0.0"},
+                    {"::", "[::1]", "; bound to ::"},
+                    {"127.0.0.1", "127.0.0.1", ""},
+                    {"localhost", "localhost", ""}
+                }) {
+            var capture = new CliFixtures.Capture("");
+            Server.listening(capture.io.err(), new InetSocketAddress(hosts[0], 0), 54920, "API");
+            assertEquals(
+                    "listening   http://" + hosts[1] + ":54920 (API" + hosts[2] + ")\n",
+                    capture.err().replace("\r\n", "\n"));
+        }
+    }
+
     @Test
     void sharedSettingsAndTransportSettingsMapToExistingConfiguration() {
         Options o =
@@ -444,6 +462,57 @@ class ServerTest {
                             get.apply("/v1/models").header("Authorization", "Bearer k").build(),
                             HttpResponse.BodyHandlers.ofString());
             assertTrue(card.body().contains("\"input_modalities\":[\"audio\"]"), card.body());
+            var props =
+                    client.send(
+                            get.apply("/props").header("Authorization", "Bearer k").build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, props.statusCode(), props.body());
+            assertEquals("asr.gguf", Json.parseMap(props.body()).get("model"));
+            assertEquals(
+                    16000, ((Number) Json.parseMap(props.body()).get("sample_rate")).intValue());
+            for (String path :
+                    List.of("/health", "/props", "/metrics", "/v1/models", "/v1/models/asr.gguf")) {
+                if (!path.equals("/health"))
+                    assertEquals(
+                            401,
+                            client.send(
+                                            get.apply(path).build(),
+                                            HttpResponse.BodyHandlers.ofString())
+                                    .statusCode(),
+                            path);
+                for (String method : List.of("POST", "PUT", "DELETE", "PATCH")) {
+                    var rejected =
+                            client.send(
+                                    get.apply(path)
+                                            .header("Authorization", "Bearer k")
+                                            .method(method, HttpRequest.BodyPublishers.noBody())
+                                            .build(),
+                                    HttpResponse.BodyHandlers.ofString());
+                    assertEquals(405, rejected.statusCode(), method + " " + path);
+                    assertEquals(
+                            "GET, OPTIONS", rejected.headers().firstValue("Allow").orElseThrow());
+                }
+                assertEquals(
+                        204,
+                        client.send(
+                                        get.apply(path)
+                                                .method(
+                                                        "OPTIONS",
+                                                        HttpRequest.BodyPublishers.noBody())
+                                                .build(),
+                                        HttpResponse.BodyHandlers.ofString())
+                                .statusCode(),
+                        path);
+                assertEquals(
+                        404,
+                        client.send(
+                                        get.apply(path + "XYZ")
+                                                .header("Authorization", "Bearer k")
+                                                .build(),
+                                        HttpResponse.BodyHandlers.ofString())
+                                .statusCode(),
+                        path);
+            }
             // one transcription, then the scrape counts it
             var body = new java.io.ByteArrayOutputStream();
             body.write(
@@ -507,6 +576,14 @@ class ServerTest {
                                 get.apply("/health").build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(200, busy.statusCode(), busy.body());
                 assertTrue(busy.body().contains("\"busy\":true"), busy.body());
+                assertEquals(
+                        200,
+                        client.send(
+                                        get.apply("/props")
+                                                .header("Authorization", "Bearer k")
+                                                .build(),
+                                        HttpResponse.BodyHandlers.ofString())
+                                .statusCode());
             }
         }
     }

@@ -564,6 +564,31 @@ class WorkflowTest {
         assertFalse(CliModelProvider.weights.scope().isAlive(), "a refused load releases weights");
     }
 
+    @Test
+    void cacheOpenFailuresIncludeTheIoReason() throws Exception {
+        Path model = model("language", "");
+        for (Path cache : List.of(dir, dir.resolve("missing-parent/x.jkv"))) {
+            var capture = new CliFixtures.Capture("");
+            assertEquals(
+                    1,
+                    run(
+                            capture,
+                            "instruct",
+                            "-m",
+                            model.toString(),
+                            "--cache",
+                            cache.toString(),
+                            "hi"));
+            assertTrue(
+                    capture.err().contains("failed to open cache " + cache + ": "), capture.err());
+            if (!Files.exists(cache))
+                assertTrue(capture.err().contains("no such file or directory"), capture.err());
+            assertFalse(capture.err().contains("\tat "), capture.err());
+            assertEquals("", capture.out());
+            assertFalse(CliModelProvider.weights.scope().isAlive());
+        }
+    }
+
     /**
      * Past the window, chat drops its oldest exchanges instead of refusing every turn from then on.
      * The fixture tokenizes a byte per token and renders "role:text" lines: turn three would need
