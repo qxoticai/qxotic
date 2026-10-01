@@ -2,7 +2,7 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.spi.CharClasses;
-import com.qxotic.toknroll.spi.Kernels;
+import com.qxotic.toknroll.spi.TiktokenEngine;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
@@ -59,9 +59,7 @@ final class TiktokenSplitter implements Splitter {
     private final int otherTail;
     private final boolean newlineRun; // '\s*[\r\n]+' before the whitespace rules
 
-    private final int kernelRules; // the rule set of Kernels.split this scanner is, or -1
-    private Kernels kernel; // the kernel that splits like this scanner, resolved on first use
-    private boolean kernelResolved; // a benign race: every resolution has the same outcome
+    private final int rules; // the TiktokenEngine rule set this scanner is, or -1
 
     private TiktokenSplitter(
             int contraction,
@@ -78,11 +76,15 @@ final class TiktokenSplitter implements Splitter {
         this.otherExcludesMarks = otherExcludesMarks;
         this.otherTail = otherTail;
         this.newlineRun = newlineRun;
-        this.kernelRules = kernelRules();
+        this.rules = engineRules();
     }
 
-    /** Which of the rule sets a kernel may implement this scanner is, or -1. */
-    private int kernelRules() {
+    /** Which of the {@link TiktokenEngine} rule sets this scanner is, or -1. */
+    int rules() {
+        return rules;
+    }
+
+    private int engineRules() {
         if (otherExcludesMarks) {
             return -1;
         }
@@ -93,16 +95,16 @@ final class TiktokenSplitter implements Splitter {
                             && numbers == SPACE_RUN
                             && otherTail == NO_TAIL
                             && !newlineRun;
-            return r50k ? Kernels.R50K : -1;
+            return r50k ? TiktokenEngine.R50K : -1;
         }
         if (word == CASED) {
             if (contraction != NO_CONTRACTION || otherTail != NEWLINES_SLASHES || !newlineRun) {
                 return -1;
             }
             if (wordSuffix && numbers == UP_TO_THREE) {
-                return Kernels.O200K;
+                return TiktokenEngine.O200K;
             }
-            return !wordSuffix && numbers == ONE ? Kernels.TEKKEN : -1;
+            return !wordSuffix && numbers == ONE ? TiktokenEngine.TEKKEN : -1;
         }
         boolean family =
                 word == PREFIX_LETTERS
@@ -116,33 +118,20 @@ final class TiktokenSplitter implements Splitter {
         boolean fold = contraction == FOLD;
         switch (numbers) {
             case UP_TO_THREE:
-                return fold ? Kernels.CL100K : Kernels.CL100K_ASCII;
+                return fold ? TiktokenEngine.CL100K : TiktokenEngine.CL100K_ASCII;
             case ONE:
-                return fold ? Kernels.QWEN2 : Kernels.QWEN2_ASCII;
+                return fold ? TiktokenEngine.QWEN2 : TiktokenEngine.QWEN2_ASCII;
             default:
                 return -1;
         }
     }
 
     /**
-     * The kernel to split with, checked once against this scanner on a sample: one that cuts a
-     * single piece differently is passed over.
+     * Text with every kind of piece of the family and the rare shapes a fast engine may handle
+     * apart: a run longer than a block, a character or a contraction cut by a block edge, cased
+     * runs, long words, marks, surrogates.
      */
-    private Kernels kernel() {
-        if (!kernelResolved) {
-            Kernels candidate = kernelRules < 0 ? null : Kernels.current();
-            kernel = candidate != null && agrees(candidate) ? candidate : null;
-            kernelResolved = true;
-        }
-        return kernel;
-    }
-
-    /**
-     * The sample covers every kind of piece and the rare shapes a kernel handles by hand (a run
-     * longer than its lookahead, a character or a contraction cut by a block edge), so the check
-     * means something and, as a side effect, every path has run once before the JIT compiles.
-     */
-    private boolean agrees(Kernels candidate) {
+    static String sample() {
         StringBuilder sample = new StringBuilder();
         for (int i = 0; i < 40; i++) {
             sample.append("I'd say it's 12345 pieces!! \n\n  \r\n x  \t y ")
@@ -155,31 +144,8 @@ final class TiktokenSplitter implements Splitter {
         sample.append("E".repeat(200)).append("ʰ").append("F".repeat(200)).append("g");
         sample.append("١".repeat(100)).append("7".repeat(100)).append(" ").append("é".repeat(70));
         sample.append("😀".repeat(70)).append("\u0301".repeat(70)).append("\uD800\uDC00");
-        byte[] text = utf8(sample, 0, sample.length());
-        int end = text.length - PADDING;
-        try {
-            for (int batch : new int[] {BATCH, 3}) {
-                int[] expected = new int[batch];
-                int[] actual = new int[batch];
-                int cursor = 0;
-                while (cursor < end) {
-                    int n = scan(text, cursor, end, expected);
-                    int m = candidate.split(kernelRules, text, cursor, end, actual);
-                    if (m <= 0) {
-                        return false;
-                    }
-                    for (int k = 0; k < m; k++) {
-                        if (k >= n || actual[k] != expected[k]) {
-                            return false;
-                        }
-                    }
-                    cursor = actual[m - 1];
-                }
-            }
-            return true;
-        } catch (RuntimeException e) {
-            return false;
-        }
+        sample.append(" x\uD800 \uDC00y");
+        return sample.toString();
     }
 
     /** The regex strings the loaders compile, each with the scanner that splits like it. */
@@ -327,21 +293,10 @@ final class TiktokenSplitter implements Splitter {
 
     /**
      * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
-     * until the array is full or the text ends. Returns how many.
+     * until the array is full or the text ends. Returns how many. The text must have {@link
+     * #PADDING} readable bytes past {@code end}.
      */
     int split(byte[] text, int start, int end, int[] ends) {
-        Kernels kernel = kernel();
-        if (kernel != null) {
-            int n = kernel.split(kernelRules, text, start, end, ends);
-            if (n > 0) {
-                return n;
-            }
-        }
-        return scan(text, start, end, ends);
-    }
-
-    /** {@link #split} by hand. */
-    private int scan(byte[] text, int start, int end, int[] ends) {
         int n = 0;
         int i = start;
         while (i < end && n < ends.length) {
@@ -356,7 +311,47 @@ final class TiktokenSplitter implements Splitter {
      * without its partner becomes U+FFFD.
      */
     static byte[] utf8(CharSequence text, int start, int end) {
-        return Kernels.current().utf8(text, start, end, PADDING);
+        int length = 0;
+        for (int i = start; i < end; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                length++;
+            } else if (c < 0x800) {
+                length += 2;
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < end
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                length += 4;
+                i++;
+            } else {
+                length += 3;
+            }
+        }
+        byte[] out = new byte[length + PADDING];
+        int o = 0;
+        for (int i = start; i < end; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                out[o++] = (byte) c;
+            } else if (c < 0x800) {
+                out[o++] = (byte) (0xC0 | (c >> 6));
+                out[o++] = (byte) (0x80 | (c & 0x3F));
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < end
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                int cp = Character.toCodePoint(c, text.charAt(++i));
+                out[o++] = (byte) (0xF0 | (cp >> 18));
+                out[o++] = (byte) (0x80 | ((cp >> 12) & 0x3F));
+                out[o++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
+                out[o++] = (byte) (0x80 | (cp & 0x3F));
+            } else {
+                int cp = Character.isSurrogate(c) ? 0xFFFD : c;
+                out[o++] = (byte) (0xE0 | (cp >> 12));
+                out[o++] = (byte) (0x80 | ((cp >> 6) & 0x3F));
+                out[o++] = (byte) (0x80 | (cp & 0x3F));
+            }
+        }
+        return out;
     }
 
     /** The end of the piece that starts at {@code i}: the alternatives in the regex's order. */

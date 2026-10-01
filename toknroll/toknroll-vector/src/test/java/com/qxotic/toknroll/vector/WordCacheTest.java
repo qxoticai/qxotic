@@ -1,10 +1,10 @@
-package com.qxotic.toknroll.impl;
+package com.qxotic.toknroll.vector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.IntSequence;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
@@ -29,9 +29,8 @@ class WordCacheTest {
         WordCache cache = new WordCache();
         Random random = new Random(42);
         int words = 1_500_000; // through every doubling and past the largest table
-        byte[] text = new byte[16 + TiktokenSplitter.PADDING];
-        IntSequence.Builder out = IntSequence.newBuilder(8);
-        int[] scratch = new int[WordCache.MAX_IDS + 8];
+        byte[] text = new byte[16 + FastEncoder.PADDING];
+        int[] found = new int[WordCache.MAX_IDS + 8];
         long hits = 0;
         for (int round = 0; round < 2; round++) {
             random.setSeed(42);
@@ -41,25 +40,19 @@ class WordCacheTest {
                     text[i] = (byte) ('a' + random.nextInt(26));
                 }
                 int[] ids = idsOf(text, length);
-                int found = cache.lookup(text, 0, length, scratch, 3);
-                if (found > 0) {
+                int count = cache.lookup(text, 0, length, found, 3);
+                if (count > 0) {
                     hits++;
-                    assertEquals(ids.length, found);
-                    for (int k = 0; k < found; k++) {
-                        assertEquals(ids[k], scratch[3 + k], "id " + k + " of " + w);
+                    assertEquals(ids.length, count);
+                    for (int k = 0; k < count; k++) {
+                        assertEquals(ids[k], found[3 + k], "id " + k + " of " + w);
                     }
                     continue;
                 }
-                out = IntSequence.newBuilder(8);
-                for (int id : ids) {
-                    out.add(id);
-                }
-                cache.insert(out, 0, ids.length);
-                // the word just inserted is found, through both lookups
-                assertEquals(ids.length, cache.lookup(text, 0, length, scratch, 0));
-                IntSequence.Builder again = IntSequence.newBuilder(8);
-                assertEquals(ids.length, cache.lookup(text, 0, length, again));
-                assertEquals(ids[0], again.asSequenceView().intAt(0));
+                cache.insert(ids, 0, ids.length);
+                // the word just inserted is found
+                assertEquals(ids.length, cache.lookup(text, 0, length, found, 0));
+                assertEquals(ids[0], found[0]);
             }
         }
         // the second round replays the first: with a million slots most of it is still there
@@ -69,18 +62,17 @@ class WordCacheTest {
     @Test
     void wordsOfEveryLengthKeepTheirOwnKey() {
         WordCache cache = new WordCache();
-        int[] scratch = new int[8];
+        int[] found = new int[8];
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
-            byte[] text = new byte[length + TiktokenSplitter.PADDING];
-            java.util.Arrays.fill(text, (byte) 'x');
-            IntSequence.Builder out = IntSequence.newBuilder(1).add(length);
-            assertEquals(0, cache.lookup(text, 0, length, scratch, 0));
-            cache.insert(out, 0, 1);
+            byte[] text = new byte[length + FastEncoder.PADDING];
+            Arrays.fill(text, 0, length, (byte) 'x');
+            assertEquals(0, cache.lookup(text, 0, length, found, 0));
+            cache.insert(new int[] {length}, 0, 1);
         }
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
             byte[] text = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".getBytes(StandardCharsets.US_ASCII);
-            assertEquals(1, cache.lookup(text, 0, length, scratch, 0));
-            assertEquals(length, scratch[0]);
+            assertEquals(1, cache.lookup(text, 0, length, found, 0));
+            assertEquals(length, found[0]);
         }
     }
 }

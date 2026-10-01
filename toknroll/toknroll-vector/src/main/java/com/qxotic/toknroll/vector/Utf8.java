@@ -1,6 +1,5 @@
 package com.qxotic.toknroll.vector;
 
-import com.qxotic.toknroll.spi.Kernels;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorMask;
@@ -9,10 +8,13 @@ import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
 /**
- * {@link Kernels} with the Java Vector API. Found by core through {@code ServiceLoader} when the
- * JVM runs with {@code --add-modules jdk.incubator.vector}.
+ * Chars to UTF-8 with the Vector API: a vector of ASCII chars narrows to bytes in one step, and the
+ * length pass counts the two- and three-byte chars of a vector without surrogates with two
+ * compares.
  */
-public final class VectorKernels implements Kernels {
+final class Utf8 {
+    private Utf8() {}
+
     /** Chars per vector; the species are constants so the JIT bakes the shapes in. */
     private static final VectorSpecies<Short> CHARS = ShortVector.SPECIES_PREFERRED;
 
@@ -25,27 +27,11 @@ public final class VectorKernels implements Kernels {
     /** Chars copied out of the text at a time: in L1, and a surrogate pair is never cut. */
     private static final int CHUNK = 4096;
 
-    /** The bitstream engine per rule set of {@link Kernels#split}. */
-    private static final BitSplit[] SPLITS = {
-        BitSplit.forRules(CL100K),
-        BitSplit.forRules(CL100K_ASCII),
-        BitSplit.forRules(QWEN2),
-        BitSplit.forRules(QWEN2_ASCII),
-        BitSplit.forRules(R50K),
-        BitSplit.forRules(O200K),
-        BitSplit.forRules(TEKKEN)
-    };
-
-    @Override
-    public int split(int rules, byte[] text, int start, int end, int[] ends) {
-        if (rules < 0 || rules >= SPLITS.length) {
-            return -1;
-        }
-        return SPLITS[rules].split(text, start, end, ends);
-    }
-
-    @Override
-    public byte[] utf8(CharSequence text, int start, int end, int padding) {
+    /**
+     * The UTF-8 of {@code text[start, end)} followed by {@code padding} zero bytes. A surrogate
+     * without its partner becomes U+FFFD.
+     */
+    static byte[] encode(CharSequence text, int start, int end, int padding) {
         char[] chunk = new char[CHUNK];
         int length = 0;
         for (int p = start; p < end; ) {

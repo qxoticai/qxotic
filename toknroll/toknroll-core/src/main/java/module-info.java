@@ -5,5 +5,5 @@ module com.qxotic.toknroll {
             com.qxotic.toknroll.gguf,
             com.qxotic.toknroll.hf;
 
-    uses com.qxotic.toknroll.spi.Kernels;
+    uses com.qxotic.toknroll.spi.TiktokenEngine;
 }

@@ -1,7 +1,7 @@
-# Tok'n'Roll Vector API Kernels
+# Tok'n'Roll Vector
 
-The hot loops of Tok'n'Roll's encoder written with the Java Vector API.
-Same API, same token ids, several times the speed on the tiktoken family of tokenizers.
+The fast encoder of Tok'n'Roll's tiktoken family, written with the Java Vector API.
+Same API, same token ids, several times the speed of core's own encoder.
 
 ## Maven
 
@@ -21,13 +21,21 @@ java --add-modules jdk.incubator.vector ...
 ```
 
 Nothing in the code changes.
-`toknroll-core` finds the kernels through `ServiceLoader`, checks them against its own versions on a sample when they load, and uses them from then on.
-Without the module, or without the flag, core runs its plain Java versions and produces the same ids.
+`toknroll-core` finds the engine through `ServiceLoader` the first time a tokenizer of the family encodes, checks it against its own encoder on a sample that covers every kind of piece, and uses it from then on.
+Without the module, or without the flag, core encodes by itself and produces the same ids.
+To rule the engine out, say when chasing a suspected difference, set `-Dtoknroll.engine=none`.
+A tokenizer's `toString()` names the engine once it has encoded through it.
 
-## What it speeds up
+## What it covers
 
-- The conversion of a `String` to UTF-8, which every encode starts with.
-- The pre-tokenization split of the tiktoken regex family: r50k (GPT-2), cl100k (GPT-4, Llama 3), Qwen2, o200k (GPT-4o, gpt-oss) and Tekken (Ministral).
-  Each regex runs as a bitstream program, 64 bytes per step, after the design of Hugging Face's `bitcannon`: one bitmap per character class, every rule as boolean algebra and carry-propagating adds over the bitmaps, no branch per piece or per character.
+The tiktoken regex family behind a byte-level BPE model: r50k (GPT-2), cl100k (GPT-4, Llama 3), Qwen2, o200k (GPT-4o, gpt-oss) and Tekken (Ministral).
+Other tokenizers are untouched.
 
-The split is proven exact against the regex the same way core's own scanner is: on a fuzz corpus of every kind of character the regexes tell apart, and piece for piece over all of enwik8.
+## How
+
+- The text goes to UTF-8 with vectors: a vector of ASCII chars narrows to bytes in one step.
+- The pre-tokenization split runs as a bitstream program, 64 bytes per step, after the design of Hugging Face's `bitcannon`: one bitmap per character class, every rule as boolean algebra and carry-propagating adds over the bitmaps, no branch per piece or per character.
+- A word seen before is a probe into the thread's word cache, which grows with use up to a million words, and its ids are written straight into the output; a run of such words is a loop of its own.
+- A new word is a token as it is when the merge loop would give it back whole, else merged: by hand up to three bytes, by a scan over flat arrays up to 95, by a heap beyond.
+
+The split is proven exact against the regex on a fuzz corpus and piece for piece over all of enwik8, and the whole encoder against core's on the same.

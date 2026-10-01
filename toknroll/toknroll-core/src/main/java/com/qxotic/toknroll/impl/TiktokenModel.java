@@ -3,51 +3,54 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.invoke.VarHandle;
+import com.qxotic.toknroll.spi.IdBuffer;
+import com.qxotic.toknroll.spi.TiktokenEngine;
+import com.qxotic.toknroll.spi.TiktokenTables;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.ServiceLoader;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Fast, flat-array Tiktoken-compatible BPE tokenizer.
+ * Byte-level BPE as tiktoken defines it, the reference encoder of the family.
  *
- * <p>Dual-path merge strategy:
- *
- * <ul>
- *   <li>Tiny chunks (up to 3 bytes): hardcoded merge logic.
- *   <li>Small chunks (4 to 95 bytes): in-place scan and merge over primitive arrays.
- *   <li>Large chunks (96 bytes and up): min-heap and intrusive linked list.
- * </ul>
+ * <p>Behind one of the scanner's regexes a {@link TiktokenEngine} encodes instead, when one is
+ * found and agrees with this encoder on {@link TiktokenSplitter#sample}. Without one, a word is
+ * merged here: its bytes' tokens, then the pair of lowest rank, the leftmost of equal ranks, until
+ * no pair merges. A short word's ids are remembered across calls.
  */
 final class TiktokenModel extends AbstractTokenizationModel {
 
-    private static final byte[] REPLACEMENT_UTF8 = {(byte) 0xEF, (byte) 0xBF, (byte) 0xBD};
-    private static final int LARGE_CHUNK_THRESHOLD = 96;
-    private static final int TINY_CHUNK_THRESHOLD = 3;
-    private static final int SCRATCH_MAX_RETAINED_ELEMENTS = 128 * 1024;
     private static final int NO_TOKEN = -1;
-    private static final int NO_INDEX = -1;
 
-    /**
-     * Thread.isVirtual, which Java 11 cannot name; a constant handle inlines like a direct call.
-     */
-    private static final MethodHandle THREAD_IS_VIRTUAL = resolveThreadIsVirtual();
+    /** Words of up to this many bytes are remembered, up to {@link #MEMO_WORDS} of them. */
+    private static final int MEMO_BYTES = 32;
+
+    private static final int MEMO_WORDS = 1 << 16;
+
+    private static final List<TiktokenEngine> ENGINES = engines();
 
     private final LongLongMap merges;
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
-    private final ExactTokenLookup exactTokenLookup;
     private final boolean ignoreMerges;
-    private final ThreadLocal<Scratch> scratchThreadLocal =
-            ThreadLocal.withInitial(() -> new Scratch(true));
+    private final Map<String, Integer>
+            wholeTokens; // with ignoreMerges: a word's bytes -> its token
+    private final Map<String, int[]> memo = new ConcurrentHashMap<>();
 
-    TiktokenModel(
+    // The engine's encoder per rule set, resolved on first use. A benign race: every resolution
+    // has the same outcome, and one that sees the flag before the encoder encodes here meanwhile.
+    private final TiktokenEngine.Encoder[] encoders = new TiktokenEngine.Encoder[7];
+    private final boolean[] resolved = new boolean[7];
+
+    private TiktokenModel(
             Vocabulary vocabulary,
             LongLongMap merges,
             int[] singleByteTokenId,
@@ -55,36 +58,30 @@ final class TiktokenModel extends AbstractTokenizationModel {
             boolean ignoreMerges,
             float expectedTokensPerChar) {
         super(vocabulary, expectedTokensPerChar);
-        this.merges = Objects.requireNonNull(merges, "merges");
-        this.singleByteTokenId = Objects.requireNonNull(singleByteTokenId, "singleByteTokenId");
-        if (singleByteTokenId.length != 256) {
-            throw new IllegalArgumentException("singleByteTokenId length must be 256");
-        }
-        this.tokenBytesById = Objects.requireNonNull(tokenBytesById, "tokenBytesById");
+        this.merges = merges;
+        this.singleByteTokenId = singleByteTokenId;
+        this.tokenBytesById = tokenBytesById;
         this.ignoreMerges = ignoreMerges;
-        // Last, since proving which tokens fold runs the merge loop above.
-        this.exactTokenLookup =
-                ExactTokenLookup.fromVocabulary(
-                        vocabulary, ignoreMerges ? null : provenFolds(), tokenBytesById);
+        this.wholeTokens = ignoreMerges ? wholeTokens(tokenBytesById) : null;
     }
 
-    /**
-     * Which tokens the merge loop gives back whole from their own bytes: those a word can be taken
-     * for without merging. Proven by merging each once, so the probe never disagrees with the loop.
-     */
-    private boolean[] provenFolds() {
-        boolean[] folds = new boolean[tokenBytesById.length];
-        Scratch s = new Scratch(false);
-        for (int id = 0; id < folds.length; id++) {
-            byte[] bytes = tokenBytesById[id];
-            if (bytes == null || bytes.length == 0) {
-                continue;
-            }
-            IntSequence.Builder out = IntSequence.newBuilder(4);
-            merge(bytes, 0, bytes.length, out, s);
-            folds[id] = out.size() == 1 && ((IntSequenceBuilder) out).get(0) == id;
-        }
-        return folds;
+    static TiktokenModel fromVocabularyAndMerges(Vocabulary vocabulary, LongLongMap merges) {
+        return fromVocabularyAndMerges(vocabulary, merges, false);
+    }
+
+    static TiktokenModel fromVocabularyAndMerges(
+            Vocabulary vocabulary, LongLongMap merges, boolean ignoreMerges) {
+        Objects.requireNonNull(vocabulary, "vocabulary");
+        Objects.requireNonNull(merges, "merges");
+        // Every token must be ByteLevel-encoded; loaders pre-encode special and control tokens.
+        validateByteLevelVocabulary(vocabulary);
+        return new TiktokenModel(
+                vocabulary,
+                merges,
+                buildSingleByteTokenMap(vocabulary),
+                buildTokenBytesById(vocabulary),
+                ignoreMerges,
+                estimateTokensPerChar(vocabulary.size()));
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
@@ -100,52 +97,361 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
     }
 
-    static TiktokenModel fromVocabularyAndMerges(Vocabulary vocabulary, LongLongMap merges) {
-        return fromVocabularyAndMerges(vocabulary, merges, false);
+    private static Map<String, Integer> wholeTokens(byte[][] tokenBytesById) {
+        Map<String, Integer> tokens = new HashMap<>();
+        for (int id = 0; id < tokenBytesById.length; id++) {
+            byte[] bytes = tokenBytesById[id];
+            if (bytes != null && bytes.length > 0) {
+                tokens.putIfAbsent(new String(bytes, StandardCharsets.ISO_8859_1), id);
+            }
+        }
+        return tokens;
     }
 
-    static TiktokenModel fromVocabularyAndMerges(
-            Vocabulary vocabulary, LongLongMap merges, boolean ignoreMerges) {
-        Objects.requireNonNull(vocabulary, "vocabulary");
-        Objects.requireNonNull(merges, "merges");
-        // Strict invariant: all vocabulary tokens must be ByteLevel-encoded.
-        // Callers/loaders are responsible for pre-encoding any special/control tokens.
-        validateByteLevelVocabulary(vocabulary);
-
-        int[] singleByteTokenId = buildSingleByteTokenMap(vocabulary);
-        byte[][] tokenBytesById = buildTokenBytesById(vocabulary);
-
-        return new TiktokenModel(
-                vocabulary,
-                merges,
-                singleByteTokenId,
-                tokenBytesById,
-                ignoreMerges,
-                estimateTokensPerChar(vocabulary.size()));
-    }
+    // ---- the model alone: the whole text is one word ----
 
     @Override
     protected IntSequence encodeImpl(CharSequence text) {
         IntSequence.Builder out =
                 IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
-        Scratch s = acquireScratch();
-        try {
-            encodeChunkRange(text, 0, text.length(), out, s);
-        } finally {
-            releaseScratch(s);
-        }
+        encodeImplInto(text, out);
         return out.build();
     }
 
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
-        Scratch s = acquireScratch();
-        try {
-            encodeChunkRange(text, 0, text.length(), out, s);
-        } finally {
-            releaseScratch(s);
+        byte[] utf8 = TiktokenSplitter.utf8(text, 0, text.length());
+        encodeWord(utf8, 0, utf8.length - TiktokenSplitter.PADDING, out);
+    }
+
+    // ---- behind a scanner ----
+
+    /** Encodes {@code text[start, end)} as {@code splitter} cuts it. */
+    void encode(
+            CharSequence text,
+            int start,
+            int end,
+            TiktokenSplitter splitter,
+            IntSequence.Builder out) {
+        TiktokenEngine.Encoder fast = encoder(splitter);
+        if (fast != null) {
+            IdBuffer ids = borrow(out);
+            fast.encode(text, start, end, ids);
+            giveBack(ids, out);
+            return;
+        }
+        byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
+        encode(utf8, 0, utf8.length - TiktokenSplitter.PADDING, splitter, out);
+    }
+
+    /** {@link #encode(CharSequence, int, int, TiktokenSplitter, IntSequence.Builder)} for UTF-8. */
+    void encodeUtf8(
+            byte[] utf8, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
+        TiktokenEngine.Encoder fast = encoder(splitter);
+        if (fast != null) {
+            IdBuffer ids = borrow(out);
+            fast.encodeUtf8(utf8, start, end, ids);
+            giveBack(ids, out);
+            return;
+        }
+        // the scanner reads past a piece, so it gets a padded copy
+        byte[] padded = Arrays.copyOfRange(utf8, start, end + TiktokenSplitter.PADDING);
+        encode(padded, 0, end - start, splitter, out);
+    }
+
+    /** The reference: the scanner's pieces, word by word. */
+    private void encode(
+            byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
+        int[] ends = new int[TiktokenSplitter.BATCH];
+        int cursor = start;
+        while (cursor < end) {
+            int n = splitter.split(text, cursor, end, ends);
+            for (int k = 0; k < n; k++) {
+                encodeWord(text, cursor, ends[k], out);
+                cursor = ends[k];
+            }
         }
     }
+
+    private void encodeWord(byte[] text, int start, int end, IntSequence.Builder out) {
+        int length = end - start;
+        if (length <= 0) {
+            return;
+        }
+        if (length == 1) {
+            out.add(singleByteTokenId[text[start] & 0xFF]);
+            return;
+        }
+        String key =
+                length <= MEMO_BYTES
+                        ? new String(text, start, length, StandardCharsets.ISO_8859_1)
+                        : null;
+        int[] ids = key != null ? memo.get(key) : null;
+        if (ids == null) {
+            ids = wordIds(text, start, end);
+            if (key != null) {
+                if (memo.size() >= MEMO_WORDS) {
+                    memo.clear();
+                }
+                memo.put(key, ids);
+            }
+        }
+        for (int id : ids) {
+            out.add(id);
+        }
+    }
+
+    private int[] wordIds(byte[] text, int start, int end) {
+        if (ignoreMerges) {
+            Integer whole =
+                    wholeTokens.get(
+                            new String(text, start, end - start, StandardCharsets.ISO_8859_1));
+            if (whole != null) {
+                return new int[] {whole};
+            }
+        }
+        return merge(text, start, end);
+    }
+
+    /**
+     * The word's tokens as a list linked through {@code next}, and every pair that merges as a
+     * candidate in a min-heap: the rank in the high half, the left position in the low, so the
+     * smallest is the lowest rank and the leftmost of equal ones. A merge leaves a candidate behind
+     * that no longer holds, which is skipped when it comes up.
+     */
+    private int[] merge(byte[] text, int start, int end) {
+        int n = end - start;
+        int[] token = new int[n];
+        int[] prev = new int[n];
+        int[] next = new int[n];
+        for (int i = 0; i < n; i++) {
+            token[i] = singleByteTokenId[text[start + i] & 0xFF];
+            prev[i] = i - 1;
+            next[i] = i + 1;
+        }
+        next[n - 1] = -1;
+        long[] heap = new long[3 * n]; // n - 1 pairs, then at most two per merge
+        int size = 0;
+        for (int i = 0; i + 1 < n; i++) {
+            size = push(heap, size, candidate(token, i, i + 1));
+        }
+        int count = n;
+        while (size > 0) {
+            long top = heap[0];
+            size = pop(heap, size);
+            int i = (int) top;
+            int j = token[i] < 0 ? -1 : next[i];
+            if (j < 0) {
+                continue;
+            }
+            long merged = merges.getPair(token[i], token[j]);
+            if (merged == IntPair.NONE || IntPair.right(merged) != (int) (top >>> 32)) {
+                continue;
+            }
+            token[i] = IntPair.left(merged);
+            token[j] = -1;
+            next[i] = next[j];
+            if (next[i] >= 0) {
+                prev[next[i]] = i;
+            }
+            count--;
+            if (prev[i] >= 0) {
+                size = push(heap, size, candidate(token, prev[i], i));
+            }
+            if (next[i] >= 0) {
+                size = push(heap, size, candidate(token, i, next[i]));
+            }
+        }
+        int[] ids = new int[count];
+        for (int i = 0, k = 0; i >= 0; i = next[i]) {
+            ids[k++] = token[i];
+        }
+        return ids;
+    }
+
+    /** The heap entry for the pair at {@code left}, or -1 when it does not merge. */
+    private long candidate(int[] token, int left, int right) {
+        long merged = merges.getPair(token[left], token[right]);
+        return merged == IntPair.NONE ? -1 : ((long) IntPair.right(merged) << 32) | left;
+    }
+
+    private static int push(long[] heap, int size, long entry) {
+        if (entry < 0) {
+            return size;
+        }
+        int i = size;
+        while (i > 0 && heap[(i - 1) >>> 1] > entry) {
+            heap[i] = heap[(i - 1) >>> 1];
+            i = (i - 1) >>> 1;
+        }
+        heap[i] = entry;
+        return size + 1;
+    }
+
+    private static int pop(long[] heap, int size) {
+        long last = heap[--size];
+        int i = 0;
+        while (2 * i + 1 < size) {
+            int child = 2 * i + 1;
+            if (child + 1 < size && heap[child + 1] < heap[child]) {
+                child++;
+            }
+            if (heap[child] >= last) {
+                break;
+            }
+            heap[i] = heap[child];
+            i = child;
+        }
+        heap[i] = last;
+        return size;
+    }
+
+    // ---- the engine ----
+
+    private static List<TiktokenEngine> engines() {
+        List<TiktokenEngine> engines = new ArrayList<>();
+        try {
+            for (TiktokenEngine engine : ServiceLoader.load(TiktokenEngine.class)) {
+                engines.add(engine);
+            }
+        } catch (Throwable e) {
+            // a provider that cannot even be loaded is no engine
+        }
+        return engines;
+    }
+
+    private TiktokenEngine.Encoder encoder(TiktokenSplitter splitter) {
+        int rules = splitter.rules();
+        if (rules < 0) {
+            return null;
+        }
+        if (!resolved[rules]) {
+            encoders[rules] = findEncoder(rules, splitter);
+            resolved[rules] = true;
+        }
+        return encoders[rules];
+    }
+
+    private TiktokenEngine.Encoder findEncoder(int rules, TiktokenSplitter splitter) {
+        if ("none".equals(System.getProperty("toknroll.engine"))) {
+            return null;
+        }
+        for (TiktokenEngine engine : ENGINES) {
+            try {
+                TiktokenEngine.Encoder candidate = engine.encoder(new Tables(), rules);
+                if (candidate != null && agrees(candidate, splitter)) {
+                    return candidate;
+                }
+            } catch (Throwable e) {
+                // passed over like one that disagrees: say, the Vector API module is not enabled
+            }
+        }
+        return null;
+    }
+
+    /** Whether {@code candidate} encodes the sample as this model does, from chars and bytes. */
+    private boolean agrees(TiktokenEngine.Encoder candidate, TiktokenSplitter splitter) {
+        String sample = TiktokenSplitter.sample();
+        byte[] utf8 = TiktokenSplitter.utf8(sample, 0, sample.length());
+        int length = utf8.length - TiktokenSplitter.PADDING;
+        IntSequenceBuilder expected = new IntSequenceBuilder();
+        encode(utf8, 0, length, splitter, expected);
+        IdBuffer fromChars = new IdBuffer(expected.size());
+        candidate.encode(sample, 0, sample.length(), fromChars);
+        IdBuffer fromBytes = new IdBuffer(expected.size());
+        candidate.encodeUtf8(Arrays.copyOf(utf8, length), 0, length, fromBytes);
+        int[] want = Arrays.copyOf(expected.data(), expected.size());
+        return Arrays.equals(want, Arrays.copyOf(fromChars.array(), fromChars.size()))
+                && Arrays.equals(want, Arrays.copyOf(fromBytes.array(), fromBytes.size()));
+    }
+
+    /** {@code out}'s own array when core made it, so the engine writes the ids there. */
+    private static IdBuffer borrow(IntSequence.Builder out) {
+        if (out instanceof IntSequenceBuilder) {
+            IntSequenceBuilder builder = (IntSequenceBuilder) out;
+            return new IdBuffer(builder.data(), builder.size());
+        }
+        return new IdBuffer(64);
+    }
+
+    private static void giveBack(IdBuffer ids, IntSequence.Builder out) {
+        if (out instanceof IntSequenceBuilder) {
+            ((IntSequenceBuilder) out).adopt(ids.array(), ids.size());
+            return;
+        }
+        int[] array = ids.array();
+        out.ensureCapacity(out.size() + ids.size());
+        for (int i = 0; i < ids.size(); i++) {
+            out.add(array[i]);
+        }
+    }
+
+    /** The model as an engine sees it. */
+    private final class Tables implements TiktokenTables {
+        private final int[] left;
+        private final int[] right;
+        private final int[] result;
+        private final int[] rank;
+
+        Tables() {
+            List<long[]> entries = new ArrayList<>();
+            merges.forEach((key, value) -> entries.add(new long[] {key, value}));
+            int count = entries.size();
+            left = new int[count];
+            right = new int[count];
+            result = new int[count];
+            rank = new int[count];
+            for (int i = 0; i < count; i++) {
+                long[] entry = entries.get(i);
+                left[i] = IntPair.left(entry[0]);
+                right[i] = IntPair.right(entry[0]);
+                result[i] = IntPair.left(entry[1]);
+                rank[i] = IntPair.right(entry[1]);
+            }
+        }
+
+        @Override
+        public int tokenCount() {
+            return tokenBytesById.length;
+        }
+
+        @Override
+        public byte[] tokenBytes(int id) {
+            return tokenBytesById[id];
+        }
+
+        @Override
+        public int mergeCount() {
+            return left.length;
+        }
+
+        @Override
+        public int mergeLeft(int merge) {
+            return left[merge];
+        }
+
+        @Override
+        public int mergeRight(int merge) {
+            return right[merge];
+        }
+
+        @Override
+        public int mergeResult(int merge) {
+            return result[merge];
+        }
+
+        @Override
+        public int mergeRank(int merge) {
+            return rank[merge];
+        }
+
+        @Override
+        public boolean ignoreMerges() {
+            return ignoreMerges;
+        }
+    }
+
+    // ---- counting and decoding ----
 
     @Override
     public void encodeInto(
@@ -155,25 +461,16 @@ final class TiktokenModel extends AbstractTokenizationModel {
         if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
             throw invalidRange(startInclusive, endExclusive, text.length());
         }
-        Scratch s = acquireScratch();
-        try {
-            out.ensureCapacity(
-                    out.size() + estimateInitialTokenCapacity(endExclusive - startInclusive));
-            encodeChunkRange(text, startInclusive, endExclusive, out, s);
-        } finally {
-            releaseScratch(s);
-        }
+        byte[] utf8 = TiktokenSplitter.utf8(text, startInclusive, endExclusive);
+        encodeWord(utf8, 0, utf8.length - TiktokenSplitter.PADDING, out);
     }
 
     @Override
     public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-        Objects.requireNonNull(text, "text");
-        Scratch s = acquireScratch();
-        try {
-            return countChunkRange(text, startInclusive, endExclusive, s);
-        } finally {
-            releaseScratch(s);
-        }
+        IntSequence.Builder out =
+                IntSequence.newBuilder(estimateInitialTokenCapacity(endExclusive - startInclusive));
+        encodeInto(text, startInclusive, endExclusive, out);
+        return out.size();
     }
 
     @Override
@@ -235,633 +532,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return consumed;
     }
 
+    /** Names the engine encoder once one encodes for this model. */
     @Override
     public String toString() {
-        return "Fast Tiktoken BPE";
-    }
-
-    // ---- Encode / count dispatch ----
-
-    private int encodeChunkRange(
-            CharSequence source,
-            int startInclusive,
-            int endExclusive,
-            IntSequence.Builder out,
-            Scratch s) {
-        if (startInclusive >= endExclusive) {
-            return 0;
-        }
-        int byteLength = utf8EncodeRange(source, startInclusive, endExclusive, s);
-        return encodeWord(s.utf8Bytes, 0, byteLength, out, s);
-    }
-
-    private int countChunkRange(
-            CharSequence source, int startInclusive, int endExclusive, Scratch s) {
-        if (startInclusive >= endExclusive) {
-            return 0;
-        }
-        IntSequence.Builder tmp =
-                IntSequence.newBuilder(estimateInitialTokenCapacity(endExclusive - startInclusive));
-        return encodeChunkRange(source, startInclusive, endExclusive, tmp, s);
-    }
-
-    /**
-     * Encodes every piece of {@code text[start, end)} as {@code splitter} cuts them. Words are read
-     * eight bytes at a time, so the pieces ending within {@link TiktokenSplitter#PADDING} bytes of
-     * the array's end are encoded from a padded copy.
-     */
-    void encode(
-            byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
-        Scratch s = acquireScratch();
-        try {
-            if (out instanceof IntSequenceBuilder) {
-                encode(text, start, end, splitter, (IntSequenceBuilder) out, s);
-            } else {
-                IntSequenceBuilder ids =
-                        new IntSequenceBuilder(estimateInitialTokenCapacity(end - start));
-                encode(text, start, end, splitter, ids, s);
-                out.addAll(ids);
-            }
-        } finally {
-            releaseScratch(s);
-        }
-    }
-
-    /**
-     * The batches. A single byte and a cached word write their ids straight into the builder's
-     * array, room for a batch of them made once, in a loop of their own inside the cache; only a
-     * miss goes through the builder.
-     */
-    private void encode(
-            byte[] text,
-            int start,
-            int end,
-            TiktokenSplitter splitter,
-            IntSequenceBuilder out,
-            Scratch s) {
-        int[] ends = s.pieceEnds;
-        WordCache cache = s.kept ? s.wordCache() : null;
-        int cursor = start;
-        while (cursor < end) {
-            int n = splitter.split(text, cursor, end, ends);
-            int inPlace = inPlace(text, ends, n);
-            cursor = encodeBatch(text, cursor, ends, inPlace, n, cache, out, s);
-            if (inPlace < n) {
-                encode(paddedTail(text, cursor, end, s), 0, end - cursor, splitter, out, s);
-                return;
+        for (TiktokenEngine.Encoder encoder : encoders) {
+            if (encoder != null) {
+                return "Tiktoken BPE, encoded by " + encoder.getClass().getName();
             }
         }
+        return "Tiktoken BPE";
     }
 
-    /**
-     * One batch: the first {@code count} pieces of {@code ends}, from {@code cursor}; returns the
-     * cursor after them. A method of its own, called once per batch, so that the JIT compiles it
-     * early and on a profile with every path in it: the text-sized loop above runs a handful of
-     * times per process, and a compile taken mid-way through it speculated wrong and cost a third
-     * of a pass.
-     */
-    private int encodeBatch(
-            byte[] text,
-            int cursor,
-            int[] ends,
-            int count,
-            int n,
-            WordCache cache,
-            IntSequenceBuilder out,
-            Scratch s) {
-        out.ensureCapacity(out.size() + n * WordCache.MAX_IDS);
-        int[] ids = out.data();
-        int size = out.size();
-        int k = 0;
-        while (k < count) {
-            if (cache != null) {
-                long ran = cache.run(text, ends, k, count, cursor, ids, size, singleByteTokenId);
-                int next = (int) (ran >>> 32);
-                size = (int) ran;
-                if (next > k) {
-                    cursor = ends[next - 1];
-                    k = next;
-                }
-                if (k == count) {
-                    break;
-                }
-            }
-            int e = ends[k];
-            int length = e - cursor;
-            if (length == 1) {
-                ids[size++] = singleByteTokenId[text[cursor] & 0xFF];
-            } else {
-                out.size(size);
-                WordCache c = cache != null && length <= WordCache.MAX_BYTES ? cache : null;
-                encodeMiss(text, cursor, e, out, s, c);
-                out.ensureCapacity(out.size() + (n - k) * WordCache.MAX_IDS);
-                ids = out.data();
-                size = out.size();
-            }
-            cursor = e;
-            k++;
-        }
-        out.size(size);
-        return cursor;
-    }
-
-    /** How many of the batch's pieces can be read where they are: all but a text's last few. */
-    private static int inPlace(byte[] text, int[] ends, int n) {
-        int limit = text.length - TiktokenSplitter.PADDING;
-        int k = n;
-        while (k > 0 && ends[k - 1] > limit) {
-            k--;
-        }
-        return k;
-    }
-
-    /** {@code text[cursor, end)} in the scratch, followed by readable zero bytes. */
-    private static byte[] paddedTail(byte[] text, int cursor, int end, Scratch s) {
-        int length = end - cursor;
-        s.ensureUtf8(length);
-        byte[] tail = s.utf8Bytes;
-        System.arraycopy(text, cursor, tail, 0, length);
-        Arrays.fill(tail, length, length + TiktokenSplitter.PADDING, (byte) 0);
-        return tail;
-    }
-
-    /** One pre-token, the UTF-8 bytes {@code text[start, end)}, with PADDING readable past them. */
-    int encodeWord(byte[] text, int start, int end, IntSequence.Builder out, Scratch s) {
-        int length = end - start;
-        if (length <= 0) {
-            return 0;
-        }
-        if (length == 1) {
-            out.add(singleByteTokenId[text[start] & 0xFF]);
-            return 1;
-        }
-        WordCache cache = s.kept && length <= WordCache.MAX_BYTES ? s.wordCache() : null;
-        if (cache != null) {
-            int hit = cache.lookup(text, start, end, out);
-            if (hit > 0) {
-                return hit;
-            }
-        }
-        return encodeMiss(text, start, end, out, s, cache);
-    }
-
-    /**
-     * A word of two bytes or more that {@code cache} (if any) was just probed for and does not
-     * hold: a token as it is, else merged; then cached when it takes few enough ids.
-     */
-    private int encodeMiss(
-            byte[] text, int start, int end, IntSequence.Builder out, Scratch s, WordCache cache) {
-        int first = out.size();
-        int count;
-        int token = exactTokenLookup.find(text, start, end - start);
-        if (token >= 0) {
-            out.add(token);
-            count = 1;
-        } else {
-            count = merge(text, start, end, out, s);
-        }
-        if (cache != null && count <= WordCache.MAX_IDS) {
-            cache.insert(out, first, count);
-        }
-        return count;
-    }
-
-    /** The merge loop for a word of {@code text[start, end)}, by its length. */
-    private int merge(byte[] text, int start, int end, IntSequence.Builder out, Scratch s) {
-        int byteLength = end - start;
-        if (byteLength <= TINY_CHUNK_THRESHOLD) {
-            return encodeTiny(text, start, byteLength, out);
-        }
-        if (byteLength < LARGE_CHUNK_THRESHOLD) {
-            return mergeSmall(text, start, byteLength, out, s);
-        }
-        return mergeLarge(text, start, byteLength, out, s);
-    }
-
-    // ---- Tiny / small path ----
-
-    private int encodeTiny(byte[] bytes, int off, int byteLength, IntSequence.Builder out) {
-        if (byteLength == 1) {
-            int t0 = singleByteTokenId[bytes[off] & 0xFF];
-            out.add(t0);
-            return 1;
-        }
-        if (byteLength == 3) {
-            int t0 = singleByteTokenId[bytes[off] & 0xFF];
-            int t1 = singleByteTokenId[bytes[off + 1] & 0xFF];
-            int t2 = singleByteTokenId[bytes[off + 2] & 0xFF];
-            long merge01 = merges.getPair(t0, t1);
-            long merge12 = merges.getPair(t1, t2);
-            int merge01Rank = mergeRank(merge01);
-            int merge12Rank = mergeRank(merge12);
-
-            if (merge01Rank < 0 && merge12Rank < 0) {
-                out.add(t0);
-                out.add(t1);
-                out.add(t2);
-                return 3;
-            }
-
-            if (merge12Rank < 0 || (merge01Rank >= 0 && merge01Rank <= merge12Rank)) {
-                int merge01Id = mergeId(merge01);
-                long merge012 = merges.getPair(merge01Id, t2);
-                if (mergeRank(merge012) >= 0) {
-                    out.add(mergeId(merge012));
-                    return 1;
-                }
-                out.add(merge01Id);
-                out.add(t2);
-                return 2;
-            }
-
-            int merge12Id = mergeId(merge12);
-            long merge012 = merges.getPair(t0, merge12Id);
-            if (mergeRank(merge012) >= 0) {
-                out.add(mergeId(merge012));
-                return 1;
-            }
-            out.add(t0);
-            out.add(merge12Id);
-            return 2;
-        }
-        int t0 = singleByteTokenId[bytes[off] & 0xFF];
-        int t1 = singleByteTokenId[bytes[off + 1] & 0xFF];
-        long mergedValue = merges.getPair(t0, t1);
-        if (mergeRank(mergedValue) >= 0) {
-            out.add(mergeId(mergedValue));
-            return 1;
-        }
-        out.add(t0);
-        out.add(t1);
-        return 2;
-    }
-
-    private Scratch acquireScratch() {
-        if (isCurrentThreadVirtual()) {
-            return new Scratch(false);
-        }
-        return scratchThreadLocal.get();
-    }
-
-    private void releaseScratch(Scratch s) {
-        if (isCurrentThreadVirtual()) {
-            return;
-        }
-        if (s.maxRetainedElements() > SCRATCH_MAX_RETAINED_ELEMENTS) {
-            scratchThreadLocal.remove();
-        }
-    }
-
-    private static MethodHandle resolveThreadIsVirtual() {
-        try {
-            return MethodHandles.publicLookup()
-                    .findVirtual(Thread.class, "isVirtual", MethodType.methodType(boolean.class));
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            return null; // Java < 21: there are no virtual threads
-        }
-    }
-
-    private static boolean isCurrentThreadVirtual() {
-        if (THREAD_IS_VIRTUAL == null) {
-            return false;
-        }
-        try {
-            return (boolean) THREAD_IS_VIRTUAL.invokeExact(Thread.currentThread());
-        } catch (Throwable e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private int mergeSmall(
-            byte[] bytes, int off, int byteLength, IntSequence.Builder out, Scratch s) {
-        s.ensureTokens(byteLength);
-        s.ensurePairData(byteLength - 1);
-        int[] tokens = s.tokens;
-        long[] pairMergeIdRank = s.pairMergeIdRank;
-        int size = byteLength;
-
-        int i = 0;
-        int unrollLimit = size & ~3;
-        for (; i < unrollLimit; i += 4) {
-            tokens[i + 3] = singleByteTokenId[bytes[off + i + 3] & 0xFF];
-            tokens[i + 2] = singleByteTokenId[bytes[off + i + 2] & 0xFF];
-            tokens[i + 1] = singleByteTokenId[bytes[off + i + 1] & 0xFF];
-            tokens[i] = singleByteTokenId[bytes[off + i] & 0xFF];
-        }
-        for (; i < size; i++) {
-            tokens[i] = singleByteTokenId[bytes[off + i] & 0xFF];
-        }
-
-        for (i = 0; i + 1 < size; i++) {
-            pairMergeIdRank[i] = merges.getPair(tokens[i], tokens[i + 1]);
-        }
-
-        while (size >= 2) {
-            // The lowest rank and its position in one long, so the scan has no branch per pair.
-            // A pair without a merge scores the maximum.
-            long best = Long.MAX_VALUE;
-            int pairCount = size - 1;
-            for (int scan = 0; scan < pairCount; scan++) {
-                long rank = (int) pairMergeIdRank[scan];
-                best = Math.min(best, rank < 0 ? Long.MAX_VALUE : (rank << 32) | scan);
-            }
-            if (best == Long.MAX_VALUE) {
-                break;
-            }
-            int bestPos = (int) best;
-
-            tokens[bestPos] = (int) (pairMergeIdRank[bestPos] >>> 32);
-            int tail = size - bestPos - 2;
-            if (tail > 0) {
-                System.arraycopy(tokens, bestPos + 2, tokens, bestPos + 1, tail);
-                System.arraycopy(pairMergeIdRank, bestPos + 1, pairMergeIdRank, bestPos, tail);
-            }
-
-            size--;
-            int newPairCount = size - 1;
-
-            if (bestPos > 0) {
-                pairMergeIdRank[bestPos - 1] = merges.getPair(tokens[bestPos - 1], tokens[bestPos]);
-            }
-            if (bestPos < newPairCount) {
-                pairMergeIdRank[bestPos] = merges.getPair(tokens[bestPos], tokens[bestPos + 1]);
-            }
-        }
-
-        out.ensureCapacity(out.size() + size);
-        for (int outIdx = 0; outIdx < size; outIdx++) {
-            out.add(tokens[outIdx]);
-        }
-        return size;
-    }
-
-    // ---- Large path ----
-
-    private int mergeLarge(
-            byte[] bytes, int off, int byteLength, IntSequence.Builder out, Scratch s) {
-        int n = byteLength;
-        s.ensureNodes(n);
-
-        int[] token = s.token;
-        int[] prev = s.prev;
-        int[] next = s.next;
-        int[] edgeStamp = s.edgeStamp;
-        int[] edgeRight = s.edgeRight;
-        int[] edgeRank = s.edgeRank;
-        int[] edgeMergeId = s.edgeMergeId;
-
-        initLargeNodes(bytes, off, n, token, prev, next, edgeStamp);
-
-        s.heapSize = 0;
-        for (int left = 0; left + 1 < n; left++) {
-            refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
-        }
-
-        int tokenCount = n;
-        while (tokenCount > 1 && popMinCandidate(edgeStamp, edgeMergeId, s)) {
-            int left = s.popLeft;
-            int mergeId = s.popMergeId;
-
-            int right = next[left];
-            if (right == NO_INDEX) {
-                continue;
-            }
-            int leftPrev = prev[left];
-            int rightNext = next[right];
-
-            token[left] = mergeId;
-            next[left] = rightNext;
-            if (rightNext != NO_INDEX) {
-                prev[rightNext] = left;
-            }
-
-            // Fully detach the removed right node so stale heap candidates that still reference
-            // it are invalidated and cannot merge an unreachable node.
-            prev[right] = NO_INDEX;
-            next[right] = NO_INDEX;
-            edgeStamp[right] = 0;
-
-            tokenCount--;
-
-            if (leftPrev != NO_INDEX) {
-                refreshEdge(leftPrev, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
-            }
-            refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
-        }
-
-        out.ensureCapacity(out.size() + tokenCount);
-        for (int idx = 0; idx != NO_INDEX; idx = next[idx]) {
-            out.add(token[idx]);
-        }
-
-        return tokenCount;
-    }
-
-    private void initLargeNodes(
-            byte[] bytes, int off, int n, int[] token, int[] prev, int[] next, int[] edgeStamp) {
-        int i = 0;
-        int unrollLimit = n & ~3;
-        for (; i < unrollLimit; i += 4) {
-            token[i] = singleByteTokenId[bytes[off + i] & 0xFF];
-            prev[i] = i - 1;
-            next[i] = i + 1;
-            edgeStamp[i] = 0;
-
-            token[i + 1] = singleByteTokenId[bytes[off + i + 1] & 0xFF];
-            prev[i + 1] = i;
-            next[i + 1] = i + 2;
-            edgeStamp[i + 1] = 0;
-
-            token[i + 2] = singleByteTokenId[bytes[off + i + 2] & 0xFF];
-            prev[i + 2] = i + 1;
-            next[i + 2] = i + 3;
-            edgeStamp[i + 2] = 0;
-
-            token[i + 3] = singleByteTokenId[bytes[off + i + 3] & 0xFF];
-            prev[i + 3] = i + 2;
-            next[i + 3] = i + 4;
-            edgeStamp[i + 3] = 0;
-        }
-        for (; i < n; i++) {
-            token[i] = singleByteTokenId[bytes[off + i] & 0xFF];
-            prev[i] = i - 1;
-            next[i] = (i + 1 < n) ? i + 1 : NO_INDEX;
-            edgeStamp[i] = 0;
-        }
-        if (n > 0) {
-            next[n - 1] = NO_INDEX;
-        }
-    }
-
-    private void refreshEdge(
-            int left,
-            int[] token,
-            int[] next,
-            int[] edgeStamp,
-            int[] edgeRight,
-            int[] edgeRank,
-            int[] edgeMergeId,
-            Scratch s) {
-        int right = next[left];
-        if (right == NO_INDEX) {
-            edgeStamp[left] = 0;
-            return;
-        }
-        long mergedValue = merges.getPair(token[left], token[right]);
-        int mergedRank = mergeRank(mergedValue);
-        if (mergedRank < 0) {
-            edgeStamp[left] = 0;
-            return;
-        }
-        int mergedId = mergeId(mergedValue);
-
-        if (edgeStamp[left] != 0
-                && edgeRight[left] == right
-                && edgeRank[left] == mergedRank
-                && edgeMergeId[left] == mergedId) {
-            return;
-        }
-
-        int stamp = s.nextStamp(edgeStamp);
-        edgeStamp[left] = stamp;
-        edgeRight[left] = right;
-        edgeRank[left] = mergedRank;
-        edgeMergeId[left] = mergedId;
-        heapPush(mergedRank, left, stamp, s);
-    }
-
-    private boolean popMinCandidate(int[] edgeStamp, int[] edgeMergeId, Scratch s) {
-        while (s.heapSize > 0) {
-            int rank = s.heapRank[0];
-            long node = s.heapNode[0];
-            int left = (int) (node >>> 32);
-            int stamp = (int) node;
-
-            int last = --s.heapSize;
-            if (last > 0) {
-                s.heapRank[0] = s.heapRank[last];
-                s.heapNode[0] = s.heapNode[last];
-                heapifyDown(s, 0);
-            }
-
-            if (edgeStamp[left] != stamp) {
-                continue;
-            }
-
-            s.popLeft = left;
-            s.popMergeId = edgeMergeId[left];
-            return true;
-        }
-        return false;
-    }
-
-    private void heapPush(int rank, int left, int stamp, Scratch s) {
-        if (s.heapSize == s.heapRank.length) {
-            s.ensureHeapSize(s.heapSize + 1);
-        }
-        int idx = s.heapSize++;
-        long node = (((long) left) << 32) | (stamp & 0xFFFFFFFFL);
-
-        while (idx > 0) {
-            int parent = (idx - 1) >>> 1;
-            if (!heapLess(rank, node, s.heapRank[parent], s.heapNode[parent])) {
-                break;
-            }
-            s.heapRank[idx] = s.heapRank[parent];
-            s.heapNode[idx] = s.heapNode[parent];
-            idx = parent;
-        }
-
-        s.heapRank[idx] = rank;
-        s.heapNode[idx] = node;
-    }
-
-    private void heapifyDown(Scratch s, int idx) {
-        int rank = s.heapRank[idx];
-        long node = s.heapNode[idx];
-
-        int half = s.heapSize >>> 1;
-        while (idx < half) {
-            int child = (idx << 1) + 1;
-            int rightChild = child + 1;
-
-            if (rightChild < s.heapSize
-                    && heapLess(
-                            s.heapRank[rightChild],
-                            s.heapNode[rightChild],
-                            s.heapRank[child],
-                            s.heapNode[child])) {
-                child = rightChild;
-            }
-            if (!heapLess(s.heapRank[child], s.heapNode[child], rank, node)) {
-                break;
-            }
-
-            s.heapRank[idx] = s.heapRank[child];
-            s.heapNode[idx] = s.heapNode[child];
-            idx = child;
-        }
-
-        s.heapRank[idx] = rank;
-        s.heapNode[idx] = node;
-    }
-
-    private static int utf8EncodeRange(
-            CharSequence source, int startInclusive, int endExclusive, Scratch scratch) {
-        int maxLen = (endExclusive - startInclusive) << 2;
-        scratch.ensureUtf8(maxLen);
-        byte[] dst = scratch.utf8Bytes;
-
-        int dp = 0;
-        for (int i = startInclusive; i < endExclusive; i++) {
-            char c = source.charAt(i);
-            if (c < 0x80) {
-                dst[dp++] = (byte) c;
-                continue;
-            }
-            if (c < 0x800) {
-                dst[dp++] = (byte) (0xC0 | (c >>> 6));
-                dst[dp++] = (byte) (0x80 | (c & 0x3F));
-                continue;
-            }
-            if (Character.isHighSurrogate(c)) {
-                if (i + 1 < endExclusive) {
-                    char low = source.charAt(i + 1);
-                    if (Character.isLowSurrogate(low)) {
-                        int cp = Character.toCodePoint(c, low);
-                        dst[dp++] = (byte) (0xF0 | (cp >>> 18));
-                        dst[dp++] = (byte) (0x80 | ((cp >>> 12) & 0x3F));
-                        dst[dp++] = (byte) (0x80 | ((cp >>> 6) & 0x3F));
-                        dst[dp++] = (byte) (0x80 | (cp & 0x3F));
-                        i++;
-                        continue;
-                    }
-                }
-                System.arraycopy(REPLACEMENT_UTF8, 0, dst, dp, 3);
-                dp += 3;
-                continue;
-            }
-            if (Character.isLowSurrogate(c)) {
-                System.arraycopy(REPLACEMENT_UTF8, 0, dst, dp, 3);
-                dp += 3;
-                continue;
-            }
-            dst[dp++] = (byte) (0xE0 | (c >>> 12));
-            dst[dp++] = (byte) (0x80 | ((c >>> 6) & 0x3F));
-            dst[dp++] = (byte) (0x80 | (c & 0x3F));
-        }
-        return dp;
-    }
-
-    private static int mergeRank(long mergeValue) {
-        return IntPair.right(mergeValue);
-    }
-
-    private static int mergeId(long mergeValue) {
-        return IntPair.left(mergeValue);
-    }
-
-    // ---- Lookup table builders ----
+    // ---- tables ----
 
     private static int[] buildSingleByteTokenMap(Vocabulary vocabulary) {
         int[] map = new int[256];
@@ -971,225 +653,5 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
         out.append('"');
         return out.toString();
-    }
-
-    // ---- Scratch + exact-token lookup ----
-
-    private static final class Scratch {
-        /** A scratch a thread keeps is worth a word cache; a one-call scratch gets none. */
-        final boolean kept;
-
-        final int[] pieceEnds = new int[TiktokenSplitter.BATCH];
-        private WordCache wordCache;
-        byte[] utf8Bytes = new byte[0];
-        int[] tokens = new int[0];
-        long[] pairMergeIdRank = new long[0];
-        int[] token = new int[0];
-        int[] prev = new int[0];
-        int[] next = new int[0];
-        int[] edgeStamp = new int[0];
-        int[] edgeRight = new int[0];
-        int[] edgeRank = new int[0];
-        int[] edgeMergeId = new int[0];
-        int stampCounter = 1;
-
-        int[] heapRank = new int[0];
-        long[] heapNode = new long[0];
-        int heapSize;
-
-        int popLeft;
-        int popMergeId;
-
-        Scratch(boolean kept) {
-            this.kept = kept;
-        }
-
-        WordCache wordCache() {
-            if (wordCache == null) {
-                wordCache = new WordCache();
-            }
-            return wordCache;
-        }
-
-        void ensureUtf8(int needed) {
-            needed += TiktokenSplitter.PADDING;
-            if (utf8Bytes.length < needed) {
-                utf8Bytes = new byte[grow(utf8Bytes.length, needed)];
-            }
-        }
-
-        void ensureTokens(int needed) {
-            if (tokens.length < needed) {
-                tokens = new int[grow(tokens.length, needed)];
-            }
-        }
-
-        void ensurePairData(int needed) {
-            if (pairMergeIdRank.length < needed) {
-                pairMergeIdRank = new long[grow(pairMergeIdRank.length, needed)];
-            }
-        }
-
-        void ensureNodes(int needed) {
-            if (token.length < needed) {
-                int cap = grow(token.length, needed);
-                token = new int[cap];
-                prev = new int[cap];
-                next = new int[cap];
-                edgeStamp = new int[cap];
-                edgeRight = new int[cap];
-                edgeRank = new int[cap];
-                edgeMergeId = new int[cap];
-            }
-            ensureHeapSize(Math.max(8, needed * 4));
-        }
-
-        int nextStamp(int[] stampArray) {
-            int s = ++stampCounter;
-            if (s == 0) {
-                Arrays.fill(stampArray, 0);
-                stampCounter = 1;
-                return 1;
-            }
-            return s;
-        }
-
-        void ensureHeapSize(int needed) {
-            if (heapRank.length < needed) {
-                int cap = grow(heapRank.length, needed);
-                heapRank = Arrays.copyOf(heapRank, cap);
-                heapNode = Arrays.copyOf(heapNode, cap);
-            }
-        }
-
-        private static int grow(int current, int needed) {
-            int c = Math.max(8, current);
-            while (c < needed) {
-                c = c + (c >>> 1);
-            }
-            return c;
-        }
-
-        int maxRetainedElements() {
-            int max = utf8Bytes.length;
-            max = Math.max(max, tokens.length);
-            max = Math.max(max, pairMergeIdRank.length);
-            max = Math.max(max, token.length);
-            max = Math.max(max, prev.length);
-            max = Math.max(max, next.length);
-            max = Math.max(max, edgeStamp.length);
-            max = Math.max(max, edgeRight.length);
-            max = Math.max(max, edgeRank.length);
-            max = Math.max(max, edgeMergeId.length);
-            max = Math.max(max, heapRank.length);
-            max = Math.max(max, heapNode.length);
-            return max;
-        }
-    }
-
-    /**
-     * The tokens a word may be taken for whole, found with one probe. A word of up to seven bytes
-     * is its own key, packed into a long with its length; a longer one is keyed by a hash and
-     * confirmed against the token's bytes. Keys and ids interleave in one array, so a probe touches
-     * one cache line, and the slot comes from the key's high bits after a multiply.
-     */
-    private static final class ExactTokenLookup {
-        private static final int INLINE_BYTES = 7;
-        private static final VarHandle LONGS =
-                MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
-        private static final long HASHED = Long.MIN_VALUE; // a packed key never has this bit
-
-        // The keys alone in one array, so a probe walks a table half the size and only a hit,
-        // one word in ten of those that come here, reads the id beside it.
-        private final long[] keys; // 0 is an empty slot
-        private final int[] ids;
-        private final int shift;
-        private final int maxTokenBytes;
-        private final byte[][] tokenBytesById;
-
-        private ExactTokenLookup(
-                long[] keys, int[] ids, int shift, int maxTokenBytes, byte[][] tokenBytesById) {
-            this.keys = keys;
-            this.ids = ids;
-            this.shift = shift;
-            this.maxTokenBytes = maxTokenBytes;
-            this.tokenBytesById = tokenBytesById;
-        }
-
-        /** Every token, or with {@code includeTokenId} only those it says. */
-        static ExactTokenLookup fromVocabulary(
-                Vocabulary vocabulary, boolean[] includeTokenId, byte[][] tokenBytesById) {
-            int slots = 16;
-            while (slots < vocabulary.size() * 2) {
-                slots <<= 1;
-            }
-            int shift = Long.numberOfLeadingZeros(slots) + 1;
-            long[] keys = new long[slots];
-            int[] ids = new int[slots];
-            int maxTokenBytes = 0;
-            for (Map.Entry<String, Integer> entry : vocabulary) {
-                int tokenId = entry.getValue();
-                if (includeTokenId != null
-                        && (tokenId < 0
-                                || tokenId >= includeTokenId.length
-                                || !includeTokenId[tokenId])) {
-                    continue;
-                }
-                byte[] tokenBytes = ByteLevel.decode(entry.getKey());
-                if (tokenBytes.length == 0) {
-                    continue;
-                }
-                maxTokenBytes = Math.max(maxTokenBytes, tokenBytes.length);
-                long key =
-                        key(Arrays.copyOf(tokenBytes, tokenBytes.length + 8), 0, tokenBytes.length);
-                int slot = slot(key, shift);
-                while (keys[slot] != 0) {
-                    slot = (slot + 1) & (slots - 1);
-                }
-                keys[slot] = key;
-                ids[slot] = tokenId;
-            }
-            return new ExactTokenLookup(keys, ids, shift, maxTokenBytes, tokenBytesById);
-        }
-
-        int find(byte[] bytes, int off, int length) {
-            if (length <= 0 || length > maxTokenBytes) {
-                return NO_TOKEN;
-            }
-            long key = key(bytes, off, length);
-            long[] keys = this.keys;
-            int mask = keys.length - 1;
-            for (int slot = slot(key, shift); ; slot = (slot + 1) & mask) {
-                long k = keys[slot];
-                if (k == 0) {
-                    return NO_TOKEN;
-                }
-                if (k == key) {
-                    int id = ids[slot];
-                    if (length <= INLINE_BYTES
-                            || Arrays.equals(
-                                    tokenBytesById[id], 0, length, bytes, off, off + length)) {
-                        return id;
-                    }
-                }
-            }
-        }
-
-        private static long key(byte[] bytes, int off, int length) {
-            if (length <= INLINE_BYTES) {
-                // One load; the bytes past the word are readable, see TiktokenSplitter.PADDING.
-                long word = (long) LONGS.get(bytes, off) & ((1L << (8 * length)) - 1);
-                return word | ((long) length << 56);
-            }
-            long h = 0xCBF29CE484222325L ^ length;
-            for (int i = 0; i < length; i++) {
-                h = (h ^ (bytes[off + i] & 0xFF)) * 0x100000001B3L;
-            }
-            return h | HASHED;
-        }
-
-        private static int slot(long key, int shift) {
-            return (int) ((key * 0x9E3779B97F4A7C15L) >>> shift);
-        }
     }
 }

@@ -2,7 +2,6 @@ package com.qxotic.toknroll.vector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.spi.Kernels;
 import com.qxotic.toknroll.testkit.corpus.Enwik8Corpus;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
@@ -21,7 +20,7 @@ class BitSplitCorpusTest {
     void splitsEnwik8LikeTheRegex(int rules, String regex) {
         byte[] data = Enwik8Corpus.load().data();
         String text = new String(data, StandardCharsets.UTF_8);
-        byte[] utf8 = Kernels.scalar().utf8(text, 0, text.length(), 16);
+        byte[] utf8 = Utf8Reference.encode(text, 0, text.length(), 16);
         int end = utf8.length - 16;
         // byte offset of every char index
         int[] byteAt = new int[text.length() + 1];

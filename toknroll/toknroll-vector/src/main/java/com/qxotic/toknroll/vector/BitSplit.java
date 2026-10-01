@@ -1,7 +1,7 @@
 package com.qxotic.toknroll.vector;
 
 import com.qxotic.toknroll.spi.CharClasses;
-import com.qxotic.toknroll.spi.Kernels;
+import com.qxotic.toknroll.spi.TiktokenEngine;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -39,9 +39,11 @@ final class BitSplit {
         this.rules = rules;
     }
 
-    /** The engine for one of the rule sets of {@link Kernels#split}, or null. */
+    /** The engine for one of the rule sets of {@link TiktokenEngine}, or null. */
     static BitSplit forRules(int rules) {
-        return rules >= Kernels.CL100K && rules <= Kernels.TEKKEN ? new BitSplit(rules) : null;
+        return rules >= TiktokenEngine.CL100K && rules <= TiktokenEngine.TEKKEN
+                ? new BitSplit(rules)
+                : null;
     }
 
     // ---- one block's class streams ----
@@ -908,19 +910,19 @@ final class BitSplit {
 
     private Run run(byte[] text, int start, int end) {
         switch (rules) {
-            case Kernels.CL100K:
+            case TiktokenEngine.CL100K:
                 return new Cl100k(text, start, end, 3, FOLD);
-            case Kernels.CL100K_ASCII:
+            case TiktokenEngine.CL100K_ASCII:
                 return new Cl100k(text, start, end, 3, ASCII_BOTH);
-            case Kernels.QWEN2:
+            case TiktokenEngine.QWEN2:
                 return new Cl100k(text, start, end, 1, FOLD);
-            case Kernels.QWEN2_ASCII:
+            case TiktokenEngine.QWEN2_ASCII:
                 return new Cl100k(text, start, end, 1, ASCII_BOTH);
-            case Kernels.R50K:
+            case TiktokenEngine.R50K:
                 return new R50k(text, start, end);
-            case Kernels.O200K:
+            case TiktokenEngine.O200K:
                 return new O200k(text, start, end, true, 3);
-            case Kernels.TEKKEN:
+            case TiktokenEngine.TEKKEN:
                 return new O200k(text, start, end, false, 1);
             default:
                 throw new IllegalStateException("rules " + rules);

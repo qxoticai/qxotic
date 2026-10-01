@@ -103,9 +103,9 @@ public final class ImplAccessor {
     }
 
     /**
-     * Encodes {@code text[start, end)} on the UTF-8 path, which a tiktoken model and a hand-written
-     * scanner share: the text is converted once and split and merged as bytes. False when the pair
-     * is anything else, and the caller takes the general path.
+     * Encodes {@code text[start, end)} with a tiktoken model behind its hand-written scanner, which
+     * an engine may take over. False when the pair is anything else, and the caller takes the
+     * general path.
      */
     public static boolean encodeUtf8(
             TokenizationModel model,
@@ -117,14 +117,7 @@ public final class ImplAccessor {
         if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
             return false;
         }
-        byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
-        ((TiktokenModel) model)
-                .encode(
-                        utf8,
-                        0,
-                        utf8.length - TiktokenSplitter.PADDING,
-                        (TiktokenSplitter) splitter,
-                        out);
+        ((TiktokenModel) model).encode(text, start, end, (TiktokenSplitter) splitter, out);
         return true;
     }
 
@@ -139,7 +132,7 @@ public final class ImplAccessor {
         if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
             return false;
         }
-        ((TiktokenModel) model).encode(utf8, start, end, (TiktokenSplitter) splitter, out);
+        ((TiktokenModel) model).encodeUtf8(utf8, start, end, (TiktokenSplitter) splitter, out);
         return true;
     }
 
