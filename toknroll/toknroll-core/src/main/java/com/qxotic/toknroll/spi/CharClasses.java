@@ -3,7 +3,7 @@ package com.qxotic.toknroll.spi;
 /**
  * The character classes of the tiktoken family of pre-tokenization regexes, as java.util.regex
  * defines them under {@code UNICODE_CHARACTER_CLASS}: a bit per class, tabulated for the BMP. The
- * scanner in core and a {@link Kernels#split} provider classify with this same table.
+ * scanner in core and a {@link TiktokenEngine} classify with this same table.
  */
 public final class CharClasses {
     public static final int SPACE = 1; // \s
