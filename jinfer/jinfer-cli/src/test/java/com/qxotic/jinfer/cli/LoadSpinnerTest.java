@@ -6,12 +6,51 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LoadSpinnerTest {
+    @Test
+    void processShutdownEndsAnActiveLoadLine(@TempDir Path dir) throws Exception {
+        var command = CliFixtures.javaCommand();
+        command.addAll(
+                List.of(
+                        "-cp",
+                        System.getProperty("java.class.path"),
+                        ShutdownProbe.class.getName()));
+        Path output = dir.resolve("shutdown.txt");
+        Process process =
+                new ProcessBuilder(command)
+                        .redirectErrorStream(true)
+                        .redirectOutput(output.toFile())
+                        .start();
+        try {
+            assertTrue(process.waitFor(20, TimeUnit.SECONDS), "spinner shutdown hung");
+            assertEquals(0, process.exitValue());
+            String text = Files.readString(output);
+            assertTrue(text.matches("(?s).*Loading model \\.{3,}\\R"), text);
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+    public static class ShutdownProbe {
+        public static void main(String[] args) throws Exception {
+            LoadSpinner.start("Loading model", System.err, true);
+            if (args.length > 0) {
+                System.out.println("ready");
+                System.in.read();
+            }
+            System.exit(0); // bypasses close(), just as a signal during loading does
+        }
+    }
+
     @Test
     void interruptedCloseCannotLeaveADotAfterTheNewline() throws Exception {
         var bytes = new ByteArrayOutputStream();

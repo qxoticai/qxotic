@@ -65,7 +65,7 @@ final class TranscriptHud implements AutoCloseable {
         /** The bundled theme of that name, or null. */
         static Theme named(String name) {
             return BUNDLED.stream()
-                    .filter(theme -> theme.name.equals(name))
+                    .filter(theme -> theme.name.equalsIgnoreCase(name))
                     .findFirst()
                     .orElse(null);
         }

@@ -320,15 +320,15 @@ public final class Server {
 
     /**
      * Every exchange gets a thread at once; {@link #gated} bounds how many are admitted into a
-     * handler ({@code 2 x Limits.threads}). A bounded pool rejected the excess inside the JDK
-     * server, which closed the connection with no status at all; the gate answers 503 + Retry-After
+     * handler ({@code Limits.threads}). A bounded pool rejected the excess inside the JDK server,
+     * which closed the connection with no status at all; the gate answers 503 + Retry-After
      * instead.
      */
     static ExecutorService requestExecutor() {
         return Executors.newCachedThreadPool();
     }
 
-    /** Work: admitted through the gate, so at most {@code 2 x threads} handlers run model work. */
+    /** Work: admitted through the gate, so at most {@code threads} handlers run model work. */
     private void route(HttpServer server, String path, HttpHandler handler) {
         server.createContext(path, gated(handler, admissions, config.limits()));
     }

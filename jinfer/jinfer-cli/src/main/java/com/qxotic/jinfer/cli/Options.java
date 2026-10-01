@@ -6,6 +6,7 @@ import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
@@ -444,6 +445,8 @@ final class Options {
                 && (failure.getMessage() == null
                         || failure.getMessage().equals(failure.getCause().toString())))
             failure = failure.getCause();
+        if (failure instanceof UncheckedIOException e)
+            return e.getMessage() + ": " + rootMessage(e.getCause());
         // NIO's message is the bare path when the OS gave no reason; say what went wrong with it
         if (failure instanceof FileSystemException e && e.getReason() == null)
             return e.getFile()
@@ -581,10 +584,12 @@ final class Options {
                   -m, --model <path|ref>       model file or hub reference; required
                   --with <role>=<path|ref>     attach a companion; repeatable for different roles
                   -t, --threads <int>          compute workers (default: physical/fast cores)
+                                               overrides -Djinfer.threads when both are supplied
 
                 References: [host/]owner/repo[@revision][/file][:quant]. Default host: hf.co.
                 Existing local files win. Remote files are downloaded once and cached.
-                Cache: JINFER_MODELS or the platform cache. JINFER_OFFLINE=1 prevents fetching.
+                Cache: JINFER_MODELS or the platform cache.
+                Offline: exactly JINFER_OFFLINE=1, or -Djinfer.offline=true, prevents fetching.
                 """);
     }
 
@@ -619,6 +624,7 @@ final class Options {
                   --stream / --no-stream      stream generated text (default: on)
                   --echo / --no-echo          echo token spellings to stderr (default: off)
                   --color <auto|on|off>       terminal colors (default: auto)
+                                              on forces colors even with NO_COLOR or TERM=dumb
                 """);
     }
 }

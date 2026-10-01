@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.net.BindException;
+import java.net.Inet6Address;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.LinkedHashSet;
@@ -80,7 +81,7 @@ final class Server {
         Options.require(!s.host.isBlank(), "--host must not be blank; got '%s'", s.host);
         Options.require(
                 s.concurrency > 0, "--concurrency must be at least 1; got %s", s.concurrency);
-        // The language server allocates 2*N admission permits using an int.
+        // Retry-After is 2*N seconds, represented as an int.
         Options.require(
                 s.concurrency <= Integer.MAX_VALUE / 2,
                 "--concurrency must not exceed %d; got %s",
@@ -185,7 +186,7 @@ final class Server {
                 .printf(
                         "model       %s (context %d)%n",
                         engine.modelName(), engine.contextCapacity());
-        listening(io.err(), running.address(), "OpenAI-compatible");
+        listening(io.err(), config.bind(), running.address().getPort(), "OpenAI-compatible");
         return running;
     }
 
@@ -200,7 +201,11 @@ final class Server {
         } catch (BindException e) {
             throw bindFailure(config, e);
         }
-        listening(io.err(), running.address(), "POST /v1/audio/transcriptions");
+        listening(
+                io.err(),
+                config.bind(),
+                running.address().getPort(),
+                "POST /v1/audio/transcriptions");
         return await(running::await, running::close);
     }
 
@@ -214,10 +219,15 @@ final class Server {
                 cause);
     }
 
-    private static void listening(PrintStream out, InetSocketAddress address, String api) {
+    static void listening(PrintStream out, InetSocketAddress address, int port, String api) {
         String host = address.getHostString();
+        if (address.getAddress().isAnyLocalAddress()) {
+            boolean ipv6 = address.getAddress() instanceof Inet6Address;
+            host = ipv6 ? "::1" : "127.0.0.1";
+            api += "; bound to " + (ipv6 ? "::" : "0.0.0.0");
+        }
         if (host.contains(":")) host = "[" + host + "]";
-        out.printf("listening   http://%s:%d (%s)%n", host, address.getPort(), api);
+        out.printf("listening   http://%s:%d (%s)%n", host, port, api);
     }
 
     @FunctionalInterface

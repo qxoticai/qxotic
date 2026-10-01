@@ -24,9 +24,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The speech-to-text transport: {@code POST /v1/audio/transcriptions} (OpenAI-compatible
- * multipart), {@code /v1/models} and {@code /health}, over one {@link TranscriptionModel}. Started
- * by the CLI when {@code --server} is given a transcription-only checkpoint; a chat server serves
- * chat models, this serves listeners.
+ * multipart), {@code /v1/models}, {@code /health}, {@code /props} and {@code /metrics}, over one
+ * {@link TranscriptionModel}. Started by the CLI when {@code server} is given a transcription-only
+ * checkpoint; a chat server serves chat models, this serves listeners.
  *
  * <p>Transcriptions run one at a time - the compute pool is the process-wide one, so two concurrent
  * utterances would only fight over it - while admission and parsing stay concurrent.
@@ -128,10 +128,29 @@ public final class TranscriptionServer {
                 "/health",
                 exchange -> {
                     if (Http.preamble(exchange, probe)) return;
+                    if (!"/health".equals(exchange.getRequestURI().getPath())) {
+                        Http.sendError(exchange, 404, "Not found");
+                        return;
+                    }
+                    if (Http.requireMethod(exchange, "GET")) return;
                     Http.sendJson(
                             exchange,
                             200,
                             Map.of("status", "ok", "busy", inFlight() > 0, "queued", 0));
+                });
+        server.createContext(
+                "/props",
+                exchange -> {
+                    if (Http.preamble(exchange, config.access())) return;
+                    if (!"/props".equals(exchange.getRequestURI().getPath())) {
+                        Http.sendError(exchange, 404, "Not found");
+                        return;
+                    }
+                    if (Http.requireMethod(exchange, "GET")) return;
+                    Http.sendJson(
+                            exchange,
+                            200,
+                            Map.of("model", servedModel, "sample_rate", model.sampleRate()));
                 });
         server.createContext(
                 "/metrics",
@@ -148,6 +167,7 @@ public final class TranscriptionServer {
                 "/v1/models",
                 exchange -> {
                     if (Http.preamble(exchange, config.access())) return;
+                    if (Http.requireMethod(exchange, "GET")) return;
                     String path = exchange.getRequestURI().getPath();
                     if (path.equals("/v1/models")) {
                         Http.sendJson(

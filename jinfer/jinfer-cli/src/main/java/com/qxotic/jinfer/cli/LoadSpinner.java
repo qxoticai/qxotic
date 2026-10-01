@@ -7,11 +7,14 @@ final class LoadSpinner implements AutoCloseable {
 
     private final Thread ticker;
     private final PrintStream out;
+    private final Thread shutdown;
     private boolean closed;
 
     private LoadSpinner(Thread ticker, PrintStream out) {
         this.ticker = ticker;
         this.out = out;
+        this.shutdown = ticker == null ? null : new Thread(this::close, "jinfer-load-shutdown");
+        if (shutdown != null) Runtime.getRuntime().addShutdownHook(shutdown);
     }
 
     static LoadSpinner start(String label, Main.IO io) {
@@ -24,8 +27,6 @@ final class LoadSpinner implements AutoCloseable {
             out.flush();
             return new LoadSpinner(null, out);
         }
-        out.print(label + " ...");
-        out.flush();
         Thread ticker =
                 new Thread(
                         () -> {
@@ -44,13 +45,19 @@ final class LoadSpinner implements AutoCloseable {
                         },
                         "jinfer-load-spinner");
         ticker.setDaemon(true);
-        ticker.start();
-        return new LoadSpinner(ticker, out);
+        synchronized (out) {
+            // Install cleanup before emitting a partial line; a signal may arrive at the first dot.
+            var spinner = new LoadSpinner(ticker, out);
+            out.print(label + " ...");
+            out.flush();
+            ticker.start();
+            return spinner;
+        }
     }
 
     /** Stops the dots and ends the line; idempotent, no-op off-terminal. */
     @Override
-    public void close() {
+    public synchronized void close() {
         if (ticker == null || closed) {
             return;
         }
@@ -60,6 +67,11 @@ final class LoadSpinner implements AutoCloseable {
         synchronized (out) {
             out.println();
             out.flush();
+        }
+        try {
+            Runtime.getRuntime().removeShutdownHook(shutdown);
+        } catch (IllegalStateException shuttingDown) {
+            // The hook ends the same line when a signal bypasses try-with-resources.
         }
     }
 }

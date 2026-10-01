@@ -182,6 +182,10 @@ jinfer server -m "$LM" --host 0.0.0.0 --port 8080 --api-key local-demo-key
 
 For this example, clients send `Authorization: Bearer local-demo-key`.
 
+Both APIs offer `GET /health`, `/v1/models`, `/props`, and `/metrics`, even while busy.
+`/health` needs no API key; the other probes use the configured key.
+The transcription server's `/props` reports the model name and input sample rate.
+
 ## Model downloads: `pull`
 
 Check upstream for one or more models and print their local paths:
@@ -201,6 +205,9 @@ Set `JINFER_OFFLINE=1` to use cached models only:
 ```sh
 JINFER_OFFLINE=1 jinfer instruct -m "$LM" "Hello."
 ```
+
+Only the exact value `1` enables offline mode through this variable; `true`, `yes`, and `0` do not.
+On the JVM, `-Djinfer.offline=true` also enables offline mode.
 
 Set `JINFER_MODELS` to choose a different model-cache directory.
 Update checks and forced downloads require network access.
