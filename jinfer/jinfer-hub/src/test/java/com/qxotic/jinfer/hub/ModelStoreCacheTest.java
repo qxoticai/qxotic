@@ -5,16 +5,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The store's own bookkeeping, offline: what {@code cached} reports, what {@code evict} removes,
@@ -145,6 +149,70 @@ class ModelStoreCacheTest {
     }
 
     // ---- the offline gate ----
+
+    @ParameterizedTest
+    @CsvSource({
+        "1,false,offline", "true,false,offline", "ON,false,offline", "YeS,false,offline",
+        "0,false,online", "FALSE,false,online", "off,false,online", "No,false,online",
+        ",false,online", "'',false,online", "invalid,false,online", "off,true,offline"
+    })
+    void offlineEnvironmentValuesGateRemoteAccess(
+            String value, boolean property, String expected, @TempDir Path root) throws Exception {
+        String classes =
+                Path.of(
+                                ModelStore.class
+                                        .getProtectionDomain()
+                                        .getCodeSource()
+                                        .getLocation()
+                                        .toURI())
+                        .toString();
+        Path output = root.resolve("stdout.txt"), error = root.resolve("stderr.txt");
+        var builder =
+                new ProcessBuilder(
+                                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                                "-ea",
+                                "-Djinfer.offline=" + property,
+                                "-cp",
+                                classes
+                                        + File.pathSeparator
+                                        + System.getProperty("java.class.path"),
+                                OfflineProbe.class.getName(),
+                                root.toString())
+                        .redirectOutput(output.toFile())
+                        .redirectError(error.toFile());
+        for (String variable : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"))
+            builder.environment().remove(variable);
+        if (value == null) builder.environment().remove("JINFER_OFFLINE");
+        else builder.environment().put("JINFER_OFFLINE", value);
+        builder.environment().put("HF_HUB_CACHE", root.resolve("hf").toString());
+        Process process = builder.start();
+        try {
+            assertTrue(process.waitFor(20, TimeUnit.SECONDS), "offline probe timed out");
+            assertEquals(0, process.exitValue(), Files.readString(error));
+            assertEquals(expected, Files.readString(output).strip());
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+    public static class OfflineProbe {
+        public static void main(String[] args) throws Exception {
+            var source = new FakeSource("fake").serving("", FILE);
+            var store = ModelStore.of(Path.of(args[0]), source);
+            String ref = "hf.co/offline-test/model/thing-Q8_0.gguf";
+            try {
+                assert "weights".equals(Files.readString(store.resolve(ref)));
+                assert source.fetched();
+                System.out.println("online");
+            } catch (IllegalStateException offline) {
+                if (!offline.getMessage().contains("JINFER_OFFLINE")) throw offline;
+                assert source.requestedDirs().isEmpty()
+                        : "offline must prevent metadata requests too";
+                assert !source.fetched();
+                System.out.println("offline");
+            }
+        }
+    }
 
     @Test
     void offlineRefusesAMissButServesAHit(@TempDir Path root) throws IOException {
