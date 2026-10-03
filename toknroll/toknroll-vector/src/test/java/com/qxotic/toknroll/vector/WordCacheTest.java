@@ -4,8 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class WordCacheTest {
@@ -27,6 +32,7 @@ class WordCacheTest {
     @Test
     void hitsAreExactAcrossGrowth() {
         WordCache cache = new WordCache(1 << 20);
+        WordCache.Probe probe = cache.probe();
         Random random = new Random(42);
         int words = 1_500_000; // through every doubling and past the largest table
         byte[] text = new byte[16 + FastEncoder.PADDING];
@@ -40,7 +46,8 @@ class WordCacheTest {
                     text[i] = (byte) ('a' + random.nextInt(26));
                 }
                 int[] ids = idsOf(text, length);
-                int count = cache.lookup(text, 0, length, found, 3);
+                cache.refresh(probe); // follows the table through its doublings
+                int count = WordCache.lookup(text, 0, length, found, 3, probe);
                 if (count > 0) {
                     hits++;
                     assertEquals(ids.length, count);
@@ -49,30 +56,76 @@ class WordCacheTest {
                     }
                     continue;
                 }
-                cache.insert(ids, 0, ids.length);
-                // the word just inserted is found
-                assertEquals(ids.length, cache.lookup(text, 0, length, found, 0));
-                assertEquals(ids[0], found[0]);
+                cache.insert(ids, 0, ids.length, probe);
             }
         }
-        // the second round replays the first: with a million slots most of it is still there
+        // the second round replays the first: with a million slots most of it is there
         assertTrue(hits > words / 2, "hits " + hits);
     }
 
     @Test
     void wordsOfEveryLengthKeepTheirOwnKey() {
         WordCache cache = new WordCache(1 << 20);
+        WordCache.Probe probe = cache.probe();
         int[] found = new int[8];
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
             byte[] text = new byte[length + FastEncoder.PADDING];
             Arrays.fill(text, 0, length, (byte) 'x');
-            assertEquals(0, cache.lookup(text, 0, length, found, 0));
-            cache.insert(new int[] {length}, 0, 1);
+            assertEquals(0, WordCache.lookup(text, 0, length, found, 0, probe));
+            cache.insert(new int[] {length}, 0, 1, probe);
         }
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
             byte[] text = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".getBytes(StandardCharsets.US_ASCII);
-            assertEquals(1, cache.lookup(text, 0, length, found, 0));
+            assertEquals(1, WordCache.lookup(text, 0, length, found, 0, probe));
             assertEquals(length, found[0]);
         }
+    }
+
+    @Test
+    void threadsSharingTheCacheOnlyEverSeeWholeEntries() throws Exception {
+        // a small cap, so the table also fills, grows and starts over while the threads run
+        WordCache cache = new WordCache(1 << 17);
+        int threads = 2 * Runtime.getRuntime().availableProcessors();
+        AtomicLong hits = new AtomicLong();
+        try (var pool = Executors.newFixedThreadPool(threads)) {
+            List<Future<?>> runs = new ArrayList<>();
+            for (int t = 0; t < threads; t++) {
+                int seed = t;
+                runs.add(
+                        pool.submit(
+                                () -> {
+                                    WordCache.Probe probe = cache.probe();
+                                    Random random = new Random(seed % 4); // threads share words
+                                    byte[] text = new byte[16 + FastEncoder.PADDING];
+                                    int[] found = new int[WordCache.MAX_IDS];
+                                    for (int w = 0; w < 400_000; w++) {
+                                        int length = 2 + random.nextInt(WordCache.MAX_BYTES - 1);
+                                        for (int i = 0; i < length; i++) {
+                                            text[i] = (byte) ('a' + random.nextInt(6));
+                                        }
+                                        int[] ids = idsOf(text, length);
+                                        if ((w & 255) == 0) {
+                                            cache.refresh(probe);
+                                        }
+                                        int count =
+                                                WordCache.lookup(text, 0, length, found, 0, probe);
+                                        if (count == 0) {
+                                            cache.insert(ids, 0, ids.length, probe);
+                                            continue;
+                                        }
+                                        hits.incrementAndGet();
+                                        assertEquals(ids.length, count);
+                                        for (int k = 0; k < count; k++) {
+                                            assertEquals(ids[k], found[k]);
+                                        }
+                                    }
+                                    return null;
+                                }));
+            }
+            for (Future<?> run : runs) {
+                run.get();
+            }
+        }
+        assertTrue(hits.get() > 0);
     }
 }

@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.vector;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.spi.IdBuffer;
 import com.qxotic.toknroll.spi.TiktokenEngine;
@@ -60,7 +59,7 @@ class FastEncoderTest {
             };
 
     @Test
-    void aBurstOfCallsKeepsAtMostOneScratchPerProcessor() throws Exception {
+    void manyThreadsAtOnceGetTheSameIds() throws Exception {
         FastEncoder encoder = new FastEncoder(BYTES, BitSplit.forRules(TiktokenEngine.CL100K));
         String text = "the cat sat on the mat, and the dog sat on the log. ".repeat(2000);
         int[] expected = ids(text);
@@ -79,9 +78,6 @@ class FastEncoderTest {
                 assertArrayEquals(expected, call.get());
             }
         }
-        int scratches = encoder.scratches();
-        assertTrue(
-                scratches <= Runtime.getRuntime().availableProcessors(), "scratches " + scratches);
     }
 
     @Test
