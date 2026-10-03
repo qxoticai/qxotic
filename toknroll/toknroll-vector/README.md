@@ -26,13 +26,15 @@ Without the module, or without the flag, core encodes by itself and produces the
 To rule the engine out, say when chasing a suspected difference, set `-Dtoknroll.engine=none`.
 A tokenizer's `toString()` names the engine once it has encoded through it.
 
-## Memory
+## Memory and threads
 
-A tokenizer's engine keeps one word cache per processor, each of at most 32 MB (a million words, about what a 100 MB corpus fills), and they are collected with the tokenizer.
-A call claims a cache for its duration, the same one each time from the same thread when it can, so a thread keeps nothing between calls however long it lives.
-A cache starts at 2 MB and grows only as far as the text it sees asks.
-`-Dtoknroll.wordCache=<MB>` sets the cap per cache; `0` turns the caches off.
-A smaller cap trades speed on large corpora: at 16 MB enwik8 encodes about a third slower.
+A tokenizer is safe to share between threads and needs nothing from them: no thread-local state, no pools.
+Each tokenizer of the family keeps one word cache, shared by every thread that encodes with it, and the cache goes when the tokenizer does.
+It starts at 2 MB and grows as the text it sees asks, up to 32 MB (a million words, about what a 100 MB corpus fills); `-Dtoknroll.wordCache=<MB>` sets that cap and `0` turns the cache off.
+Lookups take no lock: a cache entry never changes once written, a new word goes into an empty slot claimed with one compare-and-set, and a full cache is replaced whole.
+Everything else a call needs it allocates for itself, a few kilobytes.
+
+For many documents, run `encode` on them from your own executor: the tokenizer scales with the threads you give it.
 
 ## What it covers
 
