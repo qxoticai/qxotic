@@ -15,10 +15,11 @@ import java.nio.ByteOrder;
  * A miss inserts into the first empty slot of that window, or the home slot when the window is
  * full.
  *
- * <p>The table starts small and doubles, up to {@link #MAX_SLOTS}, each time it has taken as many
- * words as it has slots: a thread that encodes a few documents keeps a few megabytes, one that
- * works through a corpus grows into the tens, where a Zipf vocabulary's tail still hits. A doubling
- * rehashes what the table holds; nothing else here allocates.
+ * <p>The table starts small and doubles, up to the slots it is given, each time it has taken as
+ * many words as it has slots: a cache that has seen a few documents takes a few megabytes, one that
+ * works through a corpus grows to its cap, where a Zipf vocabulary's tail still hits. A slot takes
+ * 32 bytes and its tag one more. A doubling rehashes what the table holds; nothing else here
+ * allocates.
  *
  * <p>After Swiss tables (the tag row) and the cache of tokenizers 1.0 (the packed keys, the ids
  * inline).
@@ -28,7 +29,6 @@ final class WordCache {
     static final int MAX_IDS = 4;
 
     private static final int FIRST_SLOTS = 1 << 16;
-    private static final int MAX_SLOTS = 1 << 20;
     private static final int WINDOW = 8;
     private static final VarHandle LONGS =
             MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
@@ -36,16 +36,27 @@ final class WordCache {
     private static final long HIGH_BITS = 0x8080808080808080L;
     private static final long COUNT_MASK = 7L << 60; // the id count rides in the key's spare bits
 
-    private int mask = FIRST_SLOTS - 1;
-    private byte[] tags = new byte[FIRST_SLOTS + WINDOW]; // 0 is empty
+    private final int maxSlots;
+    private int mask;
+    private byte[] tags; // 0 is empty
 
     /**
      * Four longs per slot: the key, then the four ids packed in two. A long array's data starts 16
      * bytes into its cache line, so the two leading longs put every 32-byte slot inside one line.
      */
-    private long[] slots = new long[4 * (FIRST_SLOTS + WINDOW) + 2];
+    private long[] slots;
 
     private int inserted; // since the last doubling
+
+    /** A cache that grows up to {@code maxSlots}, a power of two. */
+    WordCache(int maxSlots) {
+        this.maxSlots = maxSlots;
+        int first = Math.min(FIRST_SLOTS, maxSlots);
+        this.mask = first - 1;
+        this.tags = new byte[first + WINDOW];
+        this.slots = new long[4 * (first + WINDOW) + 2];
+    }
+
     private int victim;
 
     // The last lookup's word: its key, its tag, and the slot an insert of it takes.
@@ -152,7 +163,7 @@ final class WordCache {
      * Records the word of the last {@link #lookup} as the {@code count} ids at {@code ids[first]}.
      */
     void insert(int[] ids, int first, int count) {
-        if (++inserted > mask && mask < MAX_SLOTS - 1) {
+        if (++inserted > mask && mask < maxSlots - 1) {
             grow();
         }
         int slot = this.slot;
