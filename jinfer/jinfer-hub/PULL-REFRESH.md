@@ -34,7 +34,8 @@ A failed refresh exits unsuccessfully while preserving the previously usable ent
 Successful paths go to stdout in argument order; progress and errors go to stderr.
 An update failure is not silently converted into cached success.
 
-`JINFER_OFFLINE=1` forbids both metadata and payload requests.
+`JINFER_OFFLINE=1|true|on|yes` (case-insensitive) forbids both metadata and payload requests.
+`0|false|off|no` disables the environment flag; `-Djinfer.offline=true` still forces offline mode.
 Cached inference works offline; mutable pulls and forced remote downloads fail before mutation.
 An ordinary pull of a cached exact filename at a full immutable commit can succeed offline.
 A directory, branch, tag, abbreviated revision, or quant shorthand does not qualify for that shortcut without authoritative selection information.

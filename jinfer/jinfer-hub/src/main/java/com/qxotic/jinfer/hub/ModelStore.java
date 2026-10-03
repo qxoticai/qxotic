@@ -535,7 +535,9 @@ public final class ModelStore {
     }
 
     private static boolean offline() {
-        return "1".equals(System.getenv("JINFER_OFFLINE")) || Boolean.getBoolean("jinfer.offline");
+        String value = System.getenv().getOrDefault("JINFER_OFFLINE", "");
+        return List.of("1", "true", "on", "yes").contains(value.toLowerCase(Locale.ROOT))
+                || Boolean.getBoolean("jinfer.offline");
     }
 
     /**

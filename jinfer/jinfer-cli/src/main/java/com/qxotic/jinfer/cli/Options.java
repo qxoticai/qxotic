@@ -589,7 +589,8 @@ final class Options {
                 References: [host/]owner/repo[@revision][/file][:quant]. Default host: hf.co.
                 Existing local files win. Remote files are downloaded once and cached.
                 Cache: JINFER_MODELS or the platform cache.
-                Offline: exactly JINFER_OFFLINE=1, or -Djinfer.offline=true, prevents fetching.
+                Offline: JINFER_OFFLINE=1|true|on|yes prevents fetching (case-insensitive).
+                0|false|off|no disables the environment flag; -Djinfer.offline=true also enables it.
                 """);
     }
 
