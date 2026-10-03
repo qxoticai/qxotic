@@ -7,6 +7,9 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * A tiktoken model behind one regex, encoded fast: the text as UTF-8, cut by {@link BitSplit} a
@@ -16,6 +19,14 @@ import java.util.Arrays;
  * their own ({@link WordCache#run}); only a miss leaves it. A miss is a token as it is when the
  * merge loop would give it back whole ({@link ExactLookup}), else merged: by hand up to three
  * bytes, by a scan over flat arrays up to {@link #LARGE} bytes, by a heap beyond.
+ *
+ * <p>The cache and the merge arrays live in a scratch that a call claims from this encoder and
+ * releases, so a thread keeps nothing between calls but the number of its home slot. The encoder
+ * has one slot per processor, each with a cache of at most {@code -Dtoknroll.wordCache} megabytes
+ * ({@link #DEFAULT_CACHE_MB} by default, 0 for none), and they go when the tokenizer does. A thread
+ * claims its home slot first, so it finds its cache where its core left it; when the home slot is
+ * taken it tries the others, and when every one is taken the call runs on a scratch of its own
+ * without a cache.
  */
 final class FastEncoder implements TiktokenEngine.Encoder {
 
@@ -28,8 +39,18 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     /** Words of this many bytes and more merge with the heap. */
     private static final int LARGE = 96;
 
-    /** A thread keeps its scratch unless a giant word grew it past this many elements. */
+    /** A scratch drops a merge array a giant word grew past this many elements. */
     private static final int MAX_RETAINED = 128 * 1024;
+
+    static final int DEFAULT_CACHE_MB = 32;
+
+    /**
+     * The slots of a word cache: a power of two, as many as fit the megabytes asked for at 32 bytes
+     * a slot; the tag row takes a thirty-second more. 32 is a million words, which a corpus of 100
+     * MB still fills: half of that encodes enwik8 a third slower.
+     */
+    static final int CACHE_SLOTS =
+            cacheSlots(Integer.getInteger("toknroll.wordCache", DEFAULT_CACHE_MB));
 
     private static final int NO_TOKEN = -1;
     private static final int NO_INDEX = -1;
@@ -38,7 +59,12 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     private final PairMap merges;
     private final int[] singleByte;
     private final ExactLookup exact;
-    private final ThreadLocal<Scratch> scratch = ThreadLocal.withInitial(() -> new Scratch(true));
+    private final AtomicReferenceArray<Scratch> slots =
+            new AtomicReferenceArray<>(Runtime.getRuntime().availableProcessors());
+    private final AtomicInteger nextHome = new AtomicInteger();
+    private final ThreadLocal<int[]> home =
+            ThreadLocal.withInitial(
+                    () -> new int[] {Math.floorMod(nextHome.getAndIncrement(), slots.length())});
 
     FastEncoder(TiktokenTables model, BitSplit split) {
         this.split = split;
@@ -100,13 +126,51 @@ final class FastEncoder implements TiktokenEngine.Encoder {
 
     @Override
     public void encodeUtf8(byte[] utf8, int start, int end, IdBuffer out) {
-        Thread thread = Thread.currentThread();
-        // a virtual thread gets a scratch for the call, without a cache worth keeping
-        Scratch s = thread.isVirtual() ? new Scratch(false) : scratch.get();
-        encode(utf8, start, end, out, s);
-        if (s.kept && s.retained() > MAX_RETAINED) {
-            scratch.remove();
+        Scratch s = borrow();
+        try {
+            encode(utf8, start, end, out, s);
+        } finally {
+            giveBack(s);
         }
+    }
+
+    private Scratch borrow() {
+        int count = slots.length();
+        int first = home.get()[0];
+        for (int k = 0; k < count; k++) {
+            int i = first + k < count ? first + k : first + k - count;
+            Scratch s = slots.get(i);
+            if (s == null) {
+                slots.compareAndSet(i, null, new Scratch(true));
+                s = slots.get(i);
+            }
+            if (s.claim()) {
+                return s;
+            }
+        }
+        return new Scratch(false);
+    }
+
+    private static void giveBack(Scratch s) {
+        if (s.kept) {
+            s.trim();
+            s.release();
+        }
+    }
+
+    /** The scratches with a cache this encoder has made: at most one per processor. */
+    int scratches() {
+        int made = 0;
+        for (int i = 0; i < slots.length(); i++) {
+            made += slots.get(i) != null ? 1 : 0;
+        }
+        return made;
+    }
+
+    private static int cacheSlots(int megabytes) {
+        long bytes = Math.max(0, megabytes) * (1L << 20);
+        long slots = Long.highestOneBit(bytes / 32);
+        return (int) Math.min(slots, 1 << 30);
     }
 
     /**
@@ -115,7 +179,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
      */
     private void encode(byte[] text, int start, int end, IdBuffer out, Scratch s) {
         int[] ends = s.pieceEnds;
-        WordCache cache = s.kept ? s.wordCache() : null;
+        WordCache cache = s.wordCache();
         int cursor = start;
         while (cursor < end) {
             int n = split.split(text, cursor, end, ends);
@@ -484,10 +548,12 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         return (int) merged;
     }
 
-    /** What a thread reuses from call to call. */
+    /** What a call claims: the word cache and the merge arrays. */
     private static final class Scratch {
-        /** A scratch a thread keeps is worth a word cache; a one-call scratch gets none. */
+        /** A slot's scratch is worth a word cache; a one-call scratch gets none. */
         final boolean kept;
+
+        private final AtomicBoolean taken = new AtomicBoolean();
 
         final int[] pieceEnds = new int[BATCH];
         private WordCache wordCache;
@@ -512,9 +578,18 @@ final class FastEncoder implements TiktokenEngine.Encoder {
             this.kept = kept;
         }
 
+        boolean claim() {
+            return !taken.get() && taken.compareAndSet(false, true);
+        }
+
+        void release() {
+            taken.setRelease(false);
+        }
+
+        /** The cache, made on first use; null for a one-call scratch or with none configured. */
         WordCache wordCache() {
-            if (wordCache == null) {
-                wordCache = new WordCache();
+            if (wordCache == null && kept && CACHE_SLOTS > 0) {
+                wordCache = new WordCache(CACHE_SLOTS);
             }
             return wordCache;
         }
@@ -564,9 +639,20 @@ final class FastEncoder implements TiktokenEngine.Encoder {
             return stamp;
         }
 
-        int retained() {
-            return Math.max(
-                    Math.max(tail.length, tokens.length), Math.max(token.length, heapRank.length));
+        /** Drops the arrays a giant word grew; the cache stays. */
+        void trim() {
+            if (tail.length > MAX_RETAINED) {
+                tail = new byte[0];
+            }
+            if (tokens.length > MAX_RETAINED) {
+                tokens = new int[0];
+                pairs = new long[0];
+            }
+            if (token.length > MAX_RETAINED || heapRank.length > MAX_RETAINED) {
+                token = prev = next = edgeStamp = edgeRight = edgeRank = edgeMergeId = new int[0];
+                heapRank = new int[0];
+                heapNode = new long[0];
+            }
         }
 
         private static int grow(int current, int needed) {

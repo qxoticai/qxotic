@@ -26,7 +26,7 @@ class WordCacheTest {
 
     @Test
     void hitsAreExactAcrossGrowth() {
-        WordCache cache = new WordCache();
+        WordCache cache = new WordCache(1 << 20);
         Random random = new Random(42);
         int words = 1_500_000; // through every doubling and past the largest table
         byte[] text = new byte[16 + FastEncoder.PADDING];
@@ -61,7 +61,7 @@ class WordCacheTest {
 
     @Test
     void wordsOfEveryLengthKeepTheirOwnKey() {
-        WordCache cache = new WordCache();
+        WordCache cache = new WordCache(1 << 20);
         int[] found = new int[8];
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
             byte[] text = new byte[length + FastEncoder.PADDING];
