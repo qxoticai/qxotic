@@ -443,6 +443,41 @@ public final class HuggingFaceTokenizerLoader {
         return specialTokens;
     }
 
+    /**
+     * The GPT-2 pre-tokenization pattern that a ByteLevel pre-tokenizer applies.
+     *
+     * <p>Kept byte-identical to {@code GGUFTokenizerDefaults.GPT2_PATTERN}. It is duplicated rather
+     * than shared because {@code toknroll-hf} does not depend on {@code toknroll-gguf}; if those
+     * modules ever gain a common home, this belongs there.
+     */
+    private static final String BYTE_LEVEL_SPLIT_PATTERN =
+            "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
+
+    /**
+     * Builds the splitter for a {@code ByteLevel} pre-tokenizer.
+     *
+     * <p>This previously returned {@link Splitter#identity()}, which is not what a ByteLevel
+     * pre-tokenizer means. In the HuggingFace {@code tokenizers} library ByteLevel carries a {@code
+     * use_regex} flag that DEFAULTS TO TRUE and applies the GPT-2 pattern; only {@code use_regex:
+     * false} suppresses it. Returning identity therefore fed the entire input to the BPE merge loop
+     * as a single chunk, with two consequences measured on a 728k-char corpus with GPT-2:
+     *
+     * <ul>
+     *   <li>TOKENIZATION DIVERGED from the same encoding loaded via tiktoken. Minimal case: {@code
+     *       "word" + "\n".repeat(12) + "word"} produced 8 tokens instead of 9, because nothing
+     *       broke the newline run that {@code \s+(?!\S)|\s+} exists to break.
+     *   <li>IT WAS ~12.6x SLOWER (186.53 ms vs 14.78 ms per pass), since merge cost is superlinear
+     *       in chunk length and the chunk was the whole document.
+     * </ul>
+     */
+    private static Splitter byteLevelSplitter(Map<String, Object> preTokenizer) {
+        Object useRegex = preTokenizer.get("use_regex");
+        if (Boolean.FALSE.equals(useRegex)) {
+            return Splitter.identity();
+        }
+        return Splitter.regex(Pattern.compile(BYTE_LEVEL_SPLIT_PATTERN, UNICODE_REGEX_FLAGS));
+    }
+
     private static String canonicalizeByteLevelSurface(String token) {
         if (ByteLevel.isValidEncoding(token)) {
             return token;
@@ -890,7 +925,7 @@ public final class HuggingFaceTokenizerLoader {
             case "Sequence":
                 return parseSequencePreTokenizer(preTokenizer);
             case "ByteLevel":
-                return Splitter.identity();
+                return byteLevelSplitter(preTokenizer);
             case "Metaspace":
                 return Splitter.identity();
             default:
