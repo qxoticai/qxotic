@@ -359,8 +359,8 @@ public final class JinjaRenderer {
             case "join" ->
                     new Val.Str(join(val, args.isEmpty() ? "" : expectStr(requireArg(args, 0))));
             case "split" -> split(val, expectStr(requireArg(args, 0)));
-            case "upper" -> new Val.Str(val.asStr().toUpperCase());
-            case "lower" -> new Val.Str(val.asStr().toLowerCase());
+            case "upper" -> new Val.Str(val.asStr().toUpperCase(Locale.ROOT));
+            case "lower" -> new Val.Str(val.asStr().toLowerCase(Locale.ROOT));
             case "startswith" ->
                     new Val.Bool(val.asStr().startsWith(expectStr(requireArg(args, 0))));
             case "endswith" -> new Val.Bool(val.asStr().endsWith(expectStr(requireArg(args, 0))));
@@ -457,7 +457,9 @@ public final class JinjaRenderer {
     }
 
     static String capitalize(String s) {
-        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1).toLowerCase();
+        return s.isEmpty()
+                ? s
+                : Character.toUpperCase(s.charAt(0)) + s.substring(1).toLowerCase(Locale.ROOT);
     }
 
     /**

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -305,5 +306,19 @@ class JinjaSemanticsTest {
                 render(
                         "{{ 'a,b,c'.split(',', 1) }} {{ 'a b  c'.split() }} {{ ' a b '.split(none,"
                                 + " 1) }} {{ 'a,,b'.split(',') }}"));
+    }
+
+    @Test
+    void caseFiltersIgnoreTheDefaultLocale() {
+        Locale saved = Locale.getDefault();
+        Locale.setDefault(Locale.forLanguageTag("tr"));
+        try {
+            // Turkish casing maps i to a dotted capital I and I to a dotless small i
+            assertEquals("TITLE", render("{{ 'title' | upper }}"));
+            assertEquals("title", render("{{ 'TITLE' | lower }}"));
+            assertEquals("Ii", render("{{ 'iI' | capitalize }}"));
+        } finally {
+            Locale.setDefault(saved);
+        }
     }
 }
