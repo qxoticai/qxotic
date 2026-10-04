@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -264,5 +265,27 @@ class JinferChatOptionsTest {
         IllegalArgumentException e =
                 assertThrows(IllegalArgumentException.class, () -> JinferChatModel.grammar(both));
         assertTrue(e.getMessage().contains("choose one"), e.getMessage());
+    }
+
+    @Test
+    void equalityCoversTheJinferExtras() {
+        JinferChatOptions base = JinferChatOptions.builder().temperature(0.7).build();
+        assertEquals(base, base.mutate().build());
+        assertEquals(base.hashCode(), base.mutate().build().hashCode());
+        // each differs from base ONLY in a jinfer field; inherited equality alone saw them equal
+        List<JinferChatOptions> variants =
+                List.of(
+                        base.mutate().seed(7L).build(),
+                        base.mutate().minP(0.1).build(),
+                        base.mutate().thinking(false).build(),
+                        base.mutate().maxReasoningTokens(48).build(),
+                        base.mutate().reasoningCutoffMessage("done").build(),
+                        base.mutate().timeout(Duration.ofSeconds(3)).build(),
+                        base.mutate().outputSchema("{\"type\":\"object\"}").build(),
+                        base.mutate().grammar("root ::= \"x\"").build());
+        for (JinferChatOptions v : variants) {
+            assertNotEquals(base, v);
+            assertNotEquals(v, base);
+        }
     }
 }
