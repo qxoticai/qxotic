@@ -655,12 +655,13 @@ public final class ChatEngine implements AutoCloseable {
             promptTokens = withPromptStart(promptTokens, promptStart);
             Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
             if (grammar != null) {
+                int end = endTurn();
                 ReplyLanguage.Walk walk =
                         ReplyLanguage.Selection.of(
                                         ReplyLanguage.content(ReplyLanguage.gbnf(grammar)),
                                         loaded.tokenizer())
                                 .walk();
-                sampler = walk.sampler(sampler, endTurn());
+                sampler = walk.sampler(sampler, end);
             }
             return Prepared.raw(
                     promptTokens, sampler, maxOutputTokens, timeout, TextStops.checked(stops));
@@ -864,9 +865,15 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * The id to EMIT when a decode must be ended from outside (a grammar's dead end, a forced
      * call's terminator): the stop set's FIRST element - the model's own end-of-turn, an order the
-     * family establishes and {@link LoadedModel} preserves.
+     * family establishes and {@link LoadedModel} preserves. A model with no stop token has nothing
+     * to end a constrained decode with, so the constraint is refused up front.
      */
     private int endTurn() {
+        if (loaded.stopTokens().isEmpty())
+            throw new UnsupportedOperationException(
+                    modelName
+                            + " declares no end-of-turn token, so a grammar, forced call or"
+                            + " constrained reply has nothing to end on");
         return loaded.stopTokens().iterator().next();
     }
 
@@ -948,6 +955,8 @@ public final class ChatEngine implements AutoCloseable {
      * have nothing to guard with.
      */
     private Sampler guarded(Sampler base, IntSequence replyPrefix, boolean noTools) {
+        // no end-of-turn to emit at a dead end: the reply runs unguarded rather than failing
+        if (loaded.stopTokens().isEmpty()) return base;
         Optional<ReplyParser> parser = loaded.template().map(t -> t.parser(loaded.tokenizer()));
         if (parser.isEmpty() || !(parser.get() instanceof ReplyLanguage.Walk walk)) return base;
         walk.seed(replyPrefix);
@@ -1415,12 +1424,16 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * One generation pass, every model kind, one path: the cache serves the prompt from the hottest
-     * thing that matches (a live session it strictly extends, else the longest block prefix, else
-     * fresh compute on a recycled state) and the pass only generates - each decode token joins the
-     * cache step-time through the {@code onIngested} hook, so the reply stays per-position
-     * resumable and the retained stream stays in lockstep. Which layers exist (sessions-only,
-     * define-only, full) was decided once, at construction, from the model and cache options.
+     * One generation pass, every model kind: the cache serves the prompt from the hottest thing
+     * that matches (a live session it strictly extends, else the longest block prefix, else fresh
+     * compute on a recycled state), then the pass decodes. The plain decoder joins each token to
+     * the cache step-time through the {@code onIngested} hook, so the reply stays per-position
+     * resumable and the retained stream stays in lockstep; a model with a ready draft head decodes
+     * through its own verify loop instead, and its committed tokens join the cache in one bulk
+     * adopt after the pass. A prefill cut short by cancellation or the deadline, or cancellation
+     * landing after it, never decodes: cancellation yields no result, the deadline an empty TIMEOUT
+     * one. Which layers exist (sessions-only, define-only, full) was decided once, at construction,
+     * from the model and cache options.
      */
     @SuppressWarnings("unchecked")
     private <S extends ContextState> Outcome run(

@@ -62,6 +62,24 @@ final class ChatEngineTimeoutTest {
     }
 
     @Test
+    void aGrammarOnAModelWithNoStopTokenIsRefusedByName() {
+        try (ChatEngine engine = engine(new ProbeModel(() -> {}))) {
+            UnsupportedOperationException failure =
+                    assertThrows(
+                            UnsupportedOperationException.class,
+                            () ->
+                                    engine.prepareRaw(
+                                            new int[] {1, 2, 3},
+                                            new Sampling(0, 1, 0, 0, 1L),
+                                            1,
+                                            Duration.ZERO,
+                                            "root ::= \"x\"",
+                                            List.of()));
+            assertTrue(failure.getMessage().contains("no end-of-turn token"), failure.getMessage());
+        }
+    }
+
+    @Test
     void deadlineExhaustedByFinalPrefillChunkNeverEntersSpeculativeDecoder() {
         ProbeModel model = new ProbeModel(() -> sleep(Duration.ofMillis(200)));
         AtomicInteger sampled = new AtomicInteger();
