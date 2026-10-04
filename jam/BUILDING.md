@@ -2,8 +2,8 @@
 
 Everything is built, tested and packaged locally, inside VMs. There is no CI. A build needs
 **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang; MSVC is rejected at configure), **Maven**, and
-a **JDK ≥ 25**. On macOS, Apple silicon only, `xcode-select --install` covers clang, cmake and the
-Metal frameworks. Windows builds use **MinGW-w64**, normally cross-compiled from Linux (below).
+a **JDK ≥ 25**. On macOS, Apple silicon only, `xcode-select --install` covers clang and the
+Metal frameworks; install CMake with `brew install cmake`. Windows builds use **MinGW-w64**, normally cross-compiled from Linux (below).
 
 **Maven** runs cmake, javac and the tests in one step, from the **repository root**. jam is not
 dependency-closed (`jam-core` builds on `jota-core`), so `mvn` inside this directory only works
