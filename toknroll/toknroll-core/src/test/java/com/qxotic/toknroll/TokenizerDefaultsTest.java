@@ -64,6 +64,96 @@ class TokenizerDefaultsTest {
                 IllegalArgumentException.class, () -> tokenizer.decodeBytesInto(tokens, 0, out));
     }
 
+    @Test
+    void defaultCountBytesHandlesTokensLongerThanItsScratch() {
+        WideTokenizer tokenizer = new WideTokenizer();
+        IntSequence tokens = IntSequence.of(1, 3, 2);
+
+        assertEquals(1000 + 3000 + 2000, tokenizer.countBytes(tokens));
+        assertEquals(6000, tokenizer.decodeBytes(tokens).length);
+    }
+
+    @Test
+    void defaultCountBytesRethrowsUnknownTokens() {
+        WideTokenizer tokenizer = new WideTokenizer();
+
+        assertThrows(
+                IllegalArgumentException.class, () -> tokenizer.countBytes(IntSequence.of(1, 99)));
+    }
+
+    /** Token {@code k} (1..9) decodes to {@code 1000 * k} bytes; uses the default countBytes. */
+    private static final class WideTokenizer implements Tokenizer {
+        @Override
+        public void encodeInto(
+                CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Vocabulary vocabulary() {
+            return new Vocabulary() {
+                @Override
+                public int size() {
+                    return 10;
+                }
+
+                @Override
+                public String token(int id) {
+                    return "t" + id;
+                }
+
+                @Override
+                public int id(String text) {
+                    return Integer.parseInt(text.substring(1));
+                }
+
+                @Override
+                public boolean contains(int id) {
+                    return id >= 1 && id <= 9;
+                }
+
+                @Override
+                public boolean contains(String text) {
+                    return false;
+                }
+
+                @Override
+                public java.util.Iterator<java.util.Map.Entry<String, Integer>> iterator() {
+                    return java.util.Collections.emptyIterator();
+                }
+            };
+        }
+
+        @Override
+        public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+            if (tokenStartIndex == tokens.length()) {
+                return 0;
+            }
+            int consumed = 0;
+            for (int i = tokenStartIndex; i < tokens.length(); i++) {
+                int id = tokens.intAt(i);
+                if (!vocabulary().contains(id)) {
+                    throw new IllegalArgumentException("Unknown token id: " + id);
+                }
+                int size = 1000 * id;
+                if (size > out.remaining()) {
+                    if (consumed == 0) {
+                        throw new IllegalArgumentException("Not enough output space");
+                    }
+                    break;
+                }
+                out.put(new byte[size]);
+                consumed++;
+            }
+            return consumed;
+        }
+    }
+
     private static class FakeTokenizer implements Tokenizer {
         int lastStart = -1;
         int lastEnd = -1;
