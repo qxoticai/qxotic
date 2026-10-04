@@ -1150,11 +1150,21 @@ public final class Grammar {
      * array of those), {@code properties} + {@code required}, {@code items}, {@code enum}, {@code
      * const}, {@code anyOf}/{@code oneOf}, and {@code $ref} into the root document ({@code $defs},
      * {@code definitions}, any local JSON Pointer) - how a generated schema spells a type it uses
-     * twice, and the only way a RECURSIVE type can be written at all. Object properties are emitted
-     * in the order of {@code required} (or, when {@code required} is absent, all declared
-     * properties); other keywords ({@code patternProperties}, numeric/length bounds, …) are ignored
-     * - the result is always valid JSON satisfying the supported constraints, never a broken
-     * grammar.
+     * twice, and the only way a RECURSIVE type can be written at all. Also honored: {@code
+     * minLength}/{@code maxLength} on strings, {@code minItems}/{@code maxItems} on arrays, tuple
+     * {@code items} (a list, one schema per position), {@code format} {@code date}, {@code time},
+     * {@code date-time} and {@code uuid}, and {@code additionalProperties: false} on an object
+     * without declared properties (the empty object). A node with {@code properties} or {@code
+     * items} but no {@code type} is an object or array.
+     *
+     * <p>Object properties are emitted in the schema's DECLARATION order: every required property
+     * first, then the optional ones as an ordered subset; {@code required} decides membership,
+     * never order. An object with declared properties admits no other keys. Other keywords ({@code
+     * patternProperties}, {@code pattern}, numeric bounds, unknown formats, …) are ignored, and an
+     * unresolvable {@code $ref} admits any JSON value - the result is always valid JSON satisfying
+     * the supported constraints, never a broken grammar. A minimum above its maximum ({@code
+     * minLength > maxLength}, {@code minItems > maxItems}) admits nothing and throws {@link
+     * IllegalArgumentException}.
      */
     static Spec fromSchema(Map<String, Object> schema, Vocab v) {
         return of(Schema.toGbnf(schema, true), v);
@@ -1440,6 +1450,7 @@ public final class Grammar {
         /** {@code minLength}/{@code maxLength} bound a repetition of {@code char}. */
         private String stringBody(Map<String, Object> m) {
             long min = bound(m, "minLength", 0), max = bound(m, "maxLength", -1);
+            requireSatisfiable(min, max, "minLength", "maxLength");
             if (min == 0 && max < 0) return "string";
             return "\"\\\"\" " + repeat("char", min, max) + " \"\\\"\"";
         }
@@ -1458,8 +1469,12 @@ public final class Grammar {
             }
             String item = m.containsKey("items") ? rule(m.get("items")) : "value";
             long min = bound(m, "minItems", 0), max = bound(m, "maxItems", -1);
+            requireSatisfiable(min, max, "minItems", "maxItems");
             if (min == 0 && max < 0)
                 return "\"[\" ws (" + item + " (ws \",\" ws " + item + ")*)? ws \"]\"";
+            // maxItems 0 is the empty array; through the tail below it became repeat(tail, 0, -1),
+            // which is UNBOUNDED, so the tightest bound admitted every array
+            if (max == 0) return "\"[\" ws \"]\"";
             // the FIRST item carries no separator, so the bounds move to the comma-led tail
             String tail = "(ws \",\" ws " + item + ")";
             if (min >= 1)
@@ -1475,6 +1490,24 @@ public final class Grammar {
             if (max < 0) return min == 0 ? term + "*" : term + "{" + min + ",}";
             if (max == 0) return "";
             return min == max ? term + "{" + min + "}" : term + "{" + min + "," + max + "}";
+        }
+
+        /**
+         * A minimum above its maximum admits NOTHING: refused here, by keyword, rather than as a
+         * GBNF repetition error the schema's author never wrote.
+         */
+        private static void requireSatisfiable(long min, long max, String minKey, String maxKey) {
+            if (max >= 0 && min > max) {
+                throw new IllegalArgumentException(
+                        "unsatisfiable schema: "
+                                + minKey
+                                + " "
+                                + min
+                                + " exceeds "
+                                + maxKey
+                                + " "
+                                + max);
+            }
         }
 
         /** A non-negative integer keyword, or {@code missing} when absent or not a number. */

@@ -126,4 +126,41 @@ final class GrammarTest {
         assertTrue(GrammarMembership.accepts(bounded, GrammarMembership.BV, "xx"));
         assertFalse(GrammarMembership.accepts(bounded, GrammarMembership.BV, "xxx"));
     }
+
+    @Test
+    void schemaMaxItemsZeroIsTheEmptyArray() {
+        Grammar.Spec spec =
+                Grammar.fromSchema(
+                        java.util.Map.of(
+                                "type",
+                                "array",
+                                "items",
+                                java.util.Map.of("type", "integer"),
+                                "maxItems",
+                                0),
+                        GrammarMembership.BV);
+        assertTrue(GrammarMembership.accepts(spec, GrammarMembership.BV, "[]"));
+        assertFalse(GrammarMembership.accepts(spec, GrammarMembership.BV, "[1]"));
+        assertFalse(GrammarMembership.accepts(spec, GrammarMembership.BV, "[1,2,3]"));
+    }
+
+    @Test
+    void schemaMinimumAboveMaximumIsRefused() {
+        IllegalArgumentException strings =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Grammar.schemaGbnf(
+                                        java.util.Map.of(
+                                                "type", "string", "minLength", 3, "maxLength", 1)));
+        assertTrue(strings.getMessage().contains("minLength 3"), strings.getMessage());
+        IllegalArgumentException arrays =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Grammar.schemaGbnf(
+                                        java.util.Map.of(
+                                                "type", "array", "minItems", 2, "maxItems", 0)));
+        assertTrue(arrays.getMessage().contains("minItems 2"), arrays.getMessage());
+    }
 }
