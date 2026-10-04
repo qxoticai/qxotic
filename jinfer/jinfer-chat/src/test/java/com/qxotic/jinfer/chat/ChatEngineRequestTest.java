@@ -310,6 +310,33 @@ final class ChatEngineRequestTest {
         assertEquals(1, request.templateKwargs().size(), "template kwargs must be copied");
     }
 
+    /**
+     * A library caller's {@code chat_template_kwargs.enable_thinking} is the thinking switch, as
+     * the server reads it: the engine's own binding used to overwrite it in the render, and the
+     * native codec never saw it at all.
+     */
+    @Test
+    void enableThinkingKwargOverridesTheThinkingFlag() {
+        ChatEngine.Request off =
+                ChatEngine.Request.builder(ONE_TURN, SAMPLING)
+                        .thinking(true)
+                        .templateKwargs(Map.of("enable_thinking", false))
+                        .build();
+        assertFalse(off.thinking());
+        ChatEngine.Request on =
+                ChatEngine.Request.builder(ONE_TURN, SAMPLING)
+                        .templateKwargs(Map.of("enable_thinking", true, "custom", 1))
+                        .build();
+        assertTrue(on.thinking());
+        // only a boolean switches; anything else stays a plain template variable
+        ChatEngine.Request text =
+                ChatEngine.Request.builder(ONE_TURN, SAMPLING)
+                        .thinking(true)
+                        .templateKwargs(Map.of("enable_thinking", "false"))
+                        .build();
+        assertTrue(text.thinking());
+    }
+
     @Test
     void absentCollectionsBecomeEmptyRatherThanNull() {
         ChatEngine.Request request =
