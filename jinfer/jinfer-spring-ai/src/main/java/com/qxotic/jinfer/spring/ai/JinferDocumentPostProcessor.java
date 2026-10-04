@@ -121,8 +121,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
     public void close() {
         lock.lock();
         try {
-            state.close();
-            Arenas.close(arena);
+            JinferEmbeddingModel.closeStateThenArena(state, arena);
         } finally {
             lock.unlock();
         }
