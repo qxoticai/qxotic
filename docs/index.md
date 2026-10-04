@@ -19,7 +19,7 @@ tokenization, model formats, tensor math, native quantized matmul, and a full in
 | [toknroll](/toknroll) | LLM tokenization (tiktoken + SentencePiece BPE) | **Token-perfect** parity with the reference tokenizers |
 | [gguf](/gguf) | Read/write GGUF model files | llama.cpp's format, pure Java |
 | [safetensors](/safetensors) | Read/write Safetensors model files | HuggingFace's format, pure Java |
-| [json](/json) | RFC 8259 JSON parser and printer | **~10 KB, zero dependencies, reflection-free** |
+| [json](/json) | RFC 8259 JSON parser and printer | **~25 KB, zero dependencies, reflection-free** |
 
 ## Where to start
 

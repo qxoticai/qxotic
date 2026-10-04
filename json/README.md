@@ -1,6 +1,6 @@
 # json
 
-**JSON for the JVM, minus the baggage.** ~10 KB. Zero dependencies. Zero reflection.
+**JSON for the JVM, minus the baggage.** ~25 KB. Zero dependencies. Zero reflection.
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.qxotic/json)](https://search.maven.org/artifact/com.qxotic/json)
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
@@ -22,7 +22,7 @@ That is the whole learning curve.
 | | **qxotic json** | Jackson | Gson |
 |---|---|---|---|
 | Dependencies | **0** | 3+ | 1+ |
-| JAR size | **~10 KB** | ~3 MB | ~250 KB |
+| JAR size | **~25 KB** | ~3 MB | ~250 KB |
 | Reflection | **None** | Yes | Yes |
 | GraalVM native image | **Out of the box** | Partial | Partial |
 | Setup | **None** | Annotations, modules | Type tokens |
@@ -93,8 +93,7 @@ Reproduce with `cd benchmarks && mvn package && java -jar target/json-benchmarks
 
 ## Documentation
 
-[qxotic.ai/json](https://qxotic.ai/json) covers parsing, serialization, error handling
-and migration from Jackson or Gson.
+[qxotic.ai/json](https://qxotic.ai/json) covers parsing, serialization and error handling.
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 
