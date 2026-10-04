@@ -1,5 +1,39 @@
 # Release notes
 
+## 0.3.1
+
+jinfer only: a command-based CLI, faster prefill, and one server limit.
+`jinfer-bom` moves to 0.3.1 and names each artifact at its own version, so one import still pins a coherent set.
+At 0.3.1: `jinfer-bom`, `jinfer-cli`, `jinfer-chat`, `jinfer-codecs`, `jinfer-hub`, `jinfer-kernels`, the ten text ports (`jinfer-lfm2`, `jinfer-qwen3`, `jinfer-qwen35`, `jinfer-bailingmoe3`, `jinfer-laguna`, `jinfer-mellum`, `jinfer-gemma4`, `jinfer-gptoss`, `jinfer-nemotronh`, `jinfer-llama`), `gguf` and `jam-native`.
+Unchanged at 0.3.0: `jinfer-core`, `jinfer-cache`, `jinfer-jinja`, `jinfer-parakeet`, `jinfer-inflect2`, `jinfer-kokoro`, `jinfer-models-all`, `jinfer-langchain4j` and the three Spring AI artifacts.
+json, safetensors, jota, toknroll and the other jam artifacts stay at 0.2.0.
+
+### CLI
+
+- **Commands, not mode flags.** Every invocation names its command: `chat`, `instruct`, `server`, `speak` and `transcribe` run a model; `pull`, `list` and `cache-info` manage the model cache.
+  The legacy mode flags `--chat`, `--server`, `--transcribe` and `--speak` are gone, a bare `-m model.gguf` no longer implies `instruct`, and `--mmproj` is replaced by `--with media=<ref>`.
+  Text and audio input are positional, switches such as `--stream` and `--echo` take no value, and `--think` accepts `on`, `off` or `inline`.
+- **Help per command.** `jinfer <command> --help` names only the options that command accepts, and an option that does not apply to it is refused rather than ignored.
+- **Live transcription.** `jinfer transcribe -m <model> - --raw-pcm` reads 16 kHz mono PCM from stdin and draws the live view; `-` alone reads an encoded audio file from stdin.
+- **`speak` plays by default.** Without `--output`, speech is played after synthesis, so `--play` is gone; `--stream` starts playback with the first clip.
+- **One server limit.** `--concurrency N` holds up to `N` requests and refuses the next one with a message naming the limit; `--queue-depth` is removed.
+  Health, props, models and metrics answer outside that gate, and the transcription server has the same probes and metrics as the language server.
+- **Chat keeps going when the context is full.** The oldest exchanges are dropped instead of every later turn being refused.
+- **Safer pulls.** A failed download or refresh leaves the previously usable model in place, and `list` prints one line per reference.
+- **One-line refusals.** A library refusal prints as one line with exit status 1; an invalid invocation exits with 2.
+  An explicit `--speculation-depth` is refused where no draft head can use it.
+
+### Performance
+
+- **Prefill per row.** Residual adds, SwiGLU and KV commits run one row per job across the ports instead of serially over the batch, for up to 20% more prompt throughput at 16 threads, depending on the model.
+- **AVX-512-VNNI prefill in `jam-native` 0.3.1.** A 32x4 tile shares every activation broadcast between two weight vectors and keeps K-quant sub-block scales integer; on Zen 5 the Gemma 4 E2B quants prefill faster than llama.cpp on the same machine.
+
+### Also
+
+- **`gguf` 0.3.1.** `GGUFFormatException` now extends `IllegalArgumentException`, so a malformed file reads as the refusal it is.
+- **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
+- **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
+
 ## 0.3.0
 
 jinfer only: speech recognition, and the CLI on Maven Central.
@@ -44,7 +78,7 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 
 - **Thinking policy.** Every chat template states how its checkpoint reasons: `NONE`, `OPTIONAL` or `ALWAYS`.
   A model that always reasons, LFM2.5-8B-A1B and gpt-oss among them, refuses `thinking(false)` with a message naming the remedy instead of leaking its reasoning into the visible text.
-  `reasoningBudget` caps the span on every model that has think markers, in the CLI, the server, langchain4j and Spring AI.
+  `maxReasoningTokens` caps the span on every model that has think markers: `--max-reasoning-tokens` in the CLI, `max_reasoning_tokens` on the server, and the same knob in langchain4j and Spring AI.
 - **Structured output in langchain4j.** A JSON-schema response format is enforced by the grammar and, so that the model knows which fields exist, described in one line appended to the last user message.
   `describeSchema(false)` on the builder leaves the prompt untouched.
 - **Reply scaffolding is guarded.** The family's reply language now masks control tokens wherever the language expects a specific one, so a model cannot derail its own tool-call header or channel scaffolding; free text stays free.
@@ -59,22 +93,25 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
   `Espeak` in `jinfer-codecs` drives espeak-ng for both speech families; the per-family symbol tables and espeak drivers are gone.
 - **Spring Boot examples.** `mvn spring-boot:run` runs with full tiered compilation; its default `optimizedLaunch` pinned C1 and slowed the Vector API about a hundredfold.
 - **CLI errors.** A bad `--cache` file, a read-only cache root and other wrapped IO failures print one `ERROR` line.
-
 - **Tools with constrained output.** A request may offer tools together with a JSON schema or a grammar: the family's reply language then offers a tool call or the document, so langchain4j's tool-round-then-structured-answer loop works in one service call.
   A forced tool call with constrained output is still refused, and a family without a combined language refuses at request time.
 - **Stringified arguments.** A small model that sends an array or object argument as a JSON string, Llama 3.2 1B does, gets it unwrapped where the tool's schema declares that shape.
-- **Gemma 4 video.** A `VideoContent` (langchain4j), a video `Media` (Spring AI) or a `video_url` part (server) renders the way the Gemma 4 processor does: every sampled frame is a timestamped image block, `mm:ss <|image>...<image|>`, one space between frames. Qwen 3.5 still refuses video: its vision tower takes images only.
-- **Browser URLs as model refs.** A repository page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope alike) is the ref it spells, so it lands in the same cache as `owner/repo`; `huggingface.co/owner/repo` is accepted as a host spelling. A plain URL that answers with a web page is refused and never kept in the cache.
+- **Gemma 4 video.** A `VideoContent` (langchain4j), a video `Media` (Spring AI) or a `video_url` part (server) renders the way the Gemma 4 processor does: every sampled frame is a timestamped image block, `mm:ss <|image>...<image|>`, one space between frames.
+  Qwen 3.5 still refuses video: its vision tower takes images only.
+- **Browser URLs as model refs.** A repository page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope alike) is the ref it spells, so it lands in the same cache as `owner/repo`; `huggingface.co/owner/repo` is accepted as a host spelling.
+  A plain URL that answers with a web page is refused and never kept in the cache.
 - **Vector API check in the library.** A JVM started without `--add-modules jdk.incubator.vector` fails at model load with the one-line remedy, on every binding, instead of a NoClassDefFoundError inside a kernel.
 - **Builder ranges.** The langchain4j builders refuse an out-of-range temperature, top-p, top-k, min-p, output limit, timeout or speech speed where it is set, with the range in the message.
 - **`--raw-prompt` writes the start token.** The raw lane prepends the model's start tokens (BOS, where the family has one) unless the prompt already spells them, as llama.cpp's `add_bos_token` does; an LFM 2.5 raw prompt no longer decodes to noise.
 - **Errors that name the mistake.** An unknown flag in last position is reported as unknown; the server answers 404 for a model name it does not serve and refuses `max_tokens: 0`; the always-reasoning refusal names the lever on every front end; a null embedding batch fails instead of returning nothing; the Narrate and Detect demos report a missing image in one line.
 - **Vision prefill no longer collapses once a model has answered.** FlashAttention's pixel-value tiles took their vector species as a parameter, so the species was constant only while the JIT inlined them; once any prefill made the same kernels hot enough to compile standalone, every broadcast de-intrinsified and the tile allocated instead of using registers.
-  One 512x512 image on LFM2.5-VL-3B went from 11 MB and 1.07 s to 162 GB and 5.3 s, on GraalVM after the first prefill and on C2 always. The tiles now read the constant species, so an image encode costs 11 MB and 1.06 s on GraalVM and 1.48 s on C2, with no JVM flags.
+  One 512x512 image on LFM2.5-VL-3B went from 11 MB and 1.07 s to 162 GB and 5.3 s, on GraalVM after the first prefill and on C2 always.
+  The tiles now read the constant species, so an image encode costs 11 MB and 1.06 s on GraalVM and 1.48 s on C2, with no JVM flags.
 - **LFM2.5 thinking policy.** A checkpoint whose template never writes a think span (the 350M instruct) reports `NONE`; the ones that do keep `OPTIONAL` or `ALWAYS`.
   LFM2.5-VL-3B ships the same template as the 8B-A1B but does not reason, so it is read off the architecture rather than the template source: `thinking(false)` on the vision models works instead of being refused.
 
 ### Known limits
 
 - The `Logic` gallery demo and the model-backed tests pin temperature 0 and a seed; small models still fail some puzzles, which the demo reports honestly.
-- When a JSON schema's fields are all optional, LFM2.5-8B-A1B may leave out a field the text does state. Mark the fields you rely on as `required`, or check the extracted values; `describeSchema(false)` turns the description line off entirely.
+- When a JSON schema's fields are all optional, LFM2.5-8B-A1B may leave out a field the text does state.
+  Mark the fields you rely on as `required`, or check the extracted values; `describeSchema(false)` turns the description line off entirely.
