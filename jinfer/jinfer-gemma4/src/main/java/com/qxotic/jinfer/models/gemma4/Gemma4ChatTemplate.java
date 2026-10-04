@@ -54,10 +54,6 @@ final class Gemma4ChatTemplate implements ChatTemplate {
     private final IntSequence noThinkingPrefix;
     private final IntSequence thoughtTail;
 
-    public Gemma4ChatTemplate(Tokenizer tokenizer) {
-        this(tokenizer, null, false);
-    }
-
     public Gemma4ChatTemplate(Gemma4 model, boolean scaffoldsNonThinking) {
         this(model.tokenizer(), model, scaffoldsNonThinking);
     }
