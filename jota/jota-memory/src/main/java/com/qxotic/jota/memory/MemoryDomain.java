@@ -70,9 +70,17 @@ public interface MemoryDomain<B> extends AutoCloseable {
         }
 
         MemoryView<S> srcContig = contiguousCopy(srcDomain, src);
-        MemoryView<D> dstContig = allocateContiguous(dstDomain, dst.dataType(), dst.shape());
-        copyContiguous(srcDomain, srcContig, dstDomain, dstContig);
-        copySameDevice(dstDomain, dstContig, dst);
+        try {
+            MemoryView<D> dstContig = allocateContiguous(dstDomain, dst.dataType(), dst.shape());
+            try {
+                copyContiguous(srcDomain, srcContig, dstDomain, dstContig);
+                copySameDevice(dstDomain, dstContig, dst);
+            } finally {
+                StridedCopy.releaseTemp(dstContig.memory());
+            }
+        } finally {
+            StridedCopy.releaseTemp(srcContig.memory());
+        }
     }
 
     private static boolean sharesMemoryOperations(MemoryDomain<?> left, MemoryDomain<?> right) {
@@ -92,7 +100,12 @@ public interface MemoryDomain<B> extends AutoCloseable {
 
     private static <B> MemoryView<B> contiguousCopy(MemoryDomain<B> domain, MemoryView<B> src) {
         MemoryView<B> dst = allocateContiguous(domain, src.dataType(), src.shape());
-        StridedCopy.copy(domain, src, dst);
+        try {
+            StridedCopy.copy(domain, src, dst);
+        } catch (RuntimeException | Error e) {
+            StridedCopy.releaseTemp(dst.memory());
+            throw e;
+        }
         return dst;
     }
 
