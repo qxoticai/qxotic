@@ -4,7 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -47,6 +51,37 @@ class JAMProvidersTest {
                             TestProvider.availabilityChecks,
                             "a disabled provider must be dropped before isAvailable() is probed");
                 });
+    }
+
+    @Test
+    void throwingProbeDropsTheProviderAndIsLogged() {
+        Logger logger = Logger.getLogger(JAM.class.getName());
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler =
+                new Handler() {
+                    @Override
+                    public void publish(LogRecord record) {
+                        records.add(record);
+                    }
+
+                    @Override
+                    public void flush() {}
+
+                    @Override
+                    public void close() {}
+                };
+        RuntimeException failure = new IllegalArgumentException("bad flag");
+        logger.addHandler(handler);
+        TestProvider.probeFailure = failure;
+        try {
+            assertFalse(ids().contains("test"));
+            assertTrue(
+                    records.stream().anyMatch(r -> r.getThrown() == failure),
+                    "the swallowed probe failure must be logged");
+        } finally {
+            TestProvider.probeFailure = null;
+            logger.removeHandler(handler);
+        }
     }
 
     private static List<String> ids() {
