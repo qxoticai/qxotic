@@ -139,8 +139,8 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
 
         /**
          * Returns these options with a different context-capacity upper bound. {@code 0} uses the
-         * model's declared context length; otherwise the effective capacity is the smaller of this
-         * value and that length.
+         * model's declared context length; any other value is the exact capacity, and {@link
+         * PromptCache#of} refuses one that exceeds that length.
          *
          * @throws IllegalArgumentException if {@code contextCapacity < 0}
          */
