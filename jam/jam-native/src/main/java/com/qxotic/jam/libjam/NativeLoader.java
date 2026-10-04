@@ -10,7 +10,7 @@ import java.util.Locale;
 /**
  * Loads the bundled native {@code libjam} for the current OS/arch.
  *
- * <p>The fat {@code jam.jar} carries one native library per platform under {@code
+ * <p>The fat {@code jam-native} jar carries one native library per platform under {@code
  * /com/qxotic/jam/native/<os>-<arch>/<libname>} (e.g. {@code linux-x86-64/libjam.so}, {@code
  * darwin-aarch64/libjam.dylib}, {@code windows-x86-64/jam.dll}). At first use this class detects
  * the platform, extracts the matching library to a temp file, and {@link System#load(String) loads}
