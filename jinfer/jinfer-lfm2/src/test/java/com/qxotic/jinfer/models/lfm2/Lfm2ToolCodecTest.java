@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Tool;
+import java.math.BigInteger;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,19 @@ final class Lfm2ToolCodecTest {
         Content.ToolCall spaced =
                 Lfm2ToolCodec.parse("[ {\"name\":\"three\",\"parameters\":{\"n\":3}} ]").getFirst();
         assertEquals(3L, spaced.arguments().get("n"));
+    }
+
+    @Test
+    void integersBeyondLongRangeStillParse() {
+        Map<String, Object> arguments =
+                Lfm2ToolCodec.parse("[f(big=123456789012345678901234567890, small=-7)]")
+                        .getFirst()
+                        .arguments();
+        assertEquals(new BigInteger("123456789012345678901234567890"), arguments.get("big"));
+        assertEquals(-7L, arguments.get("small"));
+        assertEquals(
+                Long.MIN_VALUE,
+                Lfm2ToolCodec.parse("[f(n=-9223372036854775808)]").getFirst().arguments().get("n"));
     }
 
     @Test

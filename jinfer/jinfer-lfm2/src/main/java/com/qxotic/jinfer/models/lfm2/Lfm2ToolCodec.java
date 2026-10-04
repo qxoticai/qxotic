@@ -3,6 +3,7 @@ package com.qxotic.jinfer.models.lfm2;
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Tool;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -99,8 +100,9 @@ final class Lfm2ToolCodec {
         switch (value) {
             case null -> out.append("None");
             case String text -> {
-                // repr: single quotes, backslash escapes (a string holding a quote and no
-                // double quote would be double-quoted by Python; ponytail, kept single)
+                // repr: single quotes, backslash escapes. Python would double-quote a string
+                // holding a quote and no double quote; always single-quoting keeps the escaping
+                // uniform, and the model reads either form.
                 out.append('\'');
                 for (int i = 0; i < text.length(); i++) {
                     char c = text.charAt(i);
@@ -346,7 +348,9 @@ final class Lfm2ToolCodec {
             }
             String value = text.substring(from, at);
             if (decimal) return Double.parseDouble(value);
-            return Long.parseLong(value);
+            // Python ints are unbounded: beyond long range, a BigInteger as JsonCodec yields
+            BigInteger integer = new BigInteger(value);
+            return integer.bitLength() < Long.SIZE ? (Number) integer.longValue() : integer;
         }
 
         private List<Object> sequence(char open, char close) {
