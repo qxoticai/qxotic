@@ -4,6 +4,7 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.MediaEncodingCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.PromptWriter;
 import com.qxotic.jinfer.chat.ReplyLanguage;
@@ -113,6 +114,15 @@ final class Qwen35ChatTemplate implements ChatTemplate {
 
     @Override
     public ReplyState encode(Conversation conversation, int batchCapacity, Consumer<Batch> sink) {
+        return encode(conversation, batchCapacity, null, sink);
+    }
+
+    @Override
+    public ReplyState encode(
+            Conversation conversation,
+            int batchCapacity,
+            MediaEncodingCache mediaCache,
+            Consumer<Batch> sink) {
         Objects.requireNonNull(conversation, "conversation");
         List<Message> msgs = conversation.messages();
         if (msgs.isEmpty())
@@ -125,7 +135,7 @@ final class Qwen35ChatTemplate implements ChatTemplate {
                     && message.content().stream().anyMatch(Content.Media.class::isInstance))
                 throw new UnsupportedConversation("Qwen3.5 system messages cannot contain media");
         }
-        PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
+        PromptWriter out = new PromptWriter(tokenizer, batchCapacity, mediaCache, sink);
         if (conversation.tools().isEmpty() && plainShape(msgs)) {
             for (Message m : msgs) {
                 writePlainTurn(out, m);
