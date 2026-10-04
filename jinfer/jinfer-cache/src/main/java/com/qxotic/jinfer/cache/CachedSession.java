@@ -461,8 +461,14 @@ public final class CachedSession<S extends ContextState> {
         dropSnapshot();
         long bytes = codec.byteSize(0); // an empty span = the endpoint snapshot alone
         Arena arena = Arenas.newCrossThread();
-        MemorySegment blob = arena.allocate(Math.max(bytes, 1), 8);
-        codec.capture(state, state.position(), state.position(), blob);
+        MemorySegment blob;
+        try {
+            blob = arena.allocate(Math.max(bytes, 1), 8);
+            codec.capture(state, state.position(), state.position(), blob);
+        } catch (Throwable t) {
+            Arenas.close(arena);
+            throw t;
+        }
         this.snapshotArena = arena;
         this.snapshot = blob;
         this.snapshotLen = state.position();
