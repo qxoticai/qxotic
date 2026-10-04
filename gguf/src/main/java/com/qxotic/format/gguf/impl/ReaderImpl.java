@@ -27,7 +27,7 @@ final class ReaderImpl {
     private Map<String, TypeDescriptor> metadataTypes;
     private long totalBytesRead;
 
-    private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.nativeOrder());
+    private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
 
     GGUF readImpl(ReadableByteChannel byteChannel) throws IOException {
         // The header of the file.
@@ -44,7 +44,6 @@ final class ReaderImpl {
         }
         // Padding to the nearest multiple of `ALIGNMENT`.
         // uint8_t _padding[ALIGNMENT - (sizeof(header + tensor_infos) % ALIGNMENT)];
-        // long _padding = -byteChannel.position() & (ALIGNMENT - 1);
         int padding = (int) GGUFImpl.padding(totalBytesRead, getAlignment());
 
         // Tensor data.

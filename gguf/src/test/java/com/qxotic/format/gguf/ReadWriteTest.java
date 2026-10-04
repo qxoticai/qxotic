@@ -117,10 +117,19 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
+    public void testHeaderIsLittleEndianRegardlessOfPlatform() throws IOException {
+        byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
+        // "GGUF" magic, then uint32 version 3, then uint64 tensor count 0 and kv count 1.
+        assertArrayEquals(
+                new byte[] {'G', 'G', 'U', 'F', 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
+                Arrays.copyOf(ggufBytes, 20));
+    }
+
+    @Test
     public void testInvalidMagic() throws IOException {
         byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
         // Write invalid MAGIC header.
-        ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder()).putInt(0, 0xBADBEEF);
+        ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN).putInt(0, 0xBADBEEF);
 
         assertThrows(
                 GGUFFormatException.class,
@@ -131,7 +140,7 @@ public class ReadWriteTest extends GGUFTest {
     public void testInvalidVersion() throws IOException {
         byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
         // Write invalid version.
-        ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder()).putInt(4, 0xBADBEEF);
+        ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN).putInt(4, 0xBADBEEF);
 
         assertThrows(
                 GGUFFormatException.class,
@@ -142,7 +151,7 @@ public class ReadWriteTest extends GGUFTest {
     public void testUnsupportedVersion() throws IOException {
         byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
         // Write unsupported version (version 99).
-        ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder()).putInt(4, 99);
+        ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN).putInt(4, 99);
 
         assertThrows(
                 GGUFFormatException.class,
@@ -158,7 +167,7 @@ public class ReadWriteTest extends GGUFTest {
         // GGUF format: 4 bytes magic + 4 bytes version + 8 bytes tensor_count + 8 bytes
         // metadata_kv_count
         // Then: 8 bytes key length + key bytes + 4 bytes value type
-        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder());
+        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN);
 
         // Skip: magic(4) + version(4) + tensor_count(8) + metadata_kv_count(8) = 24 bytes
         int pos = 24;
@@ -194,7 +203,7 @@ public class ReadWriteTest extends GGUFTest {
                                 .build());
 
         // Find the position of the array component type
-        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder());
+        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN);
 
         // Skip: magic(4) + version(4) + tensor_count(8) + metadata_kv_count(8) = 24 bytes
         int pos = 24;
@@ -217,7 +226,7 @@ public class ReadWriteTest extends GGUFTest {
 
         // Find the position of the array component type and change it to ARRAY (nested arrays not
         // supported)
-        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder());
+        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN);
 
         // Skip: magic(4) + version(4) + tensor_count(8) + metadata_kv_count(8) = 24 bytes
         int pos = 24;
@@ -260,7 +269,7 @@ public class ReadWriteTest extends GGUFTest {
     public void testUnknownTensorTypeIdIsAFormatError() {
         byte[] info = tensorInfo("w", new long[] {1}, GGMLType.F32, 0);
         // the type id sits right before the trailing 8-byte offset; 999 is no ggml type
-        ByteBuffer.wrap(info).order(ByteOrder.nativeOrder()).putInt(info.length - 12, 999);
+        ByteBuffer.wrap(info).order(ByteOrder.LITTLE_ENDIAN).putInt(info.length - 12, 999);
         byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {info});
         GGUFFormatException e =
                 assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
@@ -271,7 +280,7 @@ public class ReadWriteTest extends GGUFTest {
     public void testTensorRankWithTheHighBitSetIsAFormatError() {
         byte[] info = tensorInfo("w", new long[] {1}, GGMLType.F32, 0);
         // uint32 n_dimensions sits right after the 8-byte length + 1-byte name
-        ByteBuffer.wrap(info).order(ByteOrder.nativeOrder()).putInt(9, 0x80000001);
+        ByteBuffer.wrap(info).order(ByteOrder.LITTLE_ENDIAN).putInt(9, 0x80000001);
         byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {info});
         GGUFFormatException e =
                 assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
@@ -536,11 +545,11 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     private static void writeInt(ByteArrayOutputStream out, int value) throws IOException {
-        out.write(ByteBuffer.allocate(4).order(ByteOrder.nativeOrder()).putInt(value).array());
+        out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array());
     }
 
     private static void writeLong(ByteArrayOutputStream out, long value) throws IOException {
-        out.write(ByteBuffer.allocate(8).order(ByteOrder.nativeOrder()).putLong(value).array());
+        out.write(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(value).array());
     }
 
     private static byte[] rawBytes(int... values) {
