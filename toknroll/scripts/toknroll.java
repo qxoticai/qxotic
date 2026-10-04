@@ -112,10 +112,11 @@ class toknroll implements Callable<Integer> {
 
     static Tokenizer loadTokenizer(String source) throws Exception {
         if (source.contains("://")) return resolveUrl(new URL(source));
-        if (source.startsWith("ms:")) return ms(source.substring(3));
-        if (source.startsWith("modelscope:")) return ms(source.substring(11));
-        if (source.startsWith("hf:")) source = source.substring(3);
-        else if (source.startsWith("huggingface:")) source = source.substring(13);
+        if (source.startsWith("ms:")) return ms(source.substring("ms:".length()));
+        if (source.startsWith("modelscope:")) return ms(source.substring("modelscope:".length()));
+        if (source.startsWith("hf:")) source = source.substring("hf:".length());
+        else if (source.startsWith("huggingface:"))
+            source = source.substring("huggingface:".length());
         if (isLocalPath(source)) return local(source);
         return hf(source);
     }
