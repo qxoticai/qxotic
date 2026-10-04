@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.DoubleBinaryOperator;
 import java.util.function.LongBinaryOperator;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -686,6 +687,7 @@ public final class JinjaRenderer {
     enum T {
         EOF,
         TEXT,
+        RAW, // a {% raw %} body: output verbatim, never stripped by a neighbouring tag
         OPEN_STMT,
         CLOSE_STMT,
         OPEN_EXPR,
@@ -733,6 +735,9 @@ public final class JinjaRenderer {
     // ════════════════════════════════════════════════════════════════
 
     private static final class Lexer {
+        static final Pattern RAW_BEGIN = Pattern.compile("\\{%(-)?\\s*raw\\s*(-)?%}");
+        static final Pattern RAW_END = Pattern.compile("\\{%(-)?\\s*endraw\\s*(-)?%}");
+
         final CharSequence cs;
         int i;
         int depth; // 0=text mode, >0 inside {{ or {%
@@ -788,7 +793,9 @@ public final class JinjaRenderer {
                         // whitespace from the line start up to the tag is stripped (explicit
                         // {%-/{#-
                         // already strip all preceding whitespace).
-                        if (matchTrim(T.OPEN_STMT, "{%-")) {
+                        if (lexRaw()) {
+                            // the raw body is one token; the lexer stays in text mode
+                        } else if (matchTrim(T.OPEN_STMT, "{%-")) {
                             depth++;
                         } else if (matchStr("{%")) {
                             lstripLineToTag();
@@ -957,6 +964,36 @@ public final class JinjaRenderer {
             return toks;
         }
 
+        /**
+         * {@code {% raw %}…{% endraw %}}: the body is emitted verbatim as one RAW token, never
+         * lexed. Whitespace control as jinja2 applies it: each tag's own dashes strip,
+         * lstrip_blocks applies to both tags, and trim_blocks only after {@code endraw} (the
+         * newline after {@code {% raw %}} belongs to the body).
+         */
+        boolean lexRaw() {
+            Matcher open = RAW_BEGIN.matcher(cs).region(i, cs.length());
+            if (!open.lookingAt()) return false;
+            Matcher close = RAW_END.matcher(cs).region(open.end(), cs.length());
+            if (!close.find()) throw new RuntimeException("@" + i + ": unclosed {% raw %}");
+            if (open.group(1) != null) stripLastText();
+            else lstripLineToTag();
+            String body = cs.subSequence(open.end(), close.start()).toString();
+            if (open.group(2) != null) body = body.stripLeading();
+            if (close.group(1) != null) {
+                body = body.stripTrailing();
+            } else { // lstrip_blocks before endraw: an indentation-only final line goes
+                int nl = body.lastIndexOf('\n'), k = body.length();
+                while (k > nl + 1 && (body.charAt(k - 1) == ' ' || body.charAt(k - 1) == '\t')) k--;
+                if (nl >= 0 && k == nl + 1) body = body.substring(0, k);
+            }
+            // emitted even when empty: it fences the text before it from a later tag's stripping
+            toks.add(new Tok(T.RAW, body, open.end()));
+            i = close.end();
+            if (close.group(2) != null) stripNextText = true;
+            else trimNextNewline = true;
+            return true;
+        }
+
         boolean matchTrim(T type, String s) {
             // s is e.g. "{%-" or "-}}" - the FULL marker including trim dashes
             for (int j = 0; j < s.length(); j++) if (ch(j) != s.charAt(j)) return false;
@@ -985,7 +1022,7 @@ public final class JinjaRenderer {
             for (int j = toks.size() - 1; j >= 0; j--) {
                 Tok pt = toks.get(j);
                 if (pt.type != T.TEXT) {
-                    if (pt.type == T.CLOSE_STMT || pt.type == T.CLOSE_EXPR)
+                    if (pt.type == T.CLOSE_STMT || pt.type == T.CLOSE_EXPR || pt.type == T.RAW)
                         return; // tag-adjacent, no line text
                     continue;
                 }
@@ -1137,6 +1174,10 @@ public final class JinjaRenderer {
 
     // transparently, records the assistant span
 
+    record BreakNode() implements Node {}
+
+    record ContinueNode() implements Node {}
+
     record SetNode(Node target, Node value) implements Node {}
 
     record BlockExpr(List<Node> body)
@@ -1195,6 +1236,7 @@ public final class JinjaRenderer {
     private static final class Parser {
         final List<Tok> toks;
         int idx;
+        int loopDepth; // enclosing for-bodies, so a stray {% break %} fails at compile time
 
         Parser(List<Tok> toks) {
             this.toks = toks;
@@ -1264,7 +1306,7 @@ public final class JinjaRenderer {
         Node parseAny() {
             Tok t = peek();
             return switch (t.type) {
-                case T.TEXT -> {
+                case T.TEXT, T.RAW -> {
                     idx++;
                     yield new TextNode(t.val);
                 }
@@ -1292,12 +1334,22 @@ public final class JinjaRenderer {
                 case "set" -> result = parseSet();
                 case "macro" -> result = parseMacro();
                 case "generation" -> result = parseGeneration();
-                case "break", "continue" -> throw err("{% " + kw + " %} is not supported");
+                case "break", "continue" -> {
+                    // jinja2's loopcontrols extension, which transformers renders with
+                    if (loopDepth == 0) throw err("{% " + kw + " %} outside a loop");
+                    expect(T.CLOSE_STMT);
+                    result = kw.equals("break") ? new BreakNode() : new ContinueNode();
+                }
                 case "else", "elif", "endif", "endfor", "endmacro", "endgeneration", "end" ->
                         // an enclosing block consumes its own keywords before reaching here: this
                         // one has no block to close (Jinja: TemplateSyntaxError)
                         throw err("unexpected {% " + kw + " %}");
                 default -> {
+                    // a bare word is a statement this engine does not know ({% endraw %} without
+                    // its raw, {% endset %}, {% endcall %}, …): read as an expression it rendered
+                    // as nothing, silently dropping whatever the template meant by it
+                    if (!kw.isEmpty() && is(T.CLOSE_STMT))
+                        throw err("unknown statement {% " + kw + " %}");
                     // Expression statement: {% expr %}
                     // Back up the identifier so parseExpr picks it up
                     idx--;
@@ -1360,8 +1412,14 @@ public final class JinjaRenderer {
                 filter = parseExpr();
             }
             expect(T.CLOSE_STMT);
-            var body = parseBody("else", "endfor");
-            List<Node> orElse = List.of();
+            loopDepth++;
+            List<Node> body;
+            try {
+                body = parseBody("else", "endfor");
+            } finally {
+                loopDepth--;
+            }
+            List<Node> orElse = List.of(); // outside the loop: break here is not this loop's
             if (isStmt("else")) { // {% for %}...{% else %}: runs when the iterable is empty
                 expect(T.OPEN_STMT);
                 expectId("else");
@@ -1429,7 +1487,14 @@ public final class JinjaRenderer {
             }
             expect(T.RP);
             expect(T.CLOSE_STMT);
-            var body = parseBody("endmacro");
+            int enclosingLoops = loopDepth;
+            loopDepth = 0; // a macro body is a function: an enclosing loop is not its loop
+            List<Node> body;
+            try {
+                body = parseBody("endmacro");
+            } finally {
+                loopDepth = enclosingLoops;
+            }
             expect(T.OPEN_STMT);
             expectId("endmacro");
             expect(T.CLOSE_STMT);
@@ -1953,10 +2018,8 @@ public final class JinjaRenderer {
                         try {
                             stack.addLast(lf);
                             execAll(f.body(), out);
-                        } catch (BreakSignal __) {
-                            break;
-                        } catch (ContinueSignal __) {
-                            continue;
+                        } catch (LoopSignal signal) {
+                            if (signal == LoopSignal.BREAK) break;
                         } finally {
                             stack.removeLast();
                         }
@@ -1986,6 +2049,8 @@ public final class JinjaRenderer {
                     execAll(g.body(), out);
                     generationSpans.add(new int[] {start, out.length()});
                 }
+                case BreakNode __ -> throw LoopSignal.BREAK;
+                case ContinueNode __ -> throw LoopSignal.CONTINUE;
                 default -> {}
             }
         }
@@ -2000,9 +2065,18 @@ public final class JinjaRenderer {
             }
         }
 
-        private static final class BreakSignal extends RuntimeException {}
+        /**
+         * {@code {% break %}}/{@code {% continue %}} unwinding to the innermost for-loop. The
+         * parser admits them only inside a loop body, so one always has a loop to land in.
+         * Stackless singletons: control flow, not an error.
+         */
+        private static final class LoopSignal extends RuntimeException {
+            static final LoopSignal BREAK = new LoopSignal(), CONTINUE = new LoopSignal();
 
-        private static final class ContinueSignal extends RuntimeException {}
+            private LoopSignal() {
+                super(null, null, false, false);
+            }
+        }
 
         /**
          * Invoke a macro, binding each parameter from (in priority order) a positional argument, a

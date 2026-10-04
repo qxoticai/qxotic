@@ -911,17 +911,16 @@ public final class JinjaRendererTest {
         // unknown filter / function names
         throwsErr("unknown filter throws", "{{ 'x' | no_such_filter }}");
         throwsErr("unknown function throws", "{{ no_such_function() }}");
-        // loop control statements
-        throwsErr("{% break %} throws", "{% for x in xs %}{{ x }}{% break %}{% endfor %}", xs);
-        throwsErr(
-                "{% continue %} throws", "{% for x in xs %}{{ x }}{% continue %}{% endfor %}", xs);
+        // loop control statements outside a loop
+        throwsErr("stray {% break %} throws", "{{ x }}{% break %}", xs);
+        throwsErr("stray {% continue %} throws", "{% if true %}{% continue %}{% endif %}", xs);
         // integer division // is not supported
         throwsErr("integer division `//` throws", "{{ 7 // 2 }}");
         // the public template() entry point must propagate the failure too - swallowing it into
         // a null template silently downgraded the model to ChatML framing at render time
         assertThrows(
                 RuntimeException.class,
-                () -> JinjaRenderer.template("{% for x in xs %}{{ x }}{% break %}{% endfor %}"));
+                () -> JinjaRenderer.template("{% for x in xs %}{% endfor %}{% break %}"));
     }
 
     // ── remaining lenient quirks (render, do NOT throw) ──────────
