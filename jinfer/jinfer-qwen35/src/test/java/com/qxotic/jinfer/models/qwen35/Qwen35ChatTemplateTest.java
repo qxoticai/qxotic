@@ -7,9 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
+import com.qxotic.jinfer.chat.MediaEncodingCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
@@ -19,15 +22,23 @@ import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.MediaProjector;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
+import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -158,6 +169,52 @@ final class Qwen35ChatTemplateTest {
                                 new Conversation(
                                         List.of(Message.system("system")), List.of(tool), false),
                                 32));
+    }
+
+    @Test
+    void historyImagesReplayFromTheMediaCache() {
+        ContentKey key = new ContentKey("image:test");
+        Message image =
+                new Message(
+                        Role.USER,
+                        List.of(
+                                new Content.Media(
+                                        new Media.Image(new float[] {0, 0, 0}, 1, 1, 3), key)));
+        AtomicInteger projections = new AtomicInteger();
+        try (Arena arena = Arena.ofConfined()) {
+            Qwen35ChatTemplate template =
+                    new Qwen35ChatTemplate(tokenizer, new CountingVision(arena, projections));
+            MediaEncodingCache cache = new MediaEncodingCache();
+            List<Message> turns = new ArrayList<>(List.of(image));
+            for (int turn = 0; turn < 3; turn++) {
+                template.encode(new Conversation(turns), 4, cache, ignored -> {});
+                turns.add(Message.assistant("ok"));
+                turns.add(Message.user("and now?"));
+            }
+        }
+        assertEquals(1, projections.get());
+    }
+
+    private record CountingVision(Arena arena, AtomicInteger projections) implements Multimodal {
+        @Override
+        @SuppressWarnings("unchecked")
+        public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
+            if (modality != Media.Image.class) return Optional.empty();
+            return Optional.of(
+                    new MediaProjector<>() {
+                        @Override
+                        public int positions(R source) {
+                            return 2;
+                        }
+
+                        @Override
+                        public void project(
+                                R source, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+                            projections.incrementAndGet();
+                            sink.accept(Views.allocateF32(MemoryAllocators.ofArena(arena), 2, 3));
+                        }
+                    });
+        }
     }
 
     private static int[] render(
