@@ -39,6 +39,26 @@ class Gemma4VisionComponentsTest {
     }
 
     @Test
+    void aBadTokenBudgetFailsNamingTheProperty() {
+        String property = "jinfer.gemma4.test.tokenBudget";
+        try {
+            for (String bad : new String[] {"lots", "100"}) {
+                System.setProperty(property, bad);
+                var e =
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () -> VisionPreprocess.validatedBudget(property, 70));
+                assertTrue(e.getMessage().startsWith(property), e.getMessage());
+            }
+            System.setProperty(property, " 280 ");
+            assertEquals(280, VisionPreprocess.validatedBudget(property, 70));
+        } finally {
+            System.clearProperty(property);
+        }
+        assertEquals(70, VisionPreprocess.validatedBudget(property, 70));
+    }
+
+    @Test
     void clampsWithoutMutatingInputAndChecksShapes() {
         try (Arena arena = Arena.ofConfined()) {
             MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
