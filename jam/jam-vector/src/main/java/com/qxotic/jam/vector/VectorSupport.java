@@ -154,23 +154,33 @@ final class VectorSupport {
      * Constant-foldable codes:
      * 0=3x2,1=3x4,2=4x4,3=2x8,4=8x2,5=1x1,6..9=avx256,10/11=neon,12=scalar.
      */
-    static final int TILE_CODE =
-            switch (TILE) {
-                case "auto" -> autoTileCode();
-                case "3x2" -> 0;
-                case "4x4" -> 2;
-                case "2x8" -> 3;
-                case "8x2" -> 4;
-                case "1x1" -> 5;
-                case "avx256", "avx256-2x4" -> 6;
-                case "avx256-2x3" -> 7;
-                case "avx256-3x4" -> 8;
-                case "avx256-4x3" -> 9;
-                case "neon", "neon-4x4" -> 10;
-                case "neon-2x4" -> 11;
-                case "scalar", "java" -> 12;
-                default -> 1; // 3x4
-            };
+    static final int TILE_CODE = tileCode(TILE);
+
+    static int tileCode(String tile) {
+        return switch (tile) {
+            case "auto" -> autoTileCode();
+            case "3x2" -> 0;
+            case "3x4" -> 1;
+            case "4x4" -> 2;
+            case "2x8" -> 3;
+            case "8x2" -> 4;
+            case "1x1" -> 5;
+            case "avx256", "avx256-2x4" -> 6;
+            case "avx256-2x3" -> 7;
+            case "avx256-3x4" -> 8;
+            case "avx256-4x3" -> 9;
+            case "neon", "neon-4x4" -> 10;
+            case "neon-2x4" -> 11;
+            case "scalar", "java" -> 12;
+            default ->
+                    throw new IllegalArgumentException(
+                            "jam.vector.tile="
+                                    + tile
+                                    + " is not one of: auto, 3x2, 3x4, 4x4, 2x8, 8x2, 1x1,"
+                                    + " avx256, avx256-2x4, avx256-2x3, avx256-3x4,"
+                                    + " avx256-4x3, neon, neon-4x4, neon-2x4, scalar, java");
+        };
+    }
 
     /**
      * MEASURED gate for the {@link BandGemm} 4x4 default (its only consumer; the Q8_0 register tile
