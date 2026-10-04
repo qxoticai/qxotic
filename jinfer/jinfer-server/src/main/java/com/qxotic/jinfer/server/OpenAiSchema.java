@@ -168,14 +168,6 @@ final class OpenAiSchema {
     }
 
     /**
-     * What this turn actually produced, as Responses-API output items: one message, or the function
-     * calls. The streaming handler emits these as {@code response.output_item.done} and the
-     * envelope below carries the same list - one answer, so the item stream and the final response
-     * cannot disagree. They used to: a tool-call reply streamed a COMPLETED message item holding
-     * empty text while {@code response.completed} carried function_call items, so a client
-     * following the item events saw an empty answer and never learned a tool had been called.
-     */
-    /**
      * Why a Responses reply is incomplete; null when the model or a tool call ended it. The chat
      * finish reason already knows what "ended" means (a stop string and a tool call both come from
      * the generator as ABORT); the generator's reason splits its "other" into the deadline and a
@@ -193,6 +185,15 @@ final class OpenAiSchema {
         };
     }
 
+    /**
+     * What this turn actually produced, as Responses-API output items: one message, the function
+     * calls, or a message followed by the calls when the reply had both. The streaming handler
+     * emits these as {@code response.output_item.done} and the envelope below carries the same list
+     * - one answer, so the item stream and the final response cannot disagree. They used to: a
+     * tool-call reply streamed a COMPLETED message item holding empty text while {@code
+     * response.completed} carried function_call items, so a client following the item events saw an
+     * empty answer and never learned a tool had been called.
+     */
     static List<Map<String, Object>> responseOutputItems(String id, Reply result) {
         String text = result.text() == null ? "" : result.text();
         String status = incompleteReason(result) == null ? "completed" : "incomplete";
@@ -211,8 +212,8 @@ final class OpenAiSchema {
 
     /**
      * As above over items the caller ALREADY built. The streaming handler must pass the very list
-     * it emitted: a call the model did not name gets an id minted from the clock, so building the
-     * items twice hands the same call two different {@code call_id}s - one in {@code
+     * it emitted: a call the model did not name gets a random UUID id, so building the items twice
+     * hands the same call two different {@code call_id}s - one in {@code
      * response.output_item.done}, another in {@code response.completed} - and a client correlating
      * them sees two calls where there was one.
      */

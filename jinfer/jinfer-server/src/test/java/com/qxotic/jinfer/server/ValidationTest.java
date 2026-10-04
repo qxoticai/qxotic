@@ -206,9 +206,13 @@ class ValidationTest {
         Validation.validateGenerationParams(request, "model", config);
 
         request.put("response_format", Map.of("type", "json_object"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Validation.validateGenerationParams(request, "model", config));
+        // an API client cannot pass a CLI flag: the refusal names the server state, not argv
+        assertEquals(
+                "grammar constraints are disabled on this server",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> Validation.validateGenerationParams(request, "model", config))
+                        .getMessage());
     }
 
     @Test
