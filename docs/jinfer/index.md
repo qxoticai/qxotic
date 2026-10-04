@@ -48,7 +48,10 @@ java --add-modules jdk.incubator.vector \
 
 Endpoints: `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`, `/v1/detokenize`, `/health`, Prometheus `/metrics`. Chat supports streaming, tools, structured output, reasoning, stop strings, deterministic seeds, and multimodal content when the model has a projector.
 
-Loopback is the default. Non-loopback binding requires `--api-key`. Queue, body, admission, generation, and stalled-write limits have explicit CLI flags. Run `--help` for the full contract.
+Loopback is the default.
+Non-loopback binding requires `--api-key`.
+Concurrency, body, generation and stalled-write limits have explicit CLI flags.
+Run `jinfer server --help` for the full contract.
 
 ## Models and capabilities
 
@@ -56,7 +59,7 @@ Architecture dispatch comes from providers on the classpath.
 
 | Family | Capabilities |
 |--------|--------------|
-| Gemma 4 | chat, E2B/E4B vision, E2B conformer audio, MTP |
+| Gemma 4 | chat, vision with an mmproj (E2B, E4B, 12B), E2B conformer audio, MTP |
 | Qwen 3 | embeddings, reranking |
 | Qwen 3.5 | chat, vision, MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
@@ -67,6 +70,7 @@ Architecture dispatch comes from providers on the classpath.
 | gpt-oss, Nemotron-H | chat |
 | Inflect | speech synthesis |
 | Kokoro 82M | speech synthesis |
+| Parakeet | speech recognition |
 
 GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MXFP4, NVFP4, Q1_0, TQ1_0, TQ2_0.
 
@@ -80,6 +84,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4` | E2B conformer |
 | speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
+| speech recognition | `jinfer-parakeet` | mono 16 kHz; CLI `transcribe`, server `/v1/audio/transcriptions` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
 | hub + downloads | `jinfer-hub` | `owner/repo`, `modelscope.cn/...` |
@@ -107,7 +112,9 @@ After the import, declare jinfer artifacts without versions. The BOM also pins t
 Attach multimodal projectors by capability:
 
 ```bash
-jinfer \
+java --add-modules jdk.incubator.vector \
+  --enable-native-access=ALL-UNNAMED \
+  -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
   --with media=unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
   chat
@@ -128,7 +135,7 @@ Model references use one of these forms:
 ```text
 unsloth/gemma-4-E2B-it-GGUF:Q8_0
 unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf
-ggml-org/models@a1b2c3d/bert-bge-small
+unsloth/gemma-4-E2B-it-GGUF@main/mmproj-F32.gguf
 hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0          the host, written out
 modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0         another source
 ```
@@ -144,8 +151,8 @@ file in both tools. Jinfer's best-supported quant is `Q8_0`, so the examples pin
 Downloads are resumable and checksum-verified. Warm resolution makes no request. `JINFER_MODELS` moves the cache, `HF_TOKEN` unlocks gated repos, `JINFER_OFFLINE=1` (or `-Djinfer.offline`) forbids network access.
 
 ```bash
-java -jar jinfer-cli/target/jinfer.jar pull ggml-org/stories15M_MOE:Q8_0
-java -jar jinfer-cli/target/jinfer.jar list
+java -jar jinfer/jinfer-cli/target/jinfer.jar pull ggml-org/stories15M_MOE:Q8_0
+java -jar jinfer/jinfer-cli/target/jinfer.jar list
 ```
 
 Inference paths never fetch content. Media codecs decode only caller-provided local files or bytes.
@@ -183,7 +190,7 @@ Framework users need only `retainSessions(n)`, `promptCache(path)`, and `withCac
 
 ## The same knob at each face
 
-One engine, four faces: the Java API, the CLI, the OpenAI-compatible server and the two framework providers.
+One engine, five faces: the Java API, the CLI, the OpenAI-compatible server and the two framework providers.
 A knob a face inherits keeps that face's name - `max_tokens` is OpenAI's, `maxOutputTokens` LangChain4j's, `maxTokens` Spring AI's `ChatOptions` - and a knob jinfer adds is named the same on every face.
 This table is the translation.
 
