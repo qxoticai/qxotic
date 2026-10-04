@@ -176,8 +176,17 @@ public final class TranscriptionServer {
                                 Map.of("object", "list", "data", List.of(modelCard)));
                     } else if (path.equals("/v1/models/" + servedModel)) {
                         Http.sendJson(exchange, 200, modelCard);
+                    } else if (path.startsWith("/v1/models/")) {
+                        Http.sendError(
+                                exchange,
+                                404,
+                                "Unknown model: "
+                                        + path.substring("/v1/models/".length())
+                                        + " (this server serves "
+                                        + servedModel
+                                        + ")");
                     } else {
-                        Http.sendError(exchange, 404, "unknown path " + path);
+                        Http.sendError(exchange, 404, "Not found"); // /v1/modelsXYZ: a wrong path
                     }
                 });
         server.createContext(
@@ -187,19 +196,22 @@ public final class TranscriptionServer {
                             if (Http.preamble(exchange, config.access())) return;
                             if (!"/v1/audio/transcriptions"
                                     .equals(exchange.getRequestURI().getPath())) {
-                                Http.sendError(
-                                        exchange,
-                                        404,
-                                        "unknown path " + exchange.getRequestURI().getPath());
+                                Http.sendError(exchange, 404, "Not found");
                                 return;
                             }
                             if (Http.requireMethod(exchange, "POST")) return;
                             try {
                                 handleTranscription(exchange);
-                            } catch (IllegalArgumentException | IllegalStateException e) {
+                            } catch (IllegalArgumentException | UnsupportedOperationException e) {
+                                // the language server's rule: only a validator's two types are
+                                // the client's fault; anything else is ours, logged, not echoed
                                 Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
                             } catch (RuntimeException e) {
-                                Http.sendErrorQuietly(exchange, 500, Http.errorMessage(e));
+                                Log.LOG.log(
+                                        System.Logger.Level.ERROR,
+                                        "unhandled fault serving /v1/audio/transcriptions",
+                                        e);
+                                Http.sendErrorQuietly(exchange, 500, "Internal server error");
                             }
                         },
                         admissions,
@@ -213,7 +225,8 @@ public final class TranscriptionServer {
                             return thread;
                         }));
         server.start();
-        return new Running(server, Math.toIntExact(config.limits().shutdownTimeout().toSeconds()));
+        long stopDelay = Math.ceilDiv(config.limits().shutdownTimeout().toNanos(), 1_000_000_000L);
+        return new Running(server, (int) Math.min(Integer.MAX_VALUE, stopDelay));
     }
 
     private void handleTranscription(HttpExchange exchange) throws IOException {
@@ -232,7 +245,7 @@ public final class TranscriptionServer {
         }
         byte[] body =
                 Http.readBody(
-                        exchange, config.limits().maxBodyBytes(), config.limits().requestTimeout());
+                        exchange, config.limits().maxBodyBytes(), config.limits().writeTimeout());
         if (body == null) return; // readBody already answered
         Map<String, Multipart.Part> parts = Multipart.parse(body, boundary);
         Multipart.Part file = parts.get("file");
