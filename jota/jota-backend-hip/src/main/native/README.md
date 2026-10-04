@@ -1,17 +1,18 @@
-HIP JNI stub build
+HIP JNI library
 
-This builds a minimal JNI library for `com.qxotic.jota.hip.HipRuntime`.
-It does not link against HIP yet; functions throw UnsupportedOperationException.
+This builds the JNI library behind `com.qxotic.jota.runtime.hip.HipRuntime`.
+It links against `libamdhip64` and calls the HIP runtime directly (`hipMalloc`, module loading, kernel launches).
 
 Build:
 
 ```bash
 export JAVA_HOME=/path/to/jdk
 export ROCM_PATH=/opt/rocm
-./build.sh
+cmake -B build && cmake --build build
 ```
 
-The output is `build/libjota_hip.so` and links against `libamdhip64.so`.
+The output is `build/libjota_hip.so`.
+The Maven build of `jota-backend-hip` runs the same CMake project.
 
 HSACO smoke test example
 
@@ -65,5 +66,5 @@ hipcc --genco -O2 vec_add.hip -o vec_add.hsaco
 Run tests:
 
 ```bash
-mvnd -pl jota-runtime-hip -am -Phip test
+mvnd -f jota/pom.xml -pl jota-backend-hip -am -Phip test
 ```

@@ -67,7 +67,7 @@ Put the backend JAR on the classpath; it becomes available on supported platform
     <version>0.2.0</version>
 </dependency>
 
-<!-- C backend (CPU via Panama) -->
+<!-- C backend (CPU via JNI) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-c</artifactId>

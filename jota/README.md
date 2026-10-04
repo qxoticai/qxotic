@@ -104,7 +104,7 @@ mvn -Pc test           # C
 mvn -Pcuda test        # CUDA (NVIDIA)
 mvn -Phip test         # HIP (AMD)
 mvn -Pmetal test       # Metal (macOS)
-mvn -Pall test         # every backend available on this machine
+mvn -Pall test         # C, HIP, Mojo, OpenCL (+ Metal on macOS); CUDA needs -Pcuda
 ```
 
 `mvnd` works everywhere `mvn` does.
