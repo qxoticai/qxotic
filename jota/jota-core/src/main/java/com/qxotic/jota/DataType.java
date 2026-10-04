@@ -43,57 +43,41 @@ public interface DataType {
     List<String> aliases();
 
     DataType BOOL =
-            new DataTypeImpl(
-                    ValueLayout.JAVA_BYTE.withName("bool"), false, false, boolean.class, "boolean");
+            new DataTypeImpl(ValueLayout.JAVA_BYTE.withName("bool"), false, false, "boolean");
 
     DataType I8 =
-            new DataTypeImpl(
-                    ValueLayout.JAVA_BYTE.withName("i8"), false, true, byte.class, "int8", "byte");
+            new DataTypeImpl(ValueLayout.JAVA_BYTE.withName("i8"), false, true, "int8", "byte");
     DataType I16 =
             new DataTypeImpl(
                     ValueLayout.JAVA_SHORT_UNALIGNED.withName("i16"),
                     false,
                     true,
-                    short.class,
                     "int16",
                     "short");
     DataType I32 =
             new DataTypeImpl(
-                    ValueLayout.JAVA_INT_UNALIGNED.withName("i32"),
-                    false,
-                    true,
-                    int.class,
-                    "int32",
-                    "int");
+                    ValueLayout.JAVA_INT_UNALIGNED.withName("i32"), false, true, "int32", "int");
     DataType I64 =
             new DataTypeImpl(
-                    ValueLayout.JAVA_LONG_UNALIGNED.withName("i64"),
-                    false,
-                    true,
-                    long.class,
-                    "int64",
-                    "long");
+                    ValueLayout.JAVA_LONG_UNALIGNED.withName("i64"), false, true, "int64", "long");
 
     DataType FP16 =
             new DataTypeImpl(
                     ValueLayout.JAVA_SHORT_UNALIGNED.withName("fp16"),
                     true,
                     false,
-                    short.class,
                     "float16"); // no float16 in Java
     DataType BF16 =
             new DataTypeImpl(
                     ValueLayout.JAVA_SHORT_UNALIGNED.withName("bf16"),
                     true,
                     false,
-                    short.class,
                     "bfloat16"); // no bfloat16 in Java
     DataType FP32 =
             new DataTypeImpl(
                     ValueLayout.JAVA_FLOAT_UNALIGNED.withName("fp32"),
                     true,
                     false,
-                    float.class,
                     "float32",
                     "float");
     DataType FP64 =
@@ -101,7 +85,6 @@ public interface DataType {
                     ValueLayout.JAVA_DOUBLE_UNALIGNED.withName("fp64"),
                     true,
                     false,
-                    double.class,
                     "float64",
                     "double");
 
@@ -124,8 +107,7 @@ public interface DataType {
                 elements,
                 MemoryLayout.sequenceLayout(bytes, ValueLayout.JAVA_BYTE).withName(name),
                 false,
-                false,
-                null);
+                false);
     }
 
     /**
@@ -219,7 +201,6 @@ final class DataTypeImpl implements DataType {
     final MemoryLayout layout;
     final boolean isFloatingPoint;
     final boolean isIntegral;
-    final Class<?> javaClass;
     final List<String> aliases;
 
     DataTypeImpl(
@@ -228,7 +209,6 @@ final class DataTypeImpl implements DataType {
             MemoryLayout layout,
             boolean isFloatingPoint,
             boolean isIntegral,
-            Class<?> javaClass,
             String... aliases) {
         this.name = name;
         this.elementsPerBlock = elementsPerBlock;
@@ -236,7 +216,6 @@ final class DataTypeImpl implements DataType {
         this.layout = layout;
         this.isFloatingPoint = isFloatingPoint;
         this.isIntegral = isIntegral;
-        this.javaClass = javaClass;
         this.aliases = aliases == null ? List.of() : List.of(aliases);
     }
 
@@ -245,7 +224,6 @@ final class DataTypeImpl implements DataType {
             MemoryLayout layout,
             boolean isFloatingPoint,
             boolean isIntegral,
-            Class<?> javaClass,
             String... aliases) {
         this(
                 layout.name().orElseThrow(),
@@ -253,34 +231,12 @@ final class DataTypeImpl implements DataType {
                 layout,
                 isFloatingPoint,
                 isIntegral,
-                javaClass,
                 aliases);
     }
 
     DataTypeImpl(
-            MemoryLayout layout,
-            boolean isFloatingPoint,
-            boolean isIntegral,
-            Class<?> javaClass,
-            String... aliases) {
-        this(
-                layout.name().orElseThrow(),
-                1L,
-                layout,
-                isFloatingPoint,
-                isIntegral,
-                javaClass,
-                aliases);
-    }
-
-    DataTypeImpl(
-            MemoryLayout layout,
-            String name,
-            boolean isFloatingPoint,
-            boolean isIntegral,
-            Class<?> javaClass,
-            String... aliases) {
-        this(name, 1L, layout, isFloatingPoint, isIntegral, javaClass, aliases);
+            MemoryLayout layout, boolean isFloatingPoint, boolean isIntegral, String... aliases) {
+        this(layout.name().orElseThrow(), 1L, layout, isFloatingPoint, isIntegral, aliases);
     }
 
     @Override
