@@ -3,6 +3,7 @@ package com.qxotic.jinfer.spring.ai;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.model.tool.StructuredOutputChatOptions;
@@ -110,6 +111,35 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         return grammar;
     }
 
+    /** The Spring AI common options (and tools) plus every jinfer extra. */
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof JinferChatOptions that
+                && super.equals(that)
+                && Objects.equals(seed, that.seed)
+                && Objects.equals(minP, that.minP)
+                && Objects.equals(thinking, that.thinking)
+                && Objects.equals(maxReasoningTokens, that.maxReasoningTokens)
+                && Objects.equals(reasoningCutoffMessage, that.reasoningCutoffMessage)
+                && Objects.equals(timeout, that.timeout)
+                && Objects.equals(outputSchema, that.outputSchema)
+                && Objects.equals(grammar, that.grammar);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                super.hashCode(),
+                seed,
+                minP,
+                thinking,
+                maxReasoningTokens,
+                reasoningCutoffMessage,
+                timeout,
+                outputSchema,
+                grammar);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -156,7 +186,6 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         if (o instanceof StructuredOutputChatOptions s && s.getOutputSchema() != null) {
             b.outputSchema(s.getOutputSchema());
         }
-        if (o instanceof JinferChatOptions j && j.grammar != null) b.grammar(j.grammar);
         return b.build();
     }
 
