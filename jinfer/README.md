@@ -44,7 +44,7 @@ AI on the JVM, just a Maven dependency away.
 | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) | speech synthesis | `jinfer-kokoro` |
 | [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | speech recognition | `jinfer-parakeet` |
 
-Supported quantizations: `Q4_0`, `Q5_0`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4` and the dense `F32`, `F16`, `BF16`.  
+Supported quantizations: `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4`, `NVFP4`, `Q1_0`, `TQ1_0`, `TQ2_0` and the dense `F32`, `F16`, `BF16`.  
 Jinfer recommends `Q8_0` for its balance of quality and performance.
 
 ## Run the demos
@@ -111,7 +111,7 @@ Use `.modelPath(Path modelPath)` to specify a model file already on disk.
 
 Run with `--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED`, and add
 `jam-native` at runtime scope to accelerate matrix multiplications.  
-If native libraries cannot be used/loaded, use `jam-vector` instead to accelerate matrix multiplications, this provides a pure Java execution, end-to-end.
+If native libraries cannot be used or loaded, use `jam-vector` instead to accelerate matrix multiplications; it provides pure Java execution, end to end.
 
 ## Examples
 
@@ -278,7 +278,7 @@ line per partial instead, so scripts can follow along.
 
 ## Chat CLI
 
-To test different models, a simple CLI is bundled, can chat with all the supported models.
+To test different models, a simple CLI is bundled that can chat with all the supported models.
 It is published as a single executable jar, so [JBang](https://www.jbang.dev/) runs it without a
 checkout, in this mode and in the server, transcription and speech synthesis modes:
 
@@ -416,12 +416,12 @@ make -C jinfer native
 One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.3+.
 
 > [!IMPORTANT]
-> **`jinfer` does not use `jota`'s Tensor API**, instead, it uses `jota`'s low-level memory APIs, which also supports CuTe nested layouts and strong encapsulation, but without multi-backend kernel generation.  
+> **`jinfer` does not use `jota`'s Tensor API**, instead, it uses `jota`'s low-level memory APIs, which also support CuTe nested layouts and strong encapsulation, but without multi-backend kernel generation.  
 > The first `jinfer` prototype was written using the Tensor API but could only get up to ~70%-90% of the tokens/s compared to hand-written kernels.  
 > To achieve this already sub-par performance, the code used the Tensor API, but instead of pristine, beautiful code, it was rather complex and ugly; naive code using the Tensor API only reached a mere ~30%. The `jota` (tensor) compiler was no match for the hand-written kernels.  
-> The transformer architecture has been optimized A LOT, the popular implementations consist of a few hand-written kernels optimized for the hardware and we already reached the point where the hardware in being optimized for the transformer.  
+> The transformer architecture has been optimized A LOT, the popular implementations consist of a few hand-written kernels optimized for the hardware and we already reached the point where the hardware is being optimized for the transformer.  
 > No matter how many compiler tricks (and I know some) to borderline magic I poured into the jota's (tensor) compiler, I couldn't beat the hand-written kernels.  
 > I just postponed the effort... I dropped the pure, beautiful approach and accepted the pragmatic complexity, all in the name of better performance.  
-> Having sub-par performance for the `jinfer` MVP was a no-go, this is something that cannot be hidden under the _"JVM is safe, thus slower"_ carpet. I decided to go with the hand-written kernels and drop GPU supports for now.
+> Having sub-par performance for the `jinfer` MVP was a no-go, this is something that cannot be hidden under the _"JVM is safe, thus slower"_ carpet. I decided to go with the hand-written kernels and drop GPU support for now.
 > I still have hope, that the Tensor API could be re-introduced gradually later on in `jinfer`. There are some components that are performant using the pristine Tensor API with a decent (tensor) compiler.  
 > **Advice for compiler hobbyists:** If you are designing, implementing, or planning to, a tensor DSL or programming language for accelerators or custom hardware ... top performance **requires** access to the hardware in a specialized way e.g. via intrinsics, escape hatches, dialects and custom extensions ...  there's no one true language/DSL, portability and performance hardly come together. The one language/DSL to rule them all, is only a fantasy. This is obvious, but sometimes we get blinded by biases and hubris; don't.

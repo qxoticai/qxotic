@@ -100,7 +100,7 @@ Do not compare a C2 number with a Graal number.
 Matmuls try the jam backends in this order: `native` (C kernels in `libjam`), `vector` (Java Vector API kernels), `scalar` (autovectorized Java).
 If no backend applies, the engine's built-in Java kernels run.
 Prefill uses the first backend that has a kernel for the weight type.
-Decode uses the native gemv only where it is faster: on x86, at low thread counts (the crossover is between 4 and 16 threads, depending on the quantization).
+Decode uses the native gemv only where it is faster: always on AArch64, and on x86 at low thread counts (crossover 4-16 threads depending on quantization).
 `-Djinfer.q4.nativeDecode=true|false` (also `q8`, `mxfp4`, `kq`) forces the choice.
 `-Djam.native.disabled=true` (or `vector`, `scalar`) removes a backend before it is probed.
 This is how the Java kernels are compared against the native ones.
@@ -202,6 +202,30 @@ java --add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB
 
 It reports `tok/s` over the packed tokens and `seq/s`.
 `llama-bench --embeddings 1` uses one flat 512-token prompt, so only `tok/s` is comparable with it.
+
+### TranscriptionBench
+
+`TranscriptionBench` measures speech recognition: word error rate over a LibriSpeech-layout corpus (`*.flac` beside `*.trans.txt`), or speed over one audio file.
+
+```bash
+java --add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
+  -cp jinfer/jinfer-bench/target/jinfer-bench.jar com.qxotic.jinfer.bench.TranscriptionBench \
+  -m tdt-0.6b-v3-q4_k.gguf --librispeech LibriSpeech/test-clean --limit 100 --dump out.tsv
+```
+
+| option | meaning |
+|--------|---------|
+| `-m, --model <path>` | speech-recognition checkpoint |
+| `--librispeech <dir>` | WER run over a LibriSpeech-layout corpus; exclusive with `--audio` |
+| `--limit <N>` | score only the first `N` utterances; default: all |
+| `--dump <file>` | write one tab-separated line per utterance: id, audio seconds, decode seconds, hypothesis, reference |
+| `--gate <percent>` | exit 1 when the corpus WER exceeds the bound; needs `--librispeech` |
+| `--audio <file>` | speed run over one file; exclusive with `--librispeech` |
+| `--reps <N>` | runs of the speed test, the first discarded as warm-up; default 3 |
+
+WER lowercases, keeps `[a-z0-9']` and collapses spaces before a word-level edit distance.
+RTFx is seconds of audio transcribed per wall second, model load excluded.
+[WER.md](../jinfer-parakeet/WER.md) compares jinfer with parakeet.cpp and sherpa-onnx step by step.
 
 ### Microbenchmarks
 
