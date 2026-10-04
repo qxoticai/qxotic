@@ -96,10 +96,6 @@ final class Llama32ChatTemplate implements ChatTemplate {
         return new ReplyState(replyPrefix, parser);
     }
 
-    public int endTurnToken() {
-        return endTurn;
-    }
-
     @Override
     public ReplyParser parser(Tokenizer tokenizer) {
         return new BareToolCallParser(tokenizer);
