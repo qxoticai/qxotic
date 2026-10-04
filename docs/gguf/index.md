@@ -49,9 +49,9 @@ long filePosition = gguf.absoluteOffset(weights);
 long byteSize = weights.byteSize();
 ```
 
-### Inspect a Model from URL
+### Inspect a Local Model
 
-Simple program to inspect any GGUF file hosted online:
+Simple program to inspect a GGUF file on disk:
 
 ```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/UtilitySnippets.java" tag="inspector-complete"
 ```
@@ -59,7 +59,7 @@ Simple program to inspect any GGUF file hosted online:
 Usage:
 
 ```bash
-java GGUFInspector.java https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+java GGUFInspector.java model.gguf
 ```
 
 ## Installation
@@ -319,8 +319,11 @@ The library throws `GGUFFormatException` for invalid GGUF files:
 
 - **Corrupted files**: Invalid magic number, version mismatch, truncated data
 - **Format violations**: Tensor names &gt; 64 characters, more than 4 dimensions, unaligned offsets
-- **Type mismatches**: Wrong metadata value types, missing required keys
+- **Type mismatches**: Wrong metadata value types for keys the format defines, such as `general.alignment`
 - **Duplicate entries**: Duplicate tensor names or metadata keys
+
+`GGUFFormatException` extends `IllegalArgumentException`.
+Reading a metadata value with `getValue` as a type other than the one stored throws `ClassCastException`, not `GGUFFormatException`.
 
 ```java
 try {

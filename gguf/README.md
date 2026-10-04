@@ -45,6 +45,6 @@ GGUF.write(modified, Path.of("output.gguf"));
 
 ## Deliberately out of scope
 
-- **No tensor payload I/O.** Provide only the tensors offsets and metadata, not reading, loading, nor memory-mapping.
+- **No tensor payload I/O.** Provides only tensor offsets and metadata; no reading, loading or memory-mapping.
 - **No quantization.** Raw bytes only.
 - **No inference.** That is [jinfer](../jinfer).
