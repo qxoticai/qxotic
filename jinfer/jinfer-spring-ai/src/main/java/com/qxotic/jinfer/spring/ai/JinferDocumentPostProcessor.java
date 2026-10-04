@@ -30,9 +30,10 @@ import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
  * ONCE and each candidate re-ingests only its own tokens, so K documents cost {@code |frame| +
  * sum|document|} instead of {@code K * |frame + document|}.
  *
- * <p>The returned documents carry their relevance in {@link Document#getScore()} ([0,1], higher is
- * better) - overwriting the retrieval similarity the store put there - and are sorted best first;
- * ties keep the incoming order. {@code minScore} drops documents outright, {@code topK} truncates.
+ * <p>The returned documents carry their relevance in {@link Document#getScore()} (higher is better:
+ * a probability in [0,1] for a yes/no reranker, an unbounded MaxSim sum for ColBERT) - overwriting
+ * the retrieval similarity the store put there - and are sorted best first; ties keep the incoming
+ * order. {@code minScore} drops documents outright, {@code topK} truncates.
  *
  * <p>Concurrency contract as everywhere: an instance is ONE serial pipeline (one reusable
  * full-context state, rewound between documents); for parallel pipelines build several instances -
@@ -187,7 +188,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
          * {@link #build()}.
          *
          * <pre>{@code
-         * model("unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+         * model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0");
          * }</pre>
          *
          * <p>The full grammar - the default quant, pinned revisions, a file inside a repository,
