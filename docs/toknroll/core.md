@@ -4,7 +4,8 @@ sidebar_position: 2
 
 # Core API
 
-`toknroll-core` is an **extensible tokenizer API** with efficient implementations of the two dominant LLM BPE algorithms: **Tiktoken** (OpenAI GPT family) and **SentencePiece BPE** (Llama, Mistral, Gemma, DeepSeek, Qwen, ...). Tiktoken is an optimization of BPE: same foundation, different merge-rule representation.
+`toknroll-core` is an **extensible tokenizer API** with efficient implementations of the two dominant LLM BPE algorithms: **Tiktoken** (OpenAI GPT family) and **SentencePiece BPE** (Llama 2, Mistral, Gemma, ...).
+Tiktoken is an optimization of BPE: same foundation, different merge-rule representation.
 
 Zero external dependencies. Java 11+. The API is extensible, so you can implement your own `Splitter`, `Normalizer` or `TokenizationModel`, but it deliberately ships no BERT, WordPiece or Unigram: this library targets LLM inference workloads.
 
@@ -95,7 +96,8 @@ TokenizationPipeline p2 = Toknroll.pipeline(normalizer, model);
 
 ## Splitter
 
-A `@FunctionalInterface` that partitions input text into half-open ranges. Each range is delivered via a `SplitConsumer(int start, int end)` callback. Zero object allocation.
+A `@FunctionalInterface` that partitions input text into half-open ranges. Each range is delivered via a `SplitConsumer.accept(CharSequence source, int startInclusive, int endExclusive)` callback.
+Zero object allocation.
 
 ### Regex splitter
 

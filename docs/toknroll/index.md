@@ -154,8 +154,8 @@ int[] tokens = tokenizer.encodeToArray("Hello world");
 
 ## toknroll@qxoticai CLI
 
-The [toknroll CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) allows to encode/decode/count by loading
-tokenizers from HuggingFace/ModelScope, arbitrary URLs, GGUF files, local or remote.
+The [toknroll CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) encodes, decodes and counts tokens.
+It loads tokenizers from HuggingFace or ModelScope repositories, from full URLs on huggingface.co, hf.co or modelscope.cn, and from GGUF files, local or remote.
 
 ```bash
 # Pass input directly with --input
@@ -171,11 +171,11 @@ jbang toknroll@qxoticai --source google/gemma-4-e2b-it --input "Hello, Tok'n'Rol
 # 248290
 
 # Or pipe text via stdin
-echo "Hello, World\!" | jbang toknroll@qxoticai --source Qwen/Qwen3.6-35B-A3B
-# 9259
-# 236764
-# 4109
-# 236888
+echo 'Hello, World!' | jbang toknroll@qxoticai --source Qwen/Qwen3.6-35B-A3B
+# 9419
+# 11
+# 4196
+# 0
 
 # Any source: HuggingFace, ModelScope, GGUF, local
 jbang toknroll@qxoticai \
@@ -208,7 +208,7 @@ echo "22177 1044 42301 2784 1033" | jbang toknroll@qxoticai --decode --source mi
 # Hello, Mistral!
 
 # Count tokens
-echo "Hello, World\!" | jbang toknroll@qxoticai --count --source google/gemma-4-e2b-it
+echo 'Hello, World!' | jbang toknroll@qxoticai --count --source google/gemma-4-e2b-it
 # 4
 ```
 
@@ -226,18 +226,26 @@ First run caches the tokenizer on disk. Public models need no API key.
 
 ## Tested Models
 
-Token-perfect parity tested against reference Python implementations:
+Token-perfect, backed by parity tests against the Hugging Face and llama.cpp reference tokenizers:
 
-- **OpenAI** tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
-- **Google** Gemma 3, Gemma 4
-- **Alibaba** Qwen 3.5+
-- **Moonshot AI** Kimi 2.5+
-- **DeepSeek** DeepSeek 3.2, v4
-- **Mistral AI** Tekken
-- **IBM** Granite 4+
-- **Meta** Llama 3+
-- **Microsoft** Phi 4+
-- **HuggingFace** SmolLM3
+- **OpenAI**: tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
+- **Google**: Gemma 4
+- **Alibaba**: Qwen 3.5+
+- **Liquid AI**: LFM 2.5
+- **OpenBMB**: MiniCPM5
+- **Moonshot AI**: Kimi 2.5+, Kimi K3
+- **DeepSeek**: DeepSeek 3.2, DeepSeek 4
+- **Mistral AI**: Tekken
+- **IBM**: Granite 4+
+- **Meta**: Llama 3+
+- **Microsoft**: Phi 4+
+- **HuggingFace**: SmolLM3
+- **NVIDIA**: Nemotron 3
+- **Z.ai**: GLM 5.1
+- **MiniMax**: M2.7, M3
+- **Xiaomi**: MiMo V2
+- **Poolside**: Laguna XS 2.1
+- **JetBrains**: Mellum 2
 
 See the module pages for exact feature support and known limitations:
 

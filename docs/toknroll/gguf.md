@@ -52,7 +52,7 @@ Tokenizer gemma = loader.fromHuggingFace(
     "unsloth", "gemma-4-E2B-it-GGUF",
     "gemma-4-E2B-it-Q8_0.gguf");
 
-// Alibaba Qwen 3
+// Qwen 3.6
 Tokenizer qwen = loader.fromHuggingFace(
     "unsloth", "Qwen3.6-35B-A3B-GGUF",
     "Qwen3.6-35B-A3B-Q8_0.gguf");
@@ -102,6 +102,9 @@ A property that replaces a registered name is logged, naming the aliases that fo
 Each registration takes a plain `java.util.function.Function` from the GGUF metadata to the part it builds:
 
 ```java
+import com.qxotic.format.gguf.GGUF;
+import java.util.function.Function;
+
 builder.registerModelFactory(name, (Function<GGUF, TokenizationModel>) factory);
 builder.registerPreTokenizer(name, (Function<GGUF, Splitter>) factory);
 builder.registerNormalizer(name, (Function<GGUF, Normalizer>) factory);

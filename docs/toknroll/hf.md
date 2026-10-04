@@ -69,9 +69,9 @@ When `tokenizer.json` returns 404, the loader reconstructs the tokenizer from:
 - Auto-resolves `pat_str` from Python module via `auto_map` (parses `pat_str = "|".join([...])` from `.py` files)
 
 ```java
-// GPT-4o tokenizer (tiktoken format)
-Tokenizer gpt4o = HuggingFaceTokenizerLoader
-    .fromHuggingFace("Xenova", "gpt-4o");
+// Kimi K2.6 tokenizer (tiktoken format, no tokenizer.json)
+Tokenizer kimi = HuggingFaceTokenizerLoader
+    .fromHuggingFace("moonshotai", "Kimi-K2.6");
 ```
 
 ## SentencePiece Detection
@@ -82,9 +82,9 @@ Automatic SentencePiece BPE detection when:
 - A `Metaspace` pre-tokenizer is configured
 
 ```java
-// Llama tokenizer via HuggingFace (SentencePiece BPE)
-Tokenizer llama = HuggingFaceTokenizerLoader
-    .fromHuggingFace("meta-llama", "Llama-3.2-1B-Instruct");
+// Gemma 4 tokenizer via HuggingFace (SentencePiece BPE)
+Tokenizer gemma = HuggingFaceTokenizerLoader
+    .fromHuggingFace("google", "gemma-4-e2b-it");
 ```
 
 ## Configuration
