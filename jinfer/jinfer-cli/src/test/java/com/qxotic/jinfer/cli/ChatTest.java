@@ -80,4 +80,20 @@ class ChatTest {
                 template.conversations.getLast().messages().size(),
                 "rejected input was removed from history");
     }
+
+    @Test
+    void aMessageTooLongOnItsOwnLeavesEarlierExchangesInPlace() throws Exception {
+        var template = new CliFixtures.Template();
+        var capture = new CliFixtures.Capture("hello\n" + "x".repeat(5000) + "\nagain\n/exit\n");
+        Options o = Options.parse("chat", "-m", "unused", "--temp", "0", "-n", "1");
+        try (var engine = CliFixtures.engine(template)) {
+            Chat.run(engine, o.sampling(engine.loaded().samplingDefaults()), o, capture.io);
+        }
+        assertTrue(capture.err().contains("--context-capacity"), capture.err());
+        assertFalse(capture.err().contains("dropped the oldest"), capture.err());
+        var last = template.conversations.getLast().messages();
+        assertEquals(3, last.size(), "the refused message took no earlier exchange with it");
+        assertEquals("hello", last.getFirst().text());
+        assertEquals("again", last.getLast().text());
+    }
 }
