@@ -20,7 +20,7 @@ class SubprocessTest {
                 Subprocess.run(command("small"), null, Duration.ofSeconds(2), 16));
         IOException failure =
                 assertThrows(
-                        IOException.class,
+                        Subprocess.OutputLimitExceeded.class,
                         () -> Subprocess.run(command("large"), null, Duration.ofSeconds(2), 1024));
         assertTrue(failure.getMessage().contains("exceeds"), failure.getMessage());
     }

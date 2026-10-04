@@ -20,7 +20,6 @@ import javax.sound.sampled.UnsupportedAudioFileException;
 public final class JavaSoundAudioDecoder implements AudioDecoder {
 
     private static final int SR = FfmpegAudioDecoder.SAMPLE_RATE; // 16000
-    private static final int MAX_PCM_BYTES = FfmpegAudioDecoder.MAX_SAMPLES * 2;
     private final FfmpegAudioDecoder fallback = new FfmpegAudioDecoder();
 
     @Override
@@ -59,8 +58,11 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
         AudioFormat target =
                 new AudioFormat(AudioFormat.Encoding.PCM_SIGNED, SR, 16, 1, 2, SR, false);
         byte[] bytes;
+        int minutes = FfmpegAudioDecoder.maxMinutes();
         try (AudioInputStream conv = AudioSystem.getAudioInputStream(target, in)) {
-            bytes = readBounded(conv, MAX_PCM_BYTES);
+            bytes = readBounded(conv, FfmpegAudioDecoder.maxSamples(minutes) * 2);
+        } catch (Subprocess.OutputLimitExceeded e) {
+            throw FfmpegAudioDecoder.tooLong(minutes, e);
         }
         int n = bytes.length / 2;
         float[] pcm = new float[n];
@@ -74,7 +76,8 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
     static byte[] readBounded(InputStream input, int maxBytes) throws IOException {
         byte[] bytes = input.readNBytes(maxBytes + 1);
         if (bytes.length > maxBytes)
-            throw new IOException("decoded audio exceeds the " + maxBytes + "-byte limit");
+            throw new Subprocess.OutputLimitExceeded(
+                    "decoded audio exceeds the " + maxBytes + "-byte limit");
         return bytes;
     }
 }
