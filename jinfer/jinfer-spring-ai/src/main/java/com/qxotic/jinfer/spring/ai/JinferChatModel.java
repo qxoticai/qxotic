@@ -569,6 +569,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             + "' (one loaded GGUF per instance)");
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
+        // the sampler's own ranges, checked here so an invalid default fails build() and an
+        // invalid request fails naming the option, not with the sampler's bare message
+        Double temperature = o.getTemperature();
+        if (temperature != null && !(Double.isFinite(temperature) && temperature >= 0))
+            throw new IllegalArgumentException("temperature must be >= 0: " + temperature);
+        if (o.getTopP() != null && !(o.getTopP() > 0 && o.getTopP() <= 1))
+            throw new IllegalArgumentException("topP must be within (0, 1]: " + o.getTopP());
+        if (o.getTopK() != null && o.getTopK() < 0)
+            throw new IllegalArgumentException("topK must be >= 0 (0 disables it): " + o.getTopK());
+        if (o.getMinP() != null && !(o.getMinP() >= 0 && o.getMinP() <= 1))
+            throw new IllegalArgumentException("minP must be within [0, 1]: " + o.getMinP());
         try {
             engine.requireThinkingRenderable(o.getThinking() != Boolean.FALSE);
         } catch (UnsupportedOperationException e) {

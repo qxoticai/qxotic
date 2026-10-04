@@ -61,6 +61,30 @@ class JinferChatAutoConfigurationTest {
     }
 
     @Test
+    void outOfRangeSamplingFailsTheBootNamingTheProperty() {
+        // these once booted fine and then failed every request with the sampler's bare message
+        String[][] cases = {
+            {"min-p", "2"},
+            {"temperature", "-1"},
+            {"top-p", "0"},
+            {"top-k", "-1"},
+            {"max-reasoning-tokens", "-2"},
+            {"timeout", "-1s"},
+        };
+        for (String[] c : cases) {
+            runner.withPropertyValues(
+                            "spring.ai.jinfer.chat.model=/missing.gguf",
+                            "spring.ai.jinfer.chat." + c[0] + "=" + c[1])
+                    .run(
+                            context -> {
+                                assertThat(context).hasFailed();
+                                assertThat(context.getStartupFailure())
+                                        .hasStackTraceContaining("spring.ai.jinfer.chat." + c[0]);
+                            });
+        }
+    }
+
+    @Test
     void modelUrlIsRejectedBeforeResolution() {
         runner.withPropertyValues("spring.ai.jinfer.chat.model=https://example.org/model.gguf")
                 .run(
