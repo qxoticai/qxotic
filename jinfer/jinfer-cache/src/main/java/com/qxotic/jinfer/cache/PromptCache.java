@@ -737,7 +737,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         for (CachedSession<S> s : retained) {
             if (s.snapshotIsStrictPrefixOf(fingerprints)
                     && fingerprints.length <= s.state().contextCapacity()
-                    && (best == null || s.length() > best.length())) {
+                    && (best == null || s.snapshotLength() > best.snapshotLength())) {
                 best = s;
             }
         }

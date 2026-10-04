@@ -479,6 +479,11 @@ public final class CachedSession<S extends ContextState> {
         return snapshot == null ? 0 : snapshot.byteSize();
     }
 
+    /** The snapshot boundary's stream length (0 when none). */
+    int snapshotLength() {
+        return snapshotLen;
+    }
+
     /**
      * True when the snapshot exists and its stream strictly prefixes {@code req} - the rewind
      * eligibility test (at least one position left to ingest, so logits are fresh).

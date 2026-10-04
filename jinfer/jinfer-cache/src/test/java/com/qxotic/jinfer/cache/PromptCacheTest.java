@@ -472,6 +472,19 @@ public final class PromptCacheTest {
     }
 
     @Test
+    void theLongestSnapshotWinsNotTheLongestStream() {
+        try (var cache = defineOnlyCache(2, 1 << 20)) {
+            // B: snapshot at 5, stream 7
+            generate(cache, turns(new int[] {1, 2, 3, 9, 4}, new int[] {GEN}), 7);
+            // A: snapshot at 3, but a longer reply makes its stream 10
+            generate(cache, turns(new int[] {1, 2, 3}, new int[] {GEN}), 7, 8, 10, 11, 12, 13);
+            Served turn = generate(cache, turns(new int[] {1, 2, 3, 9, 4, 6}, new int[] {GEN}));
+            assertEquals(PromptCache.Tier.SESSION, turn.tier());
+            assertEquals(5, turn.restored(), "the deeper snapshot served it");
+        }
+    }
+
+    @Test
     void aForkBeforeTheSnapshotStillRePrefills() {
         // the snapshot is the TAIL rewind point only: recurrent state cannot rewind further
         try (var cache = defineOnlyCache(2, 1 << 20)) {
