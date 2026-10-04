@@ -57,7 +57,7 @@ is `Q8_0`, so the examples specify it explicitly.
 Builder values are model defaults. `ChatRequest` values override per request.
 
 ```java
-ChatModel model = JinferChatModel.builder()
+JinferChatModel model = JinferChatModel.builder()
         .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
         .contextCapacity(8192)      // 0 = the model's full context
         .temperature(0.7)
