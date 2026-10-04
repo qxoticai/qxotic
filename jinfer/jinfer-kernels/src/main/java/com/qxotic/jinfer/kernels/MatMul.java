@@ -426,7 +426,7 @@ public final class MatMul {
      * The floor: one region over the {@code n x m} output cells (rows of {@code W} vary fastest, so
      * a chunk shares its activation row), inline when the whole matvec is tiny. An in-place call
      * (the result aliases an operand) stages into a temporary and writes back after the region; the
-     * dots take their per-slot scratch from the region's slot.
+     * dots take their per-slot scratch from the region's slot, the tiny case's included.
      */
     private static void run(
             MemorySegment ws,
@@ -465,7 +465,7 @@ public final class MatMul {
                     if (tmp != null) tmp[idx] = v;
                     else writeFloat(cs, cBase + (long) s * cRowBytes + (long) row * 4, v);
                 };
-        if ((long) cells * k <= TINY_MATVEC_ELEMS) for (int i = 0; i < cells; i++) cell.run(i, 0);
+        if ((long) cells * k <= TINY_MATVEC_ELEMS) Parallel.shared().inline(cells, cell);
         else Parallel.forLoop(cells, cell);
         if (tmp != null)
             for (int s = 0; s < n; s++)

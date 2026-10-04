@@ -581,6 +581,78 @@ class ParallelTest {
         }
     }
 
+    /**
+     * Inline regions (a width-1 pool, a single job, {@link Parallel#inline}) are slot 0 as much as
+     * the caller's share of a pooled region: two submitters running them at once would share slot
+     * 0's scratch, so they serialize like any region.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {1, 4})
+    void inlineRegionsOfConcurrentSubmittersNeverShareSlotZero(int width) throws Exception {
+        try (Parallel pool = Parallel.of(width)) {
+            int submitters = 4, loops = 2_000;
+            AtomicIntegerArray busy = new AtomicIntegerArray(width);
+            AtomicBoolean shared = new AtomicBoolean();
+            Parallel.Job claim =
+                    (i, slot) -> {
+                        assertTrue(pool.inside(), "an inline region is a region");
+                        if (!busy.compareAndSet(slot, 0, 1)) shared.set(true);
+                        spin(1_000);
+                        busy.set(slot, 0);
+                    };
+            List<Thread> threads = new ArrayList<>();
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            for (int s = 0; s < submitters; s++) {
+                Thread t =
+                        new Thread(
+                                () -> {
+                                    try {
+                                        for (int l = 0; l < loops; l++) {
+                                            pool.loop(1, claim); // one job: inline at any width
+                                            pool.inline(3, claim);
+                                            if (width == 1) pool.loop(5, claim);
+                                        }
+                                    } catch (Throwable e) {
+                                        failure.set(e);
+                                    }
+                                });
+                threads.add(t);
+                t.start();
+            }
+            for (Thread t : threads) t.join(TimeUnit.MINUTES.toMillis(2));
+            for (Thread t : threads) assertFalse(t.isAlive(), "submitter hung");
+            assertTrue(failure.get() == null, String.valueOf(failure.get()));
+            assertFalse(shared.get(), "two threads ran slot 0 at once");
+        }
+    }
+
+    @Test
+    void inlineRunsInOrderOnTheCallerWithItsParticipantsSlot() {
+        try (Parallel pool = Parallel.of(4)) {
+            List<Integer> order = new ArrayList<>();
+            pool.inline(
+                    5,
+                    (i, slot) -> {
+                        assertEquals(0, slot);
+                        order.add(i);
+                    });
+            assertEquals(List.of(0, 1, 2, 3, 4), order);
+            AtomicIntegerArray mismatches = new AtomicIntegerArray(1);
+            pool.run(
+                    64,
+                    (j, outerSlot) -> {
+                        Thread outer = Thread.currentThread();
+                        pool.inline(
+                                2,
+                                (i, innerSlot) -> {
+                                    if (innerSlot != outerSlot || Thread.currentThread() != outer)
+                                        mismatches.incrementAndGet(0);
+                                });
+                    });
+            assertEquals(0, mismatches.get(0), "inline inside a region keeps the worker's slot");
+        }
+    }
+
     @Test
     void twoPoolsRunRegionsAtTheSameTime() throws Exception {
         try (Parallel a = Parallel.of(3);
