@@ -38,6 +38,11 @@ final class VectorMamba2 {
         return NORM_ENABLED && applies(groupDim);
     }
 
+    /** Whether the vector scan runs here at all: switched on, with a fast Vector API JIT. */
+    static boolean scanAvailable() {
+        return SCAN_ENABLED && FAST_VECTOR_JIT && F_SPECIES != null;
+    }
+
     private static boolean applies(int dimension) {
         return FAST_VECTOR_JIT
                 && F_SPECIES != null

@@ -167,8 +167,17 @@ public final class GatedDeltaNet {
             VectorGatedDeltaNet.scan(qr, kr, vr, gr, br, sr, or, skr, dr, rows, heads, headDim);
             return;
         }
-        PerformanceCliff.GDN_SCALAR.report();
+        if (geometryUncovered(headDim)) PerformanceCliff.GDN_SCALAR.report();
         scanScalar(qr, kr, vr, gr, br, sr, or, skr, dr, rows, heads, headDim);
+    }
+
+    /**
+     * Whether {@code headDim} alone keeps an available vector recurrence off: the cliff. A slow
+     * Vector API JIT is its own cliff, reported at boot, and {@code -Djinfer.gdn.vector=false} is
+     * the caller's choice.
+     */
+    static boolean geometryUncovered(int headDim) {
+        return VectorGatedDeltaNet.available() && !VectorGatedDeltaNet.applies(headDim);
     }
 
     /**

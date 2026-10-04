@@ -2,9 +2,12 @@ package com.qxotic.jinfer.kernels;
 
 import static com.qxotic.jinfer.Segments.F_SPECIES;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.qxotic.jinfer.Segments;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -12,6 +15,21 @@ import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
 class GatedDeltaNetTest {
+    /**
+     * The scalar-geometry cliff blames the geometry only: on a slow Vector API JIT (stock C2, or
+     * {@code -Djinfer.vectorJit=slow}) every geometry runs scalar and that is SLOW_JIT's report.
+     */
+    @Test
+    void geometryCliffOnlyWhereTheVectorPathIsAvailable() {
+        boolean available = Segments.FAST_VECTOR_JIT && VectorGatedDeltaNet.enabled();
+        assertFalse(GatedDeltaNet.geometryUncovered(256), "a covered geometry");
+        assertEquals(
+                available,
+                GatedDeltaNet.geometryUncovered(F_SPECIES == null ? 3 : F_SPECIES.length() + 1));
+        if (!Segments.FAST_VECTOR_JIT)
+            assertFalse(GatedDeltaNet.geometryUncovered(3), "a slow JIT");
+    }
+
     @Test
     void vectorScanMatchesScalarAtQwen35Shape() {
         assumeTrue(F_SPECIES != null && 128 % F_SPECIES.length() == 0);

@@ -32,8 +32,17 @@ public final class Mamba2 {
             VectorMamba2.scan(cv, zv, tv, av, dv, sv, out, rows, inner, heads, groups, stateSize);
             return;
         }
-        PerformanceCliff.MAMBA2_SCALAR.report();
+        if (geometryUncovered(stateSize)) PerformanceCliff.MAMBA2_SCALAR.report();
         scanScalar(cv, zv, tv, av, dv, sv, out, rows, inner, heads, groups, stateSize);
+    }
+
+    /**
+     * Whether {@code stateSize} alone keeps an available vector scan off: the cliff. A slow Vector
+     * API JIT is its own cliff, reported at boot, and {@code -Djinfer.mamba2.vector=false} is the
+     * caller's choice.
+     */
+    static boolean geometryUncovered(int stateSize) {
+        return VectorMamba2.scanAvailable() && !VectorMamba2.appliesScan(stateSize);
     }
 
     /** Scalar oracle and fallback for the selective scan. */
