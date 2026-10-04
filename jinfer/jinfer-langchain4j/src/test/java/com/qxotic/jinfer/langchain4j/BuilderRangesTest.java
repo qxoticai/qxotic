@@ -39,6 +39,14 @@ class BuilderRangesTest {
     }
 
     @Test
+    void aNullTimeoutIsRefusedNamingTheKnob() {
+        NullPointerException e =
+                assertThrows(
+                        NullPointerException.class, () -> JinferChatModel.builder().timeout(null));
+        assertTrue(e.getMessage().startsWith("timeout"), e.getMessage());
+    }
+
+    @Test
     void speechBuilderRefusesANonPositiveSpeed() {
         refused("> 0", () -> JinferSpeechModel.builder().speed(0));
         refused("> 0", () -> JinferSpeechModel.builder().speed(Double.NaN));
