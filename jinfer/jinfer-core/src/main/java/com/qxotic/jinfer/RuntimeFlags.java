@@ -33,14 +33,26 @@ public final class RuntimeFlags {
 
     // Keys per flashDecode partition: below this there is nothing to gain from splitting the
     // attended range, so it falls through to rollingDecode.
-    public static final int DECODE_BLOCK_SIZE = Integer.getInteger("jinfer.decodeBlockSize", 512);
+    public static final int DECODE_BLOCK_SIZE = positiveInt("jinfer.decodeBlockSize", 512);
 
     private static int positiveInt(String property, int defaultValue) {
-        int value = Integer.getInteger(property, defaultValue);
-        if (value < 1) {
-            throw new IllegalArgumentException(property + " must be positive: " + value);
+        return positiveInt(property, System.getProperty(property), defaultValue);
+    }
+
+    /** {@code value} (the property's text, null when unset) as a positive int, or a failure. */
+    static int positiveInt(String property, String value, int defaultValue) {
+        if (value == null) return defaultValue;
+        int parsed;
+        try {
+            parsed = Integer.parseInt(value.strip());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    property + " must be a positive integer, not '" + value + "'");
         }
-        return value;
+        if (parsed < 1) {
+            throw new IllegalArgumentException(property + " must be positive: " + parsed);
+        }
+        return parsed;
     }
 
     /**
