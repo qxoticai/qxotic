@@ -459,7 +459,10 @@ public final class Ops {
         }
     }
 
-    /** {@link #addScaledRows} over one span of {@code n} elements, on the calling thread. */
+    /**
+     * {@link #addScaledRows} over one span of {@code n} elements, on the calling thread. No caller
+     * in this tree, but the published jinfer-llama 0.3.0 links against it: keep it.
+     */
     public static void addScaled(
             MemoryView<MemorySegment> x, MemoryView<MemorySegment> xb, int n, float scale) {
         addScaledRows(x, xb, 1, n, scale);
