@@ -594,6 +594,25 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
     }
 
+    @Test
+    public void testShapeOverflowIsFormatError() {
+        String json =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[4294967296,4294967296],\"data_offsets\":[0,4]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        SafetensorsFormatException e =
+                assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+        assertTrue(e.getMessage().contains("'tensor'"), e.getMessage());
+    }
+
+    @Test
+    public void testMisalignedSubByteShapeIsFormatError() {
+        String json = "{\"tensor\":{\"dtype\":\"F4\",\"shape\":[3],\"data_offsets\":[0,2]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        SafetensorsFormatException e =
+                assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+        assertTrue(e.getMessage().contains("'tensor'"), e.getMessage());
+    }
+
     private byte[] createSafetensorsBytes(String json) {
         byte[] headerBytes = json.getBytes(StandardCharsets.UTF_8);
         byte[] bytes = new byte[8 + headerBytes.length];
