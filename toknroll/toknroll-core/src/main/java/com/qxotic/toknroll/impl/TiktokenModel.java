@@ -23,16 +23,10 @@ import java.util.Objects;
  */
 final class TiktokenModel extends AbstractTokenizationModel {
 
-    public static final String LARGE_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.largeChunkThreshold";
-    public static final String TINY_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.tinyChunkThreshold";
-    public static final String SCRATCH_REUSE_ENABLED_PROPERTY = "toknroll.fast.scratchReuseEnabled";
-    public static final String SCRATCH_MAX_RETAINED_ELEMENTS_PROPERTY =
-            "toknroll.fast.scratchMaxRetainedElements";
-
     private static final byte[] REPLACEMENT_UTF8 = {(byte) 0xEF, (byte) 0xBF, (byte) 0xBD};
-    private static final int DEFAULT_LARGE_CHUNK_THRESHOLD = 96;
-    private static final int DEFAULT_TINY_CHUNK_THRESHOLD = 3;
-    private static final int DEFAULT_SCRATCH_MAX_RETAINED_ELEMENTS = 128 * 1024;
+    private static final int LARGE_CHUNK_THRESHOLD = 96;
+    private static final int TINY_CHUNK_THRESHOLD = 3;
+    private static final int SCRATCH_MAX_RETAINED_ELEMENTS = 128 * 1024;
     private static final int NO_TOKEN = -1;
     private static final int NO_INDEX = -1;
     private static final Method THREAD_IS_VIRTUAL_METHOD = resolveThreadIsVirtualMethod();
@@ -42,10 +36,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private final byte[][] tokenBytesById;
     private final ExactTokenLookup exactTokenLookup;
     private final boolean ignoreMerges;
-    private final int tinyChunkThreshold;
-    private final int largeChunkThreshold;
-    private final boolean scratchReuseEnabled;
-    private final int scratchMaxRetainedElements;
     private final ThreadLocal<Scratch> scratchThreadLocal = ThreadLocal.withInitial(Scratch::new);
 
     TiktokenModel(
@@ -55,8 +45,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
             byte[][] tokenBytesById,
             ExactTokenLookup exactTokenLookup,
             boolean ignoreMerges,
-            int tinyChunkThreshold,
-            int largeChunkThreshold,
             float expectedTokensPerChar) {
         super(vocabulary, expectedTokensPerChar);
         this.merges = Objects.requireNonNull(merges, "merges");
@@ -67,16 +55,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         this.tokenBytesById = Objects.requireNonNull(tokenBytesById, "tokenBytesById");
         this.exactTokenLookup = Objects.requireNonNull(exactTokenLookup, "exactTokenLookup");
         this.ignoreMerges = ignoreMerges;
-        this.tinyChunkThreshold = Math.max(1, Math.min(3, tinyChunkThreshold));
-        this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
-        this.scratchReuseEnabled =
-                Boolean.parseBoolean(System.getProperty(SCRATCH_REUSE_ENABLED_PROPERTY, "true"));
-        this.scratchMaxRetainedElements =
-                Math.max(
-                        8,
-                        Integer.getInteger(
-                                SCRATCH_MAX_RETAINED_ELEMENTS_PROPERTY,
-                                DEFAULT_SCRATCH_MAX_RETAINED_ELEMENTS));
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
@@ -113,11 +91,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
                                 vocabulary,
                                 buildMergeReachableMask(singleByteTokenId, tokenBytesById, merges));
 
-        int tinyThreshold =
-                Integer.getInteger(TINY_CHUNK_THRESHOLD_PROPERTY, DEFAULT_TINY_CHUNK_THRESHOLD);
-        int threshold =
-                Integer.getInteger(LARGE_CHUNK_THRESHOLD_PROPERTY, DEFAULT_LARGE_CHUNK_THRESHOLD);
-
         return new TiktokenModel(
                 vocabulary,
                 merges,
@@ -125,8 +98,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 tokenBytesById,
                 exactTokenLookup,
                 ignoreMerges,
-                tinyThreshold,
-                threshold,
                 estimateTokensPerChar(vocabulary.size()));
     }
 
@@ -268,10 +239,10 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 return 1;
             }
         }
-        if (byteLength <= tinyChunkThreshold) {
+        if (byteLength <= TINY_CHUNK_THRESHOLD) {
             return encodeTiny(s.utf8Bytes, byteLength, out);
         }
-        if (byteLength < largeChunkThreshold) {
+        if (byteLength < LARGE_CHUNK_THRESHOLD) {
             return mergeSmall(s.utf8Bytes, byteLength, out, s);
         }
         return mergeLarge(s.utf8Bytes, byteLength, out, s);
@@ -288,7 +259,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private boolean shouldTryExactLookup(int byteLength) {
-        return byteLength > 0 && (ignoreMerges || byteLength > tinyChunkThreshold);
+        return byteLength > 0 && (ignoreMerges || byteLength > TINY_CHUNK_THRESHOLD);
     }
 
     // ---- Tiny / small path ----
@@ -350,17 +321,17 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private Scratch acquireScratch() {
-        if (!scratchReuseEnabled || isCurrentThreadVirtual()) {
+        if (isCurrentThreadVirtual()) {
             return new Scratch();
         }
         return scratchThreadLocal.get();
     }
 
     private void releaseScratch(Scratch s) {
-        if (!scratchReuseEnabled || isCurrentThreadVirtual()) {
+        if (isCurrentThreadVirtual()) {
             return;
         }
-        if (s.maxRetainedElements() > scratchMaxRetainedElements) {
+        if (s.maxRetainedElements() > SCRATCH_MAX_RETAINED_ELEMENTS) {
             scratchThreadLocal.remove();
         }
     }
