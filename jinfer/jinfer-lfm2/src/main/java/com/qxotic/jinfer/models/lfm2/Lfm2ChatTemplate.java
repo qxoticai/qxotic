@@ -105,13 +105,6 @@ final class Lfm2ChatTemplate implements ChatTemplate {
         this(tokenizer, null, new Dialect(promptOpensThinking, false, true, true, true));
     }
 
-    public Lfm2ChatTemplate(Lfm2 model, boolean promptOpensThinking) {
-        this(
-                model.tokenizer(),
-                model.vision(),
-                new Dialect(promptOpensThinking, false, true, true, true));
-    }
-
     Lfm2ChatTemplate(Tokenizer tokenizer, Lfm2Vision vision, Dialect dialect) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.vision = vision;
