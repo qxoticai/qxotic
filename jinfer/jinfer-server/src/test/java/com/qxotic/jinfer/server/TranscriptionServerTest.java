@@ -12,7 +12,10 @@ import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryArena;
+import java.io.OutputStream;
 import java.lang.foreign.MemorySegment;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -111,7 +114,13 @@ class TranscriptionServerTest {
         }
     }
 
-    private static HttpResponse<String> upload(TranscriptionServer.Running server)
+    record Answer(int status, String body) {}
+
+    /**
+     * Posts a short WAV over a raw socket; the body follows the headers after {@code pauseMillis},
+     * like a slow link, so a body-read deadline that already expired is bound to fire.
+     */
+    private static Answer upload(TranscriptionServer.Running server, long pauseMillis)
             throws Exception {
         String boundary = "jinfer-test-boundary";
         byte[] wav = AudioCodec.wav(new Media.Audio(new float[1600], 16000, 1));
@@ -126,16 +135,32 @@ class TranscriptionServerTest {
                                 .getBytes(StandardCharsets.UTF_8),
                         wav,
                         ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
-        HttpRequest request =
-                HttpRequest.newBuilder(
-                                URI.create(
-                                        "http://127.0.0.1:"
-                                                + server.address().getPort()
-                                                + "/v1/audio/transcriptions"))
-                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                        .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                        .build();
-        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        try (Socket socket =
+                new Socket(InetAddress.getLoopbackAddress(), server.address().getPort())) {
+            socket.setSoTimeout(10_000);
+            OutputStream out = socket.getOutputStream();
+            out.write(
+                    ("POST /v1/audio/transcriptions HTTP/1.1\r\n"
+                                    + "Host: 127.0.0.1\r\n"
+                                    + "Content-Type: multipart/form-data; boundary="
+                                    + boundary
+                                    + "\r\n"
+                                    + "Content-Length: "
+                                    + body.length
+                                    + "\r\n"
+                                    + "Connection: close\r\n\r\n")
+                            .getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            Thread.sleep(pauseMillis);
+            out.write(body);
+            out.flush();
+            String response =
+                    new String(socket.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(response.startsWith("HTTP/1.1 "), "no response: '" + response + "'");
+            return new Answer(
+                    Integer.parseInt(response.substring(9, 12)),
+                    response.substring(response.indexOf("\r\n\r\n") + 4));
+        }
     }
 
     @Test
@@ -146,9 +171,9 @@ class TranscriptionServerTest {
                         .withLimits(ServerConfig.Limits.DEFAULTS.withRequestTimeout(Duration.ZERO));
         var model = new FakeModel(pcm -> new Transcription("hi", List.of()));
         try (var server = TranscriptionServer.start(model, "asr", config)) {
-            HttpResponse<String> response = upload(server);
-            assertEquals(200, response.statusCode(), response.body());
-            assertEquals("{\"text\":\"hi\"}", response.body());
+            Answer response = upload(server, 300);
+            assertEquals(200, response.status(), response.body());
+            assertTrue(response.body().contains("{\"text\":\"hi\"}"), response.body());
         }
     }
 
@@ -160,8 +185,8 @@ class TranscriptionServerTest {
                             throw new IllegalStateException("internal detail");
                         });
         try (var server = TranscriptionServer.start(model, "asr", ServerConfig.local(0))) {
-            HttpResponse<String> response = upload(server);
-            assertEquals(500, response.statusCode(), response.body());
+            Answer response = upload(server, 0);
+            assertEquals(500, response.status(), response.body());
             assertTrue(response.body().contains("Internal server error"), response.body());
             assertFalse(response.body().contains("internal detail"), response.body());
         }
