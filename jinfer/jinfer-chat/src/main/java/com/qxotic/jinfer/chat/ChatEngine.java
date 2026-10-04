@@ -461,7 +461,8 @@ public final class ChatEngine implements AutoCloseable {
      * @param stops extra stop strings on the content lane; the reply keeps the full text and the
      *     caller truncates with {@link TextStops#apply}; empty strings are refused
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
-     *     {@link #encode} skips the native codec when any key it does not understand is present
+     *     {@link #encode} skips the native codec when any key it does not understand is present. A
+     *     boolean {@code enable_thinking} here overrides {@code thinking}
      */
     public record Request(
             List<Message> messages,
@@ -519,6 +520,12 @@ public final class ChatEngine implements AutoCloseable {
                     templateKwargs == null
                             ? null
                             : Collections.unmodifiableMap(new LinkedHashMap<>(templateKwargs));
+            // the per-request kwarg IS the thinking switch, as the server reads it: lowered here
+            // so the native codec (which never sees kwargs), the whole-render and the sampler all
+            // act on one decision. Left to the render alone, the engine's own enable_thinking
+            // binding overwrote it and a library caller's enable_thinking:false thought anyway.
+            if (templateKwargs != null
+                    && templateKwargs.get("enable_thinking") instanceof Boolean on) thinking = on;
         }
 
         /**
