@@ -790,83 +790,8 @@ public final class Server {
                                         request,
                                         messages,
                                         sink == null ? Sinks.NONE : Sinks.text(sink));
-                        if (result.toolCalls().isEmpty()) {
-                            if (mayCallTools) {
-                                responseMessageAdded(sse, itemId);
-                                if (!result.text().isEmpty()) {
-                                    sse.emit(
-                                            "response.output_text.delta",
-                                            OpenAiSchema.responseTextDelta(itemId, result.text()));
-                                }
-                            }
-                            sse.emit(
-                                    "response.output_text.done",
-                                    Map.of(
-                                            "type",
-                                            "response.output_text.done",
-                                            "item_id",
-                                            itemId,
-                                            "output_index",
-                                            0,
-                                            "content_index",
-                                            0,
-                                            "text",
-                                            result.text()));
-                            sse.emit(
-                                    "response.content_part.done",
-                                    Map.of(
-                                            "type",
-                                            "response.content_part.done",
-                                            "item_id",
-                                            itemId,
-                                            "output_index",
-                                            0,
-                                            "content_index",
-                                            0,
-                                            "part",
-                                            OpenAiSchema.outputText(result.text())));
-                        }
                         List<Map<String, Object>> items =
-                                OpenAiSchema.responseOutputItems(id, result);
-                        for (int i = 0; i < items.size(); i++) {
-                            if (!result.toolCalls().isEmpty()) {
-                                Map<String, Object> started = new LinkedHashMap<>(items.get(i));
-                                started.put("status", "in_progress");
-                                started.put("arguments", "");
-                                sse.emit(
-                                        "response.output_item.added",
-                                        Map.of(
-                                                "type",
-                                                "response.output_item.added",
-                                                "output_index",
-                                                i,
-                                                "item",
-                                                started));
-                                sse.emit(
-                                        "response.function_call_arguments.done",
-                                        Map.of(
-                                                "type",
-                                                "response.function_call_arguments.done",
-                                                "item_id",
-                                                Values.stringValue(started.get("id"), ""),
-                                                "output_index",
-                                                i,
-                                                "name",
-                                                Values.stringValue(started.get("name"), ""),
-                                                "arguments",
-                                                Values.stringValue(
-                                                        items.get(i).get("arguments"), "{}")));
-                            }
-                            sse.emit(
-                                    "response.output_item.done",
-                                    Map.of(
-                                            "type",
-                                            "response.output_item.done",
-                                            "output_index",
-                                            i,
-                                            "item",
-                                            items.get(i)));
-                        }
+                                emitResponseItems(sse, id, mayCallTools, result);
                         // Use the SAME items just emitted; rebuilding can mint new tool-call ids.
                         Map<String, Object> response =
                                 OpenAiSchema.responseResponse(id, modelId, created, result, items);
@@ -883,6 +808,91 @@ public final class Server {
                         sse.done();
                     });
         }
+    }
+
+    /**
+     * Emits the Responses-API item events for a finished reply and returns the items, so the final
+     * envelope carries the very same list. Branches per item: a reply with text AND tool calls has
+     * a message item first, whose text must stream like any other message.
+     */
+    static List<Map<String, Object>> emitResponseItems(
+            Sse.Stream sse, String id, boolean mayCallTools, Reply result) {
+        String itemId = "msg_" + id;
+        List<Map<String, Object>> items = OpenAiSchema.responseOutputItems(id, result);
+        for (int i = 0; i < items.size(); i++) {
+            if ("message".equals(items.get(i).get("type"))) {
+                if (mayCallTools) {
+                    responseMessageAdded(sse, itemId);
+                    if (!result.text().isEmpty()) {
+                        sse.emit(
+                                "response.output_text.delta",
+                                OpenAiSchema.responseTextDelta(itemId, result.text()));
+                    }
+                }
+                sse.emit(
+                        "response.output_text.done",
+                        Map.of(
+                                "type",
+                                "response.output_text.done",
+                                "item_id",
+                                itemId,
+                                "output_index",
+                                i,
+                                "content_index",
+                                0,
+                                "text",
+                                result.text()));
+                sse.emit(
+                        "response.content_part.done",
+                        Map.of(
+                                "type",
+                                "response.content_part.done",
+                                "item_id",
+                                itemId,
+                                "output_index",
+                                i,
+                                "content_index",
+                                0,
+                                "part",
+                                OpenAiSchema.outputText(result.text())));
+            } else {
+                Map<String, Object> started = new LinkedHashMap<>(items.get(i));
+                started.put("status", "in_progress");
+                started.put("arguments", "");
+                sse.emit(
+                        "response.output_item.added",
+                        Map.of(
+                                "type",
+                                "response.output_item.added",
+                                "output_index",
+                                i,
+                                "item",
+                                started));
+                sse.emit(
+                        "response.function_call_arguments.done",
+                        Map.of(
+                                "type",
+                                "response.function_call_arguments.done",
+                                "item_id",
+                                Values.stringValue(started.get("id"), ""),
+                                "output_index",
+                                i,
+                                "name",
+                                Values.stringValue(started.get("name"), ""),
+                                "arguments",
+                                Values.stringValue(items.get(i).get("arguments"), "{}")));
+            }
+            sse.emit(
+                    "response.output_item.done",
+                    Map.of(
+                            "type",
+                            "response.output_item.done",
+                            "output_index",
+                            i,
+                            "item",
+                            items.get(i)));
+        }
+        return items;
     }
 
     private static void responseMessageAdded(Sse.Stream sse, String itemId) {

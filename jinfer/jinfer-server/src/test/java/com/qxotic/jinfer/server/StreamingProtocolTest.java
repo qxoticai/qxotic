@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.llm.Generator;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,6 +54,38 @@ class StreamingProtocolTest {
             assertEquals(1, chunks.size());
             assertFalse(finish.containsKey("usage"));
         }
+    }
+
+    @Test
+    void aReplyWithTextAndToolCallsStreamsTheMessageAsAMessage() throws Exception {
+        var result =
+                new Generator.GenerationResult(
+                        new int[] {1},
+                        OptionalInt.empty(),
+                        Generator.FinishReason.STOP,
+                        Duration.ZERO,
+                        Duration.ZERO);
+        var calls = List.of(new Content.ToolCall("call_0", "weather", Map.of("city", "Zurich")));
+        var both = new Reply(result, 3, 1, "Checking.", null, calls, "tool_calls", null);
+        TestExchange exchange = new TestExchange(new byte[0]);
+        List<Map<String, Object>> items;
+        try (Sse.Stream sse = Sse.begin(exchange, Duration.ofSeconds(1))) {
+            items = Server.emitResponseItems(sse, "r1", true, both);
+        }
+        String body = new String(exchange.responseBytes(), StandardCharsets.UTF_8);
+
+        assertEquals(
+                List.of("message", "function_call"),
+                items.stream().map(i -> i.get("type")).toList());
+        assertTrue(body.contains("event: response.output_text.delta"), body);
+        assertTrue(body.contains("\"delta\":\"Checking.\""), body);
+        assertTrue(body.contains("event: response.output_text.done"), body);
+        // exactly one function_call_arguments.done, for the call at index 1 - never the message
+        int first = body.indexOf("event: response.function_call_arguments.done");
+        assertTrue(first >= 0, body);
+        assertEquals(
+                -1, body.indexOf("event: response.function_call_arguments.done", first + 1), body);
+        assertTrue(body.contains("\"item_id\":\"call_0\""), body);
     }
 
     private static Reply reply() {
