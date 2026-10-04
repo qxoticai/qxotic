@@ -224,6 +224,7 @@ class JinferChatOptionsTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation") // the aliases are asserted on purpose
     void reasoningBudgetRoundTripsAndCombinesLikeEveryJinferExtra() {
         JinferChatOptions o =
                 JinferChatOptions.builder()
@@ -231,14 +232,17 @@ class JinferChatOptionsTest {
                         .reasoningCutoffMessage("... Let me answer.")
                         .build();
         JinferChatOptions copy = o.mutate().build();
+        assertEquals(48, copy.getMaxReasoningTokens());
+        assertEquals("... Let me answer.", copy.getReasoningCutoffMessage());
+        // the 0.3.0 names stay as deprecated aliases
         assertEquals(48, copy.getReasoningBudget());
         assertEquals("... Let me answer.", copy.getReasoningBudgetMessage());
         JinferChatOptions merged =
                 o.mutate().combineWith(JinferChatOptions.builder().maxReasoningTokens(-1)).build();
-        assertEquals(-1, merged.getReasoningBudget(), "the request's cap wins");
+        assertEquals(-1, merged.getMaxReasoningTokens(), "the request's cap wins");
         assertEquals(
                 "... Let me answer.",
-                merged.getReasoningBudgetMessage(),
+                merged.getReasoningCutoffMessage(),
                 "unset keeps the default");
         assertThrows(
                 IllegalArgumentException.class,
