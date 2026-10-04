@@ -9,7 +9,8 @@
   <a href="https://bsky.app/profile/qxotic.ai"><img src="https://img.shields.io/badge/-grey?logo=bluesky&logoColor=f5f5f5" alt="Qxotic AI on Bluesky"></a>
 </p>
 
-Quixotic AI provides a complete, open stack, for local AI on the JVM. From tokenizers and model formats, to a full inference engine with multi-modal capabilities.
+Quixotic AI provides a complete, open stack for local AI on the JVM.
+From tokenizers and model formats to a full inference engine with multi-modal capabilities.
 
 _No Python. No ONNX. No external services. Just_ **AI, in a jar.**
 
@@ -34,13 +35,14 @@ _No Python. No ONNX. No external services. Just_ **AI, in a jar.**
 | [`jota`](./jota) | Tensor engine | **Write once, accelerate everywhere.** Java, C, CUDA, HIP, Metal, OpenCL, Mojo |
 | [`gguf`](./gguf) | GGUF reader/writer | llama.cpp's model format, pure Java, zero dependencies |
 | [`safetensors`](./safetensors) | Safetensors reader/writer | HuggingFace's model format, pure Java, zero dependencies |
+| [`json`](./json) | JSON parser and printer | RFC 8259, ~25 KB, zero dependencies, zero reflection |
 
 ## Build and test
 
 Requires a JDK 25 and Maven 3.9; cmake and a C compiler to build the native jam kernels.
 
 ```bash
-make test-fixtures   # once after cloning: the tokenizer vocabularies and the enwik8 corpus
+make test-fixtures   # once after cloning: tokenizer vocabularies, golden truth, enwik8, Parakeet speech
 make test            # the default suite: no models, no network
 make ci              # what a pull request runs: formatting, the suite, the corpus tests, the release shape
 ```

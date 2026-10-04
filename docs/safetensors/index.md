@@ -114,23 +114,36 @@ For large models, memory-map instead of copying:
 
 ## Data Types
 
-| Type | Size | Java Type |
-|------|------|-----------|
-| F64 | 8 bytes | `double` |
-| F32 | 4 bytes | `float` |
-| F16 | 2 bytes | `short` |
-| BF16 | 2 bytes | `short` |
-| I64 | 8 bytes | `long` |
-| I32 | 4 bytes | `int` |
-| I16 | 2 bytes | `short` |
-| I8 | 1 byte | `byte` |
-| U64 | 8 bytes | `long` |
-| U32 | 4 bytes | `int` |
-| U16 | 2 bytes | `short` |
-| U8 | 1 byte | `byte` |
-| BOOL | 1 byte | `boolean` |
+Every `DType`, in the specification's alignment order, with its size and the Java primitive that carries it:
 
-Java lacks unsigned primitives. Use `Byte.toUnsignedInt()`, `Short.toUnsignedInt()`, `Integer.toUnsignedLong()`, or `Long.toUnsignedString()` when needed.
+| Type | Bits | Java carrier |
+|------|------|--------------|
+| BOOL | 8 | `boolean` |
+| F4 | 4 | `byte` |
+| F6_E2M3 | 6 | `byte` |
+| F6_E3M2 | 6 | `byte` |
+| U8 | 8 | `byte` |
+| I8 | 8 | `byte` |
+| F8_E5M2 | 8 | `byte` |
+| F8_E4M3 | 8 | `byte` |
+| F8_E8M0 | 8 | `byte` |
+| F8_E4M3FNUZ | 8 | `byte` |
+| F8_E5M2FNUZ | 8 | `byte` |
+| I16 | 16 | `short` |
+| U16 | 16 | `short` |
+| F16 | 16 | `short` |
+| BF16 | 16 | `short` |
+| I32 | 32 | `int` |
+| U32 | 32 | `int` |
+| F32 | 32 | `float` |
+| C64 | 64 | `float` |
+| F64 | 64 | `double` |
+| I64 | 64 | `long` |
+| U64 | 64 | `long` |
+
+Sub-byte and FP8 types are carried as `byte`; `C64` is a pair of `float`s.
+Java lacks unsigned primitives.
+Use `Byte.toUnsignedInt()`, `Short.toUnsignedInt()`, `Integer.toUnsignedLong()`, or `Long.toUnsignedString()` when needed.
 
 ## Writing
 
