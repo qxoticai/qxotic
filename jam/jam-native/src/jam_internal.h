@@ -93,7 +93,7 @@ struct jam_ctx {
     void*  f32_xp; size_t f32_xp_cap; /* f32 [npanels*32*k] transposed activation panels */
     jam_task_fn f32p_kernel, f32p_pack;  /* packed-panel F32 path (avx512); NULL -> mnpack */
 
-    void*  metal;                    /* jam_metal* GPU backend, or NULL (Apple, opt-in). Routes before CPU. */
+    void*  metal;                    /* jam_metal* GPU backend, or NULL (Apple; AUTO on arm64). Routes before CPU. */
 
     /* K-quant scratch (Q4_K...): s8 activations (xq/dx/xsum) + per-worker weight repack. Context-owned,
      * grown lazily; serial-stream only (same contract as the Q8 requant scratch). */
@@ -319,7 +319,7 @@ void jam_mm_q4_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* ni
 void jam_mm_q5_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* nibble|qh decode + 4x4 */
 #endif
 
-/* ---- Metal GPU backend (Apple; opt-in via JAM_ISA=metal). A different executor, not a CPU row-range
+/* ---- Metal GPU backend (Apple; AUTO on arm64, JAM_ISA=metal on x86). Not a CPU row-range
  * kernel: jam_mm routes supported dtypes to it before the pool path. Implemented in jam_metal.mm. ---- */
 /* Shared ISA-name parser (jam.c); used by the JNI shim to seed the Java context from JAM_ISA. */
 jam_isa jam_parse_isa(const char* s);
