@@ -15,6 +15,15 @@ import java.util.Objects;
  * normalization, special-token handling, or lossy text paths. As a result, text-level reversibility
  * is not guaranteed in general (see {@link TokenizationModel} for the strict, reversible model
  * contract).
+ *
+ * <p><b>Unknown token IDs.</b> The decoding and counting methods ({@link #decodeBytesInto}, {@link
+ * #countBytes}, {@link #decodeBytes}, {@link #decode} and their overloads) reject a token ID that
+ * is not in the {@link #vocabulary()} with an unchecked exception whose type depends on the
+ * implementation: the built-in tiktoken models throw {@link java.util.NoSuchElementException}; the
+ * built-in SentencePiece models throw {@link IllegalArgumentException} from decoding and {@link
+ * java.util.NoSuchElementException} from {@link #countBytes}; tokenizers that transform token bytes
+ * (for example GPT-2 byte-level or metaspace decoding) throw {@link IllegalArgumentException}.
+ * Callers that need to tell them apart should check {@link Vocabulary#contains(int)} first.
  */
 public interface Tokenizer {
 
@@ -106,13 +115,24 @@ public interface Tokenizer {
             return 0;
         }
 
-        byte[] scratch = new byte[256];
-        ByteBuffer out = ByteBuffer.wrap(scratch);
+        ByteBuffer out = ByteBuffer.allocate(256);
         int tokenIndex = 0;
         int totalBytes = 0;
         while (tokenIndex < tokenCount) {
             out.clear();
-            int consumedTokens = decodeBytesInto(tokens, tokenIndex, out);
+            int consumedTokens;
+            try {
+                consumedTokens = decodeBytesInto(tokens, tokenIndex, out);
+            } catch (IllegalArgumentException e) {
+                // A known token at tokenIndex may simply not fit the scratch: grow and retry.
+                // Anything else (an unknown token ID, a token past 16 MiB) is rethrown as is.
+                if (out.capacity() >= (1 << 24)
+                        || !vocabulary().contains(tokens.intAt(tokenIndex))) {
+                    throw e;
+                }
+                out = ByteBuffer.allocate(out.capacity() * 2);
+                continue;
+            }
             if (consumedTokens <= 0) {
                 throw new IllegalStateException(
                         "decodeBytesInto made no progress at token index " + tokenIndex);
