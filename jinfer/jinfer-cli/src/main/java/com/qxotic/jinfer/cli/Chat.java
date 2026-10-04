@@ -99,7 +99,8 @@ final class Chat {
     /**
      * The turn prepared to fit the context: past the window, the oldest exchanges are dropped from
      * {@code history} until it does, keeping the system prompt and the message just typed, and
-     * stderr says so. A message that does not fit on its own is refused as any other.
+     * stderr says so. A message that does not fit on its own is refused as any other, and then
+     * {@code history} is left as it was: the trimming happens on a copy, committed only on success.
      */
     private static ChatEngine.Prepared prepare(
             ChatEngine engine,
@@ -107,25 +108,29 @@ final class Chat {
             Sampling sampling,
             Options options,
             Main.IO io) {
+        List<Message> kept = new ArrayList<>(history);
         int dropped = 0;
         while (true) {
             ChatEngine.Prepared prepared =
-                    engine.prepare(Requests.of(List.copyOf(history), sampling, options));
+                    engine.prepare(Requests.of(List.copyOf(kept), sampling, options));
             if (Requests.fits(prepared, engine.contextCapacity())) {
-                if (dropped > 0)
+                if (dropped > 0) {
+                    history.clear();
+                    history.addAll(kept);
                     io.err()
                             .println(
                                     "context full: dropped the oldest "
                                             + (dropped == 1 ? "exchange" : dropped + " exchanges"));
+                }
                 return prepared;
             }
             int oldest = options.systemPrompt == null ? 0 : 1;
-            if (history.size() - oldest == 1) {
+            if (kept.size() - oldest == 1) {
                 Requests.checked(prepared, engine.contextCapacity()); // refuses; closes prepared
             }
             prepared.close();
-            history.remove(oldest); // the oldest user turn, and its reply with it
-            if (history.get(oldest).role().equals(Role.ASSISTANT)) history.remove(oldest);
+            kept.remove(oldest); // the oldest user turn, and its reply with it
+            if (kept.get(oldest).role().equals(Role.ASSISTANT)) kept.remove(oldest);
             dropped++;
         }
     }
