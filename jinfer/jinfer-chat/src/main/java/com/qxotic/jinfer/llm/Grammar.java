@@ -1043,6 +1043,9 @@ public final class Grammar {
                     if ((bits & (1L << b)) == 0) setNegativeInfinity(memory, base + b);
                 }
             }
+            // a padded output head (rows rounded up past the vocabulary) carries logits for ids
+            // no token owns; left alone, the sampler could pick one and escape the grammar
+            for (long t = vocab; t < logits.shape().size(); t++) setNegativeInfinity(memory, t);
             return any;
         }
 

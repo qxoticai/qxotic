@@ -86,4 +86,19 @@ final class GrammarTest {
                         () -> Grammar.of("root := \"yes\" | \"no\"", VOCAB));
         assertTrue(e.getMessage().contains("::="), e.getMessage());
     }
+
+    @Test
+    void logitRowsPastTheVocabularyAreMasked() {
+        // a padded output head: 4 tokens, 6 logit rows; rows 4 and 5 name no token
+        Grammar.Cursor cursor = Grammar.of("root ::= \"x\"", VOCAB).cursor();
+        try (Arena arena = Arena.ofConfined()) {
+            MemoryView<MemorySegment> logits =
+                    Views.allocateF32(MemoryAllocators.ofArena(arena), 6);
+            assertTrue(cursor.maskLogits(logits));
+            float[] values = Views.toFloatArray(logits, "logits");
+            assertTrue(Float.isFinite(values[2]));
+            assertEquals(Float.NEGATIVE_INFINITY, values[4]);
+            assertEquals(Float.NEGATIVE_INFINITY, values[5]);
+        }
+    }
 }
