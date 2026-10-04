@@ -12,7 +12,7 @@ import java.util.function.IntConsumer;
  * <pre>{@code
  * List<JAM.Provider> providers = JAM.providers(); // highest priority first
  * JAM jam = providers.get(0).create();           // single-threaded; pass a JAM.Parallel to fan out
- * MemorySegment w = ..., a = ..., r = ...;       // W[m,k] weights, A[n,k] F32, R[m,n] F32
+ * MemorySegment w = ..., a = ..., r = ...;       // W[m,k] weights, A[n,k] F32, R[n,m] F32 (token-major)
  * int status = jam.mm(w, a, r, JAM.Q4_K, m, n, k);
  * }</pre>
  *
