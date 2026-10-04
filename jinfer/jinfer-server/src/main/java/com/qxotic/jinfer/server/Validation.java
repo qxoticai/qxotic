@@ -174,11 +174,6 @@ final class Validation {
     }
 
     /**
-     * Rejects a malformed REQUEST. The message travels to the client in a 400 envelope, so it says
-     * what is wrong with the request and never what the server is called or how it is configured.
-     * The CLI has its own copy for argv, whose failure mode is different: usage text and exit 1.
-     */
-    /**
      * A model name this server does not serve: OpenAI's SDKs expect 404 {@code not_found_error}.
      */
     static final class UnknownModel extends IllegalArgumentException {
@@ -187,6 +182,11 @@ final class Validation {
         }
     }
 
+    /**
+     * Rejects a malformed REQUEST. The message travels to the client in a 400 envelope, so it says
+     * what is wrong with the request and never what the server is called or how it is configured.
+     * The CLI has its own copy for argv, whose failure mode is different: usage text and exit 1.
+     */
     static void require(boolean condition, String messageFormat, Object... args) {
         if (!condition) {
             throw new IllegalArgumentException(messageFormat.formatted(args));
@@ -244,7 +244,7 @@ final class Validation {
         }
         require(
                 !usesGrammar || config.limits().grammar(),
-                "Grammar constraints disabled (--no-grammar)");
+                "grammar constraints are disabled on this server");
         if (present(request, "reasoning_effort")) {
             String effort = Values.stringValue(request.get("reasoning_effort"), "");
             require(

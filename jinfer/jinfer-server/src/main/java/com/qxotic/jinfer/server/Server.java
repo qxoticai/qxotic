@@ -536,10 +536,7 @@ public final class Server {
                         Reply result =
                                 generation.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
-                        respond(
-                                exchange,
-                                result,
-                                OpenAiSchema.chatCompletionResponse(id, modelId, result));
+                        respond(exchange, OpenAiSchema.chatCompletionResponse(id, modelId, result));
                     }
                 });
     }
@@ -563,10 +560,7 @@ public final class Server {
                     } else {
                         Reply result =
                                 generation.completion(request, prompt, Sinks.NONE); // non-streaming
-                        respond(
-                                exchange,
-                                result,
-                                OpenAiSchema.completionResponse(id, modelId, result));
+                        respond(exchange, OpenAiSchema.completionResponse(id, modelId, result));
                     }
                 });
     }
@@ -597,10 +591,7 @@ public final class Server {
                         Reply result =
                                 generation.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
-                        respond(
-                                exchange,
-                                result,
-                                OpenAiSchema.responseResponse(id, modelId, result));
+                        respond(exchange, OpenAiSchema.responseResponse(id, modelId, result));
                     }
                 });
     }
@@ -962,8 +953,7 @@ public final class Server {
     }
 
     /** Non-streaming reply: send the schema body as JSON. Timings ride in the body. */
-    private static void respond(HttpExchange exchange, Reply result, Object body)
-            throws IOException {
+    private static void respond(HttpExchange exchange, Object body) throws IOException {
         Http.sendJson(exchange, 200, body);
     }
 
