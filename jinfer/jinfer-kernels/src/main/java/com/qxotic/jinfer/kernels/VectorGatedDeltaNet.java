@@ -26,12 +26,13 @@ final class VectorGatedDeltaNet {
         return ENABLED;
     }
 
+    /** Whether the vector recurrence runs here at all: switched on, with a fast Vector API JIT. */
+    static boolean available() {
+        return ENABLED && FAST_VECTOR_JIT && F_SPECIES != null;
+    }
+
     static boolean applies(int headDim) {
-        return ENABLED
-                && FAST_VECTOR_JIT
-                && F_SPECIES != null
-                && headDim >= F_SPECIES.length()
-                && headDim % F_SPECIES.length() == 0;
+        return available() && headDim >= F_SPECIES.length() && headDim % F_SPECIES.length() == 0;
     }
 
     /**
