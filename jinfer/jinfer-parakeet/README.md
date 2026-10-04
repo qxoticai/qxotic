@@ -16,12 +16,11 @@ no Python runtime. Just the JVM.
 <p align="center">
   <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4"><img src="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.png" alt="Live transcription: final words settle, the provisional tail follows in grey, a waveform tracks the voice" width="820"></a>
 </p>
-<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4">Play it with sound.</a></sub>
+<p align="center"><sub>Live transcription of JFK's 1961 inaugural address. <a href="https://cdn.jsdelivr.net/gh/qxoticai/assets@e1fe3eacf469cf2962083a924d6daf260759e926/qxotic/parakeet-live-transcription.mp4">Play it with sound.</a></sub></p>
 
 ## Highlights
 
-- **Competitive with the reference engines.** Keeps pace
-  with [parakeet.cpp](https://github.com/mudler/parakeet.cpp) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), word for word identical.
+- **Competitive with the reference engines.** Keeps pace with [parakeet.cpp](https://github.com/mudler/parakeet.cpp) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx); at `F16` the transcript is word for word identical to parakeet.cpp.
 - **Matches the reference with 100% accuracy.** At `F16` the transcript matches [parakeet.cpp](https://github.com/mudler/parakeet.cpp) exactly;
   the rest is quantization noise, not drift.
 - **Streaming support.** Audio in as it arrives, text out in pieces, with a draft tail that keeps up with the speaker.
