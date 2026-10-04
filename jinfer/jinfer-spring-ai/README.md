@@ -374,6 +374,19 @@ Chunks may include silence and do not necessarily align with sentences.
 In a WebFlux application, inject the Spring-managed `TextToSpeechModel` and return its `Flux` from the handler.
 Block only at an imperative boundary such as this standalone example, never on a WebFlux event-loop thread.
 
+Kokoro takes its voice as a companion, the same way; `espeak-ng` must be on `PATH`:
+
+```java
+try (var speech = JinferSpeechModel.builder()
+        .model("simonfxr/kokoro.cpp-GGUF:Q8_0")
+        .companion("voice", "simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf")
+        .build()) {
+    Files.write(Path.of("kokoro.wav"), speech.call("Hello from Kokoro."));
+}
+```
+
+A request that names a `voice`, `model` or `format` this instance does not have is refused, never silently given the default.
+
 ## Transcription
 
 `JinferTranscriptionModel` implements Spring AI's `TranscriptionModel`:
@@ -390,19 +403,6 @@ try (var transcriber = JinferTranscriptionModel.builder()
 The `Resource` may hold any format `jinfer-codecs` decodes.
 The typed `transcribe(Path)` and `transcribe(byte[])` doors return the full jinfer
 `Transcription`, with per-token spans, confidences and `words()` grouping.
-
-Kokoro takes its voice as a companion, the same way; `espeak-ng` must be on `PATH`:
-
-```java
-try (var speech = JinferSpeechModel.builder()
-        .model("simonfxr/kokoro.cpp-GGUF:Q8_0")
-        .companion("voice", "simonfxr/kokoro.cpp-GGUF/voices/kokoro-voice-af_heart.gguf")
-        .build()) {
-    Files.write(Path.of("kokoro.wav"), speech.call("Hello from Kokoro."));
-}
-```
-
-A request that names a `voice`, `model` or `format` this instance does not have is refused, never silently given the default.
 
 ## Complete examples
 
