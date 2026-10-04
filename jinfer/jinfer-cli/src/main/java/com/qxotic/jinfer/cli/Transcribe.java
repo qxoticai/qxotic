@@ -271,9 +271,9 @@ final class Transcribe {
             throw new InterruptedIOException("transcription interrupted");
         } finally {
             reader.interrupt();
-            // Borrowed stdin cannot be closed here. Interruptible sources stop immediately;
-            // ponytail: native stdin may remain blocked until EOF/process exit, so its reader is a
-            // daemon.
+            // Borrowed stdin cannot be closed here. Interruptible sources stop immediately, but a
+            // read on native stdin ignores interrupts and may stay blocked until EOF or process
+            // exit, so its reader is a daemon that cannot keep the JVM alive.
             try {
                 reader.join(100);
             } catch (InterruptedException e) {
