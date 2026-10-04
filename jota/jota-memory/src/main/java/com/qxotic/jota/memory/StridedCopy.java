@@ -48,8 +48,12 @@ final class StridedCopy {
                             domain.memoryAllocator().allocateMemory(bytes),
                             src.dataType(),
                             src.shape());
-            copyElements(access, ops, src, tmp);
-            copyElements(access, ops, tmp, dst);
+            try {
+                copyElements(access, ops, src, tmp);
+                copyElements(access, ops, tmp, dst);
+            } finally {
+                releaseTemp(tmp.memory());
+            }
             return;
         }
         copyElements(access, ops, src, dst);
@@ -141,5 +145,15 @@ final class StridedCopy {
             }
         }
         return new long[] {min, Math.addExact(max, view.dataType().byteSize())};
+    }
+
+    /**
+     * Frees a staging buffer now when its allocator can ({@link ScopedMemory}); arena memory is
+     * freed with its arena.
+     */
+    static void releaseTemp(Memory<?> memory) {
+        if (memory instanceof ScopedMemory<?> scoped) {
+            scoped.close();
+        }
     }
 }
