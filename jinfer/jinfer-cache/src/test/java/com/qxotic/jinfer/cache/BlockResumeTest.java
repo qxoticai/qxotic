@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.cache;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.CheckpointCodec;
@@ -52,7 +53,7 @@ public final class BlockResumeTest {
         protected void clearHistory() {}
     }
 
-    static final class FakeCodec extends CheckpointCodec<FakeState> {
+    static class FakeCodec extends CheckpointCodec<FakeState> {
         @Override
         protected long sizeOf(int positions) {
             return positions * 8L + 8; // rows + residue trailer
@@ -125,5 +126,47 @@ public final class BlockResumeTest {
         assertEquals(0, c.position(), "divergence in the first block is a cold start");
 
         assertTrue(cache.stats().contains("blocks=3"), cache.stats());
+    }
+
+    @Test
+    void aThrowingRestoreLeavesNothingForTheNextResume() {
+        boolean[] armed = {false};
+        FakeCodec codec =
+                new FakeCodec() {
+                    @Override
+                    protected void transfer(
+                            FakeState state,
+                            int from,
+                            int to,
+                            MemorySegment memory,
+                            boolean capture) {
+                        if (!capture && from == 10 && armed[0]) {
+                            armed[0] = false;
+                            throw new IllegalStateException("restore failed once");
+                        }
+                        super.transfer(state, from, to, memory, capture);
+                    }
+                };
+        BlockTree<FakeState> cache =
+                new BlockTree<>(
+                        codec, CacheStore.inMemory(), 1 << 20, ContentKey.sha256(new byte[] {7}));
+        long[] fp = new long[17];
+        for (int i = 0; i < fp.length; i++) fp[i] = 100 + i;
+        FakeState w = new FakeState();
+        BlockTree<FakeState>.Block tip = cache.resume(new long[0], 0, w);
+        w.ingestTo(10);
+        tip = cache.commit(tip, fp, 0, 10, w);
+        w.ingestTo(17);
+        cache.commit(tip, fp, 10, 7, w);
+
+        armed[0] = true;
+        assertThrows(IllegalStateException.class, () -> cache.resume(fp, 17, new FakeState()));
+
+        // the failed chain must not be replayed on top of this shorter resume
+        FakeState r = new FakeState();
+        cache.resume(fp, 10, r);
+        assertEquals(10, r.position());
+        assertEquals(FakeState.residueAt(10), r.residue, "residue of the resumed boundary");
+        assertEquals(0, r.rows[10], "no row past the resumed boundary");
     }
 }
