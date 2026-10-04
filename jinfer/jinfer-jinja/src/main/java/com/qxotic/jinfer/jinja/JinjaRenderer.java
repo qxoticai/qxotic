@@ -2278,10 +2278,10 @@ public final class JinjaRenderer {
                 case "~" -> new Val.Str(l.asStr() + r.asStr());
                 case "==" -> new Val.Bool(eq(l, r));
                 case "!=" -> new Val.Bool(!eq(l, r));
-                case "<" -> new Val.Bool(toNum(l) < toNum(r));
-                case ">" -> new Val.Bool(toNum(l) > toNum(r));
-                case "<=" -> new Val.Bool(toNum(l) <= toNum(r));
-                case ">=" -> new Val.Bool(toNum(l) >= toNum(r));
+                case "<" -> new Val.Bool(compare(l, r) < 0);
+                case ">" -> new Val.Bool(compare(l, r) > 0);
+                case "<=" -> new Val.Bool(compare(l, r) <= 0);
+                case ">=" -> new Val.Bool(compare(l, r) >= 0);
                 // and/or return an OPERAND (Python/Jinja semantics), not a coerced bool - this is
                 // what makes the common `x or 'default'` / `a.get('k') or fallback` idiom work.
                 case "and" -> l.truthy() ? r : l;
@@ -2290,6 +2290,25 @@ public final class JinjaRenderer {
                 case "notin" -> new Val.Bool(!contains(r, l));
                 default -> Val.NONE;
             };
+        }
+
+        /**
+         * Ordering: two strings compare lexicographically by code point, as Python does ({@code
+         * '10' < '9'}); anything else compares numerically.
+         */
+        static int compare(Val l, Val r) {
+            if (l instanceof Val.Str a && r instanceof Val.Str b) {
+                int i = 0, j = 0;
+                while (i < a.v.length() && j < b.v.length()) {
+                    int ca = a.v.codePointAt(i), cb = b.v.codePointAt(j);
+                    if (ca != cb) return Integer.compare(ca, cb);
+                    i += Character.charCount(ca);
+                    j += Character.charCount(cb);
+                }
+                return Integer.compare(a.v.length() - i, b.v.length() - j);
+            }
+            double x = toNum(l), y = toNum(r); // not Double.compare: -0.0 equals 0.0 here
+            return x < y ? -1 : x > y ? 1 : 0;
         }
 
         Val evalUnary(String op, Val arg) {
