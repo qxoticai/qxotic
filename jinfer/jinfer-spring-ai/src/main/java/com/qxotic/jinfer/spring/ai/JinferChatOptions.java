@@ -82,13 +82,29 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     }
 
     /** Reasoning-span cap in generated tokens; {@code -1} uncaps, null = the family's policy. */
-    public Integer getReasoningBudget() {
+    public Integer getMaxReasoningTokens() {
         return maxReasoningTokens;
     }
 
     /** What the model "decides" when the budget runs out, in its own words; null = a break. */
-    public String getReasoningBudgetMessage() {
+    public String getReasoningCutoffMessage() {
         return reasoningCutoffMessage;
+    }
+
+    /**
+     * @deprecated use {@link #getMaxReasoningTokens()}, named like the builder and the property
+     */
+    @Deprecated
+    public Integer getReasoningBudget() {
+        return getMaxReasoningTokens();
+    }
+
+    /**
+     * @deprecated use {@link #getReasoningCutoffMessage()}, named like the builder and the property
+     */
+    @Deprecated
+    public String getReasoningBudgetMessage() {
+        return getReasoningCutoffMessage();
     }
 
     /** Wall-clock generation deadline; null = none. */

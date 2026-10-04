@@ -312,8 +312,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         tools,
                         options.getThinking() != Boolean.FALSE,
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
-                        options.getReasoningBudget(),
-                        options.getReasoningBudgetMessage(),
+                        options.getMaxReasoningTokens(),
+                        options.getReasoningCutoffMessage(),
                         options.getTimeout() == null ? Duration.ZERO : options.getTimeout(),
                         engine.loaded()
                                 .samplingDefaults()
