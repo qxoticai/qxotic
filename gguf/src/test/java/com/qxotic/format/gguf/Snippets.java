@@ -181,7 +181,7 @@ class Snippets {
 
         try (var channel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             var buffer = channel.map(MapMode.READ_ONLY, absoluteOffset, byteSize);
-            buffer.order(ByteOrder.nativeOrder());
+            buffer.order(ByteOrder.LITTLE_ENDIAN);
             // buffer now contains the raw tensor data
             // For quantized types, you'll need to decode the data
         }
@@ -197,7 +197,7 @@ class Snippets {
         long byteSize = tensor.byteSize();
 
         ByteBuffer buffer =
-                ByteBuffer.allocate(Math.toIntExact(byteSize)).order(ByteOrder.nativeOrder());
+                ByteBuffer.allocate(Math.toIntExact(byteSize)).order(ByteOrder.LITTLE_ENDIAN);
 
         try (var channel = Files.newByteChannel(modelPath, StandardOpenOption.READ)) {
             channel.position(absoluteOffset);
@@ -218,7 +218,7 @@ class Snippets {
 
         // Allocate a direct ByteBuffer for better performance
         ByteBuffer buffer = ByteBuffer.allocateDirect(Math.toIntExact(byteSize));
-        buffer.order(ByteOrder.nativeOrder());
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
 
         try (var channel = Files.newByteChannel(modelPath, StandardOpenOption.READ)) {
             channel.position(absoluteOffset);
@@ -245,7 +245,7 @@ class Snippets {
         try (var channel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             // Create a memory-mapped ByteBuffer
             ByteBuffer buffer = channel.map(MapMode.READ_ONLY, absoluteOffset, byteSize);
-            buffer.order(ByteOrder.nativeOrder());
+            buffer.order(ByteOrder.LITTLE_ENDIAN);
             // buffer is memory-mapped and data is loaded on-demand by the OS
         }
         // --8<-- [end:read-tensor-mmap-buffer]
