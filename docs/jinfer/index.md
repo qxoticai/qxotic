@@ -94,7 +94,7 @@ Add `jinfer-models-all` for every provider, or individual `jinfer-<model>` artif
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.3.0</version>
+      <version>0.3.1</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
