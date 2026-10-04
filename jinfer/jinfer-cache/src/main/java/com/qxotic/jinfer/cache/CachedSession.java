@@ -356,15 +356,13 @@ public final class CachedSession<S extends ContextState> {
      * save at the frontier (ring rows alias, residues move), which is why there is no per-token
      * back-fill overload.
      *
-     * <p>This granularity is the APPEND-ONLY CONVERSATION CONTRACT: interior content resumes at
-     * block boundaries, but the stream's tail - the reply the next request will echo - keeps EVERY
-     * position resumable, so an echo that truncates at a stop string or edits the trailing text
-     * resumes token-exact instead of re-prefilling from the last chunk boundary.
+     * <p>Per-token singles keep EVERY reply position resumable, so an echo that truncates at a stop
+     * string or edits the trailing text resumes token-exact instead of re-prefilling from the last
+     * chunk boundary.
      *
-     * <p>Cost: one residue per decode token. Free where the residue is ~0 (dense KV, ring rows);
-     * lfm2's ~340KB conv residue makes long replies heavy - if that ever matters, the upgrade path
-     * is compacting a reply's singles into one block once the next turn extends past them, not
-     * coarsening the tail.
+     * <p>Cost: one residue per decode token. Free where the residue is ~0 (dense KV, ring rows),
+     * which is the only case {@link PromptCache} uses this path for; a residue-carrying codec
+     * (lfm2's ~340KB conv state) commits its reply as one {@link #adopt(int[])} block instead.
      */
     public void adopt(int token) {
         append(token);
@@ -375,8 +373,9 @@ public final class CachedSession<S extends ContextState> {
      * Bulk adoption of decode-loop tokens ingested directly on the state, committed as ONE block
      * saved at the frontier (sound exactly like a prompt chunk: rows and residue are read at the
      * position the state is actually at) - the speculative-decode shape, where several accepted
-     * tokens land on the state before control returns. For the serving path's reply tail, prefer
-     * per-token {@link #adopt(int)}: one bulk block resumes only at its end.
+     * tokens land on the state before control returns, and the residue-codec reply tail (one
+     * residue per reply). One bulk block resumes only at its end; a residue-free reply tail uses
+     * per-token {@link #adopt(int)}.
      *
      * <p>The caller passes exactly the ingested tokens ({@code state.position() - length()} of them
      * - a trailing stop or budget-final token is sampled but never ingested); {@code commit}'s

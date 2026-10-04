@@ -643,7 +643,8 @@ public final class FrozenBlocks {
      * never touches disk: blocks only exist complete.
      */
     void append(List<Entry> fresh) throws IOException {
-        // ponytail: saves are rare; use per-path locks only if global write contention is measured.
+        // One JVM-wide monitor, not per-path locks: saves are rare, so contention between
+        // different catalogs does not matter, and a single lock cannot be keyed wrong.
         synchronized (FrozenBlocks.class) {
             appendUnderJvmLock(fresh);
         }
@@ -720,10 +721,7 @@ public final class FrozenBlocks {
         keys = nextKeys;
     }
 
-    /**
-     * FileChannel.write is not all-or-nothing: loop until the buffer drains - a truncated blob or
-     * index would otherwise be published by the commit slot, bricking that generation.
-     */
+    /** FileChannel.read may return short: loop until the buffer fills or the file ends. */
     private static void readFully(FileChannel ch, ByteBuffer buf, long pos) throws IOException {
         while (buf.hasRemaining()) {
             int read = ch.read(buf, pos);
@@ -733,6 +731,10 @@ public final class FrozenBlocks {
         }
     }
 
+    /**
+     * FileChannel.write is not all-or-nothing: loop until the buffer drains - a truncated blob or
+     * index would otherwise be published by the commit slot, bricking that generation.
+     */
     private static void writeFully(FileChannel ch, ByteBuffer buf, long pos) throws IOException {
         while (buf.hasRemaining()) {
             int written = ch.write(buf, pos);
