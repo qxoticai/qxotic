@@ -153,6 +153,12 @@ public interface JAM {
         try {
             return provider.isAvailable();
         } catch (Throwable t) {
+            // A well-behaved provider answers false; a throw is a broken backend or a bad flag.
+            System.getLogger(JAM.class.getName())
+                    .log(
+                            System.Logger.Level.INFO,
+                            "JAM provider " + provider.id() + " skipped: isAvailable() threw",
+                            t);
             return false;
         }
     }

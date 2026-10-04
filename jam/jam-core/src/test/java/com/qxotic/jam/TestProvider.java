@@ -6,6 +6,7 @@ package com.qxotic.jam;
 public final class TestProvider implements JAM.Provider {
 
     static int availabilityChecks;
+    static RuntimeException probeFailure;
 
     @Override
     public String id() {
@@ -20,6 +21,9 @@ public final class TestProvider implements JAM.Provider {
     @Override
     public boolean isAvailable() {
         availabilityChecks++;
+        if (probeFailure != null) {
+            throw probeFailure;
+        }
         return true;
     }
 
