@@ -416,6 +416,27 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
+    public void testTensorNameLimitCountsUtf8Bytes() throws IOException {
+        // 33 two-byte chars: 33 UTF-16 units but 66 UTF-8 bytes.
+        String wide = "é".repeat(33);
+        byte[] tooLong =
+                rawGguf(
+                        1,
+                        new byte[0][],
+                        new byte[][] {tensorInfo(wide, new long[] {1}, GGMLType.F32, 0)});
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(tooLong));
+
+        // The reader accepts the spec bound of 64 bytes.
+        String atSpecLimit = "a".repeat(64);
+        byte[] ok =
+                rawGguf(
+                        1,
+                        new byte[0][],
+                        new byte[][] {tensorInfo(atSpecLimit, new long[] {1}, GGMLType.F32, 0)});
+        assertNotNull(readFromBytes(ok).getTensor(atSpecLimit));
+    }
+
+    @Test
     public void testTensorWithMoreThan4DimensionsFails() {
         byte[] ggufBytes =
                 rawGguf(

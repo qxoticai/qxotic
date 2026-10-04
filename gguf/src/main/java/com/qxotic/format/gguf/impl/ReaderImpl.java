@@ -21,6 +21,7 @@ final class ReaderImpl {
     static final String ALIGNMENT_KEY = "general.alignment";
 
     private static final List<Integer> SUPPORTED_GGUF_VERSIONS = List.of(3);
+    private static final int MAX_TENSOR_NAME_BYTES = 64;
     private int version;
     private int alignment;
     private Map<String, Object> metadata;
@@ -76,10 +77,17 @@ final class ReaderImpl {
 
     private TensorEntry readTensorEntry(ReadableByteChannel byteChannel) throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
-        // it must be at most 64 bytes long.
-        String name = readString(byteChannel); // gguf_string_t name;
-        if (name.length() > 64) {
-            throw new GGUFFormatException("Tensor name too long (>64): " + name.length());
+        // it must be at most 64 bytes long. ggml itself loads at most 63 (GGML_MAX_NAME 64
+        // including the NUL); the reader accepts the spec bound.
+        byte[] nameBytes = readStringBytes(byteChannel); // gguf_string_t name;
+        String name = new String(nameBytes, StandardCharsets.UTF_8);
+        if (nameBytes.length > MAX_TENSOR_NAME_BYTES) {
+            throw new GGUFFormatException(
+                    "Tensor name too long: "
+                            + nameBytes.length
+                            + " UTF-8 bytes (maximum "
+                            + MAX_TENSOR_NAME_BYTES
+                            + ")");
         }
         // The number of shape in the tensor. Currently at most 4, but this may change in the
         // future. Unsigned: read as signed, a corrupt high bit is negative and would size the
@@ -129,6 +137,10 @@ final class ReaderImpl {
     }
 
     private String readString(ReadableByteChannel byteChannel) throws IOException {
+        return new String(readStringBytes(byteChannel), StandardCharsets.UTF_8);
+    }
+
+    private byte[] readStringBytes(ReadableByteChannel byteChannel) throws IOException {
         // A string in GGUF.
         // The length of the string, in bytes.
         int len =
@@ -137,7 +149,7 @@ final class ReaderImpl {
         // The string as a UTF-8 non-null-terminated string.
         byte[] bytes = new byte[len]; // char string[len];
         readBytes(byteChannel, bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
+        return bytes;
     }
 
     private int readHeader(ReadableByteChannel byteChannel) throws IOException {
