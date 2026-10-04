@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.jinja;
 
 import com.qxotic.format.json.Json;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
@@ -268,14 +269,32 @@ public final class JinjaRenderer {
     }
 
     /**
-     * Python {@code str(float)}: a whole value keeps its {@code .0} ({@code 1.0}, {@code 4 / 2} is
-     * {@code 2.0}).
+     * Python {@code repr(float)}: the shortest round-tripping digits (what {@link Double#toString}
+     * picks too), positional for decimal exponents -4..15 with a whole value keeping its {@code .0}
+     * ({@code 4 / 2} is {@code 2.0}, {@code 0.0005} stays as written), and {@code 1e+16} / {@code
+     * 1.5e-05} scientific outside them. Java's own {@code 5.0E-4} spelling reached prompts and
+     * {@code tojson} output verbatim.
      */
     private static String fmtDouble(double v) {
         if (Double.isNaN(v)) return "nan";
         if (Double.isInfinite(v)) return v > 0 ? "inf" : "-inf";
-        if (v == Math.rint(v) && Math.abs(v) < 1e16) return (long) v + ".0";
-        return Double.toString(v);
+        if (v == 0) return 1 / v < 0 ? "-0.0" : "0.0";
+        BigDecimal d = new BigDecimal(Double.toString(Math.abs(v))).stripTrailingZeros();
+        String digits = d.unscaledValue().toString();
+        int exp = digits.length() - 1 - d.scale(); // the decimal exponent of the leading digit
+        String sign = v < 0 ? "-" : "";
+        if (exp >= -4 && exp < 16) {
+            String plain = d.toPlainString();
+            return sign + (plain.indexOf('.') < 0 ? plain + ".0" : plain);
+        }
+        String mantissa =
+                digits.length() == 1 ? digits : digits.charAt(0) + "." + digits.substring(1);
+        return sign
+                + mantissa
+                + "e"
+                + (exp < 0 ? "-" : "+")
+                + (Math.abs(exp) < 10 ? "0" : "")
+                + Math.abs(exp);
     }
 
     /**

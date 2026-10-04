@@ -277,6 +277,20 @@ class JinjaSemanticsTest {
     }
 
     @Test
+    void floatsPrintLikePythonRepr() {
+        assertEquals(
+                "0.0005 1e+16 1.5e-05 1.2345678901234568e+17 1e+22 0.1 0.3333333333333333 0.0005",
+                render(
+                        "{{ 0.0005 }} {{ 10000000000000000.0 }} {{ 0.000015 }} {{"
+                                + " 123456789012345678.0 }} {{ 10000000000000000000000.0 }} {{ 0.1"
+                                + " }} {{ 1/3 }} {{ 0.00025 * 2 }}"));
+        assertEquals(
+                "2.0 -0.0 -1.5 100.0 1e-05",
+                render("{{ 4/2 }} {{ -0.0 }} {{ -1.5 }} {{ 100.0 }} {{ 0.00001 }}"));
+        assertEquals("[0.0005]", render("{{ [0.0005] | tojson }}"));
+    }
+
+    @Test
     void splitHonorsMaxsplit() {
         assertEquals(
                 "['a', 'b,c'] ['a', 'b', 'c'] ['a', 'b '] ['a', '', 'b']",
