@@ -261,7 +261,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
          * {@link #build()}.
          *
          * <pre>{@code
-         * model("unsloth/gemma-4-E2B-it-GGUF:Q8_0");
+         * model("remixerdec/Inflect-Nano-v2-GGUF:Q8_0");
          * }</pre>
          *
          * <p>The full grammar - the default quant, pinned revisions, a file inside a repository,
@@ -275,7 +275,6 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             return this;
         }
 
-        /** Rate multiplier for requests that do not carry one, 1.0 = the model's natural rate. */
         /** Attaches a local companion file. This method never touches the network. */
         public Builder companionPath(String capability, Path companionPath) {
             Objects.requireNonNull(capability, "capability");
@@ -304,6 +303,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             return this;
         }
 
+        /** Rate multiplier for requests that do not carry one, 1.0 = the model's natural rate. */
         public Builder speed(double speed) {
             if (!(speed > 0) || Double.isInfinite(speed))
                 throw new IllegalArgumentException("speed must be > 0: " + speed);
