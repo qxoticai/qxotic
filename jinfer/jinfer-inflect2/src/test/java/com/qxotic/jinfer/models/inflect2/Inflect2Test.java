@@ -289,6 +289,21 @@ class Inflect2Test {
     }
 
     @Test
+    @Tag("integration")
+    void textWithNoPhonemesIsRefusedByName() throws IOException {
+        InflectTTS tts =
+                InflectTTS.load(TestModels.require(REF), Arena.ofAuto())
+                        .phonemizer(text -> new int[0]);
+        try (Inflect2.State state = tts.newState()) {
+            var e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> tts.speak(state, "Hello. World.", SpeechOptions.NONE));
+            assertEquals("text produced no supported phonemes", e.getMessage());
+        }
+    }
+
+    @Test
     void aPhonemeRunPastTheLimitIsCutAtSpacesAndClosedWithCommas() {
         List<int[]> pieces = InflectTTS.pieces(ids("ab cd ef gh"), 5);
         assertEquals(2, pieces.size());

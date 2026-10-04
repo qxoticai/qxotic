@@ -55,8 +55,9 @@ public final class InflectTTS
      * Frames the duration predictor spends per phoneme at speed 1, rounded up, which turns the
      * model's frame ceiling into a phoneme count. Characters are the wrong unit for that ceiling: a
      * spelled-out run (hex, an identifier) costs six phonemes per character where prose costs one.
-     * ponytail: 4.2-5.1 measured over prose, digits, hex and identifiers; the model still refuses a
-     * chunk past its ceiling, so a wilder run is a loud refusal, not a crash.
+     * Measured 4.2-5.1 over prose, digits, hex and identifiers, so 6 leaves headroom without a
+     * per-run estimate; the model still refuses a chunk past its ceiling, so a wilder run is a loud
+     * refusal, not a crash.
      */
     private static final int FRAMES_PER_PHONEME = 6;
 
@@ -222,7 +223,6 @@ public final class InflectTTS
         return model.newState(arena);
     }
 
-    /** Ponytail: kept as a one-liner over configuration, used four times in the CLI. */
     @Override
     public int sampleRate() {
         return model.sampleRate();
@@ -258,18 +258,22 @@ public final class InflectTTS
         // nests inside this one.
         state.exclusively(
                 () -> {
+                    boolean spoke = false;
                     for (int i = 0; i < chunks.size(); i++) {
                         List<int[]> pieces =
                                 pieces(phonemizer.phonemize(chunks.get(i)), phonemeLimit(options));
                         for (int j = 0; j < pieces.size(); j++) {
-                            if (i > 0 || j > 0) {
+                            if (spoke) {
                                 // a chunk rests by its own mark; a cut inside one rests on a comma
                                 String before = j == 0 ? chunks.get(i - 1) : ",";
                                 if (!sink.test(silence(pauseSamples(before)))) return;
                             }
                             if (!sink.test(synthesize(state, pieces.get(j), options))) return;
+                            spoke = true;
                         }
                     }
+                    if (!spoke)
+                        throw new IllegalArgumentException("text produced no supported phonemes");
                 });
     }
 
