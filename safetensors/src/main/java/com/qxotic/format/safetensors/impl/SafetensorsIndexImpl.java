@@ -18,7 +18,7 @@ final class SafetensorsIndexImpl implements SafetensorsIndex {
     private static final String MODEL_SAFETENSORS = "model.safetensors";
     private static final String SAFETENSORS_INDEX = "model.safetensors.index.json";
     private static final String WEIGHT_MAP = "weight_map";
-    private static final String INDEX_ROOT_ERROR = "Index JSON must be an object";
+    private static final String INDEX_ROOT_ERROR = SAFETENSORS_INDEX + " must be a JSON object";
     private static final String WEIGHT_MAP_TYPE_ERROR =
             "'" + WEIGHT_MAP + "' keys and values must be strings in " + SAFETENSORS_INDEX;
 
@@ -79,15 +79,15 @@ final class SafetensorsIndexImpl implements SafetensorsIndex {
 
     private static void loadSharded(Path rootPath, Path indexPath, Map<String, Path> tensorIndex)
             throws IOException {
-        Map<String, String> weightMap;
+        Object parsed;
         try {
-            Map<?, ?> index =
-                    requireObject(Json.parseMap(Files.readString(indexPath)), INDEX_ROOT_ERROR);
-            weightMap = parseWeightMap(index.get(WEIGHT_MAP));
-        } catch (Json.ParseException | SafetensorsFormatException e) {
+            parsed = Json.parse(Files.readString(indexPath));
+        } catch (Json.ParseException e) {
             throw new SafetensorsFormatException(
                     "Invalid JSON in " + SAFETENSORS_INDEX + ": " + e.getMessage(), e);
         }
+        Map<?, ?> index = requireObject(parsed, INDEX_ROOT_ERROR);
+        Map<String, String> weightMap = parseWeightMap(index.get(WEIGHT_MAP));
 
         for (Map.Entry<String, String> entry : weightMap.entrySet()) {
             String tensorName = entry.getKey();
