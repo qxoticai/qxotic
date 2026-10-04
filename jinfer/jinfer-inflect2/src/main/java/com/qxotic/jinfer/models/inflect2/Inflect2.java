@@ -1,7 +1,9 @@
 // Inflect2 - VITS-family text-to-waveform model (Nano 3.97M, Micro 9.36M; F16/Q8_0/Q4_0 GGUF).
 //
 //   Inflect2 model = Inflect2.load(Path.of("model.gguf"), arena);
-//   Media.Audio audio = model.synthesize(model.newState(), tokens, 1.0f, 0.667f, seed);
+//   try (Inflect2.State state = model.newState()) {
+//       Media.Audio audio = model.synthesize(state, tokens, 1.0f, 0.667f, seed);
+//   }
 //
 // The pipeline, one step each: embed the phoneme tokens and run a relative-attention transformer
 // (encoder); project to a per-token latent mean/log-scale and a log-duration; repeat each token's
@@ -67,7 +69,7 @@ public final class Inflect2 {
      */
     public static final List<String> SYMBOLS =
             ("_" // 0  pad
-                            + ";:,.!?¡¿—…\"«»“” " // 1-16 punctuation
+                            + ";:,.!?¡¿\u2014…\"«»“” " // 1-16 punctuation
                             + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" // 17-42 uppercase
                             + "abcdefghijklmnopqrstuvwxyz" // 43-68 lowercase
                             + "ɑɐɒæɓʙβɔɕçɗɖ" // 69-80
