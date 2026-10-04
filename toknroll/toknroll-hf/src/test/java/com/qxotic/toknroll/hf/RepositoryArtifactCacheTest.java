@@ -201,6 +201,60 @@ class RepositoryArtifactCacheTest {
                 () -> cache.fetchModelScope("user", "repo", "   ", "tokenizer.json", true, false));
     }
 
+    @Test
+    void fetchHuggingFace_404OnBranchIsNotRemembered() throws Exception {
+        AtomicInteger hits = new AtomicInteger();
+        startServer(
+                "/",
+                exchange -> {
+                    int hit = hits.incrementAndGet();
+                    writeResponse(exchange, "late", hit == 1 ? 404 : 200);
+                });
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir, endpoint());
+
+        assertThrows(
+                RepositoryArtifactCache.NotFoundException.class,
+                () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false, false));
+        Path path = cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false, false);
+
+        assertEquals(2, hits.get(), "a 404 under a branch must not be cached");
+        assertEquals("late", Files.readString(path, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void fetchHuggingFace_404OnCommitShaIsRemembered() throws Exception {
+        AtomicInteger hits = new AtomicInteger();
+        startServer(
+                "/",
+                exchange -> {
+                    hits.incrementAndGet();
+                    writeResponse(exchange, "missing", 404);
+                });
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir, endpoint());
+        String sha = "0123456789abcdef0123456789abcdef01234567";
+
+        assertThrows(
+                RepositoryArtifactCache.NotFoundException.class,
+                () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false, false));
+        assertThrows(
+                RepositoryArtifactCache.NotFoundException.class,
+                () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false, false));
+
+        assertEquals(1, hits.get(), "a 404 under an immutable commit is cached");
+    }
+
+    @Test
+    void fetchHuggingFace_cacheOnlyMissIsTyped() {
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        assertThrows(
+                RepositoryArtifactCache.NotCachedException.class,
+                () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", true, false));
+    }
+
+    private String endpoint() {
+        return "http://localhost:" + server.getAddress().getPort();
+    }
+
     private void startServer(String route, ThrowingHandler handler) throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.setExecutor(
