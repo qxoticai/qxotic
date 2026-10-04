@@ -264,6 +264,19 @@ class JinjaSemanticsTest {
     }
 
     @Test
+    void popIsACallableWithPythonSemantics() {
+        assertEquals(
+                "3[1, 2]12[]",
+                render(
+                        "{% set ys = [1, 2, 3] %}{{ ys.pop() }}{{ ys }}{{ ys.pop(0) }}{{"
+                                + " ys.pop(-1) }}{{ ys }}"));
+        // naming the method mutates nothing
+        assertEquals("[1, 2, 3]", render("{% set ys = [1, 2, 3] %}{% set f = ys.pop %}{{ ys }}"));
+        RuntimeException e = assertThrows(RuntimeException.class, () -> render("{{ [].pop() }}"));
+        assertTrue(e.getMessage().contains("pop"), e.getMessage());
+    }
+
+    @Test
     void splitHonorsMaxsplit() {
         assertEquals(
                 "['a', 'b,c'] ['a', 'b', 'c'] ['a', 'b '] ['a', '', 'b']",

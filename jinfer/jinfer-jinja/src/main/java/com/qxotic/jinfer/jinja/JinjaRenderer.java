@@ -2399,7 +2399,20 @@ public final class JinjaRenderer {
 
         Val dispatchArrMethod(Val.Arr a, String m) {
             return switch (m) {
-                case "pop" -> a.v.isEmpty() ? Val.NONE : a.v.removeLast();
+                // list.pop([index]): a CALLABLE, so naming it (`xs.pop`) mutates nothing and
+                // `xs.pop()` / `xs.pop(0)` / `xs.pop(-1)` remove as Python does
+                case "pop" ->
+                        new Val.Func(
+                                "pop",
+                                args -> {
+                                    int n = a.v.size();
+                                    long i = args.isEmpty() ? -1 : expectLong(args.get(0));
+                                    long j = i < 0 ? i + n : i;
+                                    if (j < 0 || j >= n)
+                                        throw new RuntimeException(
+                                                "[jinja] pop index " + i + " out of range");
+                                    return a.v.remove((int) j);
+                                });
                 // integer indexing is handled in evalMember; unknown members are undefined
                 // (lenient)
                 default -> new Val.Undef(m);
