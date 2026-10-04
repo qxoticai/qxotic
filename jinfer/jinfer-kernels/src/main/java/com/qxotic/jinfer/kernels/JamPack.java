@@ -113,10 +113,12 @@ final class JamPack {
         // blow the JVM direct-memory limit, while mapped memory is exempt, page-aligned (all
         // Metal's zero-copy wrap needs), and portable incl. Windows. PRIVATE, not READ_WRITE:
         // written pages become anonymous copies that are NEVER flushed back - a shared mapping
-        // would have the kernel lazily writing the whole throwaway slab to disk. The file itself
-        // stays 0 bytes; it exists only because FileChannel.map needs one. The mapping rides the
-        // arena's lifetime; the file is unlinked immediately (POSIX) or on exit (Windows).
-        MemorySegment slab = mappedSlab(total, arena);
+        // would have the kernel lazily writing the whole throwaway slab to disk. map extends the
+        // file to the slab's size, but sparsely: no block of it is ever written, it exists only
+        // because FileChannel.map needs one. The mapping rides the arena's lifetime; the file is
+        // unlinked as soon as the map call returns or fails (POSIX) or on exit (Windows).
+        MemorySegment slab =
+                mappedSlab(Path.of(System.getProperty("java.io.tmpdir")), total, arena);
         Memory<MemorySegment> slabMemory = Memories.of(slab);
         try (var ignored = Timer.log("Pack " + jobs.size() + " weight tensors")) {
             for (Job j : jobs) {
@@ -276,21 +278,32 @@ final class JamPack {
         return Float.float16ToFloat(s.get(JAVA_SHORT_UNALIGNED, off));
     }
 
-    private static MemorySegment mappedSlab(long bytes, Arena arena) {
+    static MemorySegment mappedSlab(Path dir, long bytes, Arena arena) {
+        Path file;
         try {
-            Path file = Files.createTempFile("jinfer-pack-", ".bin");
-            try (FileChannel ch =
-                    FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
-                MemorySegment slab = ch.map(FileChannel.MapMode.PRIVATE, 0, bytes, arena);
-                try {
-                    Files.delete(file); // POSIX: unlink now, pages live until the arena closes
-                } catch (IOException windowsKeepsMappedFiles) {
-                    file.toFile().deleteOnExit();
-                }
-                return slab;
-            }
+            file = Files.createTempFile(dir, "jinfer-pack-", ".bin");
         } catch (IOException e) {
-            throw new OutOfMemoryError("jam pack slab: cannot map " + bytes + " B: " + e);
+            throw slabError(dir, bytes, e);
         }
+        try (FileChannel ch =
+                FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            return ch.map(FileChannel.MapMode.PRIVATE, 0, bytes, arena);
+        } catch (IOException e) {
+            throw slabError(dir, bytes, e);
+        } finally {
+            try {
+                Files.delete(file); // POSIX: unlink now, mapped pages live until the arena closes
+            } catch (IOException windowsKeepsMappedFiles) {
+                file.toFile().deleteOnExit();
+            }
+        }
+    }
+
+    private static OutOfMemoryError slabError(Path dir, long bytes, IOException cause) {
+        OutOfMemoryError error =
+                new OutOfMemoryError(
+                        "jam pack slab: cannot map " + bytes + " B in " + dir + ": " + cause);
+        error.initCause(cause);
+        return error;
     }
 }

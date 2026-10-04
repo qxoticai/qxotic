@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Random;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * {@link JamPack} against two independent executable specs: a canonical-GGUF dequantizer (ggml's
@@ -54,6 +55,28 @@ class JamPackTest {
     private static final JamPack.PackPolicy SPEC = (dt, rows, k) -> (rows / 4) * groupBytes(dt, k);
 
     // ---- bit-exact layout parity, one test per dtype ----
+
+    @Test
+    void theSlabFileIsGoneWhetherTheMapSucceedsOrFails(@TempDir Path dir) throws Exception {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment slab = JamPack.mappedSlab(dir, 1 << 20, arena);
+            slab.set(JAVA_BYTE, (1 << 20) - 1, (byte) 7);
+            assertEquals(7, slab.get(JAVA_BYTE, (1 << 20) - 1));
+            assertEquals(0, countFiles(dir), "unlinked once mapped");
+            OutOfMemoryError e =
+                    assertThrows(
+                            OutOfMemoryError.class,
+                            () -> JamPack.mappedSlab(dir, Long.MAX_VALUE, arena));
+            assertInstanceOf(java.io.IOException.class, e.getCause(), "the cause is kept");
+            assertEquals(0, countFiles(dir), "a failed map leaves no file behind");
+        }
+    }
+
+    private static long countFiles(Path dir) throws java.io.IOException {
+        try (var files = Files.list(dir)) {
+            return files.count();
+        }
+    }
 
     @Test
     void q4_0PackedBitExact() {
