@@ -167,4 +167,68 @@ class JinjaSemanticsTest {
         assertEquals("a", render("{{ 'a' or (x | length) }}"));
         assertEquals("True", render("{{ x is not defined or x | length > 0 }}"));
     }
+
+    @Test
+    void rawBlocksRenderVerbatim() {
+        // jinja2 with HF's trim_blocks + lstrip_blocks: the newline after {% raw %} is body,
+        // the one after {% endraw %} is trimmed, indentation before either tag is stripped
+        assertEquals(
+                "a\n {{ x }} {% if %}\nb",
+                render("a{% raw %}\n {{ x }} {% if %}\n{% endraw %}\nb"));
+        assertEquals("a\n  x    \nb", render("a\n  {% raw %}  x  {% endraw %}  \nb"));
+        assertEquals("axb", render("a {%- raw -%}  x  {%- endraw -%} b"));
+        assertEquals("xab\ny", render("x{% raw %}ab\n   {% endraw %}y"));
+        assertEquals("ab\nz", render("{% raw %}ab\n  {% endraw %}{% if true %}z{% endif %}"));
+        assertEquals("|q", render("{% raw %}{% endraw %}|{%raw%}q{%endraw%}"));
+        RuntimeException e = assertThrows(RuntimeException.class, () -> render("{% raw %}a"));
+        assertTrue(e.getMessage().contains("raw"), e.getMessage());
+    }
+
+    @Test
+    void unknownStatementsAreRefused() {
+        // each rendered as nothing, silently dropping what the template meant
+        for (String source :
+                new String[] {"{% endraw %}x", "{% endset %}", "{% endcall %}", "{% foo %}"}) {
+            RuntimeException e =
+                    assertThrows(
+                            RuntimeException.class, () -> JinjaRenderer.template(source), source);
+            assertTrue(e.getMessage().contains("unknown statement"), e.getMessage());
+        }
+    }
+
+    @Test
+    void loopControlsBreakAndContinue() {
+        Map<String, Object> xs = Map.of("xs", List.of(1, 2, 3));
+        assertEquals(
+                "1",
+                render(
+                        "{% for x in xs %}{% if x == 2 %}{% break %}{% endif %}{{ x }}{% endfor %}",
+                        xs));
+        assertEquals(
+                "1133",
+                render(
+                        "{% for x in xs %}{% if x == 2 %}{% continue %}{% endif %}{{ x }}{{"
+                                + " loop.index }}{% else %}E{% endfor %}",
+                        xs));
+        // break leaves only the innermost loop
+        assertEquals(
+                "11 |21 31 |",
+                render(
+                        "{% for x in xs %}{% for y in xs %}{% if y == 2 %}{% break %}{% endif"
+                                + " %}{{ x }}{{ y }} {% endfor %}{% if x == 2 %}{% continue %}{%"
+                                + " endif %}|{% endfor %}",
+                        xs));
+        // outside a loop: a loop's else, a macro body inside a loop, top level
+        for (String source :
+                new String[] {
+                    "{% break %}",
+                    "{% for x in xs %}{% else %}{% break %}{% endfor %}",
+                    "{% for x in xs %}{% macro m() %}{% continue %}{% endmacro %}{% endfor %}",
+                }) {
+            RuntimeException e =
+                    assertThrows(
+                            RuntimeException.class, () -> JinjaRenderer.template(source), source);
+            assertTrue(e.getMessage().contains("outside a loop"), e.getMessage());
+        }
+    }
 }
