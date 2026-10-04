@@ -802,18 +802,14 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static boolean isHttp404(IOException e) {
-        return e.getMessage() != null && e.getMessage().contains("HTTP 404");
+        return e instanceof RepositoryArtifactCache.NotFoundException;
     }
 
     private static boolean shouldFallbackToTiktokenModel(IOException e, boolean useCacheOnly) {
         if (isHttp404(e)) {
             return true;
         }
-        return useCacheOnly && isArtifactNotCachedError(e);
-    }
-
-    private static boolean isArtifactNotCachedError(IOException e) {
-        return e.getMessage() != null && e.getMessage().contains("artifact not cached");
+        return useCacheOnly && e instanceof RepositoryArtifactCache.NotCachedException;
     }
 
     private static Normalizer parseNormalizer(Object normalizerObj) {
