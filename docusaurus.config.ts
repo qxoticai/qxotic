@@ -17,8 +17,8 @@ const config: Config = {
   organizationName: "qxoticai",
   projectName: "qxotic",
 
-  onBrokenLinks: "warn",
-  onBrokenAnchors: "warn",
+  onBrokenLinks: "throw",
+  onBrokenAnchors: "throw",
 
   i18n: {
     defaultLocale: "en",
@@ -60,6 +60,31 @@ const config: Config = {
       title: "Qxotic",
       items: [
         {
+          to: "/jinfer",
+          position: "left",
+          label: "jinfer",
+        },
+        {
+          to: "/toknroll",
+          position: "left",
+          label: "Tok'n'Roll",
+        },
+        {
+          to: "/jam",
+          position: "left",
+          label: "jam",
+        },
+        {
+          to: "/jota",
+          position: "left",
+          label: "jota",
+        },
+        {
+          to: "/gguf",
+          position: "left",
+          label: "GGUF",
+        },
+        {
           to: "/safetensors",
           position: "left",
           label: "Safetensors",
@@ -68,16 +93,6 @@ const config: Config = {
           to: "/json",
           position: "left",
           label: "JSON",
-        },
-        {
-          to: "/gguf",
-          position: "left",
-          label: "GGUF",
-        },
-        {
-          to: "/toknroll",
-          position: "left",
-          label: "Tok'n'Roll",
         },
         {
           type: "search",
