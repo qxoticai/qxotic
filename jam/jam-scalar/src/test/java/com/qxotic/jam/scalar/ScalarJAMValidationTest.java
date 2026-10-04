@@ -46,6 +46,13 @@ class ScalarJAMValidationTest {
             assertEquals(JAM.OK, mm(w, 0, a, 0, K, r, 0, M));
             assertEquals(JAM.EINVAL, mm(w, 0, a, 0, K - 1, r, 0, M));
             assertEquals(JAM.EINVAL, mm(w, 0, a, 0, K, r, 0, M - 1));
+            // a weight stride under k overlaps the rows (whole blocks, so only the stride is bad)
+            assertEquals(
+                    JAM.EINVAL,
+                    SCALAR.mm(w, 0, JAM.Q8_0, K - 32, a, 0, JAM.F32, K, r, 0, JAM.F32, M, M, N, K));
+            assertEquals(
+                    JAM.EINVAL,
+                    SCALAR.mm(w, 0, JAM.Q8_0, 0, a, 0, JAM.F32, K, r, 0, JAM.F32, M, M, N, K));
         }
     }
 
