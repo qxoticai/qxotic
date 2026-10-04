@@ -2,6 +2,7 @@ package com.qxotic.jinfer.spring.ai;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
@@ -122,10 +123,21 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     public void close() {
         lock.lock();
         try {
-            state.close();
-            Arenas.close(arena);
+            closeStateThenArena(state, arena);
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Closes {@code state}, then {@code arena} - the arena even when the state's cleanup throws, so
+     * a failing state never strands the weights it borrowed from.
+     */
+    static void closeStateThenArena(RuntimeState state, Arena arena) {
+        try {
+            state.close();
+        } finally {
+            Arenas.close(arena);
         }
     }
 
