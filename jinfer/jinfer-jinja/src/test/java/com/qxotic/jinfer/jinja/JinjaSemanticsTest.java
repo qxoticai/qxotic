@@ -291,6 +291,14 @@ class JinjaSemanticsTest {
     }
 
     @Test
+    void stringsOrderLexicographically() {
+        assertEquals(
+                "False True True True",
+                render("{{ '10' > '9' }} {{ 'b' > 'a' }} {{ 'a' < 'b' }} {{ 'ab' > 'a' }}"));
+        assertEquals("True", render("{{ 10 > 9 }}"));
+    }
+
+    @Test
     void splitHonorsMaxsplit() {
         assertEquals(
                 "['a', 'b,c'] ['a', 'b', 'c'] ['a', 'b '] ['a', '', 'b']",
