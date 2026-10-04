@@ -2332,23 +2332,13 @@ public final class JinjaRenderer {
         Val dispatchStrMethod(Val.Str s, String m) {
             return switch (m) {
                 // strip/split have method-specific no-arg behavior, so they stay bespoke ...
-                case "strip" ->
-                        new Val.Func(
-                                "strip",
-                                a ->
-                                        new Val.Str(
-                                                a.isEmpty()
-                                                        ? s.v.strip()
-                                                        : strip(s.v, expectStr(a.get(0)))));
-                case "lstrip" -> new Val.Func("lstrip", a -> new Val.Str(s.v.stripLeading()));
-                case "rstrip" -> new Val.Func("rstrip", a -> new Val.Str(s.v.stripTrailing()));
-                case "split" ->
-                        new Val.Func(
-                                "split",
-                                a ->
-                                        a.isEmpty()
-                                                ? new Val.Arr(splitToValList(s.v))
-                                                : split(s, expectStr(a.get(0))));
+                // strip(chars): Python strips only those characters, and only from its own side(s)
+                case "strip" -> new Val.Func("strip", a -> new Val.Str(strip(s.v, a, true, true)));
+                case "lstrip" ->
+                        new Val.Func("lstrip", a -> new Val.Str(strip(s.v, a, true, false)));
+                case "rstrip" ->
+                        new Val.Func("rstrip", a -> new Val.Str(strip(s.v, a, false, true)));
+                case "split" -> new Val.Func("split", a -> pySplit(s.v, a));
                 // ... the rest share their implementation with the identically-named filter
                 case "lower", "upper", "capitalize", "startswith", "endswith", "replace" ->
                         new Val.Func(m, a -> applyFilter(m, s, a));
@@ -2359,18 +2349,52 @@ public final class JinjaRenderer {
             };
         }
 
-        /** Python {@code str.strip(chars)}: trim any of the given characters from both ends. */
-        static String strip(String s, String chars) {
+        /**
+         * Python {@code str.strip/lstrip/rstrip([chars])}: trim any of {@code chars} from the
+         * chosen end(s); no argument (or None) trims whitespace.
+         */
+        static String strip(String s, List<Val> args, boolean left, boolean right) {
+            String chars = args.isEmpty() || args.get(0).isNone() ? null : expectStr(args.get(0));
             int a = 0, b = s.length();
-            while (a < b && chars.indexOf(s.charAt(a)) >= 0) a++;
-            while (b > a && chars.indexOf(s.charAt(b - 1)) >= 0) b--;
+            while (left && a < b && stripped(s.charAt(a), chars)) a++;
+            while (right && b > a && stripped(s.charAt(b - 1), chars)) b--;
             return s.substring(a, b);
         }
 
-        static List<Val> splitToValList(String s) {
+        private static boolean stripped(char c, String chars) {
+            return chars == null ? Character.isWhitespace(c) : chars.indexOf(c) >= 0;
+        }
+
+        /**
+         * Python {@code str.split(sep=None, maxsplit=-1)}: with a separator, at most {@code
+         * maxsplit} cuts and empty fields kept; without one, runs of whitespace separate and the
+         * leading run is dropped (the unsplit remainder keeps its trailing whitespace).
+         */
+        static Val pySplit(String s, List<Val> args) {
+            Val sep = args.isEmpty() ? Val.NONE : args.get(0);
+            int max = args.size() > 1 ? (int) expectLong(args.get(1)) : -1;
             var parts = new ArrayList<Val>();
-            for (String p : s.split("\\s+")) if (!p.isEmpty()) parts.add(new Val.Str(p));
-            return parts;
+            if (!sep.isNone()) {
+                String d = expectStr(sep);
+                if (d.isEmpty()) throw new RuntimeException("[jinja] split: empty separator");
+                for (String p : s.split(Pattern.quote(d), max < 0 ? -1 : max + 1))
+                    parts.add(new Val.Str(p));
+                return new Val.Arr(parts);
+            }
+            int i = 0, n = s.length();
+            while (true) {
+                while (i < n && Character.isWhitespace(s.charAt(i))) i++;
+                if (i == n) break;
+                if (max >= 0 && parts.size() == max) {
+                    parts.add(new Val.Str(s.substring(i)));
+                    break;
+                }
+                int j = i;
+                while (j < n && !Character.isWhitespace(s.charAt(j))) j++;
+                parts.add(new Val.Str(s.substring(i, j)));
+                i = j;
+            }
+            return new Val.Arr(parts);
         }
 
         Val dispatchArrMethod(Val.Arr a, String m) {

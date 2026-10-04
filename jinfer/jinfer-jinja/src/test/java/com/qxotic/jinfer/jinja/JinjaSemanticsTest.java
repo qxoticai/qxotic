@@ -249,4 +249,26 @@ class JinjaSemanticsTest {
                         "{% macro m(messages) %}{{ messages is defined }}{% endmacro %}{{ m() }}",
                         Map.of("messages", List.of(1))));
     }
+
+    @Test
+    void stripFamilyTakesCharactersAndKeepsItsSide() {
+        assertEquals(
+                "  ab\n  |abxx|a |abc|xxab|ab",
+                render(
+                        "{{ '  ab\\n  '.rstrip('\\n ') ~ '\\n  ' }}|{{ 'xxabxx'.lstrip('x') }}|{{"
+                                + " ' a '.lstrip() }}|{{ 'abc'.rstrip('') }}|{{"
+                                + " 'xxabxx'.rstrip('x') }}|{{ 'xxabxx'.strip('x') }}"));
+        // .rstrip('\n') must keep the indentation before the newline
+        assertEquals("  ab\n  ", render("{{ '  ab\\n  \\n'.rstrip('\\n') }}"));
+        assertEquals("a", render("{{ ' a '.strip(none) }}"));
+    }
+
+    @Test
+    void splitHonorsMaxsplit() {
+        assertEquals(
+                "['a', 'b,c'] ['a', 'b', 'c'] ['a', 'b '] ['a', '', 'b']",
+                render(
+                        "{{ 'a,b,c'.split(',', 1) }} {{ 'a b  c'.split() }} {{ ' a b '.split(none,"
+                                + " 1) }} {{ 'a,,b'.split(',') }}"));
+    }
 }
