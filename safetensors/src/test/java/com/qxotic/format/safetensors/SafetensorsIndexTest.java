@@ -227,7 +227,10 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                         + "  }\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), invalidJson);
 
-        assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
+        SafetensorsFormatException e =
+                assertThrows(
+                        SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
+        assertTrue(e.getMessage().startsWith("Invalid JSON"), e.getMessage());
     }
 
     @Test
@@ -237,7 +240,11 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                 "{\n" + "  \"metadata\": {\n" + "    \"total_size\": 1000\n" + "  }\n" + "}\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
-        assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
+        SafetensorsFormatException e =
+                assertThrows(
+                        SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
+        assertFalse(e.getMessage().contains("Invalid JSON"), e.getMessage());
+        assertTrue(e.getMessage().contains("weight_map"), e.getMessage());
     }
 
     @Test
