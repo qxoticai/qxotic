@@ -2090,7 +2090,7 @@ public final class JinjaRenderer {
                 if (i < args.size()) v = args.get(i);
                 else if (kwargs.containsKey(p)) v = kwargs.get(p);
                 else if (m.defaults().get(i) != null) v = eval(m.defaults().get(i));
-                else v = Val.NONE;
+                else v = new Val.Undef(p); // jinja2: `p is defined` is False, `{{ p }}` is empty
                 mf.set(p, v);
             }
             var ms = new ArrayList<Frame>();
@@ -2226,7 +2226,11 @@ public final class JinjaRenderer {
 
         Val lookup(String name) {
             for (int i = stack.size() - 1; i >= 0; i--) {
-                Val v = stack.get(i).get(name);
+                Frame f = stack.get(i);
+                // a name BOUND to undefined (a macro parameter the call left out) shadows the
+                // globals like any other binding; only an absent name falls through
+                if (f.vars.containsKey(name)) return f.vars.get(name);
+                Val v = f.get(name);
                 if (!(v instanceof Val.Undef)) return v;
             }
             return frame.get(name);

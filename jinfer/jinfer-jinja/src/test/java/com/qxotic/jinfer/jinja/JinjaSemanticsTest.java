@@ -231,4 +231,22 @@ class JinjaSemanticsTest {
             assertTrue(e.getMessage().contains("outside a loop"), e.getMessage());
         }
     }
+
+    @Test
+    void missingMacroParametersAreUndefined() {
+        assertEquals(
+                "False2True2",
+                render(
+                        "{% macro m(a, b=2) %}{{ a is defined }}{{ b }}{% endmacro %}{{ m() }}{{"
+                                + " m(1) }}"));
+        assertEquals(
+                "[]False",
+                render("{% macro m(a) %}[{{ a }}]{{ a is none }}{% endmacro %}{{ m() }}"));
+        // an unbound parameter shadows a global of the same name, as in jinja2
+        assertEquals(
+                "False",
+                render(
+                        "{% macro m(messages) %}{{ messages is defined }}{% endmacro %}{{ m() }}",
+                        Map.of("messages", List.of(1))));
+    }
 }
