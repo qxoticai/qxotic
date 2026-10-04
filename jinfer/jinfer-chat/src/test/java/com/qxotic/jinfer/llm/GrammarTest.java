@@ -101,4 +101,29 @@ final class GrammarTest {
             assertEquals(Float.NEGATIVE_INFINITY, values[5]);
         }
     }
+
+    @Test
+    void malformedGbnfIsRefusedWithItsPosition() {
+        for (String source :
+                new String[] {
+                    "root ::= \"x\" [", // unterminated class
+                    "root ::= \"x\" ]", // stray character
+                    "root ::= \"x\" ;",
+                    "root ::= \"x\"{2", // unterminated bound
+                    "root ::= \"x\"{a}", // not a bound
+                    "root ::= \"x\"{3,1}", // max below min: was exactly 3
+                    "root ::= \"x\"{-1}", // negative: was *
+                }) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> Grammar.of(source, GrammarMembership.BV),
+                            source);
+            assertTrue(e.getMessage().contains("column"), e.getMessage());
+        }
+        // the well-formed spellings still compile
+        Grammar.Spec bounded = Grammar.of("root ::= \"x\"{1,2} \"y\" {0,0}", GrammarMembership.BV);
+        assertTrue(GrammarMembership.accepts(bounded, GrammarMembership.BV, "xx"));
+        assertFalse(GrammarMembership.accepts(bounded, GrammarMembership.BV, "xxx"));
+    }
 }

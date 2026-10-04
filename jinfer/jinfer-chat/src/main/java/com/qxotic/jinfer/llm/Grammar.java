@@ -1688,8 +1688,8 @@ public final class Grammar {
             } else if (c == '[') {
                 int end = findMatchingBracket(body, i);
                 if (end < 0) {
-                    i++;
-                    continue;
+                    throw new IllegalArgumentException(
+                            "unterminated '[' at column " + i + " in rule body: " + body);
                 }
                 res.add(parseCharClass(body.substring(i + 1, end)));
                 i = end + 1;
@@ -1727,7 +1727,12 @@ public final class Grammar {
                 List<Rule.Element> inner = parseBody(body.substring(i + 1, end - 1), rules);
                 res.add(new Rule.Element.Group(inner));
                 i = applyMod(body, end, res);
-            } else i++;
+            } else {
+                // skipping it compiled `root ::= "x" ]` as if the stray character were not there:
+                // a typo silently changed the language instead of failing
+                throw new IllegalArgumentException(
+                        "unexpected '" + c + "' at column " + i + " in rule body: " + body);
+            }
         }
         return res;
     }
@@ -1824,7 +1829,10 @@ public final class Grammar {
             }
             case '{' -> {
                 int close = body.indexOf('}', j);
-                if (close < 0) return i;
+                if (close < 0) {
+                    throw new IllegalArgumentException(
+                            "unterminated '{' at column " + j + " in rule body: " + body);
+                }
                 String spec = body.substring(j + 1, close).trim();
                 int comma = spec.indexOf(',');
                 try {
@@ -1837,7 +1845,18 @@ public final class Grammar {
                         max = hi.isEmpty() ? -1 : Integer.parseInt(hi);
                     }
                 } catch (NumberFormatException notARepetition) {
-                    return i; // not a repetition spec: leave the brace alone
+                    min = -1; // refused below, with the rest of the malformed bounds
+                    max = -1;
+                }
+                if (min < 0 || (max >= 0 && max < min)) {
+                    // {3,1} once meant exactly 3 and {-1} meant *: the refusal Term.Rep gives
+                    throw new IllegalArgumentException(
+                            "bad repetition {"
+                                    + spec
+                                    + "} at column "
+                                    + j
+                                    + " in rule body: "
+                                    + body);
                 }
                 res.add(new Rule.Element.Repetition(res.removeLast(), min, max));
                 return close + 1;
