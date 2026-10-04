@@ -20,10 +20,39 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
 
     /**
      * The longest audio decoded into memory, an hour by default, which the float representation
-     * holds in about 220 MiB. {@code -Djinfer.codecs.maxAudioMinutes} raises or lowers it.
+     * holds in about 220 MiB. {@code -Djinfer.codecs.maxAudioMinutes} raises or lowers it, up to
+     * {@link #MAX_MINUTES_CEILING}: ffmpeg's float32 output must fit one byte array.
      */
-    static final int MAX_SAMPLES =
-            SAMPLE_RATE * 60 * Math.max(1, Integer.getInteger("jinfer.codecs.maxAudioMinutes", 60));
+    static final String MAX_MINUTES = "jinfer.codecs.maxAudioMinutes";
+
+    static final int MAX_MINUTES_CEILING = (Integer.MAX_VALUE - 8) / (4 * SAMPLE_RATE * 60);
+
+    /** The validated minute cap, read per decode so a bad value fails the call, not class init. */
+    static int maxMinutes() {
+        String value = System.getProperty(MAX_MINUTES);
+        if (value == null) return 60;
+        int minutes;
+        try {
+            minutes = Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    MAX_MINUTES + " must be an integer, got '" + value + "'");
+        }
+        if (minutes < 1 || minutes > MAX_MINUTES_CEILING)
+            throw new IllegalArgumentException(
+                    MAX_MINUTES + " must be in [1, " + MAX_MINUTES_CEILING + "], got " + minutes);
+        return minutes;
+    }
+
+    /** Fits an int with room for 4 bytes per sample, by the ceiling above. */
+    static int maxSamples(int minutes) {
+        return SAMPLE_RATE * 60 * minutes;
+    }
+
+    static IOException tooLong(int minutes, IOException cause) {
+        return new IOException(
+                "audio longer than " + minutes + " minutes: raise -D" + MAX_MINUTES, cause);
+    }
 
     @Override
     public String name() {
@@ -41,19 +70,12 @@ public final class FfmpegAudioDecoder implements AudioDecoder {
     }
 
     private static byte[] run(String input, byte[] data) throws IOException {
+        int minutes = maxMinutes();
         try {
             return Subprocess.run(
-                    ffmpegArgs(input),
-                    data,
-                    Duration.ofMinutes(2),
-                    Math.multiplyExact(MAX_SAMPLES, 4));
-        } catch (IOException tooLong) {
-            if (!String.valueOf(tooLong.getMessage()).contains("exceeds")) throw tooLong;
-            throw new IOException(
-                    "audio longer than "
-                            + MAX_SAMPLES / SAMPLE_RATE / 60
-                            + " minutes: raise -Djinfer.codecs.maxAudioMinutes",
-                    tooLong);
+                    ffmpegArgs(input), data, Duration.ofMinutes(2), maxSamples(minutes) * 4);
+        } catch (Subprocess.OutputLimitExceeded e) {
+            throw tooLong(minutes, e);
         }
     }
 

@@ -24,6 +24,13 @@ final class Subprocess {
 
     private Subprocess() {}
 
+    /** The tool wrote more than the caller's output bound; typed so callers need not match text. */
+    static final class OutputLimitExceeded extends IOException {
+        OutputLimitExceeded(String message) {
+            super(message);
+        }
+    }
+
     static byte[] run(List<String> cmd, byte[] stdin) throws IOException {
         return run(cmd, stdin, TIMEOUT, MAX_OUTPUT_BYTES);
     }
@@ -118,7 +125,8 @@ final class Subprocess {
         for (int read; (read = in.read(buffer)) >= 0; ) {
             int keep = Math.min(read, limit - out.size());
             out.write(buffer, 0, keep);
-            if (keep != read) throw new IOException(tool + " output exceeds " + limit + " bytes");
+            if (keep != read)
+                throw new OutputLimitExceeded(tool + " output exceeds " + limit + " bytes");
         }
         return out.toByteArray();
     }
