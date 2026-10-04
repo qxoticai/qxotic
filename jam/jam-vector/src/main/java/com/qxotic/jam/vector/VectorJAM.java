@@ -47,9 +47,10 @@ public final class VectorJAM implements JAM {
     public VectorJAM(JAM.Parallel parallel) {
         if (!isAvailable()) {
             throw new IllegalStateException(
-                    "VectorJAM needs the incubator Vector API module 'jdk.incubator.vector', which"
-                        + " is not on the module path. Enable it on the java launch (and on javac"
-                        + " when compiling): --add-modules jdk.incubator.vector");
+                    "VectorJAM needs the incubator Vector API module 'jdk.incubator.vector' and"
+                        + " native access. Enable them on the java launch (and the module on javac"
+                        + " when compiling): --add-modules jdk.incubator.vector"
+                        + " --enable-native-access=ALL-UNNAMED");
         }
         this.scratch = new Scratch(parallel);
     }
@@ -61,7 +62,11 @@ public final class VectorJAM implements JAM {
      * kernel).
      */
     public static boolean isAvailable() {
-        return ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent();
+        // GLOBAL is null when native access is denied (--illegal-native-access=deny): every kernel
+        // addresses through it, so the backend is unavailable then. Checked second: touching
+        // VectorSupport loads the Vector API.
+        return ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent()
+                && VectorSupport.GLOBAL != null;
     }
 
     @Override
