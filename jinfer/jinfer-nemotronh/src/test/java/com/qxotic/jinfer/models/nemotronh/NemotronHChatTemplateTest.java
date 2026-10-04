@@ -1,9 +1,11 @@
 package com.qxotic.jinfer.models.nemotronh;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
@@ -16,6 +18,7 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -28,14 +31,27 @@ class NemotronHChatTemplateTest {
     private static final String RESULT = "{\"temp_c\": 7, \"condition\": \"light rain\"}";
 
     @Test
-    void typedAndPlainToolResultsBothRenderTheirText() throws Exception {
-        Path path =
-                TestModels.require("hf.co/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF:Q8_0");
-        Tokenizer tokenizer;
-        try (FileChannel channel = FileChannel.open(path)) {
-            GGUF gguf = ModelLoader.readGguf(channel, path.toString());
-            tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
+    void theReplySeedIsExactlyThePromptTail() throws Exception {
+        NemotronHChatTemplate template = new NemotronHChatTemplate(tokenizer());
+        for (boolean thinking : new boolean[] {false, true}) {
+            ArrayList<Batch> batches = new ArrayList<>();
+            ChatTemplate.ReplyState state =
+                    template.encode(
+                            new Conversation(List.of(Message.user("Hi")), List.of(), thinking),
+                            512,
+                            batches::add);
+            int[] prompt = Batch.tokenIds(batches);
+            int[] seed = state.replyPrefix().toArray();
+            assertArrayEquals(
+                    seed,
+                    Arrays.copyOfRange(prompt, prompt.length - seed.length, prompt.length),
+                    "thinking=" + thinking);
         }
+    }
+
+    @Test
+    void typedAndPlainToolResultsBothRenderTheirText() throws Exception {
+        Tokenizer tokenizer = tokenizer();
         NemotronHChatTemplate template = new NemotronHChatTemplate(tokenizer);
         Tool tool =
                 new Tool(
@@ -64,6 +80,15 @@ class NemotronHChatTemplateTest {
             assertTrue(
                     prompt.contains(RESULT),
                     result.getClass().getSimpleName() + " dropped the tool result:\n" + prompt);
+        }
+    }
+
+    private static Tokenizer tokenizer() throws Exception {
+        Path path =
+                TestModels.require("hf.co/bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF:Q8_0");
+        try (FileChannel channel = FileChannel.open(path)) {
+            GGUF gguf = ModelLoader.readGguf(channel, path.toString());
+            return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
         }
     }
 }
