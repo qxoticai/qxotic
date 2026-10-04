@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -32,11 +31,10 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     private static final String BYTE_00_TOKEN = "<0x00>";
     private static final int BMP_SIZE = 1 << 16;
     private static final int BYTE_FALLBACK_SIZE = 256;
-    private static final String MERGE_STRATEGY_PROPERTY = "toknroll.spbpe.merge.strategy";
-    private static final String FAST_THRESHOLD_PROPERTY = "toknroll.spbpe.fast.threshold";
-    private static final MergeStrategy MERGE_STRATEGY =
-            parseMergeStrategy(System.getProperty(MERGE_STRATEGY_PROPERTY));
+
+    /** Words up to this many symbols merge by the simple O(n²) scan, longer ones by the heap. */
     private static final int FAST_MERGE_THRESHOLD = 128;
+
     private static final int NO_INDEX = -1;
 
     private final int[] byteTokenIds;
@@ -46,13 +44,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     private final int[] bmpSingletonIds;
     private final boolean[] isByteToken;
     private final byte[][] tokenBytesById;
-    private final byte[] byteTokenRawValue;
-
-    private enum MergeStrategy {
-        AUTO,
-        SIMPLE,
-        FAST
-    }
 
     private SentencePieceBpeModel(
             Vocabulary vocabulary,
@@ -63,7 +54,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             int[] bmpSingletonIds,
             boolean[] isByteToken,
             byte[][] tokenBytesById,
-            byte[] byteTokenRawValue,
             float expectedTokensPerChar) {
         super(vocabulary, expectedTokensPerChar);
         this.byteTokenIds = byteTokenIds;
@@ -73,7 +63,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         this.bmpSingletonIds = bmpSingletonIds;
         this.isByteToken = isByteToken;
         this.tokenBytesById = tokenBytesById;
-        this.byteTokenRawValue = byteTokenRawValue;
     }
 
     static SentencePieceBpeModel fromVocabularyAndMerges(
@@ -173,16 +162,13 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         validateByteFallbackTable(byteTokenIds);
 
         byte[][] tokenBytesById = new byte[size][];
-        byte[] byteTokenRawValue = new byte[size];
-        Arrays.fill(byteTokenRawValue, (byte) -1);
         for (int i = 0; i < size; i++) {
             String token = tokensById[i];
             if (token == null) {
                 continue;
             }
             if (isByteToken[i]) {
-                byteTokenRawValue[i] = parseByteToken(token);
-                tokenBytesById[i] = new byte[] {byteTokenRawValue[i]};
+                tokenBytesById[i] = new byte[] {parseByteToken(token)};
             } else {
                 tokenBytesById[i] = token.getBytes(StandardCharsets.UTF_8);
             }
@@ -210,7 +196,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                 bmpSingletonIds,
                 isByteToken,
                 tokenBytesById,
-                byteTokenRawValue,
                 estimateTokensPerChar(vocabulary.size()));
     }
 
@@ -364,53 +349,9 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         if (length < 2) {
             return Arrays.copyOf(ids, length);
         }
-        switch (MERGE_STRATEGY) {
-            case SIMPLE:
-                return mergeGreedySimple(ids, length);
-            case FAST:
-                return mergeGreedyFast(ids, length);
-            default:
-                int threshold = readFastMergeThreshold();
-                return length <= threshold
-                        ? mergeGreedySimple(ids, length)
-                        : mergeGreedyFast(ids, length);
-        }
-    }
-
-    private static MergeStrategy parseMergeStrategy(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return MergeStrategy.AUTO;
-        }
-        String value = raw.trim().toLowerCase(Locale.ROOT);
-        switch (value) {
-            case "auto":
-                return MergeStrategy.AUTO;
-            case "simple":
-                return MergeStrategy.SIMPLE;
-            case "fast":
-                return MergeStrategy.FAST;
-            default:
-                throw new IllegalArgumentException(
-                        "Invalid "
-                                + MERGE_STRATEGY_PROPERTY
-                                + "='"
-                                + raw
-                                + "' (expected: auto|simple|fast)");
-        }
-    }
-
-    private static int readFastMergeThreshold() {
-        String raw = System.getProperty(FAST_THRESHOLD_PROPERTY);
-        if (raw == null || raw.isBlank()) {
-            return FAST_MERGE_THRESHOLD;
-        }
-        try {
-            return Math.max(0, Integer.parseInt(raw.trim()));
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(
-                    "Invalid " + FAST_THRESHOLD_PROPERTY + "='" + raw + "' (expected integer >= 0)",
-                    e);
-        }
+        return length <= FAST_MERGE_THRESHOLD
+                ? mergeGreedySimple(ids, length)
+                : mergeGreedyFast(ids, length);
     }
 
     /**
@@ -725,7 +666,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                 throw new IllegalArgumentException("Unknown token id: " + tokenId);
             }
             if (isByteTokenId(tokenId)) {
-                byteRun.write(byteTokenRawValue[tokenId]);
+                byteRun.write(tokenBytesById[tokenId][0]);
             } else {
                 if (byteRun.size() > 0) {
                     sb.append(byteRun.toString(StandardCharsets.UTF_8));
@@ -765,30 +706,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                 throw new IllegalArgumentException("Unknown token id: " + tokenId);
             }
 
-            byte[] piece;
-            int consumed;
-
-            if (byteTokenRawValue[tokenId] >= 0) {
-                int runEnd = index + 1;
-                while (runEnd < length && byteTokenRawValue[tokens.intAt(runEnd)] >= 0) {
-                    runEnd++;
-                }
-
-                if (runEnd - index == 1) {
-                    piece = tokenBytesById[tokenId];
-                } else {
-                    byte[] raw = new byte[runEnd - index];
-                    for (int i = index; i < runEnd; i++) {
-                        raw[i - index] = byteTokenRawValue[tokens.intAt(i)];
-                    }
-                    piece = raw;
-                }
-                consumed = runEnd - index;
-            } else {
-                piece = tokenBytesById[tokenId];
-                consumed = 1;
-            }
-
+            byte[] piece = tokenBytesById[tokenId];
             if (piece.length > out.remaining()) {
                 if (!wroteAny) {
                     throw new IllegalArgumentException("Not enough output space");
@@ -798,7 +716,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
             out.put(piece);
             wroteAny = true;
-            index += consumed;
+            index++;
         }
 
         return index - tokenStartIndex;
