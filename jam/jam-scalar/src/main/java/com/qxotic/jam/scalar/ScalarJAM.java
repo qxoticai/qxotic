@@ -64,6 +64,7 @@ public final class ScalarJAM implements JAM {
                 || k < 0
                 || k % t.elementsPerBlock() != 0
                 || ldw % t.elementsPerBlock() != 0
+                || ldw < k
                 || lda < k
                 || ldr < m) return EINVAL;
         if (m == 0 || n == 0) return OK;
