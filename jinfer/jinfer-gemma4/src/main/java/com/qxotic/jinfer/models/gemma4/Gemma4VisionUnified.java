@@ -167,7 +167,6 @@ final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
     }
 
     private int[] targetSize(Media.Image image, int budgetTokens) {
-        if (!VisionPreprocess.SMART_RESIZE) return new int[] {16 * patchSize, 16 * patchSize};
         int patchArea = Math.multiplyExact(patchSize, patchSize);
         return VisionPreprocess.smartResize(
                 image.width(),

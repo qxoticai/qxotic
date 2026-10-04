@@ -11,14 +11,19 @@ import java.lang.foreign.MemorySegment;
 final class VisionPreprocess {
     private VisionPreprocess() {}
 
-    static final boolean SMART_RESIZE = !Boolean.getBoolean("vis.squareResize");
     static final int IMAGE_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.imageTokenBudget", -1);
     static final int VIDEO_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.videoTokenBudget", 70);
 
-    private static int validatedBudget(String property, int defaultValue) {
+    static int validatedBudget(String property, int defaultValue) {
         String value = System.getProperty(property);
         if (value == null) return defaultValue;
-        int budget = Integer.parseInt(value.trim());
+        int budget;
+        try {
+            budget = Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    property + " must be 70|140|280|560|1120, got '" + value + "'");
+        }
         if (budget != 70 && budget != 140 && budget != 280 && budget != 560 && budget != 1120)
             throw new IllegalArgumentException(
                     property + " must be 70|140|280|560|1120, got " + budget);

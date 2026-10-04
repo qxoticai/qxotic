@@ -365,7 +365,6 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
     }
 
     private int[] targetSize(Media.Image image, int budgetTokens) {
-        if (!VisionPreprocess.SMART_RESIZE) return new int[] {imageSize, imageSize};
         int factor = Math.multiplyExact(patchSize, merge);
         int area = Math.multiplyExact(factor, factor);
         return VisionPreprocess.smartResize(
