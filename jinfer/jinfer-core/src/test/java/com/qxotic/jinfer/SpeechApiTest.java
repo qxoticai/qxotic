@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.media.Media;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +47,17 @@ final class SpeechApiTest {
                                 List.of(
                                         new Media.Audio(new float[] {0f}, 24000, 1),
                                         new Media.Audio(new float[] {0f, 0f}, 24000, 2))));
+    }
+
+    @Test
+    void clipsTooLongForOneArrayAreRefusedNotWrapped() {
+        // 2048 views of one 1 Mi-sample clip: 2^31 samples, which an int total wraps negative
+        Media.Audio clip = new Media.Audio(new float[1 << 20], 24000, 1);
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Media.Audio.concat(Collections.nCopies(2048, clip)));
+        assertTrue(e.getMessage().contains("2147483648"), e.getMessage());
     }
 
     @Test

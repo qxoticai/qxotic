@@ -52,7 +52,7 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
         public static Audio concat(List<Audio> clips) {
             if (clips.isEmpty()) throw new IllegalArgumentException("no clips to join");
             Audio first = clips.get(0);
-            int total = 0;
+            long total = 0;
             for (Audio clip : clips) {
                 if (clip.sampleRate() != first.sampleRate() || clip.channels() != first.channels())
                     throw new IllegalArgumentException(
@@ -67,7 +67,11 @@ public sealed interface Media permits Media.Image, Media.Audio, Media.Video {
                                     + "ch");
                 total += clip.pcm().length;
             }
-            float[] pcm = new float[total];
+            // the largest float[] the JVM reliably allocates
+            if (total > Integer.MAX_VALUE - 8)
+                throw new IllegalArgumentException(
+                        "clips too long to join: " + total + " samples exceed one array");
+            float[] pcm = new float[(int) total];
             int at = 0;
             for (Audio clip : clips) {
                 System.arraycopy(clip.pcm(), 0, pcm, at, clip.pcm().length);
