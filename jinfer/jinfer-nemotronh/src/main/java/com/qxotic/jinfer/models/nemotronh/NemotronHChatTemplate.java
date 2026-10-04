@@ -103,7 +103,7 @@ final class NemotronHChatTemplate implements ChatTemplate {
     private final int toolResponse; // <tool_response>
     private final int endToolResponse; // </tool_response>
     private final IntSequence seedThinking; // <think>\n
-    private final IntSequence seedDirect; // <think>\n\n</think>\n\n
+    private final IntSequence seedDirect; // <think></think>, exactly as the prompt ends
 
     public NemotronHChatTemplate(Tokenizer tokenizer) {
         this(tokenizer, Dialect.CASCADE);
@@ -123,12 +123,7 @@ final class NemotronHChatTemplate implements ChatTemplate {
         IntSequence.Builder thinking = IntSequence.newBuilder();
         thinking.add(think).addAll(tokenizer.encode("\n"));
         seedThinking = thinking.build();
-        IntSequence.Builder direct = IntSequence.newBuilder();
-        direct.add(think)
-                .addAll(tokenizer.encode("\n\n"))
-                .add(endThink)
-                .addAll(tokenizer.encode("\n\n"));
-        seedDirect = direct.build();
+        seedDirect = IntSequence.of(think, endThink);
     }
 
     @Override
