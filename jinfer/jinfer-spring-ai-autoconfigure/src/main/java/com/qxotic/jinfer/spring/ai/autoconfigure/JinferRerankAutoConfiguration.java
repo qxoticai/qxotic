@@ -32,6 +32,11 @@ public class JinferRerankAutoConfiguration {
     @ConditionalOnMissingBean
     public JinferDocumentPostProcessor jinferDocumentPostProcessor(
             JinferRerankProperties properties) {
+        if (!StringUtils.hasText(properties.model())) {
+            throw new IllegalStateException(
+                    "spring.ai.jinfer.rerank.model must not be blank: a reranker GGUF (e.g."
+                            + " Qwen3-Reranker or LFM2-ColBERT) as a local path or a hub ref");
+        }
         JinferDocumentPostProcessor.Builder builder =
                 JinferDocumentPostProcessor.builder()
                         .contextCapacity(properties.contextCapacity())

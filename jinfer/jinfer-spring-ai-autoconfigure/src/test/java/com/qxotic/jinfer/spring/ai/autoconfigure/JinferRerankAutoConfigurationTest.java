@@ -71,6 +71,19 @@ class JinferRerankAutoConfigurationTest {
     }
 
     @Test
+    void blankModelIsRejectedNamingTheProperty() {
+        // the property is present, so the bean activates; blank once reached Path.of("")
+        runner.withPropertyValues("spring.ai.jinfer.rerank.model=")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.rerank.model must not be blank");
+                        });
+    }
+
+    @Test
     void defaultsMatchTheAdapter() {
         new ApplicationContextRunner()
                 .withUserConfiguration(PropsOnly.class)
