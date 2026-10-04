@@ -90,6 +90,7 @@ public final class Parakeet
     private static final int PARTIAL_EDGE_FRAMES = 3;
     private static final int STREAM_CHUNK_FRAMES = 25, STREAM_RIGHT_FRAMES = 25;
     private static final int OFFLINE_CHUNK_FRAMES = 575, OFFLINE_RIGHT_FRAMES = 50;
+    static final String CHUNK_SECONDS = "jinfer.parakeet.chunkSeconds";
 
     private final Configuration configuration;
     private final Weights weights;
@@ -171,9 +172,24 @@ public final class Parakeet
 
     private Stream stream(State state, int chunkFrames, int rightFrames) {
         Objects.requireNonNull(state, "state");
-        Integer seconds = Integer.getInteger("jinfer.parakeet.chunkSeconds");
-        if (seconds != null) chunkFrames = seconds * sampleRate() / frameSamples();
+        String value = System.getProperty(CHUNK_SECONDS);
+        if (value != null) chunkFrames = chunkFrames(value, sampleRate(), frameSamples());
         return new Stream(state, chunkFrames, rightFrames);
+    }
+
+    /** The chunk override in encoder frames; a chunk must hold at least one frame. */
+    static int chunkFrames(String value, int sampleRate, int frameSamples) {
+        int seconds;
+        try {
+            seconds = Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    CHUNK_SECONDS + " must be an integer, got '" + value + "'");
+        }
+        if (seconds <= 0 || seconds > 3600)
+            throw new IllegalArgumentException(
+                    CHUNK_SECONDS + " must be in [1, 3600], got " + seconds);
+        return Math.max(1, (int) ((long) seconds * sampleRate / frameSamples));
     }
 
     /**
