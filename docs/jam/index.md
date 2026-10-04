@@ -12,7 +12,7 @@ Linux, Windows, and macOS. x86: SSE3 through AVX-512-VNNI. ARM: NEON / DotProd /
 
 - **One op.** `jam_mm` computes `R = W @ Aᵀ`. Gemv is implicit at `n == 1`.
 - **Picks the fastest kernel.** Detects CPU features once, selects the best kernels, no per-call dispatch.
-- **Parallel.** Every call runs across multiple threads.
+- **Parallel.** Calls fan out over the host's `JAM.Parallel` (or the C context's pool).
 - **No conversions.** Weights stay quantized, byte-compatible with llama.cpp's `mul_mat`; pass a `.gguf` tensor directly.
 - **No third-party runtime dependencies.** `jam-native` bundles and loads the native library for the current OS/arch. Override its location with `-Djam.native.library.path` or `JAM_NATIVE_LIBRARY_PATH`.
 
@@ -76,7 +76,7 @@ java --enable-native-access=com.qxotic.jam.libjam,com.qxotic.jam.vector \
 
 The scalar provider requires no launch flags.
 
-Quantizations: `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`, plus dense `F32`/`F16`/`BF16`. Activations and result are always `F32`. Operands must be **native** segments, not heap arrays.
+Quantizations: `Q1_0`, `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`, plus dense `F32`/`F16`/`BF16`. Activations and result are always `F32`. Operands must be **native** segments, not heap arrays.
 
 ## Backends
 
@@ -94,7 +94,7 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 
 On its native paths jam is competitive with llama.cpp's CPU kernels at matched instruction set. The same int8 kernels span the whole x86 ladder, pre-AVX2 through AVX-512.
 
-These are one machine / one model. Run `jam_bench` and llama.cpp's `pp512` to measure your hardware.
+Run `jam_bench` and llama.cpp's `pp512` to measure your hardware.
 
 ## Configuration
 
@@ -122,13 +122,13 @@ A `jam_ctx` is a serial stream: one `mm` at a time. For concurrent matmuls, use 
 
 ## Build
 
-Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 25**. On macOS, `xcode-select --install` covers clang, cmake, and Metal. On Windows the toolchain is MinGW-w64; MSVC is refused because the kernel flags are GCC/Clang spellings.
+Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 25**. On macOS, `xcode-select --install` covers clang and Metal; install CMake with `brew install cmake`. On Windows the toolchain is MinGW-w64; MSVC is refused because the kernel flags are GCC/Clang spellings.
 
-**Maven** runs cmake, javac, and tests in one step:
+**Maven** runs cmake, javac, and tests in one step, from the repository root once a root `mvn install` has built `jam-core` and `jota-core`:
 
 ```sh
-mvn package      # -> target/jam-native-0.3.1.jar with this host's library
-mvn test         # configure + build + JUnit
+mvn -f jam/jam-native/pom.xml package   # -> jam/jam-native/target/jam-native-0.3.1.jar with this host's library
+mvn -f jam/jam-native/pom.xml test      # configure + build + JUnit
 ```
 
 **Or build just the native library with cmake** (for the C API, or to pre-stage `dist/native/`):

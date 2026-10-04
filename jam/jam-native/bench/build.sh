@@ -3,7 +3,7 @@
 #   - jam:        qxotic/jam/jam-native/build/libjam.so (cmake --build build here, or mvn from the repository root)
 #   - llama.cpp:  llama.cpp/build/bin/lib{ggml-cpu,ggml-base}.so
 #                 (cmake -B build -DGGML_NATIVE=ON && cmake --build build --target ggml-cpu -j)
-# Override the checkout locations with JAM=... LLAMA=... if they live elsewhere;
+# LLAMA=... names the llama.cpp checkout (required); JAM=... overrides the jam-native one;
 # LLAMA_BUILD=build-avx2 selects a different llama.cpp build dir (default: build).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)

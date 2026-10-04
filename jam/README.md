@@ -6,11 +6,11 @@
   <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
-  <a href="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey">
+  <a href="#backends"><img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Platforms: Linux, macOS, Windows"></a>
 </p>
     
-A.k.a jokingly as _"Just A Matmul"_. JAM implements fast quantized matrix multiplication routines for CPUs, with APIs for Java and C.  
-A single, safe, entry point: `mm` dispatch to specialized kernels for a several instruction sets:  
+A.k.a., jokingly, _"Just A Matmul"_. JAM implements fast quantized matrix multiplication routines for CPUs, with APIs for Java and C.  
+A single, safe entry point: `mm` dispatches to specialized kernels for several instruction sets:  
 SSE3 through AVX-512-VNNI on x86, NEON, DotProd and I8MM on ARM, and Metal on Apple GPUs.
 
 The JAM native kernels are competitive with llama.cpp's CPU kernels across several instruction sets.
@@ -41,7 +41,7 @@ jam_status st = jam_mm(
      m, n, k);         // R = W @ A^T
 ```
 
-Supported quantizations: `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
+Supported quantizations: `Q1_0`, `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
 Activations and result are always `F32`. The operands must be **native** segments, not heap arrays.
 
 `JAM.providers()` discovers the available backends from the classpath. The `mm` operation is meticulously bounds-checked.
@@ -96,7 +96,7 @@ The scalar jam provider requires no additional flags or permission.
 ## Backends
 
 jam automatically detects the current CPU features and/or JVM configuration, the number of cores, discards low-power cores and selects the best available kernels.  
-Set the target instruction set manually  with `JAM_ISA` or `cfg.max_isa`.
+Set the target instruction set manually with `JAM_ISA` or `cfg.max_isa`.
 
 | Arch | Instruction Sets | Q8_0 dot |
 |---|---|---|
@@ -104,7 +104,7 @@ Set the target instruction set manually  with `JAM_ISA` or `cfg.max_isa`.
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (the default) auto-selects the fastest  kernels; on Apple Silicon that includes Metal kernels.  
+`JAM_ISA=auto` (the default) auto-selects the fastest kernels; on Apple Silicon that includes Metal kernels.  
 Set a CPU instruction-set (`JAM_ISA=i8mm`) to stay CPU-only. Backend dispatch, re-packing and the multi-threading contract are described in [docs/design.md](docs/design.md).
 
 ## Configuration
@@ -140,4 +140,4 @@ Toolchains, the cmake-only build, the multi-platform release set and the test su
 > The native jam (libjam) is where most of my time was spent and is the most optimized backend.  
 > Interesting fact: the `Q8_0` `mm` implementation surpasses the max. theoretical FLOPS of my AMD 9950x3D CPU; this is both impossible and really not that hard.  
 > The vector jam, uses Java's Vector API and remains competitive with native kernels for pure-Java deployments.  
-> For this particular use-case: high-performance, non-trivial kernels using the Vector API, the Graal compiler turned to be **STELLAR**, way beyond my already-high expectations.
+> For this particular use-case: high-performance, non-trivial kernels using the Vector API, the Graal compiler turned out to be **STELLAR**, way beyond my already-high expectations.
