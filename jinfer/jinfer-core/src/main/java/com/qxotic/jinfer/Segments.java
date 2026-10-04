@@ -6,10 +6,8 @@ import com.sun.management.HotSpotDiagnosticMXBean;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.management.ManagementFactory;
-import java.lang.reflect.Field;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
-import sun.misc.Unsafe;
 
 /**
  * The raw-memory substrate every kernel body assumes. Kernels validate dtype/contiguity at entry
@@ -90,23 +88,6 @@ public final class Segments {
             B_SPECIES = null;
         }
     }
-
-    static final Unsafe UNSAFE;
-
-    static {
-        try {
-            Field f = Unsafe.class.getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            UNSAFE = (Unsafe) f.get(null);
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    // Graal does not intrinsify lanewise transcendentals (EXP falls back ~4x slower than
-    // Math.exp); C2 lowers them to the vector math stubs (~3x faster than Math.exp).
-    static final boolean JIT_VECTOR_MATH =
-            !System.getProperty("java.vm.version", "").contains("jvmci");
 
     // Whether the active compiler intrinsifies the Vector API well enough to trust it on hot
     // paths. Graal (JIT or native image) does; C2 runs the byte-unpack-heavy k-quant kernels
@@ -259,19 +240,6 @@ public final class Segments {
                     ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset, value);
         } else {
             memorySegment.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);
-        }
-    }
-
-    /**
-     * Float store at an absolute address: GLOBAL_SEGMENT folds to a raw store (no Unsafe check).
-     */
-    @AlwaysInline(
-            "hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
-    static void putFloat(long address, float value) {
-        if (GLOBAL_SEGMENT != null) {
-            GLOBAL_SEGMENT.set(ValueLayout.JAVA_FLOAT_UNALIGNED, address, value);
-        } else {
-            UNSAFE.putFloat(address, value);
         }
     }
 }
