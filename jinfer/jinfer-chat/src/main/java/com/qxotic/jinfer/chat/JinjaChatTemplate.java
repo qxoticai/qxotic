@@ -176,12 +176,6 @@ final class JinjaChatTemplate {
     }
 
     /**
-     * HuggingFace {@code apply_chat_template} pre-processes tool-call arguments from JSON strings
-     * into dicts so Jinja templates can call {@code .items()} on them. This mirrors that
-     * normalization: every {@code tool_calls[*].function.arguments} string is parsed into a {@code
-     * Map<String,Object>} (non-strings and null are left alone).
-     */
-    /**
      * A template that documents the {@code <tool_call>} envelope but never reads {@code tool_calls}
      * (SmolLM3) renders an assistant call turn as content only, so a structured call vanishes from
      * the history and the model, seeing a result it never asked for, calls again. The model was
@@ -215,6 +209,12 @@ final class JinjaChatTemplate {
         return out;
     }
 
+    /**
+     * HuggingFace {@code apply_chat_template} pre-processes tool-call arguments from JSON strings
+     * into dicts so Jinja templates can call {@code .items()} on them. This mirrors that
+     * normalization: every {@code tool_calls[*].function.arguments} string is parsed into a {@code
+     * Map<String,Object>} (non-strings and null are left alone).
+     */
     static List<Object> preprocessToolCalls(List<Object> messages) {
         var out = new ArrayList<Object>(messages.size());
         for (Object raw : messages) {
