@@ -135,7 +135,16 @@ class ReaderImpl {
         validateOffsets(tensorName, begin, end);
 
         long size = end - begin;
-        long expectedSize = dtype.byteSizeForShape(shape);
+        long expectedSize;
+        try {
+            expectedSize = dtype.byteSizeForShape(shape);
+        } catch (ArithmeticException e) {
+            throw new SafetensorsFormatException(
+                    "Shape overflows the tensor byte size " + tensorContext(tensorName), e);
+        } catch (IllegalArgumentException e) {
+            throw new SafetensorsFormatException(
+                    e.getMessage() + " " + tensorContext(tensorName), e);
+        }
         if (expectedSize != size) {
             throw new SafetensorsFormatException(
                     "Size mismatch "
