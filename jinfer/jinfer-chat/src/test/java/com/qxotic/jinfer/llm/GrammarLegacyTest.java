@@ -1426,13 +1426,17 @@ public final class GrammarLegacyTest {
         Grammar.Cursor c = Grammar.of("root ::= [\\\\]", v).cursor();
         check("class lone backslash", allows(c, v, "\\"));
 
-        // a repetition spec with no preceding element is ignored; the rule is empty
-        Grammar.Cursor bare = Grammar.of("root ::= {2}", v).cursor();
-        check("bare {2} = empty rule", bare.exhausted());
-
-        // a brace spec that is not a repetition now ERRORS (via undefined ref) instead of
-        // silently vanishing
+        // a repetition spec with no preceding element is a syntax error, not an empty rule
         boolean threw = false;
+        try {
+            Grammar.parse("root ::= {2}");
+        } catch (IllegalArgumentException e) {
+            threw = true;
+        }
+        check("bare {2} errors", threw);
+
+        // a brace spec that is not a repetition ERRORS instead of silently vanishing
+        threw = false;
         try {
             Grammar.parse("root ::= \"a\"{abc}");
         } catch (IllegalArgumentException e) {
