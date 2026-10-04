@@ -55,7 +55,7 @@ Tokenizer llama = loader.fromHuggingFace("unsloth", "Llama-3.2-1B-Instruct-GGUF"
 Tokenizer gemma = loader.fromHuggingFace("unsloth", "gemma-4-E2B-it-GGUF",
     "gemma-4-E2B-it-Q8_0.gguf");
 
-// Alibaba Qwen 3
+// Qwen 3.6
 Tokenizer qwen = loader.fromHuggingFace("unsloth", "Qwen3.6-35B-A3B-GGUF",
     "Qwen3.6-35B-A3B-Q8_0.gguf");
 
@@ -90,7 +90,7 @@ Use `createEmptyBuilder()` to start with an empty registry and register only wha
 
 ## Tested Models
 
-Token-perfect tested against 20 model families:
+Token-perfect tested against tokenizers from 18 model vendors:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google** - Gemma 4

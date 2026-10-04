@@ -29,13 +29,12 @@ decodes and counts from any source: HuggingFace, ModelScope, GGUF or local files
 
 ```bash
 jbang toknroll@qxoticai --source google/gemma-4-e2b-it --input "Hello, Tok'n'Roll 🎸"
-echo "Hello\!" | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
+echo 'Hello, World!' | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
 ```
 
 ## Why Tok'n'Roll
 
-- **Token-perfect.** Byte-exact parity with the reference tokenizers for
-  [20 model families](#tested-implementations), not "close enough".
+- **Token-perfect.** Byte-exact parity with the reference tokenizers of [18 model vendors](#tested-implementations), not "close enough".
 - **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model family,
   and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
 - **Loads existing files.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
