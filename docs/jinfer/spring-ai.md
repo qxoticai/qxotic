@@ -51,11 +51,12 @@ try (var model = JinferChatModel.builder()
 local form and never touches the network. Companions use the same split:
 `companion(capability, String)` accepts a model reference; `companionPath(capability, Path)`
 accepts a local file. Spring Boot properties remain path-or-ref strings and the autoconfiguration
-routes them to the matching method. A `JinferChatOptions` value on the prompt overrides per
-request:
+routes them to the matching method.
 
 A bare repository reference follows llama.cpp and selects `Q4_K_M`. Jinfer's best-supported quant
 is `Q8_0`, so the examples specify it explicitly.
+
+A `JinferChatOptions` value on the prompt overrides per request:
 
 ```java
 ChatResponse response = model.call(new Prompt(
@@ -160,12 +161,15 @@ spring:
         max-tokens: 512
 ```
 
-Also exposed: `spring.ai.jinfer.embedding`, `spring.ai.jinfer.rerank`, `spring.ai.jinfer.speech`. Model resolution happens at startup; invalid configuration fails the boot.
+Also exposed: `spring.ai.jinfer.embedding`, `spring.ai.jinfer.rerank`, `spring.ai.jinfer.speech`, `spring.ai.jinfer.transcription`.
+Rerank, speech and transcription activate when their `model` is set.
+Embedding also needs explicit selection with `spring.ai.model.embedding=jinfer`, so a chat-only app is never asked for an embedding GGUF.
+Model resolution happens at startup; invalid configuration fails the boot.
 
 ## Lifetime and concurrency
 
 One adapter is one serial pipeline. `fork()` creates another state over shared weights when the caller supplied the loaded model and owns its arena. Close adapters before closing that arena.
 
-`JinferChatModel`, `JinferEmbeddingModel`, and `JinferDocumentPostProcessor` are `AutoCloseable`; Spring closes managed beans automatically.
+`JinferChatModel`, `JinferEmbeddingModel`, `JinferDocumentPostProcessor`, `JinferSpeechModel`, and `JinferTranscriptionModel` are `AutoCloseable`; Spring closes managed beans automatically.
 
 Shaded jars must merge `META-INF/services` entries (e.g. Maven Shade's `ServicesResourceTransformer`) so architecture providers stay discoverable.
