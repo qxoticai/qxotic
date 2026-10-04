@@ -318,7 +318,7 @@ try (FileChannel channel = FileChannel.open(Path.of("output.gguf"),
 The library throws `GGUFFormatException` for invalid GGUF files:
 
 - **Corrupted files**: Invalid magic number, version mismatch, truncated data
-- **Format violations**: Tensor names &gt; 64 characters, more than 4 dimensions, unaligned offsets
+- **Format violations**: Tensor names longer than 64 UTF-8 bytes (the writer stops at 63, the most ggml loads), more than 4 dimensions, unaligned offsets
 - **Type mismatches**: Wrong metadata value types for keys the format defines, such as `general.alignment`
 - **Duplicate entries**: Duplicate tensor names or metadata keys
 

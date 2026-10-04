@@ -29,6 +29,25 @@ class WriterValidationTest extends GGUFTest {
     }
 
     @Test
+    void testWriteTensorNameLimitIsGgmlMaxNameInUtf8Bytes() throws Exception {
+        // ggml loads names of at most GGML_MAX_NAME - 1 = 63 bytes.
+        writeToBytes(ggufWithTensorNamed("a".repeat(63)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> writeToBytes(ggufWithTensorNamed("a".repeat(64))));
+        // 32 UTF-16 units, 64 UTF-8 bytes.
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> writeToBytes(ggufWithTensorNamed("é".repeat(32))));
+    }
+
+    private static GGUF ggufWithTensorNamed(String name) {
+        return Builder.newBuilder()
+                .putTensor(TensorEntry.create(name, new long[] {1}, GGMLType.F32, 0))
+                .build();
+    }
+
+    @Test
     void testWriteFailsOnTooManyTensorDimensions() {
         GGUF gguf =
                 fakeGGUF(

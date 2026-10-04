@@ -12,6 +12,9 @@ import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 
 final class WriterImpl {
+    /** ggml's GGML_MAX_NAME (64) minus the NUL terminator. */
+    private static final int MAX_TENSOR_NAME_BYTES = 63;
+
     private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
 
     private final GGUF gguf;
@@ -95,11 +98,20 @@ final class WriterImpl {
     private void writeTensorEntry(WritableByteChannel byteChannel, TensorEntry tensorEntry)
             throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
-        // it must be at most 64 bytes long.
+        // it must be at most 64 bytes long. ggml stores it NUL-terminated in
+        // char[GGML_MAX_NAME = 64] and refuses to load longer names, so at most 63 UTF-8 bytes
+        // are written.
         String name = tensorEntry.name();
-        if (name.length() > 64) {
+        int nameBytes = name.getBytes(StandardCharsets.UTF_8).length;
+        if (nameBytes > MAX_TENSOR_NAME_BYTES) {
             throw new IllegalArgumentException(
-                    "Tensor name too long (>64): " + name.length() + " for tensor '" + name + "'");
+                    "Tensor name too long: "
+                            + nameBytes
+                            + " UTF-8 bytes (maximum "
+                            + MAX_TENSOR_NAME_BYTES
+                            + ") for tensor '"
+                            + name
+                            + "'");
         }
         writeString(byteChannel, name); // gguf_string_t name;
         // The number of shape in the tensor.
