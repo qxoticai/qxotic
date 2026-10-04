@@ -106,8 +106,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     public void close() {
         lock.lock();
         try {
-            state.close();
-            Arenas.close(arena);
+            JinferEmbeddingModel.closeStateThenArena(state, arena);
         } finally {
             lock.unlock();
         }
