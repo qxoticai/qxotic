@@ -56,6 +56,20 @@ class ParakeetStreamingTest {
     }
 
     @Test
+    void aBadChunkOverrideFailsNamingTheProperty() {
+        for (String bad : new String[] {"0", "-2", "two", "100000"}) {
+            System.setProperty(Parakeet.CHUNK_SECONDS, bad);
+            try (var state = parakeet.newState()) {
+                var e = assertThrows(IllegalArgumentException.class, () -> parakeet.stream(state));
+                assertTrue(e.getMessage().contains(Parakeet.CHUNK_SECONDS), e.getMessage());
+            } finally {
+                System.clearProperty(Parakeet.CHUNK_SECONDS);
+            }
+        }
+        assertEquals(1, Parakeet.chunkFrames("1", 16_000, 160_000));
+    }
+
+    @Test
     void audioShorterThanAChunkAndItsRightContextIsFinalOnlyAtFinish() {
         float[] pcm = TinyParakeet.noise(3.5, 3);
         Transcription oneShot = parakeet.transcribe(pcm);
