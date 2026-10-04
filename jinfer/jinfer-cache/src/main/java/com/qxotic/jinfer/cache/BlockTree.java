@@ -176,16 +176,21 @@ public final class BlockTree<S extends ContextState> {
             }
             for (Block b = tip; b != sentinel; b = b.parent) chainScratch.add(b);
             boolean corrupt = false;
-            for (int i = chainScratch.size() - 1; i >= 0; i--) {
-                Block b = chainScratch.get(i);
-                if (!verified(b)) { // failed verification = a miss, never restored
-                    discard(b); // the block and everything chained on it
-                    corrupt = true;
-                    break;
+            try {
+                for (int i = chainScratch.size() - 1; i >= 0; i--) {
+                    Block b = chainScratch.get(i);
+                    if (!verified(b)) { // failed verification = a miss, never restored
+                        discard(b); // the block and everything chained on it
+                        corrupt = true;
+                        break;
+                    }
+                    codec.restore(state, b.from, b.to, b.mem);
                 }
-                codec.restore(state, b.from, b.to, b.mem);
+            } finally {
+                // a throwing restore must not leave this chain behind for the next resume to
+                // restore over its own (correct) rows
+                chainScratch.clear();
             }
-            chainScratch.clear();
             if (corrupt) continue; // the tree changed: re-match from scratch
             hits++;
             state.resumeAt(tip.to);
