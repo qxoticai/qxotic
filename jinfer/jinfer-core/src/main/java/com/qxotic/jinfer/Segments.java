@@ -31,10 +31,9 @@ public final class Segments {
     static final int VECTOR_BIT_SIZE = vectorBitSize();
 
     private static int vectorBitSize() {
-        Integer override = Integer.getInteger("jinfer.vectorBitSize");
+        int preferred;
         try {
-            int preferred = VectorShape.preferredShape().vectorBitSize();
-            return override != null ? override : preferred;
+            preferred = VectorShape.preferredShape().vectorBitSize();
         } catch (Throwable noVectorApi) {
             // The module is not on the graph. Fail HERE, with the fix in the message: the
             // alternative is a NoClassDefFoundError thrown minutes later from inside a model
@@ -46,6 +45,23 @@ public final class Segments {
                         + " -Djinfer.vectorBitSize=0 selects jinfer's scalar kernels but still"
                         + " needs the module present.",
                     noVectorApi);
+        }
+        return vectorBitSize(System.getProperty("jinfer.vectorBitSize"), preferred);
+    }
+
+    /** {@code -Djinfer.vectorBitSize} ({@code override}, null when unset) over the preference. */
+    static int vectorBitSize(String override, int preferred) {
+        if (override == null) return preferred;
+        try {
+            int bits = Integer.parseInt(override.strip());
+            if (bits != 0) VectorShape.forBitSize(bits); // throws for a size with no shape
+            return bits;
+        } catch (IllegalArgumentException notAShape) { // NumberFormatException included
+            throw new IllegalArgumentException(
+                    "jinfer.vectorBitSize: 0 (the scalar kernels) or a Vector API shape size"
+                            + " (64, 128, 256, 512), not '"
+                            + override
+                            + "'");
         }
     }
 
