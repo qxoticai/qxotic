@@ -279,31 +279,25 @@ final class JamPack {
     }
 
     static MemorySegment mappedSlab(Path dir, long bytes, Arena arena) {
-        Path file;
+        Path file = null;
         try {
             file = Files.createTempFile(dir, "jinfer-pack-", ".bin");
+            try (FileChannel ch =
+                    FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+                return ch.map(FileChannel.MapMode.PRIVATE, 0, bytes, arena);
+            }
         } catch (IOException e) {
-            throw slabError(dir, bytes, e);
-        }
-        try (FileChannel ch =
-                FileChannel.open(file, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
-            return ch.map(FileChannel.MapMode.PRIVATE, 0, bytes, arena);
-        } catch (IOException e) {
-            throw slabError(dir, bytes, e);
+            throw (OutOfMemoryError)
+                    new OutOfMemoryError("jam pack slab: cannot map " + bytes + " B in " + dir)
+                            .initCause(e);
         } finally {
-            try {
-                Files.delete(file); // POSIX: unlink now, mapped pages live until the arena closes
-            } catch (IOException windowsKeepsMappedFiles) {
-                file.toFile().deleteOnExit();
+            if (file != null) {
+                try {
+                    Files.delete(file); // POSIX: unlink now, mapped pages live until arena close
+                } catch (IOException windowsKeepsMappedFiles) {
+                    file.toFile().deleteOnExit();
+                }
             }
         }
-    }
-
-    private static OutOfMemoryError slabError(Path dir, long bytes, IOException cause) {
-        OutOfMemoryError error =
-                new OutOfMemoryError(
-                        "jam pack slab: cannot map " + bytes + " B in " + dir + ": " + cause);
-        error.initCause(cause);
-        return error;
     }
 }
