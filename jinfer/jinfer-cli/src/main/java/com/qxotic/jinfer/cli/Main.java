@@ -189,9 +189,6 @@ public final class Main {
         return engine;
     }
 
-    static final String MODELS_DOCS =
-            "https://github.com/qxoticai/qxotic/blob/main/docs/jinfer/index.md#models-and-capabilities";
-
     /**
      * The refusal for a model chat and instruct cannot run. An embedding or reranking checkpoint is
      * the one people reach for, and the loader's own refusal speaks to library callers, so the CLI

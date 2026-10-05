@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import sun.misc.Signal;
-import sun.misc.SignalHandler;
 
 /** One conversation; the engine's retained session carries its KV state across turns. */
 final class Chat {
@@ -50,24 +49,7 @@ final class Chat {
         BufferedReader reader =
                 new BufferedReader(new InputStreamReader(io.in(), StandardCharsets.UTF_8));
         boolean interactive = io.isTerminal(0) && io.isTerminal(2);
-        Interrupts interrupts = interactive ? Interrupts.install(io.err()) : null;
-        try {
-            converse(engine, sampling, options, io, history, reader, interactive, interrupts);
-        } finally {
-            if (interrupts != null) interrupts.close();
-        }
-    }
-
-    private static void converse(
-            ChatEngine engine,
-            Sampling sampling,
-            Options options,
-            Main.IO io,
-            List<Message> history,
-            BufferedReader reader,
-            boolean interactive,
-            Interrupts interrupts)
-            throws IOException {
+        if (interactive) handleCtrlC(io.err());
         int used = 0; // what the last turn left in the context; the next prompt starts there
         while (true) {
             if (interactive) {
@@ -112,11 +94,11 @@ final class Chat {
             ChatEngine.Completion completion;
             try (prepared;
                     Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options, io)) {
-                if (interrupts != null) interrupts.turn = turn;
+                streaming = turn;
                 try {
                     completion = engine.complete(prepared, turn);
                 } finally {
-                    if (interrupts != null) interrupts.turn = null;
+                    streaming = null;
                 }
                 turn.finish(completion, engine);
             }
@@ -136,46 +118,29 @@ final class Chat {
         }
     }
 
+    private static volatile Turn streaming;
+
     /**
      * Ctrl-C at a chat terminal, as other chat CLIs treat it: while a reply streams it stops that
-     * reply and the conversation goes on; at the prompt, or again before the reply has stopped, it
-     * ends the chat on a fresh line. Only for an interactive chat: a piped one keeps the JVM's
-     * default, which ends the process.
+     * reply and the conversation goes on; at the prompt, or pressed again, it exits on a fresh
+     * line. A piped chat keeps the JVM's default.
      */
-    static final class Interrupts implements AutoCloseable {
-        private static final Signal INT = new Signal("INT");
-
-        private final SignalHandler previous;
-        volatile Turn turn;
-
-        private Interrupts(PrintStream err) {
-            previous =
-                    Signal.handle(
-                            INT,
-                            signal -> {
-                                Turn current = turn;
-                                if (current != null && !current.cancelled()) {
-                                    current.cancel();
-                                    return;
-                                }
-                                err.println();
-                                err.flush();
-                                System.exit(130);
-                            });
-        }
-
-        /** Null where the JVM does not let an application handle SIGINT (-Xrs). */
-        static Interrupts install(PrintStream err) {
-            try {
-                return new Interrupts(err);
-            } catch (IllegalArgumentException | UnsupportedOperationException unavailable) {
-                return null;
-            }
-        }
-
-        @Override
-        public void close() {
-            Signal.handle(INT, previous);
+    private static void handleCtrlC(PrintStream err) {
+        try {
+            Signal.handle(
+                    new Signal("INT"),
+                    signal -> {
+                        Turn turn = streaming;
+                        if (turn != null && !turn.cancelled) {
+                            turn.cancelled = true;
+                            return;
+                        }
+                        err.println();
+                        err.flush();
+                        System.exit(130);
+                    });
+        } catch (IllegalArgumentException | UnsupportedOperationException xrs) {
+            // -Xrs: the JVM keeps SIGINT, and Ctrl-C ends the process
         }
     }
 
