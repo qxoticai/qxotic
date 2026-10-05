@@ -85,7 +85,7 @@ class WorkflowTest {
                         "Be brief."),
                 capture.err());
         assertEquals("xx\nxx\n", capture.out().replace("\r\n", "\n"));
-        assertTrue(capture.err().contains("capacity 128"), capture.err());
+        assertTrue(capture.err().contains("context: 0/128 tokens used"), capture.err());
         assertEquals(
                 "Be brief.",
                 CliModelProvider.template.conversations.getLast().messages().getFirst().text());
@@ -97,7 +97,7 @@ class WorkflowTest {
         Path path = model("language", "");
         var capture = new CliFixtures.Capture("/context\n/exit\n");
         assertEquals(0, run(capture, "chat", "-m", path.toString(), "-c", "0"));
-        assertTrue(capture.err().contains("capacity 16384"));
+        assertTrue(capture.err().contains("context: 0/16384 tokens used"));
         var invalid = new CliFixtures.Capture("");
         assertEquals(1, run(invalid, "instruct", "-m", path.toString(), "hi", "-c", "20000"));
         assertTrue(invalid.err().contains("exceeds"));

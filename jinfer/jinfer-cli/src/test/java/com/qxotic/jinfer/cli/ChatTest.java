@@ -32,7 +32,12 @@ class ChatTest {
         assertEquals("second", second.getLast().text());
         assertEquals("xxxx\nxxxx\n", capture.out().replace("\r\n", "\n"));
         assertTrue(capture.err().contains("rejected test turn"));
-        assertTrue(capture.err().contains("context:"));
+        // after "first": its prompt and reply, as the turn's own summary counted them
+        String summary =
+                capture.err().lines().filter(l -> l.contains(" cache: ")).findFirst().orElseThrow();
+        String used = summary.substring("context: ".length(), summary.indexOf(' ', 9));
+        assertTrue(capture.err().contains("context: " + used + " tokens used ("), capture.err());
+        assertFalse(used.startsWith("0/"), used);
         assertFalse(capture.inputClosed);
     }
 
