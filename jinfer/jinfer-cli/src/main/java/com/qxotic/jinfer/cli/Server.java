@@ -103,22 +103,12 @@ final class Server {
                 !o.thinkInline, "server cannot route thoughts inline; use --think on or off");
     }
 
-    static void validateTranscription(Options o) {
-        o.rejectLanguageOptions("a transcription server");
-        Options.require(!o.rawPrompt, "--raw-prompt does not apply to a transcription server");
-        Options.require(
-                !o.server.noGrammar, "--no-grammar does not apply to a transcription server");
-        Options.require(
-                o.promptCache == null, "--cache/--cache-ro do not apply to a transcription server");
-    }
-
-    /** A retrieval server sizes one state and nothing else; every language knob is refused. */
-    static void validateRetrieval(Options o) {
-        o.rejectLanguageOptions("a retrieval server", "--context-capacity", "-c");
-        Options.require(!o.rawPrompt, "--raw-prompt does not apply to a retrieval server");
-        Options.require(!o.server.noGrammar, "--no-grammar does not apply to a retrieval server");
-        Options.require(
-                o.promptCache == null, "--cache/--cache-ro do not apply to a retrieval server");
+    /** A task server takes no language option but the {@code kept} ones. */
+    static void validateTask(Options o, String server, String... kept) {
+        o.rejectLanguageOptions(server, kept);
+        Options.require(!o.rawPrompt, "--raw-prompt does not apply to %s", server);
+        Options.require(!o.server.noGrammar, "--no-grammar does not apply to %s", server);
+        Options.require(o.promptCache == null, "--cache/--cache-ro do not apply to %s", server);
     }
 
     /**
@@ -137,51 +127,44 @@ final class Server {
         return o.contextCapacity;
     }
 
-    /** The started server and what the banner says about it. */
-    record Retrieval(RetrievalServer.Running server, String description, String api) {}
-
-    private static Retrieval startRetrieval(
+    private static int serveRetrieval(
             ModelProvider.Retrieval kind,
             Options options,
             Options.Files files,
             Arena arena,
-            ServerConfig config)
+            ServerConfig config,
+            LoadSpinner spinner,
+            Main.IO io)
             throws IOException {
         String name = files.model().getFileName().toString();
+        boolean embedding = kind == ModelProvider.Retrieval.EMBEDDING;
+        RetrievalServer.Running running;
+        int capacity;
         try {
-            if (kind == ModelProvider.Retrieval.EMBEDDING) {
+            if (embedding) {
                 LoadedEmbedder<?> embedder = Models.loadEmbedder(files.model(), arena);
-                int capacity =
+                capacity =
                         contextCapacity(
                                 options, embedder.model().configuration().maxContextLength());
-                return new Retrieval(
-                        RetrievalServer.start(embedder, capacity, name, config),
-                        name
-                                + " (embedding, dimensions "
-                                + (embedder.supportsCustomDimensions()
-                                        ? embedder.minimumDimension() + "-"
-                                        : "")
-                                + embedder.dimension()
-                                + ", context "
-                                + capacity
-                                + ")",
-                        "POST /v1/embeddings");
+                running = RetrievalServer.start(embedder, capacity, name, config);
+            } else {
+                LoadedReranker<?> reranker = Models.loadReranker(files.model(), arena);
+                capacity =
+                        contextCapacity(
+                                options, reranker.model().configuration().maxContextLength());
+                running = RetrievalServer.start(reranker, capacity, name, config);
             }
-            LoadedReranker<?> reranker = Models.loadReranker(files.model(), arena);
-            int capacity =
-                    contextCapacity(options, reranker.model().configuration().maxContextLength());
-            return new Retrieval(
-                    RetrievalServer.start(reranker, capacity, name, config),
-                    name + " (reranking, context " + capacity + ")",
-                    "POST /v1/rerank");
         } catch (BindException e) {
             throw bindFailure(config, e);
         }
-    }
-
-    private static void printRetrieval(Retrieval running, ServerConfig config, Main.IO io) {
-        io.err().printf("model       %s%n", running.description());
-        listening(io.err(), config.bind(), running.server().address().getPort(), running.api());
+        spinner.close();
+        io.err().printf("model       %s (context %d)%n", name, capacity);
+        listening(
+                io.err(),
+                config.bind(),
+                running.address().getPort(),
+                embedding ? "POST /v1/embeddings" : "POST /v1/rerank");
+        return await(running::await, running::close);
     }
 
     /** DNS and binding policy are execution work, not argument parsing. */
@@ -237,14 +220,11 @@ final class Server {
                     // is read from the header, so the weights load once, as the right face.
                     var retrieval = Models.retrieval(files.model());
                     if (retrieval.isPresent()) {
-                        validateRetrieval(options);
-                        var running =
-                                startRetrieval(retrieval.get(), options, files, arena, config);
-                        spinner.close();
-                        printRetrieval(running, config, io);
-                        return await(running.server()::await, running.server()::close);
+                        validateTask(options, "a retrieval server", "--context-capacity", "-c");
+                        return serveRetrieval(
+                                retrieval.get(), options, files, arena, config, spinner, io);
                     }
-                    validateTranscription(options);
+                    validateTask(options, "a transcription server");
                     TranscriptionModel<?, ?, ?> transcription =
                             Models.loadTranscription(files.model(), arena, files.companions());
                     spinner.close(); // one load line; the server runs outside it
