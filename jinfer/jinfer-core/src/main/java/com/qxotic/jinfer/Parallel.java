@@ -33,13 +33,11 @@ import java.util.function.IntConsumer;
  * the workers spin {@link #SPIN_NANOS} - the many small regions of one decode token or one prefill
  * matmul are microseconds apart - and park when the pool is idle. Regions of one pool are
  * serialized: a second thread submitting waits for the running region, which is the fair share on a
- * machine the first submitter already fills. That holds for a region run inline too (one job, a
- * width-1 pool, {@link #inline}): it is still slot 0, and two submitters must never share a slot's
- * scratch, so it takes the same exclusion uncontended. A loop submitted from inside a region of the
- * same pool runs inline on that thread; loops are independent and non-blocking, so that is always
- * correct, only less parallel. A loop on another pool from inside a region is a region there; two
- * pools whose regions submit to each other at the same time deadlock, as two locks taken in both
- * orders do.
+ * machine the first submitter already fills; a region run inline (one job, a width-1 pool) is slot
+ * 0 too, so it serializes the same way. A loop submitted from inside a region of the same pool runs
+ * inline on that thread; loops are independent and non-blocking, so that is always correct, only
+ * less parallel. A loop on another pool from inside a region is a region there; two pools whose
+ * regions submit to each other at the same time deadlock, as two locks taken in both orders do.
  */
 public final class Parallel implements AutoCloseable {
 
@@ -148,17 +146,7 @@ public final class Parallel implements AutoCloseable {
      */
     public void run(int jobs, Job body) {
         Objects.requireNonNull(body, "body");
-        region(0, jobs, null, body, true, false);
-    }
-
-    /**
-     * {@link #run} on the calling thread alone: every job in order, with the calling participant's
-     * slot and the same exclusion as a region. For work too small to wake the workers for that
-     * still indexes slot scratch.
-     */
-    public void inline(int jobs, Job body) {
-        Objects.requireNonNull(body, "body");
-        region(0, jobs, null, body, true, true);
+        region(0, jobs, null, body, true);
     }
 
     /** Sugar over {@link #run}: {@code body.accept(i)} for every {@code i < count}, in bands. */
@@ -172,7 +160,7 @@ public final class Parallel implements AutoCloseable {
      */
     public void loop(int start, int end, IntConsumer body) {
         Objects.requireNonNull(body, "body");
-        region(start, end, body, null, false, false);
+        region(start, end, body, null, false);
     }
 
     /** Sugar over {@link #run}: {@code body.run(i, slot)} for every {@code i < count}, in bands. */
@@ -186,40 +174,29 @@ public final class Parallel implements AutoCloseable {
      */
     public void loop(int start, int end, Job body) {
         Objects.requireNonNull(body, "body");
-        region(start, end, null, body, false, false);
+        region(start, end, null, body, false);
     }
 
     /**
      * One of {@code simple} and {@code body} is set; the region calls it without a wrapper. With
-     * {@code jobsAreIndices} every index is its own job, else the range is cut into bands; {@code
-     * serial} keeps every job on the caller.
+     * {@code jobsAreIndices} every index is its own job, else the range is cut into bands.
      */
-    private void region(
-            int start,
-            int end,
-            IntConsumer simple,
-            Job body,
-            boolean jobsAreIndices,
-            boolean serial) {
+    private void region(int start, int end, IntConsumer simple, Job body, boolean jobsAreIndices) {
         if (start >= end) return;
         Thread me = Thread.currentThread();
-        if (me instanceof Worker w && w.pool == this) {
-            if (!serial && end - start > 1 && width > 1) PerformanceCliff.NESTED_REGION.report();
-            runInline(start, end, simple, body, w.slot);
-            return;
-        }
         Region running = current;
-        if (running.submitter == me && !running.done()) { // nested on the submitter, slot 0
-            if (!serial && end - start > 1 && width > 1) PerformanceCliff.NESTED_REGION.report();
-            runInline(start, end, simple, body, 0);
-            return;
-        }
-        if (serial || end - start == 1 || width == 1) {
-            lock.lock(); // slot 0 is this pool's caller slot: one submitter at a time owns it
+        boolean nested =
+                (me instanceof Worker w && w.pool == this)
+                        || (running.submitter == me && !running.done());
+        if (end - start == 1 || width == 1 || nested) {
+            if (nested && end - start > 1 && width > 1) PerformanceCliff.NESTED_REGION.report();
+            int slot = me instanceof Worker w && w.pool == this ? w.slot : 0;
+            if (!nested) lock.lock(); // inline is still slot 0: one submitter at a time owns it
             try {
-                runInline(start, end, simple, body, 0);
+                if (simple != null) for (long i = start; i < end; i++) simple.accept((int) i);
+                else for (long i = start; i < end; i++) body.run((int) i, slot);
             } finally {
-                lock.unlock();
+                if (!nested) lock.unlock();
             }
             return;
         }
@@ -244,11 +221,6 @@ public final class Parallel implements AutoCloseable {
         } finally {
             lock.unlock();
         }
-    }
-
-    private static void runInline(int start, int end, IntConsumer simple, Job body, int slot) {
-        if (simple != null) for (long i = start; i < end; i++) simple.accept((int) i);
-        else for (long i = start; i < end; i++) body.run((int) i, slot);
     }
 
     @Override

@@ -465,8 +465,17 @@ public final class MatMul {
                     if (tmp != null) tmp[idx] = v;
                     else writeFloat(cs, cBase + (long) s * cRowBytes + (long) row * 4, v);
                 };
-        if ((long) cells * k <= TINY_MATVEC_ELEMS) Parallel.shared().inline(cells, cell);
-        else Parallel.forLoop(cells, cell);
+        if ((long) cells * k <= TINY_MATVEC_ELEMS) {
+            // one job runs inline, but under a region's slot and exclusion
+            Parallel.shared()
+                    .run(
+                            1,
+                            (j, slot) -> {
+                                for (int i = 0; i < cells; i++) cell.run(i, slot);
+                            });
+        } else {
+            Parallel.forLoop(cells, cell);
+        }
         if (tmp != null)
             for (int s = 0; s < n; s++)
                 for (int row = 0; row < m; row++)
