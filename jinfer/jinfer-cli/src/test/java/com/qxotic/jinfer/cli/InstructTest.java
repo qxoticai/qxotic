@@ -40,7 +40,7 @@ class InstructTest {
             assertEquals("A prompt from stdin.", messages.getLast().text());
             assertEquals("xxxx\n", capture.out().replace("\r\n", "\n"));
             assertFalse(capture.inputClosed);
-            assertTrue(capture.err().contains("tokens/s"));
+            assertTrue(capture.err().contains(" generation: "));
         }
     }
 

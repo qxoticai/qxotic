@@ -11,6 +11,7 @@ import java.io.PrintStream;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /** One response, using the conversation template or an explicitly raw prompt. */
@@ -109,6 +110,7 @@ final class Instruct {
         // prefix on the complete() below, on its own.
         if (options.promptCache != null && !options.promptCacheReadOnly) {
             int before = engine.cacheSample().blocks();
+            long start = System.nanoTime();
             try {
                 engine.definePrompt(request);
                 engine.savePrompts();
@@ -119,10 +121,16 @@ final class Instruct {
             }
             int added = engine.cacheSample().blocks() - before;
             if (added > 0) {
+                // the prefill happens here, so the pass below restores this prompt from these
+                // blocks: say where its time went, or the summary's "restored" reads as a disk hit
                 io.err()
                         .printf(
-                                "cache: %d blocks added, catalog appended (%s)%n",
-                                added, options.promptCache);
+                                Locale.ROOT,
+                                "cache: prefilled %d new block%s in %.2f s, appended to %s%n",
+                                added,
+                                added == 1 ? "" : "s",
+                                (System.nanoTime() - start) / 1e9,
+                                options.promptCache);
             }
         }
 

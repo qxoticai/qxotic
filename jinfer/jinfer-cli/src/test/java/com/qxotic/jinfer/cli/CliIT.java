@@ -49,7 +49,7 @@ class CliIT {
                 alias.err());
         assertFalse(modern.out().isBlank());
         assertEquals(modern.out(), alias.out());
-        assertTrue(modern.err().contains("tokens/s"));
+        assertTrue(modern.err().contains(" generation: "));
     }
 
     @Test
@@ -72,7 +72,7 @@ class CliIT {
                         capture.io,
                         ModelStore.of(dir)),
                 capture.err());
-        assertTrue(capture.err().contains("tokens/s"));
+        assertTrue(capture.err().contains(" generation: "));
     }
 
     @Test
@@ -98,7 +98,7 @@ class CliIT {
                         ModelStore.of(dir)),
                 capture.err());
         assertFalse(capture.out().isBlank());
-        assertTrue(capture.err().contains("tokens/s"));
+        assertTrue(capture.err().contains(" generation: "));
     }
 
     @Test
