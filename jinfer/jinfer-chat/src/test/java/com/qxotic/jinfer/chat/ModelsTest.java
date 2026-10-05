@@ -62,6 +62,14 @@ class ModelsTest {
     }
 
     @Test
+    void theLongestArtifactPrefixWins() {
+        assertEquals("com.qxotic:jinfer-qwen35", Models.artifactFor("qwen35moe"));
+        assertEquals("com.qxotic:jinfer-qwen35", Models.artifactFor("qwen35"));
+        assertEquals("com.qxotic:jinfer-qwen3", Models.artifactFor("qwen3moe"));
+        assertNull(Models.artifactFor("unknownarch"));
+    }
+
+    @Test
     void selectHonorsPriorityAndIgnoresNonSupporters() {
         ModelProvider low = provider(0, "llama");
         ModelProvider high = provider(5, "llama");
