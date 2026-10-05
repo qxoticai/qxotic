@@ -266,6 +266,19 @@ final class Options {
         return used.containsKey(flag);
     }
 
+    /**
+     * chat and instruct send text: a media projector would load (gigabytes, for Gemma's) and never
+     * see an image, and the model would say it cannot see the file it was "given".
+     */
+    void rejectMedia() {
+        require(
+                !companionRefs.containsKey("media"),
+                "--with media would load a projector %s never uses, as it sends text only; serve"
+                        + " the model with 'jinfer server' and send images or audio in"
+                        + " /v1/chat/completions",
+                command);
+    }
+
     void rejectLanguageOptions(String application) {
         for (var option : used.entrySet()) {
             require(
