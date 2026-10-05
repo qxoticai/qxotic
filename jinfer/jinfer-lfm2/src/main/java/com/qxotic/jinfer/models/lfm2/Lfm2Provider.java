@@ -40,14 +40,27 @@ public final class Lfm2Provider implements ModelProvider {
             Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
-        Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
-        // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name
-        if (!model.configuration().causalAttention()) {
-            throw new IllegalArgumentException(
-                    "this LFM2 checkpoint is a RETRIEVAL model (non-causal attention), not a"
-                            + " generative one - it belongs to an embedder/reranker load path,"
-                            + " not Models.load");
+        // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name,
+        // from the header, before a weight is mapped: a caller offering several kinds tries the
+        // next
+        Optional<Retrieval> retrieval = retrieval(gguf);
+        if (retrieval.isPresent() || !causal(gguf)) {
+            throw new IncompatibleModelException(
+                    path.getFileName()
+                            + switch (retrieval.orElse(null)) {
+                                case EMBEDDING ->
+                                        " is an LFM2 embedding checkpoint, not a generative one;"
+                                                + " load it with Models.loadEmbedder";
+                                case RERANKING ->
+                                        " is LFM2.5-ColBERT, a reranking checkpoint, not a"
+                                                + " generative one; load it with"
+                                                + " Models.loadReranker";
+                                case null ->
+                                        " is an LFM2 retrieval checkpoint (non-causal"
+                                                + " attention), not a generative one";
+                            });
         }
+        Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
         Path media = companions.get("media");
         if (media != null) model = model.withMedia(media, arena);
         Tokenizer tok = model.tokenizer();
@@ -61,6 +74,27 @@ public final class Lfm2Provider implements ModelProvider {
                 Models.modelSeed(fileChannel),
                 Optional.of(Lfm2ChatTemplate.fromGguf(model, gguf)),
                 samplingDefaults(gguf, model.configuration(), model.vision() != null));
+    }
+
+    /**
+     * The retrieval checkpoints declare non-causal attention; the embedder adds CLS pooling,
+     * ColBERT its per-token output width ({@code embedding_length_out}, the dense_2 projection) -
+     * the same keys {@link Lfm2.Configuration#isEmbedder} and {@code isColbert} read after a load.
+     */
+    @Override
+    public Optional<Retrieval> retrieval(GGUF gguf) {
+        if (causal(gguf)) return Optional.empty();
+        String arch = gguf.getString("general.architecture");
+        if (gguf.getValueOrDefault(int.class, arch + ".pooling_type", 0) == Lfm2.POOLING_CLS)
+            return Optional.of(Retrieval.EMBEDDING);
+        if (gguf.getValueOrDefault(int.class, arch + ".embedding_length_out", 0) > 0)
+            return Optional.of(Retrieval.RERANKING);
+        return Optional.empty();
+    }
+
+    private static boolean causal(GGUF gguf) {
+        String arch = gguf.getString("general.architecture");
+        return gguf.getValueOrDefault(boolean.class, arch + ".attention.causal", true);
     }
 
     /** LiquidAI's published generation settings; GGUF general.sampling.* overrides these. */

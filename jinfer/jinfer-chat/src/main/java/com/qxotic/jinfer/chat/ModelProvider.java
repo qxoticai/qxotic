@@ -9,6 +9,7 @@ import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -73,6 +74,26 @@ public interface ModelProvider {
      */
     default Map<String, String> companionFiles() {
         return Map.of();
+    }
+
+    /**
+     * The two retrieval faces a checkpoint can have: one pooled vector, or a query-document score.
+     */
+    enum Retrieval {
+        /** Loads with {@link Models#loadEmbedder}. */
+        EMBEDDING,
+        /** Loads with {@link Models#loadReranker}. */
+        RERANKING
+    }
+
+    /**
+     * Which retrieval face the checkpoint behind {@code gguf} has, read from its HEADER alone - no
+     * weights are touched - or empty when it is not a retrieval checkpoint, or its header does not
+     * say. A caller that serves whatever it is given ({@link Models#retrieval}) asks this once and
+     * loads once; the default is empty, for a port with no retrieval face.
+     */
+    default Optional<Retrieval> retrieval(GGUF gguf) {
+        return Optional.empty();
     }
 
     /**
