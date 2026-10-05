@@ -30,6 +30,7 @@ final class Instruct {
         Options.require(
                 o.input != null && !o.input.isBlank(),
                 "instruct requires input text or '-' for stdin");
+        o.rejectMedia();
     }
 
     static void printHelp(PrintStream out) {

@@ -87,17 +87,37 @@ class OptionsTest {
     void mediaAttachmentsUseTheSharedCompanionSyntax() {
         assertEquals(
                 "projector.gguf",
-                Options.parse("chat", "-m", "m", "--with", "media=projector.gguf")
+                Options.parse("server", "-m", "m", "--with", "media=projector.gguf")
                         .companionRefs
                         .get("media"));
         for (String value : List.of("", " ", "auto")) {
             assertThrows(
                     Options.UsageException.class,
-                    () -> Options.parse("chat", "-m", "m", "--with", "media=" + value));
+                    () -> Options.parse("server", "-m", "m", "--with", "media=" + value));
         }
         assertThrows(
                 Options.UsageException.class,
-                () -> Options.parse("chat", "-m", "m", "--with", "media=a", "--with", "media=b"));
+                () -> Options.parse("server", "-m", "m", "--with", "media=a", "--with", "media=b"));
+    }
+
+    /**
+     * Text in, text out: a projector would load for nothing, so the commands say where it works.
+     */
+    @Test
+    void textCommandsRefuseAMediaProjector() {
+        for (String[] args :
+                new String[][] {
+                    {"chat", "-m", "m", "--with", "media=p.gguf"},
+                    {"instruct", "-m", "m", "hi", "--with", "media=p.gguf"}
+                }) {
+            var refusal = assertThrows(Options.UsageException.class, () -> Options.parse(args));
+            assertTrue(
+                    refusal.getMessage()
+                            .startsWith(
+                                    "--with media would load a projector " + args[0] + " never"),
+                    refusal.getMessage());
+            assertTrue(refusal.getMessage().contains("jinfer server"), refusal.getMessage());
+        }
     }
 
     @Test

@@ -23,6 +23,7 @@ final class Chat {
         Options.require(
                 options.input == null,
                 "chat takes no input argument; use instruct for one response");
+        options.rejectMedia();
     }
 
     static void printHelp(PrintStream out) {
