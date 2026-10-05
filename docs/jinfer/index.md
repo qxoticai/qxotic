@@ -48,6 +48,12 @@ java --add-modules jdk.incubator.vector \
 
 Endpoints: `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`, `/v1/detokenize`, `/health`, Prometheus `/metrics`. Chat supports streaming, tools, structured output, reasoning, stop strings, deterministic seeds, and multimodal content when the model has a projector.
 
+The model selects the API.
+An embedding model (Qwen3-Embedding, LFM2.5-Embedding) serves OpenAI's `POST /v1/embeddings`, with `encoding_format` `float` or `base64`, and `dimensions` where the model is Matryoshka-trained (Qwen3: 32 up to 1024).
+A reranker (Qwen3-Reranker, LFM2.5-ColBERT) serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape: `query`, `documents`, `top_n`, `return_documents`.
+Qwen3-Reranker's `relevance_score` is a probability; LFM2.5-ColBERT's is an unbounded MaxSim sum (about 28 to 30 out of 32), so rank by it and never threshold it.
+A speech-to-text model serves `POST /v1/audio/transcriptions`.
+
 Loopback is the default.
 Non-loopback binding requires `--api-key`.
 Concurrency, body, generation and stalled-write limits have explicit CLI flags.
@@ -79,8 +85,8 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | Capability | Artifact | Notes |
 |------------|----------|-------|
 | chat / instruct | `jinfer-<model>` | per-architecture port |
-| embeddings | `jinfer-lfm2`, `jinfer-qwen3` | `EmbeddingModel` |
-| reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker` |
+| embeddings | `jinfer-lfm2`, `jinfer-qwen3` | `EmbeddingModel`; server `/v1/embeddings` |
+| reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker`; server `/v1/rerank` |
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4` | E2B conformer |
 | speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |

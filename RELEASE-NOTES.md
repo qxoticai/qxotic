@@ -18,6 +18,7 @@ json, safetensors, jota, toknroll and the other jam artifacts stay at 0.2.0.
 - **`speak` plays by default.** Without `--output`, speech is played after synthesis, so `--play` is gone; `--stream` starts playback with the first clip.
 - **One server limit.** `--concurrency N` holds up to `N` requests and refuses the next one with a message naming the limit; `--queue-depth` is removed.
   Health, props, models and metrics answer outside that gate, and the transcription server has the same probes and metrics as the language server.
+- **Embeddings and reranking over HTTP.** `jinfer server -m <embedding model>` serves OpenAI's `POST /v1/embeddings` (`float` or `base64`, Matryoshka `dimensions` where the model has them), and a reranker serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape; the header tells the two apart, so the weights load once.
 - **Chat keeps going when the context is full.** The oldest exchanges are dropped instead of every later turn being refused.
 - **Safer pulls.** A failed download or refresh leaves the previously usable model in place, and `list` prints one line per reference.
 - **One-line refusals.** A library refusal prints as one line with exit status 1; an invalid invocation exits with 2.
