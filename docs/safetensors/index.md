@@ -40,7 +40,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>safetensors</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -48,14 +48,14 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:safetensors:0.2.0'
+implementation 'com.qxotic:safetensors:0.3.1'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:safetensors:0.2.0"
+mvn"com.qxotic:safetensors:0.3.1"
 ```
 
   </TabItem>

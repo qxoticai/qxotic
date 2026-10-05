@@ -57,7 +57,7 @@ Path shard = index.requireSafetensorsPath("model.layers.0.self_attn.q_proj.weigh
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>safetensors</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 

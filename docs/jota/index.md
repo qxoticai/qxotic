@@ -41,7 +41,7 @@ Memory-only applications need one dependency:
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-memory</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -51,7 +51,7 @@ Tensor applications use `jota-tensor`, after a source build (`mvn -f jota/pom.xm
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-tensor</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 
@@ -64,42 +64,42 @@ Put the backend JAR on the classpath; it becomes available on supported platform
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-panama</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 
 <!-- C backend (CPU via JNI) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-c</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 
 <!-- AMD GPU -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-hip</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 
 <!-- NVIDIA GPU (Linux/Windows) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-cuda</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 
 <!-- Apple GPU (macOS) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-metal</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 
 <!-- Cross-platform GPU -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-opencl</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 

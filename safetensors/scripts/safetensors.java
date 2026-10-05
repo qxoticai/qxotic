@@ -1,5 +1,5 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS com.qxotic:safetensors:0.2.0
+//DEPS com.qxotic:safetensors:0.3.1
 //DEPS com.qxotic:json:0.2.0
 //DEPS info.picocli:picocli:4.7.7
 //DEPS info.picocli:picocli-codegen:4.7.7

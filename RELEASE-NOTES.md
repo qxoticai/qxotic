@@ -2,11 +2,10 @@
 
 ## 0.3.1
 
-jinfer only: a command-based CLI, faster prefill, and one server limit.
-`jinfer-bom` moves to 0.3.1 and names each artifact at its own version, so one import still pins a coherent set.
-At 0.3.1: `jinfer-bom`, `jinfer-cli`, `jinfer-chat`, `jinfer-codecs`, `jinfer-hub`, `jinfer-kernels`, the ten text ports (`jinfer-lfm2`, `jinfer-qwen3`, `jinfer-qwen35`, `jinfer-bailingmoe3`, `jinfer-laguna`, `jinfer-mellum`, `jinfer-gemma4`, `jinfer-gptoss`, `jinfer-nemotronh`, `jinfer-llama`), `gguf` and `jam-native`.
-Unchanged at 0.3.0: `jinfer-core`, `jinfer-cache`, `jinfer-jinja`, `jinfer-parakeet`, `jinfer-inflect2`, `jinfer-kokoro`, `jinfer-models-all`, `jinfer-langchain4j` and the three Spring AI artifacts.
-json, safetensors, jota, toknroll and the other jam artifacts stay at 0.2.0.
+A command-based CLI, embeddings and reranking over HTTP, faster prefill, and a release-wide round of fixes.
+Every artifact whose code changed moves to 0.3.1; the rest keep their version.
+Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boot-starter` at 0.3.0, `json` and `toknroll-gguf` at 0.2.0.
+`jinfer-bom` 0.3.1 names each artifact at its own version, so one import pins a coherent set.
 
 ### CLI
 
@@ -35,6 +34,16 @@ json, safetensors, jota, toknroll and the other jam artifacts stay at 0.2.0.
   Files are read and written little-endian on every platform, and the tensor name limit counts UTF-8 bytes; the writer stops at ggml's 63.
 - **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
 - **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
+
+### Fixes
+
+- **Concurrent requests on one thread.** Two requests running inline (`jinfer.threads=1`) no longer share the same attention and matmul scratch.
+- **Prompt cache.** A failed restore no longer leaves stale blocks that the next resume would trust.
+- **Thinking.** Gemma 4 no longer shows its channel name `thought` as reasoning, and Laguna answers with thinking off instead of ending the turn at once.
+- **Chat templates.** Jinja gains `{% raw %}`, `{% break %}` and `{% continue %}`, one-sided `strip` with characters, `split` with a limit, Python float formatting, and undefined (not None) missing macro arguments; an unknown statement fails instead of rendering nothing.
+- **Grammars.** Malformed GBNF and unsatisfiable schema bounds are refused, `maxItems: 0` means the empty array, and logits past the vocabulary are masked.
+- **Server.** A Responses reply with text and tool calls streams both, `timings.prompt_n` counts only evaluated tokens, the transcription server honours `--request-timeout 0`, and every request logs its status and duration.
+- **Libraries.** `jam-scalar` refuses a weight stride under `k`, `jam-vector` reports itself unavailable without native access, `jota-memory` frees its staging buffers, SentencePiece decoding into a full buffer no longer throws, safetensors reports a corrupt shape as a format error, and a 404 on a branch is no longer cached as permanent.
 
 ## 0.3.0
 

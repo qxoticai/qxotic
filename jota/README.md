@@ -50,7 +50,7 @@ Pick the smallest API that fits. Each layer includes the previous ones transitiv
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-memory</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
 </dependency>
 ```
 

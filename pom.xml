@@ -77,12 +77,12 @@
          for consumers). Jinfer library versions are managed in jinfer/pom.xml. -->
     <gguf.version>0.3.1</gguf.version>
     <json.version>0.2.0</json.version>
-    <safetensors.version>0.2.0</safetensors.version>
-    <jota.version>0.2.0</jota.version>
-    <jam.version>0.2.0</jam.version>
-    <!-- Released alone since jam 0.2.0; the next release of jam removes it. -->
-    <jam-native.version>0.3.1</jam-native.version>
+    <safetensors.version>0.3.1</safetensors.version>
+    <jota.version>0.3.1</jota.version>
+    <jam.version>0.3.1</jam.version>
     <toknroll.version>0.2.0</toknroll.version>
+    <toknroll-core.version>0.3.1</toknroll-core.version>
+    <toknroll-hf.version>0.3.1</toknroll-hf.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
          (and only) gate, so one switch decides what reaches Maven Central. -->
@@ -268,7 +268,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>${toknroll.version}</version>
+        <version>${toknroll-core.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -283,7 +283,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
-        <version>${toknroll.version}</version>
+        <version>${toknroll-hf.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -293,7 +293,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-native</artifactId>
-        <version>${jam-native.version}</version>
+        <version>${jam.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
