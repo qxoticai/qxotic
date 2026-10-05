@@ -11,7 +11,6 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import sun.misc.Signal;
 
 /** One conversation; the engine's retained session carries its KV state across turns. */
 final class Chat {
@@ -32,8 +31,7 @@ final class Chat {
                 Usage: jinfer [model options] chat [options]
                 Example: jinfer chat -m model.gguf --system-prompt "Be concise."
 
-                Commands: /quit, /exit, /context. EOF (Ctrl-D) also exits.
-                Ctrl-C stops a reply and keeps the conversation; at the prompt it exits.
+                Commands: /quit, /exit, /context. EOF also exits.
                 """);
         Options.modelHelp(out);
         Options.generationHelp(out);
@@ -49,7 +47,6 @@ final class Chat {
         BufferedReader reader =
                 new BufferedReader(new InputStreamReader(io.in(), StandardCharsets.UTF_8));
         boolean interactive = io.isTerminal(0) && io.isTerminal(2);
-        if (interactive) handleCtrlC(io.err());
         int used = 0; // what the last turn left in the context; the next prompt starts there
         while (true) {
             if (interactive) {
@@ -63,7 +60,7 @@ final class Chat {
                 throw Main.failure("cannot read chat input from stdin", e);
             }
             if (userText == null) {
-                if (interactive) io.err().println(); // Ctrl-D left the cursor after "> "
+                if (interactive) io.err().println(); // EOF left the cursor after "> "
                 break;
             }
             userText = userText.strip();
@@ -94,20 +91,8 @@ final class Chat {
             ChatEngine.Completion completion;
             try (prepared;
                     Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options, io)) {
-                streaming = turn;
-                try {
-                    completion = engine.complete(prepared, turn);
-                } finally {
-                    streaming = null;
-                }
+                completion = engine.complete(prepared, turn);
                 turn.finish(completion, engine);
-            }
-            if (completion.cancelled()) {
-                // no reply came back, so the question goes too: the next turn must not follow
-                // a user message with another
-                history.removeLast();
-                io.err().println("interrupted; this exchange was dropped from the conversation");
-                continue;
             }
             used = Turn.used(completion);
             if (completion.reply() != null) {
@@ -115,32 +100,6 @@ final class Chat {
                 // keeps generated turns inside the cache's common prefix
                 history.add(completion.reply());
             }
-        }
-    }
-
-    private static volatile Turn streaming;
-
-    /**
-     * Ctrl-C at a chat terminal, as other chat CLIs treat it: while a reply streams it stops that
-     * reply and the conversation goes on; at the prompt, or pressed again, it exits on a fresh
-     * line. A piped chat keeps the JVM's default.
-     */
-    private static void handleCtrlC(PrintStream err) {
-        try {
-            Signal.handle(
-                    new Signal("INT"),
-                    signal -> {
-                        Turn turn = streaming;
-                        if (turn != null && !turn.cancelled) {
-                            turn.cancelled = true;
-                            return;
-                        }
-                        err.println();
-                        err.flush();
-                        System.exit(130);
-                    });
-        } catch (IllegalArgumentException | UnsupportedOperationException xrs) {
-            // -Xrs: the JVM keeps SIGINT, and Ctrl-C ends the process
         }
     }
 
