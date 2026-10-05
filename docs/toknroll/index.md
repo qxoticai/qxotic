@@ -38,14 +38,14 @@ import TabItem from '@theme/TabItem';
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-core</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.1</version>
 </dependency>
 
 <!-- HuggingFace tokenizer.json loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.1</version>
 </dependency>
 
 <!-- GGUF (llama.cpp) tokenizer loading -->
@@ -60,8 +60,8 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:toknroll-core:0.2.0'
-implementation 'com.qxotic:toknroll-hf:0.2.0'
+implementation 'com.qxotic:toknroll-core:0.3.1'
+implementation 'com.qxotic:toknroll-hf:0.3.1'
 implementation 'com.qxotic:toknroll-gguf:0.2.0'
 ```
 
@@ -69,8 +69,8 @@ implementation 'com.qxotic:toknroll-gguf:0.2.0'
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:toknroll-core:0.2.0"
-mvn"com.qxotic:toknroll-hf:0.2.0"
+mvn"com.qxotic:toknroll-core:0.3.1"
+mvn"com.qxotic:toknroll-hf:0.3.1"
 mvn"com.qxotic:toknroll-gguf:0.2.0"
 ```
 

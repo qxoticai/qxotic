@@ -37,7 +37,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-core</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <!-- internal: managed for version alignment only, not an API -->
       <dependency>
@@ -54,7 +54,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-cache</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -69,23 +69,23 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
 
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-langchain4j</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-spring-ai</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -142,7 +142,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-parakeet</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -152,7 +152,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-inflect2</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -174,12 +174,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-core</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-memory</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -194,7 +194,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -204,12 +204,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-core</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -219,12 +219,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-scalar</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jam-vector</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

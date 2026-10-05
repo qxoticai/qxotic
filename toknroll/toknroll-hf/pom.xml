@@ -10,6 +10,7 @@
   </parent>
 
   <artifactId>toknroll-hf</artifactId>
+  <version>0.3.1</version>
   <name>Tok'n'Roll Hugging Face Utilities</name>
   <description>Loads Tok'n'Roll tokenizers from Hugging Face
     tokenizer.json files.</description>

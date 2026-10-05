@@ -46,27 +46,27 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>${project.version}</version>
+        <version>${toknroll-core.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-gguf</artifactId>
-        <version>${project.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
-        <version>${project.version}</version>
+        <version>${toknroll-hf.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-testkit</artifactId>
-        <version>${project.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-incubator</artifactId>
-        <version>${project.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

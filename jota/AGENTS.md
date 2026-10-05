@@ -7,7 +7,7 @@ Read the module README for the user-facing story; this file is about how the cod
 
 Jota (JVM Open Tensor Algebra) is a tensor algebra library with lazy evaluation, kernel compilation and multi-device support.
 It is one subtree of the qxotic multi-module Maven build; the root `Makefile` and root `pom.xml` own the shared configuration.
-Only `jota-core` and `jota-memory` are published to Maven Central at 0.2.0; `jota-tensor` and the backends build from source.
+Only `jota-core` and `jota-memory` are published to Maven Central at 0.3.1; `jota-tensor` and the backends build from source.
 
 ## Modules
 
