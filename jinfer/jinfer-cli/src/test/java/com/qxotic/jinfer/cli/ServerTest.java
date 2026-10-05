@@ -67,8 +67,11 @@ class ServerTest {
         assertEquals(Duration.ZERO, c.limits().requestTimeout());
         assertEquals(Duration.ofSeconds(9), c.limits().writeTimeout());
         assertEquals(32, c.defaults().maxOutputTokens());
-        assertThrows(Options.UsageException.class, () -> Server.validateTranscription(o));
-        Server.validateTranscription(Options.parse("server", "-m", "m", "--threads", "2"));
+        assertThrows(
+                Options.UsageException.class,
+                () -> Server.validateTask(o, "a transcription server"));
+        Server.validateTask(
+                Options.parse("server", "-m", "m", "--threads", "2"), "a transcription server");
     }
 
     @Test
@@ -343,7 +346,7 @@ class ServerTest {
             Options o = Options.parse(args.toArray(String[]::new));
             assertThrows(
                     Options.UsageException.class,
-                    () -> Server.validateTranscription(o),
+                    () -> Server.validateTask(o, "a transcription server"),
                     String.join(" ", setting));
         }
     }

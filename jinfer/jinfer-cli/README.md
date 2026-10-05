@@ -190,8 +190,8 @@ curl -sS http://127.0.0.1:8080/v1/embeddings \
 
 `/v1/embeddings` takes OpenAI's request, so the official clients work unchanged, `base64` encoding included.
 `dimensions` shortens a Matryoshka-trained model's vectors (Qwen3-Embedding: 32 to 1024) and is refused on a fixed-width one (LFM2.5-Embedding).
-`input_type` (`query` or `document`) is a jinfer extension that prepends the model card's retrieval prefix; LFM2.5-Embedding is trained with one.
-Inputs are token-counted up front: one longer than the context is refused with its index, and the rest are packed into as few forward passes as the context allows.
+Text is embedded as sent, so a retrieval prefix from the model card (LFM2.5-Embedding's `query: `) is the client's to add.
+An input longer than the context is refused with its index, and the rest are packed into as few forward passes as the context allows.
 
 ```sh
 jinfer server -m mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0 --port 8080
@@ -200,7 +200,7 @@ curl -sS http://127.0.0.1:8080/v1/rerank \
   -d '{"query":"capital of France","documents":["Paris is in France.","Bananas are yellow."],"top_n":1,"return_documents":true}'
 ```
 
-`/v1/rerank` (also `/rerank`) answers `results` most relevant first, each with its `index`, `relevance_score` and, on request, `document`.
+`/v1/rerank` answers `results` most relevant first, each with its `index`, `relevance_score` and, on request, `document`.
 Qwen3-Reranker scores are probabilities in [0, 1].
 LFM2.5-ColBERT scores are unbounded MaxSim sums that sit close together (about 28 to 30 out of 32), so rank by them and never threshold them.
 `--context-capacity` sizes the server's state (default 4096, `0` for the model's maximum); the language options are refused.
