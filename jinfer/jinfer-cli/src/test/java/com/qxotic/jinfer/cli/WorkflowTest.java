@@ -582,7 +582,7 @@ class WorkflowTest {
             assertTrue(
                     capture.err().contains("failed to open cache " + cache + ": "), capture.err());
             if (!Files.exists(cache))
-                assertTrue(capture.err().contains("no such file or directory"), capture.err());
+                assertTrue(capture.err().contains("no such file: '" + cache + "'"), capture.err());
             assertFalse(capture.err().contains("\tat "), capture.err());
             assertEquals("", capture.out());
             assertFalse(CliModelProvider.weights.scope().isAlive());

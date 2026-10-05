@@ -192,7 +192,7 @@ class OptionsTest {
                 Options.rootMessage(
                         new java.io.UncheckedIOException(new java.io.IOException("missing file"))));
         assertEquals(
-                "failed to open cache missing.jkv: missing.jkv: no such file or directory",
+                "failed to open cache missing.jkv: no such file: 'missing.jkv'",
                 Options.rootMessage(
                         new java.io.UncheckedIOException(
                                 "failed to open cache missing.jkv",

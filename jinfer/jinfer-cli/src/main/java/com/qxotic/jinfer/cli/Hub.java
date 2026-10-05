@@ -4,7 +4,6 @@ import com.qxotic.jinfer.cache.FrozenBlocks;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
@@ -70,7 +69,7 @@ final class Hub {
     }
 
     static void cacheInfo(Path file, PrintStream out) throws IOException {
-        if (!Files.isRegularFile(file)) throw new IOException("no such file: " + file);
+        Options.requireFile(file);
         try {
             out.print(FrozenBlocks.describe(file));
         } catch (IOException e) {

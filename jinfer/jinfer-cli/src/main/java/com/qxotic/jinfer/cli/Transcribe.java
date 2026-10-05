@@ -70,6 +70,7 @@ final class Transcribe {
         Media.Audio audio = null;
         if (!options.transcription.rawPcm) {
             boolean stdin = options.input.equals("-");
+            if (!stdin) Options.requireFile(Path.of(options.input));
             io.err()
                     .println(
                             "Reading audio "
