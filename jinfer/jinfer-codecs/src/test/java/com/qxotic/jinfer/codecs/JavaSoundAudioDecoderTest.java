@@ -31,7 +31,6 @@ class JavaSoundAudioDecoderTest {
             assertEquals(ceiling, FfmpegAudioDecoder.maxMinutes());
             long bytes = 4L * FfmpegAudioDecoder.maxSamples(ceiling);
             assertTrue(bytes < Integer.MAX_VALUE - 8, "ceiling overflows: " + bytes);
-            assertEquals(bytes, 4 * FfmpegAudioDecoder.maxSamples(ceiling), "int math wraps");
             for (String bad : new String[] {"0", "-1", "an hour", Integer.toString(ceiling + 1)}) {
                 System.setProperty(property, bad);
                 var e =

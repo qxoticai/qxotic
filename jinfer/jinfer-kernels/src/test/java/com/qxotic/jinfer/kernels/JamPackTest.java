@@ -16,6 +16,7 @@ import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryView;
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
@@ -67,12 +68,12 @@ class JamPackTest {
                     assertThrows(
                             OutOfMemoryError.class,
                             () -> JamPack.mappedSlab(dir, Long.MAX_VALUE, arena));
-            assertInstanceOf(java.io.IOException.class, e.getCause(), "the cause is kept");
+            assertInstanceOf(IOException.class, e.getCause(), "the cause is kept");
             assertEquals(0, countFiles(dir), "a failed map leaves no file behind");
         }
     }
 
-    private static long countFiles(Path dir) throws java.io.IOException {
+    private static long countFiles(Path dir) throws IOException {
         try (var files = Files.list(dir)) {
             return files.count();
         }

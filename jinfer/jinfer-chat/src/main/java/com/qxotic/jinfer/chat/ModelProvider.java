@@ -87,10 +87,8 @@ public interface ModelProvider {
     }
 
     /**
-     * Which retrieval face the checkpoint behind {@code gguf} has, read from its HEADER alone - no
-     * weights are touched - or empty when it is not a retrieval checkpoint, or its header does not
-     * say. A caller that serves whatever it is given ({@link Models#retrieval}) asks this once and
-     * loads once; the default is empty, for a port with no retrieval face.
+     * Which retrieval face the checkpoint behind {@code gguf} has, from its header alone ({@link
+     * Models#retrieval}), or empty when it has none or the header does not say.
      */
     default Optional<Retrieval> retrieval(GGUF gguf) {
         return Optional.empty();

@@ -187,8 +187,7 @@ public final class BlockTree<S extends ContextState> {
                     codec.restore(state, b.from, b.to, b.mem);
                 }
             } finally {
-                // a throwing restore must not leave this chain behind for the next resume to
-                // restore over its own (correct) rows
+                // a throwing restore must not leave this chain for the next resume to replay
                 chainScratch.clear();
             }
             if (corrupt) continue; // the tree changed: re-match from scratch

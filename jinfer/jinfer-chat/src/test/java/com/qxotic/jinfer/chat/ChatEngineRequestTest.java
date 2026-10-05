@@ -310,11 +310,6 @@ final class ChatEngineRequestTest {
         assertEquals(1, request.templateKwargs().size(), "template kwargs must be copied");
     }
 
-    /**
-     * A library caller's {@code chat_template_kwargs.enable_thinking} is the thinking switch, as
-     * the server reads it: the engine's own binding used to overwrite it in the render, and the
-     * native codec never saw it at all.
-     */
     @Test
     void enableThinkingKwargOverridesTheThinkingFlag() {
         ChatEngine.Request off =

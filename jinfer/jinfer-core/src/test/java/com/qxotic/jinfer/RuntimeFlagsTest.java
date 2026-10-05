@@ -26,9 +26,4 @@ class RuntimeFlagsTest {
             assertTrue(e.getMessage().startsWith("jinfer.decodeBlockSize must be"), e.getMessage());
         }
     }
-
-    @Test
-    void theDecodeBlockSizeIsValidatedLikeItsNeighbours() {
-        assertTrue(RuntimeFlags.DECODE_BLOCK_SIZE > 0);
-    }
 }

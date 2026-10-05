@@ -1472,8 +1472,7 @@ public final class Grammar {
             requireSatisfiable(min, max, "minItems", "maxItems");
             if (min == 0 && max < 0)
                 return "\"[\" ws (" + item + " (ws \",\" ws " + item + ")*)? ws \"]\"";
-            // maxItems 0 is the empty array; through the tail below it became repeat(tail, 0, -1),
-            // which is UNBOUNDED, so the tightest bound admitted every array
+            // the tail below would read maxItems 0 as repeat(tail, 0, -1), which is unbounded
             if (max == 0) return "\"[\" ws \"]\"";
             // the FIRST item carries no separator, so the bounds move to the comma-led tail
             String tail = "(ws \",\" ws " + item + ")";
@@ -1761,8 +1760,6 @@ public final class Grammar {
                 res.add(new Rule.Element.Group(inner));
                 i = applyMod(body, end, res);
             } else {
-                // skipping it compiled `root ::= "x" ]` as if the stray character were not there:
-                // a typo silently changed the language instead of failing
                 throw new IllegalArgumentException(
                         "unexpected '" + c + "' at column " + i + " in rule body: " + body);
             }
@@ -1878,11 +1875,10 @@ public final class Grammar {
                         max = hi.isEmpty() ? -1 : Integer.parseInt(hi);
                     }
                 } catch (NumberFormatException notARepetition) {
-                    min = -1; // refused below, with the rest of the malformed bounds
+                    min = -1; // refused below
                     max = -1;
                 }
                 if (min < 0 || (max >= 0 && max < min)) {
-                    // {3,1} once meant exactly 3 and {-1} meant *: the refusal Term.Rep gives
                     throw new IllegalArgumentException(
                             "bad repetition {"
                                     + spec

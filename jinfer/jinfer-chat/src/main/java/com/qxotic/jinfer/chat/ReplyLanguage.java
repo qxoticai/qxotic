@@ -1405,8 +1405,7 @@ public final class ReplyLanguage {
             } finally {
                 seeding = false;
             }
-            // A seed the language cannot parse fires the control rule: every later feed is inert
-            // and the guard ends the turn at once, an empty reply. That is a codec bug; say so.
+            // an unparsable seed would end the walk before the model writes anything: a codec bug
             if (ended)
                 throw new IllegalArgumentException(
                         "reply prefix "

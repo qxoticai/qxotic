@@ -11,6 +11,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -111,8 +112,8 @@ final class GrammarTest {
                     "root ::= \"x\" ;",
                     "root ::= \"x\"{2", // unterminated bound
                     "root ::= \"x\"{a}", // not a bound
-                    "root ::= \"x\"{3,1}", // max below min: was exactly 3
-                    "root ::= \"x\"{-1}", // negative: was *
+                    "root ::= \"x\"{3,1}", // max below min
+                    "root ::= \"x\"{-1}",
                 }) {
             IllegalArgumentException e =
                     assertThrows(
@@ -131,13 +132,7 @@ final class GrammarTest {
     void schemaMaxItemsZeroIsTheEmptyArray() {
         Grammar.Spec spec =
                 Grammar.fromSchema(
-                        java.util.Map.of(
-                                "type",
-                                "array",
-                                "items",
-                                java.util.Map.of("type", "integer"),
-                                "maxItems",
-                                0),
+                        Map.of("type", "array", "items", Map.of("type", "integer"), "maxItems", 0),
                         GrammarMembership.BV);
         assertTrue(GrammarMembership.accepts(spec, GrammarMembership.BV, "[]"));
         assertFalse(GrammarMembership.accepts(spec, GrammarMembership.BV, "[1]"));
@@ -151,16 +146,14 @@ final class GrammarTest {
                         IllegalArgumentException.class,
                         () ->
                                 Grammar.schemaGbnf(
-                                        java.util.Map.of(
-                                                "type", "string", "minLength", 3, "maxLength", 1)));
+                                        Map.of("type", "string", "minLength", 3, "maxLength", 1)));
         assertTrue(strings.getMessage().contains("minLength 3"), strings.getMessage());
         IllegalArgumentException arrays =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 Grammar.schemaGbnf(
-                                        java.util.Map.of(
-                                                "type", "array", "minItems", 2, "maxItems", 0)));
+                                        Map.of("type", "array", "minItems", 2, "maxItems", 0)));
         assertTrue(arrays.getMessage().contains("minItems 2"), arrays.getMessage());
     }
 }
