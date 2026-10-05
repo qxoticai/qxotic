@@ -1910,14 +1910,14 @@ public final class MatMul {
             PerformanceCliff.JAM_ABSENT.report();
     }
 
-    /**
-     * One JAM backend over Raw pointers; {@code false} = runtime decline (caller falls through).
-     */
     /** {@link JamPack}'s policy+size query: 0 without a native backend (nothing packs). */
     static long nativePackSize(DataType dt, int rows, int k) {
         return NATIVE == null ? 0 : NATIVE.jam.packSize(jamTag(dt), rows, k);
     }
 
+    /**
+     * One JAM backend over Raw pointers; {@code false} = runtime decline (caller falls through).
+     */
     private static final class JamMm {
         private final JAM jam;
 
