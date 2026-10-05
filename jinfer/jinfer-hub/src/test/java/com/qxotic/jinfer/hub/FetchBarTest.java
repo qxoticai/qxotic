@@ -135,6 +135,31 @@ class FetchBarTest {
         }
     }
 
+    /** A log gets two lines per download, start and done, never the bar's frames. */
+    @Test
+    void redirectedProgressIsAStartLineAndADoneLine(@TempDir Path dir) throws Exception {
+        Path output = dir.resolve("stdout.txt"), error = dir.resolve("stderr.txt");
+        var builder =
+                new ProcessBuilder(probeCommand())
+                        .redirectOutput(output.toFile())
+                        .redirectError(error.toFile());
+        builder.environment().remove("NO_COLOR");
+        Process process = builder.start();
+        try {
+            assertTrue(process.waitFor(20, TimeUnit.SECONDS), "probe timed out");
+            assertEquals(0, process.exitValue(), Files.readString(error));
+            List<String> lines =
+                    Files.readString(error).lines().filter(l -> l.contains("model-Q8_0")).toList();
+            assertEquals(2, lines.size(), Files.readString(error));
+            assertTrue(lines.getFirst().endsWith("model-Q8_0.gguf  1000 B"), lines.getFirst());
+            assertTrue(
+                    lines.getLast().contains("model-Q8_0.gguf  1000 B done in "), lines.getLast());
+            assertFalse(Files.readString(error).contains("eta"), Files.readString(error));
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
     public static class ProgressProbe {
         public static void main(String[] args) throws Exception {
             if (args.length > 0) {
