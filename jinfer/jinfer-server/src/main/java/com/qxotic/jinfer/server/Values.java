@@ -28,25 +28,55 @@ final class Values {
         return value == null ? defaultValue : String.valueOf(value);
     }
 
-    static boolean booleanValue(Object value, boolean defaultValue) {
-        if (value == null) return defaultValue;
-        if (value instanceof Boolean b) return b;
-        throw new IllegalArgumentException("Invalid argument: '" + value + "' is not a boolean");
+    /**
+     * A request field the client got wrong. The message names it, and so does the error envelope's
+     * {@code param} - the field OpenAI's SDKs surface - instead of null.
+     */
+    static final class InvalidParam extends IllegalArgumentException {
+        final String param;
+
+        InvalidParam(String param, String message) {
+            super(message);
+            this.param = param;
+        }
     }
 
-    static int intValue(Object value, int defaultValue) {
-        long wide = longValue(value, defaultValue);
+    /** The field a refusal is about, or null when it is not about one field. */
+    static String param(Throwable failure) {
+        return failure instanceof InvalidParam invalid ? invalid.param : null;
+    }
+
+    private static InvalidParam mistyped(String name, String expected, Object value) {
+        String shown = value instanceof String s ? "'" + s + "'" : String.valueOf(value);
+        return new InvalidParam(
+                name, "Invalid argument: " + name + " must be " + expected + "; got " + shown);
+    }
+
+    static boolean booleanValue(Object value, String name, boolean defaultValue) {
+        if (value == null) return defaultValue;
+        if (value instanceof Boolean b) return b;
+        throw mistyped(name, "a boolean", value);
+    }
+
+    static int intValue(Object value, String name, int defaultValue) {
+        long wide = longValue(value, name, defaultValue);
         // toIntExact throws ArithmeticException, which is NOT one of the two types a server maps
         // to 400 - so an out-of-range number in a request came back as "Internal server error",
         // blaming the server for the client's 99999999999
         if (wide < Integer.MIN_VALUE || wide > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException(
-                    "Invalid argument: " + wide + " is out of range for a 32-bit integer");
+            throw new InvalidParam(
+                    name,
+                    "Invalid argument: "
+                            + name
+                            + " "
+                            + wide
+                            + " is out of range for a 32-bit"
+                            + " integer");
         }
         return (int) wide;
     }
 
-    static long longValue(Object value, long defaultValue) {
+    static long longValue(Object value, String name, long defaultValue) {
         if (value == null) return defaultValue;
         if (value instanceof Number n) {
             if (n instanceof Byte
@@ -58,8 +88,7 @@ final class Values {
                     || wide != Math.rint(wide)
                     || wide < -0x1p63
                     || wide >= 0x1p63) {
-                throw new IllegalArgumentException(
-                        "Invalid argument: '" + n + "' is not an integer");
+                throw mistyped(name, "an integer", n);
             }
             return n.longValue();
         }
@@ -67,11 +96,10 @@ final class Values {
             try {
                 return Long.parseLong(s.trim());
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException(
-                        "Invalid argument: '" + s + "' is not an integer");
+                throw mistyped(name, "an integer", s);
             }
         }
-        throw new IllegalArgumentException("Invalid argument: '" + value + "' is not an integer");
+        throw mistyped(name, "an integer", value);
     }
 
     /**
@@ -93,7 +121,7 @@ final class Values {
         return stringValue(content, "");
     }
 
-    static float floatValue(Object value, float defaultValue) {
+    static float floatValue(Object value, String name, float defaultValue) {
         if (value == null) return defaultValue;
         if (value instanceof Number n) {
             return n.floatValue();
@@ -102,9 +130,9 @@ final class Values {
             try {
                 return Float.parseFloat(s.trim());
             } catch (NumberFormatException e) {
-                throw new IllegalArgumentException("Invalid argument: '" + s + "' is not a number");
+                throw mistyped(name, "a number", s);
             }
         }
-        throw new IllegalArgumentException("Invalid argument: '" + value + "' is not a number");
+        throw mistyped(name, "a number", value);
     }
 }

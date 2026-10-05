@@ -186,7 +186,13 @@ final class Http {
     }
 
     static void sendError(HttpExchange exchange, int status, String message) throws IOException {
-        sendJson(exchange, status, JsonCodec.object("error", errorPayload(status, message)));
+        sendError(exchange, status, message, null);
+    }
+
+    /** As above, naming the request field at fault in the envelope's {@code param}. */
+    static void sendError(HttpExchange exchange, int status, String message, String param)
+            throws IOException {
+        sendJson(exchange, status, JsonCodec.object("error", errorPayload(status, message, param)));
     }
 
     /**
@@ -194,8 +200,12 @@ final class Http {
      * connection loss or an already-sent header is logged, never thrown.
      */
     static void sendErrorQuietly(HttpExchange exchange, int status, String message) {
+        sendErrorQuietly(exchange, status, message, null);
+    }
+
+    static void sendErrorQuietly(HttpExchange exchange, int status, String message, String param) {
         try {
-            sendError(exchange, status, message);
+            sendError(exchange, status, message, param);
         } catch (IOException e) {
             // routine: the client hung up. Nothing here is actionable, so it stays below INFO
             Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
@@ -210,6 +220,10 @@ final class Http {
     }
 
     static Map<String, Object> errorPayload(int status, String message) {
+        return errorPayload(status, message, null);
+    }
+
+    static Map<String, Object> errorPayload(int status, String message, String param) {
         Map<String, Object> error = new LinkedHashMap<>();
         error.put("message", message);
         error.put(
@@ -221,7 +235,7 @@ final class Http {
                     case 429 -> "rate_limit_error";
                     default -> status >= 500 ? "server_error" : "invalid_request_error";
                 });
-        error.put("param", null);
+        error.put("param", param);
         error.put("code", null);
         return error;
     }
