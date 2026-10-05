@@ -4,6 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.TranscriptionModel;
+import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.testkit.TestLanguageModel;
@@ -21,7 +22,11 @@ import java.util.Set;
  */
 public final class CliModelProvider implements ModelProvider {
     public static final Set<String> ARCHITECTURES =
-            Set.of("cli_test_language", "cli_test_speech", "cli_test_transcription");
+            Set.of(
+                    "cli_test_language",
+                    "cli_test_speech",
+                    "cli_test_transcription",
+                    "cli_test_embedding");
     static Arena weights;
     static Map<String, Path> attachments;
     static CliFixtures.Template template;
@@ -95,6 +100,15 @@ public final class CliModelProvider implements ModelProvider {
         speech = new SpeakTest.Speech();
         speech.fail = gguf.getStringOrDefault("test.failure", "").equals("generate");
         return speech;
+    }
+
+    /** The embedding fixture is claimed, never built: a CLI that runs none only asks. */
+    public LoadedEmbedder<?> loadEmbedder(
+            FileChannel channel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        if (!gguf.getString("general.architecture").equals("cli_test_embedding"))
+            return ModelProvider.super.loadEmbedder(channel, gguf, path, arena, tokenizer);
+        throw new IOException("the fixture embeds nothing");
     }
 
     public TranscriptionModel<?, ?, ?> loadTranscription(

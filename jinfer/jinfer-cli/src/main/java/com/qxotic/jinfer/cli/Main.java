@@ -6,6 +6,8 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.ModelProvider;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.io.BufferedOutputStream;
 import java.io.FileDescriptor;
@@ -16,6 +18,7 @@ import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 /** Process setup and dispatch. All work returns through this boundary before the process exits. */
 public final class Main {
@@ -148,6 +151,8 @@ public final class Main {
             if (options.command.equals("chat")) Chat.run(engine, sampling, options, io);
             else Instruct.run(engine, sampling, options, io, text);
             return Thread.currentThread().isInterrupted() ? 130 : 0;
+        } catch (ModelProvider.IncompatibleModelException notLanguage) {
+            throw unrunnable(options, files.model(), arena, notLanguage);
         } finally {
             Arenas.close(arena);
         }
@@ -182,6 +187,41 @@ public final class Main {
                             + " offers it");
         }
         return engine;
+    }
+
+    static final String MODELS_DOCS =
+            "https://github.com/qxoticai/qxotic/blob/main/docs/jinfer/index.md#models-and-capabilities";
+
+    /**
+     * The refusal for a model no command here runs. An embedding or reranking checkpoint is the one
+     * people reach for, and the loader's own refusal speaks to library callers, so the CLI names it
+     * and where it does run; any other model keeps the loader's words.
+     */
+    static IllegalArgumentException unrunnable(
+            Options options,
+            Path model,
+            Arena arena,
+            ModelProvider.IncompatibleModelException refusal) {
+        if (!retrieval(model, arena)) return refusal;
+        return new IllegalArgumentException(
+                "'"
+                        + options.modelRef
+                        + "' is an embedding or reranking model, which the jinfer CLI does not run"
+                        + " yet; use it from Java with Models.loadEmbedder or Models.loadReranker: "
+                        + MODELS_DOCS,
+                refusal);
+    }
+
+    /** Whether the model's port loads it as an embedder: only an error path asks, so it loads. */
+    private static boolean retrieval(Path model, Arena arena) {
+        try {
+            Models.loadEmbedder(model, arena);
+            return true;
+        } catch (ModelProvider.IncompatibleModelException notAnEmbedder) {
+            return false;
+        } catch (IOException | RuntimeException failedAsOne) {
+            return true; // its port took it as an embedder: that is what it is
+        }
     }
 
     private static PrintStream utf8Stream(FileDescriptor fd) {
