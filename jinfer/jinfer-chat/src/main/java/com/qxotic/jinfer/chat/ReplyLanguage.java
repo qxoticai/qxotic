@@ -200,11 +200,35 @@ public final class ReplyLanguage {
             String callClose,
             Function<String, List<Content.ToolCall>> calls,
             Node terminator) {
+        return spans(thinkOpen, null, thinkClose, callOpen, callClose, calls, terminator);
+    }
+
+    /**
+     * As {@link #spans(String, String, String, String, Function, Node)}, with a {@code
+     * thinkHeader}: scaffold bytes the think span carries right after its opening mark (Gemma 4's
+     * {@code thought\n} channel name). The header is structure, never reasoning text; null = none.
+     * A guarded generation is masked to write it, while the parse tolerates a span closed before it
+     * (a zero reasoning budget forces the close right after the opener).
+     */
+    public static Node spans(
+            String thinkOpen,
+            String thinkHeader,
+            String thinkClose,
+            String callOpen,
+            String callClose,
+            Function<String, List<Content.ToolCall>> calls,
+            Node terminator) {
         Node callSpan = call(calls, mark(callOpen), free(), mark(callClose));
         return seq(
-                opt(think(mark(thinkOpen), free(), mark(thinkClose))),
+                opt(thinkSpan(thinkOpen, thinkHeader, thinkClose)),
                 rep(alt(content(free()), callSpan), 0, -1),
                 opt(terminator));
+    }
+
+    private static Node thinkSpan(String open, String header, String close) {
+        return header == null
+                ? think(mark(open), free(), mark(close))
+                : think(mark(open), opt(bytes(header)), free(), mark(close));
     }
 
     /**
@@ -215,6 +239,7 @@ public final class ReplyLanguage {
      */
     public static final class Spans {
         private final String thinkOpen;
+        private final String thinkHeader;
         private final String thinkClose;
         private final String callOpen;
         private final String callClose;
@@ -232,7 +257,24 @@ public final class ReplyLanguage {
                 Function<String, List<Content.ToolCall>> calls,
                 Node terminator,
                 Tokenizer tokenizer) {
+            this(thinkOpen, null, thinkClose, callOpen, callClose, calls, terminator, tokenizer);
+        }
+
+        /**
+         * As above, with the think span's {@code thinkHeader} scaffold (see {@link
+         * ReplyLanguage#spans(String, String, String, String, String, Function, Node)}).
+         */
+        public Spans(
+                String thinkOpen,
+                String thinkHeader,
+                String thinkClose,
+                String callOpen,
+                String callClose,
+                Function<String, List<Content.ToolCall>> calls,
+                Node terminator,
+                Tokenizer tokenizer) {
             this.thinkOpen = thinkOpen;
+            this.thinkHeader = thinkHeader;
             this.thinkClose = thinkClose;
             this.callOpen = callOpen;
             this.callClose = callClose;
@@ -278,10 +320,7 @@ public final class ReplyLanguage {
                                             -1))
                             : document;
             return Selection.of(
-                    seq(
-                            opt(think(mark(thinkOpen), free(), mark(thinkClose))),
-                            body,
-                            opt(terminator)),
+                    seq(opt(thinkSpan(thinkOpen, thinkHeader, thinkClose)), body, opt(terminator)),
                     tokenizer);
         }
 
@@ -309,7 +348,8 @@ public final class ReplyLanguage {
 
         /** The family's ordinary free-content tree. */
         private Node language() {
-            return spans(thinkOpen, thinkClose, callOpen, callClose, calls, terminator);
+            return spans(
+                    thinkOpen, thinkHeader, thinkClose, callOpen, callClose, calls, terminator);
         }
     }
 
@@ -1223,6 +1263,15 @@ public final class ReplyLanguage {
                 if (control(token) && seg == region.segs().size() - 1 && wasAccepting) {
                     exitRegion();
                     return dispatch(token);
+                }
+                // an accepting scaffold whose optional tail went unwritten yields to the free
+                // hole after it (Gemma's channel name: a span closed right after its opener)
+                if (wasAccepting
+                        && seg + 1 < region.segs().size()
+                        && region.segs().get(seg + 1) instanceof Seg.Free) {
+                    seg++;
+                    cursor = null;
+                    return feedRegion(token);
                 }
                 ended = true; // off-language: an unexpected special, or dead bytes
                 flushPending(region.kind());
