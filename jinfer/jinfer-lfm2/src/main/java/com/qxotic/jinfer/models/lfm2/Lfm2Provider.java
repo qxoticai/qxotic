@@ -40,25 +40,14 @@ public final class Lfm2Provider implements ModelProvider {
             Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
-        // a retrieval checkpoint "loads" as a chat model and then generates noise - refuse by name,
-        // from the header, before a weight is mapped: a caller offering several kinds tries the
-        // next
-        Optional<Retrieval> retrieval = retrieval(gguf);
-        if (retrieval.isPresent() || !causal(gguf)) {
+        // a retrieval checkpoint "loads" as a chat model and then generates noise: refuse it from
+        // the header, before a weight is mapped, so a caller offering several kinds tries the next
+        if (!causal(gguf)) {
             throw new IncompatibleModelException(
                     path.getFileName()
-                            + switch (retrieval.orElse(null)) {
-                                case EMBEDDING ->
-                                        " is an LFM2 embedding checkpoint, not a generative one;"
-                                                + " load it with Models.loadEmbedder";
-                                case RERANKING ->
-                                        " is LFM2.5-ColBERT, a reranking checkpoint, not a"
-                                                + " generative one; load it with"
-                                                + " Models.loadReranker";
-                                case null ->
-                                        " is an LFM2 retrieval checkpoint (non-causal"
-                                                + " attention), not a generative one";
-                            });
+                            + " is an LFM2 retrieval checkpoint (non-causal attention), not a"
+                            + " generative one; load it with Models.loadEmbedder or"
+                            + " Models.loadReranker");
         }
         Lfm2 model = Lfm2.loadModel(fileChannel, gguf, arena, tokenizer);
         Path media = companions.get("media");
