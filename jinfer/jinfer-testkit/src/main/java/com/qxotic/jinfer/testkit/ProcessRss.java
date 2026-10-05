@@ -3,6 +3,7 @@ package com.qxotic.jinfer.testkit;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.OptionalLong;
 import java.util.concurrent.TimeUnit;
@@ -84,12 +85,31 @@ public final class ProcessRss {
         return last.isEmpty() ? OptionalLong.empty() : OptionalLong.of(Long.parseLong(last));
     }
 
-    /** The command's stripped output, or null when it fails or does not finish in time. */
     private static String run(String... command) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        String out = new String(process.getInputStream().readAllBytes()).strip();
-        boolean done = process.waitFor(10, TimeUnit.SECONDS);
-        if (!done) process.destroyForcibly();
-        return done && process.exitValue() == 0 ? out : null;
+        return run(Duration.ofSeconds(10), command);
+    }
+
+    /**
+     * The command's stripped output, or null when it fails or does not finish within {@code
+     * timeout}. Output goes to a file, so the wait is bounded: reading a pipe first would block for
+     * as long as the command (or any child holding its stdout) lives.
+     */
+    static String run(Duration timeout, String... command)
+            throws IOException, InterruptedException {
+        Path out = Files.createTempFile("jinfer-rss", ".out");
+        try {
+            Process process =
+                    new ProcessBuilder(command)
+                            .redirectErrorStream(true)
+                            .redirectOutput(out.toFile())
+                            .start();
+            if (!process.waitFor(timeout.toNanos(), TimeUnit.NANOSECONDS)) {
+                process.destroyForcibly();
+                return null;
+            }
+            return process.exitValue() == 0 ? new String(Files.readAllBytes(out)).strip() : null;
+        } finally {
+            Files.deleteIfExists(out);
+        }
     }
 }
