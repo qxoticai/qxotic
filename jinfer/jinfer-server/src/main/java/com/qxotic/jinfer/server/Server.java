@@ -431,7 +431,7 @@ public final class Server {
                 // validator throws are the client's fault. A blanket RuntimeException ->
                 // 400 here told clients their request was malformed whenever this server
                 // had a defect, and echoed the JVM's own text while doing it
-                Http.sendError(exchange, clientStatus(e), Http.errorMessage(e));
+                Http.sendError(exchange, clientStatus(e), Http.errorMessage(e), Values.param(e));
             } catch (RuntimeException e) {
                 Log.LOG.log(System.Logger.Level.ERROR, "unhandled fault serving " + path, e);
                 Http.sendErrorQuietly(exchange, 500, "Internal server error");
@@ -487,7 +487,7 @@ public final class Server {
             // the same rule as the queued path below: a validator's two types are the client's
             // fault (an unknown model a 404, the rest 400); anything else is our defect
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
-            Http.sendError(exchange, clientStatus(e), Http.errorMessage(e));
+            Http.sendError(exchange, clientStatus(e), Http.errorMessage(e), Values.param(e));
             return;
         } catch (RuntimeException e) {
             metrics.record(Metrics.Outcome.FAILED);
@@ -505,7 +505,8 @@ public final class Server {
                         // the request is genuinely at fault: a bad parameter, or input this model
                         // cannot frame (media on a text-only model, a shape with no codec)
                         metrics.record(Metrics.Outcome.INVALID_REQUEST);
-                        Http.sendErrorQuietly(exchange, clientStatus(e), Http.errorMessage(e));
+                        Http.sendErrorQuietly(
+                                exchange, clientStatus(e), Http.errorMessage(e), Values.param(e));
                     } catch (IOException e) {
                         metrics.record(Metrics.Outcome.CLIENT_DISCONNECTED);
                         Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
@@ -534,7 +535,7 @@ public final class Server {
                 (request, id) -> {
                     List<Object> messages = Values.asArray(request.get("messages"), "messages");
                     String modelId = Requests.modelId(request, servedModel);
-                    if (Values.booleanValue(request.get("stream"), false)) {
+                    if (Values.booleanValue(request.get("stream"), "stream", false)) {
                         streamChatCompletion(exchange, request, messages, modelId, id);
                     } else {
                         Reply result =
@@ -559,7 +560,7 @@ public final class Server {
                 (request, id) -> {
                     String prompt = Requests.completionPrompt(request);
                     String modelId = Requests.modelId(request, servedModel);
-                    if (Values.booleanValue(request.get("stream"), false)) {
+                    if (Values.booleanValue(request.get("stream"), "stream", false)) {
                         streamCompletion(exchange, request, prompt, modelId, id);
                     } else {
                         Reply result =
@@ -589,7 +590,7 @@ public final class Server {
                 (request, id) -> {
                     List<Object> messages = Requests.responseInputMessages(request);
                     String modelId = Requests.modelId(request, servedModel);
-                    if (Values.booleanValue(request.get("stream"), false)) {
+                    if (Values.booleanValue(request.get("stream"), "stream", false)) {
                         streamResponse(exchange, request, messages, modelId, id);
                     } else {
                         Reply result =

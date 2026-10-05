@@ -402,31 +402,36 @@ final class Generation {
 
     static Sampling sampling(Map<String, Object> request, Sampling defaults) {
         Long seed = defaults.seed();
-        if (request.get("seed") != null) seed = Values.longValue(request.get("seed"), 0);
+        if (request.get("seed") != null) seed = Values.longValue(request.get("seed"), "seed", 0);
         return defaults.override(
-                number(request.get("temperature")),
-                number(request.get("top_p")),
-                integer(request.get("top_k")),
-                number(request.get("min_p")),
+                number(request, "temperature"),
+                number(request, "top_p"),
+                integer(request, "top_k"),
+                number(request, "min_p"),
                 seed);
     }
 
-    private static Float number(Object value) {
-        return value == null ? null : Values.floatValue(value, 0);
+    private static Float number(Map<String, Object> request, String field) {
+        Object value = request.get(field);
+        return value == null ? null : Values.floatValue(value, field, 0);
     }
 
-    private static Integer integer(Object value) {
-        return value == null ? null : Values.intValue(value, 0);
+    private static Integer integer(Map<String, Object> request, String field) {
+        Object value = request.get(field);
+        return value == null ? null : Values.intValue(value, field, 0);
     }
 
     private int maxTokens(Map<String, Object> request) {
-        return Values.intValue(Requests.budget(request), config.defaults().maxOutputTokens());
+        return Values.intValue(
+                Requests.budget(request),
+                Requests.budgetField(request),
+                config.defaults().maxOutputTokens());
     }
 
     static Integer reasoningMax(Map<String, Object> request) {
         return request.get("max_reasoning_tokens") == null
                 ? null
-                : Values.intValue(request.get("max_reasoning_tokens"), -1);
+                : Values.intValue(request.get("max_reasoning_tokens"), "max_reasoning_tokens", -1);
     }
 
     /**

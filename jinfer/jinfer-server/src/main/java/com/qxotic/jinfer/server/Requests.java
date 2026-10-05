@@ -34,8 +34,12 @@ final class Requests {
      * set - resolved to the server default and threw the client's 100 away.
      */
     static Object budget(Map<String, Object> request) {
-        Object legacy = request.get("max_tokens");
-        return legacy != null ? legacy : request.get("max_completion_tokens");
+        return request.get(budgetField(request));
+    }
+
+    /** The spelling that carries the budget, as a refusal should name it. */
+    static String budgetField(Map<String, Object> request) {
+        return request.get("max_tokens") != null ? "max_tokens" : "max_completion_tokens";
     }
 
     /** The /v1/completions prompt: a string, or a string array joined by newlines. */

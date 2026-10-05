@@ -659,7 +659,7 @@ class ServerIntegrationTest {
                     Values.asObject(JsonCodec.parse(frame.substring(data + 6)), "event");
             Map<String, Object> response =
                     Values.asObject(payload.get("response"), "event.response");
-            return Values.longValue(response.get("created_at"), -1);
+            return Values.longValue(response.get("created_at"), "created_at", -1);
         }
         throw new AssertionError("Missing event " + event);
     }

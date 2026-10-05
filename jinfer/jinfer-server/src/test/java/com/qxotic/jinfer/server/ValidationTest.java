@@ -34,6 +34,41 @@ class ValidationTest {
                         .contains("wizard"));
     }
 
+    /** The refusal names the field twice: in the message for people, in param for the SDKs. */
+    @Test
+    void aMistypedFieldIsNamedInMessageAndParam() {
+        ServerConfig config = ServerConfig.local(0);
+        for (var bad :
+                List.of(
+                        Map.entry("temperature", (Object) "hot"),
+                        Map.entry("top_k", 1.5),
+                        Map.entry("max_completion_tokens", "lots"),
+                        Map.entry("min_p", 7))) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.put(bad.getKey(), bad.getValue());
+            var refusal =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> Validation.validateGenerationParams(request, "model", config));
+            assertTrue(
+                    refusal.getMessage().startsWith("Invalid argument: " + bad.getKey() + " "),
+                    refusal.getMessage());
+            assertEquals(bad.getKey(), Values.param(refusal));
+            assertEquals(
+                    bad.getKey(),
+                    Http.errorPayload(400, refusal.getMessage(), Values.param(refusal))
+                            .get("param"));
+        }
+        Map<String, Object> request = new HashMap<>(user("hi"));
+        request.put("temperature", "hot");
+        assertEquals(
+                "Invalid argument: temperature must be a number; got 'hot'",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> Validation.validateGenerationParams(request, "m", config))
+                        .getMessage());
+    }
+
     @Test
     void topPRangeIsTheEnginesRange() {
         // the validator used to admit 0, which Sampling refuses after the request was accepted

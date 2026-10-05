@@ -193,6 +193,11 @@ final class Validation {
         }
     }
 
+    /** As {@link #require}, for a refusal about one request field, which the envelope names. */
+    static void requireParam(boolean condition, String param, String message) {
+        if (!condition) throw new Values.InvalidParam(param, message);
+    }
+
     /**
      * A field the request actually carries: an explicit null means "unset", as in OpenAI's SDKs.
      */
@@ -261,7 +266,7 @@ final class Validation {
             }
         }
         validateStops(request.get("stop"));
-        require(Values.intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
+        requireParam(Values.intValue(request.get("n"), "n", 1) == 1, "n", "Only n=1 is supported");
         // Every range below is checked ONLY when the request carries the field. These are rules
         // about what a CLIENT may ask for (OpenAI's caps); the server's own defaults are the
         // operator's business and are validated where they are built - Sampling's constructor and
@@ -270,38 +275,49 @@ final class Validation {
         // not override it: the client blamed for the operator's flag, and the same shape of bug
         // that made a stock `--server` refuse every request omitting max_tokens.
         if (present(request, "temperature")) {
-            float temperature = Values.floatValue(request.get("temperature"), 1f);
-            require(
+            float temperature = Values.floatValue(request.get("temperature"), "temperature", 1f);
+            requireParam(
                     Float.isFinite(temperature) && 0 <= temperature && temperature <= 2,
+                    "temperature",
                     "Invalid argument: temperature must be within [0, 2]");
         }
         if (present(request, "top_p")) {
-            float topp = Values.floatValue(request.get("top_p"), 1f);
-            require(
+            float topp = Values.floatValue(request.get("top_p"), "top_p", 1f);
+            requireParam(
                     Float.isFinite(topp) && 0 < topp && topp <= 1,
+                    "top_p",
                     "Invalid argument: top_p must be within (0, 1]"); // Sampling's own range
         }
         if (present(request, "top_k")) {
-            require(
-                    Values.intValue(request.get("top_k"), 0) >= 0,
+            requireParam(
+                    Values.intValue(request.get("top_k"), "top_k", 0) >= 0,
+                    "top_k",
                     "Invalid argument: top_k must be non-negative (0 disables it)");
         }
         if (present(request, "min_p")) {
-            float minp = Values.floatValue(request.get("min_p"), 0f);
-            require(
+            float minp = Values.floatValue(request.get("min_p"), "min_p", 0f);
+            requireParam(
                     Float.isFinite(minp) && 0 <= minp && minp <= 1,
+                    "min_p",
                     "Invalid argument: min_p must be within [0, 1]");
         }
         if (Requests.budget(request) != null) {
-            int budget = Values.intValue(Requests.budget(request), -1);
-            require(
+            int budget =
+                    Values.intValue(Requests.budget(request), Requests.budgetField(request), -1);
+            requireParam(
                     budget == -1 || budget >= 1,
-                    "Invalid argument: max_tokens must be -1 (context-bounded) or at least 1");
+                    Requests.budgetField(request),
+                    "Invalid argument: "
+                            + Requests.budgetField(request)
+                            + " must be -1 (context-bounded) or at least 1");
         }
-        require(
-                -1 <= Values.intValue(request.get("max_reasoning_tokens"), -1),
+        requireParam(
+                -1
+                        <= Values.intValue(
+                                request.get("max_reasoning_tokens"), "max_reasoning_tokens", -1),
+                "max_reasoning_tokens",
                 "Invalid argument: max_reasoning_tokens must be -1 (uncapped) or non-negative");
-        Values.longValue(request.get("seed"), 0); // type check only
+        Values.longValue(request.get("seed"), "seed", 0); // type check only
         require(
                 !present(request, "logprobs") && !present(request, "top_logprobs"),
                 "logprobs is not supported");

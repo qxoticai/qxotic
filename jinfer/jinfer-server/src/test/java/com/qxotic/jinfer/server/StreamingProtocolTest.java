@@ -35,6 +35,7 @@ class StreamingProtocolTest {
                 7,
                 Values.intValue(
                         Values.asObject(chunks.getLast().get("usage"), "usage").get("total_tokens"),
+                        "total_tokens",
                         -1));
         // llama.cpp convention: timings ride the LAST chunk (the usage-only chunk here), not the
         // final content chunk
