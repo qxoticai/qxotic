@@ -20,7 +20,7 @@ no Python runtime. Just the JVM.
 
 ## Highlights
 
-- **Competitive with the reference engines.** Keeps pace with [parakeet.cpp](https://github.com/mudler/parakeet.cpp) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx); at `F16` the transcript is word for word identical to parakeet.cpp.
+- **Competitive with the reference engines.** Keeps pace with [parakeet.cpp](https://github.com/mudler/parakeet.cpp) and [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
 - **Matches the reference with 100% accuracy.** At `F16` the transcript matches [parakeet.cpp](https://github.com/mudler/parakeet.cpp) exactly;
   the rest is quantization noise, not drift.
 - **Streaming support.** Audio in as it arrives, text out in pieces, with a draft tail that keeps up with the speaker.
