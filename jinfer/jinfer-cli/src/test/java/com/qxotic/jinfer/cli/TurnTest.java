@@ -297,21 +297,12 @@ class TurnTest {
     // ---- harness ----
 
     private static Output run(Options options, List<ChatEngine.Delta> deltas) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(), err = new ByteArrayOutputStream();
-        Main.IO io =
-                new Main.IO(
-                        java.io.InputStream.nullInputStream(),
-                        new PrintStream(out, true, StandardCharsets.UTF_8),
-                        new PrintStream(err, true, StandardCharsets.UTF_8));
-        Turn turn = new Turn(NEVER_CALLED, options, false, io);
-        deltas.forEach(turn::on);
-        turn.finish(
+        return finished(
+                options,
+                deltas,
                 new ChatEngine.Completion(null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
                 4096,
                 -1);
-        return new Output(
-                out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"),
-                err.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
     }
 
     private static Output finished(

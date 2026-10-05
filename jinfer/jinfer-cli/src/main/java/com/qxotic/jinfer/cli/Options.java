@@ -622,49 +622,45 @@ final class Options {
      */
     static String layout(String help) {
         StringBuilder out = new StringBuilder();
+        String pad = " ".repeat(HELP_COLUMN);
         boolean inRow = false;
         for (String line : help.lines().toList()) {
             Matcher row = OPTION_ROW.matcher(line);
             if (row.matches()) {
                 inRow = true;
-                out.append("  ").append(row.group(1));
-                if (row.group(2) == null) {
-                    out.append('\n');
-                    continue;
-                }
-                int at = 2 + row.group(1).length();
-                if (at + 2 > HELP_COLUMN) out.append('\n').append(" ".repeat(HELP_COLUMN));
-                else out.append(" ".repeat(HELP_COLUMN - at));
-                wrap(row.group(2), out);
+                String option = "  " + row.group(1);
+                out.append(option);
+                if (row.group(2) != null)
+                    out.append(
+                                    option.length() + 2 > HELP_COLUMN
+                                            ? "\n" + pad
+                                            : " ".repeat(HELP_COLUMN - option.length()))
+                            .append(wrap(row.group(2)));
             } else if (inRow && line.startsWith("      ") && !line.isBlank()) {
-                out.append(" ".repeat(HELP_COLUMN));
-                wrap(line.strip(), out);
+                out.append(pad).append(wrap(line.strip()));
             } else {
                 inRow = false;
-                out.append(line).append('\n');
+                out.append(line);
             }
+            out.append('\n');
         }
         return out.toString();
     }
 
-    private static void wrap(String text, StringBuilder out) {
-        int width = HELP_COLUMN;
-        boolean first = true;
+    /** {@code text} from {@link #HELP_COLUMN}, broken between words at {@link #HELP_WIDTH}. */
+    private static String wrap(String text) {
+        StringBuilder out = new StringBuilder();
+        int column = HELP_COLUMN;
         for (String word : text.split(" ")) {
-            if (!first && width + 1 + word.length() > HELP_WIDTH) {
-                out.append('\n').append(" ".repeat(HELP_COLUMN));
-                width = HELP_COLUMN;
-                first = true;
-            }
-            if (!first) {
-                out.append(' ');
-                width++;
+            if (column > HELP_COLUMN) {
+                boolean full = column + 1 + word.length() > HELP_WIDTH;
+                out.append(full ? "\n" + " ".repeat(HELP_COLUMN) : " ");
+                column = full ? HELP_COLUMN : column + 1;
             }
             out.append(word);
-            width += word.length();
-            first = false;
+            column += word.length();
         }
-        out.append('\n');
+        return out.toString();
     }
 
     static void modelHelp(PrintStream out) {

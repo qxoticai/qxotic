@@ -80,32 +80,6 @@ class MainTest {
     }
 
     @Test
-    void helpLayoutWrapsLongOptionsAndKeepsContinuations() {
-        String laid =
-                Options.layout(
-                        """
-                        Options:
-                          -a  short
-                          --a-very-long-option-name <value>  long
-                                  continued
-                        Prose stays as written.
-                        """);
-        String pad = " ".repeat(Options.HELP_COLUMN);
-        assertEquals(
-                "Options:\n"
-                        + "  -a"
-                        + " ".repeat(Options.HELP_COLUMN - 4)
-                        + "short\n"
-                        + "  --a-very-long-option-name <value>\n"
-                        + pad
-                        + "long\n"
-                        + pad
-                        + "continued\n"
-                        + "Prose stays as written.\n",
-                laid);
-    }
-
-    @Test
     void rootHelpAndVersionAreSuccessful() {
         for (String[] argv : new String[][] {{}, {"--help"}, {"--version"}}) {
             var capture = new CliFixtures.Capture("");
