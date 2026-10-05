@@ -118,30 +118,37 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         checkOutput();
         Generator.GenerationResult result = completion.result();
         if (result != null) {
-            int promptTokens = completion.promptTokens();
-            int evaluated = Math.max(0, promptTokens - completion.restoredTokens());
-            int generated = result.completionTokens() + (result.stopToken().isPresent() ? 1 : 0);
-            long promptNanos = Math.max(1, result.promptTime().toNanos());
-            long decodeNanos = Math.max(1, result.decodeTime().toNanos());
+            int evaluated = Math.max(0, completion.promptTokens() - completion.restoredTokens());
+            int generated = generated(result);
+            long promptNanos = result.promptTime().toNanos();
+            long decodeNanos = result.decodeTime().toNanos();
             String prefix = errorColors ? ANSI_CYAN : "";
             String suffix = errorColors ? ANSI_RESET : "";
             io.err()
                     .printf(
                             Locale.ROOT,
-                            "%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s"
-                                    + " (%d) cache: %s, %d restored%s%s%n",
+                            "%scontext: %d/%d prompt: %s generation: %s cache: %s, %d"
+                                    + " restored%s%s%n",
                             prefix,
-                            promptTokens + generated,
+                            used(completion),
                             contextCapacity,
-                            evaluated / (promptNanos / 1e9),
-                            evaluated,
-                            generated / (decodeNanos / 1e9),
-                            generated,
+                            speed(evaluated, promptNanos),
+                            speed(generated, decodeNanos),
                             completion.tier().name().toLowerCase(Locale.ROOT),
                             completion.restoredTokens(),
                             acceptance(completion),
                             suffix);
         }
+    }
+
+    /** The context this turn leaves filled: its prompt, its reply and the stop token. */
+    static int used(ChatEngine.Completion completion) {
+        Generator.GenerationResult result = completion.result();
+        return completion.promptTokens() + (result == null ? 0 : generated(result));
+    }
+
+    private static int generated(Generator.GenerationResult result) {
+        return result.completionTokens() + (result.stopToken().isPresent() ? 1 : 0);
     }
 
     /** Restore reasoning framing even when generation throws before finish(). */
@@ -158,6 +165,21 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         if (io.out().checkError())
             throw new UncheckedIOException(
                     new IOException("cannot write generated text to stdout"));
+    }
+
+    /**
+     * Below this many tokens a rate measures fixed latency (the first step, a batch that is mostly
+     * padding), not throughput: a 1-token prefill "at 4 tokens/s" only alarms.
+     */
+    static final int MIN_RATE_TOKENS = 32;
+
+    /** "12.34 tokens/s (512)" over enough tokens to mean throughput, else "17 tokens in 0.73 s". */
+    static String speed(int tokens, long nanos) {
+        double seconds = Math.max(1, nanos) / 1e9;
+        if (tokens >= MIN_RATE_TOKENS)
+            return String.format(Locale.ROOT, "%.2f tokens/s (%d)", tokens / seconds, tokens);
+        return String.format(
+                Locale.ROOT, "%d token%s in %.2f s", tokens, tokens == 1 ? "" : "s", seconds);
     }
 
     /** " accept: A/D (P%)" when the pass speculated, "" otherwise. */
