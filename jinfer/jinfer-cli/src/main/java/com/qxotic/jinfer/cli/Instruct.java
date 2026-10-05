@@ -94,7 +94,7 @@ final class Instruct {
                                             Duration.ZERO,
                                             List.of()),
                                     engine.contextCapacity())) {
-                turn.finish(engine.complete(prepared, turn), engine.contextCapacity());
+                turn.finish(engine.complete(prepared, turn), engine);
             }
             return;
         }
@@ -138,7 +138,7 @@ final class Instruct {
         try (ChatEngine.Prepared prepared =
                         Requests.checked(engine.prepare(request), engine.contextCapacity());
                 Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options, io)) {
-            turn.finish(engine.complete(prepared, turn), engine.contextCapacity());
+            turn.finish(engine.complete(prepared, turn), engine);
         }
     }
 }

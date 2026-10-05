@@ -40,6 +40,10 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
     private final List<ChatEngine.Delta> buffered = new ArrayList<>(); // --no-stream
     private boolean inReasoning;
     private volatile boolean cancelled;
+    private final boolean think;
+    private final int maxOutputTokens;
+    private final Integer maxReasoningTokens;
+    private boolean reasoned, answered;
 
     Turn(Tokenizer tokenizer, Options options, boolean rawLane, Main.IO io) {
         this.tokenizer = tokenizer;
@@ -52,6 +56,9 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         this.rawLane = rawLane;
         this.echoedContent = echo && io.isTerminal(1) && io.isTerminal(2);
         this.echoedThoughts = echo && (!thinkInline || echoedContent);
+        this.think = options.think;
+        this.maxOutputTokens = options.maxOutputTokens;
+        this.maxReasoningTokens = options.maxReasoningTokens;
         if (!stream) io.err().println("Generating response ...");
     }
 
@@ -111,6 +118,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
      */
     private void emit(ChatEngine.Delta delta) {
         if (delta.channel() == Channel.REASONING) {
+            reasoned |= !delta.text().isBlank();
             if (echoedThoughts) return;
             if (!inReasoning) {
                 onThinkingStart();
@@ -118,18 +126,27 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
             }
             thoughtOut().print(delta.text());
         } else {
+            answered |= !delta.text().isBlank();
             close();
             if (!echoedContent) io.out().print(delta.text());
         }
         checkOutput();
     }
 
+    /** {@link #finish(ChatEngine.Completion, int, int)} with the engine's capacity and cap. */
+    void finish(ChatEngine.Completion completion, ChatEngine engine) {
+        finish(
+                completion,
+                engine.contextCapacity(),
+                engine.maxReasoningTokens(think, maxOutputTokens, maxReasoningTokens));
+    }
+
     /**
-     * The stderr summary every turn ends with - context fill, the two speeds, and where the prompt
-     * came from (a cache tier the old CLI never could see) - then the whole reply when nothing
-     * streamed.
+     * The stderr summary every turn ends with - why the reply stopped early, if it did, then
+     * context fill, the two speeds, and where the prompt came from (a cache tier the old CLI never
+     * could see) - then the whole reply when nothing streamed.
      */
-    void finish(ChatEngine.Completion completion, int contextCapacity) {
+    void finish(ChatEngine.Completion completion, int contextCapacity, int reasoningCap) {
         if (!stream) {
             buffered.forEach(this::emit);
             buffered.clear();
@@ -145,6 +162,12 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
             long decodeNanos = result.decodeTime().toNanos();
             String prefix = errorColors ? ANSI_CYAN : "";
             String suffix = errorColors ? ANSI_RESET : "";
+            notices(
+                            completion,
+                            completion.promptTokens() + generated >= contextCapacity,
+                            contextCapacity,
+                            reasoningCap)
+                    .forEach(io.err()::println);
             io.err()
                     .printf(
                             Locale.ROOT,
@@ -201,6 +224,38 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
             return String.format(Locale.ROOT, "%.2f tokens/s (%d)", tokens / seconds, tokens);
         return String.format(
                 Locale.ROOT, "%d token%s in %.2f s", tokens, tokens == 1 ? "" : "s", seconds);
+    }
+
+    /**
+     * A line for each way the model was cut short, none when it finished on its own: the reasoning
+     * cap closing the think span (the model wrote no end of its own there, so the visible text
+     * gives no hint), and the reply stopping at the context wall or the output budget - saying,
+     * when the reasoning took everything, that there is no answer.
+     */
+    private List<String> notices(
+            ChatEngine.Completion completion, boolean contextFull, int capacity, int reasoningCap) {
+        List<String> notices = new ArrayList<>();
+        if (reasoningCap > 0 && completion.reasoningTokens() >= reasoningCap) {
+            notices.add(
+                    "reasoning: cut at its cap of "
+                            + reasoningCap
+                            + " tokens; raise --max-reasoning-tokens (-1: uncapped)");
+        }
+        if (completion.result().finishReason() == Generator.FinishReason.LENGTH) {
+            String unanswered = reasoned && !answered ? " during the reasoning, no answer" : "";
+            notices.add(
+                    contextFull || maxOutputTokens < 0
+                            ? "stopped: the context is full ("
+                                    + capacity
+                                    + " tokens)"
+                                    + unanswered
+                                    + "; raise --context-capacity"
+                            : "stopped: --max-output-tokens "
+                                    + maxOutputTokens
+                                    + " reached"
+                                    + unanswered);
+        }
+        return notices;
     }
 
     /** " accept: A/D (P%)" when the pass speculated, "" otherwise. */

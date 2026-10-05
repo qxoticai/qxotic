@@ -118,7 +118,7 @@ final class Chat {
                 } finally {
                     if (interrupts != null) interrupts.turn = null;
                 }
-                turn.finish(completion, engine.contextCapacity());
+                turn.finish(completion, engine);
             }
             if (completion.cancelled()) {
                 // no reply came back, so the question goes too: the next turn must not follow

@@ -8,6 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.testkit.TestLanguageModel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
@@ -18,9 +22,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -63,6 +69,71 @@ class TurnTest {
 
         Output inline = run(options(false, "inline"), List.of(reasoning("why "), content("42")));
         assertEquals("[Start thinking]\nwhy \n[End thinking]\n\n42\n", inline.out());
+    }
+
+    @Test
+    void aReplyCutByTheContextSaysSoAndNamesTheFlag() {
+        // the QA case: a reasoning loop ran into the context wall - stdout shows the closed think
+        // span and an empty answer, so stderr must say what happened
+        Output o =
+                finished(
+                        options(true, "inline"),
+                        List.of(reasoning("10 * 3 = 30. ")),
+                        completion(Generator.FinishReason.LENGTH, 54, 0),
+                        64,
+                        -1);
+        assertTrue(
+                o.err()
+                        .startsWith(
+                                "stopped: the context is full (64 tokens) during the reasoning, no"
+                                        + " answer; raise --context-capacity\ncontext: 64/64 "),
+                o.err());
+    }
+
+    @Test
+    void aReplyCutByTheOutputBudgetNamesThatFlagInstead() {
+        Options options =
+                Options.parse("instruct", "-m", "unused", "hi", "-n", "10", "--color", "off");
+        Output o =
+                finished(
+                        options,
+                        List.of(reasoning("hmm "), content("The answer is")),
+                        completion(Generator.FinishReason.LENGTH, 10, 0),
+                        4096,
+                        -1);
+        assertTrue(
+                o.err().contains("[End thinking]\n\nstopped: --max-output-tokens 10 reached\n"),
+                o.err());
+        assertFalse(o.err().contains("no answer"), "the reply did answer, if briefly");
+    }
+
+    @Test
+    void aReasoningCapThatFiredIsVisible() {
+        // the cap closes the span with a bare paragraph break by default: nothing in the text
+        // says the model did not finish its thought
+        Output capped =
+                finished(
+                        options(true, "on"),
+                        List.of(reasoning("1.  **Analyze"), content("Blue.")),
+                        completion(Generator.FinishReason.STOP, 8, 6),
+                        4096,
+                        6);
+        assertTrue(
+                capped.err()
+                        .contains(
+                                "reasoning: cut at its cap of 6 tokens; raise"
+                                        + " --max-reasoning-tokens (-1: uncapped)\n"),
+                capped.err());
+
+        Output finished =
+                finished(
+                        options(true, "on"),
+                        List.of(reasoning("done"), content("Blue.")),
+                        completion(Generator.FinishReason.STOP, 8, 5),
+                        4096,
+                        6);
+        assertFalse(finished.err().contains("reasoning: cut"), finished.err());
+        assertFalse(finished.err().contains("stopped"), finished.err());
     }
 
     @Test
@@ -131,7 +202,8 @@ class TurnTest {
             turn.finish(
                     new ChatEngine.Completion(
                             null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
-                    4096);
+                    4096,
+                    -1);
         }
         assertEquals("x\n", capture.out().replace("\r\n", "\n"));
         assertTrue(capture.err().startsWith("\\u001b\n\\u0009a"), capture.err());
@@ -161,7 +233,8 @@ class TurnTest {
             turn.finish(
                     new ChatEngine.Completion(
                             null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
-                    4096);
+                    4096,
+                    -1);
         }
         assertEquals("ayx", capture.err(), "the echo alone: prompt, thought, answer");
         assertEquals("x\n", capture.out().replace("\r\n", "\n"), "a redirected stdout keeps it");
@@ -234,10 +307,54 @@ class TurnTest {
         deltas.forEach(turn::on);
         turn.finish(
                 new ChatEngine.Completion(null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
-                4096);
+                4096,
+                -1);
         return new Output(
                 out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"),
                 err.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
+    }
+
+    private static Output finished(
+            Options options,
+            List<ChatEngine.Delta> deltas,
+            ChatEngine.Completion completion,
+            int contextCapacity,
+            int reasoningCap) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(), err = new ByteArrayOutputStream();
+        Main.IO io =
+                new Main.IO(
+                        java.io.InputStream.nullInputStream(),
+                        new PrintStream(out, true, StandardCharsets.UTF_8),
+                        new PrintStream(err, true, StandardCharsets.UTF_8));
+        Turn turn = new Turn(NEVER_CALLED, options, false, io);
+        deltas.forEach(turn::on);
+        turn.finish(completion, contextCapacity, reasoningCap);
+        return new Output(
+                out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"),
+                err.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
+    }
+
+    /** A 10-token prompt, {@code generated} tokens, {@code reasoning} of them in the think span. */
+    private static ChatEngine.Completion completion(
+            Generator.FinishReason finish, int generated, int reasoning) {
+        int[] tokens = new int[generated];
+        Message reply =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Reasoning(
+                                        List.of(new Content.Text("thought")),
+                                        IntSequence.of(new int[reasoning])),
+                                new Content.Text("answer")));
+        return new ChatEngine.Completion(
+                reply,
+                new Generator.GenerationResult(
+                        tokens, OptionalInt.empty(), finish, Duration.ZERO, Duration.ZERO),
+                false,
+                10,
+                0,
+                PromptCache.Tier.FRESH,
+                null);
     }
 
     private static ChatEngine.Delta reasoning(String text) {
