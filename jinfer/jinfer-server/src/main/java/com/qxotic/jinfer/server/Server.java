@@ -411,18 +411,8 @@ public final class Server {
             if (method != null && Http.requireMethod(exchange, method)) return;
             Map<String, Object> request = Map.of();
             if ("POST".equals(method)) {
-                byte[] raw =
-                        Http.readBody(
-                                exchange,
-                                config.limits().maxBodyBytes(),
-                                config.limits().writeTimeout());
-                if (raw == null) return;
-                try {
-                    request = Values.asObject(JsonCodec.parse(raw), "request");
-                } catch (RuntimeException e) {
-                    Http.sendError(exchange, 400, Http.errorMessage(e));
-                    return;
-                }
+                request = Http.readJsonObject(exchange, config.limits());
+                if (request == null) return;
             }
             try {
                 Http.sendJson(exchange, 200, body.apply(request));
@@ -1011,7 +1001,7 @@ public final class Server {
     }
 
     /** A client fault is a 400, except a model this server does not serve, which is a 404. */
-    private static int clientStatus(RuntimeException e) {
+    static int clientStatus(RuntimeException e) {
         return e instanceof Validation.UnknownModel ? 404 : 400;
     }
 }

@@ -206,23 +206,29 @@ final class Validation {
     }
 
     /**
+     * The request's {@code model}, on every endpoint that names one. OPTIONAL, because a server has
+     * exactly one model: an absent (or blank) "model" is unambiguous - it can only mean the served
+     * one, which is what Requests.modelId already returned. Naming the WRONG model is still a real
+     * mistake and still refused. Requiring the field bought no safety and cost every curl and every
+     * client that omits it a 400.
+     */
+    static void validateModel(Map<String, Object> request, String servedModel) {
+        if (request.get("model") == null) return;
+        requireParam(request.get("model") instanceof String, "model", "model must be a string");
+        String name = (String) request.get("model");
+        if (!name.isBlank() && !name.equalsIgnoreCase(servedModel)) {
+            throw new UnknownModel(
+                    "Unknown model: %s (this server serves %s)".formatted(name, servedModel));
+        }
+    }
+
+    /**
      * Sampling-parameter validation shared by all endpoints; called on the HTTP handler thread
      * (before queueing, and before any SSE headers) so invalid requests fail fast with a 400.
      */
     static void validateGenerationParams(
             Map<String, Object> request, String servedModel, ServerConfig config) {
-        // OPTIONAL, because this server has exactly one model: an absent (or blank) "model" is
-        // unambiguous - it can only mean the served one, which is what Requests.modelId already
-        // returned. Naming the WRONG model is still a real mistake and still refused. Requiring
-        // the field bought no safety and cost every curl and every client that omits it a 400.
-        if (request.containsKey("model") && request.get("model") != null) {
-            require(request.get("model") instanceof String, "model must be a string");
-            String name = (String) request.get("model");
-            if (!name.isBlank() && !name.equalsIgnoreCase(servedModel)) {
-                throw new UnknownModel(
-                        "Unknown model: %s (this server serves %s)".formatted(name, servedModel));
-            }
-        }
+        validateModel(request, servedModel);
         if (present(request, "stream")) {
             require(request.get("stream") instanceof Boolean, "stream must be a boolean");
         }
