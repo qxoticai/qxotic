@@ -984,8 +984,8 @@ public final class ModelStore {
                             + " in "
                             + ref.repoId()
                             + (folder.isEmpty() ? "" : "/" + folder)
-                            + ". Available: "
-                            + names(models));
+                            + "; available: "
+                            + quants(models));
         }
         throw new IllegalArgumentException(
                 quantOf(ref)
@@ -1245,8 +1245,46 @@ public final class ModelStore {
         return out.toString();
     }
 
-    private static List<String> names(List<RemoteFile> files) {
+    private static String names(List<RemoteFile> files) {
+        return String.join(", ", sortedNames(files));
+    }
+
+    private static List<String> sortedNames(List<RemoteFile> files) {
         return files.stream().map(f -> nameOf(f.path())).sorted().toList();
+    }
+
+    /**
+     * What a caller may write after the colon: each file's name past the stem every file shares
+     * ({@code LFM2.5-350M-Q8_0.gguf} offers {@code Q8_0}), or the whole names when they share none.
+     * Package-visible for its test.
+     */
+    static String quants(List<RemoteFile> files) {
+        List<String> stems =
+                sortedNames(files).stream()
+                        .map(
+                                n ->
+                                        n.regionMatches(true, n.length() - 5, ".gguf", 0, 5)
+                                                ? n.substring(0, n.length() - 5)
+                                                : n)
+                        .toList();
+        String first = stems.getFirst();
+        int shared = first.length();
+        for (String stem : stems) {
+            int at = 0;
+            while (at < Math.min(shared, stem.length()) && stem.charAt(at) == first.charAt(at)) {
+                at++;
+            }
+            shared = at;
+        }
+        // a quant starts after a '-' or '.', never inside a word or a tag (Q4_0 vs Q4_K_M)
+        while (shared > 0 && first.charAt(shared - 1) != '-' && first.charAt(shared - 1) != '.') {
+            shared--;
+        }
+        int cut = shared;
+        if (stems.size() < 2 || cut == 0 || stems.stream().anyMatch(s -> s.length() == cut)) {
+            return names(files);
+        }
+        return String.join(", ", stems.stream().map(s -> s.substring(cut)).toList());
     }
 
     private static void require(boolean condition, String message) {
