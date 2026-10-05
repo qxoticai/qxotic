@@ -2,11 +2,15 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.TranscriptionModel;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.LoadedEmbedder;
+import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.server.RetrievalServer;
 import com.qxotic.jinfer.server.ServerConfig;
 import com.qxotic.jinfer.server.TranscriptionServer;
 import java.io.IOException;
@@ -108,6 +112,78 @@ final class Server {
                 o.promptCache == null, "--cache/--cache-ro do not apply to a transcription server");
     }
 
+    /** A retrieval server sizes one state and nothing else; every language knob is refused. */
+    static void validateRetrieval(Options o) {
+        o.rejectLanguageOptions("a retrieval server", "--context-capacity", "-c");
+        Options.require(!o.rawPrompt, "--raw-prompt does not apply to a retrieval server");
+        Options.require(!o.server.noGrammar, "--no-grammar does not apply to a retrieval server");
+        Options.require(
+                o.promptCache == null, "--cache/--cache-ro do not apply to a retrieval server");
+    }
+
+    /**
+     * The state's capacity on the language server's rule: min(4096, model) unless chosen, 0 for the
+     * model's maximum, and a capacity the model cannot honor refused.
+     */
+    static int contextCapacity(Options o, int maximum) {
+        if (o.contextCapacity == null)
+            return Math.min(PromptCache.Options.DEFAULT_CONTEXT_CAPACITY, maximum);
+        if (o.contextCapacity == 0) return maximum;
+        Options.require(
+                o.contextCapacity <= maximum,
+                "--context-capacity %s exceeds the model's context length %s; 0 uses the maximum",
+                o.contextCapacity,
+                maximum);
+        return o.contextCapacity;
+    }
+
+    /** The started server and what the banner says about it. */
+    record Retrieval(RetrievalServer.Running server, String description, String api) {}
+
+    private static Retrieval startRetrieval(
+            ModelProvider.Retrieval kind,
+            Options options,
+            Options.Files files,
+            Arena arena,
+            ServerConfig config)
+            throws IOException {
+        String name = files.model().getFileName().toString();
+        try {
+            if (kind == ModelProvider.Retrieval.EMBEDDING) {
+                LoadedEmbedder<?> embedder = Models.loadEmbedder(files.model(), arena);
+                int capacity =
+                        contextCapacity(
+                                options, embedder.model().configuration().maxContextLength());
+                return new Retrieval(
+                        RetrievalServer.start(embedder, capacity, name, config),
+                        name
+                                + " (embedding, dimensions "
+                                + (embedder.supportsCustomDimensions()
+                                        ? embedder.minimumDimension() + "-"
+                                        : "")
+                                + embedder.dimension()
+                                + ", context "
+                                + capacity
+                                + ")",
+                        "POST /v1/embeddings");
+            }
+            LoadedReranker<?> reranker = Models.loadReranker(files.model(), arena);
+            int capacity =
+                    contextCapacity(options, reranker.model().configuration().maxContextLength());
+            return new Retrieval(
+                    RetrievalServer.start(reranker, capacity, name, config),
+                    name + " (reranking, context " + capacity + ")",
+                    "POST /v1/rerank");
+        } catch (BindException e) {
+            throw bindFailure(config, e);
+        }
+    }
+
+    private static void printRetrieval(Retrieval running, ServerConfig config, Main.IO io) {
+        io.err().printf("model       %s%n", running.description());
+        listening(io.err(), config.bind(), running.server().address().getPort(), running.api());
+    }
+
     /** DNS and binding policy are execution work, not argument parsing. */
     static ServerConfig config(Options o, Sampling sampling) {
         Settings s = o.server;
@@ -156,8 +232,18 @@ final class Server {
                 try {
                     engine = Main.loadText(options, files, arena);
                 } catch (ModelProvider.IncompatibleModelException notLanguage) {
-                    // The model selects the API: a non-language model is offered to transcription
-                    // rather than making users select a task themselves.
+                    // The model selects the API: a non-language model is offered to retrieval or
+                    // transcription rather than making users select a task themselves. Retrieval
+                    // is read from the header, so the weights load once, as the right face.
+                    var retrieval = Models.retrieval(files.model());
+                    if (retrieval.isPresent()) {
+                        validateRetrieval(options);
+                        var running =
+                                startRetrieval(retrieval.get(), options, files, arena, config);
+                        spinner.close();
+                        printRetrieval(running, config, io);
+                        return await(running.server()::await, running.server()::close);
+                    }
                     validateTranscription(options);
                     TranscriptionModel<?, ?, ?> transcription =
                             Models.loadTranscription(files.model(), arena, files.companions());
@@ -177,13 +263,11 @@ final class Server {
                         });
             }
         } catch (ModelProvider.IncompatibleModelException neither) {
-            IllegalArgumentException refusal =
-                    Main.unrunnable(options, files.model(), arena, neither);
-            if (refusal != neither) throw refusal;
             throw new IllegalArgumentException(
                     "model '"
                             + options.modelRef
-                            + "' is neither a language nor a transcription model",
+                            + "' is neither a language, an embedding, a reranking nor a"
+                            + " transcription model",
                     neither);
         } finally {
             Arenas.close(arena);
@@ -292,8 +376,11 @@ final class Server {
                 Examples:
                   jinfer server -m model.gguf --port 8080
                   jinfer -m parakeet.gguf server
+                  jinfer server -m Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0
 
-                The model selects the language or transcription API automatically.
+                The model selects the API: chat and completions for a language model,
+                /v1/embeddings for an embedding model, /v1/rerank for a reranker,
+                /v1/audio/transcriptions for a speech-to-text model.
 
                 Server options (after the command):
                   --host <host>              bind address; default 127.0.0.1

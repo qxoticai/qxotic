@@ -279,10 +279,12 @@ final class Options {
                 command);
     }
 
-    void rejectLanguageOptions(String application) {
+    /** Refuses every language option given, except the {@code kept} ones the application uses. */
+    void rejectLanguageOptions(String application, String... kept) {
         for (var option : used.entrySet()) {
             require(
-                    !option.getValue().equals(TEXT_COMMANDS),
+                    !option.getValue().equals(TEXT_COMMANDS)
+                            || List.of(kept).contains(option.getKey()),
                     "%s does not apply to %s",
                     option.getKey(),
                     application);
