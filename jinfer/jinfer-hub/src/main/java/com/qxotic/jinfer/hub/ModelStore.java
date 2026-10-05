@@ -522,23 +522,42 @@ public final class ModelStore {
     }
 
     private static void requireOnlineFor(String what, Path dest, Policy policy) {
-        if (offline()) {
+        String offline = offlineSource();
+        if (offline != null) {
             throw new IllegalStateException(
                     policy == Policy.USE_CACHE
                             ? what
                                     + " is not cached at "
                                     + dest
-                                    + " and JINFER_OFFLINE forbids downloading"
+                                    + " and "
+                                    + offline
+                                    + " forbids downloading"
                             : "cannot refresh "
                                     + what
-                                    + ": JINFER_OFFLINE forbids remote checks and downloads");
+                                    + ": "
+                                    + offline
+                                    + " forbids remote checks and downloads");
         }
     }
 
-    private static boolean offline() {
-        String value = System.getenv().getOrDefault("JINFER_OFFLINE", "");
-        return List.of("1", "true", "on", "yes").contains(value.toLowerCase(Locale.ROOT))
-                || Boolean.getBoolean("jinfer.offline");
+    /**
+     * The setting that switched offline mode on, named for the refusal; null when online. The house
+     * precedence: {@code -Djinfer.offline} decides when set, else {@code JINFER_OFFLINE}; both take
+     * the same values, and an unrecognized one counts as unset.
+     */
+    private static String offlineSource() {
+        Boolean property = flag(System.getProperty("jinfer.offline"));
+        if (property != null) return property ? "-Djinfer.offline" : null;
+        return Boolean.TRUE.equals(flag(System.getenv("JINFER_OFFLINE"))) ? "JINFER_OFFLINE" : null;
+    }
+
+    private static Boolean flag(String value) {
+        if (value == null) return null;
+        return switch (value.strip().toLowerCase(Locale.ROOT)) {
+            case "1", "true", "on", "yes" -> true;
+            case "0", "false", "off", "no" -> false;
+            default -> null;
+        };
     }
 
     /**

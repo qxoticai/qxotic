@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -152,12 +153,26 @@ class ModelStoreCacheTest {
 
     @ParameterizedTest
     @CsvSource({
-        "1,false,offline", "true,false,offline", "ON,false,offline", "YeS,false,offline",
-        "0,false,online", "FALSE,false,online", "off,false,online", "No,false,online",
-        ",false,online", "'',false,online", "invalid,false,online", "off,true,offline"
+        "1,,JINFER_OFFLINE",
+        "true,,JINFER_OFFLINE",
+        "ON,,JINFER_OFFLINE",
+        "YeS,,JINFER_OFFLINE",
+        "0,,online",
+        "FALSE,,online",
+        "off,,online",
+        "No,,online",
+        ",,online",
+        "'',,online",
+        "invalid,,online",
+        // the property decides when set, parsed like the variable; the refusal names it
+        "off,true,-Djinfer.offline",
+        ",YES,-Djinfer.offline",
+        "1,false,online",
+        "1,off,online",
+        "1,invalid,JINFER_OFFLINE"
     })
-    void offlineEnvironmentValuesGateRemoteAccess(
-            String value, boolean property, String expected, @TempDir Path root) throws Exception {
+    void offlineSettingsGateRemoteAccess(
+            String value, String property, String expected, @TempDir Path root) throws Exception {
         String classes =
                 Path.of(
                                 ModelStore.class
@@ -167,17 +182,18 @@ class ModelStoreCacheTest {
                                         .toURI())
                         .toString();
         Path output = root.resolve("stdout.txt"), error = root.resolve("stderr.txt");
+        List<String> command = new ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.add("-ea");
+        if (property != null) command.add("-Djinfer.offline=" + property);
+        command.addAll(
+                List.of(
+                        "-cp",
+                        classes + File.pathSeparator + System.getProperty("java.class.path"),
+                        OfflineProbe.class.getName(),
+                        root.toString()));
         var builder =
-                new ProcessBuilder(
-                                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                                "-ea",
-                                "-Djinfer.offline=" + property,
-                                "-cp",
-                                classes
-                                        + File.pathSeparator
-                                        + System.getProperty("java.class.path"),
-                                OfflineProbe.class.getName(),
-                                root.toString())
+                new ProcessBuilder(command)
                         .redirectOutput(output.toFile())
                         .redirectError(error.toFile());
         for (String variable : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"))
@@ -205,11 +221,17 @@ class ModelStoreCacheTest {
                 assert source.fetched();
                 System.out.println("online");
             } catch (IllegalStateException offline) {
-                if (!offline.getMessage().contains("JINFER_OFFLINE")) throw offline;
+                String setting =
+                        offline.getMessage().contains("-Djinfer.offline")
+                                ? "-Djinfer.offline"
+                                : offline.getMessage().contains("JINFER_OFFLINE")
+                                        ? "JINFER_OFFLINE"
+                                        : null;
+                if (setting == null) throw offline;
                 assert source.requestedDirs().isEmpty()
                         : "offline must prevent metadata requests too";
                 assert !source.fetched();
-                System.out.println("offline");
+                System.out.println(setting);
             }
         }
     }
@@ -222,7 +244,7 @@ class ModelStoreCacheTest {
         var failure =
                 assertThrows(
                         IllegalStateException.class, () -> store.resolve("hf.co/acme/thing:Q8_0"));
-        assertTrue(failure.getMessage().contains("JINFER_OFFLINE"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
 
         Path planted = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
         Files.createDirectories(planted.getParent());
@@ -242,7 +264,7 @@ class ModelStoreCacheTest {
                 assertThrows(
                         IllegalStateException.class,
                         () -> ModelStore.of(root).resolve("hf.co/acme/thing:Q8_0"));
-        assertTrue(failure.getMessage().contains("JINFER_OFFLINE"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
     }
 
     // ---- local passthrough ----

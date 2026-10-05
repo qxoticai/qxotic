@@ -119,7 +119,7 @@ Existing local paths are returned as-is, including with force enabled.
 | Variable | Effect |
 |----------|--------|
 | `JINFER_MODELS` | Moves the cache root (property: `-Djinfer.models`) |
-| `JINFER_OFFLINE` | `1`, `true`, `on`, `yes`: offline; `0`, `false`, `off`, `no`: online (case-insensitive). `-Djinfer.offline=true` also forces offline mode. |
+| `JINFER_OFFLINE` | `1`, `true`, `on`, `yes`: offline; `0`, `false`, `off`, `no`: online (case-insensitive). `-Djinfer.offline` takes the same values and wins over the variable when set. |
 | `JINFER_DOWNLOAD_THREADS` | Sets parallel download connections per file (property: `-Djinfer.downloadThreads`) |
 | `JINFER_SKIP_DISK_CHECK=1` | Skips the free-space check (some network mounts report no free space) |
 | `HF_TOKEN` | Authenticates access to gated Hugging Face repositories |
