@@ -193,6 +193,27 @@ public final class ReplyLanguageTest {
     }
 
     /**
+     * A seed the language cannot parse fired the control rule silently: the walk ended before the
+     * model generated anything and its guard ended the turn (Laguna's bare {@code </think>}
+     * thinking-off seed, every reply empty). It is a codec bug, so the seed refuses it.
+     */
+    @Test
+    void aSeedOutsideTheLanguageIsRefused() {
+        Node spans =
+                seq(
+                        opt(think(mark("<think>"), free(), mark("</think>"))),
+                        content(free()),
+                        opt(mark("<end>")));
+        Walk bare = Selection.of(spans, TOK).walk();
+        assertThrows(IllegalArgumentException.class, () -> bare.seed(IntSequence.of(END_THINK)));
+        Walk closed = Selection.of(spans, TOK).walk();
+        closed.seed(IntSequence.of(THINK, END_THINK));
+        assertFalse(closed.ended());
+        run(closed, ch('a'), END);
+        assertEquals("a", closed.finish().text());
+    }
+
+    /**
      * A payload grammar admits every empty-byte token where it accepts (its "may stop now"); in a
      * reply language only the successor may follow - the exit here, since nothing but the
      * terminator is left. Same law at the entry of a grammar that accepts the empty string.
