@@ -30,6 +30,8 @@ import java.util.function.Consumer;
 final class Gemma4ChatTemplate implements ChatTemplate {
     private static final String CHANNEL_OPEN = "<|channel>";
     private static final String CHANNEL_CLOSE = "<channel|>";
+    // the reasoning channel's name: scaffold the reply language consumes, never reasoning text
+    private static final String CHANNEL_NAME = "thought\n";
     private static final String THINK_SEED = "<|think|>";
     private static final ThinkMarkers CHANNEL_MARKERS =
             new ThinkMarkers(CHANNEL_OPEN, CHANNEL_CLOSE);
@@ -73,13 +75,13 @@ final class Gemma4ChatTemplate implements ChatTemplate {
         int channelOpen = SpecialTokens.require(tokenizer, CHANNEL_OPEN);
         IntSequence.Builder prefix = IntSequence.newBuilder();
         prefix.add(channelOpen);
-        prefix.addAll(tokenizer.encode("thought\n"));
+        prefix.addAll(tokenizer.encode(CHANNEL_NAME));
         prefix.add(SpecialTokens.require(tokenizer, CHANNEL_CLOSE));
         noThinkingPrefix = prefix.build();
         if (scaffoldsNonThinking) {
             IntSequence.Builder tail = IntSequence.newBuilder();
             tail.add(channelOpen);
-            tail.addAll(tokenizer.encode("thought\n"));
+            tail.addAll(tokenizer.encode(CHANNEL_NAME));
             thoughtTail = tail.build();
         } else {
             thoughtTail = IntSequence.empty();
@@ -169,7 +171,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
             if (thought != null) {
                 // <|channel>thought\n{reasoning}\n<channel|> - before calls and content
                 out.id(require(CHANNEL_OPEN))
-                        .text("thought\n")
+                        .text(CHANNEL_NAME)
                         .text(thought)
                         .text("\n")
                         .id(require(CHANNEL_CLOSE));
@@ -466,6 +468,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
             spans =
                     new ReplyLanguage.Spans(
                             CHANNEL_OPEN,
+                            CHANNEL_NAME,
                             CHANNEL_CLOSE,
                             CALL_OPEN,
                             CALL_CLOSE,

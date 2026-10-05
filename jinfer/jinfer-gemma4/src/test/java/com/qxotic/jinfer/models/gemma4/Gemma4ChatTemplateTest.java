@@ -15,6 +15,8 @@ import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyLanguage;
+import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -28,6 +30,8 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -286,6 +290,131 @@ final class Gemma4ChatTemplateTest {
         // non-thinking load, which carries the content-channel prefix)
         assertTrue(reply.replyPrefix().isEmpty());
         assertEquals(Channel.CONTENT, reply.parser().channel());
+    }
+
+    @Test
+    void theChannelNameIsScaffoldNotReasoning() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        ChatTemplate.ReplyState reply =
+                new Gemma4ChatTemplate(tokenizer, null, true)
+                        .encode(
+                                new Conversation(List.of(Message.user("hi")), List.of(), true),
+                                32,
+                                ignored -> {});
+        ReplyParser parser = reply.parser();
+        // the wire the model writes: <|channel>thought\n{reasoning}<channel|>{answer}<turn|>
+        IntSequence.Builder wire = IntSequence.newBuilder();
+        wire.add(SpecialTokens.require(tokenizer, "<|channel>"));
+        wire.addAll(tokenizer.encode("thought\nThinking Process: greet back."));
+        wire.add(SpecialTokens.require(tokenizer, "<channel|>"));
+        wire.addAll(tokenizer.encode("Hello!"));
+        wire.add(SpecialTokens.require(tokenizer, "<turn|>"));
+        StringBuilder reasoningStream = new StringBuilder();
+        StringBuilder contentStream = new StringBuilder();
+        wire.build()
+                .forEachInt(
+                        t -> {
+                            ReplyParser.Fragment f = parser.feed(t);
+                            (parser.reasoning() ? reasoningStream : contentStream).append(f.text());
+                        });
+        Message message = parser.finish();
+        assertEquals("Thinking Process: greet back.", reasoningStream.toString());
+        assertEquals("Hello!", contentStream.toString());
+        Content.Reasoning reasoning =
+                message.content().stream()
+                        .filter(Content.Reasoning.class::isInstance)
+                        .map(Content.Reasoning.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("Thinking Process: greet back.", reasoning.text());
+        assertEquals("Hello!", message.text());
+    }
+
+    @Test
+    void aChannelClosedBeforeItsNameStillParses() throws Exception {
+        // a zero reasoning budget forces <channel|> right after the model's <|channel>
+        Tokenizer tokenizer = tokenizer();
+        ReplyParser parser = new Gemma4ChatTemplate(tokenizer, null, true).parser(tokenizer);
+        IntSequence.Builder wire = IntSequence.newBuilder();
+        wire.add(SpecialTokens.require(tokenizer, "<|channel>"));
+        wire.add(SpecialTokens.require(tokenizer, "<channel|>"));
+        wire.addAll(tokenizer.encode("Hello!"));
+        wire.add(SpecialTokens.require(tokenizer, "<turn|>"));
+        Message message = ReplyParser.parse(parser, wire.build());
+        assertEquals("Hello!", message.text());
+        assertEquals(1, message.content().size());
+    }
+
+    @Test
+    void theGuardWalkForcesTheChannelName() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        ReplyLanguage.Walk walk =
+                (ReplyLanguage.Walk)
+                        new Gemma4ChatTemplate(tokenizer, null, true).parser(tokenizer);
+        walk.feed(SpecialTokens.require(tokenizer, "<|channel>"));
+        // right after the opener only the channel name may follow: the scaffold is masked, so
+        // the model cannot misspell it into the reasoning lane
+        try (Arena arena = Arena.ofConfined()) {
+            MemoryView<MemorySegment> logits =
+                    Views.fromFloatArray(
+                            MemoryAllocators.ofArena(arena),
+                            new float[tokenizer.vocabulary().size()]);
+            assertTrue(walk.maskLogits(logits));
+            int thought = tokenizer.encode("thought").intAt(0);
+            int other = tokenizer.encode("Thinking").intAt(0);
+            assertEquals(0f, logit(logits, thought));
+            assertEquals(Float.NEGATIVE_INFINITY, logit(logits, other));
+        }
+    }
+
+    @Test
+    void theNonThinkingScaffoldAndResumedChannelParseClean() throws Exception {
+        Tokenizer tokenizer = tokenizer();
+        Gemma4ChatTemplate template = new Gemma4ChatTemplate(tokenizer, null, true);
+        // thinking off: the prompt closes an empty channel; the reply is all content
+        ChatTemplate.ReplyState off =
+                template.encode(
+                        new Conversation(List.of(Message.user("hi")), List.of(), false),
+                        32,
+                        ignored -> {});
+        Message plain = ReplyParser.parse(off.parser(), tokenizer.encode("Hello!"));
+        assertEquals("Hello!", plain.text());
+        assertEquals(1, plain.content().size());
+        // a tool loop resumed with thinking on: the prompt opens <|channel>thought\n itself
+        Content.ToolCall call = new Content.ToolCall("c1", "now", java.util.Map.of());
+        ChatTemplate.ReplyState resumed =
+                template.encode(
+                        new Conversation(
+                                List.of(
+                                        Message.user("time?"),
+                                        new Message(Role.ASSISTANT, List.of(call)),
+                                        new Message(
+                                                Role.TOOL,
+                                                List.of(new Content.ToolResult("c1", "noon")))),
+                                List.of(),
+                                true),
+                        32,
+                        ignored -> {});
+        IntSequence.Builder wire = IntSequence.newBuilder();
+        wire.addAll(tokenizer.encode("It is noon."));
+        wire.add(SpecialTokens.require(tokenizer, "<channel|>"));
+        wire.addAll(tokenizer.encode("Noon."));
+        Message answer = ReplyParser.parse(resumed.parser(), wire.build());
+        assertEquals("Noon.", answer.text());
+        assertEquals(
+                "It is noon.",
+                answer.content().stream()
+                        .filter(Content.Reasoning.class::isInstance)
+                        .map(Content.Reasoning.class::cast)
+                        .findFirst()
+                        .orElseThrow()
+                        .text());
+    }
+
+    private static float logit(MemoryView<MemorySegment> logits, int token) {
+        return logits.memory()
+                .base()
+                .get(ValueLayout.JAVA_FLOAT, logits.byteOffset() + (long) token * Float.BYTES);
     }
 
     private static int indexOf(int[] ids, int id) {
