@@ -100,7 +100,12 @@ public final class Main {
             String name = "jinfer" + (command == null ? "" : " " + command);
             io.err().println(name + ": " + e.getMessage());
             if (e.showHelp)
-                io.err().println("Run '" + name + " --help' for available commands and options.");
+                io.err()
+                        .println(
+                                "Run '"
+                                        + name
+                                        + " --help' for available "
+                                        + (command == null ? "commands and options." : "options."));
             return 2;
         } catch (IOException
                 | UncheckedIOException
