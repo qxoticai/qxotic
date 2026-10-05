@@ -520,10 +520,8 @@ public final class ChatEngine implements AutoCloseable {
                     templateKwargs == null
                             ? null
                             : Collections.unmodifiableMap(new LinkedHashMap<>(templateKwargs));
-            // the per-request kwarg IS the thinking switch, as the server reads it: lowered here
-            // so the native codec (which never sees kwargs), the whole-render and the sampler all
-            // act on one decision. Left to the render alone, the engine's own enable_thinking
-            // binding overwrote it and a library caller's enable_thinking:false thought anyway.
+            // the per-request kwarg IS the thinking switch: lowered here so the native codec
+            // (which never sees kwargs), the whole-render and the sampler act on one decision
             if (templateKwargs != null
                     && templateKwargs.get("enable_thinking") instanceof Boolean on) thinking = on;
         }
@@ -662,7 +660,7 @@ public final class ChatEngine implements AutoCloseable {
             promptTokens = withPromptStart(promptTokens, promptStart);
             Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
             if (grammar != null) {
-                int end = endTurn();
+                int end = endTurn(); // refused before the grammar compiles
                 ReplyLanguage.Walk walk =
                         ReplyLanguage.Selection.of(
                                         ReplyLanguage.content(ReplyLanguage.gbnf(grammar)),
@@ -792,15 +790,19 @@ public final class ChatEngine implements AutoCloseable {
 
     /** The conversation a request encodes: one decision on thinking, shared by pin and pass. */
     private Conversation conversation(Request request) {
-        // a completion budget under THINK_FLOOR switches thinking off, except where off cannot be
-        // rendered: there the span stays open and the reasoning cap (half the budget) bounds it
         boolean think =
-                request.thinking()
-                        && request.forcedTool() == ForcedTool.NONE
-                        && (request.maxOutputTokens() < 0
-                                || request.maxOutputTokens() >= THINK_FLOOR
-                                || alwaysReasons());
+                request.forcedTool() == ForcedTool.NONE
+                        && thinks(request.thinking(), request.maxOutputTokens());
         return new Conversation(request.messages(), request.tools(), think);
+    }
+
+    /**
+     * A completion budget under THINK_FLOOR switches thinking off, except where off cannot be
+     * rendered: there the span stays open and the reasoning cap bounds it.
+     */
+    private boolean thinks(boolean thinking, int maxOutputTokens) {
+        return thinking
+                && (maxOutputTokens < 0 || maxOutputTokens >= THINK_FLOOR || alwaysReasons());
     }
 
     private Prepared prepare(Request request, Arena memory) {
@@ -872,15 +874,12 @@ public final class ChatEngine implements AutoCloseable {
     /**
      * The id to EMIT when a decode must be ended from outside (a grammar's dead end, a forced
      * call's terminator): the stop set's FIRST element - the model's own end-of-turn, an order the
-     * family establishes and {@link LoadedModel} preserves. A model with no stop token has nothing
-     * to end a constrained decode with, so the constraint is refused up front.
+     * family establishes and {@link LoadedModel} preserves.
      */
     private int endTurn() {
         if (loaded.stopTokens().isEmpty())
             throw new UnsupportedOperationException(
-                    modelName
-                            + " declares no end-of-turn token, so a grammar, forced call or"
-                            + " constrained reply has nothing to end on");
+                    modelName + " declares no end-of-turn token to end a constrained reply on");
         return loaded.stopTokens().iterator().next();
     }
 
@@ -894,21 +893,15 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * The think-span cap {@link #prepare} puts on a request with these knobs and no forced tool
-     * call: {@code -1} uncapped, {@code 0} when the request does not reason at all (thinking off,
-     * or a completion budget under {@link #THINK_FLOOR} on a model that can switch it off). Once
-     * the span holds this many tokens the engine closes it - after the request's {@code
-     * reasoningCutoffMessage}, or a bare paragraph break - so a front end can say the reasoning was
-     * cut rather than finished.
+     * The think-span cap a request with these knobs and no forced tool call gets: {@code -1}
+     * uncapped, {@code 0} when it does not reason at all. A front end compares a span against it to
+     * report reasoning that was cut rather than finished.
      */
     public int maxReasoningTokens(
             boolean thinking, int maxOutputTokens, Integer maxReasoningTokens) {
-        boolean think =
-                thinking
-                        && (maxOutputTokens < 0
-                                || maxOutputTokens >= THINK_FLOOR
-                                || alwaysReasons());
-        return think ? reasoningBudget(maxOutputTokens, maxReasoningTokens) : 0;
+        return thinks(thinking, maxOutputTokens)
+                ? reasoningBudget(maxOutputTokens, maxReasoningTokens)
+                : 0;
     }
 
     private int reasoningBudget(int maxOutputTokens, Integer reasoningOverride) {

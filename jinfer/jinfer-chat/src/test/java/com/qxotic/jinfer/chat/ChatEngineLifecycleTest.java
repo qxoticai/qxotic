@@ -308,7 +308,6 @@ final class ChatEngineLifecycleTest {
                 };
         try (ChatEngine engine = engine(template)) {
             assertEquals(ChatTemplate.ThinkingPolicy.ALWAYS, engine.thinkingPolicy());
-            // the cap prepare() applies, as a front end asks for it to report a cut span
             assertEquals(150, engine.maxReasoningTokens(true, 300, null), "half the budget");
             assertEquals(-1, engine.maxReasoningTokens(true, -1, null), "context-bound: uncapped");
             assertEquals(64, engine.maxReasoningTokens(true, 300, 64), "the caller's cap");

@@ -293,7 +293,7 @@ final class JamPack {
         } finally {
             if (file != null) {
                 try {
-                    Files.delete(file); // POSIX: unlink now, mapped pages live until arena close
+                    Files.delete(file); // POSIX: unlink now, pages live until the arena closes
                 } catch (IOException windowsKeepsMappedFiles) {
                     file.toFile().deleteOnExit();
                 }

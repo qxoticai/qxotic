@@ -187,7 +187,6 @@ class JinjaSemanticsTest {
 
     @Test
     void unknownStatementsAreRefused() {
-        // each rendered as nothing, silently dropping what the template meant
         for (String source :
                 new String[] {"{% endraw %}x", "{% endset %}", "{% endcall %}", "{% foo %}"}) {
             RuntimeException e =

@@ -272,8 +272,7 @@ public final class JinjaRenderer {
      * Python {@code repr(float)}: the shortest round-tripping digits (what {@link Double#toString}
      * picks too), positional for decimal exponents -4..15 with a whole value keeping its {@code .0}
      * ({@code 4 / 2} is {@code 2.0}, {@code 0.0005} stays as written), and {@code 1e+16} / {@code
-     * 1.5e-05} scientific outside them. Java's own {@code 5.0E-4} spelling reached prompts and
-     * {@code tojson} output verbatim.
+     * 1.5e-05} scientific outside them.
      */
     private static String fmtDouble(double v) {
         if (Double.isNaN(v)) return "nan";
@@ -1366,9 +1365,8 @@ public final class JinjaRenderer {
                         // one has no block to close (Jinja: TemplateSyntaxError)
                         throw err("unexpected {% " + kw + " %}");
                 default -> {
-                    // a bare word is a statement this engine does not know ({% endraw %} without
-                    // its raw, {% endset %}, {% endcall %}, …): read as an expression it rendered
-                    // as nothing, silently dropping whatever the template meant by it
+                    // a bare word is an unknown statement ({% endset %}, {% endcall %}, …), which
+                    // would otherwise render as nothing
                     if (!kw.isEmpty() && is(T.CLOSE_STMT))
                         throw err("unknown statement {% " + kw + " %}");
                     // Expression statement: {% expr %}

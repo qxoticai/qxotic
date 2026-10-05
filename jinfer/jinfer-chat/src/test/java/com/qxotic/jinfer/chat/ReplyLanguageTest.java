@@ -192,11 +192,7 @@ public final class ReplyLanguageTest {
         assertEquals("{\"a\":1}", w.finish().text());
     }
 
-    /**
-     * A seed the language cannot parse fired the control rule silently: the walk ended before the
-     * model generated anything and its guard ended the turn (Laguna's bare {@code </think>}
-     * thinking-off seed, every reply empty). It is a codec bug, so the seed refuses it.
-     */
+    /** A seed the language cannot parse is a codec bug: refused, not an empty reply. */
     @Test
     void aSeedOutsideTheLanguageIsRefused() {
         Node spans =

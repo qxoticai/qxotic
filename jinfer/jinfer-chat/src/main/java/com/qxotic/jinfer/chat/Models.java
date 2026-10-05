@@ -345,9 +345,8 @@ public final class Models {
     }
 
     /**
-     * Why a GGUF header did not parse, in the reader's terms: a file without the magic is some
-     * other format (the parser's number-for-number detail stays on the cause); one with it is a
-     * damaged GGUF, and the parser's detail is the useful part.
+     * Why a GGUF header did not parse: without the magic the file is some other format; with it, a
+     * damaged GGUF whose parser detail is the useful part.
      */
     private static String unreadable(Path path, FileChannel fc, Exception failure)
             throws IOException {

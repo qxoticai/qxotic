@@ -1023,9 +1023,8 @@ class ParallelTest {
                     4 * 8,
                     (i, bSlot) -> {
                         if (bSlot == 0) {
-                            // only b's WORKERS submit to a. The caller must not finish b's
-                            // iterations alone before a worker wakes (the flake this guards):
-                            // it holds its iteration until a worker's submission has run
+                            // only b's WORKERS submit to a; the caller holds its iteration
+                            // until one has, or it could finish b alone before a worker wakes
                             long deadline = System.nanoTime() + 5_000_000_000L;
                             while (visits.get() == 0 && System.nanoTime() < deadline) {
                                 Thread.onSpinWait();
