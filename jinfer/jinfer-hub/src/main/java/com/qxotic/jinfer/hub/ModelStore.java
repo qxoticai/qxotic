@@ -390,7 +390,7 @@ public final class ModelStore {
             return dest;
         }
         // before the SIZE probe, not just the download: offline means no request at all
-        requireOnlineFor(url, dest, policy);
+        requireOnlineFor(url, dest.toString(), policy);
         Map<String, String> headers = Map.of("User-Agent", "jinfer-hub");
         long size = Fetch.sizeOf(url, headers);
         requireWritable(dest);
@@ -521,15 +521,23 @@ public final class ModelStore {
         }
     }
 
-    private static void requireOnlineFor(String what, Path dest, Policy policy) {
+    /** Where {@link #cachedFile} looks for {@code ref}, as a refusal names it. */
+    private String lookedIn(ModelRef ref) {
+        Path own = folderDir(ref);
+        if (!ref.host().equals(ModelRef.Host.HF.name)) return own.toString();
+        Path hub = Hub.cache().resolve("models--" + ref.owner() + "--" + ref.repo());
+        return own + " or " + hub;
+    }
+
+    private static void requireOnlineFor(String what, String where, Policy policy) {
         String offline = offlineSource();
         if (offline != null) {
             throw new IllegalStateException(
                     policy == Policy.USE_CACHE
                             ? what
-                                    + " is not cached at "
-                                    + dest
-                                    + " and "
+                                    + " is not cached in "
+                                    + where
+                                    + ", and "
                                     + offline
                                     + " forbids downloading"
                             : "cannot refresh "
@@ -717,7 +725,7 @@ public final class ModelStore {
                 if (cached != null) return cached;
             }
             // Before creating lock files, requesting metadata, or touching a published entry.
-            requireOnlineFor(ref.toString(), folderDir(ref), policy);
+            requireOnlineFor(ref.toString(), lookedIn(ref), policy);
             Path key =
                     hubShare && ref.host().equals(ModelRef.Host.HF.name)
                             ? Hub.publicationKey(ref, Hub.cache())
