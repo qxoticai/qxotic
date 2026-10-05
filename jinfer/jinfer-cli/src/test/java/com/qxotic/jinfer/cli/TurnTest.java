@@ -139,6 +139,34 @@ class TurnTest {
         assertFalse(capture.err().contains("\033"));
     }
 
+    /**
+     * The echo already shows every reasoning token on stderr; a second copy interleaves with it.
+     */
+    @Test
+    void echoedThoughtsAreNotRenderedAgain() {
+        var capture = new CliFixtures.Capture("");
+        Options o =
+                Options.parse(
+                        "instruct",
+                        "-m",
+                        "unused",
+                        "hello",
+                        "--raw-prompt",
+                        "--echo",
+                        "--color",
+                        "off");
+        try (var turn = Turn.startRaw(controlTokenizer(), new int[] {'a'}, o, capture.io)) {
+            turn.on(new ChatEngine.Delta(Channel.REASONING, "y", IntSequence.of('y')));
+            turn.on(new ChatEngine.Delta(Channel.CONTENT, "x", IntSequence.of('x')));
+            turn.finish(
+                    new ChatEngine.Completion(
+                            null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
+                    4096);
+        }
+        assertEquals("ayx", capture.err(), "the echo alone: prompt, thought, answer");
+        assertEquals("x\n", capture.out().replace("\r\n", "\n"), "a redirected stdout keeps it");
+    }
+
     private static Tokenizer controlTokenizer() {
         Tokenizer base = TestLanguageModel.TOKENIZER;
         Vocabulary words = base.vocabulary();
