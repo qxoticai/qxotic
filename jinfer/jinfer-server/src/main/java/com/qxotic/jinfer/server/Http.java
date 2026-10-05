@@ -49,38 +49,40 @@ final class Http {
      * a request refused before its handler (503 at the gate) never appeared at all.
      */
     static HttpContext logged(HttpContext context) {
-        context.getFilters().add(ACCESS_LOG);
+        // a fresh filter per context, never a static constant: Http is initialized at image build
+        // time, so a constant would be stored in the image heap, which refuses an object whose
+        // type initializes at run time
+        context.getFilters().add(new AccessLog());
         return context;
     }
 
-    private static final Filter ACCESS_LOG =
-            new Filter() {
-                @Override
-                public void doFilter(HttpExchange exchange, Chain chain) throws IOException {
-                    long start = System.nanoTime();
-                    try {
-                        chain.doFilter(exchange);
-                    } finally {
-                        long millis = (System.nanoTime() - start) / 1_000_000;
-                        int status = exchange.getResponseCode();
-                        Log.LOG.log(
-                                System.Logger.Level.INFO,
-                                () ->
-                                        "%s %s %s %d ms from %s"
-                                                .formatted(
-                                                        exchange.getRequestMethod(),
-                                                        exchange.getRequestURI(),
-                                                        status < 0 ? "-" : status,
-                                                        millis,
-                                                        exchange.getRemoteAddress()));
-                    }
-                }
+    private static final class AccessLog extends Filter {
+        @Override
+        public void doFilter(HttpExchange exchange, Chain chain) throws IOException {
+            long start = System.nanoTime();
+            try {
+                chain.doFilter(exchange);
+            } finally {
+                long millis = (System.nanoTime() - start) / 1_000_000;
+                int status = exchange.getResponseCode();
+                Log.LOG.log(
+                        System.Logger.Level.INFO,
+                        () ->
+                                "%s %s %s %d ms from %s"
+                                        .formatted(
+                                                exchange.getRequestMethod(),
+                                                exchange.getRequestURI(),
+                                                status < 0 ? "-" : status,
+                                                millis,
+                                                exchange.getRemoteAddress()));
+            }
+        }
 
-                @Override
-                public String description() {
-                    return "access log";
-                }
-            };
+        @Override
+        public String description() {
+            return "access log";
+        }
+    }
 
     private static boolean cors(HttpExchange exchange, ServerConfig.Access access) {
         Headers headers = exchange.getResponseHeaders();
