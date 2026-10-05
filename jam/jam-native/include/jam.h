@@ -36,8 +36,7 @@
  *   == Capability names (the user-facing strings for JAM_ISA and jam_isa_name) ==
  *     "auto" "generic" "sse2" "sse3" "ssse3" "avx2" "avx_vnni" "avx512" "avx512_vnni" "amx"  (x86)
  *     "neon" "dotprod" "i8mm" "sve"                                                          (arm)
- *     "metal"      (GPU backend: on by default under "auto" on Apple Silicon, opt-in via
- *                   JAM_ISA/max_isa on Intel Macs; any CPU rung as the cap turns it off)
+ *     "metal"                                    (GPU backend, explicit opt-in via JAM_ISA/max_isa)
  */
 
 #include <stddef.h>
@@ -139,8 +138,7 @@ typedef enum {
     JAM_ISA_DOTPROD,
     JAM_ISA_I8MM,
     JAM_ISA_SVE,
-    /* GPU backend (not a CPU ISA); routes matmul to the Apple GPU. Enabled by JAM_ISA_AUTO on
-     * Apple Silicon; on Intel Macs only via JAM_ISA=metal / max_isa. */
+    /* GPU backend (not a CPU ISA) - opt-in via JAM_ISA=metal / max_isa; routes matmul to the Apple GPU. */
     JAM_ISA_METAL,
 } jam_isa;
 
