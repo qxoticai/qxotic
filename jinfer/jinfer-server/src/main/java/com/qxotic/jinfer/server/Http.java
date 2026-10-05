@@ -167,6 +167,23 @@ final class Http {
         return body;
     }
 
+    /**
+     * Reads a JSON-object body under the server's limits (the write timeout bounds the read);
+     * returns null after answering an oversized or expired upload, or one that is not a JSON object
+     * (400) - callers must return immediately on null.
+     */
+    static Map<String, Object> readJsonObject(HttpExchange exchange, ServerConfig.Limits limits)
+            throws IOException {
+        byte[] raw = readBody(exchange, limits.maxBodyBytes(), limits.writeTimeout());
+        if (raw == null) return null;
+        try {
+            return Values.asObject(JsonCodec.parse(raw), "request");
+        } catch (RuntimeException e) {
+            sendError(exchange, 400, errorMessage(e)); // not JSON, or not an object
+            return null;
+        }
+    }
+
     static void sendJson(HttpExchange exchange, int status, Object value) throws IOException {
         sendText(exchange, status, "application/json; charset=utf-8", JsonCodec.stringify(value));
     }

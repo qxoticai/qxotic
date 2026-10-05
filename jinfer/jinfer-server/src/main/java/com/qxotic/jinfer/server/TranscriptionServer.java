@@ -5,8 +5,6 @@ import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.media.Media;
 import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -16,10 +14,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -39,64 +33,51 @@ public final class TranscriptionServer {
     private final ServerConfig config;
     private final ReentrantLock compute = new ReentrantLock(true);
     // --concurrency handlers admitted at once (the compute lock still serializes the model); the
-    // rest get 503 + Retry-After, and the probes below answer regardless, as the language server's
-    private final Semaphore admissions;
-    private final long startNanos = System.nanoTime();
+    // rest get 503 + Retry-After, and the probes answer regardless, as the language server's
+    private final TaskTransport transport;
     private final AtomicLong transcriptions = new AtomicLong(), audioMillis = new AtomicLong();
 
     private TranscriptionServer(
-            TranscriptionModel<?, ?, ?> model, String servedModel, ServerConfig config) {
+            TranscriptionModel<?, ?, ?> model, String servedModel, ServerConfig config)
+            throws IOException {
         this.model = model;
         this.servedModel = servedModel;
         this.config = config;
-        this.admissions = new Semaphore(config.limits().threads());
-    }
-
-    private int inFlight() {
-        return config.limits().threads() - admissions.availablePermits();
+        this.transport = new TaskTransport(config);
     }
 
     /** The scrape's view, in the language server's format and names where the meaning is shared. */
     private String exposition() {
         StringBuilder sb = new StringBuilder();
-        Metrics.metric(
-                sb, "jinfer_uptime_seconds", "gauge", (System.nanoTime() - startNanos) / 1e9);
+        Metrics.metric(sb, "jinfer_uptime_seconds", "gauge", transport.uptimeSeconds());
         Metrics.metric(
                 sb, "jinfer_transcriptions_completed_total", "counter", transcriptions.get());
         Metrics.metric(
                 sb, "jinfer_transcribed_audio_seconds_total", "counter", audioMillis.get() / 1e3);
-        Metrics.metric(sb, "jinfer_transcriptions_in_flight", "gauge", inFlight());
+        Metrics.metric(sb, "jinfer_transcriptions_in_flight", "gauge", transport.inFlight());
         return sb.toString();
     }
 
     /** A running transport; the caller retains ownership of the model. */
     public static final class Running implements AutoCloseable {
-        private final HttpServer http;
-        private final int stopDelaySeconds;
-        private final CountDownLatch stopped = new CountDownLatch(1);
-        private volatile boolean closed;
+        private final TaskTransport.Running running;
 
-        private Running(HttpServer http, int stopDelaySeconds) {
-            this.http = http;
-            this.stopDelaySeconds = stopDelaySeconds;
+        private Running(TaskTransport.Running running) {
+            this.running = running;
         }
 
         public InetSocketAddress address() {
-            return http.getAddress();
+            return running.address();
         }
 
         /** Blocks until {@link #close()} is called. */
         public void await() throws InterruptedException {
-            stopped.await();
+            running.await();
         }
 
         @Override
-        public synchronized void close() {
-            if (closed) return;
-            closed = true;
-            http.stop(stopDelaySeconds);
-            if (http.getExecutor() instanceof ExecutorService pool) pool.shutdownNow();
-            stopped.countDown();
+        public void close() {
+            running.close();
         }
     }
 
@@ -109,12 +90,7 @@ public final class TranscriptionServer {
         return new TranscriptionServer(model, servedModel, config).serve();
     }
 
-    private static void context(HttpServer server, String path, HttpHandler handler) {
-        Http.logged(server.createContext(path, handler));
-    }
-
-    private Running serve() throws IOException {
-        HttpServer server = HttpServer.create(config.bind(), 0);
+    private Running serve() {
         Map<String, Object> modelCard =
                 JsonCodec.object(
                         "id",
@@ -127,126 +103,15 @@ public final class TranscriptionServer {
                         "jinfer",
                         "architecture",
                         JsonCodec.object("input_modalities", List.of("audio")));
-        // a liveness probe carries no key and answers under load, as the language server's does
-        ServerConfig.Access probe = new ServerConfig.Access(null, config.access().allowedOrigins());
-        context(
-                server,
-                "/health",
-                exchange -> {
-                    if (Http.preamble(exchange, probe)) return;
-                    if (!"/health".equals(exchange.getRequestURI().getPath())) {
-                        Http.sendError(exchange, 404, "Not found");
-                        return;
-                    }
-                    if (Http.requireMethod(exchange, "GET")) return;
-                    Http.sendJson(
-                            exchange,
-                            200,
-                            JsonCodec.object("status", "ok", "busy", inFlight() > 0, "queued", 0));
-                });
-        context(
-                server,
-                "/props",
-                exchange -> {
-                    if (Http.preamble(exchange, config.access())) return;
-                    if (!"/props".equals(exchange.getRequestURI().getPath())) {
-                        Http.sendError(exchange, 404, "Not found");
-                        return;
-                    }
-                    if (Http.requireMethod(exchange, "GET")) return;
-                    Http.sendJson(
-                            exchange,
-                            200,
-                            JsonCodec.object(
-                                    "model", servedModel, "sample_rate", model.sampleRate()));
-                });
-        context(
-                server,
-                "/metrics",
-                exchange -> {
-                    if (Http.preamble(exchange, config.access())) return;
-                    if (!"/metrics".equals(exchange.getRequestURI().getPath())) {
-                        Http.sendError(exchange, 404, "Not found");
-                        return;
-                    }
-                    if (Http.requireMethod(exchange, "GET")) return;
-                    Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, exposition());
-                });
-        context(
-                server,
-                "/v1/models",
-                exchange -> {
-                    if (Http.preamble(exchange, config.access())) return;
-                    if (Http.requireMethod(exchange, "GET")) return;
-                    String path = exchange.getRequestURI().getPath();
-                    if (path.equals("/v1/models")) {
-                        Http.sendJson(
-                                exchange,
-                                200,
-                                JsonCodec.object("object", "list", "data", List.of(modelCard)));
-                    } else if (path.equals("/v1/models/" + servedModel)) {
-                        Http.sendJson(exchange, 200, modelCard);
-                    } else if (path.startsWith("/v1/models/")) {
-                        Http.sendError(
-                                exchange,
-                                404,
-                                "Unknown model: "
-                                        + path.substring("/v1/models/".length())
-                                        + " (this server serves "
-                                        + servedModel
-                                        + ")");
-                    } else {
-                        Http.sendError(exchange, 404, "Not found"); // /v1/modelsXYZ: a wrong path
-                    }
-                });
-        context(
-                server,
-                "/v1/audio/transcriptions",
-                Server.gated(
-                        exchange -> {
-                            if (Http.preamble(exchange, config.access())) return;
-                            if (!"/v1/audio/transcriptions"
-                                    .equals(exchange.getRequestURI().getPath())) {
-                                Http.sendError(exchange, 404, "Not found");
-                                return;
-                            }
-                            if (Http.requireMethod(exchange, "POST")) return;
-                            try {
-                                handleTranscription(exchange);
-                            } catch (IllegalArgumentException | UnsupportedOperationException e) {
-                                // the language server's rule: only a validator's two types are
-                                // the client's fault; anything else is ours, logged, not echoed
-                                Http.sendErrorQuietly(exchange, 400, Http.errorMessage(e));
-                            } catch (RuntimeException e) {
-                                Log.LOG.log(
-                                        System.Logger.Level.ERROR,
-                                        "unhandled fault serving /v1/audio/transcriptions",
-                                        e);
-                                Http.sendErrorQuietly(exchange, 500, "Internal server error");
-                            }
-                        },
-                        admissions,
-                        config.limits()));
-        // every other path: the JSON 404 the language server answers, not the JDK's HTML page
-        context(
-                server,
-                "/",
-                exchange -> {
-                    if (Http.preamble(exchange, config.access())) return;
-                    Http.sendError(
-                            exchange, 404, "unknown path " + exchange.getRequestURI().getPath());
-                });
-        // every exchange gets a thread at once; the gate above bounds the work, not the probes
-        server.setExecutor(
-                Executors.newCachedThreadPool(
-                        runnable -> {
-                            Thread thread = new Thread(runnable, "jinfer-transcription-handler");
-                            thread.setDaemon(true);
-                            return thread;
-                        }));
-        server.start();
-        long stopDelay = Math.ceilDiv(config.limits().shutdownTimeout().toNanos(), 1_000_000_000L);
-        return new Running(server, (int) Math.min(Integer.MAX_VALUE, stopDelay));
+        transport.probes(
+                servedModel,
+                modelCard,
+                () -> JsonCodec.object("model", servedModel, "sample_rate", model.sampleRate()),
+                this::exposition);
+        transport.work("/v1/audio/transcriptions", this::handleTranscription);
+        return new Running(
+                transport.start(
+                        "POST /v1/audio/transcriptions", "jinfer-transcription-handler", () -> {}));
     }
 
     private void handleTranscription(HttpExchange exchange) throws IOException {

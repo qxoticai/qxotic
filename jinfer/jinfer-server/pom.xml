@@ -49,6 +49,12 @@
       <artifactId>jinfer-lfm2</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- RetrievalServerIntegrationTest serves Qwen3-Embedding and Qwen3-Reranker. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-qwen3</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
