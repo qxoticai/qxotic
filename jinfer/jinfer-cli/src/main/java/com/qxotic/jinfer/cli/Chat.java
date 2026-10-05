@@ -33,7 +33,8 @@ final class Chat {
                 Usage: jinfer [model options] chat [options]
                 Example: jinfer chat -m model.gguf --system-prompt "Be concise."
 
-                Commands: /quit, /exit, /context. EOF also exits.
+                Commands: /quit, /exit, /context. EOF (Ctrl-D) also exits.
+                Ctrl-C stops a reply and keeps the conversation; at the prompt it exits.
                 """);
         Options.modelHelp(out);
         Options.generationHelp(out);
