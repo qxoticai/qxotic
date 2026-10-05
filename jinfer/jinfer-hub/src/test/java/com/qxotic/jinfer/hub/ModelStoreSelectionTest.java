@@ -160,6 +160,33 @@ class ModelStoreSelectionTest {
     }
 
     @Test
+    void availableQuantsAreTheTagsPastTheSharedStem() {
+        assertEquals(
+                "BF16, Q4_K_M, Q8_0, QAD-Q4_0",
+                ModelStore.quants(
+                        java.util.List.of(
+                                new RemoteFile("LFM2.5-350M-Q8_0.gguf", 1, null),
+                                new RemoteFile("LFM2.5-350M-BF16.gguf", 1, null),
+                                new RemoteFile("sub/LFM2.5-350M-QAD-Q4_0.gguf", 1, null),
+                                new RemoteFile("LFM2.5-350M-Q4_K_M.gguf", 1, null))));
+        assertEquals(
+                "Q4_0, Q4_K_M",
+                ModelStore.quants(
+                        java.util.List.of(
+                                new RemoteFile("Llama-3.2-1B-Q4_K_M.gguf", 1, null),
+                                new RemoteFile("Llama-3.2-1B-Q4_0.gguf", 1, null))));
+        // no shared stem, or a file that is only the stem: the names say it best
+        assertEquals(
+                "a-Q8_0.gguf, b-Q4_0.gguf",
+                ModelStore.quants(
+                        java.util.List.of(
+                                new RemoteFile("b-Q4_0.gguf", 1, null),
+                                new RemoteFile("a-Q8_0.gguf", 1, null))));
+        assertEquals(
+                "m.gguf", ModelStore.quants(java.util.List.of(new RemoteFile("m.gguf", 1, null))));
+    }
+
+    @Test
     void aSafetensorsOnlyRepositoryIsRefusedBeforeAnyBytesMove(@TempDir Path root) {
         FakeSource source =
                 new FakeSource("fake")
