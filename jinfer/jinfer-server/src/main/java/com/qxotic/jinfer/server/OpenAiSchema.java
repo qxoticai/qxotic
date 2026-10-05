@@ -22,23 +22,25 @@ final class OpenAiSchema {
 
     /**
      * llama.cpp-compatible timings extension ({@code server_slot_stats::to_json}): per-phase
-     * durations and rates.
+     * durations and rates. As there, {@code prompt_n} counts the tokens this request evaluated and
+     * {@code cache_n} the ones it reused, so the prompt rate is the prefill's own; {@code usage}
+     * keeps OpenAI's meaning, where prompt_tokens includes the cached ones.
      */
     static Map<String, Object> timings(Reply result) {
+        int evaluated = Math.max(0, result.promptTokens() - result.cachedTokens());
         Map<String, Object> timings = new LinkedHashMap<>();
         timings.put("cache_n", result.cachedTokens());
-        timings.put("prompt_n", result.promptTokens());
+        timings.put("prompt_n", evaluated);
         timings.put("prompt_ms", Math.round(result.promptMillis() * 100.0) / 100.0);
         timings.put(
                 "prompt_per_token_ms",
-                result.promptTokens() > 0
-                        ? Math.round(result.promptMillis() / result.promptTokens() * 100.0) / 100.0
+                evaluated > 0
+                        ? Math.round(result.promptMillis() / evaluated * 100.0) / 100.0
                         : 0.0);
         timings.put(
                 "prompt_per_second",
                 result.promptMillis() > 0
-                        ? Math.round(result.promptTokens() / result.promptMillis() * 100_000.0)
-                                / 100.0
+                        ? Math.round(evaluated / result.promptMillis() * 100_000.0) / 100.0
                         : 0.0);
         timings.put("predicted_n", result.completionTokens());
         timings.put("predicted_ms", Math.round(result.predictedMillis() * 100.0) / 100.0);
