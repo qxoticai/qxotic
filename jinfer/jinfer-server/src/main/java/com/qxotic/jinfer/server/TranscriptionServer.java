@@ -32,8 +32,6 @@ public final class TranscriptionServer {
     private final String servedModel;
     private final ServerConfig config;
     private final ReentrantLock compute = new ReentrantLock(true);
-    // --concurrency handlers admitted at once (the compute lock still serializes the model); the
-    // rest get 503 + Retry-After, and the probes answer regardless, as the language server's
     private final TaskTransport transport;
     private final AtomicLong transcriptions = new AtomicLong(), audioMillis = new AtomicLong();
 
@@ -91,21 +89,9 @@ public final class TranscriptionServer {
     }
 
     private Running serve() {
-        Map<String, Object> modelCard =
-                JsonCodec.object(
-                        "id",
-                        servedModel,
-                        "object",
-                        "model",
-                        "created",
-                        0,
-                        "owned_by",
-                        "jinfer",
-                        "architecture",
-                        JsonCodec.object("input_modalities", List.of("audio")));
         transport.probes(
                 servedModel,
-                modelCard,
+                "audio",
                 () -> JsonCodec.object("model", servedModel, "sample_rate", model.sampleRate()),
                 this::exposition);
         transport.work("/v1/audio/transcriptions", this::handleTranscription);

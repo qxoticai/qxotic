@@ -49,9 +49,21 @@ final class TaskTransport {
      */
     void probes(
             String servedModel,
-            Map<String, Object> modelCard,
+            String modality,
             Supplier<Map<String, Object>> props,
             Supplier<String> metrics) {
+        Map<String, Object> modelCard =
+                JsonCodec.object(
+                        "id",
+                        servedModel,
+                        "object",
+                        "model",
+                        "created",
+                        0,
+                        "owned_by",
+                        "jinfer",
+                        "architecture",
+                        JsonCodec.object("input_modalities", List.of(modality)));
         ServerConfig.Access probe = new ServerConfig.Access(null, config.access().allowedOrigins());
         probe(
                 "/health",
@@ -134,11 +146,7 @@ final class TaskTransport {
                             try {
                                 work.handle(exchange);
                             } catch (IllegalArgumentException | UnsupportedOperationException e) {
-                                Http.sendErrorQuietly(
-                                        exchange,
-                                        Server.clientStatus(e),
-                                        Http.errorMessage(e),
-                                        Values.param(e));
+                                Server.refuse(exchange, e);
                             } catch (RuntimeException e) {
                                 Log.LOG.log(
                                         System.Logger.Level.ERROR,

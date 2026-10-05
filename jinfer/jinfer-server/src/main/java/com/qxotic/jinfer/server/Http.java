@@ -43,11 +43,7 @@ final class Http {
         return true;
     }
 
-    /**
-     * The access log: one line per exchange once it is answered, with the status and how long it
-     * took, as every HTTP server writes it. Logging on arrival said nothing about the outcome, and
-     * a request refused before its handler (503 at the gate) never appeared at all.
-     */
+    /** The access log: one line per exchange once it is answered, with status and duration. */
     static HttpContext logged(HttpContext context) {
         // a fresh filter per context, never a static constant: Http is initialized at image build
         // time, so a constant would be stored in the image heap, which refuses an object whose
@@ -236,10 +232,6 @@ final class Http {
                                     .formatted(status, message),
                     e);
         }
-    }
-
-    static Map<String, Object> errorPayload(int status, String message) {
-        return errorPayload(status, message, null);
     }
 
     static Map<String, Object> errorPayload(int status, String message, String param) {

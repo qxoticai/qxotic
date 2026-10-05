@@ -421,7 +421,7 @@ public final class Server {
                 // validator throws are the client's fault. A blanket RuntimeException ->
                 // 400 here told clients their request was malformed whenever this server
                 // had a defect, and echoed the JVM's own text while doing it
-                Http.sendError(exchange, clientStatus(e), Http.errorMessage(e), Values.param(e));
+                refuse(exchange, e);
             } catch (RuntimeException e) {
                 Log.LOG.log(System.Logger.Level.ERROR, "unhandled fault serving " + path, e);
                 Http.sendErrorQuietly(exchange, 500, "Internal server error");
@@ -477,7 +477,7 @@ public final class Server {
             // the same rule as the queued path below: a validator's two types are the client's
             // fault (an unknown model a 404, the rest 400); anything else is our defect
             metrics.record(Metrics.Outcome.INVALID_REQUEST);
-            Http.sendError(exchange, clientStatus(e), Http.errorMessage(e), Values.param(e));
+            refuse(exchange, e);
             return;
         } catch (RuntimeException e) {
             metrics.record(Metrics.Outcome.FAILED);
@@ -495,8 +495,7 @@ public final class Server {
                         // the request is genuinely at fault: a bad parameter, or input this model
                         // cannot frame (media on a text-only model, a shape with no codec)
                         metrics.record(Metrics.Outcome.INVALID_REQUEST);
-                        Http.sendErrorQuietly(
-                                exchange, clientStatus(e), Http.errorMessage(e), Values.param(e));
+                        refuse(exchange, e);
                     } catch (IOException e) {
                         metrics.record(Metrics.Outcome.CLIENT_DISCONNECTED);
                         Log.LOG.log(System.Logger.Level.DEBUG, "client connection lost", e);
@@ -531,7 +530,10 @@ public final class Server {
                         Reply result =
                                 generation.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
-                        respond(exchange, OpenAiSchema.chatCompletionResponse(id, modelId, result));
+                        Http.sendJson(
+                                exchange,
+                                200,
+                                OpenAiSchema.chatCompletionResponse(id, modelId, result));
                     }
                 });
     }
@@ -555,7 +557,10 @@ public final class Server {
                     } else {
                         Reply result =
                                 generation.completion(request, prompt, Sinks.NONE); // non-streaming
-                        respond(exchange, OpenAiSchema.completionResponse(id, modelId, result));
+                        Http.sendJson(
+                                exchange,
+                                200,
+                                OpenAiSchema.completionResponse(id, modelId, result));
                     }
                 });
     }
@@ -586,7 +591,8 @@ public final class Server {
                         Reply result =
                                 generation.chat(
                                         request, messages, Sinks.NONE); // non-streaming, no tools
-                        respond(exchange, OpenAiSchema.responseResponse(id, modelId, result));
+                        Http.sendJson(
+                                exchange, 200, OpenAiSchema.responseResponse(id, modelId, result));
                     }
                 });
     }
@@ -952,11 +958,6 @@ public final class Server {
                         worker, generation.cacheSample(), generation.mediaCacheSample()));
     }
 
-    /** Non-streaming reply: send the schema body as JSON. Timings ride in the body. */
-    private static void respond(HttpExchange exchange, Object body) throws IOException {
-        Http.sendJson(exchange, 200, body);
-    }
-
     /**
      * Enqueues the request for the generation worker (FIFO) and waits for it to finish; rejects
      * with 503 + Retry-After when the queue is full.
@@ -1000,8 +1001,12 @@ public final class Server {
         }
     }
 
-    /** A client fault is a 400, except a model this server does not serve, which is a 404. */
-    static int clientStatus(RuntimeException e) {
-        return e instanceof Validation.UnknownModel ? 404 : 400;
+    /**
+     * A client fault: a 400 naming the field, except a model this server does not serve, which is a
+     * 404.
+     */
+    static void refuse(HttpExchange exchange, RuntimeException e) {
+        int status = e instanceof Validation.UnknownModel ? 404 : 400;
+        Http.sendErrorQuietly(exchange, status, Http.errorMessage(e), Values.param(e));
     }
 }
