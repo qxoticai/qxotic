@@ -334,7 +334,7 @@ public final class Server {
 
     /** Work: admitted through the gate, so at most {@code threads} handlers run model work. */
     private void route(HttpServer server, String path, HttpHandler handler) {
-        server.createContext(path, gated(handler, admissions, config.limits()));
+        Http.logged(server.createContext(path, gated(handler, admissions, config.limits())));
     }
 
     /**
@@ -343,7 +343,7 @@ public final class Server {
      * queued figures /health exists to show.
      */
     private static void probe(HttpServer server, String path, HttpHandler handler) {
-        server.createContext(path, handler);
+        Http.logged(server.createContext(path, handler));
     }
 
     /** The one refusal, naming the limit that tripped and when to come back. */
@@ -375,9 +375,9 @@ public final class Server {
     }
 
     /**
-     * Registers a JSON endpoint with the shared preamble (request log, CORS headers, OPTIONS
-     * preflight), an optional method restriction, the parsed JSON body for POST routes, and the
-     * uniform 400 error envelope.
+     * Registers a JSON endpoint with the shared preamble (CORS headers, OPTIONS preflight), an
+     * optional method restriction, the parsed JSON body for POST routes, and the uniform 400 error
+     * envelope.
      */
     private void jsonRoute(
             HttpServer server,
