@@ -438,6 +438,7 @@ public final class Convolutions {
 
     static int selectTileCode(String requested, String architecture) {
         return switch (requested) {
+            case "4x1" -> 0;
             case "4x2" -> 1;
             case "4x4" -> 2;
             case "auto" ->
@@ -445,7 +446,9 @@ public final class Convolutions {
                                     || architecture.equalsIgnoreCase("arm64")
                             ? 2
                             : 0;
-            default -> 0;
+            default ->
+                    throw new IllegalArgumentException(
+                            "jinfer.convTile: auto, 4x1, 4x2 or 4x4, not '" + requested + "'");
         };
     }
 
