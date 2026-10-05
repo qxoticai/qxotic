@@ -243,6 +243,11 @@ class ModelStoreCacheTest {
                 assertThrows(
                         IllegalStateException.class, () -> store.resolve("hf.co/acme/thing:Q8_0"));
         assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
+        // both places a lookup reads, so nobody goes searching the one it never checked
+        assertTrue(
+                failure.getMessage().contains(root.resolve("hf.co/acme/thing") + " or "),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("models--acme--thing"), failure.getMessage());
 
         Path planted = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
         Files.createDirectories(planted.getParent());
