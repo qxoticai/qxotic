@@ -44,7 +44,6 @@ public class JinferChatAutoConfiguration {
                     "spring.ai.jinfer.chat.model is required: a local GGUF path, or a model ref"
                             + " (unsloth/gemma-4-E2B-it-GGUF:Q4_K_M)");
         }
-        validateSampling(properties);
         JinferChatModel.Builder builder =
                 JinferChatModel.builder()
                         .retainSessions(properties.retainedSessions())
@@ -93,34 +92,5 @@ public class JinferChatAutoConfiguration {
             builder.promptCache(Path.of(properties.promptCache()));
         }
         return builder.build();
-    }
-
-    /**
-     * Range checks on the generation properties, naming the property: run before the model
-     * resolves, so a typo fails the boot in milliseconds instead of after a download, and never
-     * reaches the first request as a bare sampler message.
-     */
-    private static void validateSampling(JinferChatProperties p) {
-        Double temperature = p.temperature();
-        if (temperature != null && !(Double.isFinite(temperature) && temperature >= 0))
-            throw invalid("temperature", "must be >= 0", temperature);
-        if (p.topP() != null && !(p.topP() > 0 && p.topP() <= 1))
-            throw invalid("top-p", "must be within (0, 1]", p.topP());
-        if (p.topK() != null && p.topK() < 0)
-            throw invalid("top-k", "must be >= 0 (0 disables it)", p.topK());
-        if (p.minP() != null && !(p.minP() >= 0 && p.minP() <= 1))
-            throw invalid("min-p", "must be within [0, 1]", p.minP());
-        if (p.maxReasoningTokens() != null && p.maxReasoningTokens() < -1)
-            throw invalid(
-                    "max-reasoning-tokens",
-                    "must be -1 (uncapped) or >= 0",
-                    p.maxReasoningTokens());
-        if (p.timeout() != null && p.timeout().isNegative())
-            throw invalid("timeout", "must not be negative", p.timeout());
-    }
-
-    private static IllegalStateException invalid(String property, String rule, Object value) {
-        return new IllegalStateException(
-                "spring.ai.jinfer.chat." + property + " " + rule + ": " + value);
     }
 }
