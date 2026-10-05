@@ -415,12 +415,16 @@ public final class Models {
         return best;
     }
 
-    /** The diagnostics table's answer for {@code arch}, or null. */
+    /**
+     * The diagnostics table's answer for {@code arch}, or null: the LONGEST matching key wins, so
+     * {@code qwen35moe} names qwen35, not qwen3 - deterministic, not the map's per-run hash order.
+     */
     static String artifactFor(String arch) {
-        for (var e : PORT_ARTIFACTS.entrySet()) {
-            if (arch.equals(e.getKey()) || arch.startsWith(e.getKey())) return e.getValue();
+        String best = null;
+        for (String key : PORT_ARTIFACTS.keySet()) {
+            if (arch.startsWith(key) && (best == null || key.length() > best.length())) best = key;
         }
-        return null;
+        return best == null ? null : PORT_ARTIFACTS.get(best);
     }
 
     /** A numeric metadata value whatever its GGUF width (split.* is UINT16 in the wild). */
