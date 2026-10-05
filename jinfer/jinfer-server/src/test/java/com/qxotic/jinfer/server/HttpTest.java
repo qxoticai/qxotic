@@ -126,9 +126,9 @@ class HttpTest {
 
     @Test
     void errorEnvelopeTypesFollowTheOpenAiSpelling() {
-        assertEquals("authentication_error", Http.errorPayload(401, "no").get("type"));
-        assertEquals("rate_limit_error", Http.errorPayload(429, "slow").get("type"));
-        assertEquals("server_error", Http.errorPayload(503, "busy").get("type"));
-        assertEquals("invalid_request_error", Http.errorPayload(400, "bad").get("type"));
+        assertEquals("authentication_error", Http.errorPayload(401, "no", null).get("type"));
+        assertEquals("rate_limit_error", Http.errorPayload(429, "slow", null).get("type"));
+        assertEquals("server_error", Http.errorPayload(503, "busy", null).get("type"));
+        assertEquals("invalid_request_error", Http.errorPayload(400, "bad", null).get("type"));
     }
 }

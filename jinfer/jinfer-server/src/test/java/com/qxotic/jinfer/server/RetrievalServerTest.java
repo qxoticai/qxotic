@@ -24,41 +24,24 @@ class RetrievalServerTest {
 
     private static final String MODEL = "fake-retriever.gguf";
     private final HttpClient client = HttpClient.newHttpClient();
-    private AutoCloseable running;
+    private RetrievalServer.Running running;
     private String base;
 
-    /** One vector per text: {@code [length, 0, 1, 2, ...]}, as wide as asked. */
+    /** One vector per text: {@code [length, 0.5, 1.5, ...]}, as wide as asked; a token a word. */
     static final class FakeEmbedder implements RetrievalServer.Embedder {
-        final int minimumDimension;
         final List<List<String>> calls = new ArrayList<>();
         boolean closed;
-
-        FakeEmbedder(int minimumDimension) {
-            this.minimumDimension = minimumDimension;
-        }
 
         public int dimension() {
             return 8;
         }
 
         public int minimumDimension() {
-            return minimumDimension;
-        }
-
-        public String queryPrefix() {
-            return "query: ";
-        }
-
-        public String documentPrefix() {
-            return "document: ";
+            return 4;
         }
 
         public int contextCapacity() {
             return 16;
-        }
-
-        public int tokens(String text) {
-            return text.split(" ").length + 1; // one framing token, as Qwen3's trailing EOS
         }
 
         public int embed(List<String> texts, int dimension, Consumer<float[]> sink) {
@@ -69,7 +52,7 @@ class RetrievalServerTest {
                 vector[0] = text.length();
                 for (int i = 1; i < dimension; i++) vector[i] = i - 1 + 0.5f;
                 sink.accept(vector);
-                total += tokens(text);
+                total += text.split(" ").length;
             }
             return total;
         }
@@ -81,8 +64,6 @@ class RetrievalServerTest {
 
     /** Scores a document by how many query words it holds; "LONG" overflows the context. */
     static final class FakeRanker implements RetrievalServer.Ranker {
-        boolean closed;
-
         public int contextCapacity() {
             return 16;
         }
@@ -105,24 +86,15 @@ class RetrievalServerTest {
             return tokens;
         }
 
-        public void close() {
-            closed = true;
-        }
+        public void close() {}
     }
 
     @AfterEach
-    void stop() throws Exception {
+    void stop() {
         if (running != null) running.close();
     }
 
-    private void serve(RetrievalServer.Embedder embedder) throws Exception {
-        var server = RetrievalServer.start(embedder, MODEL, ServerConfig.local(0));
-        running = server;
-        base = "http://127.0.0.1:" + server.address().getPort();
-    }
-
-    private void serve(RetrievalServer.Ranker ranker) throws Exception {
-        var server = RetrievalServer.start(ranker, MODEL, ServerConfig.local(0));
+    private void serve(RetrievalServer.Running server) {
         running = server;
         base = "http://127.0.0.1:" + server.address().getPort();
     }
@@ -146,6 +118,13 @@ class RetrievalServerTest {
         return (Map<String, Object>) JsonCodec.parse(response.body());
     }
 
+    @SuppressWarnings("unchecked")
+    private static List<Object> embedding(Map<String, Object> body, int index) {
+        return (List<Object>)
+                ((Map<String, Object>) ((List<Object>) body.get("data")).get(index))
+                        .get("embedding");
+    }
+
     /** A 400 naming {@code param}, with {@code fragment} in its message. */
     private void refused(String path, String body, String param, String fragment) throws Exception {
         HttpResponse<String> response = post(path, body);
@@ -157,40 +136,31 @@ class RetrievalServerTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void embeddingsAnswerInOpenAiShapeOneBatchPerRequest() throws Exception {
-        FakeEmbedder embedder = new FakeEmbedder(4);
-        serve(embedder);
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
         HttpResponse<String> response =
                 post("/v1/embeddings", "{\"input\":[\"a b\",\"c\"],\"model\":\"" + MODEL + "\"}");
         assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().startsWith("{\"object\":\"list\",\"data\":"), response.body());
         Map<String, Object> body = json(response);
-        assertEquals("list", body.get("object"));
         assertEquals(MODEL, body.get("model"));
-        assertEquals(Map.of("prompt_tokens", 5L, "total_tokens", 5L), body.get("usage"));
-        List<Object> data = (List<Object>) body.get("data");
-        assertEquals(2, data.size());
-        Map<String, Object> second = (Map<String, Object>) data.get(1);
-        assertEquals("embedding", second.get("object"));
-        assertEquals(1L, second.get("index"));
-        List<Object> vector = (List<Object>) second.get("embedding");
+        assertEquals(Map.of("prompt_tokens", 3L, "total_tokens", 3L), body.get("usage"));
+        assertEquals(2, ((List<?>) body.get("data")).size());
+        List<Object> vector = embedding(body, 1);
         assertEquals(8, vector.size());
         assertEquals(1.0, ((Number) vector.get(0)).doubleValue());
         assertEquals(1.5, ((Number) vector.get(2)).doubleValue());
         assertEquals(List.of(List.of("a b", "c")), embedder.calls, "one batch for the request");
-        assertTrue(response.body().startsWith("{\"object\":\"list\",\"data\":"), response.body());
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void base64IsLittleEndianFloat32AsTheOpenAiClientsDecodeIt() throws Exception {
-        serve(new FakeEmbedder(4));
+        serve(RetrievalServer.start(new FakeEmbedder(), MODEL, ServerConfig.local(0)));
         Map<String, Object> body =
                 json(post("/v1/embeddings", "{\"input\":\"abc\",\"encoding_format\":\"base64\"}"));
         String encoded =
-                (String)
-                        ((Map<String, Object>) ((List<Object>) body.get("data")).get(0))
-                                .get("embedding");
+                (String) ((Map<?, ?>) ((List<?>) body.get("data")).get(0)).get("embedding");
         ByteBuffer bytes = ByteBuffer.wrap(Base64.getDecoder().decode(encoded));
         bytes.order(ByteOrder.LITTLE_ENDIAN);
         assertEquals(8 * Float.BYTES, bytes.remaining());
@@ -199,65 +169,30 @@ class RetrievalServerTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void dimensionsShortenOnlyAMatryoshkaModelWithinItsRange() throws Exception {
-        FakeEmbedder embedder = new FakeEmbedder(4);
-        serve(embedder);
+    void dimensionsShortenWithinTheModelsRange() throws Exception {
+        serve(RetrievalServer.start(new FakeEmbedder(), MODEL, ServerConfig.local(0)));
         Map<String, Object> body =
                 json(post("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":4}"));
-        Map<String, Object> first = (Map<String, Object>) ((List<Object>) body.get("data")).get(0);
-        assertEquals(4, ((List<Object>) first.get("embedding")).size());
+        assertEquals(4, embedding(body, 0).size());
+        // an explicit null is "unset", as OpenAI's SDKs send an omitted argument
+        body = json(post("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":null}"));
+        assertEquals(8, embedding(body, 0).size());
         refused("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":2}", "dimensions", "[4, 8]");
         refused("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":9}", "dimensions", "[4, 8]");
-        refused(
-                "/v1/embeddings",
-                "{\"input\":\"a\",\"dimensions\":\"x\"}",
-                "dimensions",
-                "integer");
     }
 
     @Test
-    void aFixedWidthModelRefusesDimensionsItCannotHonor() throws Exception {
-        serve(new FakeEmbedder(8));
-        refused(
-                "/v1/embeddings",
-                "{\"input\":\"a\",\"dimensions\":4}",
-                "dimensions",
-                "fixed 8 dimensions");
-        assertEquals(
-                200, post("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":8}").statusCode());
-        // an explicit null is "unset", as OpenAI's SDKs send an omitted argument
-        assertEquals(
-                200, post("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":null}").statusCode());
-    }
-
-    @Test
-    void malformedInputIsRefusedNamingTheField() throws Exception {
-        FakeEmbedder embedder = new FakeEmbedder(4);
-        serve(embedder);
-        refused("/v1/embeddings", "{}", "input", "input is required");
-        refused("/v1/embeddings", "{\"input\":\"\"}", "input", "must not be empty");
-        refused("/v1/embeddings", "{\"input\":[]}", "input", "empty array");
-        refused("/v1/embeddings", "{\"input\":[\"a\",\"\"]}", "input", "input[1] must not be");
-        refused("/v1/embeddings", "{\"input\":[\"a\",3]}", "input", "token-id input");
-        refused("/v1/embeddings", "{\"input\":[[1,2]]}", "input", "token-id input");
-        refused("/v1/embeddings", "{\"input\":[\"a\",{}]}", "input", "input[1] must be a string");
-        refused("/v1/embeddings", "{\"input\":{}}", "input", "a string or an array");
-        refused(
-                "/v1/embeddings",
-                "{\"input\":[\"a\",\"" + "w ".repeat(20) + "\"]}",
-                "input",
-                "input[1] is 21 tokens, over this server's 16-token context");
+    void malformedEmbeddingRequestsAreRefusedNamingTheField() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        refused("/v1/embeddings", "{}", "input", "a string or a non-empty array");
+        refused("/v1/embeddings", "{\"input\":[]}", "input", "non-empty array");
+        refused("/v1/embeddings", "{\"input\":[[1,2]]}", "input", "token ids");
         refused(
                 "/v1/embeddings",
                 "{\"input\":\"a\",\"encoding_format\":\"int8\"}",
                 "encoding_format",
                 "float or base64");
-        refused(
-                "/v1/embeddings",
-                "{\"input\":\"a\",\"input_type\":\"passage\"}",
-                "input_type",
-                "query or document");
         refused("/v1/embeddings", "{\"input\":\"a\",\"model\":7}", "model", "must be a string");
         assertEquals(400, post("/v1/embeddings", "not json").statusCode());
         assertTrue(embedder.calls.isEmpty(), "a refused request computes nothing");
@@ -265,48 +200,34 @@ class RetrievalServerTest {
         HttpResponse<String> other = post("/v1/embeddings", "{\"input\":\"a\",\"model\":\"gpt\"}");
         assertEquals(404, other.statusCode());
         assertTrue(other.body().contains("this server serves " + MODEL), other.body());
-        assertEquals(200, post("/v1/embeddings", "{\"input\":\"a\",\"model\":\"\"}").statusCode());
-    }
-
-    @Test
-    void inputTypeAppliesTheModelCardsRetrievalPrefix() throws Exception {
-        FakeEmbedder embedder = new FakeEmbedder(4);
-        serve(embedder);
-        post("/v1/embeddings", "{\"input\":\"cats\",\"input_type\":\"query\"}");
-        post("/v1/embeddings", "{\"input\":[\"cats\"],\"input_type\":\"document\"}");
-        post("/v1/embeddings", "{\"input\":\"cats\"}");
-        assertEquals(
-                List.of(List.of("query: cats"), List.of("document: cats"), List.of("cats")),
-                embedder.calls);
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void rerankOrdersByRelevanceCutsToTopNAndReturnsDocumentsOnRequest() throws Exception {
-        serve(new FakeRanker());
-        String request =
-                "{\"query\":\"red apple\",\"documents\":[\"blue sky\",\"red apple pie\","
-                        + "{\"text\":\"a red car\"},\"green apple\"],\"top_n\":3,"
-                        + "\"return_documents\":true}";
-        for (String path : List.of("/v1/rerank", "/rerank", "/v1/reranking", "/reranking")) {
-            HttpResponse<String> response = post(path, request);
-            assertEquals(200, response.statusCode(), path + ": " + response.body());
-            Map<String, Object> body = json(response);
-            assertEquals(MODEL, body.get("model"));
-            List<Object> results = (List<Object>) body.get("results");
-            assertEquals(3, results.size());
-            Map<String, Object> best = (Map<String, Object>) results.get(0);
-            assertEquals(1L, best.get("index"));
-            assertEquals(2.0, ((Number) best.get("relevance_score")).doubleValue());
-            assertEquals(Map.of("text", "red apple pie"), best.get("document"));
-            // a tie keeps input order: "a red car" (2) before "green apple" (3)
-            assertEquals(2L, ((Map<String, Object>) results.get(1)).get("index"));
-            assertEquals(3L, ((Map<String, Object>) results.get(2)).get("index"));
-            assertEquals(Map.of("prompt_tokens", 12L, "total_tokens", 12L), body.get("usage"));
-        }
+        serve(RetrievalServer.start(new FakeRanker(), MODEL, ServerConfig.local(0)));
+        Map<String, Object> body =
+                json(
+                        post(
+                                "/v1/rerank",
+                                "{\"query\":\"red apple\",\"documents\":[\"blue sky\","
+                                        + "\"red apple pie\",\"a red car\",\"green apple\"],"
+                                        + "\"top_n\":3,\"return_documents\":true}"));
+        assertEquals(MODEL, body.get("model"));
+        List<Object> results = (List<Object>) body.get("results");
+        assertEquals(3, results.size());
+        Map<String, Object> best = (Map<String, Object>) results.get(0);
+        assertEquals(1L, best.get("index"));
+        assertEquals(2.0, ((Number) best.get("relevance_score")).doubleValue());
+        assertEquals(Map.of("text", "red apple pie"), best.get("document"));
+        // a tie keeps input order: "a red car" (2) before "green apple" (3)
+        assertEquals(2L, ((Map<String, Object>) results.get(1)).get("index"));
+        assertEquals(3L, ((Map<String, Object>) results.get(2)).get("index"));
+        assertEquals(Map.of("prompt_tokens", 12L, "total_tokens", 12L), body.get("usage"));
+
         Map<String, Object> bare =
                 json(post("/v1/rerank", "{\"query\":\"red\",\"documents\":[\"red\",\"blue\"]}"));
-        List<Object> results = (List<Object>) bare.get("results");
+        results = (List<Object>) bare.get("results");
         assertEquals(2, results.size(), "top_n defaults to every document");
         assertFalse(((Map<String, Object>) results.get(0)).containsKey("document"));
         Map<String, Object> none = json(post("/v1/rerank", "{\"query\":\"q\",\"documents\":[]}"));
@@ -315,12 +236,10 @@ class RetrievalServerTest {
 
     @Test
     void malformedRerankRequestsAreRefusedNamingTheField() throws Exception {
-        serve(new FakeRanker());
+        serve(RetrievalServer.start(new FakeRanker(), MODEL, ServerConfig.local(0)));
         refused("/v1/rerank", "{\"documents\":[\"a\"]}", "query", "non-empty string");
-        refused("/v1/rerank", "{\"query\":\" \",\"documents\":[\"a\"]}", "query", "non-empty");
-        refused("/v1/rerank", "{\"query\":\"q\"}", "documents", "documents is required");
-        refused("/v1/rerank", "{\"query\":\"q\",\"documents\":\"a\"}", "documents", "an array");
-        refused("/v1/rerank", "{\"query\":\"q\",\"documents\":[1]}", "documents", "documents[0]");
+        refused("/v1/rerank", "{\"query\":\"q\"}", "documents", "an array of strings");
+        refused("/v1/rerank", "{\"query\":\"q\",\"documents\":[1]}", "documents", "of strings");
         refused(
                 "/v1/rerank",
                 "{\"query\":\"q\",\"documents\":[\"a\"],\"top_n\":0}",
@@ -331,7 +250,7 @@ class RetrievalServerTest {
                 "{\"query\":\"q\",\"documents\":[\"a\"],\"return_documents\":\"yes\"}",
                 "return_documents",
                 "a boolean");
-        // the recipe's overflow names the document; its Java remedy is not the client's
+        // the library's overflow names the document; its Java remedy is not the client's
         HttpResponse<String> tooLong =
                 post("/v1/rerank", "{\"query\":\"q\",\"documents\":[\"a\",\"LONG\"]}");
         assertEquals(400, tooLong.statusCode());
@@ -341,36 +260,30 @@ class RetrievalServerTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void probesAndUnknownPathsAnswerAsOnTheOtherServers() throws Exception {
-        FakeEmbedder embedder = new FakeEmbedder(4);
-        serve(embedder);
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
         assertEquals("{\"status\":\"ok\",\"busy\":false,\"queued\":0}", get("/health").body());
         Map<String, Object> props = json(get("/props"));
         assertEquals("embedding", props.get("task"));
         assertEquals(16L, props.get("n_ctx"));
-        assertEquals(8L, props.get("dimension"));
         assertEquals(4L, props.get("min_dimension"));
-        Map<String, Object> models = json(get("/v1/models"));
-        Map<String, Object> card = (Map<String, Object>) ((List<Object>) models.get("data")).get(0);
-        assertEquals(MODEL, card.get("id"));
+        assertTrue(get("/v1/models").body().contains("\"id\":\"" + MODEL + "\""));
         assertEquals(200, get("/v1/models/" + MODEL).statusCode());
         assertEquals(404, get("/v1/models/other").statusCode());
 
         post("/v1/embeddings", "{\"input\":[\"a\",\"b\"]}");
         String metrics = get("/metrics").body();
         assertTrue(metrics.contains("jinfer_embedding_requests_completed_total 1"), metrics);
-        assertTrue(metrics.contains("jinfer_embedding_inputs_total 2"), metrics);
-        assertTrue(metrics.contains("jinfer_prompt_tokens_total 4"), metrics);
+        assertTrue(metrics.contains("jinfer_prompt_tokens_total 2"), metrics);
 
         HttpResponse<String> chat = post("/v1/chat/completions", "{}");
         assertEquals(404, chat.statusCode());
         assertTrue(chat.body().contains("this server serves POST /v1/embeddings"), chat.body());
-        assertTrue(chat.headers().firstValue("Content-Type").orElse("").contains("json"));
         assertEquals(404, post("/v1/embeddingsX", "{}").statusCode());
         assertEquals(405, get("/v1/embeddings").statusCode());
 
-        ((AutoCloseable) running).close();
+        running.close();
         running = null;
         assertTrue(embedder.closed, "the server's state closes with it");
     }

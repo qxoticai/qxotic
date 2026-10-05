@@ -28,10 +28,7 @@ final class Values {
         return value == null ? defaultValue : String.valueOf(value);
     }
 
-    /**
-     * A request field the client got wrong. The message names it, and so does the error envelope's
-     * {@code param} - the field OpenAI's SDKs surface - instead of null.
-     */
+    /** A request field the client got wrong, named in the error envelope's {@code param}. */
     static final class InvalidParam extends IllegalArgumentException {
         final String param;
 
@@ -70,8 +67,7 @@ final class Values {
                             + name
                             + " "
                             + wide
-                            + " is out of range for a 32-bit"
-                            + " integer");
+                            + " is out of range for a 32-bit integer");
         }
         return (int) wide;
     }

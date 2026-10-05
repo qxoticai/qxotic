@@ -193,7 +193,7 @@ final class Validation {
         }
     }
 
-    /** As {@link #require}, for a refusal about one request field, which the envelope names. */
+    /** As {@link #require}, naming the field at fault. */
     static void requireParam(boolean condition, String param, String message) {
         if (!condition) throw new Values.InvalidParam(param, message);
     }
@@ -206,11 +206,8 @@ final class Validation {
     }
 
     /**
-     * The request's {@code model}, on every endpoint that names one. OPTIONAL, because a server has
-     * exactly one model: an absent (or blank) "model" is unambiguous - it can only mean the served
-     * one, which is what Requests.modelId already returned. Naming the WRONG model is still a real
-     * mistake and still refused. Requiring the field bought no safety and cost every curl and every
-     * client that omits it a 400.
+     * The request's {@code model}: optional, because a server has exactly one model, so an absent
+     * or blank one can only mean it. Naming the WRONG model is still refused.
      */
     static void validateModel(Map<String, Object> request, String servedModel) {
         if (request.get("model") == null) return;
