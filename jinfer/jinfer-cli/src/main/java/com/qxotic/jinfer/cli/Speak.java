@@ -179,7 +179,7 @@ final class Speak {
                   jinfer speak -m kokoro.gguf --with voice=af_heart.gguf --output hello.wav "Hello."
 
                 Speak options (after the command):
-                  --stream / --no-stream    play clips during synthesis (default: off)
+                  --stream / --no-stream     play clips during synthesis (default: off)
                   -o, --output <file|->      write WAV instead of playing; '-' writes stdout
                   --speed <number>           positive speaking-rate multiplier; default: model's rate
 

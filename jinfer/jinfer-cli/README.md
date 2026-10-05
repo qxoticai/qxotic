@@ -87,7 +87,6 @@ printf '%s\n' 'Write a short greeting.' | jinfer prompt -m "$LM" -
 ```
 
 `--temp 0` selects greedy generation; `-n` limits output tokens. Responses stream by default.
-`--presence-penalty` and `--frequency-penalty` (OpenAI's semantics, in [-2, 2]) discourage tokens the reply already used.
 A reply cut short says so on stderr: a full context names `--context-capacity`, a spent budget names `-n`, and a capped reasoning span names `--max-reasoning-tokens`.
 Use `--no-stream` to print the completed response:
 

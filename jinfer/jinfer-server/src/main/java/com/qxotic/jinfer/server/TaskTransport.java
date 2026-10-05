@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.server;
 
-import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -14,11 +13,9 @@ import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
 /**
- * The transport a single-task server (transcription, retrieval) shares, on the language server's
+ * The transport the single-task servers (transcription, retrieval) share, on the language server's
  * rules: an open {@code /health}, keyed {@code /props}, {@code /metrics} and {@code /v1/models},
- * work routes admitted through the gate ({@code --concurrency} at once, then 503 + Retry-After), a
- * JSON 404 for every other path, and the access log on all of them. A task server registers its
- * work routes and starts; what differs between them is only the work.
+ * gated work routes, a JSON 404 for every other path, and the access log on all of them.
  */
 final class TaskTransport {
 
@@ -122,17 +119,11 @@ final class TaskTransport {
                 });
     }
 
-    /** One request's work, after the transport has admitted it and checked path and method. */
-    interface Work {
-        void handle(HttpExchange exchange) throws IOException;
-    }
-
     /**
-     * A POST endpoint doing model work, admitted through the gate. The language server's rule for
-     * failures: only a validator's two types are the client's fault - a 400 naming the field, or a
-     * 404 for a model this server does not serve - and anything else is ours, logged, not echoed.
+     * A POST endpoint doing model work, admitted through the gate. Only a validator's two types are
+     * the client's fault; anything else is ours, logged, not echoed.
      */
-    void work(String path, Work work) {
+    void work(String path, HttpHandler work) {
         context(
                 path,
                 Server.gated(
@@ -160,9 +151,8 @@ final class TaskTransport {
     }
 
     /**
-     * Registers the catch-all and starts serving. Every other path gets the JSON 404 the language
-     * server answers, not the JDK's HTML page, saying what this server does serve; {@code onClose}
-     * runs once the transport has stopped, after the last handler.
+     * Registers the JSON 404 catch-all, naming what this server {@code serves}, and starts serving;
+     * {@code onClose} runs once the transport has stopped.
      */
     Running start(String serves, String threadName, Runnable onClose) {
         context(

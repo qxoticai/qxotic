@@ -549,9 +549,9 @@ public final class ModelStore {
     }
 
     /**
-     * The setting that switched offline mode on, named for the refusal; null when online. The house
-     * precedence: {@code -Djinfer.offline} decides when set, else {@code JINFER_OFFLINE}; both take
-     * the same values, and an unrecognized one counts as unset.
+     * The setting that switched offline mode on, named for the refusal; null when online. {@code
+     * -Djinfer.offline} decides when set, else {@code JINFER_OFFLINE}; an unrecognized value counts
+     * as unset.
      */
     private static String offlineSource() {
         Boolean property = flag(System.getProperty("jinfer.offline"));
@@ -674,7 +674,6 @@ public final class ModelStore {
         if (name.equals("CACHEDIR.TAG")) {
             return false;
         }
-        // no lock files to skip: they live under java.io.tmpdir, never in the cache
         return !name.endsWith(".part") && !name.endsWith(".map") && !name.endsWith(".etag");
     }
 
@@ -1133,7 +1132,7 @@ public final class ModelStore {
                 existing = existing.getParent();
             }
             if (existing == null) return;
-            store = Files.getFileStore(existing); // the store measured is the store named
+            store = Files.getFileStore(existing);
             free = store.getUsableSpace();
         } catch (IOException unknown) {
             return; // a filesystem that will not say is not one we should refuse over
@@ -1261,7 +1260,7 @@ public final class ModelStore {
      * What a caller may write after the colon: each file's name past the stem every file shares
      * ({@code LFM2.5-350M-Q8_0.gguf} offers {@code Q8_0}), or the whole names when they share none.
      */
-    static String quants(List<RemoteFile> files) { // package-visible for its test
+    static String quants(List<RemoteFile> files) {
         List<String> stems =
                 files.stream()
                         .map(f -> nameOf(f.path()).replaceFirst("(?i)\\.gguf$", ""))

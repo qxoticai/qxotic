@@ -4,6 +4,7 @@ import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -155,11 +156,7 @@ public final class RetrievalServer {
     }
 
     private Running serve(
-            String task,
-            Map<String, Object> props,
-            String path,
-            TaskTransport.Work work,
-            Runnable close) {
+            String task, Map<String, Object> props, String path, HttpHandler work, Runnable close) {
         transport.probes(
                 servedModel,
                 "text",

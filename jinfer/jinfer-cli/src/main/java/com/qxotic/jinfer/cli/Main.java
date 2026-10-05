@@ -189,13 +189,8 @@ public final class Main {
         return engine;
     }
 
-    /**
-     * The refusal for a model chat and instruct cannot run. An embedding or reranking checkpoint is
-     * the one people reach for, and the loader's own refusal speaks to library callers, so the CLI
-     * names what it is and the command that serves it - read from the header, no second load; any
-     * other model keeps the loader's words.
-     */
-    static IllegalArgumentException unrunnable(
+    /** An embedding or reranking model is named as such and pointed at the server. */
+    private static IllegalArgumentException unrunnable(
             Options options, Path model, ModelProvider.IncompatibleModelException refusal)
             throws IOException {
         var retrieval = Models.retrieval(model);

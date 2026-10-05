@@ -45,9 +45,8 @@ final class Http {
 
     /** The access log: one line per exchange once it is answered, with status and duration. */
     static HttpContext logged(HttpContext context) {
-        // a fresh filter per context, never a static constant: Http is initialized at image build
-        // time, so a constant would be stored in the image heap, which refuses an object whose
-        // type initializes at run time
+        // a fresh filter, never a static constant: Http initializes at image build time, and the
+        // image heap refuses a Filter, whose type initializes at run time
         context.getFilters().add(new AccessLog());
         return context;
     }

@@ -1392,11 +1392,7 @@ final class Fetch {
                             + (already > 0 ? ", resuming at " + size(already) : ""));
         }
 
-        /**
-         * Bytes so far. Only a terminal shows them: a log is read afterwards, where a bar frozen at
-         * each tenth is a dozen lines of noise (ending "eta -") for a voice file that took half a
-         * second, so it gets the start line and the done line and nothing between.
-         */
+        /** Bytes so far, shown on a terminal only: a log gets the start and done lines. */
         void at(long written) {
             lastWritten = written;
             if (BOARD) Board.repaint(false);

@@ -73,8 +73,7 @@ class TurnTest {
 
     @Test
     void aReplyCutByTheContextSaysSoAndNamesTheFlag() {
-        // the QA case: a reasoning loop ran into the context wall - stdout shows the closed think
-        // span and an empty answer, so stderr must say what happened
+        // a reasoning loop ran into the context wall: stdout shows no answer, so stderr says why
         Output o =
                 finished(
                         options(true, "inline"),
