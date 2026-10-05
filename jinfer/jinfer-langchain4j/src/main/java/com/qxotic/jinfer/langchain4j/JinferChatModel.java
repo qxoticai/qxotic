@@ -856,9 +856,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * reply is what the deadline allowed, ended by neither the model nor the token budget.
          */
         public Builder timeout(Duration timeout) {
-            Objects.requireNonNull(
-                    timeout,
-                    "timeout must not be null: leave it unset (or Duration.ZERO) for none");
+            Objects.requireNonNull(timeout, "timeout (use Duration.ZERO for none)");
             if (timeout.isNegative())
                 throw new IllegalArgumentException("timeout must be >= 0: " + timeout);
             this.timeout = timeout;
