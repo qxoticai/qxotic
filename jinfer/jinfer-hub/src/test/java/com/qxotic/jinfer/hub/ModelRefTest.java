@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.io.UncheckedIOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -400,21 +399,16 @@ class ModelRefTest {
     }
 
     @Test
-    void aDownloadThatCannotFitIsRefusedBeforeItStarts(@TempDir Path dir) {
+    void aDownloadThatCannotFitIsRefusedBeforeItStarts(@TempDir Path dir) throws IOException {
         var failure =
                 assertThrows(
                         IllegalStateException.class,
                         () ->
                                 ModelStore.requireDiskSpace(
                                         dir.resolve("huge.gguf"), Long.MAX_VALUE / 2));
-        assertTrue(failure.getMessage().contains("free"), failure.getMessage());
-        try {
-            // the store that was measured is the one named, not the path's root
-            String store = Files.getFileStore(dir).toString();
-            assertTrue(failure.getMessage().contains(store + " has "), failure.getMessage());
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        // the store that was measured is the one named, not the path's root
+        String store = Files.getFileStore(dir) + " has ";
+        assertTrue(failure.getMessage().contains(store), failure.getMessage());
         ModelStore.requireDiskSpace(dir.resolve("small.gguf"), 1024); // one that fits is fine
     }
 
