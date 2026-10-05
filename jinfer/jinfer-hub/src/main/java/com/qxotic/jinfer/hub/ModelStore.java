@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileStore;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -1099,25 +1100,28 @@ public final class ModelStore {
         if (size <= 0 || "1".equals(System.getenv("JINFER_SKIP_DISK_CHECK"))) {
             return;
         }
+        FileStore store;
         long free;
         try {
             Path existing = dest.getParent();
             while (existing != null && !Files.exists(existing)) {
                 existing = existing.getParent();
             }
-            free = existing == null ? -1 : Files.getFileStore(existing).getUsableSpace();
+            if (existing == null) return;
+            store = Files.getFileStore(existing); // the store measured is the store named
+            free = store.getUsableSpace();
         } catch (IOException unknown) {
             return; // a filesystem that will not say is not one we should refuse over
         }
         long needed = size + size / 10;
-        if (free >= 0 && free < needed) {
+        if (free < needed) {
             throw new IllegalStateException(
                     "not enough space for "
                             + dest.getFileName()
                             + ": it needs "
                             + Fetch.size(size)
                             + " (plus headroom) and "
-                            + dest.getRoot()
+                            + store
                             + " has "
                             + Fetch.size(free)
                             + " free. Free some space, or point JINFER_MODELS at another disk.");
