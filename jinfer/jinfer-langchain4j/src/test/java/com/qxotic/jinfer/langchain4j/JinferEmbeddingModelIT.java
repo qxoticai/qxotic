@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.ModelProvider.IncompatibleModelException;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.document.Document;
@@ -184,9 +185,9 @@ class JinferEmbeddingModelIT {
         // resolve BEFORE assertThrows: an abort inside the lambda would surface as a failure
         Path generative =
                 TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf");
-        UnsupportedOperationException e =
+        IncompatibleModelException e =
                 assertThrows(
-                        UnsupportedOperationException.class,
+                        IncompatibleModelException.class,
                         () -> JinferEmbeddingModel.builder().modelPath(generative).build());
         assertTrue(e.getMessage().contains("not an embedding"), e.getMessage());
     }

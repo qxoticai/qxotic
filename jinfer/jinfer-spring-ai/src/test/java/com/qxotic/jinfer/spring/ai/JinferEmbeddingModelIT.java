@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.ModelProvider.IncompatibleModelException;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
@@ -266,9 +267,9 @@ class JinferEmbeddingModelIT {
 
     @Test
     void generativeArchitectureFailsLoudly() {
-        UnsupportedOperationException e =
+        IncompatibleModelException e =
                 assertThrows(
-                        UnsupportedOperationException.class,
+                        IncompatibleModelException.class,
                         () ->
                                 JinferEmbeddingModel.builder()
                                         .modelPath(
