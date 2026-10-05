@@ -58,7 +58,14 @@ public final class ProcessRss {
 
     /** {@code ps -o rss=} prints kilobytes on macOS (and the BSDs). */
     private static OptionalLong fromPs() throws IOException, InterruptedException {
-        String out = run("ps", "-o", "rss=", "-p", Long.toString(ProcessHandle.current().pid()));
+        String out =
+                run(
+                        Duration.ofSeconds(10),
+                        "ps",
+                        "-o",
+                        "rss=",
+                        "-p",
+                        Long.toString(ProcessHandle.current().pid()));
         return out != null && out.matches("\\d+")
                 ? OptionalLong.of(Long.parseLong(out))
                 : OptionalLong.empty();
@@ -72,6 +79,7 @@ public final class ProcessRss {
     private static OptionalLong fromTasklist() throws IOException, InterruptedException {
         String out =
                 run(
+                        Duration.ofSeconds(10),
                         "tasklist",
                         "/FI",
                         "PID eq " + ProcessHandle.current().pid(),
@@ -83,10 +91,6 @@ public final class ProcessRss {
         }
         String last = out.substring(out.lastIndexOf(",\"") + 2).replaceAll("[^0-9]", "");
         return last.isEmpty() ? OptionalLong.empty() : OptionalLong.of(Long.parseLong(last));
-    }
-
-    private static String run(String... command) throws IOException, InterruptedException {
-        return run(Duration.ofSeconds(10), command);
     }
 
     /**
