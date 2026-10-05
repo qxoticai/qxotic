@@ -5,6 +5,7 @@ import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.media.Media;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -108,6 +109,10 @@ public final class TranscriptionServer {
         return new TranscriptionServer(model, servedModel, config).serve();
     }
 
+    private static void context(HttpServer server, String path, HttpHandler handler) {
+        Http.logged(server.createContext(path, handler));
+    }
+
     private Running serve() throws IOException {
         HttpServer server = HttpServer.create(config.bind(), 0);
         Map<String, Object> modelCard =
@@ -124,7 +129,8 @@ public final class TranscriptionServer {
                         JsonCodec.object("input_modalities", List.of("audio")));
         // a liveness probe carries no key and answers under load, as the language server's does
         ServerConfig.Access probe = new ServerConfig.Access(null, config.access().allowedOrigins());
-        server.createContext(
+        context(
+                server,
                 "/health",
                 exchange -> {
                     if (Http.preamble(exchange, probe)) return;
@@ -138,7 +144,8 @@ public final class TranscriptionServer {
                             200,
                             JsonCodec.object("status", "ok", "busy", inFlight() > 0, "queued", 0));
                 });
-        server.createContext(
+        context(
+                server,
                 "/props",
                 exchange -> {
                     if (Http.preamble(exchange, config.access())) return;
@@ -153,7 +160,8 @@ public final class TranscriptionServer {
                             JsonCodec.object(
                                     "model", servedModel, "sample_rate", model.sampleRate()));
                 });
-        server.createContext(
+        context(
+                server,
                 "/metrics",
                 exchange -> {
                     if (Http.preamble(exchange, config.access())) return;
@@ -164,7 +172,8 @@ public final class TranscriptionServer {
                     if (Http.requireMethod(exchange, "GET")) return;
                     Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, exposition());
                 });
-        server.createContext(
+        context(
+                server,
                 "/v1/models",
                 exchange -> {
                     if (Http.preamble(exchange, config.access())) return;
@@ -190,7 +199,8 @@ public final class TranscriptionServer {
                         Http.sendError(exchange, 404, "Not found"); // /v1/modelsXYZ: a wrong path
                     }
                 });
-        server.createContext(
+        context(
+                server,
                 "/v1/audio/transcriptions",
                 Server.gated(
                         exchange -> {

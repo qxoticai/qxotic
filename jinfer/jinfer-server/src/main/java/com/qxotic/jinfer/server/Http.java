@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.server;
 
+import com.sun.net.httpserver.Filter;
 import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -12,21 +14,20 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * HTTP transport plumbing shared by every endpoint: the request preamble (access log, CORS, OPTIONS
- * preflight), bounded body reads, JSON responses, and the uniform error envelope. Pure transport -
- * it knows nothing about inference, so handlers read top-to-bottom as {@code preamble → parse → do
- * work → respond}.
+ * HTTP transport plumbing shared by every endpoint: the access log, the request preamble (CORS,
+ * OPTIONS preflight), bounded body reads, JSON responses, and the uniform error envelope. Pure
+ * transport - it knows nothing about inference, so handlers read top-to-bottom as {@code preamble →
+ * parse → do work → respond}.
  */
 final class Http {
 
     private Http() {}
 
     /**
-     * Per-request preamble: access log, CORS headers, and OPTIONS preflight. Returns {@code true}
+     * Per-request preamble: CORS headers, OPTIONS preflight and authorization. Returns {@code true}
      * when the request was a preflight already answered (204) - the caller should then return.
      */
     static boolean preamble(HttpExchange exchange, ServerConfig.Access access) throws IOException {
-        log(exchange);
         if (!cors(exchange, access)) {
             sendError(exchange, 403, "Origin is not allowed");
             return true;
@@ -42,16 +43,44 @@ final class Http {
         return true;
     }
 
-    static void log(HttpExchange exchange) {
-        Log.LOG.log(
-                System.Logger.Level.INFO,
-                () ->
-                        "%s %s from %s"
-                                .formatted(
-                                        exchange.getRequestMethod(),
-                                        exchange.getRequestURI(),
-                                        exchange.getRemoteAddress()));
+    /**
+     * The access log: one line per exchange once it is answered, with the status and how long it
+     * took, as every HTTP server writes it. Logging on arrival said nothing about the outcome, and
+     * a request refused before its handler (503 at the gate) never appeared at all.
+     */
+    static HttpContext logged(HttpContext context) {
+        context.getFilters().add(ACCESS_LOG);
+        return context;
     }
+
+    private static final Filter ACCESS_LOG =
+            new Filter() {
+                @Override
+                public void doFilter(HttpExchange exchange, Chain chain) throws IOException {
+                    long start = System.nanoTime();
+                    try {
+                        chain.doFilter(exchange);
+                    } finally {
+                        long millis = (System.nanoTime() - start) / 1_000_000;
+                        int status = exchange.getResponseCode();
+                        Log.LOG.log(
+                                System.Logger.Level.INFO,
+                                () ->
+                                        "%s %s %s %d ms from %s"
+                                                .formatted(
+                                                        exchange.getRequestMethod(),
+                                                        exchange.getRequestURI(),
+                                                        status < 0 ? "-" : status,
+                                                        millis,
+                                                        exchange.getRemoteAddress()));
+                    }
+                }
+
+                @Override
+                public String description() {
+                    return "access log";
+                }
+            };
 
     private static boolean cors(HttpExchange exchange, ServerConfig.Access access) {
         Headers headers = exchange.getResponseHeaders();

@@ -17,6 +17,57 @@ import org.junit.jupiter.api.Timeout;
 
 class HttpTest {
 
+    /** One line per exchange, written once it is answered: method, path, status, duration. */
+    @Test
+    void theAccessLogLineCarriesStatusAndDuration() throws Exception {
+        var logger = java.util.logging.Logger.getLogger("jinfer.server");
+        var lines = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var capture =
+                new java.util.logging.Handler() {
+                    @Override
+                    public void publish(java.util.logging.LogRecord record) {
+                        lines.add(record.getMessage());
+                    }
+
+                    @Override
+                    public void flush() {}
+
+                    @Override
+                    public void close() {}
+                };
+        logger.addHandler(capture);
+        var server =
+                com.sun.net.httpserver.HttpServer.create(
+                        new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        try {
+            Http.logged(
+                    server.createContext(
+                            "/teapot",
+                            exchange -> Http.sendError(exchange, 418, "short and stout")));
+            server.start();
+            var client = java.net.http.HttpClient.newHttpClient();
+            var response =
+                    client.send(
+                            java.net.http.HttpRequest.newBuilder(
+                                            java.net.URI.create(
+                                                    "http://127.0.0.1:"
+                                                            + server.getAddress().getPort()
+                                                            + "/teapot"))
+                                    .build(),
+                            java.net.http.HttpResponse.BodyHandlers.discarding());
+            assertEquals(418, response.statusCode());
+            // the line follows the response: the client can read it before the filter returns
+            long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+            while (lines.isEmpty() && System.nanoTime() < deadline) Thread.onSpinWait();
+            assertTrue(
+                    lines.stream().anyMatch(l -> l.matches("GET /teapot 418 \\d+ ms from .+")),
+                    lines.toString());
+        } finally {
+            server.stop(0);
+            logger.removeHandler(capture);
+        }
+    }
+
     @Test
     void bodyLimitAcceptsTheBoundaryAndRejectsTheNextByte() throws Exception {
         TestExchange exact = new TestExchange("1234".getBytes(StandardCharsets.UTF_8));
