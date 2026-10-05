@@ -6,6 +6,7 @@ import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.testkit.TestLanguageModel;
 import com.qxotic.toknroll.Tokenizer;
@@ -26,13 +27,14 @@ public final class CliModelProvider implements ModelProvider {
                     "cli_test_language",
                     "cli_test_speech",
                     "cli_test_transcription",
-                    "cli_test_embedding");
+                    "cli_test_embedding",
+                    "cli_test_reranker");
     static Arena weights;
     static Map<String, Path> attachments;
     static CliFixtures.Template template;
     static SpeakTest.Speech speech;
     static TranscribeTest.Transcriber transcription;
-    static int languageLoads, speechLoads, transcriptionLoads;
+    static int languageLoads, speechLoads, transcriptionLoads, embedderLoads, rerankerLoads;
 
     static void reset() {
         weights = null;
@@ -40,7 +42,7 @@ public final class CliModelProvider implements ModelProvider {
         template = null;
         speech = null;
         transcription = null;
-        languageLoads = speechLoads = transcriptionLoads = 0;
+        languageLoads = speechLoads = transcriptionLoads = embedderLoads = rerankerLoads = 0;
     }
 
     public Set<String> architectures() {
@@ -102,13 +104,32 @@ public final class CliModelProvider implements ModelProvider {
         return speech;
     }
 
-    /** The embedding fixture is claimed, never built: a CLI that runs none only asks. */
+    /** The retrieval fixtures say their face from the header, as the real ports do. */
+    public Optional<Retrieval> retrieval(GGUF gguf) {
+        return switch (gguf.getString("general.architecture")) {
+            case "cli_test_embedding" -> Optional.of(Retrieval.EMBEDDING);
+            case "cli_test_reranker" -> Optional.of(Retrieval.RERANKING);
+            default -> Optional.empty();
+        };
+    }
+
+    /** The retrieval fixtures are claimed, never built: the server's own tests fake the models. */
     public LoadedEmbedder<?> loadEmbedder(
             FileChannel channel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
             throws IOException {
+        embedderLoads++;
         if (!gguf.getString("general.architecture").equals("cli_test_embedding"))
             return ModelProvider.super.loadEmbedder(channel, gguf, path, arena, tokenizer);
         throw new IOException("the fixture embeds nothing");
+    }
+
+    public LoadedReranker<?> loadReranker(
+            FileChannel channel, GGUF gguf, Path path, Arena arena, Tokenizer tokenizer)
+            throws IOException {
+        rerankerLoads++;
+        if (!gguf.getString("general.architecture").equals("cli_test_reranker"))
+            return ModelProvider.super.loadReranker(channel, gguf, path, arena, tokenizer);
+        throw new IOException("the fixture ranks nothing");
     }
 
     public TranscriptionModel<?, ?, ?> loadTranscription(

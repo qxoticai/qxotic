@@ -532,26 +532,57 @@ class WorkflowTest {
         var capture = new CliFixtures.Capture("");
         assertEquals(1, run(capture, "server", "-m", path.toString(), "--port", "0"));
         assertTrue(
-                capture.err().contains("is neither a language nor a transcription model"),
+                capture.err()
+                        .contains(
+                                "is neither a language, an embedding, a reranking nor a"
+                                        + " transcription model"),
                 capture.err());
         assertEquals(0, CliModelProvider.speechLoads, "serving must never synthesize speech");
     }
 
-    /** An embedding model is named as one, with where it runs, by every text command. */
+    /**
+     * The server serves a retrieval model as the face its header names, loading it once and never
+     * offering it to transcription; chat and instruct name it and point at the server.
+     */
     @Test
-    void embeddingModelsSayTheCliDoesNotRunThem() throws Exception {
-        Path path = model("embedding", "");
-        for (String[] args :
-                new String[][] {
-                    {"server", "-m", path.toString(), "--port", "0"},
-                    {"chat", "-m", path.toString()},
-                    {"instruct", "-m", path.toString(), "hi"}
-                }) {
-            var capture = new CliFixtures.Capture("");
-            assertEquals(1, run(capture, args), capture.err());
-            assertTrue(capture.err().contains("is an embedding or reranking model"), capture.err());
-            assertTrue(capture.err().contains("Models.loadEmbedder"), capture.err());
-            assertFalse(capture.err().contains("\tat "), capture.err());
+    void retrievalModelsAreServedAndOnlyServed() throws Exception {
+        for (String kind : List.of("embedding", "reranker")) {
+            Path path = model(kind, "");
+            boolean embedding = kind.equals("embedding");
+            CliModelProvider.reset();
+            var serve = new CliFixtures.Capture("");
+            assertEquals(1, run(serve, "server", "-m", path.toString(), "--port", "0"));
+            assertTrue(
+                    serve.err().contains(embedding ? "embeds nothing" : "ranks nothing"),
+                    serve.err());
+            assertEquals(embedding ? 1 : 0, CliModelProvider.embedderLoads);
+            assertEquals(embedding ? 0 : 1, CliModelProvider.rerankerLoads);
+            assertEquals(0, CliModelProvider.transcriptionLoads);
+
+            var tuned = new CliFixtures.Capture("");
+            assertEquals(2, run(tuned, "server", "-m", path.toString(), "--temp", "0.5"));
+            assertTrue(
+                    tuned.err().contains("--temp does not apply to a retrieval server"),
+                    tuned.err());
+
+            for (String[] args :
+                    new String[][] {
+                        {"chat", "-m", path.toString()}, {"instruct", "-m", path.toString(), "hi"}
+                    }) {
+                var capture = new CliFixtures.Capture("");
+                assertEquals(1, run(capture, args), capture.err());
+                assertTrue(
+                        capture.err()
+                                .contains(
+                                        (embedding ? "is an embedding" : "is a reranking")
+                                                + " model, not a language model; serve it with"
+                                                + " 'jinfer server'"),
+                        capture.err());
+                assertTrue(
+                        capture.err().contains(embedding ? "/v1/embeddings" : "/v1/rerank"),
+                        capture.err());
+                assertFalse(capture.err().contains("\tat "), capture.err());
+            }
         }
     }
 

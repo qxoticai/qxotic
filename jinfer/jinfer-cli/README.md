@@ -149,7 +149,8 @@ ffmpeg -nostdin -loglevel error -i speech.wav -ar 16000 -ac 1 -f s16le - \
 
 ## HTTP server: `server`
 
-Start an OpenAI-compatible language API. `serve` is an alias for `server`.
+Start an OpenAI-compatible API for the model: chat for a language model, embeddings, reranking or transcription for the others.
+`serve` is an alias for `server`.
 
 ```sh
 jinfer server -m "$LM" --port 8080 --temp 0 -n 256
@@ -176,6 +177,32 @@ curl -sS http://127.0.0.1:8080/v1/audio/transcriptions \
   -F file=@speech.wav -F response_format=text
 ```
 
+An embedding or reranking model is served the same way, on the endpoint its kind takes:
+
+```sh
+jinfer server -m Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --port 8080
+curl -sS http://127.0.0.1:8080/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{"input":["The cat sat on the mat.","A kitten rests on a rug."],"dimensions":256}'
+```
+
+`/v1/embeddings` takes OpenAI's request, so the official clients work unchanged, `base64` encoding included.
+`dimensions` shortens a Matryoshka-trained model's vectors (Qwen3-Embedding: 32 to 1024) and is refused on a fixed-width one (LFM2.5-Embedding).
+`input_type` (`query` or `document`) is a jinfer extension that prepends the model card's retrieval prefix; LFM2.5-Embedding is trained with one.
+Inputs are token-counted up front: one longer than the context is refused with its index, and the rest are packed into as few forward passes as the context allows.
+
+```sh
+jinfer server -m mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0 --port 8080
+curl -sS http://127.0.0.1:8080/v1/rerank \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"capital of France","documents":["Paris is in France.","Bananas are yellow."],"top_n":1,"return_documents":true}'
+```
+
+`/v1/rerank` (also `/rerank`) answers `results` most relevant first, each with its `index`, `relevance_score` and, on request, `document`.
+Qwen3-Reranker scores are probabilities in [0, 1].
+LFM2.5-ColBERT scores are unbounded MaxSim sums that sit close together (about 28 to 30 out of 32), so rank by them and never threshold them.
+`--context-capacity` sizes the server's state (default 4096, `0` for the model's maximum); the language options are refused.
+
 The default bind is `127.0.0.1:54154`. To listen on other interfaces, supply `--host` and `--api-key`:
 
 ```sh
@@ -184,9 +211,10 @@ jinfer server -m "$LM" --host 0.0.0.0 --port 8080 --api-key local-demo-key
 
 For this example, clients send `Authorization: Bearer local-demo-key`.
 
-Both APIs offer `GET /health`, `/v1/models`, `/props`, and `/metrics`, even while busy.
+Every server offers `GET /health`, `/v1/models`, `/props`, and `/metrics`, even while busy.
 `/health` needs no API key; the other probes use the configured key.
 The transcription server's `/props` reports the model name and input sample rate.
+The retrieval server's `/props` reports the task, the context capacity and, for an embedder, its dimensions.
 
 ## Model downloads: `pull`
 
