@@ -241,6 +241,17 @@ class ModelsDispatchTest {
                 assertThrows(
                         IllegalArgumentException.class, () -> Models.load(text, Arena.ofAuto()));
         assertTrue(notGguf.getMessage().contains("not a GGUF model file"), notGguf.getMessage());
+        assertFalse(notGguf.getMessage().contains("magic"), "the parser's numbers stay below");
+        assertNotNull(notGguf.getCause(), "the parser's own failure stays on the cause");
+
+        Path truncated = Files.writeString(dir.resolve("truncated.gguf"), "GGUF");
+        IllegalArgumentException damaged =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Models.load(truncated, Arena.ofAuto()));
+        assertTrue(
+                damaged.getMessage().endsWith("is a damaged GGUF file: it ends inside its header"),
+                damaged.getMessage());
         assertThrows(
                 NoSuchFileException.class,
                 () -> Models.load(dir.resolve("absent.gguf"), Arena.ofAuto()));

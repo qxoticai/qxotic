@@ -323,13 +323,7 @@ public final class Models {
                                         new BufferedInputStream(
                                                 Channels.newInputStream(fc), 1 << 20)));
             } catch (GGUFFormatException | EOFException e) {
-                throw new IllegalArgumentException(
-                        path
-                                + " is not a GGUF model file ("
-                                + e.getMessage()
-                                + "). If this is a HuggingFace checkpoint (safetensors/pytorch),"
-                                + " convert it with llama.cpp's convert_hf_to_gguf.py",
-                        e);
+                throw new IllegalArgumentException(unreadable(path, fc, e), e);
             }
             rejectSplit(gguf, path.getFileName().toString());
             ModelProvider provider = provider(gguf);
@@ -337,6 +331,27 @@ public final class Models {
             if (tokenizer != null) requireSameIdSpace(gguf, tokenizer);
             return load.apply(provider, fc, gguf);
         }
+    }
+
+    /**
+     * Why a GGUF header did not parse, in the reader's terms: a file without the magic is some
+     * other format (the parser's number-for-number detail stays on the cause); one with it is a
+     * damaged GGUF, and the parser's detail is the useful part.
+     */
+    private static String unreadable(Path path, FileChannel fc, Exception failure)
+            throws IOException {
+        ByteBuffer magic = ByteBuffer.allocate(4);
+        while (magic.hasRemaining() && fc.read(magic, magic.position()) > 0) {}
+        if (!magic.hasRemaining()
+                && new String(magic.array(), StandardCharsets.US_ASCII).equals("GGUF"))
+            return path
+                    + " is a damaged GGUF file: "
+                    + (failure instanceof EOFException
+                            ? "it ends inside its header"
+                            : failure.getMessage());
+        return path
+                + " is not a GGUF model file; convert a Hugging Face checkpoint (safetensors,"
+                + " PyTorch) with llama.cpp's convert_hf_to_gguf.py";
     }
 
     private static void rejectSplit(GGUF gguf, String source) {
