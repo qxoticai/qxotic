@@ -1254,8 +1254,8 @@ final class Fetch {
     }
 
     /**
-     * The lock for {@code dest}, in the cache root's own {@code .locks} folder rather than beside
-     * the model.
+     * The lock for {@code dest}, in one per-user {@code jinfer-locks-<user>} folder under {@code
+     * java.io.tmpdir} - never in the cache, and never beside the model.
      *
      * <p>Two reasons. A lock file must NEVER be deleted - unlinking one another process is already
      * blocked on lets a third process create a new file and lock that instead, so both would think
