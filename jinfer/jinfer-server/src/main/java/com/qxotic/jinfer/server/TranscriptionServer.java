@@ -111,7 +111,7 @@ public final class TranscriptionServer {
     private Running serve() throws IOException {
         HttpServer server = HttpServer.create(config.bind(), 0);
         Map<String, Object> modelCard =
-                Map.of(
+                JsonCodec.object(
                         "id",
                         servedModel,
                         "object",
@@ -121,7 +121,7 @@ public final class TranscriptionServer {
                         "owned_by",
                         "jinfer",
                         "architecture",
-                        Map.of("input_modalities", List.of("audio")));
+                        JsonCodec.object("input_modalities", List.of("audio")));
         // a liveness probe carries no key and answers under load, as the language server's does
         ServerConfig.Access probe = new ServerConfig.Access(null, config.access().allowedOrigins());
         server.createContext(
@@ -136,7 +136,7 @@ public final class TranscriptionServer {
                     Http.sendJson(
                             exchange,
                             200,
-                            Map.of("status", "ok", "busy", inFlight() > 0, "queued", 0));
+                            JsonCodec.object("status", "ok", "busy", inFlight() > 0, "queued", 0));
                 });
         server.createContext(
                 "/props",
@@ -150,7 +150,8 @@ public final class TranscriptionServer {
                     Http.sendJson(
                             exchange,
                             200,
-                            Map.of("model", servedModel, "sample_rate", model.sampleRate()));
+                            JsonCodec.object(
+                                    "model", servedModel, "sample_rate", model.sampleRate()));
                 });
         server.createContext(
                 "/metrics",
@@ -173,7 +174,7 @@ public final class TranscriptionServer {
                         Http.sendJson(
                                 exchange,
                                 200,
-                                Map.of("object", "list", "data", List.of(modelCard)));
+                                JsonCodec.object("object", "list", "data", List.of(modelCard)));
                     } else if (path.equals("/v1/models/" + servedModel)) {
                         Http.sendJson(exchange, 200, modelCard);
                     } else if (path.startsWith("/v1/models/")) {
@@ -281,7 +282,8 @@ public final class TranscriptionServer {
         audioMillis.addAndGet(audio.pcm().length * 1000L / model.sampleRate());
         switch (format) {
             case "text" -> Http.sendText(exchange, 200, "text/plain", transcription.text() + "\n");
-            case "json" -> Http.sendJson(exchange, 200, Map.of("text", transcription.text()));
+            case "json" ->
+                    Http.sendJson(exchange, 200, JsonCodec.object("text", transcription.text()));
             default -> {
                 double duration = (double) audio.pcm().length / model.sampleRate();
                 Map<String, Object> payload = new LinkedHashMap<>();

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.llm.Generator;
@@ -22,6 +23,27 @@ class OpenAiSchemaTest {
                         Duration.ZERO,
                         Duration.ZERO);
         return new Reply(result, 3, 0, text, null, calls, "tool_calls", null);
+    }
+
+    /** OpenAI's own order, extensions last, the same on every response. */
+    @Test
+    void responseKeysKeepOneOrder() {
+        Reply reply = reply("hi", List.of());
+        assertEquals(
+                List.of("id", "object", "created", "model", "choices", "usage", "timings"),
+                List.copyOf(OpenAiSchema.chatCompletionResponse("id", "m", reply).keySet()));
+        assertEquals(
+                List.of("id", "object", "created", "model", "choices", "usage", "timings"),
+                List.copyOf(OpenAiSchema.completionResponse("id", "m", reply).keySet()));
+        assertEquals(
+                List.of(
+                        "prompt_tokens",
+                        "completion_tokens",
+                        "total_tokens",
+                        "prompt_tokens_details"),
+                List.copyOf(OpenAiSchema.usage(reply).keySet()));
+        String json = JsonCodec.stringify(OpenAiSchema.chatCompletionResponse("id", "m", reply));
+        assertTrue(json.startsWith("{\"id\":\"id\",\"object\":\"chat.completion\","), json);
     }
 
     @Test

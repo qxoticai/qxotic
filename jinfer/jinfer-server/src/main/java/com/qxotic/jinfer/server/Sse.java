@@ -80,7 +80,7 @@ final class Sse {
                 error.put("param", null);
                 sse.emit("error", error);
             } else {
-                sse.emit(Map.of("error", Http.errorPayload(status, message)));
+                sse.emit(JsonCodec.object("error", Http.errorPayload(status, message)));
             }
             sse.done();
         } catch (UncheckedIOException disconnected) {

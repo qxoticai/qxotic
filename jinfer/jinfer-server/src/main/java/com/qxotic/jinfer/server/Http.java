@@ -157,7 +157,7 @@ final class Http {
     }
 
     static void sendError(HttpExchange exchange, int status, String message) throws IOException {
-        sendJson(exchange, status, Map.of("error", errorPayload(status, message)));
+        sendJson(exchange, status, JsonCodec.object("error", errorPayload(status, message)));
     }
 
     /**

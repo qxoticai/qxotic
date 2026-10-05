@@ -39,6 +39,22 @@ final class JsonCodec {
         }
     }
 
+    /**
+     * A JSON object whose keys serialize in the order written. Every response is built with this,
+     * not {@code Map.of}, whose iteration order is unspecified and changes between runs: one reply
+     * opened with {@code "model"}, the next with {@code "timings"}.
+     */
+    static Map<String, Object> object(Object... keysAndValues) {
+        if (keysAndValues.length % 2 != 0)
+            throw new IllegalArgumentException("a key without a value");
+        Map<String, Object> object = LinkedHashMap.newLinkedHashMap(keysAndValues.length / 2);
+        for (int i = 0; i < keysAndValues.length; i += 2) {
+            if (object.put((String) keysAndValues[i], keysAndValues[i + 1]) != null)
+                throw new IllegalArgumentException("duplicate key: " + keysAndValues[i]);
+        }
+        return object;
+    }
+
     static String stringify(Object value) {
         return Json.stringify(toLibrary(value));
     }
