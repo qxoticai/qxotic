@@ -54,7 +54,15 @@ final class Hub {
         list(store.cached(), store.root(), out);
     }
 
-    static void list(List<ModelStore.Cached> models, Path root, PrintStream out) {
+    /**
+     * The cached files {@code --model} or {@code --with} can name: GGUFs only. The cache directory
+     * is shared with whatever else wrote there (ONNX exports, tokenizer text), none of it loadable.
+     */
+    static void list(List<ModelStore.Cached> cached, Path root, PrintStream out) {
+        List<ModelStore.Cached> models =
+                cached.stream()
+                        .filter(c -> c.ref().toLowerCase(Locale.ROOT).endsWith(".gguf"))
+                        .toList();
         if (models.isEmpty()) {
             out.println("no models cached in " + root);
             return;
