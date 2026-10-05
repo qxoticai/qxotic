@@ -13,11 +13,11 @@ final class OpenAiSchema {
     private OpenAiSchema() {}
 
     static Map<String, Object> usage(Reply result) {
-        return Map.of(
+        return JsonCodec.object(
                 "prompt_tokens", result.promptTokens(),
                 "completion_tokens", result.completionTokens(),
                 "total_tokens", result.promptTokens() + result.completionTokens(),
-                "prompt_tokens_details", Map.of("cached_tokens", result.cachedTokens()));
+                "prompt_tokens_details", JsonCodec.object("cached_tokens", result.cachedTokens()));
     }
 
     /**
@@ -76,7 +76,7 @@ final class OpenAiSchema {
         choice.put("index", 0);
         choice.put("message", message);
         choice.put("finish_reason", result.finishReason());
-        return Map.of(
+        return JsonCodec.object(
                 "id",
                 id,
                 "object",
@@ -115,7 +115,7 @@ final class OpenAiSchema {
     // ---- text completions ----
 
     static Map<String, Object> completionResponse(String id, String modelId, Reply result) {
-        return Map.of(
+        return JsonCodec.object(
                 "id",
                 id,
                 "object",
@@ -126,7 +126,7 @@ final class OpenAiSchema {
                 modelId,
                 "choices",
                 List.of(
-                        Map.of(
+                        JsonCodec.object(
                                 "text",
                                 result.text(),
                                 "index",
@@ -237,7 +237,7 @@ final class OpenAiSchema {
                         reason == null ? "completed" : "incomplete",
                         output,
                         responseUsage(result));
-        if (reason != null) response.put("incomplete_details", Map.of("reason", reason));
+        if (reason != null) response.put("incomplete_details", JsonCodec.object("reason", reason));
         response.put("timings", timings(result));
         return response;
     }
@@ -263,7 +263,7 @@ final class OpenAiSchema {
     }
 
     static Map<String, Object> responseMessageItem(String id, String status, String text) {
-        return Map.of(
+        return JsonCodec.object(
                 "id",
                 id,
                 "type",
@@ -277,11 +277,11 @@ final class OpenAiSchema {
     }
 
     static Map<String, Object> outputText(String text) {
-        return Map.of("type", "output_text", "text", text, "annotations", List.of());
+        return JsonCodec.object("type", "output_text", "text", text, "annotations", List.of());
     }
 
     private static Map<String, Object> responseUsage(Reply result) {
-        return Map.of(
+        return JsonCodec.object(
                 "input_tokens", result.promptTokens(),
                 "output_tokens", result.completionTokens(),
                 "total_tokens", result.promptTokens() + result.completionTokens());
@@ -294,7 +294,7 @@ final class OpenAiSchema {
             Map<String, Object> function =
                     Values.asObject(toolCall.get("function"), "tool_call.function");
             output.add(
-                    Map.of(
+                    JsonCodec.object(
                             "id", Values.stringValue(toolCall.get("id"), ""),
                             "type", "function_call",
                             "status", "completed",

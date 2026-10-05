@@ -181,7 +181,8 @@ public final class Server {
             if (multimodal.projector(Media.Audio.class).isPresent()) inputModalities.add("audio");
         }
         modelCard.put("supports_image_input", supportsImages);
-        modelCard.put("architecture", Map.of("input_modalities", List.copyOf(inputModalities)));
+        modelCard.put(
+                "architecture", JsonCodec.object("input_modalities", List.copyOf(inputModalities)));
         probe(
                 server,
                 "/v1/models",
@@ -193,7 +194,7 @@ public final class Server {
                         Http.sendJson(
                                 exchange,
                                 200,
-                                Map.of("object", "list", "data", List.of(modelCard)));
+                                JsonCodec.object("object", "list", "data", List.of(modelCard)));
                     } else if (path.equals("/v1/models/" + servedId)) {
                         Http.sendJson(exchange, 200, modelCard);
                     } else if (path.startsWith("/v1/models/")) {
@@ -221,14 +222,16 @@ public final class Server {
                 server,
                 "/health",
                 "GET",
-                request -> Map.of("status", "ok", "busy", worker.busy(), "queued", worker.queued()),
+                request ->
+                        JsonCodec.object(
+                                "status", "ok", "busy", worker.busy(), "queued", worker.queued()),
                 new ServerConfig.Access(null, config.access().allowedOrigins()));
         jsonProbe(
                 server,
                 "/props",
                 "GET",
                 request ->
-                        Map.of(
+                        JsonCodec.object(
                                 "model", servedModel,
                                 // what a request may actually use, not what the model was
                                 // trained for: a client sizing to the latter gets refused
@@ -236,14 +239,14 @@ public final class Server {
                                 "n_ctx_train", model.model().configuration().maxContextLength(),
                                 "n_vocab", model.model().configuration().vocabularySize(),
                                 "speculation",
-                                        Map.of(
+                                        JsonCodec.object(
                                                 "ready", engine.speculationReady(),
                                                 "enabled",
                                                         engine.speculationReady()
                                                                 && engine.speculationDepth() > 0,
                                                 "depth", engine.speculationDepth()),
                                 "sampling",
-                                        Map.of(
+                                        JsonCodec.object(
                                                 "temperature", trim(sampling.temperature()),
                                                 "top_p", trim(sampling.topP()),
                                                 "top_k", sampling.topK(),
@@ -262,7 +265,7 @@ public final class Server {
                     Validation.require(
                             request.get("content") instanceof String,
                             "Invalid argument: content must be a string");
-                    return Map.of(
+                    return JsonCodec.object(
                             "tokens", model.tokenizer().encode((String) request.get("content")));
                 };
         int vocabularySize = model.tokenizer().vocabulary().size();
@@ -293,7 +296,8 @@ public final class Server {
                                 vocabularySize);
                         tokens[i] = (int) id;
                     }
-                    return Map.of("content", model.tokenizer().decode(IntSequence.wrap(tokens)));
+                    return JsonCodec.object(
+                            "content", model.tokenizer().decode(IntSequence.wrap(tokens)));
                 };
         jsonRoute(server, "/tokenize", "POST", tokenize); // llama.cpp paths and the
         jsonRoute(server, "/v1/tokenize", "POST", tokenize); // /v1-prefixed aliases
@@ -611,7 +615,11 @@ public final class Server {
                         long created = System.currentTimeMillis() / 1000;
                         sse.emit(
                                 OpenAiSchema.chatCompletionChunk(
-                                        id, modelId, created, Map.of("role", "assistant"), null));
+                                        id,
+                                        modelId,
+                                        created,
+                                        JsonCodec.object("role", "assistant"),
+                                        null));
                         // A forced tool call streams no live channels (the turn is seeded
                         // straight into the tool-call block; the calls are parsed from the result
                         // and emitted once below); otherwise content and reasoning stream live.
@@ -629,7 +637,8 @@ public final class Server {
                                                                         id,
                                                                         modelId,
                                                                         created,
-                                                                        Map.of("content", t),
+                                                                        JsonCodec.object(
+                                                                                "content", t),
                                                                         null)),
                                                 deltaSink(
                                                         sse,
@@ -638,7 +647,7 @@ public final class Server {
                                                                         id,
                                                                         modelId,
                                                                         created,
-                                                                        Map.of(
+                                                                        JsonCodec.object(
                                                                                 "reasoning_content",
                                                                                 t),
                                                                         null)));
@@ -649,7 +658,7 @@ public final class Server {
                                             id,
                                             modelId,
                                             created,
-                                            Map.of(
+                                            JsonCodec.object(
                                                     "tool_calls",
                                                     ToolCalls.toolCallDeltas(
                                                             ToolCalls.toWire(result.toolCalls()))),
@@ -756,7 +765,7 @@ public final class Server {
                         String itemId = "msg_" + id;
                         sse.emit(
                                 "response.created",
-                                Map.of(
+                                JsonCodec.object(
                                         "type",
                                         "response.created",
                                         "response",
@@ -789,7 +798,7 @@ public final class Server {
                         String event = "response." + response.get("status");
                         sse.emit(
                                 event,
-                                Map.of(
+                                JsonCodec.object(
                                         "type",
                                         event,
                                         "timings",
@@ -822,7 +831,7 @@ public final class Server {
                 }
                 sse.emit(
                         "response.output_text.done",
-                        Map.of(
+                        JsonCodec.object(
                                 "type",
                                 "response.output_text.done",
                                 "item_id",
@@ -835,7 +844,7 @@ public final class Server {
                                 result.text()));
                 sse.emit(
                         "response.content_part.done",
-                        Map.of(
+                        JsonCodec.object(
                                 "type",
                                 "response.content_part.done",
                                 "item_id",
@@ -852,7 +861,7 @@ public final class Server {
                 started.put("arguments", "");
                 sse.emit(
                         "response.output_item.added",
-                        Map.of(
+                        JsonCodec.object(
                                 "type",
                                 "response.output_item.added",
                                 "output_index",
@@ -861,7 +870,7 @@ public final class Server {
                                 started));
                 sse.emit(
                         "response.function_call_arguments.done",
-                        Map.of(
+                        JsonCodec.object(
                                 "type",
                                 "response.function_call_arguments.done",
                                 "item_id",
@@ -875,7 +884,7 @@ public final class Server {
             }
             sse.emit(
                     "response.output_item.done",
-                    Map.of(
+                    JsonCodec.object(
                             "type",
                             "response.output_item.done",
                             "output_index",
@@ -889,7 +898,7 @@ public final class Server {
     private static void responseMessageAdded(Sse.Stream sse, String itemId) {
         sse.emit(
                 "response.output_item.added",
-                Map.of(
+                JsonCodec.object(
                         "type",
                         "response.output_item.added",
                         "output_index",
@@ -898,7 +907,7 @@ public final class Server {
                         OpenAiSchema.responseMessageItem(itemId, "in_progress", "")));
         sse.emit(
                 "response.content_part.added",
-                Map.of(
+                JsonCodec.object(
                         "type",
                         "response.content_part.added",
                         "item_id",
