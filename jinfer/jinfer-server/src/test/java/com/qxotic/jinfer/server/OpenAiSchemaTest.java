@@ -46,6 +46,25 @@ class OpenAiSchemaTest {
         assertTrue(json.startsWith("{\"id\":\"id\",\"object\":\"chat.completion\","), json);
     }
 
+    /** As llama.cpp: prompt_n is what this request evaluated, not what the cache served. */
+    @Test
+    void timingsCountOnlyEvaluatedPromptTokens() {
+        var result =
+                new Generator.GenerationResult(
+                        new int[] {1, 2},
+                        OptionalInt.empty(),
+                        Generator.FinishReason.STOP,
+                        Duration.ofMillis(30),
+                        Duration.ofMillis(20));
+        var cached = new Reply(result, 83, 80, "ok", null, List.of(), "stop", null);
+        Map<String, Object> timings = OpenAiSchema.timings(cached);
+        assertEquals(80, timings.get("cache_n"));
+        assertEquals(3, timings.get("prompt_n"));
+        assertEquals(100.0, timings.get("prompt_per_second"));
+        assertEquals(10.0, timings.get("prompt_per_token_ms"));
+        assertEquals(83, OpenAiSchema.usage(cached).get("prompt_tokens"), "usage keeps OpenAI's");
+    }
+
     @Test
     void responsesReportTruncationWithoutClaimingTheOutputIsComplete() {
         var generation =
