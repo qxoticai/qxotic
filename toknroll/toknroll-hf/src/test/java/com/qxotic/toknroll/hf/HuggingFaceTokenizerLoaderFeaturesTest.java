@@ -197,10 +197,89 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                                         buildByteLevelVocab(Map.of("ab", 256)),
                                         "[]",
                                         ",\"ignore_merges\":true"),
-                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\"}"));
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false,\"trim_offsets\":true}"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {256}, tokenizer.encode("ab").toArray());
+    }
+
+    /**
+     * The four tests below pin ByteLevel's SPLITTING. A ByteLevel pre-tokenizer carries a {@code
+     * use_regex} flag that defaults to TRUE and applies the GPT-2 pattern; the loader used to
+     * ignore it and pass the whole input through as one chunk.
+     *
+     * <p>Each case is built so the two behaviours give DIFFERENT token arrays: the vocabulary holds
+     * {@code "a" + newline} as a single entry, which is reachable only if nothing splits between
+     * the letter and the newline.
+     */
+    @Test
+    void byteLevelPreTokenizerAppliesTheGpt2SplitPatternByDefault() throws IOException {
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("aĊ", 256)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false,\"trim_offsets\":true}"));
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+        // 97 = 'a', 10 = '\n': split, so the combined entry at 256 is never reached.
+        assertArrayEquals(new int[] {97, 10}, tokenizer.encode("a\n").toArray());
+    }
+
+    @Test
+    void byteLevelPreTokenizerAppliesTheGpt2SplitPatternWhenUseRegexIsExplicitlyTrue()
+            throws IOException {
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("aĊ", 256)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false,\"trim_offsets\":true,\"use_regex\":true}"));
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+        assertArrayEquals(new int[] {97, 10}, tokenizer.encode("a\n").toArray());
+    }
+
+    @Test
+    void byteLevelSplitKeepsTheLastWhitespaceOfARunApartFromTheRun() throws IOException {
+        // The whitespace-run rule of the GPT-2 pattern, \s+(?!\S)|\s+: a run of three newlines
+        // before a letter splits as two newlines, then one newline, then the letter, and the
+        // two-newline chunk is looked up as one entry. Unsplit, the whole input is one chunk
+        // that no entry matches, and with no merges it falls apart into five singletons
+        // (a, newline, newline, newline, b): a different array, one token MORE. This is the
+        // shape that hid the bug on ordinary prose and showed it on newline runs.
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("ĊĊ", 256, "ĊĊĊ", 257)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false,\"trim_offsets\":true}"));
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+        // 97 = 'a', 256 = two newlines, 10 = '\n', 98 = 'b'; unsplit gives {97, 10, 10, 10, 98}.
+        assertArrayEquals(new int[] {97, 256, 10, 98}, tokenizer.encode("a\n\n\nb").toArray());
+    }
+
+    @Test
+    void byteLevelPreTokenizerHonoursUseRegexFalse() throws IOException {
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("aĊ", 256)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false,\"trim_offsets\":true,\"use_regex\":false}"));
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+        // use_regex:false is the one configuration where the whole input stays a single chunk.
+        assertArrayEquals(new int[] {256}, tokenizer.encode("a\n").toArray());
     }
 
     @Test
