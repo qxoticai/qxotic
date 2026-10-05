@@ -663,13 +663,11 @@ public final class ModelStore {
     /** A cached model, as opposed to the cache's own bookkeeping. */
     private static boolean isCachedModel(Path relative) {
         String name = relative.getFileName().toString();
-        if (relative.getName(0).toString().equals(".locks") || name.equals("CACHEDIR.TAG")) {
+        if (name.equals("CACHEDIR.TAG")) {
             return false;
         }
-        return !name.endsWith(".part")
-                && !name.endsWith(".map")
-                && !name.endsWith(".etag")
-                && !name.endsWith(".lock");
+        // no lock files to skip: they live under java.io.tmpdir, never in the cache
+        return !name.endsWith(".part") && !name.endsWith(".map") && !name.endsWith(".etag");
     }
 
     /**
