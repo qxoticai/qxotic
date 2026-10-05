@@ -67,7 +67,9 @@
       </resource>
     </resources>
     <plugins>
-      <!-- Build the native libjam via CMake before resources are processed. Skip with -Djam.native.skip=true. -->
+      <!-- Build the native libjam via CMake before resources are processed. Skip with -Djam.native.skip=true.
+           CMake's progress goes through Maven's logger, so `mvn -q` silences it; its stderr (compiler
+           errors) stays visible at ERROR. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
@@ -88,6 +90,7 @@
                 <argument>${project.basedir}/build</argument>
                 <argument>-DCMAKE_BUILD_TYPE=Release</argument>
               </arguments>
+              <useMavenLogger>true</useMavenLogger>
             </configuration>
           </execution>
           <execution>
@@ -107,6 +110,7 @@
                 <argument>jam_stage</argument>
                 <argument>jam_test</argument>
               </arguments>
+              <useMavenLogger>true</useMavenLogger>
             </configuration>
           </execution>
           <execution>
