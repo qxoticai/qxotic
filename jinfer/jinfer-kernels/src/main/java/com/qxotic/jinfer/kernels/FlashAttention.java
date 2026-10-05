@@ -114,9 +114,9 @@ public final class FlashAttention {
     /**
      * One {@link Buffers} per slot of the shared pool, made on first use. Indexed by the region's
      * slot, not by thread: bounded by the thread budget, and never rooted in a worker thread.
-     * ponytail: process-wide, sized to the largest head seen; a per-state scratch would need the
-     * prefill API to carry it through 15 model call sites - add if a process cycles models with
-     * different head sizes.
+     * Process-wide and sized to the largest head seen, deliberately: a per-state scratch would need
+     * the prefill API to carry it through 15 model call sites, worth it only once a process cycles
+     * models with different head sizes.
      */
     private static final Buffers[] BUFFERS = new Buffers[Parallel.threads()];
 
