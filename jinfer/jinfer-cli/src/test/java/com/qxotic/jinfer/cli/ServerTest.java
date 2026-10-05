@@ -573,6 +573,37 @@ class ServerTest {
                                     .build(),
                             HttpResponse.BodyHandlers.ofString());
             assertEquals(200, heard.statusCode(), heard.body());
+            // a file no decoder reads: what the client can act on, never the decoder's stderr
+            var corrupt =
+                    client.send(
+                            HttpRequest.newBuilder(URI.create(base + "/v1/audio/transcriptions"))
+                                    .timeout(Duration.ofSeconds(30))
+                                    .header("Authorization", "Bearer k")
+                                    .header("Content-Type", "multipart/form-data; boundary=b")
+                                    .POST(
+                                            HttpRequest.BodyPublishers.ofString(
+                                                    "--b\r\n"
+                                                            + "Content-Disposition: form-data;"
+                                                            + " name=\"file\";"
+                                                            + " filename=\"x.wav\"\r\n\r\n"
+                                                            + "not audio at all\r\n"
+                                                            + "--b--\r\n"))
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(400, corrupt.statusCode(), corrupt.body());
+            assertEquals(
+                    "cannot decode audio: unsupported or corrupt file",
+                    ((Map<?, ?>) Json.parseMap(corrupt.body()).get("error")).get("message"));
+            // any other path: the same JSON 404 envelope as every other refusal
+            var unknown =
+                    client.send(
+                            get.apply("/nope")
+                                    .header("Authorization", "Bearer k")
+                                    .POST(HttpRequest.BodyPublishers.noBody())
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(404, unknown.statusCode(), unknown.body());
+            assertTrue(unknown.body().startsWith("{\"error\":{"), unknown.body());
             var metrics =
                     client.send(
                             get.apply("/metrics").header("Authorization", "Bearer k").build(),
