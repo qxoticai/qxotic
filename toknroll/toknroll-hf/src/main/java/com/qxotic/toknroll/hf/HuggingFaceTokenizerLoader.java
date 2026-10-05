@@ -4,9 +4,11 @@ import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.text.Normalizer.Form;
 import java.util.ArrayList;
@@ -802,14 +804,14 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static boolean isHttp404(IOException e) {
-        return e instanceof RepositoryArtifactCache.NotFoundException;
+        return e instanceof FileNotFoundException;
     }
 
     private static boolean shouldFallbackToTiktokenModel(IOException e, boolean useCacheOnly) {
         if (isHttp404(e)) {
             return true;
         }
-        return useCacheOnly && e instanceof RepositoryArtifactCache.NotCachedException;
+        return useCacheOnly && e instanceof NoSuchFileException;
     }
 
     private static Normalizer parseNormalizer(Object normalizerObj) {
