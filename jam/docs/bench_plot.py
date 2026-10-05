@@ -13,18 +13,19 @@ matplotlib.rcParams["font.family"] = ["Noto Sans", "DejaVu Sans", "sans-serif"]
 quants = ["Q4_0", "Q8_0", "Q4_K", "Q5_K", "Q6_K"]
 tiers = ["sse3", "avx2", "avx_vnni", "avx512_vnni"]
 
-# pp512 t/s, Gemma 4 E2B, 16 threads, Ryzen 9 9950X3D (Zen 5), 2026-09-09
+# pp512 t/s, Gemma 4 E2B, 16 threads, Ryzen 9 9950X3D (Zen 5), 2026-10-06: jinfer a6f07016f on the shipped
+# 0.3.1 jam-native libraries, llama.cpp 86a24a182 at its best mode per format (default or --repack 0)
 jam = {
- "sse3":        [178, 175, 119, 109, 102],
- "avx2":        [649, 647, 653, 647, 533],
- "avx_vnni":    [954, 791, 638, 660, 533],
- "avx512_vnni": [1358, 1241, 1368, 1097, 987],
+ "sse3":        [84, 85, 67, 66, 49],
+ "avx2":        [883, 751, 920, 795, 590],
+ "avx_vnni":    [1044, 883, 936, 793, 598],
+ "avx512_vnni": [1752, 1689, 1775, 1757, 1768],
 }
 llama = {
- "sse3":        [176, 136, 49, 45, 48],
- "avx2":        [514, 477, 527, 291, 371],
- "avx_vnni":    [647, 509, 520, 289, 367],
- "avx512_vnni": [947, 605, 835, 313, 421],
+ "sse3":        [179, 138, 50, 45, 48],
+ "avx2":        [519, 483, 624, 624, 609],
+ "avx_vnni":    [669, 529, 631, 617, 608],
+ "avx512_vnni": [1014, 626, 1235, 1220, 1171],
 }
 
 # Two themes, matching GitHub's README surfaces. Series colors were checked with the dataviz palette
@@ -35,7 +36,7 @@ THEMES = {
     "dark":  dict(surface="#0d1117", ink="#e6edf3", ink2="#b1bac4", muted="#8b949e", grid="#21262d", base="#3d444d",
                   jam="#0a8fa0", llama="#d95926", ramp=["#1a5f68", "#0a8fa0", "#3fb6c4", "#8fd8e0"]),
 }
-LABEL_JAM, LABEL_LLAMA = "jinfer (native jam)", "llama.cpp"
+LABEL_JAM, LABEL_LLAMA = "jinfer (native jam)", "llama.cpp, best mode"
 SUBTITLE = "Gemma 4 E2B  ·  16 threads  ·  Ryzen 9 9950X3D (Zen 5)"
 
 
@@ -99,7 +100,7 @@ for mode, th in THEMES.items():
     fig, ax = plt.subplots(figsize=(8, 4.6), facecolor=th["surface"])
     style(ax, th)
     x = np.arange(len(quants)); w = 0.3
-    ax.set_xlim(-0.6, len(quants) - 0.4); ax.set_ylim(0, 1600)
+    ax.set_xlim(-0.6, len(quants) - 0.4); ax.set_ylim(0, 2000)
     ax.set_xticks(x); ax.set_xticklabels(quants, color=th["ink2"], fontsize=9.5)
     fig.subplots_adjust(top=0.8, bottom=0.1, left=0.1, right=0.98)
     rounded_bars(ax, x - w / 2, jam["avx512_vnni"], w, th["jam"], 4, 2, fig)
@@ -115,7 +116,7 @@ for mode, th in THEMES.items():
     fig, ax = plt.subplots(figsize=(8, 4.6), facecolor=th["surface"])
     style(ax, th)
     x = np.arange(len(quants)); w = 0.19
-    ax.set_xlim(-0.6, len(quants) - 0.4); ax.set_ylim(0, 1600)
+    ax.set_xlim(-0.6, len(quants) - 0.4); ax.set_ylim(0, 2000)
     ax.set_xticks(x); ax.set_xticklabels(quants, color=th["ink2"], fontsize=9.5)
     fig.subplots_adjust(top=0.78, bottom=0.1, left=0.1, right=0.98)
     for i, t in enumerate(tiers):
