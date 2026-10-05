@@ -177,6 +177,9 @@ final class Server {
                         });
             }
         } catch (ModelProvider.IncompatibleModelException neither) {
+            IllegalArgumentException refusal =
+                    Main.unrunnable(options, files.model(), arena, neither);
+            if (refusal != neither) throw refusal;
             throw new IllegalArgumentException(
                     "model '"
                             + options.modelRef

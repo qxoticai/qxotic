@@ -537,6 +537,24 @@ class WorkflowTest {
         assertEquals(0, CliModelProvider.speechLoads, "serving must never synthesize speech");
     }
 
+    /** An embedding model is named as one, with where it runs, by every text command. */
+    @Test
+    void embeddingModelsSayTheCliDoesNotRunThem() throws Exception {
+        Path path = model("embedding", "");
+        for (String[] args :
+                new String[][] {
+                    {"server", "-m", path.toString(), "--port", "0"},
+                    {"chat", "-m", path.toString()},
+                    {"instruct", "-m", path.toString(), "hi"}
+                }) {
+            var capture = new CliFixtures.Capture("");
+            assertEquals(1, run(capture, args), capture.err());
+            assertTrue(capture.err().contains("is an embedding or reranking model"), capture.err());
+            assertTrue(capture.err().contains("Models.loadEmbedder"), capture.err());
+            assertFalse(capture.err().contains("\tat "), capture.err());
+        }
+    }
+
     /**
      * The library refuses bad input with plain runtime exceptions; the CLI reports them as one
      * line, never as a bug with a stack trace.
