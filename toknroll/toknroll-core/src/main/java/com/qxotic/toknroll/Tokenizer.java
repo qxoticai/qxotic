@@ -16,14 +16,9 @@ import java.util.Objects;
  * is not guaranteed in general (see {@link TokenizationModel} for the strict, reversible model
  * contract).
  *
- * <p><b>Unknown token IDs.</b> The decoding and counting methods ({@link #decodeBytesInto}, {@link
- * #countBytes}, {@link #decodeBytes}, {@link #decode} and their overloads) reject a token ID that
- * is not in the {@link #vocabulary()} with an unchecked exception whose type depends on the
- * implementation: the built-in tiktoken models throw {@link java.util.NoSuchElementException}; the
- * built-in SentencePiece models throw {@link IllegalArgumentException} from decoding and {@link
- * java.util.NoSuchElementException} from {@link #countBytes}; tokenizers that transform token bytes
- * (for example GPT-2 byte-level or metaspace decoding) throw {@link IllegalArgumentException}.
- * Callers that need to tell them apart should check {@link Vocabulary#contains(int)} first.
+ * <p>Decoding or counting a token ID not in the {@link #vocabulary()} throws an unchecked exception
+ * whose type depends on the implementation; check {@link Vocabulary#contains(int)} first to tell it
+ * apart.
  */
 public interface Tokenizer {
 
@@ -124,8 +119,7 @@ public interface Tokenizer {
             try {
                 consumedTokens = decodeBytesInto(tokens, tokenIndex, out);
             } catch (IllegalArgumentException e) {
-                // A known token at tokenIndex may simply not fit the scratch: grow and retry.
-                // Anything else (an unknown token ID, a token past 16 MiB) is rethrown as is.
+                // a known token may just not fit the scratch: grow (up to 16 MiB) and retry
                 if (out.capacity() >= (1 << 24)
                         || !vocabulary().contains(tokens.intAt(tokenIndex))) {
                     throw e;
