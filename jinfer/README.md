@@ -347,7 +347,8 @@ The same flags work with the executable jar shown above.
 ## OpenAI-compatible server
 
 A simple OpenAI-compatible server is also provided.  
-Multimodal models can attach their audio/image projector with `--with media=<clip.gguf>`. Pass `--help` for more details.
+Multimodal models can attach their audio/image projector with `--with media=<clip.gguf>`; clients then send images or audio as base64 `data:` URIs in `/v1/chat/completions`.
+Only the server uses a projector: `chat` and `instruct` send text only. Pass `--help` for more details.
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
@@ -408,8 +409,10 @@ Check termination before parsing partial output; typed SDK parsers may raise whe
 
 ## GraalVM Native Image
 
+From the repository root:
+
 ```bash
-make -C jinfer native
+make native
 ./bin/jinfer --model ./model.gguf chat
 ```
 

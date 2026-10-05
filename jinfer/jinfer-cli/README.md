@@ -35,7 +35,7 @@ jinfer --help
 With GraalVM 25.0.3 or newer, compile the CLI into a native executable:
 
 ```sh
-make -C jinfer/jinfer-cli native
+make native   # from the repository root
 JINFER_BIN="$PWD/bin/jinfer"
 jinfer() { "$JINFER_BIN" "$@"; }
 jinfer --help

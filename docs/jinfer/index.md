@@ -109,7 +109,7 @@ Add `jinfer-models-all` for every provider, or individual `jinfer-<model>` artif
 
 After the import, declare jinfer artifacts without versions. The BOM also pins the substrate (`jota-memory`, `gguf`, `toknroll`, `jam`).
 
-Attach multimodal projectors by capability:
+Attach multimodal projectors by capability, and serve the model:
 
 ```bash
 java --add-modules jdk.incubator.vector \
@@ -117,8 +117,11 @@ java --add-modules jdk.incubator.vector \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model unsloth/gemma-4-E2B-it-GGUF:Q8_0 \
   --with media=unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf \
-  chat
+  server
 ```
+
+Clients send images as `image_url` content parts and audio as `input_audio` parts in `/v1/chat/completions`, as base64 `data:` URIs.
+`chat` and `instruct` send text only, so they refuse `--with media` instead of loading a projector they would never use.
 
 Companion roles (e.g. `media=<clip.gguf>` and `speculation=<mtp.gguf>`) are declared by the architecture port and validated at load.
 
@@ -155,7 +158,8 @@ java -jar jinfer/jinfer-cli/target/jinfer.jar pull ggml-org/stories15M_MOE:Q8_0
 java -jar jinfer/jinfer-cli/target/jinfer.jar list
 ```
 
-Inference paths never fetch content. Media codecs decode only caller-provided local files or bytes.
+Downloads happen only while a model reference resolves, before anything loads; once a model is loaded, inference never touches the network.
+Media codecs decode only caller-provided local files or bytes, and the server refuses remote media URLs.
 
 ## Memory safety: confined arenas are refused
 
@@ -220,6 +224,8 @@ For JVM runs, `hotspot_compile_commands` holds the current inlining hints for ho
 ## Native image
 
 GraalVM Native Image 25.0.3 or newer:
+
+From the repository root:
 
 ```bash
 make native
