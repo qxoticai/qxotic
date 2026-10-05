@@ -208,7 +208,7 @@ JINFER_OFFLINE=1 jinfer instruct -m "$LM" "Hello."
 
 `JINFER_OFFLINE` accepts `1`, `true`, `on`, or `yes` to enable offline mode, and
 `0`, `false`, `off`, or `no` to disable it. Word values are case-insensitive.
-On the JVM, `-Djinfer.offline=true` also enables offline mode, even if the environment flag is disabled.
+On the JVM, `-Djinfer.offline` takes the same values and wins over the environment when set.
 
 Set `JINFER_MODELS` to choose a different model-cache directory.
 Update checks and forced downloads require network access.

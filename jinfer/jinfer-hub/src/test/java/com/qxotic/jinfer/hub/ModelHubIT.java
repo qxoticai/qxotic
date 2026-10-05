@@ -228,7 +228,7 @@ class ModelHubIT {
                     assertThrows(
                             IllegalStateException.class,
                             () -> ModelStore.standard().resolve(REPO + ":Q8_0"));
-            assertTrue(failure.getMessage().contains("JINFER_OFFLINE"), failure.getMessage());
+            assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
         } finally {
             System.clearProperty("jinfer.offline");
         }
