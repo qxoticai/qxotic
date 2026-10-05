@@ -2294,21 +2294,9 @@ public final class JinjaRenderer {
             };
         }
 
-        /**
-         * Ordering: two strings compare lexicographically by code point, as Python does ({@code
-         * '10' < '9'}); anything else compares numerically.
-         */
+        /** Two strings order lexicographically ({@code '10' < '9'}); anything else numerically. */
         static int compare(Val l, Val r) {
-            if (l instanceof Val.Str a && r instanceof Val.Str b) {
-                int i = 0, j = 0;
-                while (i < a.v.length() && j < b.v.length()) {
-                    int ca = a.v.codePointAt(i), cb = b.v.codePointAt(j);
-                    if (ca != cb) return Integer.compare(ca, cb);
-                    i += Character.charCount(ca);
-                    j += Character.charCount(cb);
-                }
-                return Integer.compare(a.v.length() - i, b.v.length() - j);
-            }
+            if (l instanceof Val.Str a && r instanceof Val.Str b) return a.v.compareTo(b.v);
             double x = toNum(l), y = toNum(r); // not Double.compare: -0.0 equals 0.0 here
             return x < y ? -1 : x > y ? 1 : 0;
         }
