@@ -239,7 +239,10 @@ class MainTest {
     void unknownOptionsPointToScopedHelpButBadValuesShowTheValue() {
         var unknown = new CliFixtures.Capture("");
         assertEquals(2, Main.run(new String[] {"speak", "--wat"}, unknown.io, ModelStore.of(dir)));
-        assertTrue(unknown.err().contains("speak --help"));
+        assertTrue(unknown.err().contains("speak --help' for available options."));
+        var root = new CliFixtures.Capture("");
+        assertEquals(2, Main.run(new String[] {"--wat"}, root.io, ModelStore.of(dir)));
+        assertTrue(root.err().contains("--help' for available commands and options."));
         var prefix = new CliFixtures.Capture("");
         assertEquals(2, Main.run(new String[] {"--wat", "speak"}, prefix.io, ModelStore.of(dir)));
         assertTrue(prefix.err().contains("speak --help"));
