@@ -227,6 +227,15 @@ public final class TranscriptionServer {
                         },
                         admissions,
                         config.limits()));
+        // every other path: the JSON 404 the language server answers, not the JDK's HTML page
+        context(
+                server,
+                "/",
+                exchange -> {
+                    if (Http.preamble(exchange, config.access())) return;
+                    Http.sendError(
+                            exchange, 404, "unknown path " + exchange.getRequestURI().getPath());
+                });
         // every exchange gets a thread at once; the gate above bounds the work, not the probes
         server.setExecutor(
                 Executors.newCachedThreadPool(
@@ -278,7 +287,12 @@ public final class TranscriptionServer {
         try {
             audio = AudioCodec.decode(file.content());
         } catch (IOException | IllegalArgumentException e) {
-            Http.sendError(exchange, 400, "cannot decode audio: " + Http.errorMessage(e));
+            // the decoder's own words (ffmpeg's stderr, a pointer address in it) are for the
+            // operator's log; the client learns what it can act on
+            Log.LOG.log(
+                    System.Logger.Level.WARNING,
+                    () -> "cannot decode an uploaded audio file: " + Http.errorMessage(e));
+            Http.sendError(exchange, 400, "cannot decode audio: unsupported or corrupt file");
             return;
         }
         Transcription transcription;
