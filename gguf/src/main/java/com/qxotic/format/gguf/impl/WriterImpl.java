@@ -98,18 +98,14 @@ final class WriterImpl {
     private void writeTensorEntry(WritableByteChannel byteChannel, TensorEntry tensorEntry)
             throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
-        // it must be at most 64 bytes long. ggml stores it NUL-terminated in
-        // char[GGML_MAX_NAME = 64] and refuses to load longer names, so at most 63 UTF-8 bytes
-        // are written.
+        // it must be at most 64 bytes long; ggml loads at most 63 (see MAX_TENSOR_NAME_BYTES).
         String name = tensorEntry.name();
         int nameBytes = name.getBytes(StandardCharsets.UTF_8).length;
         if (nameBytes > MAX_TENSOR_NAME_BYTES) {
             throw new IllegalArgumentException(
-                    "Tensor name too long: "
+                    "Tensor name too long (>63 bytes): "
                             + nameBytes
-                            + " UTF-8 bytes (maximum "
-                            + MAX_TENSOR_NAME_BYTES
-                            + ") for tensor '"
+                            + " for tensor '"
                             + name
                             + "'");
         }
