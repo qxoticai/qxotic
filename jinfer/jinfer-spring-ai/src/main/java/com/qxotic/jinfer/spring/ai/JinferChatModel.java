@@ -567,10 +567,18 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                     "per-request model is not supported: this model IS '"
                             + engine.modelName()
                             + "' (one loaded GGUF per instance)");
+        checkRanges(o);
+        try {
+            engine.requireThinkingRenderable(o.getThinking() != Boolean.FALSE);
+        } catch (UnsupportedOperationException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
+    }
+
+    /** The sampler's ranges, so a bad value fails naming the option, not with a bare message. */
+    private static void checkRanges(JinferChatOptions o) {
         if (o.getTimeout() != null && o.getTimeout().isNegative())
             throw new IllegalArgumentException("timeout must not be negative");
-        // the sampler's own ranges, checked here so an invalid default fails build() and an
-        // invalid request fails naming the option, not with the sampler's bare message
         Double temperature = o.getTemperature();
         if (temperature != null && !(Double.isFinite(temperature) && temperature >= 0))
             throw new IllegalArgumentException("temperature must be >= 0: " + temperature);
@@ -580,11 +588,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             throw new IllegalArgumentException("topK must be >= 0 (0 disables it): " + o.getTopK());
         if (o.getMinP() != null && !(o.getMinP() >= 0 && o.getMinP() <= 1))
             throw new IllegalArgumentException("minP must be within [0, 1]: " + o.getMinP());
-        try {
-            engine.requireThinkingRenderable(o.getThinking() != Boolean.FALSE);
-        } catch (UnsupportedOperationException e) {
-            throw new IllegalArgumentException(e.getMessage(), e);
-        }
     }
 
     /** How the loaded checkpoint reasons; {@code ALWAYS} models refuse {@code thinking=false}. */
@@ -856,6 +859,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 throw new IllegalArgumentException(
                         "a model is required: model(\"owner/repo:Q4_K_M\"),"
                                 + " modelPath(...) or model(LoadedModel)");
+            if (options != null) checkRanges(options); // before any download or load
             if (promptCache != null && !Files.isRegularFile(promptCache)) {
                 throw new IllegalArgumentException("prompt cache does not exist: " + promptCache);
             }

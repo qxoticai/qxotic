@@ -61,15 +61,15 @@ class JinferChatAutoConfigurationTest {
     }
 
     @Test
-    void outOfRangeSamplingFailsTheBootNamingTheProperty() {
+    void outOfRangeSamplingFailsTheBootNamingTheOption() {
         // these once booted fine and then failed every request with the sampler's bare message
         String[][] cases = {
-            {"min-p", "2"},
-            {"temperature", "-1"},
-            {"top-p", "0"},
-            {"top-k", "-1"},
-            {"max-reasoning-tokens", "-2"},
-            {"timeout", "-1s"},
+            {"min-p", "2", "minP must"},
+            {"temperature", "-1", "temperature must"},
+            {"top-p", "0", "topP must"},
+            {"top-k", "-1", "topK must"},
+            {"max-reasoning-tokens", "-2", "maxReasoningTokens -2"},
+            {"timeout", "-1s", "timeout must"},
         };
         for (String[] c : cases) {
             runner.withPropertyValues(
@@ -79,7 +79,7 @@ class JinferChatAutoConfigurationTest {
                             context -> {
                                 assertThat(context).hasFailed();
                                 assertThat(context.getStartupFailure())
-                                        .hasStackTraceContaining("spring.ai.jinfer.chat." + c[0]);
+                                        .hasStackTraceContaining(c[2]);
                             });
         }
     }
