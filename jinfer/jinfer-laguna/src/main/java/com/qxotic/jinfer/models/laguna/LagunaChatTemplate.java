@@ -97,7 +97,12 @@ final class LagunaChatTemplate implements ChatTemplate {
         }
 
         prompt.append("<assistant>").append(conversation.thinking() ? THINK_OPEN : THINK_CLOSE);
-        IntSequence replyPrefix = IntSequence.of(conversation.thinking() ? thinkOpen : thinkClose);
+        // The off turn's bare </think> closes a span the prompt never opened, which the reply
+        // language cannot parse: seed the closed span it stands for, so the walk starts at content.
+        IntSequence replyPrefix =
+                conversation.thinking()
+                        ? IntSequence.of(thinkOpen)
+                        : IntSequence.of(thinkOpen, thinkClose);
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
         out.verbatim(promptStart).verbatim(SpecialTokens.encode(tokenizer, prompt.toString()));
         out.finish();

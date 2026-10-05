@@ -1408,6 +1408,13 @@ public final class ReplyLanguage {
             } finally {
                 seeding = false;
             }
+            // A seed the language cannot parse fires the control rule: every later feed is inert
+            // and the guard ends the turn at once, an empty reply. That is a codec bug; say so.
+            if (ended)
+                throw new IllegalArgumentException(
+                        "reply prefix "
+                                + seed.toString(", ", "[", "]")
+                                + " is not a prefix of the reply language");
             // Prompt text is not reply text. Parse state and an open call capture survive.
             pending.flush();
             thinkText.setLength(0);

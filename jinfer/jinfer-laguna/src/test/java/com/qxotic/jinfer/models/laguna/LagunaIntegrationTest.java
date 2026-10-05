@@ -135,6 +135,38 @@ final class LagunaIntegrationTest {
         }
     }
 
+    /**
+     * The thinking-off prompt ends in a bare {@code </think>}; seeding the reply walk with it alone
+     * fired the control rule, so the guard ended every non-thinking turn at its first token.
+     */
+    @Test
+    void bothThinkingModesSeedAParserThatAcceptsAnAnswer() throws Exception {
+        Checkpoint checkpoint = checkpoint();
+        Tokenizer tokenizer = checkpoint.tokenizer();
+        LagunaChatTemplate template =
+                new LagunaChatTemplate(
+                        tokenizer,
+                        checkpoint.gguf().getValue(int.class, "tokenizer.ggml.bos_token_id"));
+        IntSequence answer = tokenizer.encode("Red, blue and yellow.");
+        IntSequence turnEnd = IntSequence.of(SpecialTokens.require(tokenizer, "</assistant>"));
+        IntSequence reasoning =
+                tokenizer
+                        .encode("Primary colors.")
+                        .concat(IntSequence.of(SpecialTokens.require(tokenizer, "</think>")));
+        for (boolean thinking : new boolean[] {false, true}) {
+            Conversation conversation =
+                    new Conversation(
+                            List.of(Message.user("Name three primary colors.")),
+                            List.of(),
+                            thinking);
+            ChatTemplate.ReplyState state = template.encode(conversation, 64, batch -> {});
+            IntSequence reply =
+                    (thinking ? reasoning : IntSequence.empty()).concat(answer).concat(turnEnd);
+            Message message = ReplyParser.parse(state.parser(), reply);
+            assertEquals("Red, blue and yellow.", message.text(), "thinking " + thinking);
+        }
+    }
+
     @Test
     void nativeToolSyntaxIsTextWhenTheRequestOffersNoTools() throws Exception {
         Checkpoint checkpoint = checkpoint();
