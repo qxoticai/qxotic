@@ -582,9 +582,9 @@ class ParallelTest {
     }
 
     /**
-     * Inline regions (a width-1 pool, a single job, {@link Parallel#inline}) are slot 0 as much as
-     * the caller's share of a pooled region: two submitters running them at once would share slot
-     * 0's scratch, so they serialize like any region.
+     * Inline regions (a width-1 pool, a single job) are slot 0 as much as the caller's share of a
+     * pooled region: two submitters running them at once would share slot 0's scratch, so they
+     * serialize like any region.
      */
     @ParameterizedTest
     @ValueSource(ints = {1, 4})
@@ -609,7 +609,7 @@ class ParallelTest {
                                     try {
                                         for (int l = 0; l < loops; l++) {
                                             pool.loop(1, claim); // one job: inline at any width
-                                            pool.inline(3, claim);
+                                            pool.run(1, claim);
                                             if (width == 1) pool.loop(5, claim);
                                         }
                                     } catch (Throwable e) {
@@ -623,33 +623,6 @@ class ParallelTest {
             for (Thread t : threads) assertFalse(t.isAlive(), "submitter hung");
             assertTrue(failure.get() == null, String.valueOf(failure.get()));
             assertFalse(shared.get(), "two threads ran slot 0 at once");
-        }
-    }
-
-    @Test
-    void inlineRunsInOrderOnTheCallerWithItsParticipantsSlot() {
-        try (Parallel pool = Parallel.of(4)) {
-            List<Integer> order = new ArrayList<>();
-            pool.inline(
-                    5,
-                    (i, slot) -> {
-                        assertEquals(0, slot);
-                        order.add(i);
-                    });
-            assertEquals(List.of(0, 1, 2, 3, 4), order);
-            AtomicIntegerArray mismatches = new AtomicIntegerArray(1);
-            pool.run(
-                    64,
-                    (j, outerSlot) -> {
-                        Thread outer = Thread.currentThread();
-                        pool.inline(
-                                2,
-                                (i, innerSlot) -> {
-                                    if (innerSlot != outerSlot || Thread.currentThread() != outer)
-                                        mismatches.incrementAndGet(0);
-                                });
-                    });
-            assertEquals(0, mismatches.get(0), "inline inside a region keeps the worker's slot");
         }
     }
 
