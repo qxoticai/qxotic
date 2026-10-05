@@ -291,6 +291,7 @@ final class Server {
                   jinfer -m parakeet.gguf server
 
                 The model selects the language or transcription API automatically.
+
                 Server options (after the command):
                   --host <host>              bind address; default 127.0.0.1
                   --port <int>               default 54154; 0 selects an available port
@@ -300,9 +301,9 @@ final class Server {
                                              rest wait their turn; past that: 503 + Retry-After
                   --max-body-mb <int>        request-body limit; default 32
                   --write-timeout <seconds>  body-read/SSE-write timeout; default 30
-                  --request-timeout <seconds> generation deadline; default 300; 0 disables
+                  --request-timeout <seconds>  generation deadline; default 300; 0 disables
                   --no-grammar               disable constrained generation (language models)
-                  --cache / --cache-ro <file> persistent prompt cache (language models)
+                  --cache / --cache-ro <file>  persistent prompt cache (language models)
                   --raw-prompt               default to raw language prompts
 
                 Generation settings are request defaults, not HTTP resource limits.
