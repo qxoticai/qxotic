@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Segments;
@@ -28,6 +29,7 @@ class KernelSelectionTest {
     void convTileFollowsTheProperty() {
         int expected =
                 switch (System.getProperty("jinfer.convTile", "auto")) {
+                    case "4x1" -> 0;
                     case "4x2" -> 1;
                     case "4x4" -> 2;
                     case "auto" -> {
@@ -37,9 +39,19 @@ class KernelSelectionTest {
                                 ? 2
                                 : 0;
                     }
-                    default -> 0;
+                    default -> throw new AssertionError("class init accepted a bad convTile");
                 };
         assertEquals(expected, Convolutions.tileCode(), "jinfer.convTile");
+    }
+
+    @Test
+    void aMisspelledConvTileFailsNamingThePropertyAndTheChoices() {
+        assertEquals(0, Convolutions.selectTileCode("4x1", "aarch64"));
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Convolutions.selectTileCode("4X4", "amd64"));
+        assertEquals("jinfer.convTile: auto, 4x1, 4x2 or 4x4, not '4X4'", e.getMessage());
     }
 
     @Test
