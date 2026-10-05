@@ -32,6 +32,7 @@ json, safetensors, jota, toknroll and the other jam artifacts stay at 0.2.0.
 ### Also
 
 - **`gguf` 0.3.1.** `GGUFFormatException` now extends `IllegalArgumentException`, so a malformed file reads as the refusal it is.
+  Files are read and written little-endian on every platform, and the tensor name limit counts UTF-8 bytes; the writer stops at ggml's 63.
 - **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
 - **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
 
