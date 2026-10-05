@@ -8,11 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -213,7 +215,7 @@ class RepositoryArtifactCacheTest {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir, endpoint());
 
         assertThrows(
-                RepositoryArtifactCache.NotFoundException.class,
+                FileNotFoundException.class,
                 () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false, false));
         Path path = cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false, false);
 
@@ -234,10 +236,10 @@ class RepositoryArtifactCacheTest {
         String sha = "0123456789abcdef0123456789abcdef01234567";
 
         assertThrows(
-                RepositoryArtifactCache.NotFoundException.class,
+                FileNotFoundException.class,
                 () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false, false));
         assertThrows(
-                RepositoryArtifactCache.NotFoundException.class,
+                FileNotFoundException.class,
                 () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false, false));
 
         assertEquals(1, hits.get(), "a 404 under an immutable commit is cached");
@@ -247,7 +249,7 @@ class RepositoryArtifactCacheTest {
     void fetchHuggingFace_cacheOnlyMissIsTyped() {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         assertThrows(
-                RepositoryArtifactCache.NotCachedException.class,
+                NoSuchFileException.class,
                 () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", true, false));
     }
 

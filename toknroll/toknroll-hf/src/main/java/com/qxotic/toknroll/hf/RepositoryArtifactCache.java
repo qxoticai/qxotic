@@ -2,12 +2,14 @@ package com.qxotic.toknroll.hf;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
@@ -37,28 +39,10 @@ final class RepositoryArtifactCache {
     private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
             Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
 
-    /** The artifact does not exist upstream (HTTP 404, live or remembered). */
-    static final class NotFoundException extends IOException {
-        NotFoundException(String message) {
-            super(message);
-        }
-    }
-
-    /** {@code useCacheOnly} was requested and the artifact is not in the cache. */
-    static final class NotCachedException extends IOException {
-        NotCachedException(String message) {
-            super(message);
-        }
-    }
-
     private final Path cacheRoot;
     private final Duration downloadTimeout;
     private final String huggingFaceEndpoint;
     private volatile HttpClient httpClient;
-
-    private RepositoryArtifactCache(Path cacheRoot) {
-        this(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT, HUGGINGFACE_ENDPOINT);
-    }
 
     private RepositoryArtifactCache(
             Path cacheRoot, Duration downloadTimeout, String huggingFaceEndpoint) {
@@ -68,11 +52,11 @@ final class RepositoryArtifactCache {
     }
 
     static RepositoryArtifactCache create() {
-        return new RepositoryArtifactCache(resolveCacheRoot());
+        return create(resolveCacheRoot());
     }
 
     static RepositoryArtifactCache create(Path cacheRoot) {
-        return new RepositoryArtifactCache(cacheRoot.toAbsolutePath().normalize());
+        return create(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT);
     }
 
     static RepositoryArtifactCache create(Path cacheRoot, Duration downloadTimeout) {
@@ -80,7 +64,7 @@ final class RepositoryArtifactCache {
                 cacheRoot.toAbsolutePath().normalize(), downloadTimeout, HUGGINGFACE_ENDPOINT);
     }
 
-    /** Test seam: a cache that resolves HuggingFace files against {@code huggingFaceEndpoint}. */
+    /** Test seam: HuggingFace files resolve against {@code huggingFaceEndpoint}. */
     static RepositoryArtifactCache create(Path cacheRoot, String huggingFaceEndpoint) {
         return new RepositoryArtifactCache(
                 cacheRoot.toAbsolutePath().normalize(),
@@ -186,9 +170,9 @@ final class RepositoryArtifactCache {
     }
 
     /**
-     * Fetches {@code url} into {@code target}. A 404 is remembered in a {@code .notfound} marker
-     * only when {@code immutable} (a commit SHA revision): under a branch or tag such as {@code
-     * main} the file may appear later, so a miss there is never cached.
+     * Fetches {@code url} into {@code target}. Throws {@link FileNotFoundException} on HTTP 404 and
+     * {@link NoSuchFileException} on a {@code useCacheOnly} miss. A 404 is remembered only when
+     * {@code immutable} (a commit SHA): under a branch the file may appear later.
      */
     private Path fetchToPath(
             String source,
@@ -207,10 +191,10 @@ final class RepositoryArtifactCache {
                 normalizedTarget.resolveSibling(
                         normalizedTarget.getFileName().toString() + ".notfound");
         if (immutable && !forceRefresh && Files.exists(notFoundMarker)) {
-            throw new NotFoundException("[" + source + "] HTTP 404 (cached): " + url);
+            throw new FileNotFoundException("[" + source + "] HTTP 404 (cached): " + url);
         }
         if (useCacheOnly) {
-            throw new NotCachedException(
+            throw new NoSuchFileException(
                     "[" + source + "] useCacheOnly=true and artifact not cached: " + url);
         }
 
@@ -253,7 +237,7 @@ final class RepositoryArtifactCache {
                     if (immutable) {
                         Files.write(notFoundMarker, new byte[0]);
                     }
-                    throw new NotFoundException(message);
+                    throw new FileNotFoundException(message);
                 }
                 throw new IOException(message);
             }
