@@ -1359,8 +1359,9 @@ final class Fetch {
         private volatile long downloadRate; // the DOWNLOAD average, frozen at verify time
         private volatile String phase = ""; // "", or the check's name during the read-back
         volatile boolean done; // the Board prunes finished rows from the top of its region
-        private int lastDecile = -1;
         private boolean added; // registered on the Board (once, across retries)
+        private long firstStartNanos; // the plain log's "done" line times the whole transfer
+        private long firstStartBytes = -1;
 
         Progress(String label, long total) {
             this.label = label;
@@ -1372,6 +1373,10 @@ final class Fetch {
             phase = "";
             startBytes = already;
             startNanos = System.nanoTime();
+            if (firstStartBytes < 0) {
+                firstStartBytes = already;
+                firstStartNanos = startNanos;
+            }
             if (BOARD) {
                 if (!added) {
                     added = true;
@@ -1387,19 +1392,14 @@ final class Fetch {
                             + (already > 0 ? ", resuming at " + size(already) : ""));
         }
 
+        /**
+         * Bytes so far. Only a terminal shows them: a log is read afterwards, where a bar frozen at
+         * each tenth is a dozen lines of noise (ending "eta -") for a voice file that took half a
+         * second, so it gets the start line and the done line and nothing between.
+         */
         void at(long written) {
             lastWritten = written;
-            if (BOARD) {
-                Board.repaint(false);
-                return;
-            }
-            int decile = total > 0 ? (int) (10 * written / total) : -1;
-            if (decile > lastDecile) {
-                lastDecile = decile;
-                LOG.log(
-                        System.Logger.Level.INFO,
-                        label + "  " + render(written, System.nanoTime()));
-            }
+            if (BOARD) Board.repaint(false);
         }
 
         /**
@@ -1413,14 +1413,25 @@ final class Fetch {
             phase = "sha256";
             startBytes = 0;
             startNanos = System.nanoTime();
-            lastDecile = -1;
         }
 
         void finish() {
             done = true;
             if (BOARD) {
                 Board.repaint(true); // the \u2713 shows immediately, and the row may scroll away
+                return;
             }
+            double seconds = (System.nanoTime() - firstStartNanos) / 1e9;
+            long moved = total - Math.max(0, firstStartBytes);
+            LOG.log(
+                    System.Logger.Level.INFO,
+                    String.format(
+                            Locale.ROOT,
+                            "%s  %s done in %.1f s (%s/s)",
+                            label,
+                            size(total),
+                            seconds,
+                            size(seconds > 0 ? (long) (moved / seconds) : 0)));
         }
 
         void note(String message) {
