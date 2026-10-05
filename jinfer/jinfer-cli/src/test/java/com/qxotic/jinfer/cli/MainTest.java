@@ -42,6 +42,69 @@ class MainTest {
         if (verb.equals("speak")) assertFalse(direct.out().contains("--port"));
     }
 
+    /**
+     * Each help screen is assembled from several sections; every option's description still starts
+     * at one column, on the option's line or, for a long option, alone on the next.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "chat",
+                "instruct",
+                "server",
+                "speak",
+                "transcribe",
+                "pull",
+                "list",
+                "cache-info"
+            })
+    void helpDescriptionsShareOneColumn(String verb) {
+        var help = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {verb, "--help"}, help.io, ModelStore.of(dir)));
+        String pad = " ".repeat(Options.HELP_COLUMN);
+        List<String> lines = help.out().lines().toList();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            assertTrue(line.length() <= Options.HELP_WIDTH, verb + " overflows: " + line);
+            if (!line.startsWith("  -")) continue;
+            boolean inline =
+                    line.length() > Options.HELP_COLUMN
+                            && line.substring(0, Options.HELP_COLUMN).endsWith("  ")
+                            && line.charAt(Options.HELP_COLUMN) != ' ';
+            boolean below =
+                    i + 1 < lines.size()
+                            && lines.get(i + 1).startsWith(pad)
+                            && lines.get(i + 1).charAt(Options.HELP_COLUMN) != ' ';
+            assertTrue(inline || below, verb + " misaligned: " + line);
+        }
+    }
+
+    @Test
+    void helpLayoutWrapsLongOptionsAndKeepsContinuations() {
+        String laid =
+                Options.layout(
+                        """
+                        Options:
+                          -a  short
+                          --a-very-long-option-name <value>  long
+                                  continued
+                        Prose stays as written.
+                        """);
+        String pad = " ".repeat(Options.HELP_COLUMN);
+        assertEquals(
+                "Options:\n"
+                        + "  -a"
+                        + " ".repeat(Options.HELP_COLUMN - 4)
+                        + "short\n"
+                        + "  --a-very-long-option-name <value>\n"
+                        + pad
+                        + "long\n"
+                        + pad
+                        + "continued\n"
+                        + "Prose stays as written.\n",
+                laid);
+    }
+
     @Test
     void rootHelpAndVersionAreSuccessful() {
         for (String[] argv : new String[][] {{}, {"--help"}, {"--version"}}) {

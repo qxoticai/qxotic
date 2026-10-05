@@ -4,9 +4,11 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
@@ -18,6 +20,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * One parsing pass, followed by validation. Resolution and runtime setup are explicit operations.
@@ -352,7 +356,8 @@ final class Options {
         if (System.getProperty("org.graalvm.nativeimage.imagecode") == null
                 && ModuleLayer.boot().findModule("jdk.incubator.vector").isEmpty())
             throw new IOException(
-                    "Run java --add-modules jdk.incubator.vector -jar jinfer.jar ...");
+                    "Run java --add-modules jdk.incubator.vector"
+                            + " --enable-native-access=ALL-UNNAMED -jar jinfer.jar ...");
         if (threads != null) System.setProperty("jinfer.threads", threads.toString());
         if (batchCapacity != null)
             System.setProperty("jinfer.batchCapacity", batchCapacity.toString());
@@ -558,7 +563,8 @@ final class Options {
                   jinfer speak -m inflect.gguf "Hello world."
 
                 Run 'jinfer <command> --help' for details. --version prints the version.
-                JVM: java --add-modules jdk.incubator.vector -jar jinfer.jar ...
+                JVM: java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \\
+                       -jar jinfer.jar ...
                 """);
     }
 
@@ -567,14 +573,78 @@ final class Options {
             printUsage(out);
             return;
         }
+        var text = new ByteArrayOutputStream();
+        var help = new PrintStream(text, true, StandardCharsets.UTF_8);
         switch (command) {
-            case "chat" -> Chat.printHelp(out);
-            case "instruct" -> Instruct.printHelp(out);
-            case "server" -> Server.printHelp(out);
-            case "speak" -> Speak.printHelp(out);
-            case "transcribe" -> Transcribe.printHelp(out);
-            default -> Hub.printHelp(command, out);
+            case "chat" -> Chat.printHelp(help);
+            case "instruct" -> Instruct.printHelp(help);
+            case "server" -> Server.printHelp(help);
+            case "speak" -> Speak.printHelp(help);
+            case "transcribe" -> Transcribe.printHelp(help);
+            default -> Hub.printHelp(command, help);
         }
+        out.print(layout(text.toString(StandardCharsets.UTF_8)));
+    }
+
+    /** Where every option's description starts, on every help screen. */
+    static final int HELP_COLUMN = 33;
+
+    static final int HELP_WIDTH = 100;
+
+    // "  -x, --option <arg>  description": two spaces or more end the option's spelling
+    private static final Pattern OPTION_ROW = Pattern.compile("  (-\\S.*?)(?: {2,}(\\S.*))?");
+
+    /**
+     * One description column for a whole help screen. Several classes write its sections, so their
+     * own alignment is only a hint: an option row's description moves to {@link #HELP_COLUMN}, or
+     * to the next line there when the option leaves no two-space gap, and its indented continuation
+     * lines follow it. Descriptions wrap at {@link #HELP_WIDTH}.
+     */
+    static String layout(String help) {
+        StringBuilder out = new StringBuilder();
+        boolean inRow = false;
+        for (String line : help.lines().toList()) {
+            Matcher row = OPTION_ROW.matcher(line);
+            if (row.matches()) {
+                inRow = true;
+                out.append("  ").append(row.group(1));
+                if (row.group(2) == null) {
+                    out.append('\n');
+                    continue;
+                }
+                int at = 2 + row.group(1).length();
+                if (at + 2 > HELP_COLUMN) out.append('\n').append(" ".repeat(HELP_COLUMN));
+                else out.append(" ".repeat(HELP_COLUMN - at));
+                wrap(row.group(2), out);
+            } else if (inRow && line.startsWith("      ") && !line.isBlank()) {
+                out.append(" ".repeat(HELP_COLUMN));
+                wrap(line.strip(), out);
+            } else {
+                inRow = false;
+                out.append(line).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    private static void wrap(String text, StringBuilder out) {
+        int width = HELP_COLUMN;
+        boolean first = true;
+        for (String word : text.split(" ")) {
+            if (!first && width + 1 + word.length() > HELP_WIDTH) {
+                out.append('\n').append(" ".repeat(HELP_COLUMN));
+                width = HELP_COLUMN;
+                first = true;
+            }
+            if (!first) {
+                out.append(' ');
+                width++;
+            }
+            out.append(word);
+            width += word.length();
+            first = false;
+        }
+        out.append('\n');
     }
 
     static void modelHelp(PrintStream out) {
@@ -603,14 +673,14 @@ final class Options {
                   --top-k <int>               candidate limit; 0 disables
                   --min-p <number>            relative probability floor in [0, 1]
                   -s, --seed <long>           sampling seed
-                  -c, --context-capacity <int> state capacity; default min(4096, model); 0: model maximum
+                  -c, --context-capacity <int>  state capacity; default min(4096, model); 0: model maximum
                   --batch-capacity <int>      default prefill/scratch width (runtime default: 512)
-                  -n, --max-output-tokens <int> generated-token budget; -1: remaining context
+                  -n, --max-output-tokens <int>  generated-token budget; -1: remaining context
                   --think <off|on>            off: do not reason; on: allow model reasoning
-                  --max-reasoning-tokens <int> reasoning budget; -1: uncapped
-                  --reasoning-cutoff-message <text> forced text when the reasoning budget runs out
+                  --max-reasoning-tokens <int>  reasoning budget; -1: uncapped
+                  --reasoning-cutoff-message <text>  forced text when the reasoning budget runs out
                   --speculation-depth <int>   draft depth in [0, 8]; default 4
-                  --with tokenizer=<path|ref> use another GGUF's tokenizer; refused at load if its ids differ
+                  --with tokenizer=<path|ref>  use another GGUF's tokenizer; refused at load if its ids differ
 
                 Unspecified sampling settings use the model's recommendations, then engine defaults.
                 """);

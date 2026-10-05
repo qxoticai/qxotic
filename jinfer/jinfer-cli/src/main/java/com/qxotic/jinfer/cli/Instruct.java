@@ -40,7 +40,8 @@ final class Instruct {
                   jinfer instruct -m model.gguf "Explain virtual threads."
                   jinfer -m model.gguf --temp 0 instruct - < prompt.txt
 
-                  --raw-prompt               bypass the conversation template
+                Instruct options (after the command):
+                  --raw-prompt              bypass the conversation template
                   --cache <file>             read and append a persistent prompt cache
                   --cache-ro <file>          serve a prompt cache without changing it
                 """);
