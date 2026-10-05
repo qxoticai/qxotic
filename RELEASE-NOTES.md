@@ -17,7 +17,7 @@ Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boo
 - **`speak` plays by default.** Without `--output`, speech is played after synthesis, so `--play` is gone; `--stream` starts playback with the first clip.
 - **One server limit.** `--concurrency N` holds up to `N` requests and refuses the next one with a message naming the limit; `--queue-depth` is removed.
   Health, props, models and metrics answer outside that gate, and the transcription server has the same probes and metrics as the language server.
-- **Embeddings and reranking over HTTP.** `jinfer server -m <embedding model>` serves OpenAI's `POST /v1/embeddings` (`float` or `base64`, Matryoshka `dimensions` where the model has them), and a reranker serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape; the header tells the two apart, so the weights load once.
+- **Embeddings and reranking over HTTP.** `jinfer server -m <embedding model>` serves OpenAI's `POST /v1/embeddings` (`float` or `base64`, Matryoshka `dimensions` where the model has them), and a reranker serves `POST /v1/rerank` (`query`, `documents` as strings, `top_n`, `return_documents`) with llama.cpp's response shape; the header tells the two apart, so the weights load once.
 - **Chat keeps going when the context is full.** The oldest exchanges are dropped instead of every later turn being refused.
 - **Safer pulls.** A failed download or refresh leaves the previously usable model in place, and `list` prints one line per reference.
 - **One-line refusals.** A library refusal prints as one line with exit status 1; an invalid invocation exits with 2.
@@ -35,14 +35,25 @@ Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boo
 - **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
 - **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
 
+### Behaviour changes
+
+Coming from 0.3.0, these act differently:
+
+- **Stricter templates and grammars.** An unknown Jinja statement such as `{% endset %}` fails instead of rendering nothing, and malformed GBNF or unsatisfiable schema bounds (`minLength` over `maxLength`, `minItems` over `maxItems`) are refused instead of compiling to a different language.
+- **`enable_thinking` decides.** A request's `chat_template_kwargs.enable_thinking` overrides the `thinking` flag for the whole request, in the library as on the server.
+- **Offline precedence.** `-Djinfer.offline` decides when set, else `JINFER_OFFLINE`; both accept `1`/`true`/`on`/`yes` and `0`/`false`/`off`/`no`, so `-Djinfer.offline=false` overrides `JINFER_OFFLINE=1`.
+- **CLI output.** Under 32 tokens the stats line reads `N tokens in X s` instead of a rate, a reply cut short says why on stderr, and `chat` and `instruct` refuse `--with media`, which only the server uses.
+- **Server timings.** `timings.prompt_n` counts only the tokens evaluated, as llama.cpp does, so `prompt_per_second` no longer includes cached tokens.
+- **`gguf` writer.** Tensor names longer than 63 UTF-8 bytes are refused, as ggml cannot load them.
+
 ### Fixes
 
 - **Concurrent requests on one thread.** Two requests running inline (`jinfer.threads=1`) no longer share the same attention and matmul scratch.
 - **Prompt cache.** A failed restore no longer leaves stale blocks that the next resume would trust.
 - **Thinking.** Gemma 4 no longer shows its channel name `thought` as reasoning, and Laguna answers with thinking off instead of ending the turn at once.
-- **Chat templates.** Jinja gains `{% raw %}`, `{% break %}` and `{% continue %}`, one-sided `strip` with characters, `split` with a limit, Python float formatting, and undefined (not None) missing macro arguments; an unknown statement fails instead of rendering nothing.
-- **Grammars.** Malformed GBNF and unsatisfiable schema bounds are refused, `maxItems: 0` means the empty array, and logits past the vocabulary are masked.
-- **Server.** A Responses reply with text and tool calls streams both, `timings.prompt_n` counts only evaluated tokens, the transcription server honours `--request-timeout 0`, and every request logs its status and duration.
+- **Chat templates.** Jinja gains `{% raw %}`, `{% break %}` and `{% continue %}`, one-sided `strip` with characters, `split` with a limit, Python float formatting, and undefined (not None) missing macro arguments.
+- **Grammars.** `maxItems: 0` means the empty array, and logits past the vocabulary are masked.
+- **Server.** A Responses reply with text and tool calls streams both, the transcription server honours `--request-timeout 0`, and every request logs its status and duration.
 - **Libraries.** `jam-scalar` refuses a weight stride under `k`; `jam-vector` reports itself unavailable without native access and refuses an unknown `jam.vector.tile`.
   `jota-memory` frees its staging buffers, and safetensors reports a corrupt shape as a format error.
   `Tokenizer.countBytes` handles tokens longer than 256 bytes, SentencePiece decodes a run of byte tokens into a nearly full buffer, and `toknroll-hf` caches a 404 only under a commit SHA.
