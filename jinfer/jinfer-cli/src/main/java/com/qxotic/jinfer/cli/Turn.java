@@ -36,6 +36,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
     private final boolean rawLane;
     private final List<ChatEngine.Delta> buffered = new ArrayList<>(); // --no-stream
     private boolean inReasoning;
+    private volatile boolean cancelled;
 
     Turn(Tokenizer tokenizer, Options options, boolean rawLane, Main.IO io) {
         this.tokenizer = tokenizer;
@@ -74,6 +75,16 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
             echoPrompt(tokenizer, promptTokens, io.err());
         }
         return turn;
+    }
+
+    /** Stops the pass at its next token; the caller gets no reply (Ctrl-C in chat). */
+    void cancel() {
+        cancelled = true;
+    }
+
+    @Override
+    public boolean cancelled() {
+        return cancelled;
     }
 
     @Override

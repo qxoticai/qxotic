@@ -11,6 +11,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import sun.misc.Signal;
+import sun.misc.SignalHandler;
 
 /** One conversation; the engine's retained session carries its KV state across turns. */
 final class Chat {
@@ -43,11 +45,30 @@ final class Chat {
         if (options.systemPrompt != null) {
             history.add(Message.system(options.systemPrompt));
         }
-        int used = 0; // what the last turn left in the context; the next prompt starts there
         BufferedReader reader =
                 new BufferedReader(new InputStreamReader(io.in(), StandardCharsets.UTF_8));
+        boolean interactive = io.isTerminal(0) && io.isTerminal(2);
+        Interrupts interrupts = interactive ? Interrupts.install(io.err()) : null;
+        try {
+            converse(engine, sampling, options, io, history, reader, interactive, interrupts);
+        } finally {
+            if (interrupts != null) interrupts.close();
+        }
+    }
+
+    private static void converse(
+            ChatEngine engine,
+            Sampling sampling,
+            Options options,
+            Main.IO io,
+            List<Message> history,
+            BufferedReader reader,
+            boolean interactive,
+            Interrupts interrupts)
+            throws IOException {
+        int used = 0; // what the last turn left in the context; the next prompt starts there
         while (true) {
-            if (io.isTerminal(0) && io.isTerminal(2)) {
+            if (interactive) {
                 io.err().print("> ");
                 io.err().flush();
             }
@@ -57,7 +78,10 @@ final class Chat {
             } catch (IOException e) {
                 throw Main.failure("cannot read chat input from stdin", e);
             }
-            if (userText == null) break;
+            if (userText == null) {
+                if (interactive) io.err().println(); // Ctrl-D left the cursor after "> "
+                break;
+            }
             userText = userText.strip();
             if ("/quit".equals(userText) || "/exit".equals(userText)) break;
             if (userText.isEmpty()) {
@@ -86,8 +110,20 @@ final class Chat {
             ChatEngine.Completion completion;
             try (prepared;
                     Turn turn = Turn.start(engine.loaded().tokenizer(), prepared, options, io)) {
-                completion = engine.complete(prepared, turn);
+                if (interrupts != null) interrupts.turn = turn;
+                try {
+                    completion = engine.complete(prepared, turn);
+                } finally {
+                    if (interrupts != null) interrupts.turn = null;
+                }
                 turn.finish(completion, engine.contextCapacity());
+            }
+            if (completion.cancelled()) {
+                // no reply came back, so the question goes too: the next turn must not follow
+                // a user message with another
+                history.removeLast();
+                io.err().println("interrupted; this exchange was dropped from the conversation");
+                continue;
             }
             used = Turn.used(completion);
             if (completion.reply() != null) {
@@ -95,6 +131,49 @@ final class Chat {
                 // keeps generated turns inside the cache's common prefix
                 history.add(completion.reply());
             }
+        }
+    }
+
+    /**
+     * Ctrl-C at a chat terminal, as other chat CLIs treat it: while a reply streams it stops that
+     * reply and the conversation goes on; at the prompt, or again before the reply has stopped, it
+     * ends the chat on a fresh line. Only for an interactive chat: a piped one keeps the JVM's
+     * default, which ends the process.
+     */
+    static final class Interrupts implements AutoCloseable {
+        private static final Signal INT = new Signal("INT");
+
+        private final SignalHandler previous;
+        volatile Turn turn;
+
+        private Interrupts(PrintStream err) {
+            previous =
+                    Signal.handle(
+                            INT,
+                            signal -> {
+                                Turn current = turn;
+                                if (current != null && !current.cancelled()) {
+                                    current.cancel();
+                                    return;
+                                }
+                                err.println();
+                                err.flush();
+                                System.exit(130);
+                            });
+        }
+
+        /** Null where the JVM does not let an application handle SIGINT (-Xrs). */
+        static Interrupts install(PrintStream err) {
+            try {
+                return new Interrupts(err);
+            } catch (IllegalArgumentException | UnsupportedOperationException unavailable) {
+                return null;
+            }
+        }
+
+        @Override
+        public void close() {
+            Signal.handle(INT, previous);
         }
     }
 
