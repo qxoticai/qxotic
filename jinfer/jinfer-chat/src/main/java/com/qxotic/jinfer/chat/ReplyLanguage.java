@@ -203,14 +203,7 @@ public final class ReplyLanguage {
         return spans(thinkOpen, null, thinkClose, callOpen, callClose, calls, terminator);
     }
 
-    /**
-     * As {@link #spans(String, String, String, String, Function, Node)}, with a {@code
-     * thinkHeader}: scaffold bytes the think span carries right after its opening mark (Gemma 4's
-     * {@code thought\n} channel name). The header is structure, never reasoning text; null = none.
-     * A guarded generation is masked to write it, while the parse tolerates a span closed before it
-     * (a zero reasoning budget forces the close right after the opener).
-     */
-    public static Node spans(
+    private static Node spans(
             String thinkOpen,
             String thinkHeader,
             String thinkClose,
@@ -225,6 +218,11 @@ public final class ReplyLanguage {
                 opt(terminator));
     }
 
+    /**
+     * {@code header}: scaffold bytes right after the opening mark (Gemma 4's {@code thought\n}
+     * channel name), structure and never reasoning text; null = none. Optional, so a span closed
+     * right after its opener (a zero reasoning budget) still parses.
+     */
     private static Node thinkSpan(String open, String header, String close) {
         return header == null
                 ? think(mark(open), free(), mark(close))
@@ -261,8 +259,7 @@ public final class ReplyLanguage {
         }
 
         /**
-         * As above, with the think span's {@code thinkHeader} scaffold (see {@link
-         * ReplyLanguage#spans(String, String, String, String, String, Function, Node)}).
+         * As above, with the think span's {@code thinkHeader} scaffold (Gemma 4's channel name).
          */
         public Spans(
                 String thinkOpen,
