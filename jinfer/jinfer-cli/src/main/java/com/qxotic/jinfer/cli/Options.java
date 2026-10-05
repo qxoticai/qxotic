@@ -406,13 +406,20 @@ final class Options {
             if (ModelStore.isRef(ref)
                     || lower.startsWith("http://")
                     || lower.startsWith("https://")) continue;
-            Path path = Path.of(ref);
-            if (java.nio.file.Files.isDirectory(path))
-                throw new IOException("expected a file, got a directory: '" + ref + "'");
-            if (!java.nio.file.Files.isRegularFile(path))
-                throw new IOException("no such file: '" + ref + "'");
+            requireFile(Path.of(ref));
         }
         return resolve.get();
+    }
+
+    /** Every local input the CLI reads is checked here first, so a missing one reads the same. */
+    static void requireFile(Path path) throws IOException {
+        if (java.nio.file.Files.isDirectory(path))
+            throw new IOException("expected a file, got a directory: '" + path + "'");
+        if (!java.nio.file.Files.isRegularFile(path)) throw new IOException(noSuchFile(path));
+    }
+
+    static String noSuchFile(Object path) {
+        return "no such file: '" + path + "'";
     }
 
     Sampling sampling(LoadedModel.SamplingDefaults defaults) {
@@ -454,13 +461,11 @@ final class Options {
             return e.getMessage() + ": " + rootMessage(e.getCause());
         // NIO's message is the bare path when the OS gave no reason; say what went wrong with it
         if (failure instanceof FileSystemException e && e.getReason() == null)
-            return e.getFile()
-                    + ": "
-                    + switch (e) {
-                        case NoSuchFileException x -> "no such file or directory";
-                        case AccessDeniedException x -> "permission denied";
-                        default -> e.getClass().getSimpleName();
-                    };
+            return switch (e) {
+                case NoSuchFileException x -> noSuchFile(e.getFile());
+                case AccessDeniedException x -> "permission denied: '" + e.getFile() + "'";
+                default -> e.getFile() + ": " + e.getClass().getSimpleName();
+            };
         return failure.getMessage() == null
                 ? failure.getClass().getSimpleName()
                 : failure.getMessage();

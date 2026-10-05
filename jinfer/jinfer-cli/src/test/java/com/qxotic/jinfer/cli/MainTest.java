@@ -236,6 +236,23 @@ class MainTest {
     }
 
     @Test
+    void everyMissingInputFileReadsTheSame() {
+        String missing = dir.resolve("absent").toString();
+        for (String[] args :
+                new String[][] {
+                    {"transcribe", "-m", "unused.gguf", missing + ".wav"},
+                    {"cache-info", missing + ".jkv"},
+                    {"instruct", "-m", missing + ".gguf", "hi"}
+                }) {
+            var capture = new CliFixtures.Capture("");
+            assertEquals(1, Main.run(args, capture.io, ModelStore.of(dir)));
+            String file = args[args.length - (args[0].equals("instruct") ? 2 : 1)];
+            assertEquals(
+                    "jinfer " + args[0] + ": no such file: '" + file + "'", capture.err().strip());
+        }
+    }
+
+    @Test
     void unknownOptionsPointToScopedHelpButBadValuesShowTheValue() {
         var unknown = new CliFixtures.Capture("");
         assertEquals(2, Main.run(new String[] {"speak", "--wat"}, unknown.io, ModelStore.of(dir)));
