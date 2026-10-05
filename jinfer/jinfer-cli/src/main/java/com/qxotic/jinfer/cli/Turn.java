@@ -34,6 +34,9 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
     private final boolean stream, echo, thinkInline, thoughtColors, errorColors;
     private final Main.IO io;
     private final boolean rawLane;
+    // --echo writes every generated token to stderr; rendering a token again on the same screen
+    // interleaves the two copies word by word ("Thinking Thinking Process Process")
+    private final boolean echoedThoughts, echoedContent;
     private final List<ChatEngine.Delta> buffered = new ArrayList<>(); // --no-stream
     private boolean inReasoning;
     private volatile boolean cancelled;
@@ -47,6 +50,8 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         this.errorColors = options.colors(io, 2);
         this.io = io;
         this.rawLane = rawLane;
+        this.echoedContent = echo && io.isTerminal(1) && io.isTerminal(2);
+        this.echoedThoughts = echo && (!thinkInline || echoedContent);
         if (!stream) io.err().println("Generating response ...");
     }
 
@@ -99,9 +104,14 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         else buffered.add(delta);
     }
 
-    /** The one rendering path: a delta to its stream, thinking framed. */
+    /**
+     * The one rendering path: a delta to its stream, thinking framed. With {@code --echo}, what the
+     * echo already put on a screen is not rendered there twice: thoughts bound for stderr, and the
+     * answer too when stdout is the same terminal (a redirected stdout still gets it).
+     */
     private void emit(ChatEngine.Delta delta) {
         if (delta.channel() == Channel.REASONING) {
+            if (echoedThoughts) return;
             if (!inReasoning) {
                 onThinkingStart();
                 inReasoning = true;
@@ -109,7 +119,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
             thoughtOut().print(delta.text());
         } else {
             close();
-            io.out().print(delta.text());
+            if (!echoedContent) io.out().print(delta.text());
         }
         checkOutput();
     }
