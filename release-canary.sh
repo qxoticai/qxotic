@@ -23,10 +23,12 @@ WORK=${CANARY_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/release-canary.XXXXXX")}
 if [ -z "${CANARY_WORK:-}" ]; then trap 'rm -rf "$WORK"' EXIT; fi
 REPO=$WORK/repo
 
-# Every artifact the consumers ask for is a jinfer one, and the jinfer tree carries its own
-# version, which moves independently of the base projects it is built on.
-VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate -Dexpression=project.version \
-    -DforceStdout 2>/dev/null | tail -1)
+# An artifact released alone has a version of its own, so each consumer asks for that one.
+version_of() {
+    $MVN -q -B -f "$ROOT/$1/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
+        -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1
+}
+VERSION=$(version_of jinfer)
 # The catalog can have a version of its own.
 BOM_VERSION=$($MVN -q -B -f "$ROOT/jinfer/jinfer-bom/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
     -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1)
@@ -47,7 +49,7 @@ case "$SPRING_AI_VERSION" in
     ''|*' '*) echo "canary: could not determine Spring AI version" >&2; exit 1 ;;
 esac
 
-echo "==> installing the $VERSION release build into throwaway repo $REPO"
+echo "==> installing the release build (catalog $BOM_VERSION) into throwaway repo $REPO"
 # jam.natives.check.skip: the canary exercises pom/artifact resolution, not the native libraries
 # (the release profile itself never runs cmake; it packages the staged, verified set).
 # shellcheck disable=SC2086
@@ -303,17 +305,17 @@ cat > "$WORK/no-bom-providers/pom.xml" <<EOF
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-langchain4j</artifactId>
-      <version>$VERSION</version>
+      <version>$(version_of jinfer/jinfer-langchain4j)</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai</artifactId>
-      <version>$VERSION</version>
+      <version>$(version_of jinfer/jinfer-spring-ai)</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kokoro</artifactId>
-      <version>$VERSION</version>
+      <version>$(version_of jinfer/jinfer-kokoro)</version>
     </dependency>
   </dependencies>
 </project>
@@ -359,12 +361,12 @@ cat > "$WORK/no-bom-boot/pom.xml" <<EOF
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
-      <version>$VERSION</version>
+      <version>$(version_of jinfer/jinfer-spring-ai-spring-boot-starter)</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-models-all</artifactId>
-      <version>$VERSION</version>
+      <version>$(version_of jinfer/jinfer-models-all)</version>
     </dependency>
   </dependencies>
 </project>
