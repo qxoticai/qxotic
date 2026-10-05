@@ -30,7 +30,7 @@ Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boo
 
 ### Also
 
-- **`gguf` 0.3.1.** `GGUFFormatException` now extends `IllegalArgumentException`, so a malformed file reads as the refusal it is.
+- **`gguf` 0.3.1.** `GGUFFormatException` extends `IllegalArgumentException`, so a malformed file reads as the refusal it is.
   Files are read and written little-endian on every platform, and the tensor name limit counts UTF-8 bytes; the writer stops at ggml's 63.
 - **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
 - **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
@@ -43,7 +43,10 @@ Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boo
 - **Chat templates.** Jinja gains `{% raw %}`, `{% break %}` and `{% continue %}`, one-sided `strip` with characters, `split` with a limit, Python float formatting, and undefined (not None) missing macro arguments; an unknown statement fails instead of rendering nothing.
 - **Grammars.** Malformed GBNF and unsatisfiable schema bounds are refused, `maxItems: 0` means the empty array, and logits past the vocabulary are masked.
 - **Server.** A Responses reply with text and tool calls streams both, `timings.prompt_n` counts only evaluated tokens, the transcription server honours `--request-timeout 0`, and every request logs its status and duration.
-- **Libraries.** `jam-scalar` refuses a weight stride under `k`, `jam-vector` reports itself unavailable without native access, `jota-memory` frees its staging buffers, SentencePiece decoding into a full buffer no longer throws, safetensors reports a corrupt shape as a format error, and a 404 on a branch is no longer cached as permanent.
+- **Libraries.** `jam-scalar` refuses a weight stride under `k`; `jam-vector` reports itself unavailable without native access and refuses an unknown `jam.vector.tile`.
+  `jota-memory` frees its staging buffers, and safetensors reports a corrupt shape as a format error.
+  `Tokenizer.countBytes` handles tokens longer than 256 bytes, SentencePiece decodes a run of byte tokens into a nearly full buffer, and `toknroll-hf` caches a 404 only under a commit SHA.
+  The undocumented `toknroll.fast.*` and `toknroll.spbpe.*` tuning properties are gone.
 
 ## 0.3.0
 
