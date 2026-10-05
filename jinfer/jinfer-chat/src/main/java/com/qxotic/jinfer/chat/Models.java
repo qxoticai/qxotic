@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.SortedSet;
@@ -286,6 +287,16 @@ public final class Models {
      */
     public static Map<String, String> companionFiles(GGUF gguf) {
         return provider(gguf).companionFiles();
+    }
+
+    /**
+     * Whether {@code path} is an embedding or a reranking checkpoint - the GGUF header only, no
+     * weights - or empty when it is neither, or its header does not say. A caller that serves
+     * whatever model it is given asks this before loading, so the weights load once, through the
+     * right one of {@link #loadEmbedder} and {@link #loadReranker}.
+     */
+    public static Optional<ModelProvider.Retrieval> retrieval(Path path) throws IOException {
+        return open(path, Map.of(), null, (provider, fc, gguf) -> provider.retrieval(gguf));
     }
 
     /**
