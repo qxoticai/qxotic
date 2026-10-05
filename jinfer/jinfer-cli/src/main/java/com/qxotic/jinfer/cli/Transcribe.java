@@ -141,7 +141,7 @@ final class Transcribe {
                   jinfer transcribe -m parakeet.gguf - < recording.wav
 
                 Transcribe options (after the command):
-                  --raw-pcm                 live stdin: 16 kHz mono signed 16-bit little-endian PCM
+                  --raw-pcm                  live stdin: 16 kHz mono signed 16-bit little-endian PCM
                   --theme <name>             live-view palette with --raw-pcm: mint, nord, catppuccin, ember, frost, mono
                   --color <auto|on|off>      live-view colors (default: auto)
 
@@ -273,9 +273,8 @@ final class Transcribe {
             throw new InterruptedIOException("transcription interrupted");
         } finally {
             reader.interrupt();
-            // Borrowed stdin cannot be closed here. Interruptible sources stop immediately, but a
-            // read on native stdin ignores interrupts and may stay blocked until EOF or process
-            // exit, so its reader is a daemon that cannot keep the JVM alive.
+            // Borrowed stdin cannot be closed here, and a read on native stdin ignores interrupts,
+            // so its reader is a daemon that cannot keep the JVM alive.
             try {
                 reader.join(100);
             } catch (InterruptedException e) {

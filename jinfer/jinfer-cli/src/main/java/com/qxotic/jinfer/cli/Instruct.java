@@ -43,7 +43,7 @@ final class Instruct {
                   jinfer -m model.gguf --temp 0 instruct - < prompt.txt
 
                 Instruct options (after the command):
-                  --raw-prompt              bypass the conversation template
+                  --raw-prompt               bypass the conversation template
                   --cache <file>             read and append a persistent prompt cache
                   --cache-ro <file>          serve a prompt cache without changing it
                 """);

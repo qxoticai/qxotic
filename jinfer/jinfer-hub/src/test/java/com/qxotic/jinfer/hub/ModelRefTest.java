@@ -406,7 +406,6 @@ class ModelRefTest {
                         () ->
                                 ModelStore.requireDiskSpace(
                                         dir.resolve("huge.gguf"), Long.MAX_VALUE / 2));
-        // the store that was measured is the one named, not the path's root
         String store = Files.getFileStore(dir) + " has ";
         assertTrue(failure.getMessage().contains(store), failure.getMessage());
         ModelStore.requireDiskSpace(dir.resolve("small.gguf"), 1024); // one that fits is fine

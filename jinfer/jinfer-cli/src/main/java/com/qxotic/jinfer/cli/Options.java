@@ -433,7 +433,7 @@ final class Options {
         if (!java.nio.file.Files.isRegularFile(path)) throw new IOException(noSuchFile(path));
     }
 
-    static String noSuchFile(Object path) {
+    private static String noSuchFile(Object path) {
         return "no such file: '" + path + "'";
     }
 
@@ -615,10 +615,9 @@ final class Options {
     private static final Pattern OPTION_ROW = Pattern.compile("  (-\\S.*?)(?: {2,}(\\S.*))?");
 
     /**
-     * One description column for a whole help screen. Several classes write its sections, so their
-     * own alignment is only a hint: an option row's description moves to {@link #HELP_COLUMN}, or
-     * to the next line there when the option leaves no two-space gap, and its indented continuation
-     * lines follow it. Descriptions wrap at {@link #HELP_WIDTH}.
+     * One description column for a whole help screen written by several classes: each option's
+     * description moves to {@link #HELP_COLUMN}, below the option when it is too long, and wraps at
+     * {@link #HELP_WIDTH}.
      */
     static String layout(String help) {
         StringBuilder out = new StringBuilder();

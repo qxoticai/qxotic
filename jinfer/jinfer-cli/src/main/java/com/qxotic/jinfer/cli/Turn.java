@@ -128,8 +128,8 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
 
     /**
      * The stderr summary every turn ends with - why the reply stopped early, if it did, then
-     * context fill, the two speeds, and where the prompt came from (a cache tier the old CLI never
-     * could see) - then the whole reply when nothing streamed.
+     * context fill, the two speeds, and where the prompt came from - then the whole reply when
+     * nothing streamed.
      */
     void finish(ChatEngine.Completion completion, int contextCapacity, int reasoningCap) {
         if (!stream) {

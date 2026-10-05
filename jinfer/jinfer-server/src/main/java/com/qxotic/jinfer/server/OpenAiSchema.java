@@ -191,10 +191,7 @@ final class OpenAiSchema {
      * What this turn actually produced, as Responses-API output items: one message, the function
      * calls, or a message followed by the calls when the reply had both. The streaming handler
      * emits these as {@code response.output_item.done} and the envelope below carries the same list
-     * - one answer, so the item stream and the final response cannot disagree. They used to: a
-     * tool-call reply streamed a COMPLETED message item holding empty text while {@code
-     * response.completed} carried function_call items, so a client following the item events saw an
-     * empty answer and never learned a tool had been called.
+     * - one answer, so the item stream and the final response cannot disagree.
      */
     static List<Map<String, Object>> responseOutputItems(String id, Reply result) {
         String text = result.text() == null ? "" : result.text();
