@@ -894,6 +894,34 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
+     * The think-span cap {@link #prepare} puts on a request with these knobs and no forced tool
+     * call: {@code -1} uncapped, {@code 0} when the request does not reason at all (thinking off,
+     * or a completion budget under {@link #THINK_FLOOR} on a model that can switch it off). Once
+     * the span holds this many tokens the engine closes it - after the request's {@code
+     * reasoningCutoffMessage}, or a bare paragraph break - so a front end can say the reasoning was
+     * cut rather than finished.
+     */
+    public int maxReasoningTokens(
+            boolean thinking, int maxOutputTokens, Integer maxReasoningTokens) {
+        boolean think =
+                thinking
+                        && (maxOutputTokens < 0
+                                || maxOutputTokens >= THINK_FLOOR
+                                || alwaysReasons());
+        return think ? reasoningBudget(maxOutputTokens, maxReasoningTokens) : 0;
+    }
+
+    private int reasoningBudget(int maxOutputTokens, Integer reasoningOverride) {
+        if (reasoningOverride != null) return reasoningOverride;
+        // under THINK_FLOOR only an always-reasoning model still thinks (off cannot be rendered):
+        // a zero budget closes its span at once, so the few tokens left buy answer, not analysis
+        if (maxOutputTokens >= 0 && maxOutputTokens < THINK_FLOOR) return 0;
+        return loaded.template()
+                .map(template -> template.defaultMaxReasoningTokens(maxOutputTokens))
+                .orElse(maxOutputTokens >= 0 ? Math.max(1, maxOutputTokens / 2) : -1);
+    }
+
+    /**
      * The standard jinfer sampling stack: a resolved {@link Sampling} plus the reasoning policy -
      * thinking on applies the family default or caller override ({@code reasoningOverride}: null =
      * the family policy, -1 = uncapped; {@code reasoningCutoffMessage}: what the model "decides"
@@ -912,23 +940,7 @@ public final class ChatEngine implements AutoCloseable {
             return Thinking.banMarkers(
                     sampler, loaded.tokenizer(), markers.open(), markers.close());
         }
-        // under THINK_FLOOR only an always-reasoning model still thinks (off cannot be rendered):
-        // a zero budget closes its span at once, so the few tokens left buy answer, not analysis
-        boolean underFloor = maxOutputTokens >= 0 && maxOutputTokens < THINK_FLOOR;
-        int budget =
-                reasoningOverride != null
-                        ? reasoningOverride
-                        : underFloor
-                                ? 0
-                                : loaded.template()
-                                        .map(
-                                                template ->
-                                                        template.defaultMaxReasoningTokens(
-                                                                maxOutputTokens))
-                                        .orElse(
-                                                maxOutputTokens >= 0
-                                                        ? Math.max(1, maxOutputTokens / 2)
-                                                        : -1);
+        int budget = reasoningBudget(maxOutputTokens, reasoningOverride);
         // prompt-opened spans (replyPrefix carries the open id): the cap must start ARMED - the
         // open token never passes through the sampler on those families
         boolean startInThink = false;
