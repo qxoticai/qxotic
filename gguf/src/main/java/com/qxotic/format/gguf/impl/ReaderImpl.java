@@ -77,18 +77,12 @@ final class ReaderImpl {
 
     private TensorEntry readTensorEntry(ReadableByteChannel byteChannel) throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
-        // it must be at most 64 bytes long. ggml itself loads at most 63 (GGML_MAX_NAME 64
-        // including the NUL); the reader accepts the spec bound.
+        // it must be at most 64 bytes long.
         byte[] nameBytes = readStringBytes(byteChannel); // gguf_string_t name;
-        String name = new String(nameBytes, StandardCharsets.UTF_8);
         if (nameBytes.length > MAX_TENSOR_NAME_BYTES) {
-            throw new GGUFFormatException(
-                    "Tensor name too long: "
-                            + nameBytes.length
-                            + " UTF-8 bytes (maximum "
-                            + MAX_TENSOR_NAME_BYTES
-                            + ")");
+            throw new GGUFFormatException("Tensor name too long (>64 bytes): " + nameBytes.length);
         }
+        String name = new String(nameBytes, StandardCharsets.UTF_8);
         // The number of shape in the tensor. Currently at most 4, but this may change in the
         // future. Unsigned: read as signed, a corrupt high bit is negative and would size the
         // array.
