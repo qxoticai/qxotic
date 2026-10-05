@@ -43,6 +43,7 @@ final class Chat {
         if (options.systemPrompt != null) {
             history.add(Message.system(options.systemPrompt));
         }
+        int used = 0; // what the last turn left in the context; the next prompt starts there
         BufferedReader reader =
                 new BufferedReader(new InputStreamReader(io.in(), StandardCharsets.UTF_8));
         while (true) {
@@ -65,8 +66,8 @@ final class Chat {
             if ("/context".equals(userText)) {
                 io.err()
                         .printf(
-                                "context: capacity %d tokens, %s%n",
-                                engine.contextCapacity(), engine.sessionStats());
+                                "context: %d/%d tokens used (%s)%n",
+                                used, engine.contextCapacity(), engine.sessionStats());
                 continue;
             }
             history.add(Message.user(userText));
@@ -88,6 +89,7 @@ final class Chat {
                 completion = engine.complete(prepared, turn);
                 turn.finish(completion, engine.contextCapacity());
             }
+            used = Turn.used(completion);
             if (completion.reply() != null) {
                 // the parser's structured message (verbatim ids): the codec's verbatim splice
                 // keeps generated turns inside the cache's common prefix
