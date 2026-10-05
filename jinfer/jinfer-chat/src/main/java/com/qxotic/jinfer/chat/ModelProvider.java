@@ -155,10 +155,12 @@ public interface ModelProvider {
      * with one kind reports it as "wrong model for this command" rather than "broken model".
      *
      * <p>The message names the architecture and the kind refused, in the form {@code 'lfm2' is not
-     * a speech architecture}.
+     * a speech architecture}. A port that overrides a {@code load*} method only to say more (what
+     * the architecture IS, and the loader that takes it) throws this type with its own message, so
+     * callers that try the next loader still can.
      */
     final class IncompatibleModelException extends IllegalArgumentException {
-        IncompatibleModelException(String message) {
+        public IncompatibleModelException(String message) {
             super(message);
         }
     }

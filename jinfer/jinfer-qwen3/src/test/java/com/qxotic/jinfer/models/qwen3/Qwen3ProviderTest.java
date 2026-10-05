@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.Builder;
+import com.qxotic.jinfer.chat.ModelProvider;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
@@ -30,9 +31,9 @@ class Qwen3ProviderTest {
             throws IOException {
         Path file = Files.createFile(directory.resolve("qwen3.gguf"));
         try (FileChannel channel = FileChannel.open(file)) {
-            UnsupportedOperationException failure =
+            ModelProvider.IncompatibleModelException failure =
                     assertThrows(
-                            UnsupportedOperationException.class,
+                            ModelProvider.IncompatibleModelException.class,
                             () ->
                                     new Qwen3Provider()
                                             .loadLanguage(

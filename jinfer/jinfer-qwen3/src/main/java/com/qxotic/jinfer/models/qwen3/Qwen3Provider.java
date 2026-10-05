@@ -41,9 +41,9 @@ public final class Qwen3Provider implements ModelProvider {
             Arena arena,
             Map<String, Path> companions,
             Tokenizer tokenizer) {
-        throw new UnsupportedOperationException(
-                "'qwen3' is the Qwen3 RETRIEVAL family (Qwen3-Embedding, Qwen3-Reranker), not a"
-                        + " generative model - load it with Models.loadEmbedder or"
+        throw new IncompatibleModelException(
+                "'qwen3' is the Qwen3 retrieval family (Qwen3-Embedding, Qwen3-Reranker), not a"
+                        + " generative model; load it with Models.loadEmbedder or"
                         + " Models.loadReranker");
     }
 
