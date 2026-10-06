@@ -281,6 +281,7 @@ final class Server {
         } catch (BindException e) {
             throw bindFailure(config, e);
         }
+        io.err().printf("model       %s%n", files.model().getFileName().toString());
         listening(
                 io.err(),
                 config.bind(),

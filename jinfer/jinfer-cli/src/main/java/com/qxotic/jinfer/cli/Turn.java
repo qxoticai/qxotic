@@ -141,6 +141,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         checkOutput();
         Generator.GenerationResult result = completion.result();
         if (result != null) {
+            if (echo) io.err().println(); // the echo leaves stderr mid-line
             int evaluated = Math.max(0, completion.promptTokens() - completion.restoredTokens());
             int generated = generated(result);
             long promptNanos = result.promptTime().toNanos();

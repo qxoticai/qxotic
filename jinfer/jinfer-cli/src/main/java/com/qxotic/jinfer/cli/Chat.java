@@ -15,6 +15,9 @@ import java.util.List;
 /** One conversation; the engine's retained session carries its KV state across turns. */
 final class Chat {
 
+    /** The whole in-chat command set; {@code /help} prints it and {@link #printHelp} lists it. */
+    static final String COMMANDS = "Commands: /help, /context, /quit, /exit. EOF also exits.";
+
     private Chat() {}
 
     static void validate(Options options) {
@@ -31,8 +34,9 @@ final class Chat {
                 Usage: jinfer [model options] chat [options]
                 Example: jinfer chat -m model.gguf --system-prompt "Be concise."
 
-                Commands: /quit, /exit, /context. EOF also exits.
-                """);
+                %s
+                """
+                        .formatted(COMMANDS));
         Options.modelHelp(out);
         Options.generationHelp(out);
         Options.conversationHelp(out);
@@ -67,6 +71,10 @@ final class Chat {
             if ("/quit".equals(userText) || "/exit".equals(userText)) break;
             if (userText.isEmpty()) {
                 continue; // an empty turn would scaffold a reply to nothing
+            }
+            if ("/help".equals(userText)) {
+                io.err().println(COMMANDS);
+                continue;
             }
             if ("/context".equals(userText)) {
                 io.err()

@@ -89,6 +89,20 @@ class MainTest {
         }
     }
 
+    /** {@code jinfer help [command]} is the long form of {@code jinfer [command] --help}. */
+    @Test
+    void helpCommandIsTheLongFormOfDashDashHelp() {
+        var root = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {"help"}, root.io, ModelStore.of(dir)));
+        assertTrue(root.out().contains("Usage: jinfer [model options] <command>"));
+        assertEquals("", root.err());
+        var scoped = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {"help", "instruct"}, scoped.io, ModelStore.of(dir)));
+        assertTrue(scoped.out().contains("jinfer instruct"));
+        assertTrue(scoped.out().contains("Usage:"));
+        assertEquals("", scoped.err());
+    }
+
     @Test
     void helpExplainsAMalformedInvocationWithoutResolvingAModel() {
         for (String[] args :
