@@ -253,6 +253,9 @@ void jam_mm_mxfp4_sse3(void* job, int rb, int re, int tid);               /* + a
 void jam_mm_q4k_sse3(void* job, int rb, int re, int tid);                 /* K-quant int8 dot (sign-extend+madd, SSE3 floor) */
 void jam_mm_q5k_sse3(void* job, int rb, int re, int tid);
 void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
+void jam_mm_f32_sse3(void* job, int rb, int re, int tid);                  /* dense float 4x4 tile, rows in lanes */
+void jam_mm_f16_sse3(void* job, int rb, int re, int tid);
+void jam_mm_bf16_sse3(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_SSSE3
 void jam_mm_q8_0_ssse3(void* job, int rb, int re, int tid);               /* 128-bit maddubs sign-trick (Core 2 floor) */
