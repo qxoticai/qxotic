@@ -290,14 +290,16 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     c->mxfp4_kernel = NULL;
     c->q4_0_kernel  = NULL;   /* K-quant ctx->kq[] is zero from calloc (NULL kernel -> float floor) */
     c->q5_0_kernel  = NULL; c->q5_0_decode_kernel = NULL;
-    c->q1_0_kernel  = NULL;   /* NULL -> generic (float) floor */
+    c->q1_0_kernel  = NULL;   /* NULL -> the float floor */
+    c->q1_0_floor   = jam_mm_q1_0_f32_generic;
 #ifdef JAM_HAVE_SSE3
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
         c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3; c->q5_0_kernel = jam_mm_q5_0_sse3;
         c->kq[JAM_KQ_Q4K] = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
         c->kq[JAM_KQ_Q5K] = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_sse3;
         c->f32_kernel = jam_mm_f32_sse3;       /* dense float 4x4 tiles (AVX2 overrides) */
-        c->dense_f16_kernel = jam_mm_f16_sse3; c->dense_bf16_kernel = jam_mm_bf16_sse3; }
+        c->dense_f16_kernel = jam_mm_f16_sse3; c->dense_bf16_kernel = jam_mm_bf16_sse3;
+        c->q1_0_floor = jam_mm_q1_0_sse3; }
 #endif
 #ifdef JAM_HAVE_SSSE3
     if (cpu >= JAM_ISA_SSSE3) { c->q8_kernel = jam_mm_q8_0_ssse3;   /* maddubs sign-trick: faster Q8_0/Q4_0 (K-quants keep the SSE3 path) */
@@ -831,7 +833,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
                        jam_band32_quant32_avx512, jam_q1_0_band32_avx512)) return JAM_OK;
 #endif
         jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
-        return run_quant(ctx, &q, m, ctx->q1_0_kernel, jam_mm_q1_0_f32_generic);
+        return run_quant(ctx, &q, m, ctx->q1_0_kernel, ctx->q1_0_floor);
     }
 
     /* Quantized weight @ F32 activation -> F32. The weight block needs k (and ldw) on a 32 boundary. */

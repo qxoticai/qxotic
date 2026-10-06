@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "jam_internal.h"
 #include "jam_decode_x86_128.h"
+#include "jam_q1_0.h"
 
 #define JAM_BLK     jam_q8_blk
 #define JAM_DECODE  jam_decode_q8_0_128
@@ -133,3 +134,63 @@ JAM_DENSE_SSE3(jam_mm_f16_sse3,  uint16_t, jam_ld4_f16,  jam_half2float)
 JAM_DENSE_SSE3(jam_mm_bf16_sse3, uint16_t, jam_ld4_bf16, jam_cvt_bf16)
 #undef JAM_DENSE_SSE3
 #undef JAM_DENSE_STEP
+
+/* ---- Q1_0 float floor (jam_mm_q1_0_f32_generic's results): per block, s = Σ ±x[e] in element order
+ * (bit clear flips x's sign), then acc += d·s. Same tile as the dense floor: 4 rows in the lanes, 4
+ * columns, so each element's sign mask is built once for 4 rows and used for 4 columns, and the
+ * activations load 4 elements at a time (one shuffle per element, not a load and a broadcast). One
+ * column's four steps stay together: interleaving the columns, gcc hoisted all 32 sign flips of a byte
+ * ahead of the adds and spilled them (20% behind clang). ---- */
+/* one column's four elements 4h+q, q = 0..3, in order; m_q = 0x80000000 where the bit is clear */
+#define JAM_Q1_COL(sc, xc) do { const __m128 y = _mm_loadu_ps((xc) + e);   \
+        sc = _mm_add_ps(sc, _mm_xor_ps(_mm_shuffle_ps(y, y, 0x00), m0));   \
+        sc = _mm_add_ps(sc, _mm_xor_ps(_mm_shuffle_ps(y, y, 0x55), m1));   \
+        sc = _mm_add_ps(sc, _mm_xor_ps(_mm_shuffle_ps(y, y, 0xAA), m2));   \
+        sc = _mm_add_ps(sc, _mm_xor_ps(_mm_shuffle_ps(y, y, 0xFF), m3)); } while (0)
+void jam_mm_q1_0_sse3(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* W = (const uint8_t*) J->a; const float* A = (const float*) J->b; float* C = (float*) J->c;
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, nblk = J->k / JAM_Q1_0_QK;
+    const size_t wrow = (size_t) (J->lda / JAM_Q1_0_QK) * JAM_Q1_0_BYTES;   /* row stride honors lda (ldw) */
+    const __m128i one = _mm_set1_epi32(1);
+    int r = rb;
+    for (; r + 4 <= re; r += 4) {
+        const uint8_t* w0 = W + (size_t) r * wrow;
+        for (int s = 0; s < n; s += 4) {
+            const int nc = n - s < 4 ? n - s : 4;                     /* missing columns re-read column s */
+            const float* x0 = A + (size_t) s * ldb;
+            const float* x1 = nc > 1 ? x0 + ldb : x0;
+            const float* x2 = nc > 2 ? x0 + 2 * (size_t) ldb : x0;
+            const float* x3 = nc > 3 ? x0 + 3 * (size_t) ldb : x0;
+            __m128 a0 = _mm_setzero_ps(), a1 = _mm_setzero_ps(), a2 = _mm_setzero_ps(), a3 = _mm_setzero_ps();
+            for (int B = 0; B < nblk; B++, x0 += JAM_Q1_0_QK, x1 += JAM_Q1_0_QK, x2 += JAM_Q1_0_QK, x3 += JAM_Q1_0_QK) {
+                const uint8_t* b = w0 + (size_t) B * JAM_Q1_0_BYTES;      /* row q's block at b + q*wrow */
+                __m128 s0 = _mm_setzero_ps(), s1 = _mm_setzero_ps(), s2 = _mm_setzero_ps(), s3 = _mm_setzero_ps();
+                for (int by = 0; by < 16; by++) {
+                    const __m128i v = _mm_setr_epi32(b[2 + by], b[wrow + 2 + by], b[2 * wrow + 2 + by], b[3 * wrow + 2 + by]);
+                    for (int h = 0; h < 2; h++) {                      /* elements 8by + 4h .. +3 */
+                        const __m128i vh = _mm_srli_epi32(v, 4 * h);
+                        const int e = by * 8 + h * 4;
+                        const __m128 m0 = _mm_castsi128_ps(_mm_slli_epi32(_mm_andnot_si128(vh, one), 31));
+                        const __m128 m1 = _mm_castsi128_ps(_mm_slli_epi32(_mm_andnot_si128(_mm_srli_epi32(vh, 1), one), 31));
+                        const __m128 m2 = _mm_castsi128_ps(_mm_slli_epi32(_mm_andnot_si128(_mm_srli_epi32(vh, 2), one), 31));
+                        const __m128 m3 = _mm_castsi128_ps(_mm_slli_epi32(_mm_andnot_si128(_mm_srli_epi32(vh, 3), one), 31));
+                        JAM_Q1_COL(s0, x0); JAM_Q1_COL(s1, x1); JAM_Q1_COL(s2, x2); JAM_Q1_COL(s3, x3);
+                    }
+                }
+                const __m128 d = _mm_setr_ps(jam_half_at(b), jam_half_at(b + wrow), jam_half_at(b + 2 * wrow), jam_half_at(b + 3 * wrow));
+                a0 = _mm_add_ps(a0, _mm_mul_ps(d, s0)); a1 = _mm_add_ps(a1, _mm_mul_ps(d, s1));
+                a2 = _mm_add_ps(a2, _mm_mul_ps(d, s2)); a3 = _mm_add_ps(a3, _mm_mul_ps(d, s3));
+            }
+            _mm_storeu_ps(C + (size_t) s * ldc + r, a0);              /* token-major: rows r..r+3 contiguous */
+            if (nc > 1) _mm_storeu_ps(C + (size_t) (s + 1) * ldc + r, a1);
+            if (nc > 2) _mm_storeu_ps(C + (size_t) (s + 2) * ldc + r, a2);
+            if (nc > 3) _mm_storeu_ps(C + (size_t) (s + 3) * ldc + r, a3);
+        }
+    }
+    for (; r < re; ++r)                         /* row tail: the portable floor's dot */
+        for (int s = 0; s < n; ++s)
+            C[(size_t) s * ldc + r] = jam_q1_0_dot_f32(W + (size_t) r * wrow, nblk, A + (size_t) s * ldb);
+}
+#undef JAM_Q1_COL

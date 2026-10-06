@@ -66,7 +66,8 @@ struct jam_ctx {
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
     jam_task_fn      mxfp4_decode_kernel; /* MXFP4 n==1 override; direct-layout 4x1 SDOT on ARM. */
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
-    jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> generic (float). Int8 pipeline. */
+    jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> q1_0_floor (float). Int8 pipeline. */
+    jam_task_fn      q1_0_floor;     /* Q1_0 float floor (generic, or the SSE3 tile with the same results) */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_task_fn      q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_task_fn      q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
@@ -256,6 +257,7 @@ void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
 void jam_mm_f32_sse3(void* job, int rb, int re, int tid);                  /* dense float 4x4 tile, rows in lanes */
 void jam_mm_f16_sse3(void* job, int rb, int re, int tid);
 void jam_mm_bf16_sse3(void* job, int rb, int re, int tid);
+void jam_mm_q1_0_sse3(void* job, int rb, int re, int tid);                 /* Q1_0 float floor, 4x4 tile */
 #endif
 #ifdef JAM_HAVE_SSSE3
 void jam_mm_q8_0_ssse3(void* job, int rb, int re, int tid);               /* 128-bit maddubs sign-trick (Core 2 floor) */
