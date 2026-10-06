@@ -136,6 +136,21 @@ class TurnTest {
     }
 
     @Test
+    void echoEndsItsLineBeforeTheSummary() {
+        // --echo leaves a run of token spellings on stderr; the summary must not join it
+        Options options =
+                Options.parse("instruct", "-m", "unused", "hi", "--echo", "--color", "off");
+        Output o =
+                finished(
+                        options,
+                        List.of(content("Hello")),
+                        completion(Generator.FinishReason.STOP, 3, 0),
+                        4096,
+                        -1);
+        assertTrue(o.err().startsWith("\ncontext: "), o.err());
+    }
+
+    @Test
     void anEmptyReplyIsOneLineInBothModes() {
         assertEquals("\n", run(options(true, "on"), List.of()).out());
         assertEquals("\n", run(options(false, "on"), List.of()).out());

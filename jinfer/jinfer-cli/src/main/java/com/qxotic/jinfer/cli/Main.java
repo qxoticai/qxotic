@@ -73,6 +73,7 @@ public final class Main {
      * runtime exception is a bug and keeps its stack trace.
      */
     static int run(String[] args, IO io, ModelStore store) {
+        args = helpCommand(args);
         Options options = null;
         try {
             options = Options.parse(args);
@@ -130,6 +131,14 @@ public final class Main {
 
     private static String name(Options options) {
         return "jinfer" + (options == null || options.command == null ? "" : " " + options.command);
+    }
+
+    /** {@code jinfer help [command]} is the long form of {@code jinfer [command] --help}. */
+    private static String[] helpCommand(String[] args) {
+        if (args.length == 0 || !args[0].equals("help")) return args;
+        String[] translated = args.clone();
+        translated[0] = "--help";
+        return translated;
     }
 
     /**

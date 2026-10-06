@@ -582,7 +582,8 @@ final class Options {
                   jinfer -m model.gguf --temp 0.3 instruct "Hello."
                   jinfer speak -m inflect.gguf "Hello world."
 
-                Run 'jinfer <command> --help' for details. --version prints the version.
+                Run 'jinfer <command> --help' for details (or 'jinfer help <command>').
+                --version prints the version.
                 JVM: java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \\
                        -jar jinfer.jar ...
                 """);

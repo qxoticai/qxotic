@@ -42,6 +42,18 @@ class ChatTest {
     }
 
     @Test
+    void helpListsTheCommandsWithoutReachingTheModel() throws Exception {
+        var template = new CliFixtures.Template();
+        var capture = new CliFixtures.Capture("/help\nhello\n/exit\n");
+        Options o = Options.parse("chat", "-m", "unused", "--temp", "0", "-n", "1");
+        try (var engine = CliFixtures.engine(template)) {
+            Chat.run(engine, o.sampling(engine.loaded().samplingDefaults()), o, capture.io);
+        }
+        assertTrue(capture.err().contains(Chat.COMMANDS), capture.err());
+        assertEquals(1, template.conversations.size(), "only the plain turn reached the model");
+    }
+
+    @Test
     void eofAndExitDoNotGenerate() throws Exception {
         for (String input : new String[] {"", "/exit\n", "  /quit  \n"}) {
             var template = new CliFixtures.Template();

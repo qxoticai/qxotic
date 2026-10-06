@@ -74,6 +74,7 @@ Set instructions for the conversation with `--system-prompt`:
 jinfer chat -m "$LM" --system-prompt "Answer concisely." --temp 0.3
 ```
 
+`/help` lists the in-chat commands.
 `/context` shows the tokens used out of the context capacity.
 `/quit`, `/exit`, or EOF ends the session.
 
