@@ -3,7 +3,7 @@
  * The includer composes one kernel from a (quant) decoder and an (ISA) dot by defining, before #include:
  *
  *   JAM_BLK                       weight block struct (for the row stride)              [per QUANT]
- *   JAM_DECODE(blk, &wq, &dW)     decode block -> __m256i int8 weights + float scale    [per QUANT]
+ *   JAM_DECODE(blk, &wq, &dW)     decode block -> __m256i int8 weights + broadcast scale [per QUANT]
  *   JAM_DOT(aqa, sqb) -> __m256   int8 dot of |w| and sign(a,w), as float               [per ISA]
  *   JAM_MM_NAME                   exported symbol
  *
@@ -24,12 +24,12 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
             const float  *s0=J->ad+(size_t)(j+0)*nb,*s1=J->ad+(size_t)(j+1)*nb,*s2=J->ad+(size_t)(j+2)*nb,*s3=J->ad+(size_t)(j+3)*nb;
             __m256 f0=_mm256_setzero_ps(),f1=_mm256_setzero_ps(),f2=_mm256_setzero_ps(),f3=_mm256_setzero_ps();
             for (int b = 0; b < nb; ++b) {
-                __m256i wq; float dW; JAM_DECODE(&wr[b], &wq, &dW);
+                __m256i wq; __m256 dW; JAM_DECODE(&wr[b], &wq, &dW);
                 __m256i aqa = _mm256_abs_epi8(wq);
-                f0=_mm256_fmadd_ps(_mm256_set1_ps(dW*s0[b]), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a0+(size_t)b*32)),wq)), f0);
-                f1=_mm256_fmadd_ps(_mm256_set1_ps(dW*s1[b]), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a1+(size_t)b*32)),wq)), f1);
-                f2=_mm256_fmadd_ps(_mm256_set1_ps(dW*s2[b]), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a2+(size_t)b*32)),wq)), f2);
-                f3=_mm256_fmadd_ps(_mm256_set1_ps(dW*s3[b]), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a3+(size_t)b*32)),wq)), f3);
+                f0=_mm256_fmadd_ps(_mm256_mul_ps(dW,_mm256_set1_ps(s0[b])), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a0+(size_t)b*32)),wq)), f0);
+                f1=_mm256_fmadd_ps(_mm256_mul_ps(dW,_mm256_set1_ps(s1[b])), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a1+(size_t)b*32)),wq)), f1);
+                f2=_mm256_fmadd_ps(_mm256_mul_ps(dW,_mm256_set1_ps(s2[b])), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a2+(size_t)b*32)),wq)), f2);
+                f3=_mm256_fmadd_ps(_mm256_mul_ps(dW,_mm256_set1_ps(s3[b])), JAM_DOT(aqa,_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(a3+(size_t)b*32)),wq)), f3);
             }
             C[(size_t)(j+0)*ldc+i]=jam_hsum8_256(f0); C[(size_t)(j+1)*ldc+i]=jam_hsum8_256(f1);
             C[(size_t)(j+2)*ldc+i]=jam_hsum8_256(f2); C[(size_t)(j+3)*ldc+i]=jam_hsum8_256(f3);
@@ -38,8 +38,8 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
             const int8_t* aj=J->aq+(size_t)j*k; const float* sj=J->ad+(size_t)j*nb;
             __m256 f = _mm256_setzero_ps();
             for (int b = 0; b < nb; ++b) {
-                __m256i wq; float dW; JAM_DECODE(&wr[b], &wq, &dW);
-                f=_mm256_fmadd_ps(_mm256_set1_ps(dW*sj[b]), JAM_DOT(_mm256_abs_epi8(wq),_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(aj+(size_t)b*32)),wq)), f);
+                __m256i wq; __m256 dW; JAM_DECODE(&wr[b], &wq, &dW);
+                f=_mm256_fmadd_ps(_mm256_mul_ps(dW,_mm256_set1_ps(sj[b])), JAM_DOT(_mm256_abs_epi8(wq),_mm256_sign_epi8(_mm256_loadu_si256((const __m256i*)(aj+(size_t)b*32)),wq)), f);
             }
             C[(size_t)j*ldc+i] = jam_hsum8_256(f);
         }
