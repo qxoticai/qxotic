@@ -1,7 +1,7 @@
 /* AVX2 NVFP4 kernel - GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64 elems = 4 sub-blocks of 16, no global
  * scale). Decode = MXFP4's pshufb LUT; the sub-block nibble order (byte s*8+j: low=elem j, high=elem j+8)
- * means a 32-element span (2 sub-blocks, 16 bytes) decodes interleaved, so an unpacklo/hi_epi64 reorders it
- * to two contiguous 16-element halves. Per-16 UE4M3 scale via the shared 256-entry
+ * means a 32-element span (2 sub-blocks, 16 bytes) decodes interleaved, so a qword permute reorders it
+ * to element order. Per-16 UE4M3 scale via the shared 256-entry
  * LUT (jam_ue4m3_lut; ldexpf is a libm call that profiled as scalbnf in the hot loop). Activations are int8-requantized (J->aq/ad).
  *
  * Structure mirrors the q256 engine: 4 activation columns share one decoded weight span (decode and |w|
@@ -14,12 +14,13 @@
 
 #define KDOT(u, s) _mm256_cvtepi32_ps(_mm256_madd_epi16(_mm256_maddubs_epi16(u, s), _mm256_set1_epi16(1)))
 
-/* Decode one 32-element span (sub-blocks 2sp, 2sp+1) of block w to int8 codes + its per-16 scale vector. */
+/* Decode one 32-element span (sub-blocks 2sp, 2sp+1) of block w to int8 codes + its per-16 scale vector:
+ * one 256-bit pshufb over [low | high nibbles], a qword permute to element order. */
 #define NVFP4_SPAN(w, sp, lut, m4, wq, scv) do {                                                  \
         __m128i qs = _mm_loadu_si128((const __m128i*) ((w)->qs + (sp) * 16));                     \
-        __m128i lo = _mm_shuffle_epi8((lut), _mm_and_si128(qs, (m4)));                            \
-        __m128i hi = _mm_shuffle_epi8((lut), _mm_and_si128(_mm_srli_epi16(qs, 4), (m4)));         \
-        (wq) = _mm256_set_m128i(_mm_unpackhi_epi64(lo, hi), _mm_unpacklo_epi64(lo, hi));          \
+        __m256i c = _mm256_shuffle_epi8((lut),                                                    \
+            _mm256_and_si256(_mm256_set_m128i(_mm_srli_epi16(qs, 4), qs), (m4)));                 \
+        (wq) = _mm256_permute4x64_epi64(c, _MM_SHUFFLE(3, 1, 2, 0));                              \
         float s0 = jam_ue4m3_lut[(w)->d[2*(sp)]], s1 = jam_ue4m3_lut[(w)->d[2*(sp) + 1]];         \
         (scv) = _mm256_setr_ps(s0, s0, s0, s0, s1, s1, s1, s1);                                   \
     } while (0)
@@ -34,8 +35,8 @@ void jam_mm_nvfp4_avx2(void* arg, int rb, int re, int tid) {
     const int nblk = k / JAM_NVFP4_QK;                       /* 64-element blocks */
     const int nb32 = k / 32;                                 /* per-32 activation scale stride */
     const size_t wrow = (size_t)(J->lda / JAM_NVFP4_QK) * sizeof(jam_nvfp4_blk);   /* row stride honors lda (ldw) */
-    const __m128i lut = _mm_setr_epi8(JAM_MXFP4_CODES);
-    const __m128i m4  = _mm_set1_epi8(0x0F);
+    const __m256i lut = _mm256_setr_epi8(JAM_MXFP4_CODES, JAM_MXFP4_CODES);
+    const __m256i m4  = _mm256_set1_epi8(0x0F);
     for (int i = rb; i < re; ++i) {
         const jam_nvfp4_blk* wr = (const jam_nvfp4_blk*) (W + (size_t) i * wrow);
         int j = 0;
