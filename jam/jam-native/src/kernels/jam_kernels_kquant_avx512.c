@@ -65,36 +65,36 @@ INLINE __m512 k32_header(const uint8_t* w, const kq_column* c, float* min) {
     return _mm512_insertf32x8(_mm512_castps256_ps512(f8), f8, 1);
 }
 
-/* one pair of sub-blocks: codes lo | hi against 64 activations */
-INLINE __m512 k32_pair_dot(__m256i lo, __m256i hi, const kq_column* c, int g, __m512 scales, __m512 f) {
-    __m512i w = _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1);
+/* one pair of sub-blocks: codes lo | hi (one zmm) against 64 activations */
+INLINE __m512 k32_pair_dot(__m512i w, const kq_column* c, int g, __m512 scales, __m512 f) {
     __m512i dot = _mm512_dpbusd_epi32(_mm512_setzero_si512(), w, c->q[g]);
     return _mm512_fmadd_ps(_mm512_cvtepi32_ps(dot), lanes(k32_pair[g], scales), f);
 }
+/* The pair decodes as ONE zmm: [q | q >> 4] then the masks and bit planes once at 512 bits. Two 256-bit
+ * pipelines joined only at the dot took 10-13% off Q5_K decode under both compilers. */
+INLINE __m512i k32_nibbles(const uint8_t* q) {      /* 32 bytes -> low nibbles | high nibbles */
+    const __m256i v = _mm256_loadu_si256((const __m256i*) q);
+    return _mm512_and_si512(_mm512_inserti64x4(_mm512_castsi256_si512(v), _mm256_srli_epi16(v, 4), 1),
+                            _mm512_set1_epi8(0x0F));
+}
 
 INLINE kq_acc q4k_row(const uint8_t* w, const kq_column* c, kq_acc a) {
-    const __m256i m4 = _mm256_set1_epi8(0x0F);
     const __m512 scales = k32_header(w, c, &a.min);
-    for (int g = 0; g < 4; g++) {
-        __m256i q = _mm256_loadu_si256((const __m256i*) (w + 16 + g * 32));
-        a.f = k32_pair_dot(_mm256_and_si256(q, m4), _mm256_and_si256(_mm256_srli_epi16(q, 4), m4),
-                           c, g, scales, a.f);
-    }
+    for (int g = 0; g < 4; g++)
+        a.f = k32_pair_dot(k32_nibbles(w + 16 + g * 32), c, g, scales, a.f);
     return a;
 }
 
-/* Q5_K = Q4_K plus a fifth bit plane qh[32]: sub-block s takes bit s of qh[i] as its bit 4. */
+/* Q5_K = Q4_K plus a fifth bit plane qh[32]: sub-block s takes bit s of qh[i] as its bit 4. Pair g needs
+ * bit 2g in the low half and bit 2g + 1 in the high half: [qh | qh >> 1] shifted by 2g. */
 INLINE kq_acc q5k_row(const uint8_t* w, const kq_column* c, kq_acc a) {
-    const __m256i m4 = _mm256_set1_epi8(0x0F), bit = _mm256_set1_epi8(1);
+    const __m512i bit = _mm512_set1_epi8(1);
     const __m512 scales = k32_header(w, c, &a.min);
-    const __m256i qh = _mm256_loadu_si256((const __m256i*) (w + 16));
+    const __m256i h = _mm256_loadu_si256((const __m256i*) (w + 16));
+    const __m512i qh = _mm512_inserti64x4(_mm512_castsi256_si512(h), _mm256_srli_epi16(h, 1), 1);
     for (int g = 0; g < 4; g++) {
-        __m256i q = _mm256_loadu_si256((const __m256i*) (w + 48 + g * 32));
-        __m256i lo4 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh, 2 * g), bit), 4);
-        __m256i hi4 = _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh, 2 * g + 1), bit), 4);
-        a.f = k32_pair_dot(_mm256_or_si256(_mm256_and_si256(q, m4), lo4),
-                           _mm256_or_si256(_mm256_and_si256(_mm256_srli_epi16(q, 4), m4), hi4),
-                           c, g, scales, a.f);
+        const __m512i plane = _mm512_slli_epi16(_mm512_and_si512(_mm512_srli_epi16(qh, 2 * g), bit), 4);
+        a.f = k32_pair_dot(_mm512_or_si512(k32_nibbles(w + 48 + g * 32), plane), c, g, scales, a.f);
     }
     return a;
 }
@@ -163,7 +163,9 @@ INLINE void rows(const jam_q8_job* J, int j, int i, const int nr, const int byte
             c.q[g] = _mm512_loadu_si512((const void*) (aq + (size_t) B * JAM_QKK + g * 64));
         c.d8 = _mm256_loadu_ps(ad + B * 8);
         prepare(&c, as + B * 8);
-        for (int t = 0; t < nr; t++) {
+        /* unrolled, so each row's accumulator stays in a register: gcc kept this loop and with it acc[] in
+         * memory, a store-to-load round trip per row per block (Q5_K decode 12% behind clang) */
+        _Pragma("GCC unroll 4") for (int t = 0; t < nr; t++) {
             _mm_prefetch((const char*) (w[t] + 4 * bytes), _MM_HINT_T0);
             acc[t] = row(w[t], &c, acc[t]);
             w[t] += bytes;
