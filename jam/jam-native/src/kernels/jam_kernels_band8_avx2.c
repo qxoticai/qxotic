@@ -18,6 +18,7 @@
 #include "jam_internal.h"
 #include "jam_kquant.h"
 #include "jam_mxfp4.h"
+#include "jam_decode_x86_256.h"   /* jam_nibbles_256, jam_q5_0_codes_256, jam_put32_rows8, jam_sum_i8_256 */
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
@@ -57,20 +58,6 @@ static inline __m256i b8_fold(__m256i acc, __m256i i16) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(i16, _mm256_set1_epi16(1)));
 }
 
-/* The repacks decode a row's 32 codes of one sub-block as ONE vector and store its 8 dwords (codes
- * 4g..4g+3) at dst + g*32, the row's slot in each group line. Written per byte, the decode-and-scatter
- * loops left clang a branchy byte loop that was a third of a Q4_0 prefill at n = 128. */
-static inline void b8_put32(uint8_t* dst, __m256i v) {
-    const __m128i lo = _mm256_castsi256_si128(v), hi = _mm256_extracti128_si256(v, 1);
-    int32_t d[8] = { _mm_cvtsi128_si32(lo), _mm_extract_epi32(lo, 1), _mm_extract_epi32(lo, 2), _mm_extract_epi32(lo, 3),
-                     _mm_cvtsi128_si32(hi), _mm_extract_epi32(hi, 1), _mm_extract_epi32(hi, 2), _mm_extract_epi32(hi, 3) };
-    for (int g = 0; g < 8; g++) memcpy(dst + g * 32, &d[g], 4);
-}
-/* 16 packed bytes -> [16 low nibbles | 16 high nibbles] */
-static inline __m256i b8_nibbles32(const uint8_t* q) {
-    const __m128i v = _mm_loadu_si128((const __m128i*) q);
-    return _mm256_and_si256(_mm256_set_m128i(_mm_srli_epi16(v, 4), v), _mm256_set1_epi8(0x0F));
-}
 /* bit `shift` (mask 1) or bits shift..shift+1 (mask 3) of every byte of v, moved to bit 4 */
 static inline __m256i b8_plane(__m256i v, int shift, int mask) {
     return _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(v, shift), _mm256_set1_epi8((char) mask)), 4);
@@ -264,10 +251,10 @@ static void repack_q5k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
                 dw[sbHi * 8 + r] = d * sc[g * 2 + 1]; mw[sbHi * 8 + r] = dmin * mn[g * 2 + 1];
                 const __m256i q = _mm256_loadu_si256((const __m256i*) (q5 + g * 32)), m4 = _mm256_set1_epi8(0x0F);
                 const __m256i h = _mm256_loadu_si256((const __m256i*) qh);
-                b8_put32(qs + (int64_t) sbLo * 256 + r * 4,                          /* 0..31 */
-                         _mm256_or_si256(_mm256_and_si256(q, m4), b8_plane(h, 2 * g, 1)));
-                b8_put32(qs + (int64_t) sbHi * 256 + r * 4,
-                         _mm256_or_si256(_mm256_and_si256(_mm256_srli_epi16(q, 4), m4), b8_plane(h, 2 * g + 1, 1)));
+                jam_put32_rows8(qs + (int64_t) sbLo * 256 + r * 4,                          /* 0..31 */
+                                _mm256_or_si256(_mm256_and_si256(q, m4), b8_plane(h, 2 * g, 1)));
+                jam_put32_rows8(qs + (int64_t) sbHi * 256 + r * 4,
+                                _mm256_or_si256(_mm256_and_si256(_mm256_srli_epi16(q, 4), m4), b8_plane(h, 2 * g + 1, 1)));
             }
         }
     }
@@ -377,7 +364,7 @@ static void repack_q6k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
                     const __m256i l4 = _mm256_loadu_si256((const __m256i*) (qlb + (j & 1) * 32));
                     const __m256i nib = _mm256_and_si256(j < 2 ? l4 : _mm256_srli_epi16(l4, 4), _mm256_set1_epi8(0x0F));
                     const __m256i h = _mm256_loadu_si256((const __m256i*) qhb);
-                    b8_put32(qs + (int64_t) t0 * 128 + r * 4, _mm256_or_si256(nib, b8_plane(h, 2 * j, 3)));
+                    jam_put32_rows8(qs + (int64_t) t0 * 128 + r * 4, _mm256_or_si256(nib, b8_plane(h, 2 * j, 3)));
                 }
             }
         }
@@ -478,9 +465,7 @@ static void repack_q8s_group8(const uint8_t* wbase, int64_t w_stride, int nb, ui
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES) {
             dw[(int64_t) B * 8 + r] = b8_h2f(*(const uint16_t*) w);
-            const int8_t* q = (const int8_t*) (w + 2);
-            for (int g = 0; g < 8; g++)
-                memcpy(qs + (int64_t) B * 256 + g * 32 + r * 4, q + g * 4, 4);
+            jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, _mm256_loadu_si256((const __m256i*) (w + 2)));
         }
     }
 }
@@ -568,9 +553,7 @@ static void repack_q5_0s_group8(const uint8_t* wbase, int64_t w_stride, int nb, 
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES) {
             dw[(int64_t) B * 8 + r] = b8_h2f(*(const uint16_t*) w);
-            int8_t q[32]; jam_q5_0_unpack(w, q);
-            for (int g = 0; g < 8; g++)
-                memcpy(qs + (int64_t) B * 256 + g * 32 + r * 4, q + g * 4, 4);
+            jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, jam_q5_0_codes_256(w));
         }
     }
 }
@@ -612,7 +595,7 @@ static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
             float d = b8_h2f(*(const uint16_t*) w);
             dw[(int64_t) B * 8 + r] = d;
             mw[(int64_t) B * 8 + r] = 8.0f * d;
-            b8_put32(qs + (int64_t) B * 256 + r * 4, b8_nibbles32(w + 2));   /* 16 packed bytes = 32 nibbles */
+            jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, jam_nibbles_256(w + 2));   /* 16 packed bytes = 32 nibbles */
         }
     }
 }
@@ -703,12 +686,9 @@ static void repack_mxfp4_group8(const uint8_t* wbase, int64_t w_stride, int nb,
         for (int B = 0; B < nb; B++, w += JAM_MXFP4_BYTES) {
             float d = jam_mxfp4_dhalf(w[0]);
             const __m256i lut = _mm256_setr_epi8(JAM_MXFP4_CODES, JAM_MXFP4_CODES);
-            const __m256i v = _mm256_shuffle_epi8(lut, b8_nibbles32(w + 1));   /* 16 packed bytes = 32 codes */
-            b8_put32(qs + (int64_t) B * 256 + r * 4, v);
-            const __m256i s32 = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_set1_epi8(1), v), _mm256_set1_epi16(1));
-            const __m128i s4 = _mm_add_epi32(_mm256_castsi256_si128(s32), _mm256_extracti128_si256(s32, 1));
-            const __m128i s2 = _mm_add_epi32(s4, _mm_shuffle_epi32(s4, _MM_SHUFFLE(1, 0, 3, 2)));
-            const int sumw = _mm_cvtsi128_si32(_mm_add_epi32(s2, _mm_shuffle_epi32(s2, _MM_SHUFFLE(2, 3, 0, 1))));
+            const __m256i v = _mm256_shuffle_epi8(lut, jam_nibbles_256(w + 1));   /* 16 packed bytes = 32 codes */
+            jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, v);
+            const int sumw = jam_sum_i8_256(v);
             dw[(int64_t) B * 8 + r] = d;
             cw[(int64_t) B * 8 + r] = d * 128.0f * (float) sumw;
         }
