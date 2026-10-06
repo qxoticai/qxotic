@@ -57,6 +57,25 @@ static inline __m256i b8_fold(__m256i acc, __m256i i16) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(i16, _mm256_set1_epi16(1)));
 }
 
+/* The repacks decode a row's 32 codes of one sub-block as ONE vector and store its 8 dwords (codes
+ * 4g..4g+3) at dst + g*32, the row's slot in each group line. Written per byte, the decode-and-scatter
+ * loops left clang a branchy byte loop that was a third of a Q4_0 prefill at n = 128. */
+static inline void b8_put32(uint8_t* dst, __m256i v) {
+    const __m128i lo = _mm256_castsi256_si128(v), hi = _mm256_extracti128_si256(v, 1);
+    int32_t d[8] = { _mm_cvtsi128_si32(lo), _mm_extract_epi32(lo, 1), _mm_extract_epi32(lo, 2), _mm_extract_epi32(lo, 3),
+                     _mm_cvtsi128_si32(hi), _mm_extract_epi32(hi, 1), _mm_extract_epi32(hi, 2), _mm_extract_epi32(hi, 3) };
+    for (int g = 0; g < 8; g++) memcpy(dst + g * 32, &d[g], 4);
+}
+/* 16 packed bytes -> [16 low nibbles | 16 high nibbles] */
+static inline __m256i b8_nibbles32(const uint8_t* q) {
+    const __m128i v = _mm_loadu_si128((const __m128i*) q);
+    return _mm256_and_si256(_mm256_set_m128i(_mm_srli_epi16(v, 4), v), _mm256_set1_epi8(0x0F));
+}
+/* bit `shift` (mask 1) or bits shift..shift+1 (mask 3) of every byte of v, moved to bit 4 */
+static inline __m256i b8_plane(__m256i v, int shift, int mask) {
+    return _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(v, shift), _mm256_set1_epi8((char) mask)), 4);
+}
+
 /* ---- phase 1: F32 activations -> int8 + per-32 scale + per-16 RAW float sums ----
  * Semantics identical to the avx512 quantize_row_q8s (raw sums feed the exact dmin*min /
  * -32-offset corrections); 256-bit only. */
@@ -243,13 +262,12 @@ static void repack_q5k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
                 int sbLo = B * 8 + g * 2, sbHi = sbLo + 1;
                 dw[sbLo * 8 + r] = d * sc[g * 2];     mw[sbLo * 8 + r] = dmin * mn[g * 2];
                 dw[sbHi * 8 + r] = d * sc[g * 2 + 1]; mw[sbHi * 8 + r] = dmin * mn[g * 2 + 1];
-                const uint8_t* q = q5 + g * 32;
-                for (int i = 0; i < 32; i++) {
-                    uint8_t lo = (q[i] & 0xF) | (((qh[i] >> (2 * g))     & 1) << 4);   /* 0..31 */
-                    uint8_t hi = (q[i] >> 4)  | (((qh[i] >> (2 * g + 1)) & 1) << 4);
-                    qs[(int64_t) sbLo * 256 + (i >> 2) * 32 + r * 4 + (i & 3)] = lo;
-                    qs[(int64_t) sbHi * 256 + (i >> 2) * 32 + r * 4 + (i & 3)] = hi;
-                }
+                const __m256i q = _mm256_loadu_si256((const __m256i*) (q5 + g * 32)), m4 = _mm256_set1_epi8(0x0F);
+                const __m256i h = _mm256_loadu_si256((const __m256i*) qh);
+                b8_put32(qs + (int64_t) sbLo * 256 + r * 4,                          /* 0..31 */
+                         _mm256_or_si256(_mm256_and_si256(q, m4), b8_plane(h, 2 * g, 1)));
+                b8_put32(qs + (int64_t) sbHi * 256 + r * 4,
+                         _mm256_or_si256(_mm256_and_si256(_mm256_srli_epi16(q, 4), m4), b8_plane(h, 2 * g + 1, 1)));
             }
         }
     }
@@ -355,14 +373,11 @@ static void repack_q6k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
                     int t0 = B * 16 + h * 8 + j * 2;
                     dw[t0 * 8 + r]       = d * sc[h * 8 + j * 2];
                     dw[(t0 + 1) * 8 + r] = d * sc[h * 8 + j * 2 + 1];
-                    for (int l = 0; l < 32; l++) {
-                        int qv;
-                        switch (j) { case 0: qv = qlb[l] & 0xF; break; case 1: qv = qlb[32+l] & 0xF; break;
-                                     case 2: qv = qlb[l] >> 4; break; default: qv = qlb[32+l] >> 4; break; }
-                        qv |= ((qhb[l] >> (2 * j)) & 3) << 4;
-                        int t = t0 + l / 16, e = l % 16;
-                        qs[(int64_t) t * 128 + (e / 4) * 32 + r * 4 + (e % 4)] = (uint8_t) qv;
-                    }
+                    /* codes l = 0..31 of sub-blocks t0, t0+1 (16 each): dword l/4 lands at t0*128 + (l/4)*32 */
+                    const __m256i l4 = _mm256_loadu_si256((const __m256i*) (qlb + (j & 1) * 32));
+                    const __m256i nib = _mm256_and_si256(j < 2 ? l4 : _mm256_srli_epi16(l4, 4), _mm256_set1_epi8(0x0F));
+                    const __m256i h = _mm256_loadu_si256((const __m256i*) qhb);
+                    b8_put32(qs + (int64_t) t0 * 128 + r * 4, _mm256_or_si256(nib, b8_plane(h, 2 * j, 3)));
                 }
             }
         }
@@ -597,11 +612,7 @@ static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
             float d = b8_h2f(*(const uint16_t*) w);
             dw[(int64_t) B * 8 + r] = d;
             mw[(int64_t) B * 8 + r] = 8.0f * d;
-            const uint8_t* q = w + 2;                       /* 16 packed bytes = 32 nibbles */
-            for (int e = 0; e < 32; e++) {
-                uint8_t v = e < 16 ? (q[e] & 0xF) : (q[e - 16] >> 4);
-                qs[(int64_t) B * 256 + (e / 4) * 32 + r * 4 + (e % 4)] = v;
-            }
+            b8_put32(qs + (int64_t) B * 256 + r * 4, b8_nibbles32(w + 2));   /* 16 packed bytes = 32 nibbles */
         }
     }
 }
@@ -685,21 +696,19 @@ void jam_q4_0_band8_avx2(void* arg, int t0, int t1, int tid) {
 }
 
 /* ---- MXFP4: LUT-decoded signed codes |w|<=12; a+128 scheme, cw = d*128*sum(w) ---- */
-static const int8_t b8_mxfp4_lut[16] = { JAM_MXFP4_CODES };
-
 static void repack_mxfp4_group8(const uint8_t* wbase, int64_t w_stride, int nb,
                                 uint8_t* qs, float* dw, float* cw) {
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_MXFP4_BYTES) {
             float d = jam_mxfp4_dhalf(w[0]);
-            const uint8_t* q = w + 1;                       /* 16 packed bytes = 32 codes */
-            int sumw = 0;
-            for (int e = 0; e < 32; e++) {
-                int8_t v = b8_mxfp4_lut[e < 16 ? (q[e] & 0xF) : (q[e - 16] >> 4)];
-                qs[(int64_t) B * 256 + (e / 4) * 32 + r * 4 + (e % 4)] = (uint8_t) v;
-                sumw += v;
-            }
+            const __m256i lut = _mm256_setr_epi8(JAM_MXFP4_CODES, JAM_MXFP4_CODES);
+            const __m256i v = _mm256_shuffle_epi8(lut, b8_nibbles32(w + 1));   /* 16 packed bytes = 32 codes */
+            b8_put32(qs + (int64_t) B * 256 + r * 4, v);
+            const __m256i s32 = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_set1_epi8(1), v), _mm256_set1_epi16(1));
+            const __m128i s4 = _mm_add_epi32(_mm256_castsi256_si128(s32), _mm256_extracti128_si256(s32, 1));
+            const __m128i s2 = _mm_add_epi32(s4, _mm_shuffle_epi32(s4, _MM_SHUFFLE(1, 0, 3, 2)));
+            const int sumw = _mm_cvtsi128_si32(_mm_add_epi32(s2, _mm_shuffle_epi32(s2, _MM_SHUFFLE(2, 3, 0, 1))));
             dw[(int64_t) B * 8 + r] = d;
             cw[(int64_t) B * 8 + r] = d * 128.0f * (float) sumw;
         }
