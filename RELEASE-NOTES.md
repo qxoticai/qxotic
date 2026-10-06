@@ -27,6 +27,8 @@ Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boo
 
 - **Prefill per row.** Residual adds, SwiGLU and KV commits run one row per job across the ports instead of serially over the batch, for up to 20% more prompt throughput at 16 threads, depending on the model.
 - **AVX-512-VNNI prefill in `jam-native` 0.3.1.** A 32x4 tile shares every activation broadcast between two weight vectors and keeps K-quant sub-block scales integer; on Zen 5 the Gemma 4 E2B quants prefill faster than llama.cpp on the same machine.
+- **Kernels that both compilers optimize.** The shipped libraries come from clang (Linux, macOS) and gcc (Windows), and some kernels compiled badly under one of them; their source now produces the fast loop under both, with bit-identical results.
+  On the pre-AVX2 tiers prefill runs 2.4x to 2.5x faster (Gemma 4 E2B Q4_K 67 to 166 t/s on `sse3`), AVX2 and AVX-VNNI K-quants gain 5% to 13%, and the SSE3 tiers gain float, F16, BF16 and Q1_0 kernels.
 
 ### Also
 
