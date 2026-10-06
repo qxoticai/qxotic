@@ -12,10 +12,12 @@
 typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_blk;   /* Q8_0: 34 bytes */
 typedef struct __attribute__((packed)) { uint16_t d; uint8_t qs[16]; } jam_q4_0_blk; /* Q4_0: 18 bytes */
 
-/* signed int8 -> int16 (low / high 8 lanes): duplicate each byte then arithmetic-shift right 8 to
- * sign-extend; dot of 16+16 int8 via madd. Shared by the q128 engine and the SSE3 K-quant kernels. */
-#define JAM_SEXT_LO(x) _mm_srai_epi16(_mm_unpacklo_epi8((x), (x)), 8)
-#define JAM_SEXT_HI(x) _mm_srai_epi16(_mm_unpackhi_epi8((x), (x)), 8)
+/* signed int8 -> int16 (low / high 8 lanes): interleave each byte with its sign mask; dot of 16+16 int8
+ * via madd. Shared by the q128 engine and the SSE3 K-quant kernels. Not unpack(x,x) + srai 8: clang reads
+ * that as a sext whose low bytes are dead and unpacks into whatever register is free, a false dependency
+ * that chains every dot of the tile into one serial path (2.5x slower than gcc's copy + unpack). */
+#define JAM_SEXT_LO(x) _mm_unpacklo_epi8((x), _mm_cmpgt_epi8(_mm_setzero_si128(), (x)))
+#define JAM_SEXT_HI(x) _mm_unpackhi_epi8((x), _mm_cmpgt_epi8(_mm_setzero_si128(), (x)))
 #define JAM_DOT16(w, a) _mm_add_epi32(_mm_madd_epi16(JAM_SEXT_LO(w), JAM_SEXT_LO(a)), \
                                       _mm_madd_epi16(JAM_SEXT_HI(w), JAM_SEXT_HI(a)))
 
