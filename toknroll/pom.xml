@@ -12,7 +12,7 @@
   <artifactId>toknroll-aggregator</artifactId>
   <!-- This project's own release version; move toknroll.version in the root POM with it,
        since that is where everything outside toknroll resolves it. -->
-  <version>0.2.0</version>
+  <version>0.3.1</version>
   <packaging>pom</packaging>
   <name>Tok'n'Roll Parent</name>
   <description>Customizable tiktoken-compatible and SentencePiece BPE tokenization for
@@ -46,7 +46,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>${toknroll-core.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -56,7 +56,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
-        <version>${toknroll-hf.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

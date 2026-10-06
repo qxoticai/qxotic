@@ -4,10 +4,9 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </parent>
   <artifactId>jinfer-qwen35</artifactId>
-  <version>0.3.1</version>
   <name>Jinfer Qwen 3.5+ Provider</name>
   <description>Local chat and vision inference for Alibaba Qwen 3.5 and later models with Jinfer.</description>
   <properties>

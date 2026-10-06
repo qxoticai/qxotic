@@ -52,7 +52,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-gguf</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 
@@ -62,7 +62,7 @@ import TabItem from '@theme/TabItem';
 ```groovy
 implementation 'com.qxotic:toknroll-core:0.3.1'
 implementation 'com.qxotic:toknroll-hf:0.3.1'
-implementation 'com.qxotic:toknroll-gguf:0.2.0'
+implementation 'com.qxotic:toknroll-gguf:0.3.1'
 ```
 
   </TabItem>
@@ -71,7 +71,7 @@ implementation 'com.qxotic:toknroll-gguf:0.2.0'
 ```scala
 mvn"com.qxotic:toknroll-core:0.3.1"
 mvn"com.qxotic:toknroll-hf:0.3.1"
-mvn"com.qxotic:toknroll-gguf:0.2.0"
+mvn"com.qxotic:toknroll-gguf:0.3.1"
 ```
 
   </TabItem>

@@ -5,11 +5,10 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </parent>
 
   <artifactId>jinfer-parakeet</artifactId>
-  <version>0.3.1</version>
   <packaging>jar</packaging>
 
   <name>Jinfer Parakeet Provider</name>

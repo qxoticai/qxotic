@@ -5,12 +5,11 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>toknroll-aggregator</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-hf</artifactId>
-  <version>0.3.1</version>
   <name>Tok'n'Roll Hugging Face Utilities</name>
   <description>Loads Tok'n'Roll tokenizers from Hugging Face
     tokenizer.json files.</description>

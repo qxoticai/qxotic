@@ -5,7 +5,7 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </parent>
 
   <artifactId>jinfer-bom</artifactId>
@@ -90,7 +90,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
 
       <!-- architecture ports -->
@@ -157,12 +157,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-kokoro</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-models-all</artifactId>
-        <version>0.3.0</version>
+        <version>0.3.1</version>
       </dependency>
 
       <!-- Substrate this release was built against. The jinfer ports' transitive graphs resolve
@@ -204,7 +204,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-gguf</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
