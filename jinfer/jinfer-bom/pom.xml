@@ -193,6 +193,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>safetensors</artifactId>
+        <version>0.3.1</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
         <version>0.3.1</version>
       </dependency>
