@@ -1,6 +1,7 @@
 package com.qxotic.jam.vector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,5 +23,15 @@ class VectorSupportTileTest {
                 assertThrows(IllegalArgumentException.class, () -> VectorSupport.tileCode("4x3"));
         assertTrue(e.getMessage().startsWith("jam.vector.tile=4x3"), e.getMessage());
         assertTrue(e.getMessage().contains("3x4"), e.getMessage());
+    }
+
+    @Test
+    void theWideBandNeedsGraalCe25Point4OrNewer() {
+        assertTrue(VectorSupport.wideBand(true, "GraalVM CE 25.4.4.1.1+1.1"));
+        assertTrue(VectorSupport.wideBand(true, "GraalVM CE 26.0.1+3.1"));
+        assertFalse(VectorSupport.wideBand(true, "GraalVM CE 25.2.4+7.1"));
+        assertFalse(VectorSupport.wideBand(true, "Oracle GraalVM 25.2.4+7.1"));
+        assertFalse(VectorSupport.wideBand(false, "GraalVM CE 25.4.4.1.1+1.1"), "C2 on a CE build");
+        assertFalse(VectorSupport.wideBand(false, ""), "OpenJDK C2");
     }
 }
