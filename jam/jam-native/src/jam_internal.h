@@ -248,8 +248,8 @@ void jam_mm_q5_0_avxvnni(void* job, int a_begin, int a_end, int tid);      /* vp
 #ifdef JAM_HAVE_SSE3
 void jam_mm_q8_0_sse3(void* job, int rb, int re, int tid);                 /* 128-bit sign-extend+madd (pre-AVX2 floor) */
 void jam_mm_q4_0_sse3(void* job, int rb, int re, int tid);                 /* + arithmetic nibble decode */
-void jam_mm_q5_0_sse3(void* job, int rb, int re, int tid);                 /* + scalar 5-bit decode */
-void jam_mm_mxfp4_sse3(void* job, int rb, int re, int tid);               /* + scalar FP4-LUT decode (no pshufb) */
+void jam_mm_q5_0_sse3(void* job, int rb, int re, int tid);                 /* + unpack-spread 5-bit decode */
+void jam_mm_mxfp4_sse3(void* job, int rb, int re, int tid);               /* + arithmetic FP4 decode (no pshufb) */
 void jam_mm_q4k_sse3(void* job, int rb, int re, int tid);                 /* K-quant int8 dot (sign-extend+madd, SSE3 floor) */
 void jam_mm_q5k_sse3(void* job, int rb, int re, int tid);
 void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
@@ -257,7 +257,7 @@ void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
 #ifdef JAM_HAVE_SSSE3
 void jam_mm_q8_0_ssse3(void* job, int rb, int re, int tid);               /* 128-bit maddubs sign-trick (Core 2 floor) */
 void jam_mm_q4_0_ssse3(void* job, int rb, int re, int tid);              /* + arithmetic nibble decode */
-void jam_mm_q5_0_ssse3(void* job, int rb, int re, int tid);              /* + scalar 5-bit decode */
+void jam_mm_q5_0_ssse3(void* job, int rb, int re, int tid);              /* + unpack-spread 5-bit decode */
 #endif
 #ifdef JAM_HAVE_AVX2
 void jam_mm_q8_0_avx2(void* job, int a_begin, int a_end, int tid);         /* phase 2: maddubs matmul */

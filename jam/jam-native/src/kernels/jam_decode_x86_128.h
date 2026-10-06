@@ -41,31 +41,43 @@ static inline void jam_decode_q4_0_128(const void* blk, __m128i* wlo, __m128i* w
 }
 
 /* Q5_0: value = d·(q-16), q = nibble | 5th bit (bit j of qh for element j, bit j+16 for element j+16). SSE3 has
- * no pshufb: spread the 32 high bits scalarly (once per block, amortized across the engine's column tile). */
+ * no pshufb, so the bit bytes are spread with unpacks: [b0 x8 | b1 x8] for elements 0..15, [b2 x8 | b3 x8]
+ * for 16..31; and+cmpeq then tests bit j%8 of each (a scalar per-element spread ran at half the speed). */
 typedef struct __attribute__((packed)) { uint16_t d; uint32_t qh; uint8_t qs[16]; } jam_q5_0_blk; /* 22 bytes */
 static inline void jam_decode_q5_0_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
     const jam_q5_0_blk* w = (const jam_q5_0_blk*) blk;
+    const __m128i m4 = _mm_set1_epi8(0x0F), e16 = _mm_set1_epi8(16), b4 = _mm_set1_epi8(0x10);
+    const __m128i bit = _mm_set1_epi64x((long long) 0x8040201008040201ull);   /* byte j: 1 << (j % 8) */
     uint32_t qh; __builtin_memcpy(&qh, &w->qh, 4);
-    int8_t lo[16], hi[16];
-    for (int j = 0; j < 16; j++) {
-        lo[j] = (int8_t)(((w->qs[j] & 0x0F) | (((qh >> j) << 4) & 0x10)) - 16);
-        hi[j] = (int8_t)(((w->qs[j] >> 4)   | ((qh >> (j + 12)) & 0x10)) - 16);
-    }
-    *wlo = _mm_loadu_si128((const __m128i*) lo);
-    *whi = _mm_loadu_si128((const __m128i*) hi);
+    __m128i h = _mm_cvtsi32_si128((int) qh);
+    h = _mm_unpacklo_epi8(h, h);
+    h = _mm_unpacklo_epi16(h, h);                                    /* b0 x4, b1 x4, b2 x4, b3 x4 */
+    __m128i hl = _mm_unpacklo_epi32(h, h), hh = _mm_unpackhi_epi32(h, h);
+    hl = _mm_and_si128(_mm_cmpeq_epi8(_mm_and_si128(hl, bit), bit), b4);
+    hh = _mm_and_si128(_mm_cmpeq_epi8(_mm_and_si128(hh, bit), bit), b4);
+    __m128i qs = _mm_loadu_si128((const __m128i*) w->qs);
+    *wlo = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(qs, m4), hl), e16);
+    *whi = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(qs, 4), m4), hh), e16);
     *dW  = jam_half2float(w->d);
 }
 
-/* MXFP4: nibble -> int8 code (FP4 value ×2); the ×½ folds into the scale (jam_mxfp4_dhalf). The LUT lookup
- * is SSSE3 pshufb on the wider kernels - true SSE3 has none, so decode the 32 nibbles SCALARLY here (done
- * ONCE per weight block, amortized across the engine's 4-column tile), then the SSE int8 dot does the rest. */
+/* MXFP4: nibble -> int8 code (FP4 value ×2, JAM_MXFP4_CODES); the ×½ folds into the scale (jam_mxfp4_dhalf).
+ * True SSE3 has no pshufb for the LUT, so the code is computed: magnitude m = nibble & 7 maps to
+ * {0,1,2,3,4,6,8,12} = m + max(m-4, 0) + (m == 7 ? 2 : 0), then bit 3 negates. Exact, and replaces a
+ * scalar per-nibble table walk that clang ran 30% slower than gcc. */
+static inline __m128i jam_mxfp4_codes_128(__m128i nib) {
+    const __m128i m7 = _mm_set1_epi8(7), c4 = _mm_set1_epi8(4), c2 = _mm_set1_epi8(2), c8 = _mm_set1_epi8(8);
+    __m128i m = _mm_and_si128(nib, m7);
+    __m128i v = _mm_add_epi8(_mm_add_epi8(m, _mm_subs_epu8(m, c4)), _mm_and_si128(_mm_cmpeq_epi8(m, m7), c2));
+    __m128i neg = _mm_cmpeq_epi8(_mm_and_si128(nib, c8), c8);      /* 0xFF where the sign bit is set */
+    return _mm_sub_epi8(_mm_xor_si128(v, neg), neg);
+}
 static inline void jam_decode_mxfp4_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
     const jam_mxfp4_blk* w = (const jam_mxfp4_blk*) blk;
-    static const int8_t lut[16] = { JAM_MXFP4_CODES };
-    int8_t lo[16], hi[16];
-    for (int j = 0; j < 16; ++j) { uint8_t b = w->qs[j]; lo[j] = lut[b & 0x0F]; hi[j] = lut[b >> 4]; }
-    *wlo = _mm_loadu_si128((const __m128i*) lo);   /* elements 0..15 */
-    *whi = _mm_loadu_si128((const __m128i*) hi);   /* elements 16..31 */
+    const __m128i m4 = _mm_set1_epi8(0x0F);
+    __m128i qs = _mm_loadu_si128((const __m128i*) w->qs);
+    *wlo = jam_mxfp4_codes_128(_mm_and_si128(qs, m4));                    /* elements 0..15 */
+    *whi = jam_mxfp4_codes_128(_mm_and_si128(_mm_srli_epi16(qs, 4), m4)); /* elements 16..31 */
     *dW  = jam_mxfp4_dhalf(w->e);
 }
 
