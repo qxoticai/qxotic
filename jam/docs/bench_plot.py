@@ -13,19 +13,20 @@ matplotlib.rcParams["font.family"] = ["Noto Sans", "DejaVu Sans", "sans-serif"]
 quants = ["Q4_0", "Q8_0", "Q4_K", "Q5_K", "Q6_K"]
 tiers = ["sse3", "avx2", "avx_vnni", "avx512_vnni"]
 
-# pp512 t/s, Gemma 4 E2B, 16 threads, Ryzen 9 9950X3D (Zen 5), 2026-10-06: jinfer a6f07016f on the shipped
-# 0.3.1 jam-native libraries, llama.cpp 86a24a182 at its best mode per format (default or --repack 0)
+# pp512 t/s, Gemma 4 E2B, 16 threads, Ryzen 9 9950X3D (Zen 5), 2026-10-06: jinfer d5be6f72f on the shipped
+# 0.3.1 jam-native libraries (digest 8c7bc1aec8a6), llama.cpp 86a24a182 at its best mode per format (default or
+# --repack 0)
 jam = {
- "sse3":        [84, 85, 67, 66, 49],
- "avx2":        [883, 751, 920, 795, 590],
- "avx_vnni":    [1044, 883, 936, 793, 598],
- "avx512_vnni": [1752, 1689, 1775, 1757, 1768],
+ "sse3":        [201, 213, 168, 155, 163],
+ "avx2":        [968, 750, 937, 884, 669],
+ "avx_vnni":    [1008, 921, 936, 903, 657],
+ "avx512_vnni": [1754, 1686, 1710, 1679, 1752],
 }
 llama = {
- "sse3":        [179, 138, 50, 45, 48],
- "avx2":        [519, 483, 624, 624, 609],
- "avx_vnni":    [669, 529, 631, 617, 608],
- "avx512_vnni": [1014, 626, 1235, 1220, 1171],
+ "sse3":        [180, 138, 50, 46, 48],
+ "avx2":        [527, 491, 628, 626, 615],
+ "avx_vnni":    [660, 533, 634, 628, 616],
+ "avx512_vnni": [1009, 626, 1252, 1246, 1175],
 }
 
 # Two themes, matching GitHub's README surfaces. Series colors were checked with the dataviz palette
