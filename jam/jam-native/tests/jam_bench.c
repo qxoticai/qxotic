@@ -55,6 +55,7 @@ static double wbytes_per_val(int at) {
     switch (at) {
         case JAM_Q8_0: return 34.0  / 32.0;    /* 1.0625 */
         case JAM_Q4_0: return 18.0  / 32.0;    /* 0.5625 */
+        case JAM_Q5_0: return 22.0  / 32.0;    /* 0.6875 */
         case JAM_Q4_K: return 144.0 / 256.0;   /* 0.5625 */
         case JAM_Q5_K: return 176.0 / 256.0;   /* 0.6875 */
         case JAM_Q6_K: return 210.0 / 256.0;   /* 0.8203 */
@@ -109,6 +110,9 @@ int main(int argc, char** argv) {
     uint8_t* Wq40 = NULL;
     if (BW_WANT("Q4_0")) { float* dq1 = malloc(4*(size_t)M*K); float* dq2 = malloc(4*(size_t)M*K);
         Wq40 = jam_ref_make_q4_0(M,K,1,dq1,dq2); free(dq1); free(dq2); }
+    uint8_t* Wq50 = NULL;
+    if (BW_WANT("Q5_0")) { float* dq1 = malloc(4*(size_t)M*K); float* dq2 = malloc(4*(size_t)M*K);
+        Wq50 = jam_ref_make_q5_0(M,K,1,dq1,dq2); free(dq1); free(dq2); }
 
     /* K-quants are 256-element super-blocks (only when k%256==0). The makers also emit dequant scratch
      * (wdq/wmin) the bench doesn't need - one reused pair, freed after. */
@@ -125,6 +129,7 @@ int main(int argc, char** argv) {
     void* Wq1 = (K % 128 == 0 && BW_WANT("Q1_0")) ? jam_ref_quant_q1_0(Wf, M, K) : NULL;
     struct { int at; const void* W; const char* nm; } QS[] = {
         { JAM_F32, Wf, "F32" }, { JAM_F16, Wf16, "F16" }, { JAM_BF16, Wbf16, "BF16" }, { JAM_Q8_0, Wq, "Q8_0" }, { JAM_Q4_0, Wq40, "Q4_0" },
+        { JAM_Q5_0, Wq50, "Q5_0" },
         { JAM_Q4_K, Wq4k, "Q4_K" }, { JAM_Q5_K, Wq5k, "Q5_K" }, { JAM_Q6_K, Wq6k, "Q6_K" },
         { JAM_MXFP4, Wmx, "MXFP4" }, { JAM_NVFP4, Wnv, "NVFP4" }, { JAM_Q1_0, Wq1, "Q1_0" },
     };
@@ -151,7 +156,7 @@ int main(int argc, char** argv) {
         }
         jam_ctx_destroy(c);
     }
-    free(Wf); free(B); free(C); free(Wf16); free(Wbf16); free(Wq); free(Wq40);
+    free(Wf); free(B); free(C); free(Wf16); free(Wbf16); free(Wq); free(Wq40); free(Wq50);
     free(Wq4k); free(Wq5k); free(Wq6k); free(Wmx); free(Wnv); free(Wq1); free(g_scrub);
     return 0;
 }
