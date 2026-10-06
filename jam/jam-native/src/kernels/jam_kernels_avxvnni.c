@@ -66,14 +66,9 @@ static void repack_q8_group8(const uint8_t* wbase, int64_t w_stride, int nb,
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES) {
             float d = q8b_h2f(*(const uint16_t*) w);
-            const int8_t* q = (const int8_t*) (w + 2);
-            int sumw = 0;
-            for (int g = 0; g < 8; g++)
-                for (int e = 0; e < 4; e++) {
-                    int8_t v = q[g * 4 + e];
-                    qs[(int64_t) B * 256 + g * 32 + r * 4 + e] = (uint8_t) v;   /* 8 rows × 4 = 32 B/group */
-                    sumw += v;
-                }
+            const __m256i v = _mm256_loadu_si256((const __m256i*) (w + 2));
+            jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, v);              /* 8 rows × 4 = 32 B/group */
+            const int sumw = jam_sum_i8_256(v);
             dw[(int64_t) B * 8 + r] = d;
             cw[(int64_t) B * 8 + r] = d * 128.0f * (float) sumw;
         }
@@ -160,14 +155,9 @@ static void repack_q5_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES) {
             float d = q8b_h2f(*(const uint16_t*) w);
-            int8_t q[32]; jam_q5_0_unpack(w, q);
-            int sumw = 0;
-            for (int g = 0; g < 8; g++)
-                for (int e = 0; e < 4; e++) {
-                    int8_t v = q[g * 4 + e];
-                    qs[(int64_t) B * 256 + g * 32 + r * 4 + e] = (uint8_t) v;
-                    sumw += v;
-                }
+            const __m256i v = jam_q5_0_codes_256(w);
+            jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, v);
+            const int sumw = jam_sum_i8_256(v);
             dw[(int64_t) B * 8 + r] = d;
             cw[(int64_t) B * 8 + r] = d * 128.0f * (float) sumw;
         }
@@ -239,14 +229,14 @@ static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES) {
             float d = q8b_h2f(*(const uint16_t*) w);
-            const uint8_t* q = w + 2;
-            #define Q40N(idx) ((idx) < 16 ? (q[idx] & 0xF) : (q[(idx) - 16] >> 4))
-            for (int i = 0; i < 4; i++)
-                for (int e = 0; e < 4; e++) {
-                    uint8_t lo = Q40N(i * 8 + e), hi = Q40N(i * 8 + 4 + e);
-                    qs[(int64_t) B * 128 + i * 32 + r * 4 + e] = (uint8_t)(lo | (hi << 4));   /* 8 rows × 4 = 32 B/plane */
-                }
-            #undef Q40N
+            /* plane i byte e = nibble 8i+e | nibble 8i+4+e << 4: each even dword ORs in its odd neighbour,
+             * shifted up a nibble; the even dwords (0, 2, 4, 6) are the planes (8 rows × 4 = 32 B/plane) */
+            const __m256i n = jam_nibbles_256(w + 2);
+            const __m256i p = _mm256_or_si256(n, _mm256_srli_epi64(_mm256_slli_epi16(n, 4), 32));
+            const __m128i plo = _mm256_castsi256_si128(p), phi = _mm256_extracti128_si256(p, 1);
+            const int32_t pl[4] = { _mm_cvtsi128_si32(plo), _mm_extract_epi32(plo, 2),
+                                    _mm_cvtsi128_si32(phi), _mm_extract_epi32(phi, 2) };
+            for (int i = 0; i < 4; i++) memcpy(qs + (int64_t) B * 128 + i * 32 + r * 4, &pl[i], 4);
             dw[(int64_t) B * 8 + r] = d;
             mw[(int64_t) B * 8 + r] = 8.0f * d;
         }

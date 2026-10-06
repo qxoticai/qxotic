@@ -44,7 +44,7 @@ static inline void jam_decode_q4_0_256(const void* blk, __m256i* wq, __m256* dW)
  * becomes byte j in three ops: pshufb copies bit-byte j/8 into byte j, and+cmpeq tests bit j%8 there, and
  * lands it as 0x10. */
 typedef struct __attribute__((packed)) { uint16_t d; uint32_t qh; uint8_t qs[16]; } jam_q5_0_blk;
-static inline void jam_decode_q5_0_256(const void* blk, __m256i* wq, __m256* dW) {
+static inline __m256i jam_q5_0_codes_256(const void* blk) {   /* the 32 values q - 16 */
     const jam_q5_0_blk* w = (const jam_q5_0_blk*) blk;
     const __m256i shuf = _mm256_setr_epi8(0,0,0,0,0,0,0,0, 1,1,1,1,1,1,1,1, 0,0,0,0,0,0,0,0, 1,1,1,1,1,1,1,1);
     const __m256i mask = _mm256_set1_epi64x((long long) 0x8040201008040201ull);
@@ -52,8 +52,11 @@ static inline void jam_decode_q5_0_256(const void* blk, __m256i* wq, __m256* dW)
     const __m128i h = _mm_cvtsi32_si128((int) qh);
     __m256i b = _mm256_shuffle_epi8(_mm256_set_m128i(_mm_srli_epi32(h, 16), h), shuf);
     __m256i hi = _mm256_and_si256(_mm256_cmpeq_epi8(_mm256_and_si256(b, mask), mask), _mm256_set1_epi8(0x10));
-    *wq = _mm256_sub_epi8(_mm256_or_si256(jam_nibbles_256(w->qs), hi), _mm256_set1_epi8(16));
-    *dW = jam_h2f_splat256(w->d);
+    return _mm256_sub_epi8(_mm256_or_si256(jam_nibbles_256(w->qs), hi), _mm256_set1_epi8(16));
+}
+static inline void jam_decode_q5_0_256(const void* blk, __m256i* wq, __m256* dW) {
+    *wq = jam_q5_0_codes_256(blk);
+    *dW = jam_h2f_splat256(((const jam_q5_0_blk*) blk)->d);
 }
 
 /* MXFP4: decode FP4 nibbles -> int8 (value×2) via one shuffle; scale folds in the ×½. qs[j] low nibble
@@ -63,6 +66,24 @@ static inline void jam_decode_mxfp4_256(const void* blk, __m256i* wq, __m256* dW
     const __m256i lut = _mm256_setr_epi8(JAM_MXFP4_CODES, JAM_MXFP4_CODES);
     *wq = _mm256_shuffle_epi8(lut, jam_nibbles_256(w->qs));
     *dW = _mm256_set1_ps(jam_mxfp4_dhalf(w->e));
+}
+
+/* The 8-row repacks (AVX2 and AVX-VNNI bands) store a row's 32 codes of a block as its dword slot in each
+ * 32-byte group line: dword g (codes 4g..4g+3) at dst + g*32. Decoded as one vector and stored as 8
+ * dwords; written per byte, the decode-and-scatter loops left clang a branchy byte loop that was a third
+ * of a Q4_0 prefill at n = 128. */
+static inline void jam_put32_rows8(uint8_t* dst, __m256i v) {
+    const __m128i lo = _mm256_castsi256_si128(v), hi = _mm256_extracti128_si256(v, 1);
+    const int32_t d[8] = { _mm_cvtsi128_si32(lo), _mm_extract_epi32(lo, 1), _mm_extract_epi32(lo, 2), _mm_extract_epi32(lo, 3),
+                           _mm_cvtsi128_si32(hi), _mm_extract_epi32(hi, 1), _mm_extract_epi32(hi, 2), _mm_extract_epi32(hi, 3) };
+    for (int g = 0; g < 8; g++) __builtin_memcpy(dst + g * 32, &d[g], 4);
+}
+/* sum of 32 signed bytes */
+static inline int jam_sum_i8_256(__m256i v) {
+    const __m256i s32 = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_set1_epi8(1), v), _mm256_set1_epi16(1));
+    __m128i s = _mm_add_epi32(_mm256_castsi256_si128(s32), _mm256_extracti128_si256(s32, 1));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(1, 0, 3, 2)));
+    return _mm_cvtsi128_si32(_mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(2, 3, 0, 1))));
 }
 
 static inline float jam_hsum8_256(__m256 v) {
