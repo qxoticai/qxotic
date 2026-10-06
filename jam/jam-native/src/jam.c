@@ -165,6 +165,9 @@ static int jam_debug(void) {
 
 static const char* f32_kernel_name(jam_task_fn k) {
     if (k == jam_mm_f32_generic) return "generic (portable)";
+#ifdef JAM_HAVE_SSE3
+    if (k == jam_mm_f32_sse3)    return "sse3 (4x4 tile, rows in lanes)";
+#endif
 #ifdef JAM_HAVE_AVX2
     if (k == jam_mm_f32_avx2)    return "avx2 (mnpack, 8-wide)";
 #endif
@@ -292,7 +295,9 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
         c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3; c->q5_0_kernel = jam_mm_q5_0_sse3;
         c->kq[JAM_KQ_Q4K] = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
-        c->kq[JAM_KQ_Q5K] = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_sse3; }
+        c->kq[JAM_KQ_Q5K] = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_sse3;
+        c->f32_kernel = jam_mm_f32_sse3;       /* dense float 4x4 tiles (AVX2 overrides) */
+        c->dense_f16_kernel = jam_mm_f16_sse3; c->dense_bf16_kernel = jam_mm_bf16_sse3; }
 #endif
 #ifdef JAM_HAVE_SSSE3
     if (cpu >= JAM_ISA_SSSE3) { c->q8_kernel = jam_mm_q8_0_ssse3;   /* maddubs sign-trick: faster Q8_0/Q4_0 (K-quants keep the SSE3 path) */
