@@ -2,7 +2,7 @@
 
 Prefill throughput (`pp512`) of jinfer on the native jam backend and of llama.cpp, at matched instruction set per tier.
 Gemma 4 E2B (pure quants from BF16), 16 threads, Ryzen 9 9950X3D (Zen 5), `powersave` governor with `balance_performance` EPP, measured 2026-10-06.
-jinfer runs at `a6f07016f` on the jam-native 0.3.1 libraries as shipped; llama.cpp runs at `86a24a182`, built once per tier with `GGML_NATIVE=OFF`, in its best mode per format (the default or `--repack 0`, which since #27851 is the tiled K-quant path).
+jinfer runs at `d5be6f72f` on the jam-native 0.3.1 libraries as shipped (digest `8c7bc1aec8a6`); llama.cpp runs at `86a24a182`, built once per tier with `GGML_NATIVE=OFF`, in its best mode per format (the default or `--repack 0`, which since #27851 is the tiled K-quant path).
 llama.cpp is the reference: its CPU kernels are the baseline jam is measured against, and its block formats are what jam consumes unchanged.
 
 <picture>
@@ -12,14 +12,13 @@ llama.cpp is the reference: its CPU kernels are the baseline jam is measured aga
 
 | pp512 t/s, jinfer (native jam) / llama.cpp | Q4_0 | Q8_0 | Q4_K | Q5_K | Q6_K |
 |---|---|---|---|---|---|
-| sse3 | 84 / 179 | 85 / 138 | 67 / 50 | 66 / 45 | 49 / 48 |
-| avx2 | 883 / 519 | 751 / 483 | 920 / 624 | 795 / 624 | 590 / 609 |
-| avx_vnni | 1044 / 669 | 883 / 529 | 936 / 631 | 793 / 617 | 598 / 608 |
-| avx512_vnni | 1752 / 1014 | 1689 / 626 | 1775 / 1235 | 1757 / 1220 | 1768 / 1171 |
+| sse3 | 201 / 180 | 213 / 138 | 168 / 50 | 155 / 46 | 163 / 48 |
+| avx2 | 968 / 527 | 750 / 491 | 937 / 628 | 884 / 626 | 669 / 615 |
+| avx_vnni | 1008 / 660 | 921 / 533 | 936 / 634 | 903 / 628 | 657 / 616 |
+| avx512_vnni | 1754 / 1009 | 1686 / 626 | 1710 / 1252 | 1679 / 1246 | 1752 / 1175 |
 
-The shipped library is built with zig cc (clang 21, against glibc 2.17), and the compiler shows per tier.
-Against the same source built with the host gcc, the SSE3 kernels run at about half speed (Q4_0 84 against 183 t/s, and the `ssse3` tier's K-quants 67 against 127), AVX2 and AVX-VNNI run about 35% faster (Q4_K 926 against 684), and AVX-512-VNNI is level.
-jam-native 0.2.0 shows the same SSE3 numbers, so this is the toolchain, not a regression.
+The shipped libraries come from clang (Linux, macOS) and gcc (Windows), and until 0.3.1 some kernels compiled badly under one of them: the SSE3 kernels ran at half speed under clang (Q4_0 84 against 183 t/s) and the AVX2 band kernels about 30% slower under gcc.
+jam-native 0.3.1 writes those kernels so both compilers emit the fast loop, with bit-identical results; the table above is the clang-built Linux library.
 
 The flagship tier on its own:
 
