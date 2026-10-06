@@ -6,11 +6,12 @@
  * the dmin·min term is corrected in float via Σx ≈ ad·Σaq (Q6_K folds -32 into a signed weight, no min term).
  * Consumes jam_q8_0_requant output (J->aq int8, J->ad per-32 scale, J->asum per-32 Σaq). Built -msse3.
  *
- * The 4-column tile keeps the 4 columns in the 4 LANES of one float vector: the per-sub-block scale math
- * is then 4-wide mulps/subps/addps, lane c doing exactly column c's scalar operations in the same order
- * (SSE3 has no FMA, so nothing contracts and the results are the scalar tail's bit for bit). Written out
- * because only clang found that SLP form on its own (gcc ran it as 4x scalar, ~20% slower), and gcc then
- * spilled the scalar accumulators. The 4 dots reduce together with one transpose-add instead of 4 hsums. */
+ * The tiles keep 4 outputs in the 4 LANES of one float vector - 4 columns of a row, or for the column tail
+ * (decode) 4 rows of a column: the per-sub-block scale math is then 4-wide mulps/subps/addps, each lane
+ * doing exactly its output's scalar operations in the same order (SSE3 has no FMA, so nothing contracts and
+ * the results are the scalar form's bit for bit). Written out because only clang found that SLP form on its
+ * own (gcc ran it as 4x scalar, ~20% slower) and gcc then spilled the scalar accumulators. The 4 dots
+ * reduce together with one transpose-add instead of 4 hsums. */
 #include <pmmintrin.h>   /* SSE3 (pulls in SSE/SSE2) */
 #include <stdint.h>
 #include "jam_internal.h"
@@ -94,68 +95,118 @@ static inline void q5k_decode(const uint8_t* w, int g, __m128i* wl0, __m128i* wl
     *wh1 = _mm_or_si128(_mm_and_si128(_mm_srli_epi16(q1, 4), m4), bh1);
 }
 
+
 /* Per column, per sub-block pair: acc += ad[bl]·(dl·dot_lo - ml·Σaq[bl]) + ad[bh]·(dh·dot_hi - mh·Σaq[bh]).
- * The 4-column form does the same per lane. */
-#define KQ45_KERNEL(NAME, BYTES, DECODE)                                                                       \
-void NAME(void* arg, int rb, int re, int tid) {                                                              \
-    (void) tid;                                                                                              \
-    const jam_q8_job* J = (const jam_q8_job*) arg;                                                           \
-    const int n = J->n, sblocks = J->k / JAM_QKK;                                                            \
-    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * (BYTES);                                            \
-    for (int i = rb; i < re; ++i) {                                                                          \
-        const uint8_t* wrow = (const uint8_t*) J->a + (size_t) i * w_stride;                                 \
-        int j = 0;                                                                                           \
-        for (; j + 4 <= n; j += 4) {                                                                         \
-            const kq_cols t = kq_cols_at(J, j);                                                              \
-            __m128 acc = _mm_setzero_ps();                                                                   \
-            const uint8_t* w = wrow;                                                                         \
-            for (int B = 0; B < sblocks; ++B, w += (BYTES)) {                                                \
-                const kq_sb s = kq45_scales(w);                                                              \
-                for (int g = 0; g < 4; ++g) {                                                                \
-                    __m128i wl0, wl1, wh0, wh1; DECODE(w, g, &wl0, &wl1, &wh0, &wh1);                        \
-                    const int bl = B*8 + 2*g, bh = bl + 1;                                                   \
-                    const size_t ol = (size_t) bl*32, oh = (size_t) bh*32;                                   \
-                    __m128 dlo = jam_hsum4x4_f(jam_kdot32_sse3(wl0, wl1, t.aq[0] + ol), jam_kdot32_sse3(wl0, wl1, t.aq[1] + ol), \
-                                               jam_kdot32_sse3(wl0, wl1, t.aq[2] + ol), jam_kdot32_sse3(wl0, wl1, t.aq[3] + ol)); \
-                    __m128 dhi = jam_hsum4x4_f(jam_kdot32_sse3(wh0, wh1, t.aq[0] + oh), jam_kdot32_sse3(wh0, wh1, t.aq[1] + oh), \
-                                               jam_kdot32_sse3(wh0, wh1, t.aq[2] + oh), jam_kdot32_sse3(wh0, wh1, t.aq[3] + oh)); \
-                    __m128 lo = _mm_sub_ps(_mm_mul_ps(_mm_set1_ps(s.d * s.sc[2*g]), dlo),                    \
-                                           _mm_mul_ps(_mm_set1_ps(s.dmin * s.mn[2*g]), KQ_LANES(t.as, bl)));   \
-                    __m128 hi = _mm_sub_ps(_mm_mul_ps(_mm_set1_ps(s.d * s.sc[2*g+1]), dhi),                  \
-                                           _mm_mul_ps(_mm_set1_ps(s.dmin * s.mn[2*g+1]), KQ_LANES(t.as, bh))); \
-                    acc = _mm_add_ps(acc, _mm_add_ps(_mm_mul_ps(KQ_LANES(t.ad, bl), lo),                     \
-                                                     _mm_mul_ps(KQ_LANES(t.ad, bh), hi)));                   \
-                }                                                                                            \
-            }                                                                                                \
-            kq_store4(J, i, j, acc);                                                                         \
-        }                                                                                                    \
-        for (; j < n; ++j) {                  /* column tail */                                              \
-            const int8_t* aq = J->aq + (size_t) j * J->k;                                                    \
-            const float* ad = J->ad + (size_t) j * J->nb; const float* as = J->asum + (size_t) j * J->nb;    \
-            float acc = 0.0f;                                                                                \
-            const uint8_t* w = wrow;                                                                         \
-            for (int B = 0; B < sblocks; ++B, w += (BYTES)) {                                                \
-                const kq_sb s = kq45_scales(w);                                                              \
-                for (int g = 0; g < 4; ++g) {                                                                \
-                    __m128i wl0, wl1, wh0, wh1; DECODE(w, g, &wl0, &wl1, &wh0, &wh1);                        \
-                    const int bl = B*8 + 2*g, bh = bl + 1;                                                   \
-                    float dl = s.d*s.sc[2*g], ml = s.dmin*s.mn[2*g], dh = s.d*s.sc[2*g+1], mh = s.dmin*s.mn[2*g+1]; \
-                    float dlo = jam_hsum4_f(jam_kdot32_sse3(wl0, wl1, aq + (size_t) bl*32));                 \
-                    float dhi = jam_hsum4_f(jam_kdot32_sse3(wh0, wh1, aq + (size_t) bh*32));                 \
-                    acc += ad[bl] * (dl*dlo - ml*as[bl]) + ad[bh] * (dh*dhi - mh*as[bh]);                    \
-                }                                                                                            \
-            }                                                                                                \
-            ((float*) J->c)[(size_t) j * J->ldc + i] = acc;                                                  \
-        }                                                                                                    \
-    }                                                                                                        \
+ * Three shapes compute it: one row x 4 columns (columns in the lanes), 4 rows x one column (rows in the
+ * lanes: the column tail, so all of decode) and the scalar one row x one column for what is left. Lane
+ * by lane they run the scalar form's operations in its order. */
+#define INLINE static inline __attribute__((always_inline))
+#define KQ_UNROLL4 _Pragma("GCC unroll 4")   /* g constant: clang kept the loop, with its decode selects */
+typedef void (*kq45_decode)(const uint8_t* w, int g, __m128i* wl0, __m128i* wl1, __m128i* wh0, __m128i* wh1);
+
+INLINE __m128 kq45_cols4(const jam_q8_job* J, const uint8_t* w, int bytes, kq45_decode dec, int j) {
+    const kq_cols t = kq_cols_at(J, j);
+    __m128 acc = _mm_setzero_ps();
+    for (int B = 0; B < J->k / JAM_QKK; ++B, w += bytes) {
+        const kq_sb s = kq45_scales(w);
+        KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
+            __m128i wl0, wl1, wh0, wh1; dec(w, g, &wl0, &wl1, &wh0, &wh1);
+            const int bl = B*8 + 2*g, bh = bl + 1;
+            const size_t ol = (size_t) bl*32, oh = (size_t) bh*32;
+            __m128 dlo = jam_hsum4x4_f(jam_kdot32_sse3(wl0, wl1, t.aq[0] + ol), jam_kdot32_sse3(wl0, wl1, t.aq[1] + ol),
+                                       jam_kdot32_sse3(wl0, wl1, t.aq[2] + ol), jam_kdot32_sse3(wl0, wl1, t.aq[3] + ol));
+            __m128 dhi = jam_hsum4x4_f(jam_kdot32_sse3(wh0, wh1, t.aq[0] + oh), jam_kdot32_sse3(wh0, wh1, t.aq[1] + oh),
+                                       jam_kdot32_sse3(wh0, wh1, t.aq[2] + oh), jam_kdot32_sse3(wh0, wh1, t.aq[3] + oh));
+            __m128 lo = _mm_sub_ps(_mm_mul_ps(_mm_set1_ps(s.d * s.sc[2*g]), dlo),
+                                   _mm_mul_ps(_mm_set1_ps(s.dmin * s.mn[2*g]), KQ_LANES(t.as, bl)));
+            __m128 hi = _mm_sub_ps(_mm_mul_ps(_mm_set1_ps(s.d * s.sc[2*g+1]), dhi),
+                                   _mm_mul_ps(_mm_set1_ps(s.dmin * s.mn[2*g+1]), KQ_LANES(t.as, bh)));
+            acc = _mm_add_ps(acc, _mm_add_ps(_mm_mul_ps(KQ_LANES(t.ad, bl), lo), _mm_mul_ps(KQ_LANES(t.ad, bh), hi)));
+        }
+    }
+    return acc;
 }
 
-KQ45_KERNEL(jam_mm_q4k_sse3, JAM_Q4K_BYTES, q4k_decode)
-KQ45_KERNEL(jam_mm_q5k_sse3, JAM_Q5K_BYTES, q5k_decode)
+INLINE __m128 kq45_rows4(const jam_q8_job* J, const uint8_t* w0, size_t w_stride, int bytes, kq45_decode dec, int j) {
+    const int8_t* aq = J->aq + (size_t) j * J->k;
+    const float* ad = J->ad + (size_t) j * J->nb; const float* as = J->asum + (size_t) j * J->nb;
+    __m128 acc = _mm_setzero_ps();
+    for (int B = 0; B < J->k / JAM_QKK; ++B) {
+        const uint8_t* w[4];
+        for (int r = 0; r < 4; ++r) w[r] = w0 + r * w_stride + (size_t) B * bytes;
+        const kq_sb s[4] = { kq45_scales(w[0]), kq45_scales(w[1]), kq45_scales(w[2]), kq45_scales(w[3]) };
+        const __m128 d = _mm_setr_ps(s[0].d, s[1].d, s[2].d, s[3].d);
+        const __m128 dmin = _mm_setr_ps(s[0].dmin, s[1].dmin, s[2].dmin, s[3].dmin);
+        KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
+            const int bl = B*8 + 2*g, bh = bl + 1;
+            __m128i lo[4], hi[4];
+            for (int r = 0; r < 4; ++r) {
+                __m128i wl0, wl1, wh0, wh1; dec(w[r], g, &wl0, &wl1, &wh0, &wh1);
+                lo[r] = jam_kdot32_sse3(wl0, wl1, aq + (size_t) bl*32);
+                hi[r] = jam_kdot32_sse3(wh0, wh1, aq + (size_t) bh*32);
+            }
+            const __m128 dlo = jam_hsum4x4_f(lo[0], lo[1], lo[2], lo[3]), dhi = jam_hsum4x4_f(hi[0], hi[1], hi[2], hi[3]);
+            const __m128 dl = _mm_mul_ps(d, _mm_setr_ps(s[0].sc[2*g], s[1].sc[2*g], s[2].sc[2*g], s[3].sc[2*g]));
+            const __m128 ml = _mm_mul_ps(dmin, _mm_setr_ps(s[0].mn[2*g], s[1].mn[2*g], s[2].mn[2*g], s[3].mn[2*g]));
+            const __m128 dh = _mm_mul_ps(d, _mm_setr_ps(s[0].sc[2*g+1], s[1].sc[2*g+1], s[2].sc[2*g+1], s[3].sc[2*g+1]));
+            const __m128 mh = _mm_mul_ps(dmin, _mm_setr_ps(s[0].mn[2*g+1], s[1].mn[2*g+1], s[2].mn[2*g+1], s[3].mn[2*g+1]));
+            const __m128 lo4 = _mm_sub_ps(_mm_mul_ps(dl, dlo), _mm_mul_ps(ml, _mm_set1_ps(as[bl])));
+            const __m128 hi4 = _mm_sub_ps(_mm_mul_ps(dh, dhi), _mm_mul_ps(mh, _mm_set1_ps(as[bh])));
+            acc = _mm_add_ps(acc, _mm_add_ps(_mm_mul_ps(_mm_set1_ps(ad[bl]), lo4), _mm_mul_ps(_mm_set1_ps(ad[bh]), hi4)));
+        }
+    }
+    return acc;
+}
+
+INLINE float kq45_one(const jam_q8_job* J, const uint8_t* w, int bytes, kq45_decode dec, int j) {
+    const int8_t* aq = J->aq + (size_t) j * J->k;
+    const float* ad = J->ad + (size_t) j * J->nb; const float* as = J->asum + (size_t) j * J->nb;
+    float acc = 0.0f;
+    for (int B = 0; B < J->k / JAM_QKK; ++B, w += bytes) {
+        const kq_sb s = kq45_scales(w);
+        KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
+            __m128i wl0, wl1, wh0, wh1; dec(w, g, &wl0, &wl1, &wh0, &wh1);
+            const int bl = B*8 + 2*g, bh = bl + 1;
+            float dl = s.d*s.sc[2*g], ml = s.dmin*s.mn[2*g], dh = s.d*s.sc[2*g+1], mh = s.dmin*s.mn[2*g+1];
+            float dlo = jam_hsum4_f(jam_kdot32_sse3(wl0, wl1, aq + (size_t) bl*32));
+            float dhi = jam_hsum4_f(jam_kdot32_sse3(wh0, wh1, aq + (size_t) bh*32));
+            acc += ad[bl] * (dl*dlo - ml*as[bl]) + ad[bh] * (dh*dhi - mh*as[bh]);
+        }
+    }
+    return acc;
+}
+
+/* rows in 4s x columns in 4s, the column tail 4 rows at a time, then the row tail */
+INLINE void kq45_sweep(const jam_q8_job* J, int rb, int re, int bytes, kq45_decode dec) {
+    const size_t w_stride = (size_t) (J->lda / JAM_QKK) * bytes;
+    const int n = J->n, n4 = n & ~3;
+    float* C = (float*) J->c; const size_t ldc = (size_t) J->ldc;
+    int i = rb;
+    for (; i + 4 <= re; i += 4) {
+        const uint8_t* w0 = (const uint8_t*) J->a + (size_t) i * w_stride;
+        for (int j = 0; j < n4; j += 4)
+            for (int r = 0; r < 4; ++r) kq_store4(J, i + r, j, kq45_cols4(J, w0 + r * w_stride, bytes, dec, j));
+        for (int j = n4; j < n; ++j) _mm_storeu_ps(C + (size_t) j * ldc + i, kq45_rows4(J, w0, w_stride, bytes, dec, j));
+    }
+    for (; i < re; ++i) {
+        const uint8_t* w = (const uint8_t*) J->a + (size_t) i * w_stride;
+        for (int j = 0; j < n4; j += 4) kq_store4(J, i, j, kq45_cols4(J, w, bytes, dec, j));
+        for (int j = n4; j < n; ++j) C[(size_t) j * ldc + i] = kq45_one(J, w, bytes, dec, j);
+    }
+}
+
+void jam_mm_q4k_sse3(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    kq45_sweep((const jam_q8_job*) arg, rb, re, JAM_Q4K_BYTES, q4k_decode);
+}
+void jam_mm_q5k_sse3(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    kq45_sweep((const jam_q8_job*) arg, rb, re, JAM_Q5K_BYTES, q5k_decode);
+}
 
 /* Q6_K: value = d·sc·(qv-32), qv 6-bit (ql nibble | qh 2-bit << 4). -32 folds into a signed weight; int8
  * scales, one per 16 elements (two per 32-sub-block), so each sub-block is two 16-wide dots. No min term.
- * Per column: acc += ad[blk]·(s0·dot0 + s1·dot1). */
+ * Per column: acc += ad[blk]·(s0·dot0 + s1·dot1). Same three shapes. */
 static inline void q6k_decode(const uint8_t* w, int h, int g, __m128i* w0, __m128i* w1) {
     const __m128i m4 = _mm_set1_epi8(0x0F), m2 = _mm_set1_epi8(3), bias = _mm_set1_epi8(32);
     const uint8_t* qlb = w + h*64; const uint8_t* qhb = w + 128 + h*32;
@@ -170,55 +221,91 @@ static inline void q6k_decode(const uint8_t* w, int h, int g, __m128i* w0, __m12
     *w1 = _mm_sub_epi8(_mm_or_si128(lo1, hi1), bias);
 }
 
+INLINE __m128 q6k_cols4(const jam_q8_job* J, const uint8_t* w, int j) {
+    const kq_cols t = kq_cols_at(J, j);
+    __m128 acc = _mm_setzero_ps();
+    for (int B = 0; B < J->k / JAM_QKK; ++B, w += JAM_Q6K_BYTES) {
+        const int8_t* sc = (const int8_t*) (w + 192);
+        const float d = jam_half2float(*(const uint16_t*) (w + 208));
+        for (int h = 0; h < 2; ++h)
+            KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
+                __m128i w0, w1; q6k_decode(w, h, g, &w0, &w1);
+                const int blk = B*8 + h*4 + g;
+                const size_t o = (size_t) blk*32;
+                __m128 d0 = jam_hsum4x4_f(jam_kdot16_sse3(w0, t.aq[0] + o), jam_kdot16_sse3(w0, t.aq[1] + o),
+                                          jam_kdot16_sse3(w0, t.aq[2] + o), jam_kdot16_sse3(w0, t.aq[3] + o));
+                __m128 d1 = jam_hsum4x4_f(jam_kdot16_sse3(w1, t.aq[0] + o + 16), jam_kdot16_sse3(w1, t.aq[1] + o + 16),
+                                          jam_kdot16_sse3(w1, t.aq[2] + o + 16), jam_kdot16_sse3(w1, t.aq[3] + o + 16));
+                __m128 s0 = _mm_set1_ps(d * (float) sc[h*8 + g*2]), s1 = _mm_set1_ps(d * (float) sc[h*8 + g*2 + 1]);
+                acc = _mm_add_ps(acc, _mm_mul_ps(KQ_LANES(t.ad, blk), _mm_add_ps(_mm_mul_ps(s0, d0), _mm_mul_ps(s1, d1))));
+            }
+    }
+    return acc;
+}
+
+INLINE __m128 q6k_rows4(const jam_q8_job* J, const uint8_t* w0, size_t w_stride, int j) {
+    const int8_t* aq = J->aq + (size_t) j * J->k; const float* ad = J->ad + (size_t) j * J->nb;
+    __m128 acc = _mm_setzero_ps();
+    for (int B = 0; B < J->k / JAM_QKK; ++B) {
+        const uint8_t* w[4];
+        for (int r = 0; r < 4; ++r) w[r] = w0 + r * w_stride + (size_t) B * JAM_Q6K_BYTES;
+        const __m128 d = _mm_setr_ps(jam_half2float(*(const uint16_t*) (w[0] + 208)), jam_half2float(*(const uint16_t*) (w[1] + 208)),
+                                     jam_half2float(*(const uint16_t*) (w[2] + 208)), jam_half2float(*(const uint16_t*) (w[3] + 208)));
+        for (int h = 0; h < 2; ++h)
+            KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
+                const int blk = B*8 + h*4 + g, e0 = h*8 + g*2;
+                const size_t o = (size_t) blk*32;
+                __m128i p0[4], p1[4];
+                for (int r = 0; r < 4; ++r) {
+                    __m128i w0r, w1r; q6k_decode(w[r], h, g, &w0r, &w1r);
+                    p0[r] = jam_kdot16_sse3(w0r, aq + o); p1[r] = jam_kdot16_sse3(w1r, aq + o + 16);
+                }
+                const __m128 d0 = jam_hsum4x4_f(p0[0], p0[1], p0[2], p0[3]), d1 = jam_hsum4x4_f(p1[0], p1[1], p1[2], p1[3]);
+                const int8_t* sc[4] = { (const int8_t*) (w[0] + 192), (const int8_t*) (w[1] + 192),
+                                        (const int8_t*) (w[2] + 192), (const int8_t*) (w[3] + 192) };
+                const __m128 s0 = _mm_mul_ps(d, _mm_setr_ps(sc[0][e0], sc[1][e0], sc[2][e0], sc[3][e0]));
+                const __m128 s1 = _mm_mul_ps(d, _mm_setr_ps(sc[0][e0 + 1], sc[1][e0 + 1], sc[2][e0 + 1], sc[3][e0 + 1]));
+                acc = _mm_add_ps(acc, _mm_mul_ps(_mm_set1_ps(ad[blk]), _mm_add_ps(_mm_mul_ps(s0, d0), _mm_mul_ps(s1, d1))));
+            }
+    }
+    return acc;
+}
+
+INLINE float q6k_one(const jam_q8_job* J, const uint8_t* w, int j) {
+    const int8_t* aq = J->aq + (size_t) j * J->k; const float* ad = J->ad + (size_t) j * J->nb;
+    float acc = 0.0f;
+    for (int B = 0; B < J->k / JAM_QKK; ++B, w += JAM_Q6K_BYTES) {
+        const int8_t* sc = (const int8_t*) (w + 192);
+        const float d = jam_half2float(*(const uint16_t*) (w + 208));
+        for (int h = 0; h < 2; ++h)
+            KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
+                __m128i w0, w1; q6k_decode(w, h, g, &w0, &w1);
+                const int blk = B*8 + h*4 + g;
+                float s0 = d * (float) sc[h*8 + g*2], s1 = d * (float) sc[h*8 + g*2 + 1];
+                float dot0 = jam_hsum4_f(jam_kdot16_sse3(w0, aq + (size_t) blk*32));
+                float dot1 = jam_hsum4_f(jam_kdot16_sse3(w1, aq + (size_t) blk*32 + 16));
+                acc += ad[blk] * (s0 * dot0 + s1 * dot1);
+            }
+    }
+    return acc;
+}
+
 void jam_mm_q6k_sse3(void* arg, int rb, int re, int tid) {
     (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
-    const int n = J->n, sblocks = J->k / JAM_QKK;
-    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q6K_BYTES;
-    for (int i = rb; i < re; ++i) {
-        const uint8_t* wrow = (const uint8_t*) J->a + (size_t) i * w_stride;
-        int j = 0;
-        for (; j + 4 <= n; j += 4) {
-            const kq_cols t = kq_cols_at(J, j);
-            __m128 acc = _mm_setzero_ps();
-            const uint8_t* w = wrow;
-            for (int B = 0; B < sblocks; ++B, w += JAM_Q6K_BYTES) {
-                const int8_t* sc = (const int8_t*) (w + 192);
-                const float d = jam_half2float(*(const uint16_t*) (w + 208));
-                for (int h = 0; h < 2; ++h)
-                    for (int g = 0; g < 4; ++g) {
-                        __m128i w0, w1; q6k_decode(w, h, g, &w0, &w1);
-                        const int blk = B*8 + h*4 + g;
-                        const size_t o = (size_t) blk*32;
-                        __m128 d0 = jam_hsum4x4_f(jam_kdot16_sse3(w0, t.aq[0] + o), jam_kdot16_sse3(w0, t.aq[1] + o),
-                                                  jam_kdot16_sse3(w0, t.aq[2] + o), jam_kdot16_sse3(w0, t.aq[3] + o));
-                        __m128 d1 = jam_hsum4x4_f(jam_kdot16_sse3(w1, t.aq[0] + o + 16), jam_kdot16_sse3(w1, t.aq[1] + o + 16),
-                                                  jam_kdot16_sse3(w1, t.aq[2] + o + 16), jam_kdot16_sse3(w1, t.aq[3] + o + 16));
-                        __m128 s0 = _mm_set1_ps(d * (float) sc[h*8 + g*2]), s1 = _mm_set1_ps(d * (float) sc[h*8 + g*2 + 1]);
-                        acc = _mm_add_ps(acc, _mm_mul_ps(KQ_LANES(t.ad, blk),
-                                                         _mm_add_ps(_mm_mul_ps(s0, d0), _mm_mul_ps(s1, d1))));
-                    }
-            }
-            kq_store4(J, i, j, acc);
-        }
-        for (; j < n; ++j) {                  /* column tail */
-            const int8_t* aq = J->aq + (size_t) j * J->k; const float* ad = J->ad + (size_t) j * J->nb;
-            float acc = 0.0f;
-            const uint8_t* w = wrow;
-            for (int B = 0; B < sblocks; ++B, w += JAM_Q6K_BYTES) {
-                const int8_t* sc = (const int8_t*) (w + 192);
-                const float d = jam_half2float(*(const uint16_t*) (w + 208));
-                for (int h = 0; h < 2; ++h)
-                    for (int g = 0; g < 4; ++g) {
-                        __m128i w0, w1; q6k_decode(w, h, g, &w0, &w1);
-                        const int blk = B*8 + h*4 + g;
-                        float s0 = d * (float) sc[h*8 + g*2], s1 = d * (float) sc[h*8 + g*2 + 1];
-                        float dot0 = jam_hsum4_f(jam_kdot16_sse3(w0, aq + (size_t) blk*32));
-                        float dot1 = jam_hsum4_f(jam_kdot16_sse3(w1, aq + (size_t) blk*32 + 16));
-                        acc += ad[blk] * (s0 * dot0 + s1 * dot1);
-                    }
-            }
-            ((float*) J->c)[(size_t) j * J->ldc + i] = acc;
-        }
+    const size_t w_stride = (size_t) (J->lda / JAM_QKK) * JAM_Q6K_BYTES;
+    const int n = J->n, n4 = n & ~3;
+    float* C = (float*) J->c; const size_t ldc = (size_t) J->ldc;
+    int i = rb;
+    for (; i + 4 <= re; i += 4) {   /* the kq45_sweep order */
+        const uint8_t* w0 = (const uint8_t*) J->a + (size_t) i * w_stride;
+        for (int j = 0; j < n4; j += 4)
+            for (int r = 0; r < 4; ++r) kq_store4(J, i + r, j, q6k_cols4(J, w0 + r * w_stride, j));
+        for (int j = n4; j < n; ++j) _mm_storeu_ps(C + (size_t) j * ldc + i, q6k_rows4(J, w0, w_stride, j));
+    }
+    for (; i < re; ++i) {
+        const uint8_t* w = (const uint8_t*) J->a + (size_t) i * w_stride;
+        for (int j = 0; j < n4; j += 4) kq_store4(J, i, j, q6k_cols4(J, w, j));
+        for (int j = n4; j < n; ++j) C[(size_t) j * ldc + i] = q6k_one(J, w, j);
     }
 }
