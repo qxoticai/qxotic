@@ -29,6 +29,7 @@ The one unchanged artifact is `json`, at 0.2.0.
 - **AVX-512-VNNI prefill in `jam-native` 0.3.1.** A 32x4 tile shares every activation broadcast between two weight vectors and keeps K-quant sub-block scales integer; on Zen 5 the Gemma 4 E2B quants prefill faster than llama.cpp on the same machine.
 - **Kernels that both compilers optimize.** The shipped libraries come from clang (Linux, macOS) and gcc (Windows), and some kernels compiled badly under one of them; their source now produces the fast loop under both, with bit-identical results.
   On the pre-AVX2 tiers prefill runs 2.4x to 2.5x faster (Gemma 4 E2B Q4_K 67 to 166 t/s on `sse3`), AVX2 and AVX-VNNI K-quants gain 5% to 13%, and the SSE3 tiers gain float, F16, BF16 and Q1_0 kernels.
+- **`jam-vector` picks its band tile per JIT.** GraalVM CE 25.4 and newer allocate all 32 AVX-512 registers and take the 4x4 band (9% to 36% faster gemm, 16% to 23% faster prefill); OpenJDK C2 and older Graal JITs take 3x3, which on C2 is 14% to 24% faster than its former 4x4 default.
 
 ### Also
 
