@@ -7,7 +7,7 @@
  * 4-groups-of-8 layouts are byte-for-byte the 2-groups-of-16 ones), same two-phase launch, same
  * deferred-float scale/min math. Only the int8 dot differs: no vpdpbusd, so the base ladder is
  * maddubs(w_u8, x_s8) -> madd(1) -> add int32 - and wherever the per-maddubs int16 bound allows,
- * products ACCUMULATE IN INT16 (plain add_epi16, wrap provably unreachable) with ONE deferred
+ * products ACCUMULATE IN INT16 (wrap/saturation provably unreachable) with ONE deferred
  * madd, cutting the ladder to ~2 ops/group:
  *   Q4_K, Q4_0 : peak 2*15*127 = 3810/maddubs -> all 8 groups chain (8*3810 = 30480 < 32767)
  *   MXFP4      : peak 2*255*12 = 6120        -> chains of 4 (24480)
@@ -38,12 +38,20 @@ static inline __m256i b8_dot(__m256i acc, __m256i wu, __m256i xb) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(_mm256_maddubs_epi16(wu, xb), _mm256_set1_epi16(1)));
 }
 
-/* int16-chained variants: accumulate maddubs products with a plain (wrapping) add_epi16 - callers
- * guarantee the chain length keeps |sum| under 32767 (see the header table) - then fold the chain
- * to int32 with one madd. */
+/* int16-chained variants: accumulate maddubs products in int16 - callers guarantee the chain length
+ * keeps |sum| under 32767 (see the header table) - then fold the chain to int32 with one madd. Integer
+ * adds are associative, so gcc rebalances a fully unrolled chain into a sum tree that computes every
+ * maddubs of the tile first and spills them (q4k_block8_nr: 167 stack accesses, ~30% behind clang). Each
+ * chain shape is written so neither compiler can: the 8-chains unroll by 2 only (a 2-term tree per step),
+ * the 4-chains (b8_chain4) use a SATURATING add, which is not associative and equals the wrapping add
+ * because the bound is never reached. Not saturating everywhere: on the 8-chains it costs clang ~6%. */
 static inline __m256i b8_chain(__m256i i16, __m256i wu, __m256i xb) {
     return _mm256_add_epi16(i16, _mm256_maddubs_epi16(wu, xb));
 }
+static inline __m256i b8_chain4(__m256i i16, __m256i wu, __m256i xb) {
+    return _mm256_adds_epi16(i16, _mm256_maddubs_epi16(wu, xb));
+}
+#define B8_UNROLL2 _Pragma("GCC unroll 2")   /* honoured by gcc and clang alike */
 
 static inline __m256i b8_fold(__m256i acc, __m256i i16) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(i16, _mm256_set1_epi16(1)));
@@ -131,7 +139,7 @@ static inline __m256 q4k_block8(const uint8_t* qs, const float* dw, const float*
     __m256 f = _mm256_setzero_ps();
     for (int p = 0; p < pairs; p++) {
         __m256i iLo = _mm256_setzero_si256(), iHi = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
+        B8_UNROLL2 for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i pk = _mm256_load_si256((const void*) (qs + g * 32));
             iLo = b8_chain(iLo, _mm256_and_si256(pk, m4), _mm256_set1_epi32(((const int*) x)[g]));
             iHi = b8_chain(iHi, _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4),
@@ -164,7 +172,7 @@ static inline void q4k_block8_nr(const uint8_t* qs, const float* dw, const float
     for (int p = 0; p < pairs; p++) {
         __m256i iLo[B8_NR_Q4K], iHi[B8_NR_Q4K];
         for (int c = 0; c < B8_NR_Q4K; c++) { iLo[c] = _mm256_setzero_si256(); iHi[c] = _mm256_setzero_si256(); }
-        for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
+        B8_UNROLL2 for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i pk = _mm256_load_si256((const void*) (qs + g * 32));
             __m256i lo = _mm256_and_si256(pk, m4);                       /* decode once, reuse NR cols */
             __m256i hi = _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4);
@@ -255,7 +263,7 @@ static inline __m256 q5k_block8(const uint8_t* qs, const float* dw, const float*
         for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*7874) */
             __m256i i16 = _mm256_setzero_si256();
             for (int g = h * 4; g < h * 4 + 4; g++)
-                i16 = b8_chain(i16, _mm256_load_si256((const void*) (qs + g * 32)),
+                i16 = b8_chain4(i16, _mm256_load_si256((const void*) (qs + g * 32)),
                                _mm256_set1_epi32(((const int*) x)[g]));
             acc = b8_fold(acc, i16);
         }
@@ -286,7 +294,7 @@ static inline void q5k_block8_nr(const uint8_t* qs, const float* dw, const float
             for (int g = h * 4; g < h * 4 + 4; g++) {
                 __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
                 for (int c = 0; c < B8_NR_KQ; c++)
-                    i16[c] = b8_chain(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+                    i16[c] = b8_chain4(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
             }
             for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
@@ -603,7 +611,7 @@ static inline __m256 q4_0_block8(const uint8_t* qs, const float* dw, const float
     __m256 f = _mm256_setzero_ps();
     for (int b = 0; b < nb; b++) {
         __m256i i16 = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++)   /* 8 chained maddubs stay under int16 (8*3810) */
+        B8_UNROLL2 for (int g = 0; g < 8; g++)   /* 8 chained maddubs stay under int16 (8*3810) */
             i16 = b8_chain(i16, _mm256_load_si256((const void*) (qs + g * 32)),
                            _mm256_set1_epi32(((const int*) x)[g]));
         __m256i acc = b8_fold(_mm256_setzero_si256(), i16);
@@ -628,7 +636,7 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
     for (int b = 0; b < nb; b++) {
         __m256i i16[B8_NR_KQ];
         for (int c = 0; c < B8_NR_KQ; c++) i16[c] = _mm256_setzero_si256();
-        for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
+        B8_UNROLL2 for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
             for (int c = 0; c < B8_NR_KQ; c++)
                 i16[c] = b8_chain(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
@@ -706,7 +714,7 @@ static inline __m256 mxfp4_block8(const uint8_t* qs, const float* dw, const floa
         for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*6120) */
             __m256i i16 = _mm256_setzero_si256();
             for (int g = h * 4; g < h * 4 + 4; g++)
-                i16 = b8_chain(i16, _mm256_set1_epi32((int) (((const uint32_t*) x)[g] ^ 0x80808080u)),
+                i16 = b8_chain4(i16, _mm256_set1_epi32((int) (((const uint32_t*) x)[g] ^ 0x80808080u)),
                                _mm256_load_si256((const void*) (qs + g * 32)));
             acc = b8_fold(acc, i16);
         }
@@ -736,7 +744,7 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
             for (int g = h * 4; g < h * 4 + 4; g++) {
                 __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
                 for (int c = 0; c < B8_NR_KQ; c++)
-                    i16[c] = b8_chain(i16[c], _mm256_set1_epi32((int) (((const uint32_t*) x[c])[g] ^ 0x80808080u)), w);
+                    i16[c] = b8_chain4(i16[c], _mm256_set1_epi32((int) (((const uint32_t*) x[c])[g] ^ 0x80808080u)), w);
             }
             for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
