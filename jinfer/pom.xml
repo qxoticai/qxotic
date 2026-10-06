@@ -11,7 +11,7 @@
 
   <artifactId>jinfer-parent</artifactId>
   <!-- The version of a jinfer release, and of every artifact that declares none of its own. -->
-  <version>0.3.0</version>
+  <version>0.3.1</version>
   <packaging>pom</packaging>
 
   <name>Jinfer Parent</name>
@@ -56,30 +56,7 @@
   <properties>
     <!-- This POM's version, written out: in an artifact that declares its own,
          ${project.version} would mean that one. -->
-    <jinfer.version>0.3.0</jinfer.version>
-    <!-- Released alone since (RELEASING.md); the next release of jinfer removes these. -->
-    <jinfer-bailingmoe3.version>0.3.1</jinfer-bailingmoe3.version>
-    <jinfer-cache.version>0.3.1</jinfer-cache.version>
-    <jinfer-chat.version>0.3.1</jinfer-chat.version>
-    <jinfer-codecs.version>0.3.1</jinfer-codecs.version>
-    <jinfer-core.version>0.3.1</jinfer-core.version>
-    <jinfer-gemma4.version>0.3.1</jinfer-gemma4.version>
-    <jinfer-gptoss.version>0.3.1</jinfer-gptoss.version>
-    <jinfer-hub.version>0.3.1</jinfer-hub.version>
-    <jinfer-inflect2.version>0.3.1</jinfer-inflect2.version>
-    <jinfer-jinja.version>0.3.1</jinfer-jinja.version>
-    <jinfer-kernels.version>0.3.1</jinfer-kernels.version>
-    <jinfer-laguna.version>0.3.1</jinfer-laguna.version>
-    <jinfer-langchain4j.version>0.3.1</jinfer-langchain4j.version>
-    <jinfer-lfm2.version>0.3.1</jinfer-lfm2.version>
-    <jinfer-llama.version>0.3.1</jinfer-llama.version>
-    <jinfer-mellum.version>0.3.1</jinfer-mellum.version>
-    <jinfer-nemotronh.version>0.3.1</jinfer-nemotronh.version>
-    <jinfer-parakeet.version>0.3.1</jinfer-parakeet.version>
-    <jinfer-qwen3.version>0.3.1</jinfer-qwen3.version>
-    <jinfer-qwen35.version>0.3.1</jinfer-qwen35.version>
-    <jinfer-spring-ai-autoconfigure.version>0.3.1</jinfer-spring-ai-autoconfigure.version>
-    <jinfer-spring-ai.version>0.3.1</jinfer-spring-ai.version>
+    <jinfer.version>0.3.1</jinfer.version>
     <maven.compiler.release>25</maven.compiler.release>
 
     <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
@@ -148,82 +125,82 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-core</artifactId>
-        <version>${jinfer-core.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-codecs</artifactId>
-        <version>${jinfer-codecs.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-kernels</artifactId>
-        <version>${jinfer-kernels.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-cache</artifactId>
-        <version>${jinfer-cache.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-lfm2</artifactId>
-        <version>${jinfer-lfm2.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-qwen3</artifactId>
-        <version>${jinfer-qwen3.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-qwen35</artifactId>
-        <version>${jinfer-qwen35.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-bailingmoe3</artifactId>
-        <version>${jinfer-bailingmoe3.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-laguna</artifactId>
-        <version>${jinfer-laguna.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-mellum</artifactId>
-        <version>${jinfer-mellum.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-gemma4</artifactId>
-        <version>${jinfer-gemma4.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-gptoss</artifactId>
-        <version>${jinfer-gptoss.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-nemotronh</artifactId>
-        <version>${jinfer-nemotronh.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-parakeet</artifactId>
-        <version>${jinfer-parakeet.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-llama</artifactId>
-        <version>${jinfer-llama.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-inflect2</artifactId>
-        <version>${jinfer-inflect2.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -233,7 +210,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-chat</artifactId>
-        <version>${jinfer-chat.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -248,7 +225,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-hub</artifactId>
-        <version>${jinfer-hub.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -258,22 +235,22 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
-        <version>${jinfer-jinja.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-langchain4j</artifactId>
-        <version>${jinfer-langchain4j.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-spring-ai</artifactId>
-        <version>${jinfer-spring-ai.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-spring-ai-autoconfigure</artifactId>
-        <version>${jinfer-spring-ai-autoconfigure.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

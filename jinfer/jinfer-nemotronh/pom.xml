@@ -4,10 +4,9 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </parent>
   <artifactId>jinfer-nemotronh</artifactId>
-  <version>0.3.1</version>
   <name>Jinfer Nemotron-H Provider</name>
   <description>Local chat inference for NVIDIA Nemotron-H models with Jinfer.</description>
   <properties>

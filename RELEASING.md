@@ -66,6 +66,7 @@ Smoke-test any native executables intended for distribution on their target plat
 - A project (gguf, json, safetensors, jota, jam, toknroll, jinfer) is released as a whole, and every artifact in it takes the project's version.
   Between two releases of a project, an artifact whose code changed is released alone, on a version of its own.
   The next release of the project removes those versions again.
+- An artifact that depends on a bumped artifact is bumped too, transitively, so no published POM names a stale version of a sibling.
 - A project's version is its own root POM plus the matching `<project>.version` property (in the repository root POM; for jinfer, in `jinfer/pom.xml`), and its entries in `jinfer-bom`.
   An artifact's own version is three: its POM, the `<artifactId>.version` property next to its project's, and its entry in `jinfer-bom`.
 - Run `make release-plan`: it fails when those edits disagree or when code changed under a version Maven Central holds, and it lists what to stage.

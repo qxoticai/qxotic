@@ -3,8 +3,8 @@
 ## 0.3.1
 
 A command-based CLI, embeddings and reranking over HTTP, faster prefill, and a release-wide round of fixes.
-Every artifact whose code changed moves to 0.3.1; the rest keep their version.
-Unchanged: `jinfer-kokoro`, `jinfer-models-all` and `jinfer-spring-ai-spring-boot-starter` at 0.3.0, `json` and `toknroll-gguf` at 0.2.0.
+Every artifact whose code changed moves to 0.3.1, and so does everything that depends on one, so a published POM never names a stale version.
+The one unchanged artifact is `json`, at 0.2.0.
 `jinfer-bom` 0.3.1 names each artifact at its own version, so one import pins a coherent set.
 
 ### CLI

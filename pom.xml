@@ -80,9 +80,7 @@
     <safetensors.version>0.3.1</safetensors.version>
     <jota.version>0.3.1</jota.version>
     <jam.version>0.3.1</jam.version>
-    <toknroll.version>0.2.0</toknroll.version>
-    <toknroll-core.version>0.3.1</toknroll-core.version>
-    <toknroll-hf.version>0.3.1</toknroll-hf.version>
+    <toknroll.version>0.3.1</toknroll.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
          (and only) gate, so one switch decides what reaches Maven Central. -->
@@ -268,7 +266,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
-        <version>${toknroll-core.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
@@ -283,7 +281,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
-        <version>${toknroll-hf.version}</version>
+        <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

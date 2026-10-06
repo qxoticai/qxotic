@@ -47,7 +47,7 @@ echo 'Hello, World!' | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>    <!-- tokenizer.json loading (HF / ModelScope) -->
-  <version>0.2.0</version>
+  <version>0.3.1</version>
 </dependency>
 ```
 

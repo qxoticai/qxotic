@@ -4,10 +4,9 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </parent>
   <artifactId>jinfer-laguna</artifactId>
-  <version>0.3.1</version>
   <name>Jinfer Laguna Provider</name>
   <description>Local chat inference for Poolside Laguna XS 2.1 with Jinfer.</description>
   <properties>

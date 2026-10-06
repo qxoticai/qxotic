@@ -4,10 +4,9 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </parent>
   <artifactId>jinfer-bailingmoe3</artifactId>
-  <version>0.3.1</version>
   <name>Jinfer Ling 3 Provider</name>
   <description>Local chat inference for inclusionAI Ling 3 models (Bailing V3 MoE architecture) with
     Jinfer.</description>

@@ -5,12 +5,11 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>toknroll-aggregator</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.1</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-core</artifactId>
-  <version>0.3.1</version>
   <name>Tok'n'Roll Core</name>
   <description>Customizable tiktoken-compatible and SentencePiece BPE tokenization for language models.</description>
   <properties>

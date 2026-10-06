@@ -1,6 +1,6 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS com.qxotic:toknroll-gguf:0.2.0
-//DEPS com.qxotic:toknroll-hf:0.2.0
+//DEPS com.qxotic:toknroll-gguf:0.3.1
+//DEPS com.qxotic:toknroll-hf:0.3.1
 //DEPS info.picocli:picocli:4.7.7
 //DEPS info.picocli:picocli-codegen:4.7.7
 //JAVAC_OPTIONS -proc:full
@@ -22,7 +22,7 @@ import picocli.CommandLine.Option;
 
 @Command(
         name = "toknroll",
-        version = "toknroll 0.2.0",
+        version = "toknroll 0.3.1",
         description = "Tokenize text or decode token IDs with HuggingFace / ModelScope / GGUF tokenizers")
 class toknroll implements Callable<Integer> {
 
