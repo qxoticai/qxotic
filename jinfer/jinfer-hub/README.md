@@ -136,7 +136,7 @@ Warm resolution makes no request. A cached reference resolves locally. In offlin
 file reports its expected cache path:
 
 ```text
-hf.co/unsloth/gemma-4-E2B-it-GGUF is not cached at ~/.cache/jinfer/... and JINFER_OFFLINE forbids downloading
+hf.co/unsloth/gemma-4-E2B-it-GGUF is not cached in ~/.cache/jinfer/..., and JINFER_OFFLINE forbids downloading
 ```
 
 `find(...)` does not access the network. It also checks the Hugging Face hub cache, so files fetched

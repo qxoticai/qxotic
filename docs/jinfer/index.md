@@ -15,7 +15,13 @@ backend is on the classpath.
 
 ## Quick start
 
-Build the CLI:
+With [JBang](https://www.jbang.dev/), run the published CLI without a checkout:
+
+```bash
+jbang jinfer@qxoticai chat --model LiquidAI/LFM2.5-350M-GGUF:Q8_0
+```
+
+Or build it from a checkout:
 
 ```bash
 mvn -pl jinfer/jinfer-cli -am package -DskipTests
@@ -72,7 +78,7 @@ Architecture dispatch comes from providers on the classpath.
 | Laguna XS 2.1 | chat |
 | Mellum 2 | chat |
 | Ling 3 | chat |
-| Llama family | chat (Llama, Ministral, MiniCPM, SmolLM, Granite) |
+| Llama family | chat (Llama, Ministral, MiniCPM, SmolLM3, Granite) |
 | gpt-oss, Nemotron-H | chat |
 | Inflect | speech synthesis |
 | Kokoro 82M | speech synthesis |
@@ -113,7 +119,7 @@ Add `jinfer-models-all` for every provider, or individual `jinfer-<model>` artif
 </dependencyManagement>
 ```
 
-After the import, declare jinfer artifacts without versions. The BOM also pins the substrate (`jota-memory`, `gguf`, `toknroll`, `jam`).
+After the import, declare jinfer artifacts without versions. The BOM also pins the substrate (`jota`, `jam`, `toknroll`, `gguf`, `safetensors`, `json`).
 
 Attach multimodal projectors by capability, and serve the model:
 

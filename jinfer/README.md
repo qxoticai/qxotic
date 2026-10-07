@@ -293,6 +293,7 @@ mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
 java \
   --add-modules jdk.incubator.vector \
+  --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model LiquidAI/LFM2.5-350M-GGUF:Q8_0 \
   chat
@@ -355,6 +356,7 @@ mvn -pl jinfer/jinfer-cli -am package -DskipTests
 
 java \
   --add-modules jdk.incubator.vector \
+  --enable-native-access=ALL-UNNAMED \
   -jar jinfer/jinfer-cli/target/jinfer.jar \
   --model LiquidAI/LFM2.5-2.6B-GGUF:Q8_0 \
   --context-capacity 65536 \

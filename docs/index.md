@@ -31,9 +31,9 @@ tokenization, model formats, tensor math, native quantized matmul, and a full in
 
 ## Conventions
 
-- **Model strings.** Wherever a model is expected, a local path or hub reference
-  (`user/repo:file`, or `modelscope.cn/user/repo:file` for another source) works. Downloads are resumable,
-  checksum-verified, and cached, so warm runs never touch the network.
+- **Model strings.** Wherever a model is expected, a local path or hub reference works:
+  `user/repo:QUANT` or `user/repo/file.gguf`, prefixed with `modelscope.cn/` for another source.
+  Downloads are resumable, checksum-verified, and cached, so warm runs never touch the network.
 - **GGUF, everywhere.** Quantized weights, metadata and tokenizer in one file. `gguf` reads the
   layout, `toknroll` loads the tokenizer, `jinfer` runs the model.
 - **Memory-first.** Tensors and activations live in `MemoryView` (jota), shared by jota, jam and
