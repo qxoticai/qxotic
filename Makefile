@@ -152,4 +152,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release
+	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy
