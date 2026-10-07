@@ -610,15 +610,12 @@ final class Options {
     /** Where every option's description starts, on every help screen. */
     static final int HELP_COLUMN = 33;
 
-    static final int HELP_WIDTH = 80;
-
     // "  -x, --option <arg>  description": two spaces or more end the option's spelling
     private static final Pattern OPTION_ROW = Pattern.compile("  (-\\S.*?)(?: {2,}(\\S.*))?");
 
     /**
      * One description column for a whole help screen written by several classes: each option's
-     * description moves to {@link #HELP_COLUMN}, below the option when it is too long, and wraps at
-     * {@link #HELP_WIDTH}.
+     * description moves to {@link #HELP_COLUMN}, below the option when it is too long.
      */
     static String layout(String help) {
         StringBuilder out = new StringBuilder();
@@ -635,30 +632,14 @@ final class Options {
                                     option.length() + 2 > HELP_COLUMN
                                             ? "\n" + pad
                                             : " ".repeat(HELP_COLUMN - option.length()))
-                            .append(wrap(row.group(2)));
+                            .append(row.group(2));
             } else if (inRow && line.startsWith("      ") && !line.isBlank()) {
-                out.append(pad).append(wrap(line.strip()));
+                out.append(pad).append(line.strip());
             } else {
                 inRow = false;
                 out.append(line);
             }
             out.append('\n');
-        }
-        return out.toString();
-    }
-
-    /** {@code text} from {@link #HELP_COLUMN}, broken between words at {@link #HELP_WIDTH}. */
-    private static String wrap(String text) {
-        StringBuilder out = new StringBuilder();
-        int column = HELP_COLUMN;
-        for (String word : text.split(" ")) {
-            if (column > HELP_COLUMN) {
-                boolean full = column + 1 + word.length() > HELP_WIDTH;
-                out.append(full ? "\n" + " ".repeat(HELP_COLUMN) : " ");
-                column = full ? HELP_COLUMN : column + 1;
-            }
-            out.append(word);
-            column += word.length();
         }
         return out.toString();
     }
