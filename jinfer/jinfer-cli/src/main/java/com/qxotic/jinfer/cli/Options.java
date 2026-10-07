@@ -584,8 +584,8 @@ final class Options {
 
                 Run 'jinfer <command> --help' for details (or 'jinfer help <command>').
                 --version prints the version.
-                JVM: java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \\
-                       -jar jinfer.jar ...
+                JVM: java --add-modules jdk.incubator.vector \\
+                       --enable-native-access=ALL-UNNAMED -jar jinfer.jar ...
                 """);
     }
 
@@ -610,7 +610,7 @@ final class Options {
     /** Where every option's description starts, on every help screen. */
     static final int HELP_COLUMN = 33;
 
-    static final int HELP_WIDTH = 100;
+    static final int HELP_WIDTH = 80;
 
     // "  -x, --option <arg>  description": two spaces or more end the option's spelling
     private static final Pattern OPTION_ROW = Pattern.compile("  (-\\S.*?)(?: {2,}(\\S.*))?");
@@ -668,9 +668,9 @@ final class Options {
                 """
                 Model options (before or after the command):
                   -m, --model <path|ref>       model file or hub reference; required
-                  --with <role>=<path|ref>     attach a companion; repeatable for different roles
+                  --with <role>=<path|ref>     attach a companion; repeat for other roles
                   -t, --threads <int>          compute workers (default: physical/fast cores)
-                                               overrides -Djinfer.threads when both are supplied
+                                               overrides -Djinfer.threads when both are given
 
                 References: [host/]owner/repo[@revision][/file][:quant]. Default host: hf.co.
                 Existing local files win. Remote files are downloaded once and cached.
@@ -689,16 +689,17 @@ final class Options {
                   --top-k <int>               candidate limit; 0 disables
                   --min-p <number>            relative probability floor in [0, 1]
                   -s, --seed <long>           sampling seed
-                  -c, --context-capacity <int>  state capacity; default min(4096, model); 0: model maximum
-                  --batch-capacity <int>      default prefill/scratch width (runtime default: 512)
+                  -c, --context-capacity <int>  default min(4096, model); 0: model maximum
+                  --batch-capacity <int>      prefill/scratch width; default 512
                   -n, --max-output-tokens <int>  generated-token budget; -1: remaining context
                   --think <off|on>            off: do not reason; on: allow model reasoning
                   --max-reasoning-tokens <int>  reasoning budget; -1: uncapped
                   --reasoning-cutoff-message <text>  forced text when the reasoning budget runs out
                   --speculation-depth <int>   draft depth in [0, 8]; default 4
-                  --with tokenizer=<path|ref>  use another GGUF's tokenizer; refused at load if its ids differ
+                  --with tokenizer=<path|ref>  another GGUF's tokenizer; its ids must match
 
-                Unspecified sampling settings use the model's recommendations, then engine defaults.
+                Unspecified sampling settings use the model's recommendations, then engine
+                defaults.
                 """);
     }
 
@@ -711,7 +712,7 @@ final class Options {
                   --stream / --no-stream      stream generated text (default: on)
                   --echo / --no-echo          echo token spellings to stderr (default: off)
                   --color <auto|on|off>       terminal colors (default: auto)
-                                              on forces colors even with NO_COLOR or TERM=dumb
+                                              on: colors even with NO_COLOR or TERM=dumb
                 """);
     }
 }

@@ -106,7 +106,7 @@ final class Hub {
                             Usage: jinfer pull [--force] <ref>...
                             Example: jinfer pull LiquidAI/LFM2.5-350M-GGUF:Q8_0
 
-                              -f, --force  download again even when a completed file is cached
+                              -f, --force  download again even when already cached
 
                             Prints local paths. A failed refresh preserves the previous cached file.
                             Mutable references require network access, even when cached.

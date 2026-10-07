@@ -42,6 +42,9 @@ class MainTest {
         if (verb.equals("speak")) assertFalse(direct.out().contains("--port"));
     }
 
+    /** A wider line wraps at the terminal's edge and lands left of the description column. */
+    private static final int TERMINAL_WIDTH = 80;
+
     /**
      * Each help screen is assembled from several sections; every option's description still starts
      * at one column, on the option's line or, for a long option, alone on the next.
@@ -65,7 +68,7 @@ class MainTest {
         List<String> lines = help.out().lines().toList();
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
-            assertTrue(line.length() <= Options.HELP_WIDTH, verb + " overflows: " + line);
+            assertTrue(line.length() <= TERMINAL_WIDTH, verb + " overflows: " + line);
             if (!line.startsWith("  -")) continue;
             boolean inline =
                     line.length() > Options.HELP_COLUMN
@@ -86,6 +89,9 @@ class MainTest {
             assertEquals(0, Main.run(argv, capture.io, ModelStore.of(dir)));
             assertTrue(capture.out().contains("jinfer"));
             assertEquals("", capture.err());
+            capture.out()
+                    .lines()
+                    .forEach(line -> assertTrue(line.length() <= TERMINAL_WIDTH, line));
         }
     }
 
