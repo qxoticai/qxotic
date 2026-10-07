@@ -12,7 +12,7 @@ The one unchanged artifact is `json`, at 0.2.0.
 - **Commands, not mode flags.** Every invocation names its command: `chat`, `instruct`, `server`, `speak` and `transcribe` run a model; `pull`, `list` and `cache-info` manage the model cache.
   The legacy mode flags `--chat`, `--server`, `--transcribe` and `--speak` are gone, a bare `-m model.gguf` no longer implies `instruct`, and `--mmproj` is replaced by `--with media=<ref>`.
   Text and audio input are positional, switches such as `--stream` and `--echo` take no value, and `--think` accepts `on`, `off` or `inline`.
-- **Help per command.** `jinfer <command> --help` names only the options that command accepts, and an option that does not apply to it is refused rather than ignored.
+- **Help per command.** `jinfer <command> --help` and `jinfer help <command>` name only the options that command accepts, and an option that does not apply to it is refused rather than ignored; `/help` lists chat's own commands.
 - **Live transcription.** `jinfer transcribe -m <model> - --raw-pcm` reads 16 kHz mono PCM from stdin and draws the live view; `-` alone reads an encoded audio file from stdin.
 - **`speak` plays by default.** Without `--output`, speech is played after synthesis, so `--play` is gone; `--stream` starts playback with the first clip.
 - **One server limit.** `--concurrency N` holds up to `N` requests and refuses the next one with a message naming the limit; `--queue-depth` is removed.
@@ -28,8 +28,8 @@ The one unchanged artifact is `json`, at 0.2.0.
 - **Prefill per row.** Residual adds, SwiGLU and KV commits run one row per job across the ports instead of serially over the batch, for up to 20% more prompt throughput at 16 threads, depending on the model.
 - **AVX-512-VNNI prefill in `jam-native` 0.3.1.** A 32x4 tile shares every activation broadcast between two weight vectors and keeps K-quant sub-block scales integer; on Zen 5 the Gemma 4 E2B quants prefill faster than llama.cpp on the same machine.
 - **Kernels that both compilers optimize.** The shipped libraries come from clang (Linux, macOS) and gcc (Windows), and some kernels compiled badly under one of them; their source now produces the fast loop under both, with bit-identical results.
-  On the pre-AVX2 tiers prefill runs 2.4x to 2.5x faster (Gemma 4 E2B Q4_K 67 to 166 t/s on `sse3`), AVX2 and AVX-VNNI K-quants gain 5% to 13%, and the SSE3 tiers gain float, F16, BF16 and Q1_0 kernels.
-- **`jam-vector` picks its band tile per JIT.** GraalVM CE 25.4 and newer allocate all 32 AVX-512 registers and take the 4x4 band (9% to 36% faster gemm, 16% to 23% faster prefill); OpenJDK C2 and older Graal JITs take 3x3, which on C2 is 14% to 24% faster than its former 4x4 default.
+  On the pre-AVX2 tiers prefill runs 2.3x to 3.3x faster (Gemma 4 E2B Q4_K 67 to 168 t/s on `sse3`), Q5_K and Q6_K gain 10% to 14% on AVX2 and AVX-VNNI, and the SSE3 tiers gain float, F16, BF16 and Q1_0 kernels.
+- **`jam-vector` picks its band tile per JIT.** GraalVM CE 25.4 and newer allocate all 32 AVX-512 registers and take the 4x4 band (9% to 36% faster gemm, 16% to 23% faster prefill); OpenJDK C2, Oracle GraalVM and older GraalVM CE take 3x3, which on C2 is 14% to 24% faster than its former 4x4 default.
 
 ### Also
 
@@ -42,6 +42,9 @@ The one unchanged artifact is `json`, at 0.2.0.
 
 Coming from 0.3.0, these act differently:
 
+- **GPT-2 style tokenizers in `toknroll-hf`.** A `ByteLevel` pre-tokenizer applies the GPT-2 split unless it says `use_regex: false`, as Hugging Face tokenizers does, so GPT-2, DistilGPT-2, Phi-2 and RoBERTa encode differently: now identical to `r50k_base` where they share its vocabulary.
+- **Refusals instead of silent defaults.** A generative model loaded as an embedder throws `IncompatibleModelException`, and the positive-integer tuning properties (`jinfer.decodeBlockSize` and the like) refuse a value they cannot use instead of ignoring it; the undocumented `vis.squareResize` switch is gone.
+- **Spring AI.** Sampling options are validated when they are built, naming the property, a blank rerank model is refused at boot, and `getReasoningBudget()` / `getReasoningBudgetMessage()` are deprecated for `getMaxReasoningTokens()` / `getReasoningCutoffMessage()`.
 - **Stricter templates and grammars.** An unknown Jinja statement such as `{% endset %}` fails instead of rendering nothing, and malformed GBNF or unsatisfiable schema bounds (`minLength` over `maxLength`, `minItems` over `maxItems`) are refused instead of compiling to a different language.
 - **`enable_thinking` decides.** A request's `chat_template_kwargs.enable_thinking` overrides the `thinking` flag for the whole request, in the library as on the server.
 - **Offline precedence.** `-Djinfer.offline` decides when set, else `JINFER_OFFLINE`; both accept `1`/`true`/`on`/`yes` and `0`/`false`/`off`/`no`, so `-Djinfer.offline=false` overrides `JINFER_OFFLINE=1`.

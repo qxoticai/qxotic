@@ -6,7 +6,7 @@ sidebar_position: 2
 
 **One tensor API, every backend.** A tensor library with pluggable CPU/GPU backends and first-class GraalVM Native Image support. Write tensor code once, run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
 
-**On Maven Central at 0.2.0:** `jota-core` and `jota-memory`, the layers jinfer builds on. The tensor engine (`jota-tensor`) and the backends build from the [repository](https://github.com/qxoticai/qxotic) with `mvn -f jota/pom.xml install` and are not published yet.
+**On Maven Central at 0.3.1:** `jota-core` and `jota-memory`, the layers jinfer builds on. The tensor engine (`jota-tensor`) and the backends build from the [repository](https://github.com/qxoticai/qxotic) with `mvn -f jota/pom.xml install` and are not published yet.
 
 jota's IRs are simple and MLIR-like; no data-dependent control flow:
 

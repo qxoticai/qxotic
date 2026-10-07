@@ -10,7 +10,7 @@ first-class GraalVM Native Image support.
 Write tensor code once. Run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
 Backends self-register, with no launch flags and no `-Djava.library.path`.
 
-**What is on Maven Central at 0.2.0:** `jota-core` and `jota-memory`, the layers jinfer builds on.
+**What is on Maven Central at 0.3.1:** `jota-core` and `jota-memory`, the layers jinfer builds on.
 The tensor engine (`jota-tensor`) and the backends build from this repository (`mvn -f jota/pom.xml
 install`) and are not published yet; their sections below describe the source tree.
 
@@ -40,7 +40,7 @@ traces a computation graph once and emits
 
 Pick the smallest API that fits. Each layer includes the previous ones transitively:
 
-| Artifact | Contents | 0.2.0 |
+| Artifact | Contents | 0.3.1 |
 |----------|--------------|-------|
 | `jota-core` | data types, devices, shapes, strides, layouts | Maven Central |
 | `jota-memory` | `Memory`, `MemoryView`, allocators, access, transfers | Maven Central |
