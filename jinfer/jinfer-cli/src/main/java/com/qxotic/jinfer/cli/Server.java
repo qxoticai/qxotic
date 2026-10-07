@@ -368,17 +368,19 @@ final class Server {
                   --port <int>               default 54154; 0 selects an available port
                   --api-key <token>          required for non-loopback binds
                   --cors-origin <origin>     repeatable; default *
-                  --concurrency <int>        requests held at once; default 16. One is served, the
-                                             rest wait their turn; past that: 503 + Retry-After
+                  --concurrency <int>        requests held at once; default 16
+                                             one is served, the rest wait their turn
+                                             past that: 503 + Retry-After
                   --max-body-mb <int>        request-body limit; default 32
                   --write-timeout <seconds>  body-read/SSE-write timeout; default 30
                   --request-timeout <seconds>  generation deadline; default 300; 0 disables
-                  --no-grammar               disable constrained generation (language models)
+                  --no-grammar               disable constrained decoding (language models)
                   --cache / --cache-ro <file>  persistent prompt cache (language models)
                   --raw-prompt               default to raw language prompts
 
                 Generation settings are request defaults, not HTTP resource limits.
-                Clients supply system messages in their requests; --system-prompt is not a server option.
+                Clients supply system messages in their requests; --system-prompt is not a
+                server option.
                 """);
         Options.modelHelp(out);
         Options.generationHelp(out);

@@ -176,17 +176,18 @@ final class Speak {
                 Usage: jinfer [model options] speak [options] <text|->
                 Examples:
                   jinfer speak -m inflect.gguf "Hello world."
-                  jinfer speak -m kokoro.gguf --with voice=af_heart.gguf --output hello.wav "Hello."
+                  jinfer speak -m kokoro.gguf --with voice=af_heart.gguf -o hello.wav "Hello."
 
                 Speak options (after the command):
                   --stream / --no-stream     play clips during synthesis (default: off)
                   -o, --output <file|->      write WAV instead of playing; '-' writes stdout
-                  --speed <number>           positive speaking-rate multiplier; default: model's rate
+                  --speed <number>           positive rate multiplier; default: model's rate
 
                 Speech plays after synthesis unless --stream or --output is given; those two
                 exclude each other. '-' reads UTF-8 text to EOF; --stream controls audio
                 playback, not incremental text input.
-                Kokoro requires --with voice=<path|ref>; Inflect2 accepts --with lexicon=<path|ref>.
+                Kokoro requires --with voice=<path|ref>; Inflect2 accepts
+                --with lexicon=<path|ref>.
                 Playback: macOS afplay; Windows PowerShell SoundPlayer; Linux aplay/ffplay.
                 """);
         Options.modelHelp(out);
