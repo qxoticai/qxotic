@@ -55,6 +55,10 @@ class JinferChatModelIT {
                         .modelPath(TestModels.require(MODEL_REF))
                         .contextCapacity(4096)
                         .maxOutputTokens(512)
+                        // greedy and seeded: sampled at the 0.8 default, the 8B answers the
+                        // multiTurn codeword question with "Unknown" on some draws
+                        .temperature(0.0)
+                        .seed(42L)
                         .build();
     }
 
