@@ -37,6 +37,7 @@ The one unchanged artifact is `json`, at 0.2.0.
   Files are read and written little-endian on every platform, and the tensor name limit counts UTF-8 bytes; the writer stops at ggml's 63.
 - **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
 - **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
+- **LangChain4j 1.21.0.** `jinfer-langchain4j` builds on it and passes its chat, streaming, AI-service, tools and JSON-schema TCKs.
 
 ### Behaviour changes
 
