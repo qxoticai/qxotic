@@ -2,6 +2,7 @@
 # What a release would publish, and whether the versions agree (RELEASING.md):
 #
 #   ./release-plan.sh
+#   ./release-plan.sh --held   # only the module directories Central already holds, for release-deploy
 #
 # Lists every artifact that opts into publication with its version, whether Maven Central holds
 # it, and whether its code changed since the tag it was released under. Fails when code changed
@@ -11,6 +12,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+# --held: the table goes away and stdout carries only the held module directories
+HELD_ONLY=
+if [ "${1:-}" = --held ]; then HELD_ONLY=1; exec 3>&1 1>/dev/null; fi
 CENTRAL=https://repo1.maven.org/maven2/com/qxotic
 BOM=jinfer/jinfer-bom
 
@@ -59,7 +63,7 @@ while IFS= read -r pom; do
     version=$(version_of "$pom")
 
     case $(curl -s -o /dev/null -I -w '%{http_code}' "$CENTRAL/$artifact/$version/$artifact-$version.pom") in
-        200) central=yes; held[$project]=1 ;;
+        200) central=yes; held[$project]=1; [ -z "$HELD_ONLY" ] || echo "$dir" >&3 ;;
         404) central=no; pending+=("$dir") ;;
         *) echo "release-plan: cannot ask Maven Central about $artifact $version" >&2; exit 1 ;;
     esac
@@ -102,5 +106,6 @@ echo
 echo "to publish, the catalog last:"
 [ ${#pending[@]} -gt 0 ] || echo "  nothing: Maven Central holds every version"
 for dir in "${deploys[@]}" "${catalog[@]}"; do echo "  make release-deploy PROJECT=$dir"; done
+[ ${#pending[@]} -eq 0 ] || echo "or all of it in one bundle: make release-deploy PROJECT=."
 
 [ $problems -eq 0 ] || { echo "release-plan: $problems problem(s)" >&2; exit 1; }

@@ -75,15 +75,18 @@ Smoke-test any native executables intended for distribution on their target plat
 - Inspect the artifacts that opt into publication, including POM dependencies, source and Javadoc JARs, LICENSE and NOTICE files, and native-library contents.
 - Run the signing-enabled release verification with the configured release key, without `gpg.skip` or native-check bypasses.
 - Resolve failures and document coverage gaps before deciding whether to release.
-- Stage only the project whose version moved. Central rejects a coordinate it already holds and one rejection fails the whole bundle, so deploying from the repository root, which restages every artifact that opts into publication, is wrong. Publish one project at a time:
+- Stage only what Central does not hold yet. Central rejects a coordinate it already holds and one rejection fails the whole bundle, so a plain `deploy` from the repository root, which restages every artifact that opts into publication, is wrong.
+  Release everything pending in one bundle, or one project at a time:
 
 ```sh
-mvn -Prelease install -DskipTests            # once, so the projects not being released resolve
-make release-deploy PROJECT=jinfer CHECK=--check   # what it would stage, and whether Central has it
-make release-deploy PROJECT=jinfer
+mvn -Prelease install -DskipTests                  # once, so the modules not being staged resolve
+make release-deploy PROJECT=. CHECK=--check        # what it would stage, and whether Central has it
+make release-deploy PROJECT=.                      # every pending artifact, one deployment to approve
+make release-deploy PROJECT=jinfer                 # or one project's reactor
 ```
 
-It builds only that project's reactor and refuses before uploading anything if one of its coordinates is already published.
+From the repository root it leaves out the modules Central already holds (`./release-plan.sh --held`, which also refuses when the plan reports problems), and each project keeps its own version.
+For one project it builds only that project's reactor and refuses before uploading anything if one of its coordinates is already published.
 
 Publishing and tagging are separate, explicit maintainer actions.
 The release profile leaves publication approval manual in Central (`autoPublish=false`); `deploy` still uploads artifacts and must not be used as a local QA check.
