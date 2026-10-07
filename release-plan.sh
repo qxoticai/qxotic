@@ -50,6 +50,7 @@ problem() {
 }
 
 pending=()
+declare -A held # projects with an artifact Central already holds at its version
 printf '%-38s %-8s %-11s %s\n' artifact version 'on Central' code
 while IFS= read -r pom; do
     dir=$(dirname "$pom")
@@ -58,7 +59,7 @@ while IFS= read -r pom; do
     version=$(version_of "$pom")
 
     case $(curl -s -o /dev/null -I -w '%{http_code}' "$CENTRAL/$artifact/$version/$artifact-$version.pom") in
-        200) central=yes ;;
+        200) central=yes; held[$project]=1 ;;
         404) central=no; pending+=("$dir") ;;
         *) echo "release-plan: cannot ask Maven Central about $artifact $version" >&2; exit 1 ;;
     esac
@@ -86,10 +87,20 @@ while IFS= read -r pom; do
     done
 done < <(git ls-files '*pom.xml' | xargs grep -l '<maven.deploy.skip>false</maven.deploy.skip>' | sort)
 
+# A project Central holds nothing of releases whole (its reactor stages every artifact, jinfer's
+# the catalog with it); otherwise each pending artifact releases alone. The catalog goes last.
+declare -A seen
+deploys=() catalog=()
+for dir in "${pending[@]}"; do
+    [ -n "${held[${dir%%/*}]:-}" ] || dir=${dir%%/*}
+    [ -z "${seen[$dir]:-}" ] || continue
+    seen[$dir]=1
+    case $dir in "$BOM" | "${BOM%%/*}") catalog+=("$dir") ;; *) deploys+=("$dir") ;; esac
+done
+
 echo
 echo "to publish, the catalog last:"
 [ ${#pending[@]} -gt 0 ] || echo "  nothing: Maven Central holds every version"
-for dir in "${pending[@]}"; do [ "$dir" = $BOM ] || echo "  make release-deploy PROJECT=$dir"; done
-for dir in "${pending[@]}"; do [ "$dir" != $BOM ] || echo "  make release-deploy PROJECT=$dir"; done
+for dir in "${deploys[@]}" "${catalog[@]}"; do echo "  make release-deploy PROJECT=$dir"; done
 
 [ $problems -eq 0 ] || { echo "release-plan: $problems problem(s)" >&2; exit 1; }
