@@ -4,6 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.3.1@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
+//DEPS org.slf4j:slf4j-nop:2.0.18
 
 // Ask a local multimodal model about an image.
 //   jbang GemmaVision.java cat.jpg "What is in this image?"

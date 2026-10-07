@@ -4,6 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.3.1@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
+//DEPS org.slf4j:slf4j-nop:2.0.18
 
 // Ask Gemma 4 to compare multiple images in one prompt.
 //   jbang GemmaVisionMulti.java "Which image has more animals?" a.jpg b.jpg

@@ -4,6 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.3.1@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4 com.qxotic:jinfer-codecs
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
+//DEPS org.slf4j:slf4j-nop:2.0.18
 
 // Sample a video with ffmpeg and ask a local multimodal model to describe it.
 //   jbang GemmaVideo.java clip.mp4 "Summarize the main events."
