@@ -116,7 +116,7 @@ If native libraries cannot be used or loaded, use `jam-vector` instead to accele
 ## Examples
 
 The snippets below use the [LangChain4j](jinfer-langchain4j) integration. The [Spring AI](jinfer-spring-ai/README.md) integration covers the same features.
-For the `AiServices` examples, also add `dev.langchain4j:langchain4j:1.19.0` to your dependencies.
+For the `AiServices` examples, also add `dev.langchain4j:langchain4j:1.21.0` to your dependencies.
 
 **Streaming.**
 
