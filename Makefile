@@ -132,7 +132,7 @@ release-canary: ## Prove the published shape works: install the release build in
 release-plan: ## What a release would publish, and whether the versions agree
 	./release-plan.sh
 
-release-deploy: ## Stage ONE project for Central, refusing a version it already holds: make release-deploy PROJECT=jinfer (CHECK=--check to only look)
+release-deploy: ## Stage for Central what it does not hold yet: PROJECT=. for everything in one bundle, PROJECT=jinfer for one project (CHECK=--check to only look)
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-deploy.sh $(PROJECT) $(CHECK)
 
 jam-natives: ## Build, stage and stamp every shipped libjam (linux/windows x86-64 here, darwin-aarch64 on JAM_MAC=user@mac over ssh)
