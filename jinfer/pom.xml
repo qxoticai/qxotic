@@ -104,7 +104,7 @@
     <jinfer.preload />
 
     <!-- Spring provider modules -->
-    <langchain4j.version>1.19.0</langchain4j.version>
+    <langchain4j.version>1.21.0</langchain4j.version>
     <spring-ai.version>2.0.1</spring-ai.version>
     <!-- enforcer pin, see dependencyManagement -->
     <jackson-core.version>3.1.5</jackson-core.version>
