@@ -34,12 +34,12 @@ public class Transcribe {
         try (var transcriber = JinferTranscriptionModel.builder().model(model).build()) {
             Transcription transcription = transcriber.transcribe(audio);
             System.out.println(transcription.text());
-            for (Transcription.Token token : transcription.tokens()) {
+            for (Transcription.Word word : transcription.words()) {
                 System.err.printf(
                         "%6.2f-%6.2f %s%n",
-                        token.start().toMillis() / 1e3,
-                        token.end().toMillis() / 1e3,
-                        token.text());
+                        word.start().toMillis() / 1e3,
+                        word.end().toMillis() / 1e3,
+                        word.text());
             }
         }
     }
