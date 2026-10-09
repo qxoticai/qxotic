@@ -130,6 +130,8 @@ void jam_mm_f32_avx512(void* job, int row_begin, int row_end, int tid);
 void jam_mm_f16_avx512(void* job, int row_begin, int row_end, int tid);     /* F16 dense, 4×4 tile */
 void jam_mm_bf16_avx512(void* job, int row_begin, int row_end, int tid);    /* BF16 dense, 4×4 tile */
 void jam_f32_pack_avx512(void* job, int p_begin, int p_end, int tid);       /* token-panel transpose */
+/* The packed-panel F32/BF16 kernels' row tile: slices start on these bounds (jam_run_tiles). */
+#define JAM_PACKED_ROWS 8
 void jam_mm_f32p_avx512(void* job, int row_begin, int row_end, int tid);    /* packed broadcast 8x32 */
 #endif
 
