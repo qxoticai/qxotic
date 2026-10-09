@@ -2,6 +2,7 @@ package com.qxotic.jinfer;
 
 import com.qxotic.jota.memory.MemoryView;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -53,6 +54,17 @@ public interface EmbeddingModel<C extends ContextConfiguration, W, S extends Con
         Objects.requireNonNull(sink, "sink");
         requireComplete(sequences);
         state.exclusively(() -> embedAll0(state, sequences, sink));
+    }
+
+    /**
+     * Embeds ONE input interleaving text ({@link String}) with media ({@link
+     * com.qxotic.jinfer.media.Media.Image Image}, {@link com.qxotic.jinfer.media.Media.Audio
+     * Audio}, {@link com.qxotic.jinfer.media.Media.Video Video}) in order, framed as the model's
+     * reference processor frames them, delivering one borrowed view; returns the positions it took.
+     * A model that embeds only text refuses.
+     */
+    default int embed(S state, List<?> parts, Consumer<MemoryView<?>> consumer) {
+        throw new UnsupportedOperationException("this model embeds text only");
     }
 
     /**
