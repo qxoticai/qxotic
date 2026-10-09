@@ -97,7 +97,7 @@ public interface VideoCodec {
     default Media.Video uniform(Path video, Duration from, Duration to, int n) throws IOException {
         if (n <= 0) throw new IllegalArgumentException("n must be positive");
         long start = from.toNanos();
-        long duration = totalDuration(video).toNanos(); // one ffprobe spawn, used for both clamps
+        long duration = totalDuration(video).toNanos(); // read once, used for both clamps
         long end = Math.min(to.toNanos(), duration);
         if (start < 0 || start >= end) {
             throw new IllegalArgumentException(
@@ -112,6 +112,31 @@ public interface VideoCodec {
         for (int k = 0; k < n; k++) {
             long t = start + k * (window / n) + window / (2L * n);
             timestamps[k] = Duration.ofNanos(Math.min(t, lastFrame));
+        }
+        return framesAt(video, timestamps);
+    }
+
+    /**
+     * A frame every {@code step} from the start, across the whole duration ({@code duration / step}
+     * of them, floored, at least one), thinned evenly to {@code maxFrames} keeping the first and
+     * last when there are more: the HF video processors' {@code fps = 1 / step} sampling with
+     * {@code max_frames} and {@code overflow_strategy="uniform"} (EmbeddingGemma 2: one a second,
+     * at most 32). Each timestamp clamps to the final frame.
+     */
+    default Media.Video every(Path video, Duration step, int maxFrames) throws IOException {
+        if (step.isNegative() || step.isZero())
+            throw new IllegalArgumentException("step must be positive");
+        if (maxFrames <= 0) throw new IllegalArgumentException("maxFrames must be positive");
+        long duration = totalDuration(video).toNanos();
+        long lastFrame = duration - framePeriod(video).toNanos();
+        int count = (int) Math.max(1, Math.min(Integer.MAX_VALUE, duration / step.toNanos()));
+        int kept = Math.min(count, maxFrames);
+        // numpy's linspace(0, count - 1, kept).astype(int): truncated, its last point exact
+        double stride = kept == 1 ? 0 : (count - 1.0) / (kept - 1);
+        Duration[] timestamps = new Duration[kept];
+        for (int k = 0; k < kept; k++) {
+            long i = k > 0 && k == kept - 1 ? count - 1 : (long) (k * stride);
+            timestamps[k] = Duration.ofNanos(Math.min(i * step.toNanos(), lastFrame));
         }
         return framesAt(video, timestamps);
     }
