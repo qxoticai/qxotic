@@ -537,6 +537,19 @@ static void jam_run(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
     else                 fn(arg, 0, n, 0);
 }
 
+/* jam_run over m rows in whole tiles of `tile` rows: a slice ending mid-tile would push every
+ * slice's last rows through the kernel's row tail (1 row at a time, ~8x slower per row). */
+typedef struct { jam_task_fn fn; void* arg; int m, tile; } jam_tiled;
+static void tiled_task(void* p, int tb, int te, int tid) {
+    const jam_tiled* t = (const jam_tiled*) p;
+    int re = te * t->tile;
+    t->fn(t->arg, tb * t->tile, re < t->m ? re : t->m, tid);
+}
+static void jam_run_tiles(jam_ctx* c, int m, int tile, jam_task_fn fn, void* arg) {
+    jam_tiled t = { fn, arg, m, tile };
+    jam_run(c, (m + tile - 1) / tile, tiled_task, &t);
+}
+
 /* ---- packed weights (jam.h: caller-produced layouts, JAM_PACK_ABI) ---- */
 
 int jam_pack_abi(void) { return JAM_PACK_ABI; }
@@ -760,7 +773,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             jam_f32p_job job = { (const float*) w, ldw, (const float*) a, lda,
                                  (float*) ctx->f32_xp, c, ldc, n, k };
             jam_run(ctx, npanels, ctx->f32p_pack, &job);
-            jam_run(ctx, m, ctx->f32p_kernel, &job);
+            jam_run_tiles(ctx, m, JAM_PACKED_ROWS, ctx->f32p_kernel, &job);
             return JAM_OK;
         }
     }
@@ -768,8 +781,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32) {
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
         jam_task_fn fastd = (ctx->dense_f32_kernel && (k % 8 == 0)) ? ctx->dense_f32_kernel : ctx->f32_kernel;
-        if (n == 1) jam_run(ctx, m, fastd, &job);   /* gemv: DRAM-bound */
-        else        jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
+        jam_run(ctx, m, fastd, &job);   /* the pool fans the row-range kernel over m weight rows */
         return JAM_OK;
     }
 
@@ -786,7 +798,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             jam_bf16_job job = { (const uint16_t*) w, ldw, (const float*) a, lda,
                                  (uint16_t*) ctx->bf_x, c, ldc, n, k };
             jam_run(ctx, npanels, ctx->bf16zp_pack, &job);
-            jam_run(ctx, m, ctx->bf16zp_kernel, &job);
+            jam_run_tiles(ctx, m, JAM_PACKED_ROWS, ctx->bf16zp_kernel, &job);
             return JAM_OK;
         }
     }
@@ -812,8 +824,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
         jam_task_fn fast = (wt == JAM_F16) ? ctx->dense_f16_kernel : ctx->dense_bf16_kernel;
         jam_task_fn slow = (wt == JAM_F16) ? jam_mm_f16_f32_generic : jam_mm_bf16_f32_generic;
-        if (n == 1) jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
-        else        jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
+        jam_run(ctx, m, (fast && (k % 16 == 0)) ? fast : slow, &job);
         return JAM_OK;
     }
 
