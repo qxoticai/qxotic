@@ -54,12 +54,11 @@ public final class Gemma4
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;
-    private final MediaProjector<Media.Image> vision;
-    private final MediaProjector<Media.Audio> audio;
+    private final Towers towers;
     private final Gemma4Mtp mtp; // MTP draft sidecar; null unless attachMtp loaded one
 
     Gemma4(Configuration configuration, Tokenizer tokenizer, Weights weights) {
-        this(configuration, tokenizer, weights, null, null, null);
+        this(configuration, tokenizer, weights, Towers.NONE, null);
     }
 
     // sidecars attach by copying, so attachMtp and withMedia commute and a model never changes
@@ -68,14 +67,12 @@ public final class Gemma4
             Configuration configuration,
             Tokenizer tokenizer,
             Weights weights,
-            MediaProjector<Media.Image> vision,
-            MediaProjector<Media.Audio> audio,
+            Towers towers,
             Gemma4Mtp mtp) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
-        this.vision = vision;
-        this.audio = audio;
+        this.towers = towers;
         this.mtp = mtp;
     }
 
@@ -99,13 +96,12 @@ public final class Gemma4
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
-        if (modality == Media.Image.class && vision != null)
-            return Optional.of((MediaProjector<R>) vision);
-        if (modality == Media.Audio.class && audio != null)
-            return Optional.of((MediaProjector<R>) audio);
-        return Optional.empty();
+        return towers.projector(modality);
+    }
+
+    Towers towers() {
+        return towers;
     }
 
     @Override
@@ -157,7 +153,7 @@ public final class Gemma4
             }
             case Batch.Input.Embeddings e -> {
                 state.lastTokens = null; // media rows are no seed for the MTP draft
-                if (vision == null && audio == null)
+                if (towers == Towers.NONE)
                     throw new UnsupportedOperationException("no media encoder loaded");
                 if (e.rows().shape().flatAt(1) != configuration.embeddingLength)
                     throw new IllegalArgumentException(
@@ -428,12 +424,23 @@ public final class Gemma4
             MemoryView<MemorySegment> branch,
             MemoryView<MemorySegment> norm,
             int seqLen) {
-        int dim = configuration.embeddingLength;
+        normThenAddRows(
+                sum, branch, norm, seqLen, configuration.embeddingLength, configuration.rmsNormEps);
+    }
+
+    /** {@code sum += rmsnorm(branch)} row by row, the branch normalized in place: one region. */
+    static void normThenAddRows(
+            MemoryView<MemorySegment> sum,
+            MemoryView<MemorySegment> branch,
+            MemoryView<MemorySegment> norm,
+            int rows,
+            int dim,
+            float eps) {
         Parallel.forLoop(
-                seqLen,
+                rows,
                 s -> {
                     long row = (long) s * dim;
-                    Norms.rmsnorm(branch, row, branch, row, norm, dim, configuration.rmsNormEps);
+                    Norms.rmsnorm(branch, row, branch, row, norm, dim, eps);
                     Ops.addInPlace(sum, row, branch, row, dim);
                 });
     }
@@ -902,7 +909,7 @@ public final class Gemma4
                             + " - it is the MTP head of a different gemma-4 size; use the sidecar"
                             + " published for this exact model");
         }
-        return new Gemma4(configuration, tokenizer, weights, vision, audio, sidecar);
+        return new Gemma4(configuration, tokenizer, weights, towers, sidecar);
     }
 
     private int kvHeadSize(int layer) {
@@ -957,16 +964,57 @@ public final class Gemma4
 
     /** Returns a model sharing this backbone's weights with a validated media sidecar attached. */
     public Gemma4 withMedia(Path mmprojPath, Arena arena) throws IOException {
+        return new Gemma4(
+                configuration,
+                tokenizer,
+                weights,
+                loadTowers(mmprojPath, configuration.embeddingLength, arena),
+                mtp);
+    }
+
+    /** The media towers of one Gemma 4 family mmproj; a modality it does not carry is null. */
+    public record Towers(MediaProjector<Media.Image> vision, MediaProjector<Media.Audio> audio)
+            implements Multimodal {
+        /** No mmproj attached. */
+        public static final Towers NONE = new Towers(null, null);
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
+            MediaProjector<?> tower =
+                    modality == Media.Image.class
+                            ? vision
+                            : modality == Media.Audio.class ? audio : null;
+            return Optional.ofNullable((MediaProjector<R>) tower);
+        }
+
+        /**
+         * The vision tower sizing video frames: {@code defaultBudget} tokens a frame (the model's
+         * video processor default), or {@code -Djinfer.gemma4.videoTokenBudget} when set.
+         */
+        public Optional<MediaProjector<Media.Image>> frames(int defaultBudget) {
+            int budget = VisionPreprocess.videoBudget(defaultBudget);
+            return Optional.ofNullable(vision)
+                    .map(v -> v instanceof VisionTower tower ? tower.atBudget(budget) : v);
+        }
+    }
+
+    /**
+     * Maps the towers of the Gemma 4 family mmproj at {@code mmprojPath} into {@code arena},
+     * checked against the {@code modelWidth} its rows must project to.
+     */
+    public static Towers loadTowers(Path mmprojPath, int modelWidth, Arena arena)
+            throws IOException {
         Objects.requireNonNull(mmprojPath, "mmprojPath");
         Objects.requireNonNull(arena, "arena");
         try (FileChannel channel = FileChannel.open(mmprojPath, StandardOpenOption.READ)) {
             GGUF gguf = ModelLoader.readGguf(channel, mmprojPath.toString());
-            validateMediaPairing(mmprojPath, gguf, configuration.embeddingLength);
+            validateMediaPairing(mmprojPath, gguf, modelWidth);
             String visionType = gguf.getStringOrDefault("clip.vision.projector_type", "");
             String audioType = gguf.getStringOrDefault("clip.audio.projector_type", "");
             Map<String, MemoryView<MemorySegment>> tensors =
                     ModelLoader.loadTensors(channel, gguf, arena);
-            MediaProjector<Media.Image> visionEncoder =
+            MediaProjector<Media.Image> vision =
                     switch (visionType) {
                         case "" -> null;
                         case "gemma4v" -> Gemma4Vision.loadModel(mmprojPath, gguf, tensors);
@@ -979,7 +1027,7 @@ public final class Gemma4
                                                 + visionType
                                                 + "' (expected gemma4v or gemma4uv)");
                     };
-            MediaProjector<Media.Audio> audioEncoder =
+            MediaProjector<Media.Audio> audio =
                     switch (audioType) {
                         case "" -> null;
                         case "gemma4a" ->
@@ -993,7 +1041,7 @@ public final class Gemma4
                                                 + audioType
                                                 + "' (expected gemma4a or gemma4ua)");
                     };
-            return new Gemma4(configuration, tokenizer, weights, visionEncoder, audioEncoder, mtp);
+            return new Towers(vision, audio);
         }
     }
 

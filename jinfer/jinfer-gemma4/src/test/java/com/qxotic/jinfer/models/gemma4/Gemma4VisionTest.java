@@ -1,9 +1,11 @@
 package com.qxotic.jinfer.models.gemma4;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
@@ -17,9 +19,12 @@ class Gemma4VisionTest {
     @Test
     void appliesIndependentNeoxRopeToXAndYHalves() {
         try (Arena arena = Arena.ofConfined()) {
-            MemoryView<MemorySegment> value =
-                    tensor(MemoryAllocators.ofArena(arena), new float[] {1, 2, 3, 4, 5, 6, 7, 8});
-            Gemma4Vision.rope2d(value, 0, 8, 1, 2, 100f);
+            MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
+            MemoryView<MemorySegment> value = tensor(memory, new float[] {1, 2, 3, 4, 5, 6, 7, 8});
+            MemoryView<MemorySegment> cos = Views.allocateF32(memory, 3, 2);
+            MemoryView<MemorySegment> sin = Views.allocateF32(memory, 3, 2);
+            RoPE.fill(cos, sin, 0, 3, 2, RoPE.plain(4, 100));
+            Gemma4Vision.rope2d(value, 0, 8, 1, 2, cos, sin);
             assertPair(value, 0, 2, 1, 3, 1f);
             assertPair(value, 1, 3, 2, 4, 0.1f);
             assertPair(value, 4, 6, 5, 7, 2f);
@@ -33,17 +38,16 @@ class Gemma4VisionTest {
             MemoryArena<MemorySegment> memory = MemoryAllocators.ofArena(arena);
             Gemma4Vision vision =
                     new Gemma4Vision(
-                            2,
                             1,
                             4,
                             1,
                             4,
                             2,
                             1,
-                            2,
+                            24,
                             1e-6f,
                             tensor(memory, 4, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1),
-                            tensor(memory, 2, 2, 4, new float[16]),
+                            tensor(memory, 2, 24, 4, new float[192]),
                             null, // no v.std_bias/v.std_scale in this synthetic model
                             null,
                             new Clamped(
@@ -55,16 +59,22 @@ class Gemma4VisionTest {
                             new Gemma4Vision.Layer[0]);
             Media.Image image =
                     new Media.Image(new float[] {0.25f, 0.5f, 0.75f, 1f, 0f, 0.5f}, 1, 2, 3);
-            assertEquals(2, vision.positions(image));
+            // the 2x1 image grows to the budget's 23x11 grid, as the reference sizes it
+            assertEquals(253, vision.positions(image));
+            // a video frame sizes at the video processor's budget, and caches under its own plan
+            var frames = new Gemma4.Towers(vision, null).frames(70).orElseThrow();
+            assertEquals(55, frames.positions(image));
+            assertNotEquals(vision.planId(), frames.planId());
             assertThrows(
-                    IllegalArgumentException.class, () -> vision.project(image, 1, ignored -> {}));
+                    IllegalArgumentException.class,
+                    () -> vision.project(image, 252, ignored -> {}));
             AtomicInteger calls = new AtomicInteger();
             vision.project(
                     image,
-                    2,
+                    253,
                     rows -> {
                         calls.incrementAndGet();
-                        assertEquals(2, rows.shape().flatAt(0));
+                        assertEquals(253, rows.shape().flatAt(0));
                         assertEquals(2, rows.shape().flatAt(1));
                     });
             assertEquals(1, calls.get());

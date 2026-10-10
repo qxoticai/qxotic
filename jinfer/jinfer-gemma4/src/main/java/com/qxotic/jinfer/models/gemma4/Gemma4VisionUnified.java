@@ -9,7 +9,6 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.media.Media;
-import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;
@@ -26,7 +25,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 unified vision projector ({@code projector_type=gemma4uv}). */
-final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
+final class Gemma4VisionUnified implements VisionTower {
     static final float LAYER_NORM_EPS = 1e-5f;
 
     private final int patchSize, visionDim, modelDim, positionSize, patchVector;
@@ -89,22 +88,23 @@ final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
     }
 
     @Override
-    public int positions(Media.Image image) {
-        int[] size = targetSize(image, VisionPreprocess.budget(280));
+    public int positions(Media.Image image, int budget) {
+        int[] size = targetSize(image, budget);
         return Math.multiplyExact(size[0] / patchSize, size[1] / patchSize);
     }
 
     @Override
-    public String planId() {
+    public String geometry() {
         return "gemma4uv patch=" + patchSize + " positions=" + positionSize;
     }
 
     @Override
-    public void project(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(
+            Media.Image image, int budget, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
-        int[] size = targetSize(image, VisionPreprocess.budget(280));
+        int[] size = targetSize(image, budget);
         int count = Math.multiplyExact(size[0] / patchSize, size[1] / patchSize);
         if (count > maxChunkSize)
             throw new IllegalArgumentException(
@@ -167,13 +167,7 @@ final class Gemma4VisionUnified implements MediaProjector<Media.Image> {
     }
 
     private int[] targetSize(Media.Image image, int budgetTokens) {
-        int patchArea = Math.multiplyExact(patchSize, patchSize);
-        return VisionPreprocess.smartResize(
-                image.width(),
-                image.height(),
-                patchSize,
-                Math.multiplyExact(40, patchArea),
-                Math.multiplyExact(budgetTokens, patchArea));
+        return VisionPreprocess.targetSize(image.width(), image.height(), patchSize, budgetTokens);
     }
 
     public static Gemma4VisionUnified loadModel(Path path, Arena arena) throws IOException {
