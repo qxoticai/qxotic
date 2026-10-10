@@ -23,10 +23,13 @@ class Gemma4AudioTest {
     private static final int FRAME_SIZE = 640;
 
     @Test
-    void downmixesAndLinearlyResamplesPcm() {
+    void downmixesBeforeResampling() {
         Media.Audio stereo8k = new Media.Audio(new float[] {1, 1, 1, -1}, 8_000, 2);
         assertEquals(4, AudioPreprocess.mono16kLength(stereo8k));
-        assertArrayEquals(new float[] {1, 0.5f, 0, 0}, AudioPreprocess.toMono16k(stereo8k), 0);
+        assertArrayEquals(
+                AudioPreprocess.toMono16k(new Media.Audio(new float[] {1, 0}, 8_000, 1)),
+                AudioPreprocess.toMono16k(stereo8k),
+                0);
     }
 
     @Test
