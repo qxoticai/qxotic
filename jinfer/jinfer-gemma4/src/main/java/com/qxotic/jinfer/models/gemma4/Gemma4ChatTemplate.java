@@ -25,9 +25,13 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /** Gemma 4 chat framing with structural image, audio and video input and the tool round-trip. */
 final class Gemma4ChatTemplate implements ChatTemplate {
+    /** The Gemma 4 video processor's {@code max_soft_tokens}: a frame's budget. */
+    private static final int VIDEO_FRAME_TOKENS = 70;
+
     private static final String CHANNEL_OPEN = "<|channel>";
     private static final String CHANNEL_CLOSE = "<channel|>";
     // the reasoning channel's name: scaffold the reply language consumes, never reasoning text
@@ -57,7 +61,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
     private final IntSequence thoughtTail;
 
     public Gemma4ChatTemplate(Gemma4 model, boolean scaffoldsNonThinking) {
-        this(model.tokenizer(), model, scaffoldsNonThinking);
+        this(model.tokenizer(), model.towers(), scaffoldsNonThinking);
     }
 
     public Gemma4ChatTemplate(Tokenizer tokenizer, Multimodal media, boolean scaffoldsNonThinking) {
@@ -355,13 +359,14 @@ final class Gemma4ChatTemplate implements ChatTemplate {
     }
 
     private void writeMedia(PromptWriter out, Content.Media content) {
+        ContentKey key = content.contentKey();
         switch (content.value()) {
             case Media.Image image ->
                     writeMedia(
                             out,
                             image,
-                            content.contentKey(),
-                            Media.Image.class,
+                            key,
+                            refuse(images(), "image"),
                             imageOpen,
                             imageClose,
                             true);
@@ -369,12 +374,12 @@ final class Gemma4ChatTemplate implements ChatTemplate {
                     writeMedia(
                             out,
                             audio,
-                            content.contentKey(),
-                            Media.Audio.class,
+                            key,
+                            refuse(audio(), "audio"),
                             audioOpen,
                             audioClose,
                             false);
-            case Media.Video video -> writeVideo(out, video, content.contentKey());
+            case Media.Video video -> writeVideo(out, video, key);
         }
     }
 
@@ -385,6 +390,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
      * video's, so a repeated video replays every frame's projection.
      */
     private void writeVideo(PromptWriter out, Media.Video video, ContentKey videoKey) {
+        MediaProjector<Media.Image> projector = refuse(frames(), "video");
         List<Media.Video.Frame> frames = video.frames();
         for (int i = 0; i < frames.size(); i++) {
             Media.Video.Frame frame = frames.get(i);
@@ -394,23 +400,47 @@ final class Gemma4ChatTemplate implements ChatTemplate {
             out.text((i == 0 ? "" : " ") + stamp);
             ContentKey frameKey =
                     videoKey == null ? null : new ContentKey(videoKey.value() + ":frame:" + i);
-            writeMedia(
-                    out, frame.image(), frameKey, Media.Image.class, imageOpen, imageClose, true);
+            writeMedia(out, frame.image(), frameKey, projector, imageOpen, imageClose, true);
         }
+    }
+
+    private Optional<MediaProjector<Media.Image>> images() {
+        return media == null ? Optional.empty() : media.projector(Media.Image.class);
+    }
+
+    private Optional<MediaProjector<Media.Audio>> audio() {
+        return media == null ? Optional.empty() : media.projector(Media.Audio.class);
+    }
+
+    /**
+     * Frames at the Gemma 4 video processor's own budget, 70 tokens (a still gets 280); any other
+     * media source sizes frames as it sizes stills.
+     */
+    private Optional<MediaProjector<Media.Image>> frames() {
+        return media instanceof Gemma4.Towers towers ? towers.frames(VIDEO_FRAME_TOKENS) : images();
+    }
+
+    private static <M extends Media> MediaProjector<M> refuse(
+            Optional<MediaProjector<M>> projector, String medium) {
+        return require(projector, medium, UnsupportedConversation::new);
+    }
+
+    private static <M extends Media> MediaProjector<M> require(
+            Optional<MediaProjector<M>> projector,
+            String medium,
+            Function<String, RuntimeException> refusal) {
+        return projector.orElseThrow(
+                () -> refusal.apply(medium + " input is not supported by this model"));
     }
 
     private <M extends Media> void writeMedia(
             PromptWriter out,
             M value,
             ContentKey contentKey,
-            Class<M> type,
+            MediaProjector<M> projector,
             int open,
             int close,
             boolean bidirectional) {
-        MediaProjector<M> projector = media == null ? null : media.projector(type).orElse(null);
-        if (projector == null)
-            throw new UnsupportedConversation(
-                    type.getSimpleName().toLowerCase() + " input is not supported by this model");
         out.cachedMedia(
                 value,
                 contentKey,
@@ -423,20 +453,15 @@ final class Gemma4ChatTemplate implements ChatTemplate {
     /** Best-effort media positions via the modality's embedder plan (no encoding). */
     @Override
     public int mediaPositions(Media m) {
+        Function<String, RuntimeException> refusal = UnsupportedOperationException::new;
         return switch (m) {
-            case Media.Image img -> plan(Media.Image.class, img);
-            case Media.Audio aud -> plan(Media.Audio.class, aud);
-            case Media.Video video ->
-                    video.frames().stream().mapToInt(f -> plan(Media.Image.class, f.image())).sum();
+            case Media.Image image -> require(images(), "image", refusal).positions(image);
+            case Media.Audio audio -> require(audio(), "audio", refusal).positions(audio);
+            case Media.Video video -> {
+                MediaProjector<Media.Image> frames = require(frames(), "video", refusal);
+                yield video.frames().stream().mapToInt(f -> frames.positions(f.image())).sum();
+            }
         };
-    }
-
-    private <M extends Media> int plan(Class<M> type, M m) {
-        MediaProjector<M> projector = media == null ? null : media.projector(type).orElse(null);
-        if (projector == null)
-            throw new UnsupportedOperationException(
-                    type.getSimpleName().toLowerCase() + " input is not supported by this model");
-        return projector.positions(m);
     }
 
     private static void requireText(Message message, Content part) {

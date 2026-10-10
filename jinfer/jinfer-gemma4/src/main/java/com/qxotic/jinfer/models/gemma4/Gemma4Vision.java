@@ -8,7 +8,6 @@ import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Activations;
-import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.FlashAttention;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
@@ -17,7 +16,6 @@ import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.Raw;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.media.Media;
-import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryArena;
@@ -34,11 +32,10 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /** Gemma 4 SigLIP-style vision tower ({@code projector_type=gemma4v}). */
-final class Gemma4Vision implements MediaProjector<Media.Image> {
+final class Gemma4Vision implements VisionTower {
     private static final float ROPE_THETA = 100f;
 
-    private final int imageSize,
-            patchSize,
+    private final int patchSize,
             visionDim,
             headCount,
             headDim,
@@ -70,7 +67,6 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
             Clamped down) {}
 
     Gemma4Vision(
-            int imageSize,
             int patchSize,
             int visionDim,
             int headCount,
@@ -85,8 +81,7 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
             MemoryView<MemorySegment> stdScale,
             Clamped inputProjection,
             Layer[] layers) {
-        if (imageSize <= 0
-                || patchSize <= 0
+        if (patchSize <= 0
                 || visionDim <= 0
                 || headCount <= 0
                 || ffnDim <= 0
@@ -97,13 +92,10 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
         if (visionDim % headCount != 0)
             throw new IllegalArgumentException(
                     "head_count " + headCount + " does not divide embedding_length " + visionDim);
-        if (imageSize % patchSize != 0)
-            throw new IllegalArgumentException("image_size must be divisible by patch_size");
         this.headDim = visionDim / headCount;
         if (headDim % 4 != 0)
             throw new IllegalArgumentException(
                     "vision head dimension " + headDim + " must be divisible by 4 for 2D RoPE");
-        this.imageSize = imageSize;
         this.patchSize = patchSize;
         this.visionDim = visionDim;
         this.headCount = headCount;
@@ -136,34 +128,27 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
     }
 
     @Override
-    public int positions(Media.Image image) {
+    public int positions(Media.Image image, int budget) {
         Objects.requireNonNull(image, "image");
-        int[] size = targetSize(image, VisionPreprocess.budget(280));
-        int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
-        return Math.multiplyExact(Math.max(1, patchesX / merge), Math.max(1, patchesY / merge));
+        int[] size = targetSize(image, budget);
+        int side = patchSize * merge; // one projected row per side x side pixels
+        return (size[0] / side) * (size[1] / side);
     }
 
     @Override
-    public String planId() {
-        return "gemma4v patch="
-                + patchSize
-                + " merge="
-                + merge
-                + " imageSize="
-                + imageSize
-                + " positions="
-                + positionSize;
+    public String geometry() {
+        return "gemma4v patch=" + patchSize + " merge=" + merge + " positions=" + positionSize;
     }
 
     @Override
-    public void project(Media.Image image, int maxChunkSize, Consumer<MemoryView<?>> sink) {
+    public void project(
+            Media.Image image, int budget, int maxChunkSize, Consumer<MemoryView<?>> sink) {
         Objects.requireNonNull(image, "image");
         Objects.requireNonNull(sink, "sink");
         if (maxChunkSize <= 0) throw new IllegalArgumentException("maxChunkSize must be positive");
         Views.checkAlive(patchEmbedding, "patchEmbedding"); // fail-fast on freed weights
-        int[] size = targetSize(image, VisionPreprocess.budget(280));
-        int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
-        int rows = Math.multiplyExact(Math.max(1, patchesX / merge), Math.max(1, patchesY / merge));
+        int[] size = targetSize(image, budget);
+        int rows = positions(image, budget);
         if (rows > maxChunkSize)
             throw new IllegalArgumentException(
                     "vision block has "
@@ -198,15 +183,17 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
         addPositions(current, count, patchesX);
 
         MemoryView<MemorySegment> normalized = Views.allocateF32(scratch, count, visionDim);
-        MemoryView<MemorySegment> temporary = Views.allocateF32(scratch, count, visionDim);
         MemoryView<MemorySegment> query = Views.allocateF32(scratch, count, visionDim);
         MemoryView<MemorySegment> key = Views.allocateF32(scratch, count, visionDim);
         MemoryView<MemorySegment> value = Views.allocateF32(scratch, count, visionDim);
         MemoryView<MemorySegment> attention = Views.allocateF32(scratch, count, visionDim);
         MemoryView<MemorySegment> gate = Views.allocateF32(scratch, count, ffnDim);
         MemoryView<MemorySegment> up = Views.allocateF32(scratch, count, ffnDim);
-        MemoryView<MemorySegment> keyF16 = Views.allocateF16(scratch, count, visionDim);
-        MemoryView<MemorySegment> valueF16 = Views.allocateF16(scratch, count, visionDim);
+        // 2D RoPE: the first half of a head rotates by column, the second by row
+        int lanes = headDim / 4, grid = Math.max(patchesX, patchesY);
+        MemoryView<MemorySegment> cos = Views.allocateF32(scratch, grid, lanes);
+        MemoryView<MemorySegment> sin = Views.allocateF32(scratch, grid, lanes);
+        RoPE.fill(cos, sin, 0, grid, lanes, RoPE.plain(headDim / 2, ROPE_THETA));
         MemoryView<MemorySegment> clampScratch =
                 Views.allocateF32(scratch, count, Math.max(visionDim, ffnDim));
 
@@ -218,23 +205,24 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
                     key,
                     value,
                     attention,
-                    keyF16,
-                    valueF16,
+                    cos,
+                    sin,
                     layer,
                     patchesX,
                     count,
                     clampScratch);
-            postNormResidual(current, attention, layer.attentionPostNorm(), temporary, count);
+            Gemma4.normThenAddRows(
+                    current, attention, layer.attentionPostNorm(), count, visionDim, normEps);
             Norms.rmsnormRows(normalized, current, layer.norm2(), count, visionDim, normEps);
             layer.gate().gemm(normalized, visionDim, gate, ffnDim, count, clampScratch);
             layer.up().gemm(normalized, visionDim, up, ffnDim, count, clampScratch);
+            // tanh GELU, the reference's gelu_pytorch_tanh (llama.cpp runs quick-GELU here)
             Parallel.forLoop(
                     count,
-                    row ->
-                            Activations.quickGeluMultiply(
-                                    gate, (long) row * ffnDim, up, (long) row * ffnDim, ffnDim));
+                    row -> Activations.geluMultiply(gate, row * ffnDim, up, row * ffnDim, ffnDim));
             layer.down().gemm(gate, ffnDim, attention, visionDim, count, clampScratch);
-            postNormResidual(current, attention, layer.ffnPostNorm(), temporary, count);
+            Gemma4.normThenAddRows(
+                    current, attention, layer.ffnPostNorm(), count, visionDim, normEps);
         }
         return projectPooled(current, patchesX, patchesY, scratch, clampScratch);
     }
@@ -245,8 +233,8 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
             MemoryView<MemorySegment> key,
             MemoryView<MemorySegment> value,
             MemoryView<MemorySegment> output,
-            MemoryView<MemorySegment> keyF16,
-            MemoryView<MemorySegment> valueF16,
+            MemoryView<MemorySegment> cos,
+            MemoryView<MemorySegment> sin,
             Layer layer,
             int patchesX,
             int count,
@@ -257,46 +245,21 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
         Parallel.forLoop(
                 count,
                 token -> {
+                    int column = token % patchesX, row = token / patchesX;
                     for (int head = 0; head < headCount; head++) {
                         long offset = (long) token * visionDim + (long) head * headDim;
                         Norms.rmsnorm(
                                 query, offset, query, offset, layer.queryNorm(), headDim, normEps);
                         Norms.rmsnorm(key, offset, key, offset, layer.keyNorm(), headDim, normEps);
                         Norms.rmsnormNoWeight(value, offset, value, offset, headDim, normEps);
-                        rope2d(
-                                query,
-                                offset,
-                                headDim,
-                                token % patchesX,
-                                token / patchesX,
-                                ROPE_THETA);
-                        rope2d(
-                                key,
-                                offset,
-                                headDim,
-                                token % patchesX,
-                                token / patchesX,
-                                ROPE_THETA);
+                        rope2d(query, offset, headDim, column, row, cos, sin);
+                        rope2d(key, offset, headDim, column, row, cos, sin);
                     }
                 });
-        int elements = Math.multiplyExact(count, visionDim);
-        Convert.f32ToF16(key, 0, keyF16, 0, elements);
-        Convert.f32ToF16(value, 0, valueF16, 0, elements);
-        FlashAttention.bidirectionalPrefill(
-                query, output, keyF16, valueF16, headCount, count, headDim, visionDim, visionDim, 1,
-                1f);
-        layer.attentionOutput().gemm(output, visionDim, query, visionDim, count, clampScratch);
-        Convert.copyF32(query, 0, output, 0, elements);
-    }
-
-    private void postNormResidual(
-            MemoryView<MemorySegment> residual,
-            MemoryView<MemorySegment> value,
-            MemoryView<MemorySegment> weight,
-            MemoryView<MemorySegment> temporary,
-            int rows) {
-        Norms.rmsnormRows(temporary, value, weight, rows, visionDim, normEps);
-        Ops.addInPlace(residual, 0, temporary, 0, Math.multiplyExact(rows, visionDim));
+        // 64-wide heads: flash runs them faster than GEMMs with a 64-long contraction
+        FlashAttention.bidirectionalPrefill( // x is free once q, k and v are projected
+                query, x, key, value, headCount, count, headDim, visionDim, visionDim, 1, 1f);
+        layer.attentionOutput().gemm(x, visionDim, output, visionDim, count, clampScratch);
     }
 
     private MemoryView<MemorySegment> projectPooled(
@@ -305,7 +268,7 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
             int patchesY,
             MemoryArena<MemorySegment> scratch,
             MemoryView<MemorySegment> clampScratch) {
-        int outputX = Math.max(1, patchesX / merge), outputY = Math.max(1, patchesY / merge);
+        int outputX = patchesX / merge, outputY = patchesY / merge;
         int rows = Math.multiplyExact(outputX, outputY);
         MemoryView<MemorySegment> pooled = Views.allocateF32(scratch, rows, visionDim);
         float scale = (float) Math.sqrt(visionDim);
@@ -350,29 +313,26 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
         Ops.addGridPositions(current, positionEmbedding, count, patchesX, visionDim, positionSize);
     }
 
+    /**
+     * NeoX rotation of one head's halves: the first by {@code column}, the second by {@code row},
+     * from tables of {@code headDim / 4} lanes per position.
+     */
     static void rope2d(
             MemoryView<MemorySegment> value,
             long base,
             int headDim,
-            int positionX,
-            int positionY,
-            float theta) {
-        if (headDim <= 0 || headDim % 4 != 0 || theta <= 0f)
-            throw new IllegalArgumentException("invalid 2D RoPE geometry");
+            int column,
+            int row,
+            MemoryView<MemorySegment> cos,
+            MemoryView<MemorySegment> sin) {
         int half = headDim / 2;
-        RoPE.rotatePairs(value, base, half / 2, half, positionX, theta);
-        RoPE.rotatePairs(value, base + half, half / 2, half, positionY, theta);
+        RoPE.applyNeox(value, base, column, cos, sin, half / 2);
+        RoPE.applyNeox(value, base + half, row, cos, sin, half / 2);
     }
 
     private int[] targetSize(Media.Image image, int budgetTokens) {
-        int factor = Math.multiplyExact(patchSize, merge);
-        int area = Math.multiplyExact(factor, factor);
-        return VisionPreprocess.smartResize(
-                image.width(),
-                image.height(),
-                factor,
-                area,
-                Math.multiplyExact(budgetTokens, area));
+        return VisionPreprocess.targetSize(
+                image.width(), image.height(), Math.multiplyExact(patchSize, merge), budgetTokens);
     }
 
     private void validateLayer(Layer layer, int index) {
@@ -442,17 +402,6 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
                 || ffnDim <= 0
                 || modelDim <= 0)
             throw new IllegalArgumentException(label.getFileName() + ": invalid vision metadata");
-        int factor = Math.multiplyExact(patchSize, merge);
-        int maxPixels =
-                VisionPreprocess.IMAGE_TOKEN_BUDGET > 0
-                        ? Math.multiplyExact(
-                                VisionPreprocess.IMAGE_TOKEN_BUDGET,
-                                Math.multiplyExact(factor, factor))
-                        : gguf.getValueOrDefault(
-                                int.class,
-                                "clip.vision.image_max_pixels",
-                                Math.multiplyExact(280, Math.multiplyExact(factor, factor)));
-        int imageSize = (int) (Math.sqrt(maxPixels) / factor) * factor;
         MemoryView<MemorySegment> position = require(tensors, "v.position_embd.weight");
         if (position.dataType() != DataType.FP32)
             throw new IllegalArgumentException(
@@ -497,7 +446,6 @@ final class Gemma4Vision implements MediaProjector<Media.Image> {
                             + " does not divide embedding_length "
                             + visionDim);
         return new Gemma4Vision(
-                imageSize,
                 patchSize,
                 visionDim,
                 headCount,

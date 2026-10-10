@@ -22,19 +22,21 @@ import org.junit.jupiter.api.Test;
 class Gemma4VisionComponentsTest {
 
     @Test
-    void preservesSmartResizeAndPatchOrdering() {
-        assertArrayEquals(
-                new int[] {624, 480},
-                VisionPreprocess.smartResize(640, 480, 48, 48 * 48, 280 * 48 * 48));
+    void preservesTargetSizeAndPatchOrdering() {
+        assertArrayEquals(new int[] {912, 672}, VisionPreprocess.targetSize(640, 480, 48, 280));
 
-        Media.Image image =
-                new Media.Image(new float[] {0f, 0.25f, 0.5f, 0.75f, 1f, 0.125f}, 1, 2, 3);
+        Media.Image image = new Media.Image(new float[] {0f, 0.2f, 0.4f, 0.6f, 1f, 0.8f}, 1, 2, 3);
         try (Arena arena = Arena.ofConfined()) {
             MemoryView<MemorySegment> patches =
                     VisionPreprocess.im2col(image, 2, 1, 1, MemoryAllocators.ofArena(arena));
             assertEquals(2, patches.shape().flatAt(0));
             assertEquals(3, patches.shape().flatAt(1));
-            assertArrayEquals(new float[] {-1f, -0.5f, 0f, 0.5f, 1f, -0.75f}, values(patches), 0f);
+            assertArrayEquals(
+                    new float[] {
+                        -1f, 0.2f * 2f - 1f, 0.4f * 2f - 1f, 0.6f * 2f - 1f, 1f, 0.8f * 2f - 1f
+                    },
+                    values(patches),
+                    0f);
         }
     }
 
@@ -87,11 +89,11 @@ class Gemma4VisionComponentsTest {
                             1,
                             2,
                             2,
-                            7,
+                            16,
                             1e-6f,
                             tensor(weights, 2, 3, 1f, 0f, 0f, 0f, 1f, 0f),
                             tensor(weights, 2, 0f, 0f),
-                            tensor(weights, 2, 7, 2, new float[28]),
+                            tensor(weights, 2, 16, 2, new float[64]),
                             tensor(weights, 2, 2, 1f, 0f, 0f, 1f),
                             tensor(weights, 3, 1f, 1f, 1f),
                             tensor(weights, 3, 0f, 0f, 0f),
@@ -100,26 +102,27 @@ class Gemma4VisionComponentsTest {
                             tensor(weights, 2, 1f, 1f),
                             tensor(weights, 2, 0f, 0f));
             Media.Image image = new Media.Image(new float[] {0.25f, 0.5f, 0.75f}, 1, 1, 3);
-            assertEquals(49, projector.positions(image));
+            // the 1x1 image grows to the budget's 16x16 grid, as the reference sizes it
+            assertEquals(256, projector.positions(image));
             assertThrows(
-                    IllegalArgumentException.class, () -> projector.project(image, 48, v -> {}));
+                    IllegalArgumentException.class, () -> projector.project(image, 255, v -> {}));
 
             int[] rows = {0};
             projector.project(
                     image,
-                    49,
+                    256,
                     chunk -> {
                         assertTrue(
                                 chunk.memory().base() instanceof MemorySegment segment
                                         && segment.scope().isAlive());
-                        assertEquals(49, chunk.shape().flatAt(0));
+                        assertEquals(256, chunk.shape().flatAt(0));
                         assertEquals(2, chunk.shape().flatAt(1));
                         for (float value : values(Views.castToSegmentBacked(chunk, "chunk")))
                             assertTrue(Float.isFinite(value));
                         rows[0] += Math.toIntExact(chunk.shape().flatAt(0));
                         borrowed.add(chunk);
                     });
-            assertEquals(49, rows[0]);
+            assertEquals(256, rows[0]);
 
             // The shared contract on top of the specifics above.
             MediaProjectorContract.assertContract(projector, image, 2);

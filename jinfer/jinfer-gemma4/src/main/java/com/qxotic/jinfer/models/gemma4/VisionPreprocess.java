@@ -6,13 +6,17 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 
-/** Shared Gemma 4 aspect-preserving resize and patch extraction. */
+/**
+ * Shared Gemma 4 image preprocessing as Google's reference does it (the JAX {@code
+ * gemma4/vision/_preprocessing.py}, HF's {@code Gemma4ImageProcessor}), and patch extraction.
+ */
 final class VisionPreprocess {
     private VisionPreprocess() {}
 
-    static final int IMAGE_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.imageTokenBudget", -1);
-    static final int VIDEO_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.videoTokenBudget", 70);
+    static final int IMAGE_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.imageTokenBudget", 280);
+    static final int VIDEO_TOKEN_BUDGET = validatedBudget("jinfer.gemma4.videoTokenBudget", -1);
 
     static int validatedBudget(String property, int defaultValue) {
         String value = System.getProperty(property);
@@ -30,58 +34,146 @@ final class VisionPreprocess {
         return budget;
     }
 
-    static int budget(int defaultValue) {
-        return IMAGE_TOKEN_BUDGET > 0 ? IMAGE_TOKEN_BUDGET : defaultValue;
+    /** A video frame's budget: the property when set, else the model's video processor default. */
+    static int videoBudget(int defaultValue) {
+        return VIDEO_TOKEN_BUDGET > 0 ? VIDEO_TOKEN_BUDGET : defaultValue;
     }
 
-    static int[] smartResize(int width, int height, int factor, int minPixels, int maxPixels) {
-        if (width <= 0 || height <= 0 || factor <= 0 || minPixels <= 0 || maxPixels < minPixels)
-            throw new IllegalArgumentException("invalid smart-resize geometry");
-        int resizedWidth = Math.max(factor, Math.round((float) width / factor) * factor);
-        int resizedHeight = Math.max(factor, Math.round((float) height / factor) * factor);
-        long area = (long) resizedWidth * resizedHeight;
-        if (area > maxPixels) {
-            double beta = Math.sqrt((double) width * height / maxPixels);
-            resizedWidth = Math.max(factor, (int) (Math.floor(width / beta / factor) * factor));
-            resizedHeight = Math.max(factor, (int) (Math.floor(height / beta / factor) * factor));
-        } else if (area < minPixels) {
-            double beta = Math.sqrt((double) minPixels / ((double) width * height));
-            resizedWidth = (int) (Math.ceil(width * beta / factor) * factor);
-            resizedHeight = (int) (Math.ceil(height * beta / factor) * factor);
+    /**
+     * The reference's {@code get_aspect_ratio_preserving_size}: the largest {@code [width, height]}
+     * with the image's aspect, both edges multiples of {@code side} (one output token), and at most
+     * {@code maxTokens} tokens - small images grow to fill the budget, large ones shrink to it. A
+     * sliver too thin for one token keeps one along its short edge.
+     */
+    static int[] targetSize(int width, int height, int side, int maxTokens) {
+        if (width <= 0 || height <= 0 || side <= 0 || maxTokens <= 0)
+            throw new IllegalArgumentException("invalid image geometry");
+        double factor = Math.sqrt((double) maxTokens * side * side / ((double) height * width));
+        int targetHeight = (int) Math.floor(factor * height / side) * side;
+        int targetWidth = (int) Math.floor(factor * width / side) * side;
+        int maxSide = maxTokens * side;
+        if (targetHeight == 0) {
+            targetHeight = side;
+            targetWidth = Math.min(Math.max(1, width / height) * side, maxSide);
+        } else if (targetWidth == 0) {
+            targetWidth = side;
+            targetHeight = Math.min(Math.max(1, height / width) * side, maxSide);
         }
-        return new int[] {resizedWidth, resizedHeight};
+        return new int[] {targetWidth, targetHeight};
     }
 
+    /** Source rows per horizontal-pass block: each tap is then one loop over 3 * ROWS values. */
+    private static final int ROWS = 16;
+
+    /**
+     * The image as {@code [3][targetHeight][targetWidth]} planes in {@code [0,1]}: 8-bit RGB
+     * resized to the target with Pillow's bicubic (fixed point, horizontal then vertical), as the
+     * reference does it.
+     */
     static float[] toCHW(Media.Image image, int targetWidth, int targetHeight) {
         if (targetWidth <= 0 || targetHeight <= 0)
             throw new IllegalArgumentException("target dimensions must be positive");
-        int plane = Math.multiplyExact(targetHeight, targetWidth);
-        float[] out = new float[Math.multiplyExact(3, plane)];
-        int height = image.height(), width = image.width(), channels = image.channels();
+        int width = image.width(), height = image.height(), channels = image.channels();
         float[] values = image.values();
-        for (int y = 0; y < targetHeight; y++)
-            for (int x = 0; x < targetWidth; x++) {
-                float fy = (y + 0.5f) * height / targetHeight - 0.5f;
-                float fx = (x + 0.5f) * width / targetWidth - 0.5f;
-                int y0 = Math.max(0, Math.min(height - 1, (int) Math.floor(fy)));
-                int y1 = Math.min(height - 1, y0 + 1);
-                int x0 = Math.max(0, Math.min(width - 1, (int) Math.floor(fx)));
-                int x1 = Math.min(width - 1, x0 + 1);
-                float wy = Math.max(0f, fy - y0), wx = Math.max(0f, fx - x0);
-                for (int c = 0; c < 3; c++) {
-                    int cc = Math.min(c, channels - 1);
-                    float a = values[(y0 * width + x0) * channels + cc];
-                    float b = values[(y0 * width + x1) * channels + cc];
-                    float d0 = values[(y1 * width + x0) * channels + cc];
-                    float d1 = values[(y1 * width + x1) * channels + cc];
-                    out[c * plane + y * targetWidth + x] =
-                            a * (1 - wx) * (1 - wy)
-                                    + b * wx * (1 - wy)
-                                    + d0 * (1 - wx) * wy
-                                    + d1 * wx * wy;
+        int w = targetWidth, h = targetHeight, plane = w * h, lane = 3 * ROWS;
+        // horizontal pass, ROWS source rows at a time, rounded to 8 bits into a column-major
+        // block [x][row * 3 + c] (never the whole image), into [height][w][3]
+        Filter across = Filter.of(width, w);
+        int[] rows = new int[Math.multiplyExact(height, 3 * w)];
+        int[][] blocks = new int[Parallel.threads()][lane * width];
+        int[][] sums = new int[Parallel.threads()][Math.max(lane, 3 * w)];
+        Parallel.forLoop(
+                (height + ROWS - 1) / ROWS,
+                (block, slot) -> {
+                    int y0 = block * ROWS, n = Math.min(ROWS, height - y0);
+                    int[] columns = blocks[slot], sum = sums[slot];
+                    for (int r = 0; r < n; r++)
+                        for (int x = 0; x < width; x++)
+                            for (int c = 0; c < 3; c++)
+                                columns[x * lane + r * 3 + c] =
+                                        Math.round(
+                                                values[
+                                                                ((y0 + r) * width + x) * channels
+                                                                        + Math.min(c, channels - 1)]
+                                                        * 255f);
+                    for (int x = 0; x < w; x++) {
+                        across.apply(columns, lane, x, sum);
+                        for (int r = 0; r < n; r++)
+                            for (int c = 0; c < 3; c++)
+                                rows[((y0 + r) * w + x) * 3 + c] = sum[r * 3 + c];
+                    }
+                });
+        // vertical pass: a whole output row per tap, then into the [0,1] planes
+        Filter down = Filter.of(height, h);
+        float[] out = new float[3 * plane];
+        Parallel.forLoop(
+                h,
+                (y, slot) -> {
+                    int[] sum = sums[slot];
+                    down.apply(rows, 3 * w, y, sum);
+                    for (int x = 0; x < w; x++)
+                        for (int c = 0; c < 3; c++)
+                            out[c * plane + y * w + x] = sum[x * 3 + c] / 255.0f;
+                });
+        return out;
+    }
+
+    private static final int PRECISION_BITS = 22; // Pillow's fixed point: 32 - 8 - 2
+
+    /**
+     * One axis of Pillow's separable bicubic ({@code a = -0.5}) on 8-bit values: per output, its
+     * first input and fixed-point weights ({@code precompute_coeffs}). An unchanged size copies
+     * exactly: the kernel is 1 at distance 0 and 0 at 1 and 2, so the one weight is 2^22.
+     */
+    private record Filter(int[] first, int[] count, int[] weights, int ksize) {
+        static Filter of(int inSize, int outSize) {
+            double scale = (double) inSize / outSize, filterScale = Math.max(1.0, scale);
+            double support = 2.0 * filterScale, inverse = 1.0 / filterScale;
+            int ksize = (int) Math.ceil(support) * 2 + 1;
+            int[] first = new int[outSize],
+                    count = new int[outSize],
+                    weights = new int[outSize * ksize];
+            double[] w = new double[ksize];
+            for (int o = 0; o < outSize; o++) {
+                double center = (o + 0.5) * scale, sum = 0;
+                first[o] = Math.max(0, (int) (center - support + 0.5));
+                count[o] = Math.min(inSize, (int) (center + support + 0.5)) - first[o];
+                for (int k = 0; k < count[o]; k++)
+                    sum += w[k] = cubic((k + first[o] - center + 0.5) * inverse);
+                for (int k = 0; k < count[o]; k++) {
+                    double v = sum != 0 ? w[k] / sum : w[k];
+                    weights[o * ksize + k] =
+                            (int) (v * (1 << PRECISION_BITS) + (v < 0 ? -0.5 : 0.5));
                 }
             }
-        return out;
+            return new Filter(first, count, weights, ksize);
+        }
+
+        /**
+         * Output {@code o} of {@code lane} interleaved lines at once, into {@code sum[0, lane)}:
+         * input {@code i} of every line sits at {@code in[i * lane, (i + 1) * lane)}, so each tap
+         * is one loop over the lines (what the JIT vectorizes).
+         */
+        void apply(int[] in, int lane, int o, int[] sum) {
+            Arrays.fill(sum, 0, lane, 1 << (PRECISION_BITS - 1));
+            for (int k = 0; k < count[o]; k++) {
+                int weight = weights[o * ksize + k], base = (first[o] + k) * lane;
+                for (int j = 0; j < lane; j++) sum[j] += in[base + j] * weight;
+            }
+            for (int j = 0; j < lane; j++) sum[j] = clip8(sum[j]);
+        }
+    }
+
+    private static double cubic(double x) {
+        double a = -0.5;
+        x = Math.abs(x);
+        if (x < 1) return ((a + 2) * x - (a + 3)) * x * x + 1;
+        if (x < 2) return (((x - 5) * x + 8) * x - 4) * a;
+        return 0;
+    }
+
+    private static int clip8(int fixedPoint) {
+        return Math.max(0, Math.min(255, fixedPoint >> PRECISION_BITS));
     }
 
     static MemoryView<MemorySegment> im2col(
