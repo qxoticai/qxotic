@@ -122,6 +122,21 @@ public interface ModelProvider {
     }
 
     /**
+     * As {@link #loadEmbedder(FileChannel, GGUF, Path, Arena, Tokenizer)} with {@code companions}
+     * already validated against {@link #companionFiles()}; a port that offers none never sees one.
+     */
+    default LoadedEmbedder<?> loadEmbedder(
+            FileChannel channel,
+            GGUF gguf,
+            Path path,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
+            throws IOException {
+        return loadEmbedder(channel, gguf, path, arena, tokenizer);
+    }
+
+    /**
      * Loads a RERANKER ({@link Models#loadReranker}). {@code tokenizer} is the validated caller
      * override, or null for the GGUF's own.
      */
