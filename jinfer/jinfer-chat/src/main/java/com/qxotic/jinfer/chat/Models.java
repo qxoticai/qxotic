@@ -67,6 +67,7 @@ public final class Models {
                     "com.qxotic.jinfer.models.llama.LlamaProvider",
                     "com.qxotic.jinfer.models.llama.GraniteProvider",
                     "com.qxotic.jinfer.models.gemma4.Gemma4Provider",
+                    "com.qxotic.jinfer.models.gemmaembedding2.GemmaEmbedding2Provider",
                     "com.qxotic.jinfer.models.lfm2.Lfm2Provider",
                     "com.qxotic.jinfer.models.qwen3.Qwen3Provider",
                     "com.qxotic.jinfer.models.qwen35.Qwen35Provider",
@@ -181,11 +182,24 @@ public final class Models {
      */
     public static LoadedEmbedder<?> loadEmbedder(Path path, Arena arena, Tokenizer tokenizer)
             throws IOException {
+        return loadEmbedder(path, arena, Map.of(), tokenizer);
+    }
+
+    /**
+     * As {@link #loadEmbedder(Path, Arena, Tokenizer)} with COMPANIONS - {@code "media"} for a
+     * projector, whose inputs {@link LoadedEmbedder#embed} then takes - on the terms of {@link
+     * #load(Path, Arena, Map)}.
+     */
+    public static LoadedEmbedder<?> loadEmbedder(
+            Path path, Arena arena, Map<String, Path> companions, Tokenizer tokenizer)
+            throws IOException {
+        Map<String, Path> attached = Map.copyOf(companions);
         return open(
                 path,
-                Map.of(),
+                attached,
                 tokenizer,
-                (provider, fc, gguf) -> provider.loadEmbedder(fc, gguf, path, arena, tokenizer));
+                (provider, fc, gguf) ->
+                        provider.loadEmbedder(fc, gguf, path, arena, attached, tokenizer));
     }
 
     /** Loads a RERANKER - the backbone plus the family's scoring recipe. */
@@ -384,6 +398,7 @@ public final class Models {
             Map.ofEntries(
                     Map.entry("bailingmoe3", "com.qxotic:jinfer-bailingmoe3"),
                     Map.entry("gemma4", "com.qxotic:jinfer-gemma4"),
+                    Map.entry("gemma-embedding2", "com.qxotic:jinfer-gemma-embedding2"),
                     Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
                     Map.entry("laguna", "com.qxotic:jinfer-laguna"),
                     Map.entry("lfm", "com.qxotic:jinfer-lfm2"),

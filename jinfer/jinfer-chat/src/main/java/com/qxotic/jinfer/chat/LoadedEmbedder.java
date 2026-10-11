@@ -170,6 +170,40 @@ public record LoadedEmbedder<S extends ContextState>(
         }
     }
 
+    /**
+     * Embeds ONE input interleaving text and media ({@link EmbeddingModel#embed}), delivering a
+     * caller-owned vector of {@code outputDimension} after the model operation has released the
+     * state; returns the positions it took. A retrieval prefix, when the card prescribes one, is
+     * the leading text part. A model without media, or without its projector attached, refuses with
+     * {@link UnsupportedOperationException}.
+     */
+    public int embed(
+            ContextState state, List<?> parts, int outputDimension, Consumer<float[]> consumer) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(parts, "parts");
+        Objects.requireNonNull(consumer, "consumer");
+        requireSupportedDimension(outputDimension);
+        @SuppressWarnings("unchecked") // states of this embedder's model ARE S, by construction
+        S s = (S) state;
+        float[][] result = new float[1][];
+        InferenceEvent event =
+                InferenceEvent.started(name, InferenceEvent.EMBEDDINGS, InferenceEvent.TEXT);
+        try {
+            long started = System.nanoTime();
+            event.inputTokens =
+                    model.embed(s, parts, view -> result[0] = copyEmbedding(view, outputDimension));
+            event.prefillTime += System.nanoTime() - started;
+        } catch (RuntimeException | Error failure) {
+            event.errorType = failure.getClass().getSimpleName();
+            throw failure;
+        } finally {
+            event.end();
+            event.commit();
+        }
+        consumer.accept(result[0]);
+        return event.inputTokens;
+    }
+
     private void embedPacked(
             ContextState state,
             IntSequence[] sequences,
