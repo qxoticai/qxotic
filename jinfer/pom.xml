@@ -33,6 +33,7 @@
     <module>jinfer-laguna</module>
     <module>jinfer-mellum</module>
     <module>jinfer-gemma4</module>
+    <module>jinfer-gemma-embedding2</module>
     <module>jinfer-gptoss</module>
     <module>jinfer-nemotronh</module>
     <module>jinfer-parakeet</module>
@@ -175,6 +176,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-gemma4</artifactId>
+        <version>${jinfer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-gemma-embedding2</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
       <dependency>
