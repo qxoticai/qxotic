@@ -55,7 +55,8 @@ java --add-modules jdk.incubator.vector \
 Endpoints: `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`, `/v1/detokenize`, `/health`, Prometheus `/metrics`. Chat supports streaming, tools, structured output, reasoning, stop strings, deterministic seeds, and multimodal content when the model has a projector.
 
 The model selects the API.
-An embedding model (Qwen3-Embedding, LFM2.5-Embedding) serves OpenAI's `POST /v1/embeddings`, with `encoding_format` `float` or `base64`, and `dimensions` where the model is Matryoshka-trained (Qwen3: 32 up to 1024).
+An embedding model (Qwen3-Embedding, LFM2.5-Embedding, EmbeddingGemma 2) serves OpenAI's `POST /v1/embeddings`, with `encoding_format` `float` or `base64`, and `dimensions` where the model is Matryoshka-trained (Qwen3: 32 up to 1024).
+With its projector attached (`--with media=<mmproj>`), EmbeddingGemma 2 also takes inputs that are arrays of content parts, `text`, `image_url`, `input_audio` and `video_url`, each array embedded as one vector.
 A reranker (Qwen3-Reranker, LFM2.5-ColBERT) serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape: `query`, `documents`, `top_n`, `return_documents`.
 Qwen3-Reranker's `relevance_score` is a probability; LFM2.5-ColBERT's is an unbounded MaxSim sum (about 28 to 30 out of 32), so rank by it and never threshold it.
 A speech-to-text model serves `POST /v1/audio/transcriptions`.
@@ -72,6 +73,7 @@ Architecture dispatch comes from providers on the classpath.
 | Family | Capabilities |
 |--------|--------------|
 | Gemma 4 | chat, vision with an mmproj (E2B, E4B, 12B), E2B conformer audio, MTP |
+| EmbeddingGemma 2 | embeddings of text, and of images, audio and video with its mmproj |
 | Qwen 3 | embeddings, reranking |
 | Qwen 3.5 | chat, vision, MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
@@ -91,7 +93,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | Capability | Artifact | Notes |
 |------------|----------|-------|
 | chat / instruct | `jinfer-<model>` | per-architecture port |
-| embeddings | `jinfer-lfm2`, `jinfer-qwen3` | `EmbeddingModel`; server `/v1/embeddings` |
+| embeddings | `jinfer-lfm2`, `jinfer-qwen3`, `jinfer-gemma-embedding2` | `EmbeddingModel`; server `/v1/embeddings` |
 | reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker`; server `/v1/rerank` |
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4` | E2B conformer |
