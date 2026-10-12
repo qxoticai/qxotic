@@ -142,12 +142,18 @@ final class Server {
         int capacity;
         try {
             if (embedding) {
-                LoadedEmbedder<?> embedder = Models.loadEmbedder(files.model(), arena);
+                // a media companion lets /v1/embeddings take images, audio and video
+                LoadedEmbedder<?> embedder =
+                        Models.loadEmbedder(files.model(), arena, files.companions(), null);
                 capacity =
                         contextCapacity(
                                 options, embedder.model().configuration().maxContextLength());
                 running = RetrievalServer.start(embedder, capacity, name, config);
             } else {
+                Options.require(
+                        files.companions().isEmpty(),
+                        "--with attaches nothing to a reranker; %s scores text only",
+                        name);
                 LoadedReranker<?> reranker = Models.loadReranker(files.model(), arena);
                 capacity =
                         contextCapacity(

@@ -192,6 +192,22 @@ curl -sS http://127.0.0.1:8080/v1/embeddings \
 Text is embedded as sent, so a retrieval prefix from the model card (LFM2.5-Embedding's `query: `) is the client's to add.
 An input longer than the context is refused with its index, and the rest are packed into as few forward passes as the context allows.
 
+A multimodal embedder (EmbeddingGemma 2) also embeds images, audio and video once its projector is attached with `--with media`.
+An input is then either a string or an array of content parts in the chat endpoint's syntax, `text`, `image_url`, `input_audio` and `video_url` with base64 data URIs, and the parts of one input make one vector:
+
+```sh
+jinfer server -m unsloth/embeddinggemma-2-GGUF:Q8_0 \
+  --with media=unsloth/embeddinggemma-2-GGUF/mmproj-BF16.gguf --port 8080
+curl -sS http://127.0.0.1:8080/v1/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{"input":["task: search result | query: a cat",
+       [{"type":"text","text":"A photo: "},
+        {"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0..."}}]]}'
+```
+
+A video is sampled one frame a second, at most 32, as the model's reference does.
+`/v1/models` lists the input modalities the server takes; a medium it does not take is refused naming them.
+
 ```sh
 jinfer server -m mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0 --port 8080
 curl -sS http://127.0.0.1:8080/v1/rerank \
