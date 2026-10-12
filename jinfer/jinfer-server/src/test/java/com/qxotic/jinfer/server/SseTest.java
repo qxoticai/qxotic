@@ -70,29 +70,34 @@ class SseTest {
         BlockingOutput output = new BlockingOutput();
         TestExchange exchange = new TestExchange(new ByteArrayInputStream(new byte[0]), output);
         AtomicReference<Throwable> failure = new AtomicReference<>();
-        Sse.startReaper();
+        Thread reaper = Sse.startReaper(); // stopped below: a leaked one skews later reaper counts
+        try {
 
-        Thread writer =
-                Thread.ofPlatform()
-                        .start(
-                                () -> {
-                                    try (Sse.Stream stream =
-                                            Sse.begin(exchange, Duration.ofMillis(10))) {
-                                        Sse.guarded(
-                                                stream,
-                                                new Metrics(),
-                                                () -> stream.emit(Map.of("x", 1)));
-                                    } catch (Throwable t) {
-                                        failure.set(t);
-                                    }
-                                });
+            Thread writer =
+                    Thread.ofPlatform()
+                            .start(
+                                    () -> {
+                                        try (Sse.Stream stream =
+                                                Sse.begin(exchange, Duration.ofMillis(10))) {
+                                            Sse.guarded(
+                                                    stream,
+                                                    new Metrics(),
+                                                    () -> stream.emit(Map.of("x", 1)));
+                                        } catch (Throwable t) {
+                                            failure.set(t);
+                                        }
+                                    });
 
-        assertTrue(output.started.await(2, TimeUnit.SECONDS), "write never started");
-        assertTrue(output.closed.await(3, TimeUnit.SECONDS), "reaper did not close the stream");
-        writer.join(2_000);
-        assertTrue(!writer.isAlive(), "writer remained blocked");
-        assertTrue(exchange.closed());
-        assertInstanceOf(IOException.class, failure.get());
+            assertTrue(output.started.await(2, TimeUnit.SECONDS), "write never started");
+            assertTrue(output.closed.await(3, TimeUnit.SECONDS), "reaper did not close the stream");
+            writer.join(2_000);
+            assertTrue(!writer.isAlive(), "writer remained blocked");
+            assertTrue(exchange.closed());
+            assertInstanceOf(IOException.class, failure.get());
+        } finally {
+            reaper.interrupt();
+            reaper.join(2_000);
+        }
     }
 
     private static final class BlockingOutput extends OutputStream {
