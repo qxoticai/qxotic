@@ -27,6 +27,7 @@ AI on the JVM, just a Maven dependency away.
 | Family | Capabilities | Artifact |
 |--------|--------------|----------|
 | [Google Gemma 4](https://deepmind.google/models/gemma/gemma-4) | chat, vision, audio, MTP | `jinfer-gemma4` |
+| [Google EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) | embeddings of text, images, audio and video | `jinfer-gemma-embedding2` |
 | [Liquid AI LFM 2.5](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) | chat, vision, embeddings, reranking | `jinfer-lfm2` |
 | [OpenAI gpt-oss](https://openai.com/index/introducing-gpt-oss/) | chat | `jinfer-gptoss` |
 | [Poolside Laguna XS 2.1](https://poolside.ai/blog/introducing-laguna-xs-2-1) | chat | `jinfer-laguna` |
