@@ -3,12 +3,15 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedReranker;
+import com.qxotic.jinfer.codecs.VideoCodec;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -38,7 +41,13 @@ public final class RetrievalServer {
         int contextCapacity();
 
         /** Embeds every text in order; returns the input-token count. */
-        int embed(List<String> texts, int dimension, Consumer<float[]> sink);
+        int embedAll(List<String> texts, int dimension, Consumer<float[]> sink);
+
+        /** What one input may hold: {@code "text"}, and the media its projector takes. */
+        List<String> modalities();
+
+        /** Embeds one input of text and media parts; returns the positions it took. */
+        int embed(List<?> parts, int dimension, Consumer<float[]> sink);
 
         void close();
     }
@@ -126,9 +135,12 @@ public final class RetrievalServer {
                         "dimension",
                         embedder.dimension(),
                         "min_dimension",
-                        embedder.minimumDimension());
+                        embedder.minimumDimension(),
+                        "modalities",
+                        embedder.modalities());
         return server.serve(
                 "embedding",
+                embedder.modalities(),
                 props,
                 "/v1/embeddings",
                 exchange -> server.embeddings(exchange, embedder),
@@ -143,6 +155,7 @@ public final class RetrievalServer {
                         "model", servedModel, "task", "rerank", "n_ctx", ranker.contextCapacity());
         return server.serve(
                 "rerank",
+                List.of("text"),
                 props,
                 "/v1/rerank",
                 exchange -> server.rerank(exchange, ranker),
@@ -156,10 +169,15 @@ public final class RetrievalServer {
     }
 
     private Running serve(
-            String task, Map<String, Object> props, String path, HttpHandler work, Runnable close) {
+            String task,
+            List<String> modalities,
+            Map<String, Object> props,
+            String path,
+            HttpHandler work,
+            Runnable close) {
         transport.probes(
                 servedModel,
-                "text",
+                modalities,
                 () -> props,
                 () -> {
                     StringBuilder sb = new StringBuilder();
@@ -227,11 +245,14 @@ public final class RetrievalServer {
                 input instanceof String
                         || input instanceof List<?> items
                                 && !items.isEmpty()
-                                && items.stream().allMatch(String.class::isInstance),
+                                && items.stream().allMatch(RetrievalServer::isInput),
                 "input",
-                "Invalid argument: input must be a string or a non-empty array of strings; token"
-                        + " ids are not supported");
-        List<String> texts = input instanceof String text ? List.of(text) : (List<String>) input;
+                "Invalid argument: input must be a string or a non-empty array of strings and"
+                        + " content-part arrays; token ids are not supported");
+        List<?> items = input instanceof String text ? List.of(text) : (List<?>) input;
+        List<Object> inputs = new ArrayList<>(items.size());
+        for (Object item : items)
+            inputs.add(item instanceof String text ? text : parts((List<?>) item, embedder));
         String format = Values.stringValue(request.get("encoding_format"), "float");
         Validation.requireParam(
                 format.equals("float") || format.equals("base64"),
@@ -249,8 +270,8 @@ public final class RetrievalServer {
                         + "]; got "
                         + dimension);
 
-        List<float[]> vectors = new ArrayList<>(texts.size());
-        int tokens = compute("input", () -> embedder.embed(texts, dimension, vectors::add));
+        List<float[]> vectors = new ArrayList<>(inputs.size());
+        int tokens = compute("input", () -> embedAll(embedder, inputs, dimension, vectors::add));
         List<Object> data = new ArrayList<>(vectors.size());
         for (float[] vector : vectors) {
             data.add(
@@ -275,6 +296,75 @@ public final class RetrievalServer {
                         "usage",
                         usage(tokens)));
     }
+
+    /**
+     * Embeds every input in order: runs of plain strings pack into batches, and each input with
+     * media is embedded on its own.
+     */
+    private static int embedAll(
+            Embedder embedder, List<Object> inputs, int dimension, Consumer<float[]> sink) {
+        int tokens = 0;
+        List<String> texts = new ArrayList<>();
+        for (Object input : inputs) {
+            if (input instanceof String text) {
+                texts.add(text);
+                continue;
+            }
+            if (!texts.isEmpty()) tokens += embedder.embedAll(texts, dimension, sink);
+            texts = new ArrayList<>();
+            tokens += embedder.embed((List<?>) input, dimension, sink);
+        }
+        if (!texts.isEmpty()) tokens += embedder.embedAll(texts, dimension, sink);
+        return tokens;
+    }
+
+    /** A text, or a non-empty array of content-part objects (never token ids). */
+    private static boolean isInput(Object item) {
+        return item instanceof String
+                || item instanceof List<?> parts
+                        && !parts.isEmpty()
+                        && parts.stream().allMatch(Map.class::isInstance);
+    }
+
+    /**
+     * One input's content parts, in the chat endpoint's syntax ({@link MediaParts}); a medium the
+     * model does not take is the client's 400, naming what it does take.
+     */
+    private static List<Object> parts(List<?> raw, Embedder embedder) {
+        List<Object> parts = new ArrayList<>(raw.size());
+        for (Object item : raw) {
+            Map<String, Object> part = Values.asObject(item, "content part");
+            String modality = MediaParts.modality(part);
+            Validation.requireParam(
+                    modality != null,
+                    "input",
+                    "Invalid argument: unsupported content part type: " + part.get("type"));
+            Validation.requireParam(
+                    embedder.modalities().contains(modality),
+                    "input",
+                    "Invalid argument: this model embeds "
+                            + String.join(", ", embedder.modalities())
+                            + ", not "
+                            + modality
+                            + "; a multimodal embedder takes it with its projector, jinfer server"
+                            + " --with media=<mmproj>");
+            parts.add(
+                    switch (modality) {
+                        case "text" -> MediaParts.text(part);
+                        case "image" -> MediaParts.image(part).value();
+                        case "audio" -> MediaParts.audio(part).value();
+                        default -> MediaParts.video(part, EMBEDDING_FRAMES).value();
+                    });
+        }
+        return parts;
+    }
+
+    /**
+     * EmbeddingGemma 2's sampling, one frame a second and at most 32 (ponytail: the only video
+     * embedder; a per-model sampler when a second one arrives).
+     */
+    private static final VideoSampler EMBEDDING_FRAMES =
+            video -> VideoCodec.ffmpeg().every(video, Duration.ofSeconds(1), 32);
 
     /** OpenAI's base64 encoding: the vector's float32 values, little-endian. */
     private static String base64(float[] vector) {
@@ -346,6 +436,8 @@ public final class RetrievalServer {
     private static <S extends ContextState> Embedder adapt(
             LoadedEmbedder<S> loaded, int contextCapacity) {
         S state = loaded.model().newState(contextCapacity);
+        // EmbeddingGemma 2's embed renders video frames, so video rides its image projector
+        List<String> modalities = MediaParts.modalities(loaded.model(), true);
         return new Embedder() {
             public int dimension() {
                 return loaded.dimension();
@@ -359,8 +451,16 @@ public final class RetrievalServer {
                 return contextCapacity;
             }
 
-            public int embed(List<String> texts, int dimension, Consumer<float[]> sink) {
+            public int embedAll(List<String> texts, int dimension, Consumer<float[]> sink) {
                 return loaded.embedAll(state, texts, dimension, sink);
+            }
+
+            public List<String> modalities() {
+                return modalities;
+            }
+
+            public int embed(List<?> parts, int dimension, Consumer<float[]> sink) {
+                return loaded.embed(state, parts, dimension, sink);
             }
 
             public void close() {

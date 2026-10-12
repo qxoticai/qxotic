@@ -46,7 +46,7 @@ final class TaskTransport {
      */
     void probes(
             String servedModel,
-            String modality,
+            List<String> modalities,
             Supplier<Map<String, Object>> props,
             Supplier<String> metrics) {
         Map<String, Object> modelCard =
@@ -60,7 +60,7 @@ final class TaskTransport {
                         "owned_by",
                         "jinfer",
                         "architecture",
-                        JsonCodec.object("input_modalities", List.of(modality)));
+                        JsonCodec.object("input_modalities", List.copyOf(modalities)));
         ServerConfig.Access probe = new ServerConfig.Access(null, config.access().allowedOrigins());
         probe(
                 "/health",
