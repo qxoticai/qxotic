@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.media.Media;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -29,7 +30,8 @@ class RetrievalServerTest {
 
     /** One vector per text: {@code [length, 0.5, 1.5, ...]}, as wide as asked; a token a word. */
     static final class FakeEmbedder implements RetrievalServer.Embedder {
-        final List<List<String>> calls = new ArrayList<>();
+        final List<List<?>> calls = new ArrayList<>();
+        List<String> modalities = List.of("text");
         boolean closed;
 
         public int dimension() {
@@ -44,7 +46,7 @@ class RetrievalServerTest {
             return 16;
         }
 
-        public int embed(List<String> texts, int dimension, Consumer<float[]> sink) {
+        public int embedAll(List<String> texts, int dimension, Consumer<float[]> sink) {
             calls.add(List.copyOf(texts));
             int total = 0;
             for (String text : texts) {
@@ -57,10 +59,27 @@ class RetrievalServerTest {
             return total;
         }
 
+        public List<String> modalities() {
+            return modalities;
+        }
+
+        /** One vector per input: {@code [parts, ...]}; a token a part. */
+        public int embed(List<?> parts, int dimension, Consumer<float[]> sink) {
+            calls.add(List.copyOf(parts));
+            float[] vector = new float[dimension];
+            vector[0] = parts.size();
+            sink.accept(vector);
+            return parts.size();
+        }
+
         public void close() {
             closed = true;
         }
     }
+
+    /** A 1x1 PNG. */
+    private static final String PIXEL =
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
     /** Scores a document by how many query words it holds; "LONG" overflows the context. */
     static final class FakeRanker implements RetrievalServer.Ranker {
@@ -152,6 +171,57 @@ class RetrievalServerTest {
         assertEquals(1.0, ((Number) vector.get(0)).doubleValue());
         assertEquals(1.5, ((Number) vector.get(2)).doubleValue());
         assertEquals(List.of(List.of("a b", "c")), embedder.calls, "one batch for the request");
+    }
+
+    @Test
+    void mediaInputsKeepTheirOrderAndTextRunsStillBatch() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        embedder.modalities = List.of("text", "image", "video", "audio");
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        HttpResponse<String> response =
+                post(
+                        "/v1/embeddings",
+                        "{\"input\":[\"a b\",\"c\",[{\"type\":\"text\",\"text\":\"a cat:\"},"
+                                + "{\"type\":\"image_url\",\"image_url\":{\"url\":\""
+                                + PIXEL
+                                + "\"}}],\"d\"]}");
+        assertEquals(200, response.statusCode(), response.body());
+        Map<String, Object> body = json(response);
+        assertEquals(4, ((List<?>) body.get("data")).size());
+        assertEquals(2.0, ((Number) embedding(body, 2).get(0)).doubleValue(), "the parts input");
+        assertEquals(1.0, ((Number) embedding(body, 3).get(0)).doubleValue(), "\"d\", in place");
+        assertEquals(Map.of("prompt_tokens", 6L, "total_tokens", 6L), body.get("usage"));
+        assertEquals(3, embedder.calls.size(), "a text run, the parts input, a text run");
+        assertEquals(List.of("a b", "c"), embedder.calls.get(0));
+        assertEquals("a cat:", embedder.calls.get(1).get(0));
+        assertTrue(embedder.calls.get(1).get(1) instanceof Media.Image image && image.width() == 1);
+        assertEquals(List.of("d"), embedder.calls.get(2));
+        assertEquals(
+                List.of("text", "image", "video", "audio"),
+                ((Map<?, ?>)
+                                ((Map<?, ?>) ((List<?>) json(get("/v1/models")).get("data")).get(0))
+                                        .get("architecture"))
+                        .get("input_modalities"));
+    }
+
+    @Test
+    void mediaTheModelDoesNotTakeIsRefusedNamingWhatItTakes() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        String image = "{\"type\":\"image_url\",\"image_url\":{\"url\":\"" + PIXEL + "\"}}";
+        refused(
+                "/v1/embeddings",
+                "{\"input\":[[" + image + "]]}",
+                "input",
+                "embeds text, not image");
+        refused("/v1/embeddings", "{\"input\":[[" + image + "]]}", "input", "--with media");
+        refused(
+                "/v1/embeddings",
+                "{\"input\":[[{\"type\":\"file\"}]]}",
+                "input",
+                "unsupported content part type: file");
+        refused("/v1/embeddings", "{\"input\":[[]]}", "input", "content-part arrays");
+        assertTrue(embedder.calls.isEmpty(), "a refused request computes nothing");
     }
 
     @Test

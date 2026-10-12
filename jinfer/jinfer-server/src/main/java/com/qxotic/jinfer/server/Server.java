@@ -3,8 +3,6 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.llm.Sampling;
-import com.qxotic.jinfer.media.Media;
-import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.sun.net.httpserver.HttpExchange;
@@ -12,7 +10,6 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -173,16 +170,9 @@ public final class Server {
         // OpenRouter's structured list - read off the attached projectors (a null-check each,
         // never an instantiation). Video is omitted: it rides the vision projector but only on
         // families whose template renders it, which the projectors cannot say.
-        List<String> inputModalities = new ArrayList<>(List.of("text"));
-        boolean supportsImages = false;
-        if (model.model() instanceof Multimodal multimodal) {
-            supportsImages = multimodal.projector(Media.Image.class).isPresent();
-            if (supportsImages) inputModalities.add("image");
-            if (multimodal.projector(Media.Audio.class).isPresent()) inputModalities.add("audio");
-        }
-        modelCard.put("supports_image_input", supportsImages);
-        modelCard.put(
-                "architecture", JsonCodec.object("input_modalities", List.copyOf(inputModalities)));
+        List<String> inputModalities = MediaParts.modalities(model.model(), false);
+        modelCard.put("supports_image_input", inputModalities.contains("image"));
+        modelCard.put("architecture", JsonCodec.object("input_modalities", inputModalities));
         probe(
                 server,
                 "/v1/models",

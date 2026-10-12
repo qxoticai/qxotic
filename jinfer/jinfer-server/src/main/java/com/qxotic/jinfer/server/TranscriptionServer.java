@@ -91,7 +91,7 @@ public final class TranscriptionServer {
     private Running serve() {
         transport.probes(
                 servedModel,
-                "audio",
+                List.of("audio"),
                 () -> JsonCodec.object("model", servedModel, "sample_rate", model.sampleRate()),
                 this::exposition);
         transport.work("/v1/audio/transcriptions", this::handleTranscription);
