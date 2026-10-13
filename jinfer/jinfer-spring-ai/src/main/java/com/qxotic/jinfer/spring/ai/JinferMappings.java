@@ -76,26 +76,31 @@ final class JinferMappings {
             parts.add(new Content.Text(u.getText(), null));
         }
         for (org.springframework.ai.content.Media media : u.getMedia()) {
-            String kind = media.getMimeType().getType();
-            switch (kind) {
-                case "image" -> {
-                    byte[] src = bytes(media);
-                    parts.add(blob(kind, ContentKey.sha256(src), () -> ImageCodec.decode(src)));
-                }
-                case "audio" -> {
-                    byte[] src = bytes(media);
-                    parts.add(blob(kind, ContentKey.sha256(src), () -> AudioCodec.decode(src)));
-                }
-                case "video" -> {
-                    Path src = localPath(media);
-                    parts.add(blob(kind, sha256(src), () -> videoSampler.sample(src)));
-                }
-                default ->
-                        throw new UnsupportedOperationException(
-                                "media type " + media.getMimeType() + " is not supported");
-            }
+            parts.add(media(media, videoSampler));
         }
         return parts;
+    }
+
+    /** One image, audio or video, decoded by its MIME type; any other type is refused. */
+    static Content.Media media(org.springframework.ai.content.Media media, VideoSampler sampler) {
+        String kind = media.getMimeType().getType();
+        return switch (kind) {
+            case "image" -> {
+                byte[] src = bytes(media);
+                yield blob(kind, ContentKey.sha256(src), () -> ImageCodec.decode(src));
+            }
+            case "audio" -> {
+                byte[] src = bytes(media);
+                yield blob(kind, ContentKey.sha256(src), () -> AudioCodec.decode(src));
+            }
+            case "video" -> {
+                Path src = localPath(media);
+                yield blob(kind, sha256(src), () -> sampler.sample(src));
+            }
+            default ->
+                    throw new UnsupportedOperationException(
+                            "media type " + media.getMimeType() + " is not supported");
+        };
     }
 
     private interface MediaDecode {
