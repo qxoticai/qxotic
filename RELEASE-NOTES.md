@@ -1,5 +1,23 @@
 # Release notes
 
+## Unreleased
+
+- **EmbeddingGemma 2.** Google EmbeddingGemma 2 (`jinfer-gemma-embedding2`, architecture `gemma-embedding2`) embeds text into 768 dimensions (Matryoshka down to 128), and images, audio and video through its mmproj with `GemmaEmbedding2.withMedia` and `embed`.
+  It matches Google's official pipeline (sentence-transformers over `google/embeddinggemma-2`) for every task prompt on the model card, and for images, audio and video: cosine above 0.99999 with F32 weights.
+  `VideoCodec.every(video, step, maxFrames)` samples a video the way the reference does (one frame a second, at most 32).
+- **Media embeddings over HTTP.** `jinfer server` attaches an embedder's projector with `--with media=<mmproj>`, and `/v1/embeddings` then takes inputs that are arrays of content parts (`text`, `image_url`, `input_audio`, `video_url`, as in chat), each embedded as one vector; `/v1/models` lists the modalities served.
+  In the library, `Models.loadEmbedder(path, arena, companions, tokenizer)` attaches companions and `LoadedEmbedder.embed(state, parts, dimension, consumer)` embeds one interleaved input (`EmbeddingModel.embed` underneath).
+- **Media embeddings in LangChain4j and Spring AI.** Both `JinferEmbeddingModel` builders take `companion(capability, ref)` and `companionPath(capability, path)`, and the starter reads `spring.ai.jinfer.embedding.companions.media`.
+  With EmbeddingGemma 2's projector attached, LangChain4j embeds image, audio and video `EmbeddingRequest` inputs (`supportedContentTypes()` says which), and Spring AI embeds media `Document`s, both with the query or document framing.
+  Spring AI's vector stores still refuse non-text documents at `add`; media vectors come from the `EmbeddingModel` directly.
+- **Gemma 4 media follows Google's reference, not llama.cpp.** Three places where llama.cpp departs from Google's JAX and Hugging Face implementations now follow the reference, for the Gemma 4 chat models as well as EmbeddingGemma 2.
+  Images are resized to fill the token budget (280 by default) with their aspect kept, small images growing and nothing padded, where llama.cpp only shrinks them and pads with black.
+  The vision tower's MLP uses tanh GELU, where llama.cpp runs quick-GELU.
+  Audio features take `log(mel + 0.001)`, where llama.cpp clamps at 0.001.
+  Against the official towers, Gemma 4 E2B's projected image and audio rows now agree to cosine 0.99998 and better.
+  Gemma 4 chat encodes video frames at the reference's 70 tokens again, not at a still image's 280, so a 32-frame video fits a prompt about four times smaller.
+  Audio handed in at another rate is resampled to 16 kHz with miniaudio's filter (`AudioCodec` still decodes files to 16 kHz itself).
+
 ## 0.3.1
 
 A command-based CLI, embeddings and reranking over HTTP, faster prefill, and a release-wide round of fixes.
