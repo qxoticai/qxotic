@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -247,6 +248,44 @@ final class BuilderContractTest {
             assertEquals(
                     "companions are load-time settings; apply them when you build the LoadedModel"
                             + " passed to model(...)",
+                    e.getMessage());
+        }
+    }
+
+    @Test
+    void anEmbeddingCompanionIsARefOrALocalPath() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                JinferEmbeddingModel.builder()
+                                        .companion("media", "/tmp/mmproj.gguf"));
+        assertEquals(
+                "'/tmp/mmproj.gguf' is not a companion model ref. Use companionPath(...) for a"
+                        + " local file; download plain URLs first.",
+                e.getMessage());
+    }
+
+    @Test
+    @Tag("integration")
+    void embeddingCompanionsStillBelongToTheLoad() throws IOException {
+        try (Arena weights = Arenas.newCrossThread()) {
+            LoadedEmbedder<?> loaded =
+                    Models.loadEmbedder(
+                            TestModels.require(
+                                    "hf.co/unsloth/embeddinggemma-2-GGUF/embeddinggemma-2-Q8_0.gguf"),
+                            weights);
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    JinferEmbeddingModel.builder()
+                                            .model(loaded)
+                                            .companionPath("media", Path.of("mmproj.gguf"))
+                                            .build());
+            assertEquals(
+                    "companions are load-time settings; apply them when you load the"
+                            + " LoadedEmbedder passed to model(...)",
                     e.getMessage());
         }
     }

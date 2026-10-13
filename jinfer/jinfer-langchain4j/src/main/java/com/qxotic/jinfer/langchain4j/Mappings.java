@@ -102,34 +102,41 @@ final class Mappings {
     private static List<Content> userParts(UserMessage u, VideoSampler videoSampler) {
         List<Content> parts = new ArrayList<>();
         for (dev.langchain4j.data.message.Content c : u.contents()) {
-            switch (c) {
-                case TextContent t -> parts.add(new Content.Text(t.text(), null));
-                case ImageContent i -> {
-                    byte[] src = bytes(i.image().base64Data(), i.image().url());
-                    parts.add(blob("image", ContentKey.sha256(src), () -> ImageCodec.decode(src)));
-                }
-                case AudioContent a -> {
-                    byte[] src = bytes(a.audio().base64Data(), a.audio().url());
-                    parts.add(blob("audio", ContentKey.sha256(src), () -> AudioCodec.decode(src)));
-                }
-                case VideoContent v -> {
-                    // no base64 door here, unlike image/audio: the frame sampler reads a FILE
-                    // (ffmpeg seam), so the refusal must not advise the base64 the user just sent
-                    // inline bytes deferred - the fix is byte[] overloads on VideoCodec
-                    // when a caller actually holds bytes, NOT per-adapter temp-file handling
-                    if (v.video().base64Data() != null)
-                        throw new UnsupportedFeatureException(
-                                "inline base64 video is not supported: write it to a file and"
-                                        + " pass its file:// URI");
-                    Path src = localPath(v.video().url());
-                    parts.add(blob("video", sha256(src), () -> videoSampler.sample(src)));
-                }
-                default ->
-                        throw new UnsupportedFeatureException(
-                                c.getClass().getSimpleName() + " is not supported");
-            }
+            parts.add(
+                    c instanceof TextContent t
+                            ? new Content.Text(t.text(), null)
+                            : media(c, videoSampler));
         }
         return parts;
+    }
+
+    /** One image, audio or video content, decoded; anything else is refused. */
+    static Content.Media media(dev.langchain4j.data.message.Content c, VideoSampler videoSampler) {
+        return switch (c) {
+            case ImageContent i -> {
+                byte[] src = bytes(i.image().base64Data(), i.image().url());
+                yield blob("image", ContentKey.sha256(src), () -> ImageCodec.decode(src));
+            }
+            case AudioContent a -> {
+                byte[] src = bytes(a.audio().base64Data(), a.audio().url());
+                yield blob("audio", ContentKey.sha256(src), () -> AudioCodec.decode(src));
+            }
+            case VideoContent v -> {
+                // no base64 door here, unlike image/audio: the frame sampler reads a FILE
+                // (ffmpeg seam), so the refusal must not advise the base64 the user just sent
+                // inline bytes deferred - the fix is byte[] overloads on VideoCodec
+                // when a caller actually holds bytes, NOT per-adapter temp-file handling
+                if (v.video().base64Data() != null)
+                    throw new UnsupportedFeatureException(
+                            "inline base64 video is not supported: write it to a file and"
+                                    + " pass its file:// URI");
+                Path src = localPath(v.video().url());
+                yield blob("video", sha256(src), () -> videoSampler.sample(src));
+            }
+            default ->
+                    throw new UnsupportedFeatureException(
+                            c.getClass().getSimpleName() + " is not supported");
+        };
     }
 
     private interface MediaDecode {
