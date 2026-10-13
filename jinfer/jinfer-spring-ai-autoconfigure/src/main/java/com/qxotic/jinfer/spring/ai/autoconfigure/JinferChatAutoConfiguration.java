@@ -63,31 +63,11 @@ public class JinferChatAutoConfiguration {
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
-        if (properties.companions() != null) {
-            properties
-                    .companions()
-                    .forEach(
-                            (capability, value) -> {
-                                if (!StringUtils.hasText(value)) {
-                                    throw new IllegalStateException(
-                                            "spring.ai.jinfer.chat.companions."
-                                                    + capability
-                                                    + " must not be blank");
-                                }
-                                if (value.contains("://")) {
-                                    throw new IllegalStateException(
-                                            "spring.ai.jinfer.chat.companions."
-                                                    + capability
-                                                    + " is a URL; download it first and configure"
-                                                    + " its local path");
-                                }
-                                if (ModelStore.isRef(value)) {
-                                    builder.companion(capability, value);
-                                } else {
-                                    builder.companionPath(capability, Path.of(value));
-                                }
-                            });
-        }
+        Companions.attach(
+                "spring.ai.jinfer.chat",
+                properties.companions(),
+                builder::companion,
+                builder::companionPath);
         if (StringUtils.hasText(properties.promptCache())) {
             builder.promptCache(Path.of(properties.promptCache()));
         }

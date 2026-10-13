@@ -68,13 +68,44 @@ class JinferEmbeddingAutoConfigurationTest {
                 .withUserConfiguration(PropsOnly.class)
                 .withPropertyValues(
                         "spring.ai.jinfer.embedding.model=/emb.gguf",
+                        "spring.ai.jinfer.embedding.companions.media=/mmproj.gguf",
                         "spring.ai.jinfer.embedding.context-capacity=1024")
                 .run(
                         context -> {
                             JinferEmbeddingProperties p =
                                     context.getBean(JinferEmbeddingProperties.class);
                             assertThat(p.model()).isEqualTo("/emb.gguf");
+                            assertThat(p.companions()).containsEntry("media", "/mmproj.gguf");
                             assertThat(p.contextCapacity()).isEqualTo(1024);
+                        });
+    }
+
+    @Test
+    void theContextCapacityDefaultSurvivesTheCompanions() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(PropsOnly.class)
+                .withPropertyValues("spring.ai.jinfer.embedding.model=/emb.gguf")
+                .run(
+                        context ->
+                                assertThat(
+                                                context.getBean(JinferEmbeddingProperties.class)
+                                                        .contextCapacity())
+                                        .isEqualTo(2048));
+    }
+
+    @Test
+    void aCompanionUrlIsRejectedBeforeResolution() {
+        runner.withPropertyValues(
+                        "spring.ai.model.embedding=jinfer",
+                        "spring.ai.jinfer.embedding.model=/emb.gguf",
+                        "spring.ai.jinfer.embedding.companions.media=https://example.org/mmproj.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "spring.ai.jinfer.embedding.companions.media is a URL;"
+                                                    + " download it first");
                         });
     }
 
