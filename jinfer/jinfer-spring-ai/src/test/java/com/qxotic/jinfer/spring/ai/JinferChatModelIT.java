@@ -40,13 +40,14 @@ class JinferChatModelIT {
     static final String MODEL_REF = "hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf";
     static final String SMALL_REF = "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf";
 
-    static final Path MODEL = TestModels.require(MODEL_REF);
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
 
     static JinferChatModel model;
     static TestObservationRegistry observations;
 
     @BeforeAll
     static void load() {
+        MODEL = TestModels.require(MODEL_REF);
         observations = TestObservationRegistry.create();
         model =
                 JinferChatModel.builder()

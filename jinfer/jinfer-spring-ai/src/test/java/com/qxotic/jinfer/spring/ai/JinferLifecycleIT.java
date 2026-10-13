@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -24,8 +25,12 @@ import org.springframework.ai.chat.prompt.Prompt;
 @Tag("integration")
 class JinferLifecycleIT {
 
-    static final Path SMALL =
-            TestModels.require("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf");
+    static Path SMALL; // resolved in @BeforeAll: a missing model then skips
+
+    @BeforeAll
+    static void requireModels() {
+        SMALL = TestModels.require("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf");
+    }
 
     private static JinferChatModel load() {
         return JinferChatModel.builder()

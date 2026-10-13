@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -23,10 +24,14 @@ import org.springframework.ai.chat.prompt.Prompt;
 @Tag("integration")
 class SpeculationIT {
 
-    static final Path MODEL =
-            TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf");
-    static final Path MTP =
-            TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/mtp-gemma-4-E2B-it.gguf");
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
+    static Path MTP; // resolved in @BeforeAll: a missing model then skips
+
+    @BeforeAll
+    static void requireModels() {
+        MODEL = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf");
+        MTP = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF/mtp-gemma-4-E2B-it.gguf");
+    }
 
     private static JinferChatModel model(Integer depth) {
         return JinferChatModel.builder()

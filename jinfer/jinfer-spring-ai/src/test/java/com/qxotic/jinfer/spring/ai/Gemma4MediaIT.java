@@ -33,16 +33,17 @@ import org.springframework.util.MimeType;
 @Tag("integration")
 class Gemma4MediaIT {
 
-    static final Path MODEL =
-            TestModels.require(
-                    "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf");
-    static final Path MMPROJ =
-            TestModels.require("hf.co/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf");
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
+    static Path MMPROJ; // resolved in @BeforeAll: a missing model then skips
 
     static JinferChatModel model;
 
     @BeforeAll
     static void load() {
+        MODEL =
+                TestModels.require(
+                        "hf.co/unsloth/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf");
+        MMPROJ = TestModels.require("hf.co/unsloth/gemma-4-12B-it-qat-GGUF/mmproj-F32.gguf");
         model =
                 JinferChatModel.builder()
                         .modelPath(MODEL)
