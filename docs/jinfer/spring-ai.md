@@ -147,6 +147,17 @@ The starter brings it in; without the starter, add it at the same Spring AI vers
 
 Embedding requests are packed into ragged batches. `EmbeddingOptions.dimensions` requests a supported Matryoshka width; fixed-width models accept only their native width. Typed query/document entry points apply retrieval framing; `call(EmbeddingRequest)` stays raw.
 
+EmbeddingGemma 2 also embeds media documents (image, audio or video) once its projector is attached, with `companion("media", ...)` on the builder or `spring.ai.jinfer.embedding.companions.media` in the starter:
+
+```java
+float[] photo = embeddings.embed(Document.builder()
+        .media(new Media(MimeTypeUtils.IMAGE_PNG, Path.of("photo.png").toUri()))
+        .build());
+```
+
+The vector lands in the space text queries search, with the document framing applied.
+Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
+
 ## Spring Boot
 
 Use `jinfer-spring-ai-spring-boot-starter`:
