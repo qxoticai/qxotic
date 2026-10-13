@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -18,8 +19,12 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 @Tag("integration")
 class JinferChatAutoConfigurationIT {
 
-    static final Path MODEL =
-            TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
+
+    @BeforeAll
+    static void requireModels() {
+        MODEL = TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
+    }
 
     @Test
     void wiresAndServes() {

@@ -32,8 +32,7 @@ import org.springframework.ai.tool.definition.ToolDefinition;
 @Tag("integration")
 class CachedPromptIT {
 
-    static final Path MODEL =
-            TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
 
     static final List<Message> SUPPORT =
             List.of(
@@ -45,6 +44,7 @@ class CachedPromptIT {
 
     @BeforeAll
     static void load() {
+        MODEL = TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
         base =
                 JinferChatModel.builder()
                         .modelPath(MODEL)

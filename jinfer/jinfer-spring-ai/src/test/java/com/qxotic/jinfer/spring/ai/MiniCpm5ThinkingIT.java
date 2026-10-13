@@ -26,13 +26,13 @@ import org.springframework.ai.chat.prompt.Prompt;
 @Tag("integration")
 class MiniCpm5ThinkingIT {
 
-    static final Path MODEL =
-            TestModels.require("hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf");
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
 
     static JinferChatModel model;
 
     @BeforeAll
     static void load() {
+        MODEL = TestModels.require("hf.co/openbmb/MiniCPM5-1B-GGUF/MiniCPM5-1B-Q8_0.gguf");
         model = JinferChatModel.builder().modelPath(MODEL).contextCapacity(4096).build();
     }
 

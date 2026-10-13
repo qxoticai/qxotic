@@ -9,6 +9,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -30,8 +31,12 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 @Tag("integration")
 class JinferStarterIT {
 
-    static final Path MODEL =
-            TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
+    static Path MODEL; // resolved in @BeforeAll: a missing model then skips
+
+    @BeforeAll
+    static void requireModels() {
+        MODEL = TestModels.require("hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF/LFM2.5-8B-A1B-Q8_0.gguf");
+    }
 
     static class Weather {
         @Tool(description = "Get current weather for a city")
