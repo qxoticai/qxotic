@@ -167,8 +167,9 @@ class Gemma4MediaIT extends AbstractMediaIT {
                                                 "What is the weather in Paris? Use the"
                                                         + " get_weather tool."))
                                 .toolSpecifications(weather)
+                                .temperature(0.0) // sampled, E2B sometimes ends the turn empty
                                 .build());
-        Assumptions.assumeTrue(
+        assertTrue(
                 first.aiMessage().hasToolExecutionRequests(),
                 "model chose not to call the tool: " + first.aiMessage().text());
         var call = first.aiMessage().toolExecutionRequests().get(0);
