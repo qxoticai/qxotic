@@ -309,6 +309,24 @@ EmbeddingStoreContentRetriever.builder()
         .build();
 ```
 
+EmbeddingGemma 2 also embeds images, audio and video once its projector is attached as the `media` companion:
+
+```java
+EmbeddingModel embeddings = JinferEmbeddingModel.builder()
+        .model("unsloth/embeddinggemma-2-GGUF:Q8_0")
+        .companion("media", "unsloth/embeddinggemma-2-GGUF/mmproj-BF16.gguf")
+        .build();
+
+Embedding photo = embeddings.embed(EmbeddingRequest.builder()
+        .input(ImageContent.from(Path.of("photo.png").toUri()))
+        .inputType(EmbeddingInputType.DOCUMENT)
+        .build()).embeddings().getFirst();
+```
+
+Text and media parts in one `EmbeddingInput` embed as one vector, in order.
+Without the projector, `supportedContentTypes()` is text only and LangChain4j refuses media before decoding it.
+With a listener registered, LangChain4j (1.21 and 1.22) refuses an input that is media alone ("text cannot be null or blank"), so give such an input a text part.
+
 ## Reranking
 
 Add reranking after embedding retrieval:

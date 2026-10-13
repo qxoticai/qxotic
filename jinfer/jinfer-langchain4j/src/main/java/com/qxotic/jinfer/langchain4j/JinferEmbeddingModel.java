@@ -5,12 +5,19 @@ import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.VideoCodec;
+import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.listener.EmbeddingModelListener;
+import dev.langchain4j.model.embedding.request.EmbeddingInput;
 import dev.langchain4j.model.embedding.request.EmbeddingParameter;
 import dev.langchain4j.model.embedding.request.EmbeddingRequest;
 import dev.langchain4j.model.embedding.request.EmbeddingRequestParameters;
@@ -22,8 +29,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -41,6 +54,10 @@ import org.slf4j.LoggerFactory;
  * ports (Qwen3: 32 through native); truncated vectors are L2-normalized. Fixed-width ports reject
  * it instead of returning an arbitrary prefix.
  *
+ * <p>A multimodal embedder (EmbeddingGemma 2) with its projector attached - {@code
+ * companion("media", ...)} - also embeds image, audio and video {@code EmbeddingRequest} inputs,
+ * text and media interleaved in one vector.
+ *
  * <p>Token counts in the returned usage are exact (the real tokenizer, not an estimate). Run with
  * jinfer's JVM flags: {@code --add-modules jdk.incubator.vector
  * --enable-native-access=ALL-UNNAMED}.
@@ -55,6 +72,14 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     private static final Logger LOG = LoggerFactory.getLogger(JinferEmbeddingModel.class);
     private final AtomicBoolean hintedBareUse = new AtomicBoolean();
     private final List<EmbeddingModelListener> listeners;
+    private final Set<ContentType> contentTypes;
+
+    /**
+     * EmbeddingGemma 2's sampling, one frame a second and at most 32 (ponytail: the only video
+     * embedder, as in the server; a per-model sampler when a second one arrives).
+     */
+    private static final VideoSampler EMBEDDING_FRAMES =
+            video -> VideoCodec.ffmpeg().every(video, Duration.ofSeconds(1), 32);
 
     private JinferEmbeddingModel(Builder b) {
         // ONE private arena. The state borrows it; close() closes the state first, then the arena.
@@ -64,7 +89,10 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         try {
             this.ownsWeights = b.loaded == null;
             try {
-                this.loaded = b.loaded != null ? b.loaded : Models.loadEmbedder(b.modelPath, arena);
+                this.loaded =
+                        b.loaded != null
+                                ? b.loaded
+                                : Models.loadEmbedder(b.modelPath, arena, b.companionPaths, null);
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
@@ -75,10 +103,24 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             : Math.min(b.contextCapacity, maxContextLength);
             this.state = newState(loaded, contextCapacity, arena);
             this.listeners = b.listeners == null ? List.of() : List.copyOf(b.listeners);
+            this.contentTypes = contentTypes(loaded.model());
         } catch (RuntimeException | Error e) {
             Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
             throw e;
         }
+    }
+
+    /** Text, plus what the attached projector ingests; video rides the image projector. */
+    private static Set<ContentType> contentTypes(Object model) {
+        Set<ContentType> types = EnumSet.of(ContentType.TEXT);
+        if (model instanceof Multimodal media) {
+            if (media.projector(Media.Image.class).isPresent()) {
+                types.add(ContentType.IMAGE);
+                types.add(ContentType.VIDEO);
+            }
+            if (media.projector(Media.Audio.class).isPresent()) types.add(ContentType.AUDIO);
+        }
+        return Collections.unmodifiableSet(types);
     }
 
     private static <S extends ContextState> S newState(LoadedEmbedder<S> l, int ctx, Arena arena) {
@@ -154,6 +196,12 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return loaded.dimension();
     }
 
+    /** Text; image, audio and video too when a multimodal embedder has its projector attached. */
+    @Override
+    public Set<ContentType> supportedContentTypes() {
+        return contentTypes;
+    }
+
     /** Retrieval framing always applies; Matryoshka dimensions only when the port declares them. */
     @Override
     public Set<EmbeddingParameter<?>> supportedParameters() {
@@ -180,7 +228,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      * before tokenizing - retrieval-tuned embedders are TRAINED with these prefixes, and both
      * {@code EmbeddingStoreIngestor} and {@code EmbeddingStoreContentRetriever} send the type via
      * their {@code embeddingInputType(...)} builder knob. A typeless request embeds raw text as
-     * given.
+     * given. An input carrying media embeds as one vector of its parts in order, the framing as its
+     * leading text.
      */
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
@@ -193,8 +242,13 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                     case DOCUMENT -> loaded.documentPrefix();
                     case null -> hintBareUse();
                 };
-        List<String> texts = request.inputs().stream().map(in -> prefix + in.text()).toList();
-        Response<List<Embedding>> response = embedTexts(texts, outputDimension);
+        List<EmbeddingInput> inputs = request.inputs();
+        Response<List<Embedding>> response =
+                inputs.stream().allMatch(JinferEmbeddingModel::textOnly)
+                        ? embedTexts(
+                                inputs.stream().map(in -> prefix + in.text()).toList(),
+                                outputDimension)
+                        : embedParts(inputs, prefix, outputDimension);
         return EmbeddingResponse.builder()
                 .embeddings(response.content())
                 .metadata(
@@ -216,6 +270,42 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             texts,
                             outputDimension,
                             vector -> out.add(Embedding.from(vector)));
+        } finally {
+            lock.unlock();
+        }
+        return Response.from(out, new TokenUsage(total));
+    }
+
+    private static boolean textOnly(EmbeddingInput input) {
+        return input.contents().stream().allMatch(TextContent.class::isInstance);
+    }
+
+    /**
+     * One vector per input, its parts in order: texts as written, media decoded before the lock.
+     */
+    private Response<List<Embedding>> embedParts(
+            List<EmbeddingInput> inputs, String prefix, int outputDimension) {
+        List<List<Object>> decoded = new ArrayList<>(inputs.size());
+        for (EmbeddingInput input : inputs) {
+            List<Object> parts = new ArrayList<>();
+            if (!prefix.isEmpty()) parts.add(prefix);
+            for (var content : input.contents()) {
+                parts.add(
+                        content instanceof TextContent t
+                                ? t.text()
+                                : Mappings.media(content, EMBEDDING_FRAMES).value());
+            }
+            decoded.add(parts);
+        }
+        List<Embedding> out = new ArrayList<>(inputs.size());
+        int total = 0;
+        lock.lock();
+        try {
+            for (List<Object> parts : decoded) {
+                total +=
+                        loaded.embed(
+                                state, parts, outputDimension, v -> out.add(Embedding.from(v)));
+            }
         } finally {
             lock.unlock();
         }
@@ -248,6 +338,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private Object source; // Path | model-ref String | LoadedEmbedder: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedEmbedder<?> loaded; // derived from source at build()
+        private Map<String, Path> companionPaths; // resolved at build()
+        private final Map<String, String> companionRefs = new LinkedHashMap<>();
+        private final Map<String, Path> localCompanions = new LinkedHashMap<>();
         private int contextCapacity = 2048;
         private List<EmbeddingModelListener> listeners;
 
@@ -292,6 +385,40 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         /**
+         * Attaches a local companion file, such as EmbeddingGemma 2's {@code "media"} projector.
+         * This method never touches the network.
+         */
+        public Builder companionPath(String capability, Path companionPath) {
+            Objects.requireNonNull(capability, "capability");
+            Objects.requireNonNull(companionPath, "companionPath");
+            companionRefs.remove(capability);
+            localCompanions.put(capability, companionPath);
+            return this;
+        }
+
+        /**
+         * Attaches a companion from a supported model repository. The reference is resolved at
+         * {@link #build()}.
+         *
+         * <pre>{@code
+         * companion("media", "unsloth/embeddinggemma-2-GGUF/mmproj-BF16.gguf");
+         * }</pre>
+         */
+        public Builder companion(String capability, String companionRef) {
+            Objects.requireNonNull(capability, "capability");
+            if (!ModelStore.isRef(companionRef)) {
+                throw new IllegalArgumentException(
+                        "'"
+                                + companionRef
+                                + "' is not a companion model ref. Use companionPath(...) for a"
+                                + " local file; download plain URLs first.");
+            }
+            localCompanions.remove(capability);
+            companionRefs.put(capability, companionRef);
+            return this;
+        }
+
+        /**
          * Upper bound on the packing window and on each embedded sequence, in tokens. The default
          * is 2048. A larger value admits longer sequences and can pack more sequences into one
          * forward pass, at the cost of a larger resident state. {@code 0} uses the model's {@code
@@ -312,15 +439,32 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         public JinferEmbeddingModel build() {
             modelPath = null;
             loaded = null;
-            switch (source) {
-                case String ref -> modelPath = ModelStore.standard().resolve(ref);
-                case Path path -> modelPath = path;
-                case LoadedEmbedder<?> l -> loaded = l;
-                case null, default ->
-                        throw new IllegalArgumentException(
-                                "a model is required: model(\"owner/repo:Q4_K_M\"),"
-                                        + " modelPath(...) or model(LoadedEmbedder)");
+            companionPaths = Map.of();
+            if (source == null)
+                throw new IllegalArgumentException(
+                        "a model is required: model(\"owner/repo:Q4_K_M\"),"
+                                + " modelPath(...) or model(LoadedEmbedder)");
+            if (source instanceof LoadedEmbedder<?> l) {
+                if (!companionRefs.isEmpty() || !localCompanions.isEmpty())
+                    throw new IllegalArgumentException(
+                            "companions are load-time settings; apply them when you load the"
+                                    + " LoadedEmbedder passed to model(...)");
+                loaded = l;
+                return new JinferEmbeddingModel(this);
             }
+            // the model (when it is a string) and the companions resolve in ONE batch, so a cold
+            // start pays the slowest download, not the sum
+            List<String> wanted = new ArrayList<>();
+            if (source instanceof String ref) wanted.add(ref);
+            wanted.addAll(companionRefs.values());
+            List<Path> resolved = ModelStore.standard().resolveAll(wanted);
+            int at = 0;
+            modelPath = source instanceof Path path ? path : resolved.get(at++);
+            var resolvedCompanions = new LinkedHashMap<>(localCompanions);
+            for (String capability : companionRefs.keySet()) {
+                resolvedCompanions.put(capability, resolved.get(at++));
+            }
+            companionPaths = Collections.unmodifiableMap(resolvedCompanions);
             return new JinferEmbeddingModel(this);
         }
     }
