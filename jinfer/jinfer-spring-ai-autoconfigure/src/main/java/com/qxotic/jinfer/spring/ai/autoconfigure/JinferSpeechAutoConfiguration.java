@@ -54,31 +54,11 @@ public class JinferSpeechAutoConfiguration {
         } else {
             builder.modelPath(Path.of(properties.model()));
         }
-        if (properties.companions() != null) {
-            properties
-                    .companions()
-                    .forEach(
-                            (capability, value) -> {
-                                if (!StringUtils.hasText(value)) {
-                                    throw new IllegalStateException(
-                                            "spring.ai.jinfer.speech.companions."
-                                                    + capability
-                                                    + " must not be blank");
-                                }
-                                if (value.contains("://")) {
-                                    throw new IllegalStateException(
-                                            "spring.ai.jinfer.speech.companions."
-                                                    + capability
-                                                    + " is a URL; download it first and configure"
-                                                    + " its local path");
-                                }
-                                if (ModelStore.isRef(value)) {
-                                    builder.companion(capability, value);
-                                } else {
-                                    builder.companionPath(capability, Path.of(value));
-                                }
-                            });
-        }
+        Companions.attach(
+                "spring.ai.jinfer.speech",
+                properties.companions(),
+                builder::companion,
+                builder::companionPath);
         if (speed != null) builder.speed(speed);
         if (maxInputChars > 0) builder.maxInputChars(maxInputChars);
         return builder.build();

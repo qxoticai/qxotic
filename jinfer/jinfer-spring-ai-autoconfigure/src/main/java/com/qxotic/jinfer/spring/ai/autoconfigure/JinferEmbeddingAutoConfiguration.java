@@ -47,6 +47,11 @@ public class JinferEmbeddingAutoConfiguration {
         } else {
             builder.modelPath(Path.of(properties.model()));
         }
+        Companions.attach(
+                "spring.ai.jinfer.embedding",
+                properties.companions(),
+                builder::companion,
+                builder::companionPath);
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         return builder.build();
