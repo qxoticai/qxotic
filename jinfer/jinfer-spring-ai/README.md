@@ -88,6 +88,7 @@ The starter creates beans from these properties:
 Chat is enabled when its model is configured and no other chat provider is selected.
 Model sources may be remote references or local paths and resolve during application startup.
 Add companions under `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
+An embedder takes its projector the same way, as `spring.ai.jinfer.embedding.companions.media`.
 
 The [translation table](https://qxotic.ai/jinfer#the-same-knob-at-each-face) maps settings between Spring AI, LangChain4j, the CLI and the server.
 
@@ -315,6 +316,17 @@ try (var embeddings = JinferEmbeddingModel.builder()
 
 The example embeds a query and reranks two supplied documents.
 In a RAG application, pass the documents returned by your retriever to the reranker.
+
+EmbeddingGemma 2 also embeds media documents (image, audio or video) once its projector is attached, with `companion("media", ...)` on the builder or `spring.ai.jinfer.embedding.companions.media` in the starter:
+
+```java
+float[] photo = embeddings.embed(Document.builder()
+        .media(new Media(MimeTypeUtils.IMAGE_PNG, Path.of("photo.png").toUri()))
+        .build());
+```
+
+The vector lands in the space text queries search, with the document framing applied.
+Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
 
 ## Prompt caching
 
