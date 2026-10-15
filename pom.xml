@@ -36,6 +36,7 @@
 
   <modules>
     <!-- Core modules (order by dependency; the reactor topologically sorts by dependency anyway) -->
+    <module>fetch</module>
     <module>gguf</module>
     <module>json</module>
     <!-- JMH benchmarks for json; built with the reactor, never deployed (maven.deploy.skip). -->
@@ -77,6 +78,7 @@
          for consumers). Jinfer library versions are managed in jinfer/pom.xml. -->
     <gguf.version>0.3.1</gguf.version>
     <json.version>0.2.0</json.version>
+    <fetch.version>0.1.0</fetch.version>
     <safetensors.version>0.3.1</safetensors.version>
     <jota.version>0.3.1</jota.version>
     <jam.version>0.3.1</jam.version>
@@ -262,6 +264,11 @@
         <groupId>com.qxotic</groupId>
         <artifactId>jota-backend-opencl</artifactId>
         <version>${jota.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>fetch</artifactId>
+        <version>${fetch.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
