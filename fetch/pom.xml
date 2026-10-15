@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>qxotic-parent</artifactId>
+    <version>0.2.0</version>
+  </parent>
+
+  <artifactId>fetch</artifactId>
+  <!-- This project's own release version; move fetch.version in the root POM with it,
+       since that is where everything outside fetch resolves it. -->
+  <version>0.1.0</version>
+  <name>Quixotic Fetch</name>
+  <description>One HTTP GET, two ways to make it: the JDK client, or curl as a process. The hub
+    downloaders run on it, and a native image that leaves the JDK client out carries no TLS stack.</description>
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <!-- the test's local server lives in jdk.httpserver, which the module does not read -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <compilerArgs>
+                <arg>--add-modules</arg>
+                <arg>jdk.httpserver</arg>
+                <arg>--add-reads</arg>
+                <arg>com.qxotic.fetch=jdk.httpserver</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>--add-modules jdk.httpserver --add-reads com.qxotic.fetch=jdk.httpserver</argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <sourceFileExcludes>
+            <sourceFileExclude>**/module-info.java</sourceFileExclude>
+          </sourceFileExcludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
