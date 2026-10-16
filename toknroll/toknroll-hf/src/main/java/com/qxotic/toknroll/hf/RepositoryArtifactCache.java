@@ -2,12 +2,10 @@ package com.qxotic.toknroll.hf;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.qxotic.fetch.Transport;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -34,15 +32,12 @@ final class RepositoryArtifactCache {
     private static final String HUGGINGFACE_ENDPOINT = "https://huggingface.co";
     private static final Pattern COMMIT_SHA = Pattern.compile("[0-9a-f]{40}");
 
-    private static final long CONNECT_TIMEOUT_SECONDS =
-            Long.getLong("toknroll.hf.connectTimeoutSeconds", 120);
     private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
             Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
 
     private final Path cacheRoot;
     private final Duration downloadTimeout;
     private final String huggingFaceEndpoint;
-    private volatile HttpClient httpClient;
 
     private RepositoryArtifactCache(
             Path cacheRoot, Duration downloadTimeout, String huggingFaceEndpoint) {
@@ -199,17 +194,13 @@ final class RepositoryArtifactCache {
         }
 
         Files.createDirectories(normalizedTarget.getParent());
-        HttpRequest.Builder builder =
-                HttpRequest.newBuilder(URI.create(url)).timeout(downloadTimeout).GET();
+        Map<String, String> requestHeaders = new LinkedHashMap<>();
         if (headers != null) {
             for (Map.Entry<String, List<String>> e : headers.entrySet()) {
-                if (e.getValue() == null) {
-                    continue;
-                }
-                for (String value : e.getValue()) {
-                    if (value != null) {
-                        builder.header(e.getKey(), value);
-                    }
+                if (e.getValue() != null
+                        && !e.getValue().isEmpty()
+                        && e.getValue().get(0) != null) {
+                    requestHeaders.put(e.getKey(), e.getValue().get(0));
                 }
             }
         }
@@ -219,21 +210,15 @@ final class RepositoryArtifactCache {
                         normalizedTarget.getParent(),
                         normalizedTarget.getFileName().toString() + ".",
                         ".partial");
-        try {
-            HttpResponse<Path> response =
-                    getOrCreateHttpClient()
-                            .send(builder.build(), HttpResponse.BodyHandlers.ofFile(partial));
-
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+        try (Transport.Response response =
+                Transport.deadline(
+                        Transport.system().follow(URI.create(url), requestHeaders, downloadTimeout),
+                        downloadTimeout)) {
+            int status = response.status();
+            if (status < 200 || status >= 300) {
                 String message =
-                        "["
-                                + source
-                                + "] Failed to download "
-                                + url
-                                + " (HTTP "
-                                + response.statusCode()
-                                + ")";
-                if (response.statusCode() == 404) {
+                        "[" + source + "] Failed to download " + url + " (HTTP " + status + ")";
+                if (status == 404) {
                     if (immutable) {
                         Files.write(notFoundMarker, new byte[0]);
                     }
@@ -241,6 +226,7 @@ final class RepositoryArtifactCache {
                 }
                 throw new IOException(message);
             }
+            Files.copy(response.body(), partial, StandardCopyOption.REPLACE_EXISTING);
 
             Files.deleteIfExists(notFoundMarker);
             Files.move(
@@ -249,30 +235,9 @@ final class RepositoryArtifactCache {
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
             return normalizedTarget;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("[" + source + "] Interrupted while downloading " + url, e);
         } finally {
             Files.deleteIfExists(partial);
         }
-    }
-
-    private HttpClient getOrCreateHttpClient() {
-        HttpClient client = httpClient;
-        if (client == null) {
-            synchronized (this) {
-                client = httpClient;
-                if (client == null) {
-                    client =
-                            HttpClient.newBuilder()
-                                    .followRedirects(HttpClient.Redirect.NORMAL)
-                                    .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
-                                    .build();
-                    httpClient = client;
-                }
-            }
-        }
-        return client;
     }
 
     private static Map<String, List<String>> authHeaders(String token) {
