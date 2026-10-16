@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.gguf;
 
+import com.qxotic.fetch.Transport;
 import com.qxotic.format.gguf.GGUF;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -7,9 +8,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
@@ -17,9 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.Map;
 
 final class GGUFMetadataCache {
     private static final String ROOT_PROPERTY = "toknroll.cache.root";
@@ -34,15 +30,11 @@ final class GGUFMetadataCache {
     private static final int MAX_RANGE_BYTES =
             Integer.getInteger("toknroll.gguf.maxMetadataBytes", 1024 << 20);
 
-    private static final long CONNECT_TIMEOUT_SECONDS =
-            Long.getLong("toknroll.gguf.connectTimeoutSeconds", 120);
     private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
             Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
-    private static final ScheduledThreadPoolExecutor READ_TIMEOUTS = createReadTimeouts();
 
     private final Path cacheRoot;
     private final Duration downloadTimeout;
-    private volatile HttpClient httpClient;
 
     private GGUFMetadataCache(Path cacheRoot) {
         this(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT);
@@ -146,25 +138,17 @@ final class GGUFMetadataCache {
 
         Files.createDirectories(normalizedTarget.getParent());
 
-        HttpRequest.Builder builder =
-                HttpRequest.newBuilder(URI.create(url)).timeout(downloadTimeout).GET();
-        if (bearerToken != null && !bearerToken.isBlank()) {
-            builder.header("Authorization", "Bearer " + bearerToken);
-        }
+        Map<String, String> headers =
+                bearerToken != null && !bearerToken.isBlank()
+                        ? Map.of("Authorization", "Bearer " + bearerToken)
+                        : Map.of();
+        Transport.Response response =
+                Transport.deadline(
+                        Transport.system().follow(URI.create(url), headers, downloadTimeout),
+                        downloadTimeout);
 
-        HttpResponse<InputStream> response;
-        try {
-            response =
-                    getOrCreateHttpClient()
-                            .send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("[" + source + "] Interrupted while downloading " + url, e);
-        }
-
-        InputStream rawBody = response.body();
-        try (rawBody) {
-            int status = response.statusCode();
+        try (response) {
+            int status = response.status();
             if (status < 200 || status >= 300) {
                 throw new IOException(
                         "[" + source + "] Failed to download " + url + " (HTTP " + status + ")");
@@ -175,19 +159,8 @@ final class GGUFMetadataCache {
                             normalizedTarget.getParent(),
                             normalizedTarget.getFileName().toString() + ".",
                             ".partial");
-            ScheduledFuture<?> readTimeout =
-                    READ_TIMEOUTS.schedule(
-                            () -> {
-                                try {
-                                    rawBody.close();
-                                } catch (IOException ignored) {
-                                    // The read already failed or completed.
-                                }
-                            },
-                            downloadTimeout.toNanos(),
-                            TimeUnit.NANOSECONDS);
             try {
-                InputStream body = new BufferedInputStream(rawBody, 1 << 16);
+                InputStream body = new BufferedInputStream(response.body(), 1 << 16);
                 try (OutputStream tap =
                         new BufferedOutputStream(Files.newOutputStream(partial), 1 << 16)) {
                     ReadableByteChannel sourceChannel = Channels.newChannel(body);
@@ -207,41 +180,9 @@ final class GGUFMetadataCache {
                 throw new IOException(
                         "[" + source + "] Failed to parse GGUF metadata from " + url, e);
             } finally {
-                readTimeout.cancel(false);
                 Files.deleteIfExists(partial);
             }
         }
-    }
-
-    private static ScheduledThreadPoolExecutor createReadTimeouts() {
-        ScheduledThreadPoolExecutor executor =
-                new ScheduledThreadPoolExecutor(
-                        1,
-                        task -> {
-                            Thread thread = new Thread(task, "toknroll-download-timeout");
-                            thread.setDaemon(true);
-                            return thread;
-                        });
-        executor.setRemoveOnCancelPolicy(true);
-        return executor;
-    }
-
-    private HttpClient getOrCreateHttpClient() {
-        HttpClient client = httpClient;
-        if (client == null) {
-            synchronized (this) {
-                client = httpClient;
-                if (client == null) {
-                    client =
-                            HttpClient.newBuilder()
-                                    .followRedirects(HttpClient.Redirect.NORMAL)
-                                    .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
-                                    .build();
-                    httpClient = client;
-                }
-            }
-        }
-        return client;
     }
 
     static final class TeeReadableByteChannel implements ReadableByteChannel {

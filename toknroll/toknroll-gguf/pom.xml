@@ -27,6 +27,10 @@
       <artifactId>gguf</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>fetch</artifactId>
+    </dependency>
+    <dependency>
       <!-- test-only: reads the committed reference-token goldens -->
       <groupId>com.qxotic</groupId>
       <artifactId>json</artifactId>
