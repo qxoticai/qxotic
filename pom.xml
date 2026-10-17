@@ -498,6 +498,10 @@
                  but every module inherits the same https://qxotic.ai, so the links are wrong, and
                  dependency-only modules have no apidocs to link -->
             <detectOfflineLinks>false</detectOfflineLinks>
+            <!-- the standard web fonts are 4 MB of every javadoc jar; readers fall back to system fonts -->
+            <additionalOptions>
+              <additionalOption>--no-fonts</additionalOption>
+            </additionalOptions>
           </configuration>
         </plugin>
         <plugin>
