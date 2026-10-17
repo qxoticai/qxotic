@@ -354,7 +354,7 @@
                  produces a hundred of them. Incubator module flags mirror the compiler's, or
                  javadoc cannot resolve the types it is documenting. -->
             <doclint>all,-missing</doclint>
-            <additionalOptions>
+            <additionalOptions combine.children="append">
               <additionalOption>--add-modules</additionalOption>
               <additionalOption>jdk.incubator.vector,jdk.httpserver</additionalOption>
             </additionalOptions>
