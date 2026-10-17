@@ -1351,6 +1351,9 @@ final class Fetch {
                 progress().charset().contains(StandardCharsets.UTF_8)
                         && (!BOARD || TerminalSupport.enableUtf8());
 
+        /** A host's own rendering; set, it replaces the Board and the log lines. */
+        static volatile ModelStore.ProgressListener listener;
+
         final String label;
         private final long total;
         private volatile long startBytes;
@@ -1377,6 +1380,11 @@ final class Fetch {
                 firstStartBytes = already;
                 firstStartNanos = startNanos;
             }
+            ModelStore.ProgressListener host = listener;
+            if (host != null) {
+                host.progress(label, already, total);
+                return;
+            }
             if (BOARD) {
                 if (!added) {
                     added = true;
@@ -1395,6 +1403,11 @@ final class Fetch {
         /** Bytes so far, shown on a terminal only: a log gets the start and done lines. */
         void at(long written) {
             lastWritten = written;
+            ModelStore.ProgressListener host = listener;
+            if (host != null) {
+                host.progress(label, written, total);
+                return;
+            }
             if (BOARD) Board.repaint(false);
         }
 
@@ -1413,6 +1426,11 @@ final class Fetch {
 
         void finish() {
             done = true;
+            ModelStore.ProgressListener host = listener;
+            if (host != null) {
+                host.progress(label, total, total);
+                return;
+            }
             if (BOARD) {
                 Board.repaint(true); // the \u2713 shows immediately, and the row may scroll away
                 return;
@@ -1431,10 +1449,10 @@ final class Fetch {
         }
 
         void note(String message) {
-            if (BOARD) {
-                Board.announce("  " + label + ": " + message);
-            } else {
+            if (listener != null || !BOARD) {
                 LOG.log(System.Logger.Level.INFO, label + ": " + message);
+            } else {
+                Board.announce("  " + label + ": " + message);
             }
         }
 

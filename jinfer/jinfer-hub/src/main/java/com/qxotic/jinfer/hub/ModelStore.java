@@ -129,6 +129,21 @@ public final class ModelStore {
     }
 
     /** Where downloads land, and the first place a ref is looked for. */
+    /**
+     * Download progress for a host that renders it itself (a library embedding jinfer, a GUI).
+     * {@code done} and {@code total} are bytes of the named file; a finished file reports {@code
+     * done == total}; {@code total} is 0 when unknown. Process-wide: one listener for every
+     * download in the process, and while one is set the terminal rendering is off.
+     */
+    public interface ProgressListener {
+        void progress(String file, long done, long total);
+    }
+
+    /** Installs the process-wide {@link ProgressListener}; null restores the terminal rendering. */
+    public static void progressListener(ProgressListener listener) {
+        Fetch.Progress.listener = listener;
+    }
+
     public Path root() {
         return root;
     }
