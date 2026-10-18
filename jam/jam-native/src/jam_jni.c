@@ -47,3 +47,12 @@ Java_com_qxotic_jam_libjam_NativeJAM_mmJni(JNIEnv* env, jclass cls, jlong ctx,
                          (void*)      (intptr_t) c, (jam_dtype) ct, ldc,
                          m, n, k);
 }
+
+/* Marks libjam as a built-in (statically linked) JNI library: the JDK and a native image answer
+ * System.loadLibrary("jam") from the program itself only when JNI_OnLoad_<name> is present. */
+JNIEXPORT jint JNICALL
+JNI_OnLoad_jam(JavaVM* vm, void* reserved)
+{
+    (void) vm; (void) reserved;
+    return JNI_VERSION_1_8;
+}
