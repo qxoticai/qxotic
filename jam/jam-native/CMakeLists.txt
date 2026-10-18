@@ -219,6 +219,16 @@ add_custom_target(jam_stage ALL
     DEPENDS jam
     COMMENT "jam: staging ${JAM_LIBFILE} for jam.jar (${JAM_OS}-${JAM_ARCH})")
 
+# ---- the static twin: for a host that links jam into its own image (libjinfer's GraalVM image does) ----
+# The same sources, objects, definitions and options as the shared library, archived as libjam.a in the
+# build directory. Not staged into the jar: nothing at run time loads it.
+get_target_property(JAM_SOURCES jam SOURCES)
+add_library(jam_static STATIC EXCLUDE_FROM_ALL ${JAM_SOURCES})
+set_target_properties(jam_static PROPERTIES OUTPUT_NAME jam)
+target_include_directories(jam_static PRIVATE $<TARGET_PROPERTY:jam,INCLUDE_DIRECTORIES>)
+target_compile_definitions(jam_static PRIVATE $<TARGET_PROPERTY:jam,COMPILE_DEFINITIONS>)
+target_compile_options(jam_static PRIVATE $<TARGET_PROPERTY:jam,COMPILE_OPTIONS>)
+
 # ---- tests + benchmark ----
 option(JAM_TESTS "Build tests and benchmarks" ON)
 if (JAM_TESTS)
