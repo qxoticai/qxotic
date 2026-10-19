@@ -137,6 +137,19 @@ final class GGUFTokenizerDefaults {
     private static final Function<GGUF, Normalizer> METASPACE_NORMALIZER_FACTORY =
             gguf -> METASPACE_NORMALIZER;
 
+    // gemma4's vocab spells its U+2581 as a space (see GGUFTokenizerModelFactory), so a literal
+    // U+2581 in the text is a space too, as in llama.cpp and Hugging Face; text without one is
+    // passed on as is, not copied
+    private static final Normalizer GEMMA4_NORMALIZER =
+            text -> {
+                for (int i = 0; i < text.length(); i++) {
+                    if (text.charAt(i) == '\u2581') {
+                        return text.toString().replace('\u2581', ' ');
+                    }
+                }
+                return text;
+            };
+
     private GGUFTokenizerDefaults() {}
 
     static void applyTo(GGUFTokenizerLoader.Builder builder) {
@@ -204,6 +217,7 @@ final class GGUFTokenizerDefaults {
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());
         builder.registerNormalizer("default", METASPACE_NORMALIZER_FACTORY);
 
+        builder.registerNormalizer("gemma4", gguf -> GEMMA4_NORMALIZER);
         builder.registerPreFallback("gemma4", "gemma4");
         builder.registerNormalizerFallback("gemma4", "gemma4");
     }
