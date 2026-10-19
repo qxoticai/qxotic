@@ -1,5 +1,7 @@
 // Typed value coercion for parsed-JSON request maps: read objects/arrays/strings/numbers with
-// defaults and lenient (string-encoded) number parsing. Shared leaf utility, no dependencies.
+// defaults. A number is a JSON number: a string-encoded one is refused by name, as the OpenAI API
+// refuses it, so a client's mistake surfaces as a 400 and not as a silently parsed value. Shared
+// leaf utility, no dependencies.
 package com.qxotic.jinfer.server;
 
 import java.util.List;
@@ -88,13 +90,6 @@ final class Values {
             }
             return n.longValue();
         }
-        if (value instanceof String s) { // tolerate string-encoded numbers (e.g. "seed": "42")
-            try {
-                return Long.parseLong(s.trim());
-            } catch (NumberFormatException e) {
-                throw mistyped(name, "an integer", s);
-            }
-        }
         throw mistyped(name, "an integer", value);
     }
 
@@ -121,13 +116,6 @@ final class Values {
         if (value == null) return defaultValue;
         if (value instanceof Number n) {
             return n.floatValue();
-        }
-        if (value instanceof String s) {
-            try {
-                return Float.parseFloat(s.trim());
-            } catch (NumberFormatException e) {
-                throw mistyped(name, "a number", s);
-            }
         }
         throw mistyped(name, "a number", value);
     }
