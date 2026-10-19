@@ -1,22 +1,12 @@
 package com.qxotic.jinfer.server;
 
-import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.TextStops;
-import com.qxotic.jinfer.chat.Tool;
-import com.qxotic.jinfer.codecs.VideoSampler;
-import com.qxotic.jinfer.llm.Generator;
-import com.qxotic.jinfer.llm.Grammar;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -59,25 +49,8 @@ final class Generation {
     }
 
     Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
-        List<Tool> tools = ToolUse.offered(request) ? tools(request) : List.of();
-        List<Message> prompt = messages(messages);
-        Map<String, Object> schema = schema(request);
-        if (schema != null) describeSchema(prompt, schema);
-        ChatEngine.Request lowered =
-                new ChatEngine.Request(
-                        prompt,
-                        tools,
-                        thinking(request) && forcedTool(request) == null,
-                        maxTokens(request),
-                        maxReasoningTokensOrDefault(request),
-                        reasoningCutoffMessageOrDefault(request),
-                        config.limits().requestTimeout(),
-                        sampling(request, defaults),
-                        grammar(request),
-                        forced(request),
-                        stops(request.get("stop")),
-                        templateKwargs(request));
-        return recorded(run(lowered, request, sinks));
+        OpenAiChat.Lowered lowered = OpenAiChat.lower(request, messages, config, defaults);
+        return recorded(run(lowered, sinks));
     }
 
     Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
@@ -85,14 +58,15 @@ final class Generation {
                 config.defaults().rawPrompt()
                         ? SpecialTokens.encode(engine.loaded().tokenizer(), prompt)
                         : engine.loaded().tokenizer().encode(prompt);
+        List<String> stops = OpenAiChat.stops(request.get("stop"));
         try (ChatEngine.Prepared prepared =
                 engine.prepareRaw(
                         ids.toArray(),
-                        sampling(request, defaults),
-                        maxTokens(request),
+                        OpenAiChat.sampling(request, defaults),
+                        OpenAiChat.maxTokens(request, config),
                         config.limits().requestTimeout(),
-                        grammar(request),
-                        stops(request.get("stop")))) {
+                        OpenAiChat.grammar(request),
+                        stops)) {
             WireSink sink = new WireSink(request, sinks);
             ChatEngine.Completion completion = engine.complete(prepared, sink);
             sink.finish();
@@ -100,13 +74,21 @@ final class Generation {
         }
     }
 
-    private Reply run(ChatEngine.Request request, Map<String, Object> wire, Sinks sinks) {
-        try (ChatEngine.Prepared prepared = engine.prepare(request)) {
-            WireSink sink = new WireSink(wire, sinks);
+    private Reply run(OpenAiChat.Lowered lowered, Sinks sinks) {
+        try (ChatEngine.Prepared prepared = engine.prepare(lowered.request())) {
+            WireSink sink = new WireSink(lowered.inlineReasoning(), sinks);
             ChatEngine.Completion completion = engine.complete(prepared, sink);
             sink.finish();
             return finish(completion, prepared.stops(), sink.inline);
         }
+    }
+
+    /** The server's one addition to {@link OpenAiChat#reply}: the prompt-cache metric. */
+    private Reply finish(
+            ChatEngine.Completion completion, List<String> stops, boolean inlineReasoning) {
+        Reply reply = OpenAiChat.reply(completion, stops, inlineReasoning);
+        metrics.recordPromptCache(completion.tier(), completion.restoredTokens());
+        return reply;
     }
 
     private static final class WireSink implements ChatEngine.ReplySink {
@@ -115,8 +97,12 @@ final class Generation {
         private boolean reasoning;
 
         WireSink(Map<String, Object> request, Sinks sinks) {
+            this("none".equals(Values.stringValue(request.get("reasoning_format"), null)), sinks);
+        }
+
+        WireSink(boolean inline, Sinks sinks) {
             this.sinks = sinks;
-            inline = "none".equals(Values.stringValue(request.get("reasoning_format"), null));
+            this.inline = inline;
         }
 
         @Override
@@ -143,309 +129,8 @@ final class Generation {
         }
     }
 
-    /**
-     * OpenAI's {@code finish_reason}. A deadline or a cancel is "other": neither the model nor the
-     * token budget ended the reply, and "stop" would claim the model did - the providers say OTHER.
-     */
-    static String finishReason(Generator.FinishReason reason, boolean hasCalls, boolean stopped) {
-        if (hasCalls) return "tool_calls";
-        if (stopped) return "stop";
-        return switch (reason) {
-            case STOP -> "stop";
-            case LENGTH -> "length";
-            default -> "other";
-        };
-    }
-
-    private Reply finish(
-            ChatEngine.Completion completion, List<String> stops, boolean inlineReasoning) {
-        Message message = completion.reply();
-        List<Content.ToolCall> calls = new ArrayList<>();
-        StringBuilder text = new StringBuilder();
-        StringBuilder reasoning = new StringBuilder();
-        if (message != null) collect(message.content(), text, reasoning, calls);
-        String content =
-                inlineReasoning && !reasoning.isEmpty()
-                        ? "<think>" + reasoning + "</think>" + text
-                        : text.toString();
-        TextStops.Result visible = TextStops.apply(content, stops);
-        boolean stopped =
-                completion.result().stopToken().isPresent()
-                        || completion.stopped()
-                        || visible.stopped();
-        String finish = finishReason(completion.result().finishReason(), !calls.isEmpty(), stopped);
-        metrics.recordPromptCache(completion.tier(), completion.restoredTokens());
-        return new Reply(
-                completion.result(),
-                completion.promptTokens(),
-                completion.restoredTokens(),
-                visible.text(),
-                inlineReasoning || reasoning.isEmpty() ? null : reasoning.toString(),
-                calls,
-                finish,
-                completion.speculation());
-    }
-
-    private static void collect(
-            List<Content> content,
-            StringBuilder text,
-            StringBuilder reasoning,
-            List<Content.ToolCall> calls) {
-        for (Content part : content) {
-            switch (part) {
-                case Content.Text value -> text.append(value.text());
-                case Content.Reasoning value -> {
-                    reasoning.append(value.text());
-                    collectCalls(value.content(), calls);
-                }
-                case Content.ToolCall value -> calls.add(value);
-                default -> {}
-            }
-        }
-    }
-
-    private static void collectCalls(List<Content> content, List<Content.ToolCall> calls) {
-        for (Content part : content) {
-            if (part instanceof Content.ToolCall call) calls.add(call);
-            else if (part instanceof Content.Reasoning nested)
-                collectCalls(nested.content(), calls);
-        }
-    }
-
     private Reply recorded(Reply reply) {
         metrics.record(reply);
         return reply;
-    }
-
-    private List<Message> messages(List<Object> values) {
-        List<Message> out = new ArrayList<>(values.size());
-        for (Object value : values) {
-            Map<String, Object> message = Values.asObject(value, "message");
-            String role = Values.stringValue(message.get("role"), "user");
-            if ("tool".equals(role)) {
-                out.add(
-                        new Message(
-                                Role.TOOL,
-                                List.of(
-                                        new Content.ToolResult(
-                                                Values.stringValue(message.get("tool_call_id"), ""),
-                                                Values.messageContent(message.get("content"))))));
-                continue;
-            }
-            List<Content> content = content(message.get("content"));
-            if ("assistant".equals(role)) {
-                String thought = Values.stringValue(message.get("reasoning_content"), null);
-                if (thought == null) thought = Values.stringValue(message.get("reasoning"), null);
-                if (thought != null && !thought.isEmpty()) {
-                    content.addFirst(
-                            new Content.Reasoning(List.of(new Content.Text(thought)), null));
-                }
-                content.addAll(toolCalls(message.get("tool_calls")));
-            }
-            out.add(new Message(new Role(role), content));
-        }
-        return out;
-    }
-
-    private List<Content> content(Object value) {
-        if (!(value instanceof List<?> parts)) {
-            return new ArrayList<>(List.of(new Content.Text(Values.stringValue(value, ""))));
-        }
-        List<Content> out = new ArrayList<>();
-        for (Object raw : parts) {
-            Map<String, Object> part = Values.asObject(raw, "content part");
-            String modality = MediaParts.modality(part);
-            if (modality == null)
-                throw new IllegalArgumentException(
-                        "unsupported content part type: " + part.get("type"));
-            out.add(
-                    switch (modality) {
-                        case "text" -> new Content.Text(MediaParts.text(part));
-                        case "image" -> MediaParts.image(part);
-                        case "audio" -> MediaParts.audio(part);
-                        default -> MediaParts.video(part, VideoSampler.UNIFORM);
-                    });
-        }
-        return out;
-    }
-
-    private static List<Content> toolCalls(Object value) {
-        if (value == null) return List.of();
-        List<Content> out = new ArrayList<>();
-        for (Object raw : Values.asArray(value, "tool_calls")) {
-            Map<String, Object> call = Values.asObject(raw, "tool call");
-            Map<String, Object> function = Values.asObject(call.get("function"), "function");
-            Object arguments = function.get("arguments");
-            Map<String, Object> args =
-                    arguments instanceof Map<?, ?> map
-                            ? castMap(map)
-                            : parseArguments(Values.stringValue(arguments, ""));
-            out.add(
-                    new Content.ToolCall(
-                            Values.stringValue(call.get("id"), ""),
-                            Values.stringValue(function.get("name"), ""),
-                            args));
-        }
-        return out;
-    }
-
-    static Map<String, Object> parseArguments(String json) {
-        if (json.isBlank()) return Map.of();
-        Object parsed;
-        try {
-            parsed = JsonCodec.parse(json);
-        } catch (Json.ParseException e) {
-            // a model's broken JSON echoed back in history is the client's input, a 400, not a
-            // server failure (ParseException is a bare RuntimeException, which the worker
-            // reports as ours)
-            throw new IllegalArgumentException(
-                    "tool_calls[].function.arguments is not valid JSON: " + e.getMessage());
-        }
-        if (!(parsed instanceof Map<?, ?> map)) {
-            throw new IllegalArgumentException("tool arguments must be a JSON object");
-        }
-        return castMap(map);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> castMap(Map<?, ?> map) {
-        return (Map<String, Object>) map;
-    }
-
-    private static List<Tool> tools(Map<String, Object> request) {
-        List<Tool> out = new ArrayList<>();
-        for (Object raw : Values.asArray(request.get("tools"), "tools")) {
-            Map<String, Object> definition = Values.asObject(raw, "tool");
-            Map<String, Object> function = Values.asObject(definition.get("function"), "function");
-            String name = Values.stringValue(function.get("name"), "");
-            if (!name.isEmpty()) out.add(new Tool(name, definition));
-        }
-        return out;
-    }
-
-    static Sampling sampling(Map<String, Object> request, Sampling defaults) {
-        Long seed = defaults.seed();
-        if (request.get("seed") != null) seed = Values.longValue(request.get("seed"), "seed", 0);
-        return defaults.override(
-                number(request, "temperature"),
-                number(request, "top_p"),
-                integer(request, "top_k"),
-                number(request, "min_p"),
-                seed);
-    }
-
-    private static Float number(Map<String, Object> request, String field) {
-        Object value = request.get(field);
-        return value == null ? null : Values.floatValue(value, field, 0);
-    }
-
-    private static Integer integer(Map<String, Object> request, String field) {
-        Object value = request.get(field);
-        return value == null ? null : Values.intValue(value, field, 0);
-    }
-
-    private int maxTokens(Map<String, Object> request) {
-        return Values.intValue(
-                Requests.budget(request),
-                Requests.budgetField(request),
-                config.defaults().maxOutputTokens());
-    }
-
-    static Integer reasoningMax(Map<String, Object> request) {
-        return request.get("max_reasoning_tokens") == null
-                ? null
-                : Values.intValue(request.get("max_reasoning_tokens"), "max_reasoning_tokens", -1);
-    }
-
-    /**
-     * What the model "decides" when the think-span cap fires (llama.cpp's {@code
-     * --reasoning-cutoff-message}); absent = a bare paragraph break.
-     */
-    static String reasoningCutoffMessage(Map<String, Object> request) {
-        return Values.stringValue(request.get("reasoning_cutoff_message"), null);
-    }
-
-    /** The request's value, else the server's configured default - as {@code think} does. */
-    private Integer maxReasoningTokensOrDefault(Map<String, Object> request) {
-        Integer value = reasoningMax(request);
-        return value != null ? value : config.defaults().maxReasoningTokens();
-    }
-
-    private String reasoningCutoffMessageOrDefault(Map<String, Object> request) {
-        String value = reasoningCutoffMessage(request);
-        return value != null ? value : config.defaults().reasoningCutoffMessage();
-    }
-
-    private boolean thinking(Map<String, Object> request) {
-        return thinking(request, config.defaults().think());
-    }
-
-    /**
-     * {@code chat_template_kwargs.enable_thinking} first, else the OpenAI spelling: {@code
-     * reasoning_effort} "none" turns reasoning off and any level turns it on (the levels themselves
-     * have no dial here, as in llama.cpp), else the server default.
-     */
-    static boolean thinking(Map<String, Object> request, boolean fallback) {
-        if (request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs
-                && kwargs.get("enable_thinking") instanceof Boolean value) return value;
-        if (request.get("reasoning_effort") instanceof String effort) return !effort.equals("none");
-        return fallback;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> templateKwargs(Map<String, Object> request) {
-        return request.get("chat_template_kwargs") instanceof Map<?, ?> map
-                ? (Map<String, Object>) map
-                : null;
-    }
-
-    private static ChatEngine.ForcedTool forced(Map<String, Object> request) {
-        String name = ToolUse.forced(request);
-        if (name == null) return ChatEngine.ForcedTool.NONE;
-        return name.isEmpty() ? ChatEngine.ForcedTool.ANY : new ChatEngine.ForcedTool.Named(name);
-    }
-
-    private static String grammar(Map<String, Object> request) {
-        if (request.get("grammar") instanceof String source && !source.isBlank()) return source;
-        if (request.get("response_format") instanceof Map<?, ?> format) {
-            if ("json_object".equals(format.get("type"))) return Grammar.jsonGbnf();
-        }
-        Map<String, Object> schema = schema(request);
-        return schema == null ? null : Grammar.schemaGbnf(schema);
-    }
-
-    private static Map<String, Object> schema(Map<String, Object> request) {
-        if (!(request.get("response_format") instanceof Map<?, ?> format)
-                || !"json_schema".equals(format.get("type"))) return null;
-        Map<String, Object> wrapper =
-                Values.asObject(format.get("json_schema"), "response_format.json_schema");
-        return Values.asObject(wrapper.get("schema"), "response_format.json_schema.schema");
-    }
-
-    /** The grammar enforces syntax; the prompt tells the model what to produce. */
-    static void describeSchema(List<Message> messages, Map<String, Object> schema) {
-        String instruction =
-                "Your final answer must be JSON matching this schema: "
-                        + JsonCodec.stringify(schema);
-        for (int i = 0; i < messages.size(); i++) {
-            Message message = messages.get(i);
-            if (!Role.SYSTEM.equals(message.role())) continue;
-            List<Content> content = new ArrayList<>(message.content());
-            content.add(new Content.Text("\n\n" + instruction));
-            messages.set(i, new Message(Role.SYSTEM, content));
-            return;
-        }
-        messages.addFirst(Message.system(instruction));
-    }
-
-    private static List<String> stops(Object value) {
-        if (value == null) return List.of();
-        if (value instanceof String stop) return stop.isEmpty() ? List.of() : List.of(stop);
-        List<String> out = new ArrayList<>();
-        for (Object item : Values.asArray(value, "stop")) {
-            String stop = Values.stringValue(item, "");
-            if (!stop.isEmpty()) out.add(stop);
-        }
-        return List.copyOf(out);
     }
 }
