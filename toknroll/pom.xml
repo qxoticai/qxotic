@@ -23,6 +23,7 @@
     <module>toknroll-core</module>
     <module>toknroll-gguf</module>
     <module>toknroll-hf</module>
+    <module>toknroll-native</module>
     <module>toknroll-incubator</module>
     <module>toknroll-benchmarks</module>
   </modules>
