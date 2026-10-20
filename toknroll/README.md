@@ -32,6 +32,21 @@ jbang toknroll@qxoticai --source google/gemma-4-e2b-it --input "Hello, Tok'n'Rol
 echo 'Hello, World!' | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B-A3B
 ```
 
+## Or from C and Python
+
+`libtoknroll` is Tok'n'Roll as a shared library with a C API, [`toknroll.h`](toknroll-native/include/toknroll.h): twelve functions, the same sources, built with GraalVM Native Image.
+The `toknroll` Python package binds it, with no Python ML stack behind it.
+
+```python
+import toknroll
+
+tokenizer = toknroll.load("Qwen/Qwen3-0.6B")
+ids = tokenizer.encode("Hello, world!")
+tokenizer.decode(ids)
+```
+
+See [toknroll-native](toknroll-native/).
+
 ## Why Tok'n'Roll
 
 - **Token-perfect.** Byte-exact parity with the reference tokenizers of [18 model vendors](#tested-implementations), not "close enough".
