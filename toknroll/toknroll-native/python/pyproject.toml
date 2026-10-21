@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "toknroll"
+version = "0.3.1"
+description = "Token-perfect LLM tokenization: tokenizer.json, GGUF and hub sources, one shared library, no Python ML stack."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Quixotic AI" }]
+keywords = ["tokenizer", "tokenization", "llm", "bpe", "tiktoken", "gguf", "huggingface"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://qxotic.ai"
+Documentation = "https://qxotic.ai/toknroll"
+Source = "https://github.com/qxoticai/qxotic"
+Issues = "https://github.com/qxoticai/qxotic/issues"
+
+[tool.setuptools]
+packages = ["toknroll"]
+
+[tool.setuptools.package-data]
+toknroll = ["lib/*/*", "py.typed"]
+
+# Pure Python over a native library it carries, so the wheel is py3-none but platform-tagged.
+[tool.distutils.bdist_wheel]
+plat-name = "manylinux_2_34_x86_64"
