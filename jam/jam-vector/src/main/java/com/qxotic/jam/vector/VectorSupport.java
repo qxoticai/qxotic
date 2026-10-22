@@ -40,7 +40,8 @@ final class VectorSupport {
     /** Integer {@link #jamProp}. */
     static int jamPropInt(String name, int def) {
         String v = jamProp(name, null);
-        if (v == null) return def;
+        if (v == null || v.isBlank())
+            return def; // a build may pass the property through unset as ""
         try {
             return Integer.parseInt(v.trim());
         } catch (NumberFormatException e) {

@@ -71,7 +71,7 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 NATIVE_MODULE ?= jinfer-cli
 NATIVE_EXECUTABLE = $(patsubst %-cli,%,$(NATIVE_MODULE))
 
-native: ## GraalVM native image of the CLI for THIS machine (-march=native) -> bin/jinfer (a clean build, as jinfer-jar); NATIVE_MODULE=jinfer-tts|jinfer-bench for the others, or make -C jinfer/<module> native; PRELOAD_GGUF=model.gguf embeds metadata (CLI), MODELS=dir finds the Inflect lexicon (tts)
+check-native-image: ## the GraalVM the images build with: GraalVM CE, native-image >= 25.0.3 (JAVA_HOME picks it)
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
@@ -80,9 +80,18 @@ native: ## GraalVM native image of the CLI for THIS machine (-march=native) -> b
 	if [ "$$major" -lt 25 ] || { [ "$$major" -eq 25 ] && [ "$$minor" -eq 0 ] && [ "$$patch" -lt 3 ]; }; then \
 		echo "ERROR: native-image $$v is too old for the jinfer kernels (need >= 25.0.3)."; \
 		exit 1; \
-	fi
+	fi; \
+	vendor=$$($(NATIVE_IMAGE) --version 2>/dev/null | sed -n 2p | sed 's/^ *//'); \
+	case "$$vendor" in *"Oracle GraalVM"*) [ -n "$(ALLOW_ORACLE_GRAALVM)" ] || { \
+		echo "ERROR: $$vendor: the images ship, so they are built with GraalVM CE (JAVA_HOME=/path/to/graalvm-ce); ALLOW_ORACLE_GRAALVM=1 overrides"; exit 1; }; esac; \
+	echo "native-image $$v ($$vendor)"
+
+native: check-native-image ## GraalVM native image of the CLI for THIS machine (-march=native) -> bin/jinfer (a clean build, as jinfer-jar); NATIVE_MODULE=jinfer-tts|jinfer-bench for the others, or make -C jinfer/<module> native; PRELOAD_GGUF=model.gguf embeds metadata (CLI), MODELS=dir finds the Inflect lexicon (tts)
 	$(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/$(NATIVE_MODULE) -am clean package -DskipTests -Djinfer.image.march=native -Djinfer.preload=$(PRELOAD_GGUF) $(if $(MODELS),-Djinfer.models=$(MODELS))
 	mkdir -p bin && cp jinfer/$(NATIVE_MODULE)/target/$(NATIVE_EXECUTABLE)$(EXE) bin/$(NATIVE_EXECUTABLE)$(EXE)
+
+libjinfer: ## libjinfer.so, jinfer's shared library with a C API (jinfer/jinfer-native); QUICK=1 for the dev loop
+	$(MAKE) -C jinfer/jinfer-native libjinfer $(if $(QUICK),QUICK=1)
 
 ##@ Tidy
 
@@ -152,4 +161,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test native format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy
+	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy

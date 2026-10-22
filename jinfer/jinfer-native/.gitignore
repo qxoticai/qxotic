@@ -1,0 +1,5 @@
+target/
+python/jinfer/lib/
+python/**/__pycache__/
+python/*.egg-info/
+python/speech.wav

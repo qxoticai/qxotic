@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.3.1</version>
+  </parent>
+
+  <artifactId>jinfer-native</artifactId>
+  <packaging>jar</packaging>
+
+  <name>Jinfer Native Library</name>
+  <description>libjinfer: jinfer as a shared library with a C API (include/jinfer.h), built with
+    GraalVM Native Image. Consumed from Python, C and any language with a foreign function
+    interface. Not a Maven dependency; the shared library is the artifact.</description>
+
+  <properties>
+    <jinfer.image.name>libjinfer</jinfer.image.name>
+    <!-- -O3 for a shipped library; the Makefile passes -Ob for the dev loop. -->
+    <jinfer.image.opt>-O3</jinfer.image.opt>
+    <!-- The ISA level, x86-64-v3 (AVX2) being the kernels' floor; the Makefile passes compatibility on other
+         architectures and native for the dev loop. -->
+    <jinfer.image.march>x86-64-v3</jinfer.image.march>
+    <!-- The Vector API width in bits, empty = what the target ISA (-march) can execute, which the
+         VectorWidth feature pins at build time. Set it only to build narrower than the target. -->
+    <jinfer.image.vectorBits />
+    <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-chat</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-codecs</artifactId>
+    </dependency>
+    <dependency>
+      <!-- the OpenAI chat.completions dialect: OpenAiChat is the seam the server exposes for in-process hosts -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-cache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
+    <dependency>
+      <!-- the toknroll_* entry points: libjinfer carries the tokenizer API under toknroll.h -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-native</artifactId>
+      <version>${toknroll.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
+    </dependency>
+    <dependency>
+      <!-- the @CEntryPoint annotations and C type views; the image builder supplies them at run time -->
+      <groupId>org.graalvm.sdk</groupId>
+      <artifactId>nativeimage</artifactId>
+      <version>${graalvm.sdk.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <!-- StaticJam and VectorWidth: the builder's own hosted API (NativeLibraries, CPUFeatureAccess) -->
+      <groupId>org.graalvm.nativeimage</groupId>
+      <artifactId>svm</artifactId>
+      <version>${graalvm.sdk.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-models-all</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-vector</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-scalar</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- see jinfer-cli: jinfer-kernels' ModelLoader needs both at run time; compile scope keeps
+         them from being shadowed -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-memory</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <profiles>
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <!-- The C face of the library is one translation unit, compiled with the platform C
+                 compiler and linked into the image below. -->
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>compile-shim</id>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <phase>prepare-package</phase>
+                <configuration>
+                  <executable>cc</executable>
+                  <arguments>
+                    <argument>-std=c11</argument>
+                    <argument>-O2</argument>
+                    <argument>-fPIC</argument>
+                    <argument>-Wall</argument>
+                    <argument>-I${project.basedir}/include</argument>
+                    <argument>-I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</argument>
+                    <argument>-c</argument>
+                    <argument>${project.basedir}/src/main/c/jinfer_shim.c</argument>
+                    <argument>-o</argument>
+                    <argument>${project.build.directory}/jinfer_shim.o</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <!-- toknroll's C face too: the shim forwarding to the toknroll__* entry points, and the
+                   isolate they run in, which jinfer_* shares (jinfer_shim.c has none of its own) -->
+              <execution>
+                <id>compile-toknroll-shim</id>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <phase>prepare-package</phase>
+                <configuration>
+                  <executable>cc</executable>
+                  <arguments>
+                    <argument>-std=c11</argument>
+                    <argument>-O2</argument>
+                    <argument>-fPIC</argument>
+                    <argument>-Wall</argument>
+                    <argument>-DTOKNROLL_BUILD</argument>
+                    <argument>-I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</argument>
+                    <argument>-c</argument>
+                    <argument>${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_shim.c</argument>
+                    <argument>-o</argument>
+                    <argument>${project.build.directory}/toknroll_shim.o</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>compile-toknroll-isolate</id>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <phase>prepare-package</phase>
+                <configuration>
+                  <executable>cc</executable>
+                  <arguments>
+                    <argument>-std=c11</argument>
+                    <argument>-O2</argument>
+                    <argument>-fPIC</argument>
+                    <argument>-Wall</argument>
+                    <argument>-DTOKNROLL_PROGRAM="jinfer"</argument>
+                    <argument>-DTOKNROLL_OPTIONS_ENV="JINFER_OPTIONS"</argument>
+                    <argument>-I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</argument>
+                    <argument>-c</argument>
+                    <argument>${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c</argument>
+                    <argument>-o</argument>
+                    <argument>${project.build.directory}/toknroll_isolate.o</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+            <!-- A shared library, not the parent's executable recipe: restated whole. The
+                 correctness flags still come from each jar's native-image.properties. -->
+            <configuration combine.self="override">
+              <imageName>${jinfer.image.name}</imageName>
+              <sharedLibrary>true</sharedLibrary>
+              <!-- a fallback image would need a JDK at run time: a library that is not standalone is a failure -->
+              <fallback>false</fallback>
+              <buildArgs>
+                <buildArg>${jinfer.image.opt}</buildArg>
+                <buildArg>-march=${jinfer.image.march}</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/jinfer_shim.o</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim.o</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate.o</buildArg>
+                <!-- the shim's jinfer_* symbols are the API; the wrapper adds them to GraalVM's export
+                     list, which otherwise names only the image's own entry points -->
+                <buildArg>--native-compiler-path=${project.basedir}/src/main/c/jinfer-cc.sh</buildArg>
+                <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
+                <buildArg>-EJINFER_CC_LOG</buildArg>
+                <!-- jinfer_model_options is read through the header itself (Options.Directives), which includes toknroll.h -->
+                <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
+                <!-- libjam linked into the image (StaticJam): the archive jam-native's jam_static target
+                     builds, and no bundled copy left to extract at run time -->
+                <buildArg>--features=com.qxotic.jinfer.libjinfer.StaticJam,com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
+                <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.hosted.c=ALL-UNNAMED</buildArg>
+                <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
+                <buildArg>-H:CLibraryPath=${maven.multiModuleProjectDirectory}/jam/jam-native/build</buildArg>
+                <!-- nothing in the image references jam's symbols statically (JNI and FFM resolve them
+                     by name at run time), so the archive goes in whole or the linker drops every member -->
+                <buildArg>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</buildArg>
+                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
+                <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
+                <!-- the kernels' vector width: the target ISA's unless narrowed here (VectorWidth) -->
+                <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
+                <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
+                <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>
+                <buildArg>-Djinfer.trace=${jinfer.trace}</buildArg>
+              </buildArgs>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
