@@ -65,6 +65,19 @@ Start with `Chat.java`, which downloads a 1B model. `Detect.java` uses a 12B vis
 expect a longer download. The [full gallery](examples/scripts/README.md) also covers semantic
 search, reranking, logic puzzles and prompt-cache accounting.
 
+## Use it from Python or C
+
+`jinfer-native` builds jinfer as a shared library with a C API, `libjinfer`, and ships a Python package over it: chat, embeddings, reranking, speech and transcription with no server and no Java visible.
+Requests and responses are OpenAI's chat.completions JSON, so `jinfer.OpenAI(ref)` is a drop-in for code written against the OpenAI SDK.
+See [jinfer-native](jinfer-native/README.md) and the [docs page](../docs/jinfer/native.md).
+
+```python
+import jinfer
+
+model = jinfer.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")
+print(model.chat("What is the capital of France?").text)
+```
+
 ## Use it from Java
 
 Import the BOM once:

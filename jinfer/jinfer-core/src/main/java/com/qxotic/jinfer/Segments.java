@@ -51,7 +51,8 @@ public final class Segments {
 
     /** {@code -Djinfer.vectorBitSize} ({@code override}, null when unset) over the preference. */
     static int vectorBitSize(String override, int preferred) {
-        if (override == null) return preferred;
+        if (override == null || override.isBlank())
+            return preferred; // a build passes it through unset as ""
         try {
             int bits = Integer.parseInt(override.strip());
             if (bits != 0) VectorShape.forBitSize(bits); // throws for a size with no shape

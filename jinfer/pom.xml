@@ -46,6 +46,7 @@
     <module>jinfer-server</module>
     <module>jinfer-cli</module>
     <module>jinfer-bench</module>
+    <module>jinfer-native</module>
     <module>jinfer-hub</module>
     <module>jinfer-jinja</module>
     <module>jinfer-langchain4j</module>

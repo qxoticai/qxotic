@@ -1,0 +1,79 @@
+# libjinfer: jinfer as a shared library with the C API in include/jinfer.h. `make help` lists the targets.
+ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
+MAVEN ?= mvn
+OPT   := $(if $(QUICK),-Ob,-O3)
+OS    := $(shell uname -s | tr A-Z a-z)
+ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
+# The ISA level the image is built for; the kernels' vector width follows it (VectorWidth, at
+# build time). x86-64-v3 (AVX2, 2013) is the floor: below it the kernels are not usable.
+MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,compatibility))
+PLATFORM := $(OS)-$(ARCH)
+LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
+LIB   := target/$(LIBFILE)
+VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd.)
+DIST  := libjinfer-$(VERSION)-$(PLATFORM)
+.DEFAULT_GOAL := help
+
+help:
+	@echo 'make libjinfer             -O3 -march=$(MARCH), what ships -> $(LIB); MARCH=x86-64-v4 for AVX-512'
+	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
+	@echo 'make check                 header vs exports, C example, Python test'
+	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
+	@echo 'make python                stage $(LIB) into python/jinfer/lib/$(PLATFORM)/'
+	@echo 'make wheel                 the platform-tagged wheel -> target/wheel/'
+	@echo 'make check-wheel           the wheel as a user gets it: a fresh venv, pip install, the Python test from outside the checkout'
+	@echo 'make dist                  release bundle: header, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
+
+libjinfer:
+	@$(MAKE) -s -C $(ROOT) check-native-image
+	cd $(ROOT) && $(MAVEN) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
+	  -Djinfer.image.opt=$(OPT) -Djinfer.image.march=$(MARCH)
+
+TOKNROLL_INCLUDE := $(ROOT)/toknroll/toknroll-native/include
+
+# Every function the two headers declare is exported, and nothing jinfer_* or toknroll_* beyond them is.
+check-exports:
+	@grep -hE '^(JINFER|TOKNROLL)_API' include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h | grep -oE '(jinfer|toknroll)_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
+	@nm -D --defined-only $(LIB) | awk '{print $$3}' | grep -E '^(jinfer|toknroll)_' | sort > target/exported.syms
+	@diff target/header.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms) functions"
+
+target/chat: examples/c/chat.c include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h $(LIB)
+	cc -std=c99 -Wall -Wextra -Iinclude -I$(TOKNROLL_INCLUDE) -o $@ $< -L target -ljinfer -Wl,-rpath,$(abspath target)
+
+check-version: ## the header, the wheel and the pom name the same release (__version__ is the library's own string)
+	@h=$$(grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{printf "%s%s", (NR>1?".":""), $$2}'); \
+	 w=$$(grep -oE '^version = "[^"]+"' python/pyproject.toml | cut -d'"' -f2); \
+	 m=$$(grep -oE '<version>[^<]+</version>' pom.xml | head -1 | sed 's/<[^>]*>//g'); \
+	 [ "$$h" = "$$w" ] && [ "$$h" = "$$m" ] && echo "version $$h everywhere" || { echo "version drift: header $$h, wheel $$w, pom $$m"; exit 1; }
+
+check: check-version check-exports target/chat
+	./target/chat
+	python3 python/test_jinfer.py
+
+qa:
+	python3 python/qa.py
+
+python: $(LIB)
+	mkdir -p python/jinfer/lib/$(PLATFORM) && cp $(LIB) python/jinfer/lib/$(PLATFORM)/
+
+wheel: python
+	cp $(ROOT)/LICENSE python/LICENSE
+	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps --no-build-isolation -q
+
+# The wheel as a user gets it: installed into a fresh venv and tested from outside the checkout.
+check-wheel: wheel
+	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(ROOT)/toknroll/toknroll-native/target/wheel/*.whl
+	cd target && JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
+	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
+
+# What a GitHub release carries per platform. The wheel rides along so pip users need no second download.
+dist: wheel
+	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/include target/dist/$(DIST)/lib/$(PLATFORM) target/dist/$(DIST)/python
+	cp include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h target/dist/$(DIST)/include/
+	cp $(LIB) target/dist/$(DIST)/lib/$(PLATFORM)/
+	cp README.md $(ROOT)/LICENSE target/dist/$(DIST)/
+	cp target/wheel/*.whl target/dist/$(DIST)/python/
+	cd target/dist && rm -f $(DIST).zip && zip -qr $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
+	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
+
+.PHONY: help libjinfer check check-version check-exports qa python wheel check-wheel dist
