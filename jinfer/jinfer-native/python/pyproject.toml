@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jinfer"
+version = "0.3.1"
+description = "Local AI inference: chat, vision, audio, embeddings, reranking, speech, transcription. One shared library, no server, no Python ML stack."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Quixotic AI" }]
+keywords = ["llm", "inference", "chat", "embeddings", "reranking", "speech", "transcription", "gguf", "local-ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dependencies = ["numpy>=1.24", "toknroll>=0.3.1,<0.4"]
+
+[project.urls]
+Homepage = "https://qxotic.ai"
+Documentation = "https://qxotic.ai/jinfer"
+Source = "https://github.com/qxoticai/qxotic"
+Issues = "https://github.com/qxoticai/qxotic/issues"
+
+[tool.setuptools]
+packages = ["jinfer"]
+
+[tool.setuptools.package-data]
+jinfer = ["lib/*/*", "py.typed"]
+
+# The package is pure Python over a native library it carries, so the wheel is py3-none but
+# platform-tagged. The glibc floor is the one the library was linked against (objdump -T).
+[tool.distutils.bdist_wheel]
+plat-name = "manylinux_2_34_x86_64"
