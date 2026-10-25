@@ -118,6 +118,11 @@ public final class Main {
                 | UnsupportedOperationException e) {
             io.err().println(name(options) + ": " + Options.rootMessage(e));
             return Thread.currentThread().isInterrupted() ? 130 : 1;
+        } catch (ExceptionInInitializerError e) {
+            // a -Djinfer.* value RuntimeFlags refused: the cause is the message, the class is now
+            // unusable
+            io.err().println(name(options) + ": " + Options.rootMessage(e));
+            return 2;
         } catch (RuntimeException e) {
             if (Thread.currentThread().isInterrupted()) {
                 io.err().println(name(options) + ": interrupted");

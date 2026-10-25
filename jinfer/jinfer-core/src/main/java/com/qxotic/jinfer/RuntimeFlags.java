@@ -15,8 +15,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Runtime flags read by the parallel work runners and the model boundary. Prompt and cache defaults
- * live with their owning modules.
+ * Runtime flags read by the parallel work runners and the model boundary, plus the prompt cache's
+ * two deployment knobs, read here so every face (the CLI and server, libjinfer) spells them the
+ * same way; the cache's defaults themselves live with it, in {@code PromptCache.Options.DEFAULTS}.
  */
 public final class RuntimeFlags {
 
@@ -34,6 +35,42 @@ public final class RuntimeFlags {
     // Keys per flashDecode partition: below this there is nothing to gain from splitting the
     // attended range, so it falls through to rollingDecode.
     public static final int DECODE_BLOCK_SIZE = positiveInt("jinfer.decodeBlockSize", 512);
+
+    /**
+     * Conversations the prompt cache keeps warm: {@code -Djinfer.cache.sessions}, 0 or more, 4 when
+     * unset. Read per call, so a bad value fails the load that reads it, by name, not this class.
+     */
+    public static int cacheSessions() {
+        String value = System.getProperty("jinfer.cache.sessions");
+        if (value == null) return 4;
+        try {
+            int sessions = Integer.parseInt(value.strip());
+            if (sessions >= 0) return sessions;
+        } catch (NumberFormatException ignored) {
+        }
+        throw new IllegalArgumentException(
+                "jinfer.cache.sessions must be 0 or more, not '" + value + "'");
+    }
+
+    /**
+     * Bytes of KV blocks the prompt cache keeps: {@code -Djinfer.cache.budget}, as -Xmx spells it
+     * (a number, or one with a k, m or g suffix), 0 turning the block layer off, 2 GB when unset.
+     */
+    public static long cacheBudget() {
+        String value = System.getProperty("jinfer.cache.budget");
+        if (value == null) return 2048L << 20;
+        String v = value.strip().toLowerCase(Locale.ROOT);
+        try {
+            int shift = v.endsWith("k") ? 10 : v.endsWith("m") ? 20 : v.endsWith("g") ? 30 : 0;
+            long bytes = Long.parseLong(shift == 0 ? v : v.substring(0, v.length() - 1)) << shift;
+            if (bytes >= 0) return bytes;
+        } catch (NumberFormatException ignored) {
+        }
+        throw new IllegalArgumentException(
+                "jinfer.cache.budget must be bytes, or a number with k, m or g, not '"
+                        + value
+                        + "'");
+    }
 
     private static int positiveInt(String property, int defaultValue) {
         return positiveInt(property, System.getProperty(property), defaultValue);
