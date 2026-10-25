@@ -230,6 +230,7 @@ This table is the translation.
 - Vector API kernels run on x86 and ARM. JAM is selected automatically when present.
 - Prompt ingestion is batched. Generation uses one serial state per pipeline; fork another pipeline for parallel inference.
 - Threads: `-Djinfer.threads` (default: physical cores) sizes the one pool every kernel and jam backend runs on; there is no other thread knob.
+- Prompt cache: `-Djinfer.cache.sessions` (default: 4) is how many conversations stay warm, `-Djinfer.cache.budget` (default: 2g, as `-Xmx` spells sizes) bounds the KV blocks kept, 0 switching the block layer off; the CLI, the server and libjinfer read both, the LangChain4j and Spring AI builders take them as arguments.
 - JFR events cover load, queue/prefill/decode/TTFT, cache state, media projection, and MTP. The packaged `jinfer.jfc` enables aggregate events and leaves per-token decode off.
 - The server exports request outcomes, phase timings, token counters, and cache/media gauges at `/metrics`.
 

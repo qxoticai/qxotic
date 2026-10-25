@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.cli;
 
+import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.hub.ModelStore;
@@ -442,7 +443,12 @@ final class Options {
     }
 
     PromptCache.Options cacheOptions() {
-        var cache = PromptCache.Options.DEFAULTS.withCatalog(promptCache, promptCacheReadOnly);
+        var cache =
+                PromptCache.Options.DEFAULTS
+                        .withRetainedSessions(
+                                RuntimeFlags.cacheSessions()) // -Djinfer.cache.sessions
+                        .withBlockBudget(RuntimeFlags.cacheBudget()) // -Djinfer.cache.budget
+                        .withCatalog(promptCache, promptCacheReadOnly);
         return contextCapacity == null ? cache : cache.withContextCapacity(contextCapacity);
     }
 
@@ -652,6 +658,8 @@ final class Options {
                   --with <role>=<path|ref>     attach a companion; repeat for other roles
                   -t, --threads <int>          compute workers (default: physical/fast cores)
                                                overrides -Djinfer.threads when both are given
+                  -Djinfer.cache.sessions=<n>  conversations the prompt cache keeps warm (4)
+                  -Djinfer.cache.budget=<n>    KV blocks kept, e.g. 8g; 0 = off (default: 2g)
 
                 References: [host/]owner/repo[@revision][/file][:quant]. Default host: hf.co.
                 Existing local files win. Remote files are downloaded once and cached.
