@@ -6,10 +6,12 @@
 [ -n "$TOKNROLL_CC_LOG" ] && printf '%s\n' "$*" >> "$TOKNROLL_CC_LOG"
 for arg in "$@"; do
   case "$arg" in
-    -Wl,-exported_symbols_list,*)
-      printf '_toknroll_[!_]*\n' >> "${arg##*,}" ;;   # macOS ld64: one symbol per line, underscore-prefixed
-    -Wl,--version-script,*exported_symbols.list)
+    -Wl,--version-script,*exported_symbols.list)   # GNU ld
       sed -i -e '/^"toknroll__/d' -e 's/^local: \*;/toknroll_[!_]*;\nlocal: *;/' "${arg##*,}" ;;   # [!_]: toknroll__* stays local
+    -Wl,*exported_symbols.list)   # ld64, the list follows -Wl,-exported_symbols_list: one underscore-prefixed name per line
+      list=${arg#-Wl,}
+      sed -i '' '/^_toknroll__/d' "$list"
+      for o in "$@"; do case "$o" in *_shim.o) nm -gU "$o" | awk '{print $3}' >> "$list" ;; esac; done ;;   # the shim's globals are the API
   esac
 done
 exec "${TOKNROLL_CC:-cc}" "$@"

@@ -6,15 +6,20 @@
 # gets out of the way.
 [ -n "$JINFER_CC_LOG" ] && printf '%s\n' "$*" >> "$JINFER_CC_LOG"   # the exact compiler and linker lines, when asked
 for arg in "$@"; do
+  shift
   case "$arg" in
-    -Wl,-exported_symbols_list,*)
-      # macOS: ld64 takes one symbol per line, underscore-prefixed, wildcards allowed. Untested until
-      # the Mac that builds the jam natives has a GraalVM.
-      printf '_jinfer_[!_]*\n_toknroll_[!_]*\n_jam_*\n_Java_com_qxotic_jam_libjam_*\n_JNI_OnLoad_jam\n' >> "${arg##*,}" ;;
-    -Wl,--version-script,*exported_symbols.list)
+    -Wl,--whole-archive,*,--no-whole-archive)   # libjam in whole: GNU ld's spelling in the pom, ld64's here
+      [ "$(uname -s)" = Darwin ] && arg="-Wl,-force_load,${arg#-Wl,--whole-archive,}" && arg="${arg%,--no-whole-archive}" ;;
+    -Wl,--version-script,*exported_symbols.list)   # GNU ld
       # jinfer_* and toknroll_*: the API. jam_* and Java_com_qxotic_jam_libjam_*: libjam, linked in whole, which jam's
       # Java side resolves with dlsym at run time, so it must stay in the dynamic symbol table.
       sed -i -e '/^"\(jinfer\|toknroll\)__/d' -e 's/^local: \*;/jinfer_[!_]*;\ntoknroll_[!_]*;\njam_*;\nJava_com_qxotic_jam_libjam_*;\nJNI_OnLoad_jam;\nlocal: *;/' "${arg##*,}" ;;   # [!_]: the __ entry points stay local
+    -Wl,*exported_symbols.list)   # ld64, the list follows -Wl,-exported_symbols_list: one underscore-prefixed name per line
+      list=${arg#-Wl,}
+      sed -i '' -e '/^_jinfer__/d' -e '/^_toknroll__/d' "$list"
+      for o in "$@"; do case "$o" in *_shim.o) nm -gU "$o" | awk '{print $3}' >> "$list" ;; esac; done   # the shims' globals are the API
+      printf '_jam_*\n_Java_com_qxotic_jam_libjam_*\n_JNI_OnLoad_jam\n' >> "$list" ;;
   esac
+  set -- "$@" "$arg"
 done
 exec "${JINFER_CC:-cc}" "$@"
