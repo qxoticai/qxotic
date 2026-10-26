@@ -27,6 +27,7 @@ help:
 	@echo 'make python                stage $(LIB) into python/jinfer/lib/$(PLATFORM)/'
 	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
 	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the Python test from outside the checkout'
+	@echo 'make publish               twine upload to PyPI after check-wheel; TWINE_REPOSITORY=testpypi rehearses'
 	@echo 'make dist                  release bundle: header, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
 
 libjinfer:
@@ -61,18 +62,30 @@ qa:
 python: $(LIB)
 	mkdir -p python/jinfer/lib/$(PLATFORM) && cp $(LIB) python/jinfer/lib/$(PLATFORM)/
 
-wheel: python
+# The release tools, one venv for both packages: build makes the wheel, wheel tags it with the
+# platform, twine checks and uploads it, auditwheel audits the manylinux claim.
+TOOLS := $(ROOT)/target/pytools
+$(TOOLS)/bin/twine:
+	python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
+
+wheel: python $(TOOLS)/bin/twine
 	cp $(ROOT)/LICENSE python/LICENSE
-	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps -q -C--build-option=--plat-name=$(WHEEL_PLAT)
+	rm -rf target/wheel python/build && $(TOOLS)/bin/python -m build --wheel --outdir target/wheel python
+	$(TOOLS)/bin/wheel tags --remove --platform-tag $(WHEEL_PLAT) target/wheel/*.whl
 
 # The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the
 # toknroll wheel it depends on, tested from outside the checkout.
 check-wheel: wheel
 	$(MAKE) -s -C $(ROOT)/toknroll/toknroll-native wheel
-	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q twine target/wheel/*.whl $(ROOT)/toknroll/toknroll-native/target/wheel/*.whl
-	target/wheelenv/bin/twine check --strict target/wheel/*.whl
+	$(TOOLS)/bin/twine check --strict target/wheel/*.whl
+	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)   # "unsupported ISA extensions" is the x86-64-v3 floor, known and documented
+	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(ROOT)/toknroll/toknroll-native/target/wheel/*.whl
 	cd target && JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
 	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
+
+# TWINE_REPOSITORY=testpypi rehearses; credentials come from ~/.pypirc or TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-...
+publish: check-wheel
+	$(TOOLS)/bin/twine upload target/wheel/*.whl
 
 # What a GitHub release carries per platform. The wheel rides along so pip users need no second download.
 dist: wheel
@@ -84,4 +97,4 @@ dist: wheel
 	cd target/dist && rm -f $(DIST).zip && zip -qr $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
 	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
 
-.PHONY: help libjinfer check check-version check-exports qa python wheel check-wheel dist
+.PHONY: help libjinfer check check-version check-exports qa python wheel check-wheel publish dist

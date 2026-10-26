@@ -26,7 +26,8 @@ make libtoknroll            # GraalVM Native Image -> target/libtoknroll.so and 
 make check                  # versions agree, exports vs header, the C example against both, the Python test
 make python                 # stage the shared library into python/toknroll/lib/<platform>/
 make wheel                  # the platform-tagged wheel -> target/wheel/
-make check-wheel            # the wheel as a user gets it: a fresh venv, pip install, the suite from outside the checkout
+make check-wheel            # the wheel as a user gets it: twine and auditwheel, a fresh venv, pip install, the suite from outside the checkout
+make publish                # twine upload to PyPI, after check-wheel; TWINE_REPOSITORY=testpypi rehearses
 make dist                   # release bundle: header, both libraries, README, LICENSE, wheel -> target/dist/
 ```
 

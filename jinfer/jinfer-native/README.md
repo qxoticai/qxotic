@@ -28,7 +28,8 @@ make check                # versions agree, header vs exports, the C example, th
 make qa                   # threads, lifetime at interpreter exit, soak, offline, tools, unicode
 make python               # stage the library into the Python package
 make wheel                # the platform-tagged wheel -> target/wheel/
-make check-wheel          # the wheel as a user gets it: a fresh venv, pip install, the test from outside the checkout
+make check-wheel          # the wheel as a user gets it: twine and auditwheel, a fresh venv, pip install, the test from outside the checkout
+make publish              # twine upload to PyPI, after check-wheel; TWINE_REPOSITORY=testpypi rehearses
 make dist                 # release bundle: headers, library, README, LICENSE, wheel -> target/dist/
 ```
 
