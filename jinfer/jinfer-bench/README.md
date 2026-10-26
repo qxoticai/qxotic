@@ -16,7 +16,7 @@ The native image measures what the shipped binary does.
 The JVM run measures what the jars do.
 The first line of the output names which one ran.
 
-Native image, from the repository root (requires GraalVM Native Image 25.0.3 or newer; the image is built for the current machine):
+Native image, from the repository root (requires GraalVM Native Image 25.0.4 or newer; the image is built for the current machine):
 
 ```bash
 make -C jinfer/jinfer-bench native            # -> bin/jinfer-bench

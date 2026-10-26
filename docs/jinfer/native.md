@@ -63,10 +63,10 @@ There are no prompt templates, chains, memory classes, callbacks, retries or opt
 
 ## Build
 
-From `jinfer/jinfer-native`, with GraalVM 25 and a C compiler:
+From `jinfer/jinfer-native`, with GraalVM 25.0.4 or newer and a C compiler:
 
 ```sh
-make libjinfer            # -O3 for x86-64-v3 (AVX2): target/libjinfer.so; MARCH=x86-64-v4 for AVX-512
+make libjinfer            # -O3 -march=x86-64-v3 (GraalVM's default on x86-64, AVX2): target/libjinfer.so; MARCH=x86-64-v4 for AVX-512
 make check                # header vs exports, the C example, the Python test
 make python               # stage the library into the Python package; then pip install python/
 ```

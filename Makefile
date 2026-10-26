@@ -71,19 +71,19 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 NATIVE_MODULE ?= jinfer-cli
 NATIVE_EXECUTABLE = $(patsubst %-cli,%,$(NATIVE_MODULE))
 
-check-native-image: ## the GraalVM the images build with: GraalVM CE, native-image >= 25.0.3 (JAVA_HOME picks it)
+check-native-image: ## the GraalVM the images build with: native-image >= 25.0.4, GraalVM CE recommended (JAVA_HOME picks it)
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
 	fi; \
 	major=$${v%%.*}; rest=$${v#*.}; minor=$${rest%%.*}; patch=$${v##*.}; \
-	if [ "$$major" -lt 25 ] || { [ "$$major" -eq 25 ] && [ "$$minor" -eq 0 ] && [ "$$patch" -lt 3 ]; }; then \
-		echo "ERROR: native-image $$v is too old for the jinfer kernels (need >= 25.0.3)."; \
+	if [ "$$major" -lt 25 ] || { [ "$$major" -eq 25 ] && [ "$$minor" -eq 0 ] && [ "$$patch" -lt 4 ]; }; then \
+		echo "ERROR: native-image $$v is too old (need >= 25.0.4: the isolate parameters the C shims use)."; \
 		exit 1; \
 	fi; \
 	vendor=$$($(NATIVE_IMAGE) --version 2>/dev/null | sed -n 2p | sed 's/^ *//'); \
-	case "$$vendor" in *"Oracle GraalVM"*) [ -n "$(ALLOW_ORACLE_GRAALVM)" ] || { \
-		echo "ERROR: $$vendor: the images ship, so they are built with GraalVM CE (JAVA_HOME=/path/to/graalvm-ce); ALLOW_ORACLE_GRAALVM=1 overrides"; exit 1; }; esac; \
+	case "$$vendor" in *"Oracle GraalVM"*) \
+		echo "note: $$vendor builds, but the binaries we ship are built with GraalVM CE (JAVA_HOME=/path/to/graalvm-ce)";; esac; \
 	echo "native-image $$v ($$vendor)"
 
 native: check-native-image ## GraalVM native image of the CLI for THIS machine (-march=native) -> bin/jinfer (a clean build, as jinfer-jar); NATIVE_MODULE=jinfer-tts|jinfer-bench for the others, or make -C jinfer/<module> native; PRELOAD_GGUF=model.gguf embeds metadata (CLI), MODELS=dir finds the Inflect lexicon (tts)

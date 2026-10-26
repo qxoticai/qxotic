@@ -238,7 +238,7 @@ For JVM runs, `hotspot_compile_commands` holds the current inlining hints for ho
 
 ## Native image
 
-GraalVM Native Image 25.0.3 or newer:
+GraalVM Native Image 25.0.4 or newer:
 
 From the repository root:
 

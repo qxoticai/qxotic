@@ -32,7 +32,7 @@ jinfer --help
 
 ### Native executable
 
-With GraalVM 25.0.3 or newer, compile the CLI into a native executable:
+With GraalVM 25.0.4 or newer, compile the CLI into a native executable:
 
 ```sh
 make native   # from the repository root
