@@ -29,7 +29,7 @@ try:
     jinfer.load("nobody/does-not-exist-GGUF:Q8_0")
     ok(False, "missing model must raise")
 except jinfer.JinferError as e:
-    ok(e.code < 0 and isinstance(e, (jinfer.NotFound, jinfer.JinferError)), f"error: {type(e).__name__}: {e}")
+    ok(isinstance(e, jinfer.NotFound) and isinstance(e, FileNotFoundError), f"an offline miss is NotFound: {e}")
 
 records = []
 handler = logging.Handler(); handler.emit = records.append

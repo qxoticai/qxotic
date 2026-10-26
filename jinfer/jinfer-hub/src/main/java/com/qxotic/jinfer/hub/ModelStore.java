@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.hub;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
@@ -546,21 +547,19 @@ public final class ModelStore {
 
     private static void requireOnlineFor(String what, String where, Policy policy) {
         String offline = offlineSource();
-        if (offline != null) {
-            throw new IllegalStateException(
-                    policy == Policy.USE_CACHE
-                            ? what
+        if (offline == null) return;
+        // offline, a cache miss is a missing file: not-found to every caller
+        if (policy == Policy.USE_CACHE)
+            throw new UncheckedIOException(
+                    new FileNotFoundException(
+                            what
                                     + " is not cached in "
                                     + where
                                     + ", and "
                                     + offline
-                                    + " forbids downloading"
-                            : "cannot refresh "
-                                    + what
-                                    + ": "
-                                    + offline
-                                    + " forbids remote checks and downloads");
-        }
+                                    + " forbids downloading"));
+        throw new IllegalStateException(
+                "cannot refresh " + what + ": " + offline + " forbids remote checks and downloads");
     }
 
     /**

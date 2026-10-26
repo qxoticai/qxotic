@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -359,7 +360,7 @@ class ModelRefTest {
         try {
             var offline =
                     assertThrows(
-                            IllegalStateException.class,
+                            UncheckedIOException.class,
                             () ->
                                     ModelStore.standard()
                                             .resolve("https://example.org/models/x.gguf"));

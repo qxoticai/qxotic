@@ -114,7 +114,11 @@ class ModelStorePullTest {
                             () -> store.pullAll(List.of(pinned), true));
             assertTrue(force.getMessage().contains("cannot refresh"), force.getMessage());
             assertFalse(force.getMessage().contains("not cached"), force.getMessage());
-            assertThrows(IllegalStateException.class, () -> store.pullAll(List.of(REF), false));
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            store.pullAll(
+                                    List.of(REF), false)); // a pull refreshes: refused, not missing
             assertEquals("weights", Files.readString(immutable));
         } finally {
             if (old == null) System.clearProperty("jinfer.offline");
