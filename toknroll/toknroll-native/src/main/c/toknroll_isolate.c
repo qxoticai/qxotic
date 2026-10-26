@@ -3,6 +3,8 @@
  * when it exits. libjinfer compiles this file too (TOKNROLL_PROGRAM "jinfer", TOKNROLL_OPTIONS_ENV
  * "JINFER_OPTIONS"), so its jinfer_* and toknroll_* symbols share one isolate and one configure. */
 #define _POSIX_C_SOURCE 200809L   /* strdup */
+#define _DARWIN_C_SOURCE          /* dladdr, RTLD_NOLOAD */
+#include <dlfcn.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -64,6 +66,14 @@ static void detach(void* thread) { graal_detach_thread((graal_isolatethread_t*) 
 
 static void init(void) {
     created = 1;
+#ifdef __APPLE__
+    /* The image finds a JNI library built into it (libjam in libjinfer) with dlsym(RTLD_DEFAULT), which
+     * dyld limits to globally loaded images, while glibc also searches the caller's own. So whichever way
+     * this library was opened, make it global: RTLD_NOLOAD is dlopen's documented way to do that to a
+     * loaded image. Without it a plain dlopen on macOS would silently lose the native kernels. */
+    Dl_info self;
+    if (dladdr((void*) &init, &self)) dlopen(self.dli_fname, RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
+#endif
     /* the environment comes last: it overrides what the program configured, later wins as on a command
      * line. Split on whitespace; a value with a space in it goes through configure. ponytail: no quoting */
     const char* env = getenv(TOKNROLL_OPTIONS_ENV);
