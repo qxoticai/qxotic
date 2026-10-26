@@ -22,7 +22,7 @@
     model.chat(["What is this?", Path("photo.jpg")]).text       # media are values
 
     embedder = jinfer.load("LiquidAI/LFM2.5-Embedding-350M-GGUF:Q8_0")   # an Embedder
-    vectors = embedder.embed(["a cat", "a dog"])                 # a (2, dim) float32 array
+    vectors = embedder.embed(["a cat", "a dog"])                 # two float32 arrays
 
 `load` returns the class the file calls for: LanguageModel, Embedder, Reranker, Speaker or
 Transcriber, each with only the methods that apply. Options are keyword-only and `None` means

@@ -27,6 +27,7 @@ help:
 	@echo 'make python                stage $(LIB) into python/toknroll/lib/$(PLATFORM)/'
 	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
 	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the suite from outside the tree'
+	@echo 'make publish               twine upload to PyPI after check-wheel; TWINE_REPOSITORY=testpypi rehearses'
 
 libtoknroll:
 	@$(MAKE) -s -C $(ROOT) check-native-image
@@ -69,16 +70,28 @@ check: check-version check-exports target/tokenize check-static
 python: $(LIB)
 	mkdir -p python/toknroll/lib/$(PLATFORM) && cp $(LIB) python/toknroll/lib/$(PLATFORM)/
 
-wheel: python
+# The release tools, one venv for both packages: build makes the wheel, wheel tags it with the
+# platform, twine checks and uploads it, auditwheel audits the manylinux claim.
+TOOLS := $(ROOT)/target/pytools
+$(TOOLS)/bin/twine:
+	python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
+
+wheel: python $(TOOLS)/bin/twine
 	cp $(ROOT)/LICENSE python/LICENSE
-	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps -q -C--build-option=--plat-name=$(WHEEL_PLAT)
+	rm -rf target/wheel python/build && $(TOOLS)/bin/python -m build --wheel --outdir target/wheel python
+	$(TOOLS)/bin/wheel tags --remove --platform-tag $(WHEEL_PLAT) target/wheel/*.whl
 
 # The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv, tested from outside the checkout.
 check-wheel: wheel
-	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q twine target/wheel/*.whl
-	target/wheelenv/bin/twine check --strict target/wheel/*.whl
+	$(TOOLS)/bin/twine check --strict target/wheel/*.whl
+	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)
+	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl
 	cd target && TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
 	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
+
+# TWINE_REPOSITORY=testpypi rehearses; credentials come from ~/.pypirc or TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-...
+publish: check-wheel
+	$(TOOLS)/bin/twine upload target/wheel/*.whl
 
 # What a GitHub release carries per platform: both libraries, the header, the wheel.
 dist: wheel
@@ -90,4 +103,4 @@ dist: wheel
 	cd target/dist && rm -f $(DIST).zip && zip -qr $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
 	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
 
-.PHONY: help libtoknroll check check-version check-exports check-static python wheel check-wheel dist
+.PHONY: help libtoknroll check check-version check-exports check-static python wheel check-wheel publish dist
