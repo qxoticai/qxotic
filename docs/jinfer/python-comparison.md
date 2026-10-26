@@ -352,8 +352,8 @@ jinfer:
 
 ```python
 embedder = jinfer.load("LiquidAI/LFM2.5-Embedding-350M-GGUF:Q8_0")
-vectors = embedder.embed(["AI on the JVM", "the JVM thinks now", "bananas are yellow"])   # (3, 1024) float32
-query = embedder.embed("Java machine learning")[0]
+vectors = np.asarray(embedder.embed(["AI on the JVM", "the JVM thinks now", "bananas are yellow"]))   # (3, 1024) float32, zero-copy
+query = np.asarray(embedder.embed("Java machine learning")[0])
 scores = vectors @ query / (np.linalg.norm(vectors, axis=1) * np.linalg.norm(query))
 ```
 
@@ -382,7 +382,7 @@ llm = Llama(model_path="embedding.gguf", embedding=True)
 vectors = llm.embed(["AI on the JVM", "the JVM thinks now"])   # list of lists
 ```
 
-A whole text is one input everywhere, but only jinfer returns an array shaped `(n, dimension)` ready for linear algebra; the others return nested Python lists, and llama-cpp-python needs the model opened in a separate embedding mode.
+A whole text is one input everywhere; jinfer returns float32 arrays that `np.asarray` stacks into a matrix, the others return nested Python lists, and llama-cpp-python needs the model opened in a separate embedding mode.
 
 ### Reranking
 
@@ -482,7 +482,7 @@ llama-cpp-python raises `ValueError` for bad arguments, but a context overflow o
 
 | | jinfer | ollama | transformers | llama-cpp-python |
 |---|---|---|---|---|
-| Install | `pip install` plus numpy | the Ollama app, a running server, `pip install ollama` | `transformers` plus `torch`, gigabytes | compiles llama.cpp, or a per-backend wheel index |
+| Install | `pip install`, no ML stack | the Ollama app, a running server, `pip install ollama` | `transformers` plus `torch`, gigabytes | compiles llama.cpp, or a per-backend wheel index |
 | Lines to a first reply | 3 | 3, plus two shell commands | 4 | 4 |
 | Where the text is | `.text`, `print(reply)` | `.message.content` | `[0]["generated_text"][-1]["content"]` | `["choices"][0]["message"]["content"]` |
 | A string as the prompt | yes | no, a messages list | no | no |

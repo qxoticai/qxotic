@@ -1,7 +1,7 @@
 # jinfer for Python
 
 Local AI inference from Python over `libjinfer`, jinfer's shared library with a C API.
-Chat, vision, audio, embeddings, reranking, speech synthesis and transcription; no server, no Python ML stack, no Java visible, numpy and `toknroll` the only dependencies.
+Chat, vision, audio, embeddings, reranking, speech synthesis and transcription; no server, no Python ML stack, no Java visible, `toknroll` the only dependency.
 
 ```python
 import jinfer
@@ -64,7 +64,7 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 - Silent in programs: nothing is printed once logging is configured, `logging.basicConfig(level=logging.INFO)` shows downloads and loads as log lines. At a terminal, a download shows jinfer's progress board. Ctrl-C during a download ends the process; the download resumes next time. `repr(model)` names the kernels and threads that actually run.
 - Any thread may call. A model may be shared between threads; a reply, speech or conversation belongs to one thread at a time. `async for` on a reply or speech steps in a worker thread; wrap one-shot calls in `asyncio.to_thread`.
 - A model's weights stay alive while any reply or speech made from it lives; `close()` drops your reference. Context managers close; so does garbage collection.
-- Float buffers (embeddings, scores, audio) are float32 numpy arrays: one type, whoever installs the package.
+- Embeddings and audio are float32 `array.array` buffers, scores are floats: the standard library, whoever installs the package. `np.asarray(vector)` and `torch.frombuffer(speech.audio, dtype=torch.float32)` are zero-copy.
 - `jinfer.configure("-Djinfer.threads=8", "-Djinfer.cache.sessions=16", "-Djinfer.cache.budget=8g", "-Djinfer.offline=true", "-XX:MaxHeapSize=4g")` passes the runtime the options a java command line would, once and before the first load; the engine's `jinfer.*` and `jam.*` properties are all reachable this way. A later call is refused, and a rejected option fails this one. `JINFER_OPTIONS="-Djinfer.threads=4"` in the environment holds the same options and overrides them, so the box a program runs on can retune it without a code change.
 - `model.tokenizer` runs inside libjinfer, so `jinfer.configure` is what configures it. `toknroll.load(...)` in the same process loads libtoknroll as well, a second runtime with its own `toknroll.configure`, about 60 MB more; a program that only needs a model's tokenizer never loads it.
 - A scalar schema (`int`, `str`, `bool`, `Literal`, `Enum`) travels as `{"value": ...}` on the wire, so the model's first token is anchored; `reply.parsed` is the value, `reply.text` the JSON. Objects and lists go as they are.

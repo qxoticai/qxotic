@@ -6,8 +6,8 @@ def cosine(a, b):
 
 with jinfer.load("LiquidAI/LFM2.5-Embedding-350M-GGUF:Q8_0") as embedder:
     texts = ["AI on the JVM", "the JVM thinks now", "the python shed its skin"]
-    vectors = embedder.embed(texts)                  # (3, dim), numpy when installed
-    query = embedder.embed("Java machine learning")[0]  # (1, dim) -> (dim,)
+    vectors = embedder.embed(texts)                  # three float32 arrays; np.asarray(vectors) is the matrix
+    query = embedder.embed("Java machine learning")[0]  # a list of one -> the vector
     print(f"{len(texts)} vectors of {embedder.dimension}")
     for text, vector in zip(texts, vectors):
         print(f"{cosine(query, vector):.3f}  {text}")

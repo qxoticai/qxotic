@@ -26,8 +26,8 @@
 
 `load` returns the class the file calls for: LanguageModel, Embedder, Reranker, Speaker or
 Transcriber, each with only the methods that apply. Options are keyword-only and `None` means
-the model's own default. Float buffers (embeddings, scores, audio) are float32 numpy arrays, the
-one dependency. The library's lines go to `logging.getLogger("jinfer")`; a download at a terminal
+the model's own default. Embeddings and audio are float32 `array.array` buffers, zero-copy into
+numpy or torch; scores are floats. The library's lines go to `logging.getLogger("jinfer")`; a download at a terminal
 shows jinfer's progress board on stderr.
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generic, Literal, TypeVar
 
-import numpy as _np
+import array as _array
 
 from . import _native as N
 
@@ -333,16 +333,35 @@ def _request(messages: list[dict], schema, options: dict) -> dict:
     return request
 
 
-# ---- float buffers ----
+# ---- float buffers: stdlib float32 arrays, zero-copy into numpy or torch through the buffer protocol ----
 
 def _floats(n: int):
-    """A zeroed float32 buffer of n and its C pointer (None when empty, as the C API allows)."""
-    buf = _np.zeros(n, dtype=_np.float32)
+    """A zeroed float32 array of n and its C pointer (None when empty, as the C API allows)."""
+    buf = _array.array("f", bytes(4 * n))
     return buf, (C.c_float * n).from_buffer(buf) if n else None
 
 
 def _copy_floats(ptr, n: int):
-    return _np.frombuffer(C.string_at(ptr, 4 * n) if n else b"", dtype=_np.float32).copy()
+    buf = _array.array("f")
+    if n:
+        buf.frombytes(C.string_at(ptr, 4 * n))
+    return buf
+
+
+def _f32(samples):
+    """`samples` as a float32 array: a float32 buffer (array, memoryview, numpy) in one copy, any
+    other iterable of numbers element by element."""
+    if isinstance(samples, _array.array) and samples.typecode == "f":
+        return samples
+    try:
+        view = memoryview(samples)
+    except TypeError:
+        return _array.array("f", samples)
+    if view.format != "f":
+        return _array.array("f", samples)
+    buf = _array.array("f")
+    buf.frombytes(view.cast("B"))
+    return buf
 
 
 def _read_wav(path) -> tuple:
@@ -350,11 +369,11 @@ def _read_wav(path) -> tuple:
     with wave.open(str(path), "rb") as f:
         rate, channels, width = f.getframerate(), f.getnchannels(), f.getsampwidth()
         frames = f.readframes(f.getnframes())
-    dtype, scale, offset = {1: (_np.uint8, 128.0, 128), 2: (_np.int16, 32768.0, 0), 4: (_np.int32, 2147483648.0, 0)}.get(width, (None, 0, 0))
-    if dtype is None:
+    code, scale, offset = {1: ("B", 128.0, 128), 2: ("h", 32768.0, 0), 4: ("i", 2147483648.0, 0)}.get(width, (None, 0, 0))
+    if code is None:
         raise InvalidArgument(f"{width * 8}-bit WAV is not supported; 8, 16 or 32-bit PCM is")
-    ints = _np.frombuffer(frames, dtype=dtype)[::channels]
-    return ((ints.astype(_np.float32) - offset) / scale).astype(_np.float32), rate
+    ints = _array.array(code, frames)[::channels]
+    return _array.array("f", ((s - offset) / scale for s in ints)), rate
 
 
 # ---- results ----
@@ -550,8 +569,8 @@ class Reply(_Stream, Generic[T]):
 
 
 class Speech(_Stream):
-    """Synthesized speech, already generating. Iterate it for float32 mono PCM chunks as they are
-    produced, or read `.audio` for all of it; `.save(path)` writes a 16-bit WAV."""
+    """Synthesized speech, already generating. Iterate it for float32 mono PCM chunks (arrays) as
+    they are produced, or read `.audio` for all of it; `.save(path)` writes a 16-bit WAV."""
 
     def __init__(self, ptr, model: "Model"):
         super().__init__(ptr, model)
@@ -572,9 +591,12 @@ class Speech(_Stream):
 
     @property
     def audio(self):
-        """All samples, float32 mono at `sample_rate`; waits for the end."""
+        """All samples, a float32 array, mono at `sample_rate`; waits for the end."""
         self._finish()
-        return _np.concatenate(self._chunks) if self._chunks else _np.zeros(0, dtype=_np.float32)
+        out = _array.array("f")
+        for chunk in self._chunks:
+            out.extend(chunk)
+        return out
 
     def save(self, path) -> None:
         """Writes all of the audio as a 16-bit mono WAV."""
@@ -583,7 +605,7 @@ class Speech(_Stream):
             out.setnchannels(1)
             out.setsampwidth(2)
             out.setframerate(self.sample_rate)
-            out.writeframes((_np.clip(pcm, -1, 1) * 32767).astype(_np.int16).tobytes())
+            out.writeframes(_array.array("h", (int(max(-1.0, min(1.0, s)) * 32767) for s in pcm)).tobytes())
 
 
 # ---- models ----
@@ -817,29 +839,30 @@ class Embedder(_Tokens):
         return self._info["embedding_dimension"]
 
     def embed(self, texts, *, dimension: int | None = None):
-        """One float32 vector per text, a (len(texts), dimension) array; a single string is a list
-        of one. `dimension` truncates (and renormalises) a Matryoshka model's vectors."""
+        """A float32 array per text, in the texts' order; a single string is a list of one.
+        `dimension` truncates (and renormalises) a Matryoshka model's vectors."""
         texts = [texts] if isinstance(texts, str) else list(texts)
         strings = _strings(texts, "embed")
         n = _check(N.lib.jinfer_embed(self._h, strings, len(texts), dimension or 0, None, 0))
         buf, ptr = _floats(n)
         _check(N.lib.jinfer_embed(self._h, strings, len(texts), dimension or 0, ptr, n))
-        return buf.reshape(len(texts), n // max(len(texts), 1))
+        d = n // max(len(texts), 1)
+        return [buf[i * d:(i + 1) * d] for i in range(len(texts))]
 
 
 class Reranker(_Context):
     """A reranking model: `rerank` scores documents against a query."""
 
     def rerank(self, query: str, documents, *, instruction: str | None = None):
-        """A float32 relevance score per document, in the documents' order; higher is more
-        relevant. A single string is a list of one; `instruction` replaces the model's default."""
+        """A relevance score per document, in the documents' order; higher is more relevant.
+        A single string is a list of one; `instruction` replaces the model's default."""
         if not isinstance(query, str):
             raise TypeError(f"query: expected str, got {type(query).__name__}")
         documents = [documents] if isinstance(documents, str) else list(documents)
         buf, ptr = _floats(len(documents))
         _check(N.lib.jinfer_rerank(self._h, query.encode(), _strings(documents, "rerank"), len(documents),
                                    instruction.encode() if instruction else None, ptr))
-        return buf
+        return buf.tolist()
 
 
 class Speaker(Model):
@@ -866,13 +889,14 @@ class Transcriber(Model):
         return self._info["sample_rate"]
 
     def transcribe(self, audio, *, sample_rate: int | None = None) -> Transcript:
-        """Transcribes a WAV file (a path) or float32 mono PCM at `sample_rate`; any rate, the
-        library resamples. The Transcript has the text and timed words."""
+        """Transcribes a WAV file (a path) or mono PCM samples at `sample_rate`: a float32 buffer
+        (array, numpy) or any iterable of numbers; any rate, the library resamples. The Transcript
+        has the text and timed words."""
         if isinstance(audio, (str, os.PathLike)):
             audio, sample_rate = _read_wav(audio)
         elif sample_rate is None:
             raise InvalidArgument("sample_rate is required for PCM samples")
-        buf = _np.ascontiguousarray(audio, dtype=_np.float32)
+        buf = _f32(audio)
         ptr = (C.c_float * len(buf)).from_buffer(buf) if len(buf) else None  # copied by the call
         with _Stream(N.lib.jinfer_transcribe(self._h, ptr, len(buf), sample_rate), self) as s:
             result = s._finish()
