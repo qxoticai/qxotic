@@ -229,6 +229,9 @@
                 <buildArg>--native-compiler-path=${project.basedir}/src/main/c/jinfer-cc.sh</buildArg>
                 <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
                 <buildArg>-EJINFER_CC_LOG</buildArg>
+                <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
+                <buildArg>-H:-JNIExportSymbols</buildArg>
+                <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- jinfer_model_options is read through the header itself (Options.Directives), which includes toknroll.h -->
                 <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
                 <!-- libjam linked into the image (StaticJam): the archive jam-native's jam_static target

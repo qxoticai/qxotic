@@ -9,15 +9,26 @@ PLATFORM := $(OS)-$(ARCH)
 LIBFILE := $(if $(filter darwin,$(OS)),libtoknroll.dylib,libtoknroll.so)
 LIB   := target/$(LIBFILE)
 STATIC := target/libtoknroll.a
-SYSLIBS := -lz -ldl -lpthread -lm -lrt   # what the image needs from the system; the shared library carries these as NEEDED
+SYSLIBS := -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt)   # what the image needs from the system; the shared library carries these as NEEDED
+# the exported (defined, global) symbol names of a shared library or archive; Mach-O names lose their underscore
+EXPORTS = $(if $(filter darwin,$(OS)),nm -gU $(1) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(1) | awk '{print $$3}')
 # what `make check` tokenizes: a hub repository, metadata only
 SOURCE ?= Qwen/Qwen3-0.6B
-VERSION := $(shell grep -oE 'TOKNROLL_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/toknroll.h | awk '{print $$2}' | paste -sd.)
+VERSION := $(shell grep -oE 'TOKNROLL_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/toknroll.h | awk '{print $$2}' | paste -sd. -)
 DIST  := libtoknroll-$(VERSION)-$(PLATFORM)
-# The wheel is pure Python over the library it carries: py3-none, tagged with Python's own platform
-# name, where a Linux wheel states the glibc floor read off the library, so it cannot drift from what was linked.
+# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
+# floor is read off the library itself, the glibc version on Linux and the minimum macOS on a Mac, so it
+# cannot drift from what was linked; the rest is Python's own platform name.
 GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
-WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/')
+MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
+WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
+ifeq ($(OS),darwin)
+# What the library and the wheel tag promise: GraalVM 25's own darwin runtime objects are built for 14.0.
+# Reaches the pom's cc through the environment and native-image's linker through -E. (Apple's make 3.81:
+# export and default on two lines.)
+MACOSX_DEPLOYMENT_TARGET ?= 14.0
+export MACOSX_DEPLOYMENT_TARGET
+endif
 .DEFAULT_GOAL := help
 
 help:
@@ -39,7 +50,7 @@ libtoknroll:
 # Every function the header declares is exported, and nothing toknroll_* beyond the header is.
 check-exports:
 	@grep -E '^TOKNROLL_API' include/toknroll.h | grep -oE 'toknroll_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@nm -D --defined-only $(LIB) | awk '{print $$3}' | grep -E '^toknroll_' | sort > target/exported.syms
+	@$(call EXPORTS,$(LIB)) | grep -E '^toknroll_' | sort > target/exported.syms
 	@diff target/header.syms target/exported.syms && echo "exports match the header: $$(wc -l < target/header.syms) functions"
 
 target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
@@ -51,9 +62,9 @@ target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
 
 check-static: target/tokenize-static
 	@grep -E '^TOKNROLL_API' include/toknroll.h | grep -oE 'toknroll_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@nm --defined-only -g $(STATIC) | awk 'NF == 3 {print $$3}' | sort > target/static.syms   # NF: the member header and blank lines nm prints for an archive
+	@nm --defined-only -g $(STATIC) | awk 'NF == 3 {print $$3}' | sed 's/^_//' | sort > target/static.syms   # NF: the member header and blank lines nm prints for an archive
 	@diff target/header.syms target/static.syms && echo "the static archive exports the header's $$(wc -l < target/header.syms) functions and nothing else"
-	@! ldd target/tokenize-static | grep -q toknroll && echo "the static example needs no libtoknroll"
+	@! $(if $(filter darwin,$(OS)),otool -L,ldd) target/tokenize-static | grep -q toknroll && echo "the static example needs no libtoknroll"
 	./target/tokenize-static $(SOURCE) "Hello, Tok'n'Roll!"
 
 check-version: ## the header, the wheel, the package and the pom name the same release

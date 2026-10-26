@@ -5,18 +5,27 @@ OPT   := $(if $(QUICK),-Ob,-O3)
 OS    := $(shell uname -s | tr A-Z a-z)
 ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
 # The ISA level the image is built for; the kernels' vector width follows it (VectorWidth, at
-# build time). x86-64-v3 (AVX2, 2013) is GraalVM's own default on x86-64, spelled out because the
-# plugin cannot leave the flag out, and the floor: below it the kernels are not usable.
-MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,compatibility))
+# build time). x86-64-v3 (AVX2, 2013) and armv8.1-a are GraalVM's own defaults, spelled out because
+# the plugin cannot leave the flag out; x86-64-v3 is the floor there, below it the kernels are not usable.
+MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,armv8.1-a))
 PLATFORM := $(OS)-$(ARCH)
 LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
 LIB   := target/$(LIBFILE)
-VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd.)
+VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd. -)
 DIST  := libjinfer-$(VERSION)-$(PLATFORM)
-# The wheel is pure Python over the library it carries: py3-none, tagged with Python's own platform
-# name, where a Linux wheel states the glibc floor read off the library, so it cannot drift from what was linked.
+# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
+# floor is read off the library itself, the glibc version on Linux and the minimum macOS on a Mac, so it
+# cannot drift from what was linked; the rest is Python's own platform name.
 GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
-WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/')
+MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
+WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
+ifeq ($(OS),darwin)
+# What the library and the wheel tag promise: GraalVM 25's own darwin runtime objects are built for 14.0.
+# Reaches the pom's cc through the environment and native-image's linker through -E. (Apple's make 3.81:
+# export and default on two lines.)
+MACOSX_DEPLOYMENT_TARGET ?= 14.0
+export MACOSX_DEPLOYMENT_TARGET
+endif
 .DEFAULT_GOAL := help
 
 help:
@@ -40,7 +49,7 @@ TOKNROLL_INCLUDE := $(ROOT)/toknroll/toknroll-native/include
 # Every function the two headers declare is exported, and nothing jinfer_* or toknroll_* beyond them is.
 check-exports:
 	@grep -hE '^(JINFER|TOKNROLL)_API' include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h | grep -oE '(jinfer|toknroll)_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@nm -D --defined-only $(LIB) | awk '{print $$3}' | grep -E '^(jinfer|toknroll)_' | sort > target/exported.syms
+	@$(if $(filter darwin,$(OS)),nm -gU $(LIB) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(LIB) | awk '{print $$3}') | grep -E '^(jinfer|toknroll)_' | sort > target/exported.syms
 	@diff target/header.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms) functions"
 
 target/chat: examples/c/chat.c include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h $(LIB)
