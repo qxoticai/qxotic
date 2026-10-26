@@ -3,7 +3,9 @@ package com.qxotic.jinfer.codecs;
 import com.qxotic.jinfer.media.Media;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -19,29 +21,58 @@ public final class FfmpegImageDecoder implements ImageDecoder {
 
     @Override
     public Media.Image load(Path path) throws IOException {
-        return parsePpm(Subprocess.run(ffmpegArgs(path.toString()), null));
+        byte[] head;
+        try (var in = Files.newInputStream(path)) {
+            head = in.readNBytes(16);
+        }
+        return parsePpm(Subprocess.run(ffmpegArgs(path.toString(), demuxer(head)), null));
     }
 
     @Override
     public Media.Image decode(byte[] encoded) throws IOException {
-        return parsePpm(Subprocess.run(ffmpegArgs("pipe:0"), encoded));
+        return parsePpm(Subprocess.run(ffmpegArgs("pipe:0", demuxer(encoded)), encoded));
     }
 
-    private static List<String> ffmpegArgs(String input) {
-        return List.of(
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                input,
-                "-f",
-                "image2pipe",
-                "-vcodec",
-                "ppm",
-                "-pix_fmt",
-                "rgb24",
-                "-");
+    /**
+     * The demuxer the bytes' signature names, or null to let ffmpeg probe. Forced, because ffmpeg's
+     * probe is a best match, not a verdict: a PNG with a broken header probes as CD+G karaoke
+     * graphics and decodes to a black 300x216 frame, and the model answers about an image nobody
+     * sent. A signature that names a format is held to that format.
+     */
+    static String demuxer(byte[] head) {
+        if (starts(head, 0, "\u0089PNG")) return "png_pipe";
+        if (head.length >= 2 && (head[0] & 0xff) == 0xff && (head[1] & 0xff) == 0xd8)
+            return "jpeg_pipe";
+        if (starts(head, 0, "GIF8")) return "gif";
+        if (starts(head, 0, "RIFF") && starts(head, 8, "WEBP")) return "webp_pipe";
+        if (starts(head, 0, "BM")) return "bmp_pipe";
+        if (starts(head, 0, "II*\u0000") || starts(head, 0, "MM\u0000*")) return "tiff_pipe";
+        return null;
+    }
+
+    private static boolean starts(byte[] head, int at, String ascii) {
+        if (head.length < at + ascii.length()) return false;
+        for (int i = 0; i < ascii.length(); i++)
+            if ((head[at + i] & 0xff) != ascii.charAt(i)) return false;
+        return true;
+    }
+
+    private static List<String> ffmpegArgs(String input, String demuxer) {
+        List<String> args =
+                new ArrayList<>(List.of("ffmpeg", "-hide_banner", "-loglevel", "error"));
+        if (demuxer != null) args.addAll(List.of("-f", demuxer));
+        args.addAll(
+                List.of(
+                        "-i",
+                        input,
+                        "-f",
+                        "image2pipe",
+                        "-vcodec",
+                        "ppm",
+                        "-pix_fmt",
+                        "rgb24",
+                        "-"));
+        return args;
     }
 
     /**
