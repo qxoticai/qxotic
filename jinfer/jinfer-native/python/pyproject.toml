@@ -40,8 +40,3 @@ packages = ["jinfer"]
 
 [tool.setuptools.package-data]
 jinfer = ["lib/*/*", "py.typed"]
-
-# The package is pure Python over a native library it carries, so the wheel is py3-none but
-# platform-tagged. The glibc floor is the one the library was linked against (objdump -T).
-[tool.distutils.bdist_wheel]
-plat-name = "manylinux_2_34_x86_64"
