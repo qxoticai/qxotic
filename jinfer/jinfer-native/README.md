@@ -19,10 +19,10 @@ a model is reference-counted by its states and streams; any thread may call, one
 
 ## Build
 
-GraalVM 25.0.3 or later (`native-image`; `JAVA_HOME` picks it, GraalVM CE for the binaries we ship), a C compiler and Maven. From this directory:
+GraalVM 25.0.4 or later (`native-image`; `JAVA_HOME` picks it, GraalVM CE for the binaries we ship), a C compiler and Maven. From this directory:
 
 ```sh
-make libjinfer            # -O3 -march=x86-64-v3 (AVX2), what ships -> target/libjinfer.so; MARCH=x86-64-v4 for AVX-512
+make libjinfer            # -O3 -march=x86-64-v3 (GraalVM's default on x86-64, AVX2), what ships -> target/libjinfer.so; MARCH=x86-64-v4 for AVX-512
 make libjinfer QUICK=1    # -Ob -march=native: links and runs in seconds, kernels unoptimized, never measure it
 make check                # versions agree, header vs exports, the C example, the Python test (cached models)
 make qa                   # threads, lifetime at interpreter exit, soak, offline, tools, unicode

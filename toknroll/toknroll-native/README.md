@@ -19,7 +19,7 @@ The contract is the one `jinfer.h` keeps: pointer-returning functions return NUL
 
 ## Build and check
 
-GraalVM 25.0.3 or later (`native-image`; `JAVA_HOME` picks it, GraalVM CE for the binaries we ship), a C compiler and Maven. From this directory:
+GraalVM 25.0.4 or later (`native-image`; `JAVA_HOME` picks it, GraalVM CE for the binaries we ship), a C compiler and Maven. From this directory:
 
 ```sh
 make libtoknroll            # GraalVM Native Image -> target/libtoknroll.so and target/libtoknroll.a

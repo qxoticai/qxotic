@@ -432,7 +432,7 @@ make native
 ./bin/jinfer --model ./model.gguf chat
 ```
 
-One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.3+.
+One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.4+.
 
 > [!IMPORTANT]
 > **`jinfer` does not use `jota`'s Tensor API**, instead, it uses `jota`'s low-level memory APIs, which also support CuTe nested layouts and strong encapsulation, but without multi-backend kernel generation.  

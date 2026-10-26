@@ -5,7 +5,8 @@ OPT   := $(if $(QUICK),-Ob,-O3)
 OS    := $(shell uname -s | tr A-Z a-z)
 ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
 # The ISA level the image is built for; the kernels' vector width follows it (VectorWidth, at
-# build time). x86-64-v3 (AVX2, 2013) is the floor: below it the kernels are not usable.
+# build time). x86-64-v3 (AVX2, 2013) is GraalVM's own default on x86-64, spelled out because the
+# plugin cannot leave the flag out, and the floor: below it the kernels are not usable.
 MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,compatibility))
 PLATFORM := $(OS)-$(ARCH)
 LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
@@ -15,7 +16,7 @@ DIST  := libjinfer-$(VERSION)-$(PLATFORM)
 .DEFAULT_GOAL := help
 
 help:
-	@echo 'make libjinfer             -O3 -march=$(MARCH), what ships -> $(LIB); MARCH=x86-64-v4 for AVX-512'
+	@echo 'make libjinfer             -O3 -march=$(MARCH) (GraalVM'"'"'s default), what ships -> $(LIB); MARCH=x86-64-v4 for AVX-512'
 	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
 	@echo 'make check                 header vs exports, C example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
