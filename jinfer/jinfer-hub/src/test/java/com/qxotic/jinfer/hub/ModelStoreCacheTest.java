@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -218,7 +219,7 @@ class ModelStoreCacheTest {
                 assert "weights".equals(Files.readString(store.resolve(ref)));
                 assert source.fetched();
                 System.out.println("online");
-            } catch (IllegalStateException offline) {
+            } catch (UncheckedIOException offline) {
                 String setting =
                         offline.getMessage().contains("-Djinfer.offline")
                                 ? "-Djinfer.offline"
@@ -241,7 +242,7 @@ class ModelStoreCacheTest {
 
         var failure =
                 assertThrows(
-                        IllegalStateException.class, () -> store.resolve("hf.co/acme/thing:Q8_0"));
+                        UncheckedIOException.class, () -> store.resolve("hf.co/acme/thing:Q8_0"));
         assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
         assertTrue(
                 failure.getMessage().contains(root.resolve("hf.co/acme/thing") + " or "),
@@ -264,7 +265,7 @@ class ModelStoreCacheTest {
 
         var failure =
                 assertThrows(
-                        IllegalStateException.class,
+                        UncheckedIOException.class,
                         () -> ModelStore.of(root).resolve("hf.co/acme/thing:Q8_0"));
         assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
     }

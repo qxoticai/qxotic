@@ -54,6 +54,7 @@ final class Errors {
     }
 
     static int set(Throwable t) {
+        if (t instanceof java.io.UncheckedIOException u && u.getCause() != null) t = u.getCause();
         if (t instanceof ExceptionInInitializerError e && e.getCause() != null)
             t = e.getCause(); // a -Djinfer.* value a flags class refused: its own
         // message is the one to report
