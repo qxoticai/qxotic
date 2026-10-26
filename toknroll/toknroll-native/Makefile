@@ -14,6 +14,10 @@ SYSLIBS := -lz -ldl -lpthread -lm -lrt   # what the image needs from the system;
 SOURCE ?= Qwen/Qwen3-0.6B
 VERSION := $(shell grep -oE 'TOKNROLL_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/toknroll.h | awk '{print $$2}' | paste -sd.)
 DIST  := libtoknroll-$(VERSION)-$(PLATFORM)
+# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
+# glibc floor is read off the library itself, so it cannot drift from what was linked.
+GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
+WHEEL_PLAT = $(if $(filter darwin,$(OS)),macosx_11_0_$(if $(filter aarch64,$(ARCH)),arm64,x86_64),manylinux_$(GLIBC)_$(subst x86-64,x86_64,$(ARCH)))
 .DEFAULT_GOAL := help
 
 help:
@@ -21,8 +25,8 @@ help:
 	@echo 'make libtoknroll QUICK=1   this machine, quick build (-Ob -march=native)'
 	@echo 'make check                 header vs exports, C example, Python test'
 	@echo 'make python                stage $(LIB) into python/toknroll/lib/$(PLATFORM)/'
-	@echo 'make wheel                 the platform-tagged wheel -> target/wheel/'
-	@echo 'make check-wheel           install the wheel in a fresh venv and run the suite from outside the tree'
+	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
+	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the suite from outside the tree'
 
 libtoknroll:
 	@$(MAKE) -s -C $(ROOT) check-native-image
@@ -67,11 +71,12 @@ python: $(LIB)
 
 wheel: python
 	cp $(ROOT)/LICENSE python/LICENSE
-	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps --no-build-isolation -q
+	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps -q -C--build-option=--plat-name=$(WHEEL_PLAT)
 
-# The wheel as a user gets it: installed into a fresh venv and tested from outside the checkout.
+# The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv, tested from outside the checkout.
 check-wheel: wheel
-	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl
+	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q twine target/wheel/*.whl
+	target/wheelenv/bin/twine check --strict target/wheel/*.whl
 	cd target && TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
 	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
 

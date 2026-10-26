@@ -13,6 +13,10 @@ LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
 LIB   := target/$(LIBFILE)
 VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd.)
 DIST  := libjinfer-$(VERSION)-$(PLATFORM)
+# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
+# glibc floor is read off the library itself, so it cannot drift from what was linked.
+GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
+WHEEL_PLAT = $(if $(filter darwin,$(OS)),macosx_11_0_$(if $(filter aarch64,$(ARCH)),arm64,x86_64),manylinux_$(GLIBC)_$(subst x86-64,x86_64,$(ARCH)))
 .DEFAULT_GOAL := help
 
 help:
@@ -21,8 +25,8 @@ help:
 	@echo 'make check                 header vs exports, C example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
 	@echo 'make python                stage $(LIB) into python/jinfer/lib/$(PLATFORM)/'
-	@echo 'make wheel                 the platform-tagged wheel -> target/wheel/'
-	@echo 'make check-wheel           the wheel as a user gets it: a fresh venv, pip install, the Python test from outside the checkout'
+	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
+	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the Python test from outside the checkout'
 	@echo 'make dist                  release bundle: header, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
 
 libjinfer:
@@ -59,11 +63,14 @@ python: $(LIB)
 
 wheel: python
 	cp $(ROOT)/LICENSE python/LICENSE
-	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps --no-build-isolation -q
+	rm -rf target/wheel python/build && cd python && python3 -m pip wheel . -w ../target/wheel --no-deps -q -C--build-option=--plat-name=$(WHEEL_PLAT)
 
-# The wheel as a user gets it: installed into a fresh venv and tested from outside the checkout.
+# The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the
+# toknroll wheel it depends on, tested from outside the checkout.
 check-wheel: wheel
-	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(ROOT)/toknroll/toknroll-native/target/wheel/*.whl
+	$(MAKE) -s -C $(ROOT)/toknroll/toknroll-native wheel
+	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q twine target/wheel/*.whl $(ROOT)/toknroll/toknroll-native/target/wheel/*.whl
+	target/wheelenv/bin/twine check --strict target/wheel/*.whl
 	cd target && JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
 	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
 

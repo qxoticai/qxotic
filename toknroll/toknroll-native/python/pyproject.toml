@@ -40,7 +40,3 @@ packages = ["toknroll"]
 
 [tool.setuptools.package-data]
 toknroll = ["lib/*/*", "py.typed"]
-
-# Pure Python over a native library it carries, so the wheel is py3-none but platform-tagged.
-[tool.distutils.bdist_wheel]
-plat-name = "manylinux_2_34_x86_64"
