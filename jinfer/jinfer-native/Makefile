@@ -11,6 +11,8 @@ MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,armv8.1-a)
 PLATFORM := $(OS)-$(ARCH)
 LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
 LIB   := target/$(LIBFILE)
+# the exported (defined, global) symbol names of a shared library or archive; Mach-O names lose their underscore
+EXPORTS = $(if $(filter darwin,$(OS)),nm -gU $(1) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(1) | awk '{print $$3}')
 VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd. -)
 DIST  := libjinfer-$(VERSION)-$(PLATFORM)
 # The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
@@ -19,13 +21,11 @@ DIST  := libjinfer-$(VERSION)-$(PLATFORM)
 GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
 MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
 WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
-ifeq ($(OS),darwin)
-# What the library and the wheel tag promise: GraalVM 25's own darwin runtime objects are built for 14.0.
-# Reaches the pom's cc through the environment and native-image's linker through -E. (Apple's make 3.81:
-# export and default on two lines.)
-MACOSX_DEPLOYMENT_TARGET ?= 14.0
+# macOS: what the library and the wheel tag promise, 14.0 being what GraalVM 25's own darwin runtime objects
+# are built for. Reaches the pom's cc through the environment and native-image's linker through -E; empty
+# elsewhere, which compilers ignore. (No trailing comment: Apple's make would hand clang the spaces.)
+MACOSX_DEPLOYMENT_TARGET ?= $(if $(filter darwin,$(OS)),14.0)
 export MACOSX_DEPLOYMENT_TARGET
-endif
 .DEFAULT_GOAL := help
 
 help:
@@ -49,7 +49,7 @@ TOKNROLL_INCLUDE := $(ROOT)/toknroll/toknroll-native/include
 # Every function the two headers declare is exported, and nothing jinfer_* or toknroll_* beyond them is.
 check-exports:
 	@grep -hE '^(JINFER|TOKNROLL)_API' include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h | grep -oE '(jinfer|toknroll)_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@$(if $(filter darwin,$(OS)),nm -gU $(LIB) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(LIB) | awk '{print $$3}') | grep -E '^(jinfer|toknroll)_' | sort > target/exported.syms
+	@$(call EXPORTS,$(LIB)) | grep -E '^(jinfer|toknroll)_' | sort > target/exported.syms
 	@diff target/header.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms) functions"
 
 target/chat: examples/c/chat.c include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h $(LIB)

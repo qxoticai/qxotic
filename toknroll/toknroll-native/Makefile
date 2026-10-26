@@ -22,13 +22,11 @@ DIST  := libtoknroll-$(VERSION)-$(PLATFORM)
 GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
 MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
 WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
-ifeq ($(OS),darwin)
-# What the library and the wheel tag promise: GraalVM 25's own darwin runtime objects are built for 14.0.
-# Reaches the pom's cc through the environment and native-image's linker through -E. (Apple's make 3.81:
-# export and default on two lines.)
-MACOSX_DEPLOYMENT_TARGET ?= 14.0
+# macOS: what the library and the wheel tag promise, 14.0 being what GraalVM 25's own darwin runtime objects
+# are built for. Reaches the pom's cc through the environment and native-image's linker through -E; empty
+# elsewhere, which compilers ignore. (No trailing comment: Apple's make would hand clang the spaces.)
+MACOSX_DEPLOYMENT_TARGET ?= $(if $(filter darwin,$(OS)),14.0)
 export MACOSX_DEPLOYMENT_TARGET
-endif
 .DEFAULT_GOAL := help
 
 help:

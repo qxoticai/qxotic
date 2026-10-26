@@ -41,7 +41,7 @@ Remote metadata is fetched with `curl`, which must be on the PATH for hub source
 ## Install
 
 ```sh
-pip install toknroll            # the wheel carries the library: Linux x86_64 (glibc 2.34 or later) today
+pip install toknroll            # the wheel carries the library: Linux x86_64 (glibc 2.34 or later), macOS 14 or later on Apple silicon
 ```
 
 From a source checkout, `make python` in `toknroll/toknroll-native` stages the freshly built library into the package, then `pip install python/`.
