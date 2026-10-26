@@ -13,10 +13,10 @@ LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
 LIB   := target/$(LIBFILE)
 VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd.)
 DIST  := libjinfer-$(VERSION)-$(PLATFORM)
-# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
-# glibc floor is read off the library itself, so it cannot drift from what was linked.
+# The wheel is pure Python over the library it carries: py3-none, tagged with Python's own platform
+# name, where a Linux wheel states the glibc floor read off the library, so it cannot drift from what was linked.
 GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
-WHEEL_PLAT = $(if $(filter darwin,$(OS)),macosx_11_0_$(if $(filter aarch64,$(ARCH)),arm64,x86_64),manylinux_$(GLIBC)_$(subst x86-64,x86_64,$(ARCH)))
+WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/')
 .DEFAULT_GOAL := help
 
 help:
