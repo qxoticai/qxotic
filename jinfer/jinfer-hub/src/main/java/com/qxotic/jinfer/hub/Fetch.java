@@ -1,14 +1,12 @@
 package com.qxotic.jinfer.hub;
 
+import com.qxotic.fetch.Transport;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.RandomAccessFile;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -71,17 +69,8 @@ final class Fetch {
 
     private Fetch() {}
 
-    /**
-     * HTTP/1.1 on purpose: HTTP/2 would multiplex every ranged GET onto ONE connection, and it is
-     * the connections, not the requests, that the parallel path exists to multiply.
-     */
-    private static final HttpClient HTTP =
-            HttpClient.newBuilder()
-                    .version(HttpClient.Version.HTTP_1_1)
-                    .followRedirects(HttpClient.Redirect.NEVER) // see the class note
-                    .proxy(Proxies.selector())
-                    .connectTimeout(Duration.ofSeconds(30))
-                    .build();
+    /* HTTP is com.qxotic.fetch.Transport's: the JDK client on a JVM, curl as a process in a native
+     * image, which so carries no TLS stack. Redirects are followed here (see the class note). */
 
     private static final int MAX_REDIRECTS = 5;
     private static final int MAX_ATTEMPTS = 3;
@@ -384,20 +373,18 @@ final class Fetch {
         Map<String, String> ranged = downloadHeaders(headers);
         ranged.put("Range", "bytes=0-0");
         try {
-            HttpResponse<InputStream> response = send(URI.create(url), ranged, LISTING_TIMEOUT);
+            Transport.Response response = send(URI.create(url), ranged, LISTING_TIMEOUT);
             try (InputStream drain = response.body()) {
                 // NEVER readAllBytes here: a server that ignores Range answers 200 with the
                 // WHOLE file, and draining it would stream gigabytes into nothing
                 drain.readNBytes(8 * 1024);
             }
-            String contentRange = response.headers().firstValue("content-range").orElse("");
+            String contentRange = header(response, "content-range", "");
             int slash = contentRange.lastIndexOf('/');
-            if (response.statusCode() == 206 && slash > 0) {
+            if (response.status() == 206 && slash > 0) {
                 return Long.parseLong(contentRange.substring(slash + 1).strip());
             }
-            return response.statusCode() == 200
-                    ? response.headers().firstValueAsLong("content-length").orElse(-1)
-                    : -1;
+            return response.status() == 200 ? contentLength(response, -1) : -1;
         } catch (IOException | NumberFormatException unknown) {
             return -1; // a size we cannot learn is not a reason to refuse the download
         }
@@ -405,13 +392,13 @@ final class Fetch {
 
     /** A GET whose body is a String - the listing APIs. */
     static String getString(String url, Map<String, String> headers) throws IOException {
-        HttpResponse<InputStream> response = send(URI.create(url), headers, LISTING_TIMEOUT);
+        Transport.Response response = send(URI.create(url), headers, LISTING_TIMEOUT);
         try (InputStream in = response.body()) {
             // capped: a listing is megabytes at the wildest; an endless body must not be our OOM
             byte[] body = in.readNBytes(64 << 20);
-            if (response.statusCode() != 200) {
+            if (response.status() != 200) {
                 throw new HttpStatusException(
-                        response.statusCode(), url, new String(body, StandardCharsets.UTF_8));
+                        response.status(), url, new String(body, StandardCharsets.UTF_8));
             }
             return new String(body, StandardCharsets.UTF_8);
         }
@@ -770,9 +757,9 @@ final class Fetch {
             long at = start;
             Stall stall = null;
             try {
-                HttpResponse<InputStream> response = send(URI.create(url), ranged, headerTimeout());
+                Transport.Response response = send(URI.create(url), ranged, headerTimeout());
                 try (InputStream in = body(response, url, true)) {
-                    if (response.statusCode() == 200) {
+                    if (response.status() == 200) {
                         throw new SingleStreamRequired("server ignored Range: " + url);
                     }
                     validateRange(response, start, start + length - 1, size);
@@ -848,9 +835,9 @@ final class Fetch {
                     checksum && value == null && Files.exists(part) && Files.size(part) > 0;
         }
 
-        synchronized void accept(HttpResponse<?> response, boolean ranged) throws IOException {
+        synchronized void accept(Transport.Response response, boolean ranged) throws IOException {
             validateEncoding(response);
-            String received = strongETag(response.headers().firstValue("etag").orElse(null));
+            String received = strongETag(response.header("etag"));
             if (received == null) {
                 if (ranged && !checksum) {
                     throw new SingleStreamRequired("no strong ETag or checksum");
@@ -877,17 +864,17 @@ final class Fetch {
         return value != null && STRONG_ETAG.matcher(value).matches() ? value : null;
     }
 
-    private static void validateEncoding(HttpResponse<?> response) throws InvalidTransfer {
-        String encoding = response.headers().firstValue("content-encoding").orElse("identity");
+    private static void validateEncoding(Transport.Response response) throws InvalidTransfer {
+        String encoding = header(response, "content-encoding", "identity");
         if (!encoding.equalsIgnoreCase("identity")) {
             throw new InvalidTransfer("unexpected Content-Encoding: " + encoding);
         }
     }
 
     /** Validates a single range and returns its total size; -1 means an unknown end or total. */
-    private static long validateRange(HttpResponse<?> response, long start, long end, long size)
+    private static long validateRange(Transport.Response response, long start, long end, long size)
             throws InvalidTransfer {
-        String range = response.headers().firstValue("content-range").orElse("");
+        String range = header(response, "content-range", "");
         var match = CONTENT_RANGE.matcher(range);
         String mismatch =
                 "Content-Range '"
@@ -909,8 +896,7 @@ final class Fetch {
                     || (size >= 0 && total != size)) {
                 throw new InvalidTransfer(mismatch);
             }
-            long length =
-                    response.headers().firstValueAsLong("content-length").orElse(last - first + 1);
+            long length = contentLength(response, last - first + 1);
             if (length != last - first + 1) {
                 throw new InvalidTransfer(
                         "invalid Content-Length " + length + " for Content-Range '" + range + "'");
@@ -1014,17 +1000,17 @@ final class Fetch {
                 ranged.put("If-Range", validator.value);
             }
         }
-        HttpResponse<InputStream> response = send(URI.create(url), ranged, headerTimeout());
+        Transport.Response response = send(URI.create(url), ranged, headerTimeout());
         Stall stall = null;
         try (InputStream in = body(response, url, true)) {
-            if (have > 0 && response.statusCode() == 200) {
+            if (have > 0 && response.status() == 200) {
                 // the server ignored the range, or the file changed: start over rather than append
                 have = 0;
                 digest = sha256 == null ? null : sha256Digest();
                 discard(part);
                 validator = new Validator(part, sha256 != null);
             }
-            if (response.statusCode() == 206) {
+            if (response.status() == 206) {
                 if (have == 0) throw new InvalidTransfer("unsolicited partial response: " + url);
                 expectedSize =
                         validateRange(
@@ -1074,15 +1060,16 @@ final class Fetch {
      * Sends a GET, waiting out a server rate limit (HTTP 429, or 503 with a stated wait) instead of
      * failing on it - see {@link RateLimit}.
      */
-    private static HttpResponse<InputStream> send(
-            URI uri, Map<String, String> headers, Duration timeout) throws IOException {
+    private static Transport.Response send(URI uri, Map<String, String> headers, Duration timeout)
+            throws IOException {
         long waitedNanos = 0;
         for (int backoff = 0; ; backoff++) {
-            HttpResponse<InputStream> response = sendOnce(uri, headers, timeout);
-            int status = response.statusCode();
+            Sent sent = sendOnce(uri, headers, timeout);
+            Transport.Response response = sent.response();
+            int status = response.status();
             Duration asked =
                     status == 429 || status == 503
-                            ? RateLimit.requested(response.headers(), System.currentTimeMillis())
+                            ? RateLimit.requested(response, System.currentTimeMillis())
                             : null;
             if (status != 429 && asked == null) {
                 return response; // a 503 without a stated wait is an outage, not a rate limit
@@ -1102,8 +1089,8 @@ final class Fetch {
             if (Duration.ofNanos(waitedNanos).plus(wait).compareTo(RateLimit.BUDGET) > 0) {
                 return response;
             }
-            response.body().close();
-            String host = response.uri().getHost();
+            response.close();
+            String host = sent.uri().getHost();
             if (RateLimit.hold(host, wait)) {
                 announce(
                         host
@@ -1124,32 +1111,29 @@ final class Fetch {
         }
     }
 
+    /** A response and the URI that answered it, after the redirects. */
+    private record Sent(Transport.Response response, URI uri) {}
+
     /** One GET, following redirects by hand and dropping credentials off-origin. */
-    private static HttpResponse<InputStream> sendOnce(
-            URI uri, Map<String, String> headers, Duration timeout) throws IOException {
+    private static Sent sendOnce(URI uri, Map<String, String> headers, Duration timeout)
+            throws IOException {
         URI current = uri;
         Map<String, String> currentHeaders = headers;
         for (int redirect = 0; ; redirect++) {
-            HttpRequest.Builder request = HttpRequest.newBuilder(current).GET();
-            currentHeaders.forEach(request::header);
-            if (timeout != null) {
-                request.timeout(timeout);
-            }
-            HttpResponse<InputStream> response;
             try {
                 RateLimit.awaitClear(
                         current.getHost()); // a held host is asked nothing until it clears
-                response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted while fetching " + current, e);
             }
-            int status = response.statusCode();
+            Transport.Response response = Transport.system().get(current, currentHeaders, timeout);
+            int status = response.status();
             if (!isRedirect(status)) {
-                return response;
+                return new Sent(response, current);
             }
-            String location = response.headers().firstValue("location").orElse(null);
-            response.body().close();
+            String location = response.header("location");
+            response.close();
             if (location == null || redirect == MAX_REDIRECTS) {
                 throw new IOException("redirect loop or missing Location for " + uri);
             }
@@ -1222,9 +1206,9 @@ final class Fetch {
     }
 
     /** The response body, or the response's own explanation of why there is not one. */
-    private static InputStream body(HttpResponse<InputStream> response, String url, boolean ranged)
+    private static InputStream body(Transport.Response response, String url, boolean ranged)
             throws IOException {
-        int status = response.statusCode();
+        int status = response.status();
         if (status == 200 || (ranged && status == 206)) {
             return response.body();
         }
@@ -1233,6 +1217,17 @@ final class Fetch {
             throw new HttpStatusException(
                     status, url, new String(in.readNBytes(64 * 1024), StandardCharsets.UTF_8));
         }
+    }
+
+    private static String header(Transport.Response response, String name, String fallback) {
+        String value = response.header(name);
+        return value == null ? fallback : value;
+    }
+
+    /** Content-Length: {@code fallback} when absent; malformed is a NumberFormatException. */
+    private static long contentLength(Transport.Response response, long fallback) {
+        String value = response.header("content-length");
+        return value == null ? fallback : Long.parseLong(value.strip());
     }
 
     /** Invalid bytes or metadata cannot be retained as resumable progress. */

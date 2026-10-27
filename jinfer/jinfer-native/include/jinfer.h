@@ -20,6 +20,8 @@
  *             a terminal, as log lines otherwise.
  *   Defaults  A request field left out takes the model file's value, listed by
  *             jinfer_model_info, never the library's.
+ *   Downloads run through curl on the PATH: the library carries no TLS stack of its own.
+ *             -Djinfer.offline=true never downloads; local files need nothing.
  *   Stability MAJOR breaks the ABI, MINOR only adds, PATCH only fixes; 0.x is held to the
  *             same rule as 1.x. A shipped signature, name or default never changes. New
  *             capabilities arrive as new functions and new jinfer_property keys; options

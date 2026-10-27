@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
@@ -31,6 +32,12 @@ public interface Transport {
 
         /** The first value of a header, by case-insensitive name; null when absent. */
         String header(String name);
+
+        /** Every value of a header, by case-insensitive name, in order; empty when absent. */
+        default List<String> headers(String name) {
+            String value = header(name);
+            return value == null ? List.of() : List.of(value);
+        }
 
         InputStream body();
     }

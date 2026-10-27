@@ -47,7 +47,7 @@ so `src/main/c/jinfer-cc.sh` wraps the C compiler and adds `jinfer_*` to that li
 `jinfer_model_options` is read through the header itself (`Options.Directives`), so the layout cannot drift.
 
 The chat dialect is jinfer-server's own: `OpenAiChat` is the public seam the server exposes, so the library and
-`/v1/chat/completions` lower and answer identically. Download progress is jinfer-hub's: a board on stderr at a terminal, log lines otherwise. libjam is linked into the image (`StaticJam`, jam-native's `jam_static` archive linked
+`/v1/chat/completions` lower and answer identically. Downloads run through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local models need nothing. Download progress is jinfer-hub's: a board on stderr at a terminal, log lines otherwise. libjam is linked into the image (`StaticJam`, jam-native's `jam_static` archive linked
 whole, its symbols exported by the wrapper), so nothing is extracted at run time.
 `JINFER_CC_LOG=<file> make libjinfer` records every compiler and linker line the build ran.
 

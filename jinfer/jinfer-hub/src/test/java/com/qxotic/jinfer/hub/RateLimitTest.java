@@ -5,11 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.fetch.Transport;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.http.HttpHeaders;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -28,13 +29,41 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class RateLimitTest {
 
-    private static HttpHeaders headers(Map<String, List<String>> map) {
-        return HttpHeaders.of(map, (name, value) -> true);
+    /** A 429 carrying just these headers. */
+    private static Transport.Response headers(Map<String, List<String>> map) {
+        return new Transport.Response() {
+            @Override
+            public int status() {
+                return 429;
+            }
+
+            @Override
+            public String header(String name) {
+                List<String> values = headers(name);
+                return values.isEmpty() ? null : values.get(0);
+            }
+
+            @Override
+            public List<String> headers(String name) {
+                return map.entrySet().stream()
+                        .filter(e -> e.getKey().equalsIgnoreCase(name))
+                        .flatMap(e -> e.getValue().stream())
+                        .toList();
+            }
+
+            @Override
+            public InputStream body() {
+                return InputStream.nullInputStream();
+            }
+
+            @Override
+            public void close() {}
+        };
     }
 
     @Test
     void readsTheResetOfTheExhaustedHuggingFacePolicy() {
-        HttpHeaders h =
+        Transport.Response h =
                 headers(
                         Map.of(
                                 "RateLimit", List.of("\"resolvers\";r=0;t=21"),
@@ -45,7 +74,7 @@ class RateLimitTest {
 
     @Test
     void ignoresPoliciesThatStillHaveRoom() {
-        HttpHeaders h =
+        Transport.Response h =
                 headers(Map.of("RateLimit", List.of("\"api\";r=5;t=90, \"resolvers\";r=0;t=7")));
         assertEquals(Duration.ofSeconds(7), RateLimit.requested(h, 0));
         assertNull(

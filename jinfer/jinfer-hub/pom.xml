@@ -25,6 +25,11 @@
       <groupId>com.qxotic</groupId>
       <artifactId>json</artifactId>
     </dependency>
+    <!-- One HTTP GET: the JDK client on a JVM, curl as a process in a native image that excludes it -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>fetch</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

@@ -244,6 +244,8 @@
                      by name at run time), so the archive goes in whole or the linker drops every member -->
                 <buildArg>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</buildArg>
                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
+                <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
                 <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
                 <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
                 <!-- the kernels' vector width: the target ISA's unless narrowed here (VectorWidth) -->

@@ -26,7 +26,7 @@ print(conversation.chat("Weather in Zurich?").text)          # runs weather, the
 branch = conversation.fork(); conversation.rewind()          # free: nothing is recomputed
 ```
 
-Models are hub references (`owner/repo:QUANT`, downloaded once and cached) or local paths.
+Models are hub references (`owner/repo:QUANT`, downloaded once with `curl`, which must be on the PATH for that, and cached) or local paths.
 `load` returns the class the file calls for, `LanguageModel`, `Embedder`, `Reranker`, `Speaker` or `Transcriber`, each with only the methods that apply.
 Every call returns a plain typed object; nothing is a dict you have to know the shape of, and nothing in the API mentions tokens, JSON or OpenAI field names.
 
