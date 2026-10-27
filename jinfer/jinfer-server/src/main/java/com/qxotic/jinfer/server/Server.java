@@ -670,89 +670,58 @@ public final class Server {
                         // a spoken reply streams in OpenAI's delta.audio: the transcript and the
                         // speech's PCM16 chunks, each naming the one id the reply is kept under
                         String audioId = request.get("audio") != null ? SpokenTurns.newId() : null;
+                        Function<Map<String, Object>, Map<String, Object>> chunk =
+                                delta ->
+                                        OpenAiSchema.chatCompletionChunk(
+                                                id, modelId, created, delta, null);
                         Sinks sinks =
                                 audioId != null
                                         ? new Sinks(
                                                 deltaSink(
                                                         sse,
                                                         t ->
-                                                                OpenAiSchema.chatCompletionChunk(
-                                                                        id,
-                                                                        modelId,
-                                                                        created,
-                                                                        JsonCodec.object(
-                                                                                "audio",
-                                                                                JsonCodec.object(
-                                                                                        "id",
-                                                                                        audioId,
-                                                                                        "transcript",
-                                                                                        t)),
-                                                                        null)),
+                                                                chunk.apply(
+                                                                        audio(
+                                                                                audioId,
+                                                                                "transcript",
+                                                                                t))),
                                                 null,
                                                 speech ->
                                                         sse.emit(
-                                                                OpenAiSchema.chatCompletionChunk(
-                                                                        id,
-                                                                        modelId,
-                                                                        created,
-                                                                        JsonCodec.object(
-                                                                                "audio",
-                                                                                JsonCodec.object(
-                                                                                        "id",
-                                                                                        audioId,
-                                                                                        "data",
-                                                                                        Base64
-                                                                                                .getEncoder()
-                                                                                                .encodeToString(
-                                                                                                        AudioCodec
-                                                                                                                .pcm16(
-                                                                                                                        speech)))),
-                                                                        null)))
+                                                                chunk.apply(
+                                                                        audio(
+                                                                                audioId,
+                                                                                "data",
+                                                                                Base64.getEncoder()
+                                                                                        .encodeToString(
+                                                                                                AudioCodec
+                                                                                                        .pcm16(
+                                                                                                                speech))))))
                                         : generation.forcedTool(request) != null
                                                 ? Sinks.NONE
                                                 : new Sinks(
                                                         deltaSink(
                                                                 sse,
                                                                 t ->
-                                                                        OpenAiSchema
-                                                                                .chatCompletionChunk(
-                                                                                        id,
-                                                                                        modelId,
-                                                                                        created,
-                                                                                        JsonCodec
-                                                                                                .object(
-                                                                                                        "content",
-                                                                                                        t),
-                                                                                        null)),
+                                                                        chunk.apply(
+                                                                                JsonCodec.object(
+                                                                                        "content",
+                                                                                        t))),
                                                         deltaSink(
                                                                 sse,
                                                                 t ->
-                                                                        OpenAiSchema
-                                                                                .chatCompletionChunk(
-                                                                                        id,
-                                                                                        modelId,
-                                                                                        created,
-                                                                                        JsonCodec
-                                                                                                .object(
-                                                                                                        "reasoning_content",
-                                                                                                        t),
-                                                                                        null)));
+                                                                        chunk.apply(
+                                                                                JsonCodec.object(
+                                                                                        "reasoning_content",
+                                                                                        t))));
                         Reply result = generation.chat(request, messages, sinks, audioId);
-                        if (result.audio() != null) {
+                        if (result.audio() != null)
                             sse.emit(
-                                    OpenAiSchema.chatCompletionChunk(
-                                            id,
-                                            modelId,
-                                            created,
-                                            JsonCodec.object(
-                                                    "audio",
-                                                    JsonCodec.object(
-                                                            "id",
-                                                            result.audio().id(),
-                                                            "expires_at",
-                                                            result.audio().expiresAt())),
-                                            null));
-                        }
+                                    chunk.apply(
+                                            audio(
+                                                    audioId,
+                                                    "expires_at",
+                                                    result.audio().expiresAt())));
                         if (!result.toolCalls().isEmpty()) {
                             sse.emit(
                                     OpenAiSchema.chatCompletionChunk(
@@ -1025,6 +994,11 @@ public final class Server {
      * A streaming text sink: each chunk of generated text becomes one {@code data:} SSE frame built
      * by {@code chunkOf}.
      */
+    /** One field of a spoken stream's {@code delta.audio}, naming the reply's audio id. */
+    private static Map<String, Object> audio(String audioId, String field, Object value) {
+        return JsonCodec.object("audio", JsonCodec.object("id", audioId, field, value));
+    }
+
     private static Consumer<String> deltaSink(
             Sse.Stream sse, Function<String, Map<String, Object>> chunkOf) {
         return deltaSink(sse, null, chunkOf);

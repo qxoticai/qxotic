@@ -109,19 +109,14 @@ final class Generation {
                 if (!(part instanceof Content.Speech speech)) continue;
                 String id = audioId != null ? audioId : SpokenTurns.newId();
                 long expiresAt = turns.put(id, speech, reply.text());
-                String data = null;
+                String data = null; // a stream has sent it already
                 if (audioId == null) {
-                    boolean wav =
-                            "wav"
-                                    .equals(
-                                            Values.asObject(request.get("audio"), "audio")
-                                                    .get("format"));
-                    data =
-                            Base64.getEncoder()
-                                    .encodeToString(
-                                            wav
-                                                    ? AudioCodec.wav(speech.audio())
-                                                    : AudioCodec.pcm16(speech.audio()));
+                    Object format = Values.asObject(request.get("audio"), "audio").get("format");
+                    byte[] bytes =
+                            "wav".equals(format)
+                                    ? AudioCodec.wav(speech.audio())
+                                    : AudioCodec.pcm16(speech.audio());
+                    data = Base64.getEncoder().encodeToString(bytes);
                 }
                 return reply.withAudio(new Reply.Audio(id, expiresAt, data, reply.text()));
             }

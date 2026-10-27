@@ -747,8 +747,7 @@ final class Lfm3Speech {
             return new SpeechOutput.Frame(
                     codes.clone(),
                     clamp(pcm),
-                    Batch.embeddings(stream.feedback, 1, false, frameKey(codes)),
-                    !more);
+                    Batch.embeddings(stream.feedback, 1, false, frameKey(codes)));
         }
 
         /** An interleaved slot taken: the block flips when its count runs out. */

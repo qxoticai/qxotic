@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.media.Media;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -46,15 +47,14 @@ final class SpokenTurns {
      * The assistant turn kept under {@code id}: its transcript and its spoken record (without the
      * waveform, which replay never reads). Unknown or expired ids are refused.
      */
-    synchronized Content[] get(String id) {
+    synchronized List<Content> get(String id) {
         Kept kept = turns.get(id);
         if (kept == null || kept.expiresAt() < System.currentTimeMillis() / 1000) {
             turns.remove(id);
             throw new IllegalArgumentException("audio " + id + " is unknown or expired");
         }
-        return new Content[] {
-            new Content.Text(kept.transcript()),
-            new Content.Speech(new Media.Audio(new float[0], kept.rate(), 1), kept.turn())
-        };
+        return List.of(
+                new Content.Text(kept.transcript()),
+                new Content.Speech(new Media.Audio(new float[0], kept.rate(), 1), kept.turn()));
     }
 }

@@ -69,9 +69,9 @@ public interface SpeechOutput<S extends ContextState> {
     }
 
     /**
-     * One frame: its codes, the PCM it decodes to (possibly empty while the decoder fills), and the
-     * one-row batch the caller ingests at the next position. The end frame is a frame too: it is
-     * ingested, and the speech is over.
+     * One frame: its codes (the caller's to keep), the PCM it decodes to (possibly empty while the
+     * decoder fills), and the one-row batch the caller ingests at the next position. The end frame
+     * is a frame too: it is ingested, and text follows.
      */
-    record Frame(int[] codes, float[] pcm, Batch row, boolean last) {}
+    record Frame(int[] codes, float[] pcm, Batch row) {}
 }

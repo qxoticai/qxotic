@@ -248,7 +248,7 @@ public final class OpenAiChat {
                                 Values.asObject(message.get("audio"), "audio").get("id"), null);
                 if (audio == null || turns == null)
                     throw new IllegalArgumentException("assistant audio needs the id of a reply");
-                out.add(new Message(Role.ASSISTANT, List.of(turns.get(audio))));
+                out.add(new Message(Role.ASSISTANT, turns.get(audio)));
                 continue;
             }
             List<Content> content = content(message.get("content"));

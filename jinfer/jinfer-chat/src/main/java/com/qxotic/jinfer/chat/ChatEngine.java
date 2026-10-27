@@ -1794,7 +1794,7 @@ public final class ChatEngine implements AutoCloseable {
                     model.ingest(state, frame.row());
                     serving.tail(frame.row());
                     spoken.positions.add(spoken.placeholder);
-                    spoken.frames.add(frame.codes().clone());
+                    spoken.frames.add(frame.codes());
                     generated.add(spoken.placeholder);
                     n++;
                     if (spoken.out.cancelled()) {
