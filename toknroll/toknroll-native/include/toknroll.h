@@ -79,7 +79,7 @@ TOKNROLL_API const char* toknroll_last_error(int32_t* code);    /* the message; 
  * overrides them: the program sets its options, whoever runs it has the last word. */
 TOKNROLL_API int32_t toknroll_configure(const char* const* options, int32_t count);
 
-/* A tokenizer from a tokenizer.json or its directory, a GGUF file, or owner/repo[:QUANT] on a hub. */
+/* A tokenizer from a path or a hub reference: Sources, above. */
 TOKNROLL_API toknroll_tokenizer* toknroll_load(const char* source);
 TOKNROLL_API void                toknroll_free(toknroll_tokenizer* t);
 

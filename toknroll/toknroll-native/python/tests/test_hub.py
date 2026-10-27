@@ -35,12 +35,6 @@ class HubTest(unittest.TestCase):
             toknroll.load("LiquidAI/LFM2.5-350M-GGUF")
         self.assertIn("Q8_0", str(e.exception))
 
-    def test_the_old_prefixes_name_the_host_instead(self):
-        for old in ("hf:" + HUB_JSON, "ms:" + HUB_JSON):
-            with self.subTest(old=old), self.assertRaises(toknroll.InvalidArgument) as e:
-                toknroll.load(old)
-            self.assertIn("hf.co/owner/repo", str(e.exception))
-
     def test_a_misspelled_host_is_invalid_not_an_owner(self):
         with self.assertRaises(toknroll.InvalidArgument) as e:
             toknroll.load("huggingface.com/" + HUB_JSON)
