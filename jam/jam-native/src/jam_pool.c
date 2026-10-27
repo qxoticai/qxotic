@@ -5,7 +5,7 @@
 #include "jam_internal.h"
 
 #include <stdlib.h>
-#include <pthread.h>
+#include "jam_thread.h"
 #include <stdatomic.h>
 
 #if defined(__x86_64__) || defined(_M_X64)
@@ -22,10 +22,10 @@ typedef struct { jam_pool* pool; int idx; } jam_worker;
 
 struct jam_pool {
     int             nworkers;     /* worker THREADS; participants = nworkers + 1 (the submitter) */
-    pthread_t*      threads;
+    jam_thread_t*   threads;
     jam_worker*     wargs;
-    pthread_mutex_t mtx;
-    pthread_cond_t  cv;           /* parked workers wait here for a job */
+    jam_mutex_t     mtx;
+    jam_cond_t      cv;           /* parked workers wait here for a job */
     jam_task_fn     fn;
     void*           arg;
     int             n;
@@ -52,12 +52,12 @@ static void* worker_main(void* p) {
         while (atomic_load_explicit(&pool->seq, memory_order_acquire) == my_seq
                && !atomic_load_explicit(&pool->stop, memory_order_relaxed)) {
             if (++spins < JAM_SPIN_PAUSES) { JAM_PAUSE(); continue; }
-            pthread_mutex_lock(&pool->mtx);   /* idle too long: park, re-checking seq under the lock */
+            jam_mutex_lock(&pool->mtx);   /* idle too long: park, re-checking seq under the lock */
             atomic_fetch_add(&pool->parked, 1);
             while (atomic_load(&pool->seq) == my_seq && !atomic_load(&pool->stop))
-                pthread_cond_wait(&pool->cv, &pool->mtx);
+                jam_cond_wait(&pool->cv, &pool->mtx);
             atomic_fetch_sub(&pool->parked, 1);
-            pthread_mutex_unlock(&pool->mtx);
+            jam_mutex_unlock(&pool->mtx);
             spins = 0;
         }
         if (atomic_load(&pool->stop)) break;
@@ -79,14 +79,14 @@ jam_pool* jam_pool_create(int nthreads) {
     jam_pool* pool = (jam_pool*) calloc(1, sizeof *pool);
     if (!pool) return NULL;
     pool->nworkers = nthreads - 1;
-    if (pthread_mutex_init(&pool->mtx, NULL) != 0) { free(pool); return NULL; }
-    if (pthread_cond_init(&pool->cv, NULL) != 0) {
-        pthread_mutex_destroy(&pool->mtx);
+    if (jam_mutex_init(&pool->mtx) != 0) { free(pool); return NULL; }
+    if (jam_cond_init(&pool->cv) != 0) {
+        jam_mutex_destroy(&pool->mtx);
         free(pool);
         return NULL;
     }
     if (pool->nworkers > 0) {
-        pool->threads = (pthread_t*) calloc(pool->nworkers, sizeof(pthread_t));
+        pool->threads = (jam_thread_t*) calloc(pool->nworkers, sizeof(jam_thread_t));
         pool->wargs   = (jam_worker*) calloc(pool->nworkers, sizeof(jam_worker));
         if (!pool->threads || !pool->wargs) {
             pool->nworkers = 0;
@@ -96,7 +96,7 @@ jam_pool* jam_pool_create(int nthreads) {
         for (int i = 0; i < pool->nworkers; ++i) {
             pool->wargs[i].pool = pool;
             pool->wargs[i].idx  = i + 1;   /* participants 1..nworkers; the submitter is 0 */
-            if (pthread_create(&pool->threads[i], NULL, worker_main, &pool->wargs[i]) != 0) {
+            if (jam_thread_create(&pool->threads[i], worker_main, &pool->wargs[i]) != 0) {
                 pool->nworkers = i;
                 jam_pool_destroy(pool);
                 return NULL;
@@ -116,9 +116,9 @@ void jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg) {
     atomic_store_explicit(&pool->remaining, part - 1, memory_order_relaxed);
     atomic_store_explicit(&pool->seq, next, memory_order_seq_cst);   /* publish (also orders vs parked) */
     if (atomic_load_explicit(&pool->parked, memory_order_seq_cst) > 0) {
-        pthread_mutex_lock(&pool->mtx);
-        pthread_cond_broadcast(&pool->cv);
-        pthread_mutex_unlock(&pool->mtx);
+        jam_mutex_lock(&pool->mtx);
+        jam_cond_broadcast(&pool->cv);
+        jam_mutex_unlock(&pool->mtx);
     }
     run_range(fn, arg, n, 0, part);                                  /* the submitter is participant 0 */
     while (atomic_load_explicit(&pool->remaining, memory_order_acquire) > 0) JAM_PAUSE();
@@ -126,13 +126,13 @@ void jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg) {
 
 void jam_pool_destroy(jam_pool* pool) {
     if (!pool) return;
-    pthread_mutex_lock(&pool->mtx);
+    jam_mutex_lock(&pool->mtx);
     atomic_store(&pool->stop, 1);
-    pthread_cond_broadcast(&pool->cv);
-    pthread_mutex_unlock(&pool->mtx);
-    for (int i = 0; i < pool->nworkers; ++i) pthread_join(pool->threads[i], NULL);
-    pthread_mutex_destroy(&pool->mtx);
-    pthread_cond_destroy(&pool->cv);
+    jam_cond_broadcast(&pool->cv);
+    jam_mutex_unlock(&pool->mtx);
+    for (int i = 0; i < pool->nworkers; ++i) jam_thread_join(pool->threads[i]);
+    jam_mutex_destroy(&pool->mtx);
+    jam_cond_destroy(&pool->cv);
     free(pool->threads);
     free(pool->wargs);
     free(pool);

@@ -1,10 +1,11 @@
 /* The isolate behind the toknroll__* entry points: created by configure, or else on first use, with the
  * options configure passed plus those in the environment, each calling thread attached once and detached
  * when it exits. libjinfer compiles this file too (TOKNROLL_PROGRAM "jinfer", TOKNROLL_OPTIONS_ENV
- * "JINFER_OPTIONS"), so its jinfer_* and toknroll_* symbols share one isolate and one configure. */
-#define _POSIX_C_SOURCE 200809L   /* strdup */
-#define _DARWIN_C_SOURCE          /* dladdr, RTLD_NOLOAD */
-#ifdef __APPLE__
+ * "JINFER_OPTIONS", TOKNROLL_SELF_PROPERTY "jam.native.library.path"), so its jinfer_* and toknroll_*
+ * symbols share one isolate and one configure, and libjam, linked into it, is loaded from the image. */
+#define _GNU_SOURCE               /* dladdr */
+#define _DARWIN_C_SOURCE
+#ifndef _WIN32
 #include <dlfcn.h>
 #endif
 #include <stdarg.h>
@@ -23,6 +24,9 @@
 #ifndef TOKNROLL_OPTIONS_ENV
 #define TOKNROLL_OPTIONS_ENV TOKNROLL_OPTIONS    /* options separated by whitespace, applied after configure's */
 #endif
+/* TOKNROLL_SELF_PROPERTY, when defined (libjinfer: jam.native.library.path): the runtime is told this
+ * image's own file as that property, so a native library linked INTO the image (libjam) is loaded from
+ * the image itself, through the ordinary System.load path every platform resolves symbols on. */
 #define STR_(x) #x
 #define STR(x) STR_(x)
 
@@ -69,26 +73,41 @@ static int32_t early(int32_t code, const char* format, ...) {
 
 static void detach(void* thread) { graal_detach_thread((graal_isolatethread_t*) thread); }
 
+#ifdef TOKNROLL_SELF_PROPERTY
+/* The path of the file this code was loaded from: the shared library, or the program it is linked into. */
+static const char* self_path(void) {
+#ifdef _WIN32
+    static char path[4096];
+    HMODULE module;
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            (LPCSTR) &self_path, &module)) return NULL;
+    return GetModuleFileNameA(module, path, sizeof path) ? path : NULL;
+#else
+    Dl_info self;
+    return dladdr((void*) &self_path, &self) ? self.dli_fname : NULL;
+#endif
+}
+#endif
+
 static void init(void) {
     created = 1;
-#ifdef __APPLE__
-    /* The image finds a JNI library built into it (libjam in libjinfer) with dlsym(RTLD_DEFAULT), which
-     * dyld limits to globally loaded images, while glibc also searches the caller's own. So whichever way
-     * this library was opened, make it global: RTLD_NOLOAD is dlopen's documented way to do that to a
-     * loaded image. Without it a plain dlopen on macOS would silently lose the native kernels. */
-    Dl_info self;
-    if (dladdr((void*) &init, &self)) dlopen(self.dli_fname, RTLD_NOW | RTLD_GLOBAL | RTLD_NOLOAD);
-#endif
-    /* the environment comes last: it overrides what the program configured, later wins as on a command
-     * line. Split on whitespace; a value with a space in it goes through configure. ponytail: no quoting */
-    const char* env = getenv(STR(TOKNROLL_OPTIONS_ENV));
-    if (env && *env) {
-        char* copy = port_strdup(env);
-        char** all = malloc((argc + strlen(env) / 2 + 2) * sizeof *all);   /* a token needs a char and a gap */
-        memcpy(all, argv, argc * sizeof *argv);
-        argv = all;
-        for (char* tok = strtok(copy, " \t\n"); tok; tok = strtok(NULL, " \t\n")) argv[argc++] = tok;
+    /* configure's options first, then the image's own file for the library linked into it, then the
+     * environment, which wins: later wins as on a command line. Split on whitespace; a value with a space in
+     * it goes through configure. ponytail: no quoting */
+    const char* e = getenv(STR(TOKNROLL_OPTIONS_ENV));
+    char* env = port_strdup(e ? e : "");
+    char** all = malloc((argc + 2 + strlen(env) / 2) * sizeof *all);   /* a token needs a char and a gap */
+    memcpy(all, argv, argc * sizeof *argv);
+    argv = all;
+#ifdef TOKNROLL_SELF_PROPERTY
+    const char* self = self_path();
+    if (self) {
+        char* option = malloc(sizeof "-D" STR(TOKNROLL_SELF_PROPERTY) "=" + strlen(self));
+        strcpy(option, "-D" STR(TOKNROLL_SELF_PROPERTY) "=");
+        argv[argc++] = strcat(option, self);
     }
+#endif
+    for (char* tok = strtok(env, " \t\n"); tok; tok = strtok(NULL, " \t\n")) argv[argc++] = tok;
     isolate_params params;
     memset(&params, 0, sizeof params);
     params.version = 5;
