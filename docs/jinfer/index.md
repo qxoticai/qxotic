@@ -64,7 +64,7 @@ A model that speaks (LFM3-Omni with its projector) also answers chat in speech, 
 A stream carries `pcm16` chunks and the transcript in `delta.audio`.
 A later turn refers back to a spoken reply by its `audio.id`, and it replays exactly as the model spoke it, for an hour.
 `audio.voice` does not steer a chat reply: the model speaks in its own voice.
-The same model serves `POST /v1/audio/speech`, with `voice` `female` or `male`, a `language`, and `response_format` `wav` or `pcm`.
+The same model serves `POST /v1/audio/speech`, with `voice` `female` or `male`, a `language`, `response_format` `wav` or `pcm`, and an optional integer `seed` that makes the reading reproducible.
 
 Loopback is the default.
 Non-loopback binding requires `--api-key`.

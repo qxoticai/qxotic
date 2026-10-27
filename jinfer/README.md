@@ -282,7 +282,8 @@ ChatEngine.Completion reply = engine.complete(
 ```
 
 The reply carries the transcript as its text and the speech as a `Content.Speech`, whose record replays the turn exactly when the conversation continues.
-`engine.speak(text, language, voice)` reads a text aloud and returns the waveform; with a fourth argument, a `Predicate<Media.Audio>`, each 80 ms part goes to it as it is spoken, and returning false stops.
+`engine.speak(text, language, voice)` reads a text aloud and returns the waveform, a fresh take each call; a `long seed` argument makes it reproducible, sample for sample.
+With a `Predicate<Media.Audio>`, each 80 ms part goes to it as it is spoken, and returning false stops.
 
 **Streaming transcription.** Feed audio as it arrives and poll the evolving transcript; text
 behind the commit horizon no longer changes, and `finish()` equals the offline transcript:

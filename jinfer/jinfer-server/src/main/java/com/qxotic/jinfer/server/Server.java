@@ -547,7 +547,8 @@ public final class Server {
      * OpenAI's text to speech: {@code input} read aloud in the model's own voice. {@code voice} is
      * one the model has ({@code female} or {@code male} on LFM3-Omni), {@code language} - a jinfer
      * extension, as llama.cpp's {@code lang} - one it speaks; {@code response_format} is {@code
-     * wav} (the default) or {@code pcm} (16-bit, mono, at the model's rate).
+     * wav} (the default) or {@code pcm} (16-bit, mono, at the model's rate). An integer {@code
+     * seed} makes the reading reproducible.
      */
     private void handleSpeech(HttpExchange exchange, ServerConfig config) throws IOException {
         handleGenerationPost(
@@ -563,6 +564,7 @@ public final class Server {
                     for (String knob : List.of("speed", "instructions", "stream_format"))
                         Validation.require(request.get(knob) == null, "%s is not supported", knob);
                     Validation.speechWav(request);
+                    Values.longValue(request.get("seed"), "seed", 0); // as chat checks it
                 },
                 (request, id) -> {
                     boolean wav = Validation.speechWav(request);
@@ -574,6 +576,9 @@ public final class Server {
                                     Values.stringValue(request.get("input"), ""),
                                     Values.stringValue(request.get("language"), null),
                                     Values.stringValue(request.get("voice"), null),
+                                    request.get("seed") == null
+                                            ? null
+                                            : Values.longValue(request.get("seed"), "seed", 0),
                                     wav));
                 });
     }

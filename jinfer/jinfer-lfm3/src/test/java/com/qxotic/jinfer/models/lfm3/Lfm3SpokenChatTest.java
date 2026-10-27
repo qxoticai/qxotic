@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.lfm3;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -21,6 +22,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -86,6 +88,21 @@ final class Lfm3SpokenChatTest {
         engine.speak("Hello world, one two three.", "en", "male", part -> !first.add(part));
         assertEquals(1, first.size(), "stopped after one part");
         assertTrue(seconds(engine.speak("Good morning.", null, null)) > 0.3, "the whole waveform");
+    }
+
+    /** A seed makes a reading reproducible, sample for sample; another seed is another take. */
+    @Test
+    void aSeededReadingIsReproducible() {
+        String text = "The quick brown fox jumps over the lazy dog.";
+        engine.speak(text, "en", "female", 1); // warm: cold JIT code differs by an LSB
+        Media.Audio first = engine.speak(text, "en", "female", 7);
+        List<Media.Audio> parts = new ArrayList<>();
+        engine.speak(text, "en", "female", 7, parts::add);
+        assertArrayEquals(first.pcm(), engine.speak(text, "en", "female", 7).pcm(), "same seed");
+        assertArrayEquals(first.pcm(), Media.Audio.concat(parts).pcm(), "streamed, same seed");
+        assertTrue(
+                !Arrays.equals(first.pcm(), engine.speak(text, "en", "female", 8).pcm()),
+                "another seed, another take");
     }
 
     @Test

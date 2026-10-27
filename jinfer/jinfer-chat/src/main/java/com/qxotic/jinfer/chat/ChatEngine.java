@@ -1354,15 +1354,23 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * Text to speech in the model's own voice: {@code text} read aloud and nothing added. Returns
-     * the whole waveform; see {@link #speak(String, String, String, Predicate)} to play it as it
-     * comes.
+     * Text to speech in the model's own voice: {@code text} read aloud and nothing added, a fresh
+     * take each call. Returns the whole waveform; see {@link #speak(String, String, String,
+     * Predicate)} to play it as it comes.
      *
      * @param language one the family lists; null = its default
      * @param voice one the family lists; null = its default
      */
     public Media.Audio speak(String text, String language, String voice) {
-        return speak0(text, language, voice, part -> true).reply().speech().orElseThrow();
+        return speak0(text, language, voice, null, part -> true).reply().speech().orElseThrow();
+    }
+
+    /**
+     * As {@link #speak(String, String, String)}, reproducible: the same text, language, voice and
+     * {@code seed} give the same audio, sample for sample.
+     */
+    public Media.Audio speak(String text, String language, String voice, long seed) {
+        return speak0(text, language, voice, seed, part -> true).reply().speech().orElseThrow();
     }
 
     /**
@@ -1372,11 +1380,17 @@ public final class ChatEngine implements AutoCloseable {
      * alone, sampled with the model's own settings.
      */
     public void speak(String text, String language, String voice, Predicate<Media.Audio> sink) {
-        speak0(text, language, voice, sink);
+        speak0(text, language, voice, null, sink);
+    }
+
+    /** As {@link #speak(String, String, String, Predicate)}, reproducible by {@code seed}. */
+    public void speak(
+            String text, String language, String voice, long seed, Predicate<Media.Audio> sink) {
+        speak0(text, language, voice, seed, sink);
     }
 
     private Completion speak0(
-            String text, String language, String voice, Predicate<Media.Audio> sink) {
+            String text, String language, String voice, Long seed, Predicate<Media.Audio> sink) {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("nothing to say");
         voice();
         String instruction =
@@ -1390,7 +1404,7 @@ public final class ChatEngine implements AutoCloseable {
         return complete(
                 Request.builder(
                                 List.of(Message.system(instruction), Message.user(text)),
-                                loaded.samplingDefaults().resolve())
+                                loaded.samplingDefaults().resolve(null, null, null, null, seed))
                         .speech(Speech.only())
                         .build(),
                 new ReplySink() {

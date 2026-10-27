@@ -66,9 +66,16 @@ final class Generation {
         return recorded(run(lowered, sinks, request, audioId));
     }
 
-    /** Text to speech: {@code input} read aloud, as a WAV file or raw 16-bit PCM. */
-    byte[] speech(String input, String language, String voice, boolean wav) {
-        return encode(engine.speak(input, language, voice), wav);
+    /**
+     * Text to speech: {@code input} read aloud, as a WAV file or raw 16-bit PCM; the same {@code
+     * seed} gives the same audio, null a fresh take.
+     */
+    byte[] speech(String input, String language, String voice, Long seed, boolean wav) {
+        Media.Audio speech =
+                seed == null
+                        ? engine.speak(input, language, voice)
+                        : engine.speak(input, language, voice, seed);
+        return encode(speech, wav);
     }
 
     /** Speech on the wire: a WAV file, or the bare 16-bit samples. */
