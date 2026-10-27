@@ -17,6 +17,7 @@ import org.graalvm.nativeimage.c.function.CEntryPoint;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CIntPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
+import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
 /**
@@ -123,6 +124,14 @@ public final class Native {
         return CTypeConversion.toJavaString(value);
     }
 
+    /** length bytes of UTF-8, any byte among them; NULL only with length 0. */
+    private static String string(CCharPointer value, UnsignedWord length, String what) {
+        if (length.aboveThan(Integer.MAX_VALUE)) throw Errors.invalid(what + " is over 2 GiB");
+        if (length.equal(0)) return "";
+        if (value.isNull()) throw Errors.invalid(what + " is NULL");
+        return CTypeConversion.toJavaString(value, length, StandardCharsets.UTF_8);
+    }
+
     /** snprintf for bytes: writes min(n, capacity) and a NUL when there is room, returns n. */
     private static int bytes(byte[] value, CCharPointer out, int capacity) {
         if (capacity < 0) throw Errors.invalid("capacity must not be negative");
@@ -149,6 +158,7 @@ public final class Native {
     @CEntryPoint(name = "toknroll__load")
     static ObjectHandle load(IsolateThread thread, CCharPointer source) {
         try {
+            Errors.clear();
             return HANDLES.create(Loaded.of(Sources.load(string(source, "source"))));
         } catch (Throwable t) {
             Errors.set(t);
@@ -159,6 +169,7 @@ public final class Native {
     @CEntryPoint(name = "toknroll__free")
     static void free(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             get(handle);
             HANDLES.destroy(handle);
         } catch (Throwable t) {
@@ -171,12 +182,14 @@ public final class Native {
             IsolateThread thread,
             ObjectHandle handle,
             CCharPointer text,
+            UnsignedWord length,
             boolean specials,
             CIntPointer out,
             int capacity) {
         try {
+            Errors.clear();
             Loaded loaded = get(handle);
-            String s = string(text, "text");
+            String s = string(text, length, "text");
             if (capacity < 0) throw Errors.invalid("capacity must not be negative");
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
             if (capacity == 0 && !specials) return loaded.tokenizer().countTokens(s);
@@ -202,6 +215,7 @@ public final class Native {
             int capacity,
             CIntPointer ends) {
         try {
+            Errors.clear();
             Loaded loaded = get(handle);
             if (count < 0 || capacity < 0)
                 throw Errors.invalid("count and capacity must not be negative");
@@ -255,6 +269,7 @@ public final class Native {
             CCharPointer out,
             int capacity) {
         try {
+            Errors.clear();
             Loaded loaded = get(handle);
             if (count < 0) throw Errors.invalid("count must not be negative");
             if (ids.isNull() && count > 0) throw Errors.invalid("ids is NULL");
@@ -305,6 +320,7 @@ public final class Native {
     @CEntryPoint(name = "toknroll__vocabulary_size")
     static int vocabularySize(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             return get(handle).tokenizer().vocabulary().size();
         } catch (Throwable t) {
             return Errors.set(t);
@@ -315,6 +331,7 @@ public final class Native {
     @CEntryPoint(name = "toknroll__token_flags")
     static long tokenFlags(IsolateThread thread, ObjectHandle handle, int id) {
         try {
+            Errors.clear();
             Vocabulary vocab = get(handle).tokenizer().vocabulary();
             if (!vocab.contains(id)) throw Errors.notFound("no token with id " + id);
             long flags = 0;
@@ -331,6 +348,7 @@ public final class Native {
     static int token(
             IsolateThread thread, ObjectHandle handle, int id, CCharPointer out, int capacity) {
         try {
+            Errors.clear();
             Vocabulary vocab = get(handle).tokenizer().vocabulary();
             if (!vocab.contains(id)) throw Errors.notFound("no token with id " + id);
             return bytes(vocab.token(id).getBytes(StandardCharsets.UTF_8), out, capacity);
@@ -340,10 +358,12 @@ public final class Native {
     }
 
     @CEntryPoint(name = "toknroll__id")
-    static int id(IsolateThread thread, ObjectHandle handle, CCharPointer token) {
+    static int id(
+            IsolateThread thread, ObjectHandle handle, CCharPointer token, UnsignedWord length) {
         try {
+            Errors.clear();
             Vocabulary vocab = get(handle).tokenizer().vocabulary();
-            String s = string(token, "token");
+            String s = string(token, length, "token");
             if (!vocab.contains(s)) throw Errors.notFound("no token '" + s + "'");
             return vocab.id(s);
         } catch (Throwable t) {

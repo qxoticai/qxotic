@@ -27,7 +27,7 @@
     <toknroll.image.march>compatibility</toknroll.image.march>
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
     <shim.cc>cc</shim.cc>
-    <shim.cflags>-std=c11 -O2 -fPIC -Wall</shim.cflags>
+    <shim.cflags>-std=c11 -O2 -fPIC -Wall -Wextra -Wpedantic</shim.cflags>
     <shim.out>-o</shim.out>
     <shim.obj>.o</shim.obj>
     <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/native-cc.sh</shim.wrapper>
@@ -158,7 +158,7 @@
       <properties>
         <toknroll.image.name>toknroll</toknroll.image.name>
         <shim.cc>cl</shim.cc>
-        <shim.cflags>-nologo -O2 -W3 -D_CRT_SECURE_NO_WARNINGS</shim.cflags>
+        <shim.cflags>-nologo -std:c11 -O2 -W4</shim.cflags>
         <shim.out>-Fo</shim.out>
         <shim.obj>.obj</shim.obj>
         <shim.wrapper>-H:-JNIExportSymbols</shim.wrapper>

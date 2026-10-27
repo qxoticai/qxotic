@@ -5,7 +5,10 @@ import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
 
-/** The calling thread's last error, as the header promises: valid until its next toknroll call. */
+/**
+ * The calling thread's last error, as the header promises: valid until its next toknroll call,
+ * which clears it by succeeding.
+ */
 final class Errors {
     static final int OK = 0, ERROR = -1, EINVAL = -2, ENOTFOUND = -3;
 
@@ -27,9 +30,19 @@ final class Errors {
         return new Failure(ENOTFOUND, message);
     }
 
-    private static final ThreadLocal<CCharPointerHolder> LAST = new ThreadLocal<>();
-    private static final ThreadLocal<Integer> LAST_CODE = new ThreadLocal<>();
+    /** A thread's last failure; its message stays allocated, unread, once a call succeeds. */
+    private static final class Last {
+        int code = OK;
+        CCharPointerHolder message;
+    }
+
+    private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
     private static CCharPointerHolder none;
+
+    /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
+    static void clear() {
+        LAST.get().code = OK;
+    }
 
     static int code(Throwable t) {
         if (t instanceof Failure f) return f.code;
@@ -56,26 +69,21 @@ final class Errors {
         Throwable cause = t.getCause();
         if (cause != null && cause.getMessage() != null && !message.contains(cause.getMessage()))
             message += ": " + cause.getMessage();
-        set(message);
         int code = code(t);
-        LAST_CODE.set(code);
+        Last last = LAST.get();
+        if (last.message != null) last.message.close();
+        last.message = CTypeConversion.toCString(message);
+        last.code = code;
         return code;
     }
 
     static int lastCode() {
-        Integer code = LAST_CODE.get();
-        return code == null ? OK : code;
-    }
-
-    static void set(String message) {
-        CCharPointerHolder previous = LAST.get();
-        if (previous != null) previous.close();
-        LAST.set(CTypeConversion.toCString(message));
+        return LAST.get().code;
     }
 
     static CCharPointer last() {
-        CCharPointerHolder holder = LAST.get();
-        if (holder != null) return holder.get();
+        Last last = LAST.get();
+        if (last.code != OK) return last.message.get();
         if (none == null) none = CTypeConversion.toCString("");
         return none.get();
     }

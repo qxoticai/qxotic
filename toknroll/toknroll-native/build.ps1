@@ -9,7 +9,7 @@ param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $
 $Here = $PSScriptRoot; $Name = 'toknroll'; $Opt = '-O2'; $March = 'compatibility'
 $Headers = 'include\toknroll.h'; $Syms = 'toknroll'
 $Example = {
-    cl -nologo -W3 -Iinclude examples\c\tokenize.c -Fe:target\tokenize.exe -Fo:target\ target\toknroll.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    cl -nologo -std:c11 -W4 -Iinclude examples\c\tokenize.c -Fe:target\tokenize.exe -Fo:target\ target\toknroll.lib; if ($LASTEXITCODE) { throw "cl failed" }
     & target\tokenize.exe $Source "Hello, Tok'n'Roll!"; if ($LASTEXITCODE) { throw "tokenize failed" }
 }
 $PyTest = { Push-Location python; try { python -m unittest discover -s tests -t tests; if ($LASTEXITCODE) { throw "tests failed" } } finally { Pop-Location } }
