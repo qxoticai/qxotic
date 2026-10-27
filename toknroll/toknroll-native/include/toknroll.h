@@ -12,11 +12,23 @@
  *   Runtime   The library is a Java runtime compiled ahead of time; toknroll_configure passes it
  *             options as a java command line would, before the first call, and the TOKNROLL_OPTIONS
  *             environment variable adds to or overrides them. Nothing requires either.
- *   Sources   A tokenizer.json or the directory holding one, a GGUF file, or a hub reference:
- *             owner/repo loads the repository's tokenizer files, owner/repo:QUANT the tokenizer
- *             of that GGUF; hf: and ms: (ModelScope) prefixes pick the hub, Hugging Face by
- *             default. Remote sources fetch tokenizer metadata only, never weights, and cache it
- *             on disk (TOKNROLL_CACHE_ROOT).
+ *   Sources   A path, or a reference to a hub. Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x,
+ *             a backslash, owner/file.gguf or a name that exists on disk is a path; anything else
+ *             is a reference, [host/]owner/repo[@revision][/path][:quant], the host hf.co (the
+ *             default), huggingface.co or modelscope.cn. To force the hub, write the host; to force
+ *             the disk, write ./ What is reached decides the format: a file by its content, the
+ *             GGUF magic or a JSON tokenizer.json, whatever its name; a folder by name, its
+ *             tokenizer.json. A bare owner/repo is the repository root, a folder: it never opens a
+ *             GGUF. A GGUF on a hub, named by :quant or a /path ending in .gguf, is read for its
+ *             header only, never its weights. Files land in the cache jinfer shares;
+ *             -Dtoknroll.cache.root moves it, -Dtoknroll.offline=true never fetches. Missing is
+ *             TOKNROLL_ENOTFOUND; a malformed reference, an unknown host, a file named twice (by
+ *             /path and :quant) or a file of no known kind is TOKNROLL_EINVAL.
+ *               Qwen/Qwen3-0.6B                         the repository's tokenizer.json
+ *               LiquidAI/LFM2.5-350M-GGUF:Q8_0          the header of that GGUF
+ *               org/repo/tokenizers/v2                  a folder inside a repository
+ *               modelscope.cn/Qwen/Qwen3-0.6B@v1        the other hub, a pinned revision
+ *               ~/.ollama/models/blobs/sha256-3f1a...   a GGUF with no extension
  *   Stability MAJOR breaks the ABI, MINOR only adds, PATCH only fixes; 0.x is held to the same
  *             rule as 1.x. A shipped signature, name or default never changes. toknroll__* is
  *             private.

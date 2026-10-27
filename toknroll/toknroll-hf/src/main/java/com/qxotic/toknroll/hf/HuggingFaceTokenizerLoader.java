@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.hf;
 
+import com.qxotic.fetch.Transport;
 import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.impl.ImplAccessor;
@@ -176,7 +177,9 @@ public final class HuggingFaceTokenizerLoader {
             String revision,
             boolean useCacheOnly,
             boolean forceRefresh) {
-        RepositoryArtifactCache cache = RepositoryArtifactCache.create();
+        RepositoryArtifactCache cache =
+                RepositoryArtifactCache.create(
+                        useCacheOnly ? Transport.offline() : Transport.system());
         String modelRef = user + "/" + repository;
         try {
             Path tokenizerJson;
@@ -189,17 +192,16 @@ public final class HuggingFaceTokenizerLoader {
                                 repository,
                                 revision,
                                 TOKENIZER_JSON,
-                                useCacheOnly,
                                 forceRefresh);
             } catch (IOException e) {
                 if (shouldFallbackToTiktokenModel(e, useCacheOnly)) {
                     return loadFromTiktokenModel(
-                            source, cache, user, repository, revision, useCacheOnly, forceRefresh);
+                            source, cache, user, repository, revision, forceRefresh);
                 }
                 throw e;
             }
             fetchOptionalTokenizerArtifacts(
-                    source, cache, user, repository, revision, useCacheOnly, forceRefresh);
+                    source, cache, user, repository, revision, forceRefresh);
             return loadUnchecked(tokenizerJson);
         } catch (IOException e) {
             throw new TokenizerLoadException(
@@ -285,11 +287,10 @@ public final class HuggingFaceTokenizerLoader {
             String user,
             String repository,
             String revision,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         return loadFromTiktokenModel(
-                SOURCE_HUGGING_FACE, cache, user, repository, revision, useCacheOnly, forceRefresh);
+                SOURCE_HUGGING_FACE, cache, user, repository, revision, forceRefresh);
     }
 
     /**
@@ -301,11 +302,10 @@ public final class HuggingFaceTokenizerLoader {
             String user,
             String repository,
             String revision,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         return loadFromTiktokenModel(
-                SOURCE_MODELSCOPE, cache, user, repository, revision, useCacheOnly, forceRefresh);
+                SOURCE_MODELSCOPE, cache, user, repository, revision, forceRefresh);
     }
 
     private static Tokenizer loadFromTiktokenModel(
@@ -314,7 +314,6 @@ public final class HuggingFaceTokenizerLoader {
             String user,
             String repository,
             String revision,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         Path tiktokenModel =
@@ -325,12 +324,11 @@ public final class HuggingFaceTokenizerLoader {
                         repository,
                         revision,
                         TIKTOKEN_MODEL_FILE,
-                        useCacheOnly,
                         forceRefresh);
 
         Map<String, Object> tokenizerConfig =
                 loadOptionalTokenizerConfig(
-                        source, cache, user, repository, revision, useCacheOnly, forceRefresh);
+                        source, cache, user, repository, revision, forceRefresh);
 
         Map<String, Integer> mergeableRanks;
         try (BufferedReader reader =
@@ -346,14 +344,7 @@ public final class HuggingFaceTokenizerLoader {
         TokenizationModel model = Toknroll.tiktokenModel(vocabulary, merges);
         String patStr =
                 resolvePatStr(
-                        source,
-                        cache,
-                        user,
-                        repository,
-                        revision,
-                        tokenizerConfig,
-                        useCacheOnly,
-                        forceRefresh);
+                        source, cache, user, repository, revision, tokenizerConfig, forceRefresh);
         return Toknroll.pipeline(
                 Splitter.regex(Pattern.compile(patStr, UNICODE_REGEX_FLAGS)), model);
     }
@@ -364,20 +355,11 @@ public final class HuggingFaceTokenizerLoader {
             String user,
             String repository,
             String revision,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         for (String file : OPTIONAL_TOKENIZER_FILES) {
             try {
-                fetchFromSource(
-                        source,
-                        cache,
-                        user,
-                        repository,
-                        revision,
-                        file,
-                        useCacheOnly,
-                        forceRefresh);
+                fetchFromSource(source, cache, user, repository, revision, file, forceRefresh);
             } catch (IOException e) {
                 if (!isHttp404(e)) {
                     throw e;
@@ -392,7 +374,6 @@ public final class HuggingFaceTokenizerLoader {
             String user,
             String repository,
             String revision,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         try {
@@ -404,7 +385,6 @@ public final class HuggingFaceTokenizerLoader {
                             repository,
                             revision,
                             TOKENIZER_CONFIG_JSON,
-                            useCacheOnly,
                             forceRefresh);
             return parseObject(tokenizerConfigPath);
         } catch (IOException e) {
@@ -495,7 +475,6 @@ public final class HuggingFaceTokenizerLoader {
             String repository,
             String revision,
             Map<String, Object> tokenizerConfig,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         String directPatStr = parsePatStrFromTokenizerConfig(tokenizerConfig);
@@ -504,14 +483,7 @@ public final class HuggingFaceTokenizerLoader {
         }
         String modulePatStr =
                 tryResolvePatStrFromAutoMapModule(
-                        source,
-                        cache,
-                        user,
-                        repository,
-                        revision,
-                        tokenizerConfig,
-                        useCacheOnly,
-                        forceRefresh);
+                        source, cache, user, repository, revision, tokenizerConfig, forceRefresh);
         if (modulePatStr != null) {
             return modulePatStr;
         }
@@ -549,7 +521,6 @@ public final class HuggingFaceTokenizerLoader {
             String repository,
             String revision,
             Map<String, Object> tokenizerConfig,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         if (tokenizerConfig == null) {
@@ -577,14 +548,7 @@ public final class HuggingFaceTokenizerLoader {
         try {
             modulePath =
                     fetchFromSource(
-                            source,
-                            cache,
-                            user,
-                            repository,
-                            revision,
-                            moduleFile,
-                            useCacheOnly,
-                            forceRefresh);
+                            source, cache, user, repository, revision, moduleFile, forceRefresh);
         } catch (IOException e) {
             if (isHttp404(e)) {
                 return null;
@@ -606,16 +570,13 @@ public final class HuggingFaceTokenizerLoader {
             String repository,
             String revision,
             String file,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         if (SOURCE_HUGGING_FACE.equals(source)) {
-            return cache.fetchHuggingFace(
-                    user, repository, revision, file, useCacheOnly, forceRefresh);
+            return cache.fetchHuggingFace(user, repository, revision, file, forceRefresh);
         }
         if (SOURCE_MODELSCOPE.equals(source)) {
-            return cache.fetchModelScope(
-                    user, repository, revision, file, useCacheOnly, forceRefresh);
+            return cache.fetchModelScope(user, repository, revision, file, forceRefresh);
         }
         throw new IllegalArgumentException("Unsupported source: " + source);
     }
@@ -759,11 +720,11 @@ public final class HuggingFaceTokenizerLoader {
         if (!Files.exists(input)) {
             throw new IllegalArgumentException("Path does not exist: " + input);
         }
-        if (!input.getFileName().toString().equals("tokenizer.json")) {
+        if (!Files.isRegularFile(input)) {
             throw new IllegalArgumentException(
-                    "Expected directory or tokenizer.json path, got " + input);
+                    "Expected a directory or a tokenizer.json file, got " + input);
         }
-        return input;
+        return input; // any name: the content is the tokenizer.json, the name is the caller's
     }
 
     @SuppressWarnings("unchecked")

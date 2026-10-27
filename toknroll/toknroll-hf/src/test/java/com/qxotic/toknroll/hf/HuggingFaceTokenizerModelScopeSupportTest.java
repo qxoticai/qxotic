@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.fetch.Transport;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.testkit.TestSystemProperties;
@@ -65,7 +66,11 @@ class HuggingFaceTokenizerModelScopeSupportTest {
 
         Tokenizer tokenizer =
                 HuggingFaceTokenizerLoader.loadFromModelScopeTiktokenModel(
-                        RepositoryArtifactCache.create(tempDir), "org", "repo", "dev", true, false);
+                        RepositoryArtifactCache.create(tempDir, Transport.offline()),
+                        "org",
+                        "repo",
+                        "dev",
+                        false);
 
         assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
         assertTrue(tokenizer.vocabulary().contains("<|end|>"));
@@ -83,8 +88,7 @@ class HuggingFaceTokenizerModelScopeSupportTest {
                                     HuggingFaceTokenizerLoader.fromModelScope(
                                             "cacheonly", "demo", null, true, false));
             assertTrue(error.getCause() instanceof IOException);
-            assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
-            assertTrue(error.getCause().getMessage().contains("artifact not cached"));
+            assertTrue(error.getCause().getMessage().contains("offline"));
         } finally {
             restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }

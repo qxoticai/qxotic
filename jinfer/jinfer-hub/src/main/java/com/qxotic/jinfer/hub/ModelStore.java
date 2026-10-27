@@ -282,6 +282,28 @@ public final class ModelStore {
         return resolve(pathOrRef, Policy.USE_CACHE);
     }
 
+    /**
+     * The repository-relative path of the file {@code ref} names: its {@code /path}, checked to
+     * exist, or the file its {@code :quant} selects, chosen exactly as {@link #resolve} would
+     * choose it. Nothing is downloaded: for a caller that reads the file its own way, a GGUF header
+     * by a bounded request where resolve would bring the model.
+     */
+    public String select(String ref) {
+        requireRef(ref);
+        ModelRef parsed = ModelRef.parse(ref);
+        requireOnlineFor(parsed.toString(), lookedIn(parsed), Policy.USE_CACHE);
+        List<ModelSource> serving = sources.stream().filter(s -> s.supports(parsed)).toList();
+        if (serving.isEmpty()) {
+            throw new UncheckedIOException(
+                    new IOException(parsed + ": no source in this store serves " + parsed.host()));
+        }
+        try {
+            return select(parsed, serving.getFirst()).path();
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not resolve " + parsed + ": " + e, e);
+        }
+    }
+
     private Path resolve(String pathOrRef, Policy policy) {
         if (ModelRef.isRef(pathOrRef)) {
             return resolveRef(ModelRef.parse(pathOrRef), policy);

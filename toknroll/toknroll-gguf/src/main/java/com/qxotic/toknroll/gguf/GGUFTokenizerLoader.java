@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.gguf;
 
+import com.qxotic.fetch.Transport;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
@@ -18,7 +19,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
@@ -365,10 +365,6 @@ public final class GGUFTokenizerLoader {
         if (Files.isDirectory(file)) {
             throw new IllegalArgumentException("Expected GGUF file path, got directory: " + file);
         }
-        if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gguf")) {
-            throw new IllegalArgumentException("Expected .gguf file path, got: " + file);
-        }
-
         try {
             GGUF gguf = GGUF.read(file);
             return fromGGUF(gguf);
@@ -468,17 +464,16 @@ public final class GGUFTokenizerLoader {
             String ggufPath,
             boolean useCacheOnly,
             boolean forceRefresh) {
-        GGUFMetadataCache cache = GGUFMetadataCache.create();
+        GGUFMetadataCache cache =
+                GGUFMetadataCache.create(useCacheOnly ? Transport.offline() : Transport.system());
         try {
             Path metadataPath;
             if (SOURCE_HUGGING_FACE.equals(source)) {
                 metadataPath =
-                        cache.fetchHuggingFace(
-                                user, repository, revision, ggufPath, useCacheOnly, forceRefresh);
+                        cache.fetchHuggingFace(user, repository, revision, ggufPath, forceRefresh);
             } else if (SOURCE_MODELSCOPE.equals(source)) {
                 metadataPath =
-                        cache.fetchModelScope(
-                                user, repository, revision, ggufPath, useCacheOnly, forceRefresh);
+                        cache.fetchModelScope(user, repository, revision, ggufPath, forceRefresh);
             } else {
                 throw new IllegalArgumentException("Unsupported source: " + source);
             }

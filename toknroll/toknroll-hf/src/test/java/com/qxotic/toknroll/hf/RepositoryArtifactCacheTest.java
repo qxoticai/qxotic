@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.fetch.Transport;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.FileNotFoundException;
@@ -48,8 +49,8 @@ class RepositoryArtifactCacheTest {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         String url = "http://localhost:" + server.getAddress().getPort() + "/artifact";
 
-        Path first = cache.fetchUrl(url, Map.of(), false, false);
-        Path second = cache.fetchUrl(url, Map.of(), false, false);
+        Path first = cache.fetchUrl(url, Map.of(), false);
+        Path second = cache.fetchUrl(url, Map.of(), false);
 
         assertEquals(first, second);
         assertEquals(1, hits.get(), "second fetch should reuse cache");
@@ -58,14 +59,13 @@ class RepositoryArtifactCacheTest {
 
     @Test
     void fetchUrl_offlineMissThrows() throws Exception {
-        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        RepositoryArtifactCache cache =
+                RepositoryArtifactCache.create(tempDir, Transport.offline());
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () ->
-                                cache.fetchUrl(
-                                        "https://example.com/never-used", Map.of(), true, false));
-        assertTrue(error.getMessage().contains("useCacheOnly=true"));
+                        () -> cache.fetchUrl("https://example.com/never-used", Map.of(), false));
+        assertTrue(error.getMessage().contains("offline"));
     }
 
     @Test
@@ -76,8 +76,8 @@ class RepositoryArtifactCacheTest {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         String url = "http://localhost:" + server.getAddress().getPort() + "/refresh";
 
-        Path first = cache.fetchUrl(url, Map.of(), false, false);
-        Path second = cache.fetchUrl(url, Map.of(), false, true);
+        Path first = cache.fetchUrl(url, Map.of(), false);
+        Path second = cache.fetchUrl(url, Map.of(), true);
 
         assertEquals(first, second);
         assertEquals(2, hits.get(), "forceRefresh should trigger second download");
@@ -100,7 +100,7 @@ class RepositoryArtifactCacheTest {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         String url = "http://localhost:" + server.getAddress().getPort() + "/binary";
 
-        Path path = cache.fetchUrl(url, Map.of(), false, false);
+        Path path = cache.fetchUrl(url, Map.of(), false);
         assertArrayEquals(payload, Files.readAllBytes(path));
     }
 
@@ -122,9 +122,7 @@ class RepositoryArtifactCacheTest {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         String url = "http://localhost:" + server.getAddress().getPort() + "/auth";
 
-        Path path =
-                cache.fetchUrl(
-                        url, Map.of("Authorization", List.of("Bearer secret")), false, false);
+        Path path = cache.fetchUrl(url, Map.of("Authorization", List.of("Bearer secret")), false);
         assertEquals("ok", Files.readString(path, StandardCharsets.UTF_8));
     }
 
@@ -135,7 +133,7 @@ class RepositoryArtifactCacheTest {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
         String url = "http://localhost:" + server.getAddress().getPort() + "/error";
 
-        assertThrows(IOException.class, () -> cache.fetchUrl(url, Map.of(), false, false));
+        assertThrows(IOException.class, () -> cache.fetchUrl(url, Map.of(), false));
         assertNoPartials();
     }
 
@@ -154,8 +152,8 @@ class RepositoryArtifactCacheTest {
         String url = "http://localhost:" + server.getAddress().getPort() + "/concurrent";
         ExecutorService callers = Executors.newFixedThreadPool(2);
         try {
-            Future<Path> first = callers.submit(() -> cache.fetchUrl(url, Map.of(), false, true));
-            Future<Path> second = callers.submit(() -> cache.fetchUrl(url, Map.of(), false, true));
+            Future<Path> first = callers.submit(() -> cache.fetchUrl(url, Map.of(), true));
+            Future<Path> second = callers.submit(() -> cache.fetchUrl(url, Map.of(), true));
 
             assertEquals(first.get(2, TimeUnit.SECONDS), second.get(2, TimeUnit.SECONDS));
             assertEquals("complete", Files.readString(first.get(), StandardCharsets.UTF_8));
@@ -180,27 +178,26 @@ class RepositoryArtifactCacheTest {
 
         assertTimeoutPreemptively(
                 Duration.ofSeconds(2),
-                () ->
-                        assertThrows(
-                                IOException.class,
-                                () -> cache.fetchUrl(url, Map.of(), false, false)));
+                () -> assertThrows(IOException.class, () -> cache.fetchUrl(url, Map.of(), false)));
         assertNoPartials();
     }
 
     @Test
     void fetchHuggingFace_blankRevisionRejected() {
-        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        RepositoryArtifactCache cache =
+                RepositoryArtifactCache.create(tempDir, Transport.offline());
         assertThrows(
                 IllegalArgumentException.class,
-                () -> cache.fetchHuggingFace("user", "repo", "   ", "tokenizer.json", true, false));
+                () -> cache.fetchHuggingFace("user", "repo", "   ", "tokenizer.json", false));
     }
 
     @Test
     void fetchModelScope_blankRevisionRejected() {
-        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        RepositoryArtifactCache cache =
+                RepositoryArtifactCache.create(tempDir, Transport.offline());
         assertThrows(
                 IllegalArgumentException.class,
-                () -> cache.fetchModelScope("user", "repo", "   ", "tokenizer.json", true, false));
+                () -> cache.fetchModelScope("user", "repo", "   ", "tokenizer.json", false));
     }
 
     @Test
@@ -216,8 +213,8 @@ class RepositoryArtifactCacheTest {
 
         assertThrows(
                 FileNotFoundException.class,
-                () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false, false));
-        Path path = cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false, false);
+                () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false));
+        Path path = cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false);
 
         assertEquals(2, hits.get(), "a 404 under a branch must not be cached");
         assertEquals("late", Files.readString(path, StandardCharsets.UTF_8));
@@ -237,20 +234,21 @@ class RepositoryArtifactCacheTest {
 
         assertThrows(
                 FileNotFoundException.class,
-                () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false, false));
+                () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false));
         assertThrows(
                 FileNotFoundException.class,
-                () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false, false));
+                () -> cache.fetchHuggingFace("u", "r", sha, "tokenizer.json", false));
 
         assertEquals(1, hits.get(), "a 404 under an immutable commit is cached");
     }
 
     @Test
     void fetchHuggingFace_cacheOnlyMissIsTyped() {
-        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        RepositoryArtifactCache cache =
+                RepositoryArtifactCache.create(tempDir, Transport.offline());
         assertThrows(
                 NoSuchFileException.class,
-                () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", true, false));
+                () -> cache.fetchHuggingFace("u", "r", "main", "tokenizer.json", false));
     }
 
     private String endpoint() {

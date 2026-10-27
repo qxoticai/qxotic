@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.fetch.Transport;
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
 import com.sun.net.httpserver.HttpExchange;
@@ -56,12 +57,7 @@ class GGUFMetadataCacheTest {
 
         Path actual =
                 cache.fetchHuggingFace(
-                        "unsloth",
-                        "gemma-4-E2B-it-GGUF",
-                        null,
-                        "gemma-4-E2B-it-Q8_0.gguf",
-                        true,
-                        false);
+                        "unsloth", "gemma-4-E2B-it-GGUF", null, "gemma-4-E2B-it-Q8_0.gguf", false);
 
         assertEquals(cachedPath.toAbsolutePath().normalize(), actual);
         assertTrue(actual.toString().contains("/main/"));
@@ -88,7 +84,6 @@ class GGUFMetadataCacheTest {
                         "Qwen3.6-35B-A3B-GGUF",
                         null,
                         "quantized/Qwen3.6-35B-A3B-Q8_0.gguf",
-                        true,
                         false);
 
         assertEquals(cachedPath.toAbsolutePath().normalize(), actual);
@@ -110,12 +105,7 @@ class GGUFMetadataCacheTest {
 
         Path actual =
                 cache.fetchModelScope(
-                        "Qwen",
-                        "Qwen3.6-35B-A3B-GGUF",
-                        null,
-                        "Qwen3.6-35B-A3B-Q8_0.gguf",
-                        true,
-                        false);
+                        "Qwen", "Qwen3.6-35B-A3B-GGUF", null, "Qwen3.6-35B-A3B-Q8_0.gguf", false);
 
         assertEquals(cachedPath.toAbsolutePath().normalize(), actual);
         assertTrue(actual.toString().contains("/master/"));
@@ -124,7 +114,7 @@ class GGUFMetadataCacheTest {
 
     @Test
     void fetchHuggingFace_offlineMissThrows() {
-        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
+        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir, Transport.offline());
 
         IOException error =
                 assertThrows(
@@ -135,10 +125,9 @@ class GGUFMetadataCacheTest {
                                         "Llama-3.2-1B-Instruct-GGUF",
                                         null,
                                         "Llama-3.2-1B-Instruct-Q8_0.gguf",
-                                        true,
                                         false));
 
-        assertTrue(error.getMessage().contains("useCacheOnly=true"));
+        assertTrue(error.getMessage().contains("offline"));
     }
 
     @Test
@@ -152,7 +141,6 @@ class GGUFMetadataCacheTest {
                                 "gpt-oss-20b-GGUF",
                                 "   ",
                                 "gpt-oss-20b-Q8_0.gguf",
-                                true,
                                 false));
     }
 
@@ -167,7 +155,6 @@ class GGUFMetadataCacheTest {
                                 "Qwen3.6-35B-A3B-GGUF",
                                 "   ",
                                 "Qwen3.6-35B-A3B-Q8_0.gguf",
-                                true,
                                 false));
     }
 
@@ -176,7 +163,7 @@ class GGUFMetadataCacheTest {
         GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> cache.fetchHuggingFace("a", "b", null, "tokenizer.json", true, false));
+                () -> cache.fetchHuggingFace("a", "b", null, "tokenizer.json", false));
     }
 
     @Test
@@ -184,18 +171,18 @@ class GGUFMetadataCacheTest {
         GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> cache.fetchHuggingFace("a/b", "repo", null, "model.gguf", true, false));
+                () -> cache.fetchHuggingFace("a/b", "repo", null, "model.gguf", false));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> cache.fetchHuggingFace("user", "../repo", null, "model.gguf", true, false));
+                () -> cache.fetchHuggingFace("user", "../repo", null, "model.gguf", false));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> cache.fetchHuggingFace("user", "repo", null, "../model.gguf", true, false));
+                () -> cache.fetchHuggingFace("user", "repo", null, "../model.gguf", false));
     }
 
     @Test
     void fetchHuggingFace_forceRefreshWithCacheOnlyThrows() throws Exception {
-        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
+        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir, Transport.offline());
         Path cachedPath =
                 tempDir.resolve("gguf-metadata")
                         .resolve("huggingface")
@@ -215,9 +202,8 @@ class GGUFMetadataCacheTest {
                                         "Llama-3.2-1B-Instruct-GGUF",
                                         null,
                                         "Llama-3.2-1B-Instruct-Q8_0.gguf",
-                                        true,
                                         true));
-        assertTrue(error.getMessage().contains("useCacheOnly=true"));
+        assertTrue(error.getMessage().contains("offline"));
     }
 
     @Test
@@ -232,8 +218,8 @@ class GGUFMetadataCacheTest {
         String url = serverUrl("/model.gguf");
         Path target = tempDir.resolve("model.gguf.metadata");
 
-        Path first = cache.fetchPartialMetadata("test", url, target, null, false, false);
-        Path second = cache.fetchPartialMetadata("test", url, target, null, false, false);
+        Path first = cache.fetchPartialMetadata("test", url, target, null, false);
+        Path second = cache.fetchPartialMetadata("test", url, target, null, false);
 
         assertEquals(first, second);
         assertEquals(1, hits.get(), "second fetch should reuse cache");
@@ -255,8 +241,8 @@ class GGUFMetadataCacheTest {
         String url = serverUrl("/refresh.gguf");
         Path target = tempDir.resolve("refresh.gguf.metadata");
 
-        cache.fetchPartialMetadata("test", url, target, null, false, false);
-        cache.fetchPartialMetadata("test", url, target, null, false, true);
+        cache.fetchPartialMetadata("test", url, target, null, false);
+        cache.fetchPartialMetadata("test", url, target, null, true);
 
         assertEquals(2, hits.get(), "forceRefresh should trigger re-download");
     }
@@ -272,7 +258,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false));
 
         assertTrue(error.getMessage().contains("HTTP 404"));
     }
@@ -288,7 +274,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false));
 
         assertTrue(error.getMessage().contains("HTTP 500"));
     }
@@ -306,7 +292,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false));
 
         assertTrue(
                 error.getMessage().contains("Failed to parse GGUF metadata"),
@@ -324,7 +310,7 @@ class GGUFMetadataCacheTest {
 
         assertThrows(
                 IOException.class,
-                () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
+                () -> cache.fetchPartialMetadata("test", url, target, null, false));
     }
 
     @Test
@@ -338,7 +324,7 @@ class GGUFMetadataCacheTest {
         Path target = tempDir.resolve("cleanup.gguf.metadata");
         assertThrows(
                 IOException.class,
-                () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
+                () -> cache.fetchPartialMetadata("test", url, target, null, false));
 
         assertNoPartials();
         assertFalse(Files.exists(target), ".metadata file should not be created on failure");
@@ -363,14 +349,10 @@ class GGUFMetadataCacheTest {
         try {
             Future<Path> first =
                     callers.submit(
-                            () ->
-                                    cache.fetchPartialMetadata(
-                                            "test", url, target, null, false, true));
+                            () -> cache.fetchPartialMetadata("test", url, target, null, true));
             Future<Path> second =
                     callers.submit(
-                            () ->
-                                    cache.fetchPartialMetadata(
-                                            "test", url, target, null, false, true));
+                            () -> cache.fetchPartialMetadata("test", url, target, null, true));
 
             assertEquals(first.get(2, TimeUnit.SECONDS), second.get(2, TimeUnit.SECONDS));
             assertEquals("test-value", GGUF.read(first.get()).getString("test.key"));
@@ -400,7 +382,7 @@ class GGUFMetadataCacheTest {
                                 IOException.class,
                                 () ->
                                         cache.fetchPartialMetadata(
-                                                "test", url, target, null, false, false)));
+                                                "test", url, target, null, false)));
         assertNoPartials();
         assertFalse(Files.exists(target));
     }
@@ -423,23 +405,23 @@ class GGUFMetadataCacheTest {
         String url = serverUrl("/auth.gguf");
         Path target = tempDir.resolve("auth.gguf.metadata");
 
-        Path result = cache.fetchPartialMetadata("test", url, target, "test-token", false, false);
+        Path result = cache.fetchPartialMetadata("test", url, target, "test-token", false);
 
         assertTrue(Files.exists(result));
     }
 
     @Test
     void fetchPartialMetadata_useCacheOnlyMissThrows() throws Exception {
-        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
+        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir, Transport.offline());
         String url = "http://localhost:1/nonexistent.gguf";
         Path target = tempDir.resolve("nonexistent.gguf.metadata");
 
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () -> cache.fetchPartialMetadata("test", url, target, null, true, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false));
 
-        assertTrue(error.getMessage().contains("useCacheOnly=true"));
+        assertTrue(error.getMessage().contains("offline"));
     }
 
     private String serverUrl(String path) {

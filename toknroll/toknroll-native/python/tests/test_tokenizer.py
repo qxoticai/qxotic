@@ -42,12 +42,27 @@ class LoadTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(TypeError):
                 toknroll.load(bad)
 
+    @needs_gguf
+    def test_a_gguf_loads_by_its_content_whatever_its_name(self):
+        with tempfile.TemporaryDirectory() as d:   # an Ollama blob: sha256-<hex>, no extension
+            blob = Path(d) / "sha256-3f1a"
+            blob.write_bytes(Path(GGUF).read_bytes()[: 32 << 20])   # the header is all a tokenizer reads
+            with toknroll.load(GGUF) as named, toknroll.load(str(blob)) as unnamed:
+                self.assertEqual(named.encode("Hello, Tok'n'Roll!"), unnamed.encode("Hello, Tok'n'Roll!"))
+
+    def test_a_file_of_no_known_kind_is_invalid(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("not a tokenizer")
+        with self.assertRaises(toknroll.InvalidArgument) as e:
+            toknroll.load(f.name)
+        self.assertIn("GGUF", str(e.exception))
+
     def test_load_errors_are_typed(self):
         with self.assertRaises(toknroll.NotFound) as e:
             toknroll.load("/no/such/dir/tokenizer.json")
         self.assertIsInstance(e.exception, FileNotFoundError)
         self.assertEqual(e.exception.code, -3)
-        self.assertIn("/no/such/dir/tokenizer.json", str(e.exception))
+        self.assertIn(str(Path("/no/such/dir/tokenizer.json")), str(e.exception))   # as the platform spells it
         with self.assertRaises(toknroll.InvalidArgument) as e:
             toknroll.load("")
         self.assertIsInstance(e.exception, ValueError)
@@ -256,8 +271,10 @@ class PicklingTest(unittest.TestCase):
             clone.close()
 
     def test_processes(self):
+        import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
-        with toknroll.load(GGUF) as t, ProcessPoolExecutor(2) as pool:
+        # spawn, Python 3.14's default: a fork of a process with a live runtime inherits none of its threads
+        with toknroll.load(GGUF) as t, ProcessPoolExecutor(2, mp_context=multiprocessing.get_context("spawn")) as pool:
             self.assertEqual(list(pool.map(t.count_tokens, ["one", "two three", ""])), [1, 2, 0])
 
 
