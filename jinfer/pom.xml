@@ -27,6 +27,7 @@
     <module>jinfer-kernels</module>
     <module>jinfer-cache</module>
     <module>jinfer-lfm2</module>
+    <module>jinfer-lfm3</module>
     <module>jinfer-qwen3</module>
     <module>jinfer-qwen35</module>
     <module>jinfer-bailingmoe3</module>
@@ -162,6 +163,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-bailingmoe3</artifactId>
+        <version>${jinfer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-lfm3</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
       <dependency>

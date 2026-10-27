@@ -1,0 +1,798 @@
+package com.qxotic.jinfer.models.lfm3;
+
+import static com.qxotic.jinfer.models.lfm3.Lfm3.f32;
+import static com.qxotic.jinfer.models.lfm3.Lfm3.require;
+import static com.qxotic.jinfer.models.lfm3.Lfm3.weight;
+
+import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.Parallel;
+import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.kernels.Activations;
+import com.qxotic.jinfer.kernels.Convert;
+import com.qxotic.jinfer.kernels.Convolutions;
+import com.qxotic.jinfer.kernels.FlashAttention;
+import com.qxotic.jinfer.kernels.MatMul;
+import com.qxotic.jinfer.kernels.ModelLoader;
+import com.qxotic.jinfer.kernels.Norms;
+import com.qxotic.jinfer.kernels.Ops;
+import com.qxotic.jinfer.kernels.RoPE;
+import com.qxotic.jota.memory.MemoryArena;
+import com.qxotic.jota.memory.MemoryView;
+import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.random.RandomGenerator;
+
+/**
+ * LFM3-Omni's speech head: the backbone's hidden state becomes one 80 ms audio frame - 12 codes,
+ * one per codebook - and the frame becomes 24 kHz PCM.
+ *
+ * <pre>
+ *   hidden ─► depthformer (MaskGIT: 3 passes, 4 codebooks revealed each) ─► 12 codes
+ *   codes  ─► feedback row: the sum of 12 code embeddings, the backbone's next input
+ *   codes  ─► codec: FSQ lookup, x6 upsample, a causal LFM stack, log-magnitude + phase, ISTFT
+ * </pre>
+ *
+ * Package-private: the public speech API is still to be designed; this is its engine.
+ */
+final class Lfm3Speech {
+
+    static final int SAMPLE_RATE = 24_000;
+    static final int CODEBOOKS = 12;
+    private static final int[] SCHEDULE = {4, 4, 4}; // codebooks revealed per depthformer pass
+    private static final int FRAME_STACK = 6; // codec positions per frame
+    private static final int WINDOW = 30, RING = 32; // the codec's attention window, its ring
+    private static final int SHORTCONV_TAPS = 7, SHORTCONV_PARTS = 3;
+    private static final int FSQ_LEVELS = 4; // [8, 7, 6, 6]: one value per level per code
+
+    /** One LFM block of either stack: exactly one of the conv and attention groups is set. */
+    record Block(
+            MemoryView<MemorySegment> norm1,
+            MemoryView<MemorySegment> postNorm1,
+            MemoryView<MemorySegment> convIn,
+            MemoryView<MemorySegment> convTaps,
+            MemoryView<MemorySegment> convOut,
+            MemoryView<MemorySegment> query,
+            MemoryView<MemorySegment> key,
+            MemoryView<MemorySegment> value,
+            MemoryView<MemorySegment> output,
+            MemoryView<MemorySegment> gate,
+            MemoryView<MemorySegment> queryNorm,
+            MemoryView<MemorySegment> keyNorm,
+            MemoryView<MemorySegment> norm2,
+            MemoryView<MemorySegment> postNorm2,
+            MemoryView<MemorySegment> ffnGate,
+            MemoryView<MemorySegment> ffnUp,
+            MemoryView<MemorySegment> ffnDown) {}
+
+    /** A transformer's geometry. */
+    record Stack(
+            int dim, int heads, int kvHeads, int headDim, int ffnDim, float eps, Block[] blocks) {
+        int kvDim() {
+            return kvHeads * headDim;
+        }
+    }
+
+    /** Speech-code sampling; temperature 0 is argmax. The GGUF carries the model card's values. */
+    record Sampling(float temperature, int topK, float repetitionPenalty, int repetitionWindow) {}
+
+    final int modelDim, vocab; // vocab: per codebook, the last code ends the audio
+    final Sampling defaults;
+    private final Stack depth, codec;
+    private final MemoryView<MemorySegment> projIn, projInBias, maskEmbd, depthNorm;
+    private final MemoryView<MemorySegment>[] headNorms; // per codebook [depth.dim]
+    private final MemoryView<MemorySegment>[] codeEmbd; // per codebook [vocab][depth.dim]
+    private final MemoryView<MemorySegment> outEmbd; // [codebooks * vocab][modelDim]
+    private final float[] fsq; // [vocab - 1][FSQ_LEVELS]
+    private final MemoryView<MemorySegment> quantOut, quantOutBias, codecIn, codecInBias;
+    private final MemoryView<MemorySegment> codecNorm, codecOut, codecOutBias;
+    private final RoPE.Schedule depthRope, codecRope;
+
+    private Lfm3Speech(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
+        require(
+                "lfm3a_gen".equals(gguf.getString("clip.gen.audio.projector_type")),
+                "unsupported speech head " + gguf.getString("clip.gen.audio.projector_type"));
+        this.modelDim = modelDim;
+        require(
+                gguf.getValue(int.class, "clip.gen.audio.projection_dim") == modelDim,
+                "speech head width != model width " + modelDim);
+        int dim = gguf.getValue(int.class, "clip.gen.audio.embedding_length");
+        int heads = gguf.getValue(int.class, "clip.gen.audio.attention.head_count");
+        depth =
+                stack(
+                        tensors,
+                        "a.gen.code.blk.",
+                        gguf.getValue(int.class, "clip.gen.audio.block_count"),
+                        dim,
+                        heads,
+                        gguf.getValue(int.class, "clip.gen.audio.attention.head_count_kv"),
+                        gguf.getValue(int.class, "clip.gen.audio.feed_forward_length"),
+                        gguf.getValue(float.class, "clip.gen.audio.attention.layer_norm_epsilon"));
+        MemoryView<MemorySegment>[] tables =
+                Views.sliceLeadingAxis(ModelLoader.require(tensors, "a.gen.code.embd.weight"));
+        require(tables.length == CODEBOOKS, "expected " + CODEBOOKS + " codebooks");
+        codeEmbd = tables;
+        vocab = Math.toIntExact(tables[0].shape().flatAt(0));
+        projIn = weight(tensors, "a.gen.code.proj_in.weight", CODEBOOKS * dim, modelDim);
+        projInBias = f32(tensors, "a.gen.code.proj_in.bias", CODEBOOKS * dim);
+        maskEmbd = f32(tensors, "a.gen.code.mask_embd", dim);
+        depthNorm = f32(tensors, "a.gen.code.output_norm.weight", dim);
+        MemoryView<MemorySegment> headNorm =
+                f32(tensors, "a.gen.code.head_norm.weight", CODEBOOKS, dim);
+        headNorms = rows(headNorm, CODEBOOKS);
+        outEmbd = weight(tensors, "a.gen.code.out_embd.weight", CODEBOOKS * vocab, modelDim);
+
+        // the codec: liquid-codec's fixed decoder shape; head counts from its tensors
+        MemoryView<MemorySegment> table =
+                f32(tensors, "a.gen.wav.quant.first.codebook.weight", vocab - 1, FSQ_LEVELS);
+        fsq = Views.toFloatArray(table, "fsq");
+        int quantDim =
+                Math.toIntExact(
+                        ModelLoader.require(tensors, "a.gen.wav.quant.first.out_proj.bias")
+                                .shape()
+                                .flatAt(0));
+        quantOut =
+                f32(
+                        tensors,
+                        "a.gen.wav.quant.first.out_proj.weight",
+                        quantDim,
+                        CODEBOOKS * FSQ_LEVELS);
+        quantOutBias = f32(tensors, "a.gen.wav.quant.first.out_proj.bias", quantDim);
+        int codecDim =
+                Math.toIntExact(
+                        ModelLoader.require(tensors, "a.gen.wav.tfm.in_proj.bias")
+                                .shape()
+                                .flatAt(0));
+        codecIn = weight(tensors, "a.gen.wav.tfm.in_proj.weight", codecDim, quantDim);
+        codecInBias = f32(tensors, "a.gen.wav.tfm.in_proj.bias", codecDim);
+        // liquid-codec's decoder shape is fixed by its config, its sizes are read off the tensors
+        int codecLayers = 0, codecHeadDim = 0, codecKvDim = 0;
+        for (;
+                tensors.containsKey("a.gen.wav.tfm.blk." + codecLayers + ".ln1.weight");
+                codecLayers++) {
+            String p = "a.gen.wav.tfm.blk." + codecLayers + ".";
+            if (tensors.containsKey(p + "attn_q_norm.weight")) {
+                codecHeadDim =
+                        Math.toIntExact(tensors.get(p + "attn_q_norm.weight").shape().flatAt(0));
+                codecKvDim = logical(tensors, p + "attn_k.weight", 0);
+            }
+        }
+        require(codecHeadDim > 0, "the codec has no attention layer");
+        int codecFfn = logical(tensors, "a.gen.wav.tfm.blk.0.ffn_down.weight", 1);
+        codec =
+                stack(
+                        tensors,
+                        "a.gen.wav.tfm.blk.",
+                        codecLayers,
+                        codecDim,
+                        codecDim / codecHeadDim,
+                        codecKvDim / codecHeadDim,
+                        codecFfn,
+                        1e-5f);
+        codecNorm = f32(tensors, "a.gen.wav.tfm.output_norm.weight", codecDim);
+        int bins = Istft.N_FFT / 2 + 1;
+        codecOut = weight(tensors, "a.gen.wav.tfm.out_proj.weight", 2 * bins, codecDim);
+        codecOutBias = f32(tensors, "a.gen.wav.tfm.out_proj.bias", 2 * bins);
+
+        depthRope = RoPE.plain(depth.headDim, 1e6); // the converter pins both rope bases
+        codecRope = RoPE.plain(codec.headDim, 1e6);
+        defaults =
+                new Sampling(
+                        gguf.getValueOrDefault(float.class, "clip.gen.audio.sampling.temp", 0.4f),
+                        gguf.getValueOrDefault(int.class, "clip.gen.audio.sampling.top_k", 0),
+                        gguf.getValueOrDefault(
+                                float.class, "clip.gen.audio.sampling.penalty_repeat", 1.2f),
+                        gguf.getValueOrDefault(
+                                int.class, "clip.gen.audio.sampling.penalty_last_n", 64));
+    }
+
+    static Lfm3Speech load(
+            GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
+        return new Lfm3Speech(gguf, tensors, modelDim);
+    }
+
+    /** A weight's logical size along {@code axis} (rows 0, columns 1), whatever its type. */
+    private static int logical(
+            Map<String, MemoryView<MemorySegment>> tensors, String name, int axis) {
+        MemoryView<MemorySegment> w = ModelLoader.require(tensors, name);
+        return Math.toIntExact(w.dataType().logicalShape(w.shape()).flatAt(axis));
+    }
+
+    /** The rows of a dense {@code [n][width]} view, each a {@code [1][width]} view. */
+    @SuppressWarnings("unchecked")
+    private static MemoryView<MemorySegment>[] rows(MemoryView<MemorySegment> t, int n) {
+        MemoryView<MemorySegment>[] rows = new MemoryView[n];
+        for (int i = 0; i < n; i++) rows[i] = t.slice(0, i, i + 1);
+        return rows;
+    }
+
+    private static Stack stack(
+            Map<String, MemoryView<MemorySegment>> tensors,
+            String prefix,
+            int layers,
+            int dim,
+            int heads,
+            int kvHeads,
+            int ffnDim,
+            float eps) {
+        int headDim = dim / heads, kvDim = kvHeads * headDim;
+        Block[] blocks = new Block[layers];
+        for (int l = 0; l < layers; l++) {
+            String p = prefix + l + ".";
+            boolean conv = tensors.containsKey(p + "conv_dw.weight");
+            boolean post = tensors.containsKey(p + "attn_post_norm.weight");
+            blocks[l] =
+                    new Block(
+                            f32(tensors, p + "ln1.weight", dim),
+                            post ? f32(tensors, p + "attn_post_norm.weight", dim) : null,
+                            conv
+                                    ? weight(
+                                            tensors,
+                                            p + "conv_pw1.weight",
+                                            SHORTCONV_PARTS * dim,
+                                            dim)
+                                    : null,
+                            conv ? f32(tensors, p + "conv_dw.weight", dim, SHORTCONV_TAPS) : null,
+                            conv ? weight(tensors, p + "conv_pw2.weight", dim, dim) : null,
+                            conv ? null : weight(tensors, p + "attn_q.weight", dim, dim),
+                            conv ? null : weight(tensors, p + "attn_k.weight", kvDim, dim),
+                            conv ? null : weight(tensors, p + "attn_v.weight", kvDim, dim),
+                            conv ? null : weight(tensors, p + "attn_out.weight", dim, dim),
+                            conv ? null : weight(tensors, p + "attn_gate.weight", heads, dim),
+                            conv ? null : f32(tensors, p + "attn_q_norm.weight", headDim),
+                            conv ? null : f32(tensors, p + "attn_k_norm.weight", headDim),
+                            f32(tensors, p + "ln2.weight", dim),
+                            post ? f32(tensors, p + "ffn_post_norm.weight", dim) : null,
+                            weight(tensors, p + "ffn_gate.weight", ffnDim, dim),
+                            weight(tensors, p + "ffn_up.weight", ffnDim, dim),
+                            weight(tensors, p + "ffn_down.weight", dim, ffnDim));
+        }
+        return new Stack(dim, heads, kvHeads, headDim, ffnDim, eps, blocks);
+    }
+
+    /** Buffers for one stack over up to {@code rows} positions; the codec's also keep its state. */
+    private static final class Pass {
+        final Stack stack;
+        final MemoryView<MemorySegment> x, normed, mixed, wide, query, key, value, gate, attn;
+        final MemoryView<MemorySegment> hidden, hidden2, cos, sin;
+        final MemoryView<MemorySegment>[] keyRing, valueRing, convState; // codec state, per block
+
+        @SuppressWarnings("unchecked")
+        Pass(Stack stack, int rows, boolean stateful, MemoryArena<MemorySegment> arena) {
+            this.stack = stack;
+            int dim = stack.dim, kvDim = stack.kvDim();
+            x = Views.allocateF32(arena, rows, dim);
+            normed = Views.allocateF32(arena, rows, dim);
+            mixed = Views.allocateF32(arena, rows, dim);
+            wide = Views.allocateF32(arena, rows, SHORTCONV_PARTS * dim);
+            query = Views.allocateF32(arena, rows, dim);
+            key = Views.allocateF32(arena, rows, kvDim);
+            value = Views.allocateF32(arena, rows, kvDim);
+            gate = Views.allocateF32(arena, rows, stack.heads);
+            attn = Views.allocateF32(arena, rows, dim);
+            hidden = Views.allocateF32(arena, rows, stack.ffnDim);
+            hidden2 = Views.allocateF32(arena, rows, stack.ffnDim);
+            cos = Views.allocateF32(arena, rows, stack.headDim / 2);
+            sin = Views.allocateF32(arena, rows, stack.headDim / 2);
+            int n = stack.blocks.length;
+            keyRing = new MemoryView[n];
+            valueRing = new MemoryView[n];
+            convState = new MemoryView[n];
+            if (!stateful) return;
+            for (int l = 0; l < n; l++) {
+                if (stack.blocks[l].convIn != null) {
+                    convState[l] = Views.allocateF32(arena, (long) (SHORTCONV_TAPS - 1) * dim);
+                } else {
+                    keyRing[l] = Views.allocateF32(arena, RING, kvDim);
+                    valueRing[l] = Views.allocateF32(arena, RING, kvDim);
+                }
+            }
+        }
+    }
+
+    /**
+     * The stack over {@code p.x[0, rows)} in place: pre-norm blocks with optional sandwich norms.
+     * Bidirectional without state (the depthformer); causal over a {@link #WINDOW}-position window
+     * continuing at {@code start} (the codec).
+     */
+    private static void run(Pass p, int rows, int start, boolean causal, RoPE.Schedule rope) {
+        Stack s = p.stack;
+        int dim = s.dim;
+        RoPE.fill(p.cos, p.sin, start, rows, s.headDim / 2, rope);
+        for (int l = 0; l < s.blocks.length; l++) {
+            Block b = s.blocks[l];
+            Norms.rmsnormRowsGgml(p.normed, p.x, b.norm1, rows, dim, s.eps);
+            if (b.convIn != null) {
+                MatMul.gemm(b.convIn, p.normed, p.wide, rows);
+                Convolutions.shortConvScan(
+                        b.convTaps,
+                        p.convState[l],
+                        p.wide,
+                        p.attn,
+                        rows,
+                        dim,
+                        SHORTCONV_TAPS,
+                        SHORTCONV_PARTS);
+                MatMul.gemm(b.convOut, p.attn, p.mixed, rows);
+            } else {
+                attention(p, b, l, rows, start, causal);
+            }
+            if (b.postNorm1 != null)
+                Norms.rmsnormRowsGgml(p.mixed, p.mixed, b.postNorm1, rows, dim, s.eps);
+            Ops.addRows(p.x, p.mixed, rows, dim);
+            Norms.rmsnormRowsGgml(p.normed, p.x, b.norm2, rows, dim, s.eps);
+            MatMul.gemm(b.ffnGate, p.normed, p.hidden, rows);
+            MatMul.gemm(b.ffnUp, p.normed, p.hidden2, rows);
+            Activations.siluMultiplyRows(p.hidden, p.hidden2, rows, s.ffnDim);
+            MatMul.gemm(b.ffnDown, p.hidden, p.mixed, rows);
+            if (b.postNorm2 != null)
+                Norms.rmsnormRowsGgml(p.mixed, p.mixed, b.postNorm2, rows, dim, s.eps);
+            Ops.addRows(p.x, p.mixed, rows, dim);
+        }
+    }
+
+    /** GQA with per-head Q/K RMS norms, NeoX RoPE and the per-head sigmoid gate; F32 throughout. */
+    private static void attention(Pass p, Block b, int l, int rows, int start, boolean causal) {
+        Stack s = p.stack;
+        int dim = s.dim, kvDim = s.kvDim(), headDim = s.headDim;
+        MatMul.gemm(b.query, p.normed, p.query, rows);
+        MatMul.gemm(b.key, p.normed, p.key, rows);
+        MatMul.gemm(b.value, p.normed, p.value, rows);
+        MatMul.gemm(b.gate, p.normed, p.gate, rows);
+        Parallel.forLoop(
+                rows,
+                r -> {
+                    for (int h = 0; h < s.heads; h++)
+                        normRope(p, p.query, (long) r * dim + (long) h * headDim, b.queryNorm, r);
+                    for (int h = 0; h < s.kvHeads; h++)
+                        normRope(p, p.key, (long) r * kvDim + (long) h * headDim, b.keyNorm, r);
+                });
+        float scale = 1f / (float) Math.sqrt(headDim);
+        if (causal) {
+            FlashAttention.slidingWindowPrefill(
+                    p.query,
+                    p.attn,
+                    p.keyRing[l],
+                    p.valueRing[l],
+                    p.key,
+                    p.value,
+                    s.heads,
+                    start,
+                    rows,
+                    headDim,
+                    kvDim,
+                    dim,
+                    kvDim,
+                    s.heads / s.kvHeads,
+                    scale,
+                    WINDOW,
+                    RING - 1,
+                    null);
+            for (int r = 0; r < rows; r++) {
+                long at = (long) ((start + r) & (RING - 1)) * kvDim;
+                Convert.copyF32(p.key, (long) r * kvDim, p.keyRing[l], at, kvDim);
+                Convert.copyF32(p.value, (long) r * kvDim, p.valueRing[l], at, kvDim);
+            }
+        } else {
+            FlashAttention.bidirectionalPrefill(
+                    p.query,
+                    p.attn,
+                    p.key,
+                    p.value,
+                    s.heads,
+                    rows,
+                    headDim,
+                    kvDim,
+                    dim,
+                    s.heads / s.kvHeads,
+                    scale);
+        }
+        long gateStride = p.gate.stride().flatAt(0);
+        Parallel.forLoop(
+                rows,
+                r -> {
+                    for (int h = 0; h < s.heads; h++)
+                        Ops.multiplyInPlace(
+                                p.attn,
+                                (long) r * dim + (long) h * headDim,
+                                headDim,
+                                Activations.sigmoid(
+                                        Views.getFloat(p.gate, r * gateStride + h, "gate")));
+                });
+        MatMul.gemm(b.output, p.attn, p.mixed, rows);
+    }
+
+    private static void normRope(
+            Pass p, MemoryView<MemorySegment> t, long at, MemoryView<MemorySegment> norm, int row) {
+        Norms.rmsnormGgml(t, at, t, at, norm, p.stack.headDim, p.stack.eps);
+        RoPE.applyNeox(t, at, row, p.cos, p.sin, p.stack.headDim / 2);
+    }
+
+    /**
+     * One utterance's state: the depthformer's buffers, the codec's window and ISTFT, the recent
+     * codes the repetition penalty reads. Everything a frame touches is allocated here, once; close
+     * it when the speech ends.
+     */
+    final class Stream implements AutoCloseable {
+        private final MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
+        private final Pass depthPass = new Pass(depth, CODEBOOKS, false, arena);
+        private final Pass codecPass = new Pass(codec, FRAME_STACK, true, arena);
+        private final MemoryView<MemorySegment> projected, logits, feedbackRows, quantIn, quant;
+        private final MemoryView<MemorySegment> codecRow, spectra;
+        private final MemoryView<MemorySegment>[] depthRows, logitRows;
+
+        /** The last frame's feedback row, the backbone's next input. */
+        final MemoryView<MemorySegment> feedback;
+
+        /** Where the caller puts the backbone's hidden state before each frame. */
+        final MemoryView<MemorySegment> hidden;
+
+        private final int[] feedbackIds = new int[CODEBOOKS], history;
+        private final float[] logitRow = new float[vocab], spectrum = new float[2 * Istft.BINS];
+        private final float[] quantValues = new float[CODEBOOKS * FSQ_LEVELS], feedbackRow;
+        private final double[] feedbackSum, probabilities = new double[vocab];
+        private final boolean[] seen = new boolean[vocab];
+        private final Istft istft = new Istft();
+        private int frames, position;
+
+        private Stream(int historyFrames) {
+            int dim = depth.dim;
+            projected = Views.allocateF32(arena, 1, CODEBOOKS * dim);
+            logits = Views.allocateF32(arena, CODEBOOKS, vocab);
+            feedbackRows = Views.allocateF32(arena, CODEBOOKS, modelDim);
+            feedback = Views.allocateF32(arena, 1, modelDim);
+            hidden = Views.allocateF32(arena, 1, modelDim);
+            quantIn = Views.allocateF32(arena, 1, CODEBOOKS * FSQ_LEVELS);
+            quant = Views.allocateF32(arena, 1, quantOutBias.shape().flatAt(0));
+            codecRow = codecPass.normed.slice(0, 0, 1);
+            spectra = Views.allocateF32(arena, FRAME_STACK, 2 * Istft.BINS);
+            depthRows = rows(depthPass.normed, CODEBOOKS);
+            logitRows = rows(logits, CODEBOOKS);
+            feedbackRow = new float[modelDim];
+            feedbackSum = new double[modelDim];
+            history = new int[Math.max(1, historyFrames) * CODEBOOKS];
+        }
+
+        /**
+         * Samples the frame for {@code hiddenState} (the backbone's final-normed last row) into
+         * {@code codes}, revealing the codebooks in {@code order}, 4 per depthformer pass, and sets
+         * {@link #feedback}. False when a codebook picked the end code: the speech is over.
+         */
+        boolean frame(
+                MemoryView<MemorySegment> hiddenState,
+                int[] order,
+                Sampling sampling,
+                RandomGenerator rng,
+                int[] codes) {
+            Arrays.fill(codes, -1);
+            int k = 0;
+            for (int pick : SCHEDULE) {
+                codeLogits(hiddenState, codes);
+                for (int j = 0; j < pick; j++, k++) {
+                    int cb = order[k];
+                    Views.copyToArray(logits, (long) cb * vocab, logitRow, 0, vocab, "logits");
+                    penalize(logitRow, cb, sampling);
+                    codes[cb] = sample(logitRow, sampling, rng);
+                }
+            }
+            for (int c : codes) if (c == vocab - 1) return false;
+            System.arraycopy(
+                    codes,
+                    0,
+                    history,
+                    (frames % (history.length / CODEBOOKS)) * CODEBOOKS,
+                    CODEBOOKS);
+            frames++;
+            feedback(codes);
+            return true;
+        }
+
+        /**
+         * The depthformer's logits {@code [codebook][vocab]} for the codes known so far (-1
+         * masked).
+         */
+        MemoryView<MemorySegment> codeLogits(MemoryView<MemorySegment> hiddenState, int[] codes) {
+            int dim = depth.dim;
+            MatMul.gemv(projIn, hiddenState, projected);
+            Ops.addInPlace(projected, 0, projInBias, 0, CODEBOOKS * dim);
+            Convert.copyF32(projected, 0, depthPass.x, 0, (long) CODEBOOKS * dim);
+            for (int cb = 0; cb < CODEBOOKS; cb++) {
+                if (codes[cb] >= 0) {
+                    Convert.copyToF32(
+                            codeEmbd[cb], (long) codes[cb] * dim, depthPass.normed, 0, dim);
+                    Ops.addInPlace(depthPass.x, (long) cb * dim, depthPass.normed, 0, dim);
+                } else {
+                    Ops.addInPlace(depthPass.x, (long) cb * dim, maskEmbd, 0, dim);
+                }
+            }
+            run(depthPass, CODEBOOKS, 0, false, depthRope);
+            // the stack's norm, then each codebook's own, then its tied embedding table
+            Norms.rmsnormRowsGgml(
+                    depthPass.normed, depthPass.x, depthNorm, CODEBOOKS, dim, depth.eps);
+            for (int cb = 0; cb < CODEBOOKS; cb++) {
+                long row = (long) cb * dim;
+                Norms.rmsnormGgml(
+                        depthPass.normed,
+                        row,
+                        depthPass.normed,
+                        row,
+                        headNorms[cb],
+                        dim,
+                        depth.eps);
+                MatMul.gemv(codeEmbd[cb], depthRows[cb], logitRows[cb]);
+            }
+            return logits;
+        }
+
+        /** {@link #feedback}: the sum of the frame's code embeddings, accumulated in double. */
+        void feedback(int[] codes) {
+            for (int cb = 0; cb < CODEBOOKS; cb++) feedbackIds[cb] = codes[cb] + cb * vocab;
+            Convert.gatherToF32(outEmbd, feedbackIds, 0, CODEBOOKS, feedbackRows, 0, modelDim);
+            Arrays.fill(feedbackSum, 0);
+            for (int cb = 0; cb < CODEBOOKS; cb++) {
+                Views.copyToArray(
+                        feedbackRows, (long) cb * modelDim, feedbackRow, 0, modelDim, "feedback");
+                for (int i = 0; i < modelDim; i++) feedbackSum[i] += feedbackRow[i];
+            }
+            for (int i = 0; i < modelDim; i++) feedbackRow[i] = (float) feedbackSum[i];
+            Views.copyFromArray(feedback, 0, feedbackRow, 0, modelDim, "feedback");
+        }
+
+        /** The frame's audio: {@value #FRAME_STACK} ISTFT hops, less the start padding at first. */
+        float[] decode(int[] codes) {
+            for (int cb = 0; cb < CODEBOOKS; cb++)
+                System.arraycopy(
+                        fsq, codes[cb] * FSQ_LEVELS, quantValues, cb * FSQ_LEVELS, FSQ_LEVELS);
+            Views.copyFromArray(quantIn, 0, quantValues, 0, quantValues.length, "fsq");
+            MatMul.gemv(quantOut, quantIn, quant);
+            Ops.addInPlace(
+                    quant, 0, quantOutBias, 0, Math.toIntExact(quantOutBias.shape().flatAt(0)));
+            int dim = codec.dim;
+            MatMul.gemv(codecIn, quant, codecRow);
+            Ops.addInPlace(codecPass.normed, 0, codecInBias, 0, dim);
+            // nearest upsampling: every frame is FRAME_STACK codec positions
+            for (int r = 0; r < FRAME_STACK; r++)
+                Convert.copyF32(codecPass.normed, 0, codecPass.x, (long) r * dim, dim);
+            run(codecPass, FRAME_STACK, position, true, codecRope);
+            position += FRAME_STACK;
+            Norms.rmsnormRowsGgml(
+                    codecPass.normed, codecPass.x, codecNorm, FRAME_STACK, dim, codec.eps);
+            MatMul.gemm(codecOut, codecPass.normed, spectra, FRAME_STACK);
+            Ops.addRowBiasInPlace(spectra, 0, codecOutBias, 0, FRAME_STACK, 2 * Istft.BINS);
+            float[] pcm = new float[FRAME_STACK * Istft.HOP];
+            int n = 0;
+            for (int r = 0; r < FRAME_STACK; r++) {
+                Views.copyToArray(
+                        spectra,
+                        (long) r * 2 * Istft.BINS,
+                        spectrum,
+                        0,
+                        spectrum.length,
+                        "spectrum");
+                n += istft.frame(spectrum, pcm, n);
+            }
+            return n == pcm.length ? pcm : Arrays.copyOf(pcm, n);
+        }
+
+        /** The ISTFT's held-back tail, less its padding: the end of the audio. */
+        float[] flush() {
+            return istft.flush();
+        }
+
+        /** The CTRL penalty on the codes this codebook took in the recent frames. */
+        private void penalize(float[] l, int cb, Sampling s) {
+            if (s.repetitionPenalty() <= 1f || s.repetitionWindow() <= 0) return;
+            int capacity = history.length / CODEBOOKS;
+            int n = Math.min(frames, Math.min(capacity, s.repetitionWindow()));
+            Arrays.fill(seen, false);
+            for (int f = frames - n; f < frames; f++) {
+                int c = history[(f % capacity) * CODEBOOKS + cb];
+                if (seen[c]) continue;
+                seen[c] = true;
+                l[c] = l[c] > 0 ? l[c] / s.repetitionPenalty() : l[c] * s.repetitionPenalty();
+            }
+        }
+
+        /** Argmax at temperature 0, else top-k (ties kept) then a tempered softmax draw. */
+        private int sample(float[] l, Sampling s, RandomGenerator rng) {
+            int best = 0;
+            for (int v = 1; v < l.length; v++) if (l[v] > l[best]) best = v;
+            if (s.temperature() <= 0f) return best;
+            float min = Float.NEGATIVE_INFINITY;
+            if (s.topK() > 0 && s.topK() < l.length) {
+                float[] sorted =
+                        l.clone(); // ponytail: a sort per draw, top-k is off in Omni's card
+                Arrays.sort(sorted);
+                min = sorted[l.length - s.topK()];
+            }
+            double sum = 0;
+            for (int v = 0; v < l.length; v++)
+                sum +=
+                        probabilities[v] =
+                                l[v] < min ? 0 : Math.exp((l[v] - l[best]) / s.temperature());
+            double r = rng.nextDouble() * sum;
+            for (int v = 0; v < l.length; v++) if ((r -= probabilities[v]) <= 0) return v;
+            return l.length - 1;
+        }
+
+        @Override
+        public void close() {
+            Arenas.close(arena);
+        }
+    }
+
+    Stream newStream(Sampling sampling) {
+        return new Stream(sampling.repetitionWindow());
+    }
+
+    /**
+     * Speaks from the state's position - its prompt ingested, ending in {@code <|audio_start|>} -
+     * until the end code or {@code maxFrames}, each frame's PCM to {@code sink} as it decodes, then
+     * the tail. {@code shuffle} reveals the codebooks in a fresh random order per frame, as the
+     * model was trained; false keeps index order, a deterministic reference. Returns the frames
+     * spoken.
+     */
+    int speak(
+            Lfm3 model,
+            Lfm3.State state,
+            Sampling sampling,
+            RandomGenerator rng,
+            boolean shuffle,
+            int maxFrames,
+            Consumer<float[]> sink) {
+        int[] order = new int[CODEBOOKS], codes = new int[CODEBOOKS];
+        try (Stream stream = newStream(sampling)) {
+            int frames = 0;
+            for (; frames < maxFrames; frames++) {
+                model.hiddenState(state, stream.hidden);
+                for (int i = 0; i < CODEBOOKS; i++) order[i] = i;
+                if (shuffle)
+                    for (int i = CODEBOOKS - 1; i > 0; i--) {
+                        int j = rng.nextInt(i + 1), t = order[i];
+                        order[i] = order[j];
+                        order[j] = t;
+                    }
+                if (!stream.frame(stream.hidden, order, sampling, rng, codes)) break;
+                sink.accept(stream.decode(codes));
+                model.ingest(state, Batch.embeddings(stream.feedback, 1, false));
+            }
+            sink.accept(stream.flush());
+            return frames;
+        }
+    }
+
+    /**
+     * llama.cpp's streaming ISTFT: a periodic Hann window, overlap-add normalized by the summed
+     * squared window, the first {@code (N_FFT - HOP) / 2} samples dropped as padding and as many
+     * held back until {@link #flush}. Its inverse FFT is llama.cpp's own: radix-2 levels scaling by
+     * 1/2 over an odd-length inverse DFT leaf.
+     */
+    static final class Istft {
+        static final int N_FFT = 1280, HOP = 320;
+        static final int BINS = N_FFT / 2 + 1;
+        private static final int PADDING = (N_FFT - HOP) / 2;
+        private static final float[] SIN = new float[N_FFT],
+                COS = new float[N_FFT],
+                HANN = new float[N_FFT];
+
+        static {
+            for (int i = 0; i < N_FFT; i++) {
+                double theta = 2 * Math.PI * i / N_FFT;
+                SIN[i] = (float) Math.sin((float) theta);
+                COS[i] = (float) Math.cos((float) theta);
+                HANN[i] =
+                        (float)
+                                (0.5
+                                        * (1.0
+                                                - (float)
+                                                        Math.cos(
+                                                                (float)
+                                                                        (2.0 * Math.PI * i
+                                                                                / N_FFT))));
+            }
+        }
+
+        private final float[] overlap = new float[N_FFT], windowSum = new float[N_FFT];
+        private final float[] in = new float[N_FFT * 8], out = new float[N_FFT * 8];
+        private int padding = PADDING;
+
+        /**
+         * One STFT frame - log magnitudes, then phases - into {@code pcm[at]}; returns samples
+         * written.
+         */
+        int frame(float[] logMagnitudePhase, float[] pcm, int at) {
+            for (int j = 0; j < BINS; j++) {
+                float magnitude = (float) Math.exp(logMagnitudePhase[j]);
+                float phase = logMagnitudePhase[BINS + j];
+                in[2 * j] = magnitude * (float) Math.cos(phase);
+                in[2 * j + 1] = magnitude * (float) Math.sin(phase);
+            }
+            for (int j = 1; j < BINS - 1; j++) {
+                in[2 * (N_FFT - j)] = in[2 * j];
+                in[2 * (N_FFT - j) + 1] = -in[2 * j + 1];
+            }
+            inverse(in, 0, N_FFT, out, 0);
+            for (int j = 0; j < N_FFT; j++) {
+                windowSum[j] += HANN[j] * HANN[j];
+                overlap[j] += out[2 * j] * HANN[j];
+            }
+            int n = 0;
+            for (int i = 0; i < HOP; i++) {
+                if (padding > 0) {
+                    padding--;
+                    continue;
+                }
+                pcm[at + n++] = windowSum[i] > 1e-8f ? overlap[i] / windowSum[i] : overlap[i];
+            }
+            shift(HOP);
+            return n;
+        }
+
+        /** The overlap still held, less the trailing padding. */
+        float[] flush() {
+            float[] tail = new float[N_FFT - HOP];
+            for (int i = 0; i < tail.length; i++)
+                tail[i] = windowSum[i] > 1e-8f ? overlap[i] / windowSum[i] : overlap[i];
+            shift(N_FFT - HOP);
+            return Arrays.copyOf(tail, tail.length - PADDING);
+        }
+
+        private void shift(int n) {
+            System.arraycopy(overlap, n, overlap, 0, N_FFT - n);
+            Arrays.fill(overlap, N_FFT - n, N_FFT, 0f);
+            System.arraycopy(windowSum, n, windowSum, 0, N_FFT - n);
+            Arrays.fill(windowSum, N_FFT - n, N_FFT, 0f);
+        }
+
+        /** llama.cpp's fft_impl<Inverse, complex input>, op for op. */
+        private static void inverse(float[] in, int inAt, int n, float[] out, int outAt) {
+            if (n == 1) {
+                out[outAt] = in[inAt];
+                out[outAt + 1] = in[inAt + 1];
+                return;
+            }
+            int step = N_FFT / n;
+            if (n % 2 == 1) {
+                float scale = 1f / n;
+                for (int k = 0; k < n; k++) {
+                    float re = 0, im = 0;
+                    for (int j = 0; j < n; j++) {
+                        int index = k * j * step % N_FFT;
+                        float c = COS[index], s = SIN[index];
+                        float a = in[inAt + 2 * j], b = in[inAt + 2 * j + 1];
+                        re += a * c - b * s;
+                        im += a * s + b * c;
+                    }
+                    out[outAt + 2 * k] = re * scale;
+                    out[outAt + 2 * k + 1] = im * scale;
+                }
+                return;
+            }
+            int half = n / 2, child = inAt + 2 * n;
+            for (int i = 0; i < half; i++) {
+                in[child + 2 * i] = in[inAt + 4 * i];
+                in[child + 2 * i + 1] = in[inAt + 4 * i + 1];
+            }
+            int even = outAt + 2 * n;
+            inverse(in, child, half, out, even);
+            for (int i = 0; i < half; i++) {
+                in[child + 2 * i] = in[inAt + 4 * i + 2];
+                in[child + 2 * i + 1] = in[inAt + 4 * i + 3];
+            }
+            int odd = even + n;
+            inverse(in, child, half, out, odd);
+            for (int k = 0; k < half; k++) {
+                float re = COS[k * step], im = SIN[k * step];
+                float oddRe = out[odd + 2 * k], oddIm = out[odd + 2 * k + 1];
+                float evenRe = out[even + 2 * k], evenIm = out[even + 2 * k + 1];
+                out[outAt + 2 * k] = 0.5f * (evenRe + re * oddRe - im * oddIm);
+                out[outAt + 2 * k + 1] = 0.5f * (evenIm + re * oddIm + im * oddRe);
+                out[outAt + 2 * (k + half)] = 0.5f * (evenRe - re * oddRe + im * oddIm);
+                out[outAt + 2 * (k + half) + 1] = 0.5f * (evenIm - re * oddIm - im * oddRe);
+            }
+        }
+    }
+}

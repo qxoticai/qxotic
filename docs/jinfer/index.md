@@ -77,6 +77,7 @@ Architecture dispatch comes from providers on the classpath.
 | Qwen 3 | embeddings, reranking |
 | Qwen 3.5 | chat, vision, MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
+| LFM3 | chat, vision (LFM3-VL, Omni), audio input (Omni) |
 | Laguna XS 2.1 | chat |
 | Mellum 2 | chat |
 | Ling 3 | chat |
@@ -95,8 +96,8 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | chat / instruct | `jinfer-<model>` | per-architecture port |
 | embeddings | `jinfer-lfm2`, `jinfer-qwen3`, `jinfer-gemma-embedding2` | `EmbeddingModel`; server `/v1/embeddings` |
 | reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker`; server `/v1/rerank` |
-| vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
-| audio input | `jinfer-gemma4` | E2B conformer |
+| vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-lfm3`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
+| audio input | `jinfer-gemma4`, `jinfer-lfm3` | E2B conformer; LFM3-Omni, 16 kHz |
 | speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
 | speech recognition | `jinfer-parakeet` | mono 16 kHz; CLI `transcribe`, server `/v1/audio/transcriptions` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
