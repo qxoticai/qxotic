@@ -69,6 +69,7 @@ public final class Models {
                     "com.qxotic.jinfer.models.gemma4.Gemma4Provider",
                     "com.qxotic.jinfer.models.gemmaembedding2.GemmaEmbedding2Provider",
                     "com.qxotic.jinfer.models.lfm2.Lfm2Provider",
+                    "com.qxotic.jinfer.models.lfm3.Lfm3Provider",
                     "com.qxotic.jinfer.models.qwen3.Qwen3Provider",
                     "com.qxotic.jinfer.models.qwen35.Qwen35Provider",
                     "com.qxotic.jinfer.models.bailingmoe3.BailingMoe3Provider",
