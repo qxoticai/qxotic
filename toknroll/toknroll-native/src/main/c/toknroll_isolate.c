@@ -77,11 +77,13 @@ static void detach(void* thread) { graal_detach_thread((graal_isolatethread_t*) 
 /* The path of the file this code was loaded from: the shared library, or the program it is linked into. */
 static const char* self_path(void) {
 #ifdef _WIN32
-    static char path[4096];
+    static char path[4096 * 3];   /* UTF-8, the encoding the runtime reads its options in; a path is wide on Windows */
+    wchar_t wide[4096];
     HMODULE module;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             (LPCSTR) &self_path, &module)) return NULL;
-    return GetModuleFileNameA(module, path, sizeof path) ? path : NULL;
+    if (!GetModuleFileNameW(module, wide, sizeof wide / sizeof *wide)) return NULL;
+    return WideCharToMultiByte(CP_UTF8, 0, wide, -1, path, sizeof path, NULL, NULL) ? path : NULL;
 #else
     Dl_info self;
     return dladdr((void*) &self_path, &self) ? self.dli_fname : NULL;
