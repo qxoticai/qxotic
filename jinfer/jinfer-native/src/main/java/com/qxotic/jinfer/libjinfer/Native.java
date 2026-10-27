@@ -75,6 +75,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__log_set")
     static void logSet(IsolateThread thread, Log.Fn fn, VoidPointer payload) {
         try {
+            Errors.clear();
             Log.set(fn, payload);
         } catch (Throwable t) {
             Errors.set(t);
@@ -92,6 +93,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__model_load")
     static ObjectHandle modelLoad(IsolateThread thread, CCharPointer ref, Options.Struct options) {
         try {
+            Errors.clear();
             return HANDLES.create(Model.load(string(ref, "ref"), Options.read(options)));
         } catch (Throwable t) {
             Errors.set(t);
@@ -102,6 +104,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__model_free")
     static void modelFree(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             Model model = get(handle, Model.class, "model");
             HANDLES.destroy(handle);
             model.release();
@@ -113,6 +116,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__model_property")
     static int modelProperty(IsolateThread thread, ObjectHandle handle, int key) {
         try {
+            Errors.clear();
             return get(handle, Model.class, "model").property(key);
         } catch (Throwable t) {
             return Errors.set(t);
@@ -122,6 +126,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__model_info")
     static CCharPointer modelInfo(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             return get(handle, Model.class, "model").info().get();
         } catch (Throwable t) {
             Errors.set(t);
@@ -132,6 +137,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__model_tokenizer")
     static ObjectHandle modelTokenizer(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             // a toknroll handle over the model's tokenizer, freed by toknroll_free; the tokenizer
             // is a plain heap object, so it outlives the model
             return com.qxotic.toknroll.libtoknroll.Native.handle(
@@ -147,6 +153,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__state_new")
     static ObjectHandle stateNew(IsolateThread thread, ObjectHandle handle, int contextCapacity) {
         try {
+            Errors.clear();
             return HANDLES.create(new State(get(handle, Model.class, "model"), contextCapacity));
         } catch (Throwable t) {
             Errors.set(t);
@@ -157,6 +164,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__state_free")
     static void stateFree(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             State state = get(handle, State.class, "state");
             HANDLES.destroy(handle);
             state.close();
@@ -170,6 +178,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__state_reset")
     static int stateReset(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             get(handle, State.class, "state").reset();
             return Errors.OK;
         } catch (Throwable t) {
@@ -180,6 +189,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__state_position")
     static int statePosition(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             return get(handle, State.class, "state").position();
         } catch (Throwable t) {
             return Errors.set(t);
@@ -189,6 +199,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__state_ingest")
     static int ingest(IsolateThread thread, ObjectHandle handle, CIntPointer tokens, int count) {
         try {
+            Errors.clear();
             State state = get(handle, State.class, "state");
             if (count < 0) throw Errors.invalid("count must not be negative");
             if (tokens.isNull() && count > 0) throw Errors.invalid("tokens is NULL");
@@ -203,6 +214,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__state_logits")
     static int logits(IsolateThread thread, ObjectHandle handle, CFloatPointer out, int capacity) {
         try {
+            Errors.clear();
             return floats(get(handle, State.class, "state").logits(), out, capacity);
         } catch (Throwable t) {
             return Errors.set(t);
@@ -213,6 +225,7 @@ public final class Native {
     static int embedding(
             IsolateThread thread, ObjectHandle handle, CFloatPointer out, int capacity) {
         try {
+            Errors.clear();
             return floats(get(handle, State.class, "state").embedding(), out, capacity);
         } catch (Throwable t) {
             return Errors.set(t);
@@ -224,6 +237,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__stream_step")
     static int streamStep(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             return get(handle, Stream.class, "stream").step();
         } catch (Throwable t) {
             return Errors.set(t);
@@ -233,6 +247,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__stream_text")
     static CCharPointer streamText(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             return get(handle, Stream.class, "stream").cText();
         } catch (Throwable t) {
             Errors.set(t);
@@ -244,6 +259,7 @@ public final class Native {
     static CFloatPointer streamSamples(
             IsolateThread thread, ObjectHandle handle, CIntPointer count) {
         try {
+            Errors.clear();
             Stream stream = get(handle, Stream.class, "stream");
             float[] pcm = stream.samples;
             if (count.isNonNull()) count.write(pcm == null ? 0 : pcm.length);
@@ -258,6 +274,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__stream_result")
     static CCharPointer streamResult(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             return get(handle, Stream.class, "stream").cResult();
         } catch (Throwable t) {
             Errors.set(t);
@@ -268,6 +285,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__stream_cancel")
     static void streamCancel(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             get(handle, Stream.class, "stream").cancel();
         } catch (Throwable t) {
             Errors.set(t);
@@ -277,6 +295,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__stream_free")
     static void streamFree(IsolateThread thread, ObjectHandle handle) {
         try {
+            Errors.clear();
             Stream stream = get(handle, Stream.class, "stream");
             HANDLES.destroy(handle);
             stream.close();
@@ -288,6 +307,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__chat")
     static ObjectHandle chat(IsolateThread thread, ObjectHandle handle, CCharPointer requestJson) {
         try {
+            Errors.clear();
             return HANDLES.create(
                     Stream.chat(
                             get(handle, Model.class, "model"),
@@ -301,6 +321,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__speak")
     static ObjectHandle speak(IsolateThread thread, ObjectHandle handle, CCharPointer requestJson) {
         try {
+            Errors.clear();
             return HANDLES.create(
                     Stream.speech(
                             get(handle, Model.class, "model"),
@@ -319,6 +340,7 @@ public final class Native {
             int count,
             int sampleRate) {
         try {
+            Errors.clear();
             Model model = get(handle, Model.class, "model");
             if (count < 0) throw Errors.invalid("count must not be negative");
             if (pcm.isNull() && count > 0) throw Errors.invalid("pcm is NULL");
@@ -343,6 +365,7 @@ public final class Native {
             CFloatPointer out,
             int capacity) {
         try {
+            Errors.clear();
             Model model = get(handle, Model.class, "model");
             if (capacity < 0) throw Errors.invalid("capacity must not be negative");
             float[] all = model.embed(strings(texts, count, "texts"), dimension);
@@ -362,6 +385,7 @@ public final class Native {
             CCharPointer instruction,
             CFloatPointer scores) {
         try {
+            Errors.clear();
             Model model = get(handle, Model.class, "model");
             String q = string(query, "query");
             List<String> docs = strings(documents, count, "documents");
@@ -377,6 +401,7 @@ public final class Native {
     @CEntryPoint(name = "jinfer__prepare")
     static int prepare(IsolateThread thread, ObjectHandle handle, CCharPointer requestJson) {
         try {
+            Errors.clear();
             Stream.prepare(get(handle, Model.class, "model"), string(requestJson, "request_json"));
             return Errors.OK;
         } catch (Throwable t) {

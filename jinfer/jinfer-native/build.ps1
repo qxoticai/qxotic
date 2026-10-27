@@ -10,7 +10,7 @@ $Here = $PSScriptRoot; $Name = 'jinfer'; $Opt = '-O3'; $March = 'x86-64-v3'
 $Toknroll = "$PSScriptRoot\..\..\toknroll\toknroll-native"
 $Headers = 'include\jinfer.h', "$Toknroll\include\toknroll.h"; $Syms = 'jinfer|toknroll'   # the library carries toknroll's C face too
 $Example = {
-    cl -nologo -W3 -Iinclude "-I$Toknroll\include" examples\c\chat.c -Fe:target\chat.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    cl -nologo -std:c11 -W4 -Iinclude "-I$Toknroll\include" examples\c\chat.c -Fe:target\chat.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }
     & target\chat.exe; if ($LASTEXITCODE) { throw "chat failed" }
 }
 $PyTest = { python python\test_jinfer.py; if ($LASTEXITCODE) { throw "checks failed" } }

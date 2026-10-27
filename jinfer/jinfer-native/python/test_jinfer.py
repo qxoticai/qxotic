@@ -3,13 +3,14 @@
 cached (or a network); the optional speech, transcription and reranking checks run when their
 model is cached and are skipped otherwise. Checks pin behaviour, not model prose: prompts have
 decisive answers, because a near-tie flips under different kernels."""
-import asyncio, base64, enum, json, logging, math, os, sys, tempfile, threading, time
+import asyncio, base64, ctypes, enum, json, logging, math, os, signal, sys, tempfile, threading, time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
 if "JINFER_INSTALLED" not in os.environ:  # the checkout's package; check-wheel tests the installed one
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jinfer
+import toknroll
 from jinfer import _native as N
 
 LM = "LiquidAI/LFM2.5-350M-GGUF:Q8_0"
@@ -37,6 +38,14 @@ logging.getLogger("jinfer").addHandler(handler); logging.getLogger("jinfer").set
 
 # language model
 m = jinfer.load(LM)
+code = ctypes.c_int32()
+ok(N.lib.jinfer_last_error(ctypes.byref(code)) == b"" and code.value == N.OK, "the load that succeeded cleared the miss before it")
+# the failure reaches the log callback, where Python may call back in (a finalizer freeing a dropped
+# handle): that call must not clear the error being raised
+nested = logging.Handler(); nested.emit = lambda record: N.lib.jinfer_model_property(m._h, 1)
+logging.getLogger("jinfer").addHandler(nested)
+ok(N.lib.jinfer_model_property(m._h, 999) == N.EINVAL and b"999" in N.lib.jinfer_last_error(None), "a call from inside the log callback keeps the error")
+logging.getLogger("jinfer").removeHandler(nested)
 ok(isinstance(m, jinfer.LanguageModel) and not hasattr(m, "embed") and not hasattr(m, "kind"), f"{m!r}")
 ok("kernels=native" in repr(m) and "threads=" in repr(m), f"repr says what runs: {m!r}")
 ok(m.context_capacity == min(4096, m.max_context_length) and m.max_context_length >= m.context_capacity and m.name.endswith(".gguf"), f"properties: capacity {m.context_capacity} of {m.max_context_length}")
@@ -364,6 +373,10 @@ try:
 except jinfer.InvalidArgument as err:
     ok("negative" in str(err), f"dimension=-1: {err}")
 try:
+    e.embed("hello\0 completely different text"); ok(False, "a text with a NUL must be refused, not cut there")
+except jinfer.InvalidArgument as err:
+    ok("NUL" in str(err), f"a NUL in a text: {err}")
+try:
     e.embed("AI on the JVM", dimension=64); ok(False, "a fixed-dimension model must refuse truncation")
 except jinfer.InvalidArgument as err:
     ok("fixed" in str(err), f"dimension refused with a reason: {err}")
@@ -425,5 +438,22 @@ t.join(timeout=30)
 ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} after {len(seen)} chunks")
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
 ok(jinfer.__version__ == "0.3.1" == N.lib.jinfer_version().decode(), f"version {jinfer.__version__}")
+
+# a child forked once the library started is refused at once, where it would hang; the parent carries on
+if hasattr(os, "fork"):
+    pid = os.fork()
+    if pid == 0:
+        signal.alarm(30)  # a hung child dies rather than outlive the test
+        status = 0
+        for call in (lambda: m.chat("Hi", max_tokens=2).text, lambda: m.tokenizer.encode("hi")):
+            try:
+                call(); status = 3
+            except (jinfer.JinferError, toknroll.ToknrollError) as e:   # the tokenizer is toknroll's face of libjinfer
+                status = status or (0 if "forked" in str(e) else 4)
+        m.close()  # a free in the child does nothing, and returns
+        os._exit(status)
+    rc = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+    ok(rc == 0, f"forked child: {'hung' if rc == -signal.SIGALRM else rc}")
+    ok(m.chat("Say hi.", max_tokens=4, temperature=0).text, "the parent answers after the fork")
 m.close()
 print(f"ok: {checks} checks")
