@@ -6,12 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.codecs.AudioCodec;
-import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
@@ -20,7 +16,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -28,8 +23,8 @@ import org.junit.jupiter.params.provider.CsvSource;
  * LFM3-Omni's speech head against llama.cpp ({@code lfm3-oracle speech}): the TTS prompt, the
  * backbone's hidden state, every depthformer pass, the feedback row, the codec and ISTFT on
  * llama.cpp's own codes, and the greedy loop - codebooks revealed in index order, argmax codes, the
- * one deterministic schedule both sides share. Then the real thing: sampled speech that the model's
- * own ears transcribe back.
+ * one deterministic schedule both sides share. The engine's spoken replies are {@link
+ * Lfm3SpokenChatTest}'s.
  */
 @Tag("integration")
 final class Lfm3SpeechParityTest {
@@ -70,7 +65,7 @@ final class Lfm3SpeechParityTest {
                             arena);
             Lfm3Speech speech = model.speech();
             int dim = model.configuration().embeddingLength(), cbs = Lfm3Speech.CODEBOOKS;
-            int[] prompt = new Lfm3ChatTemplate(model).ttsPrompt(SENTENCE, "en", null);
+            int[] prompt = ttsPrompt(model, SENTENCE);
             assertArrayEquals(Oracle.ints(dir.resolve("tokens.i32")), prompt, "the tts prompt");
             float[] h = Oracle.floats(dir.resolve("h.f32"));
             int[] expectedCodes = Oracle.ints(dir.resolve("codes.i32"));
@@ -150,75 +145,28 @@ final class Lfm3SpeechParityTest {
     }
 
     /**
-     * Speech as shipped - Q8_0, F16 mmproj, sampled with the GGUF's settings and a shuffled reveal
-     * - transcribed back by the same model's audio input: the words must survive.
+     * The prompt the engine sends for text to speech: the template's reading conversation, then the
+     * opener - which must be LiquidAI's {@code tts} prompt, token for token.
      */
-    @Test
-    void sampledSpeechSaysTheText() throws Exception {
-        try (Arena arena = Arena.ofShared()) {
-            Lfm3 model =
-                    Lfm3.loadModel(
-                            TestModels.require(MODELS + "LFM3-Omni-2B-Q8_0.gguf"),
-                            TestModels.require(MODELS + "mmproj-LFM3-Omni-2B-F16.gguf"),
-                            arena);
-            Lfm3Speech speech = model.speech();
-            Lfm3ChatTemplate template = new Lfm3ChatTemplate(model);
-            List<float[]> chunks = new ArrayList<>();
-            int frames;
-            try (Lfm3.State state = model.newState(1024, 256)) {
-                model.ingest(state, Batch.prefill(template.ttsPrompt(SENTENCE, "en", "male")));
-                frames =
-                        speech.speak(
-                                model,
-                                state,
-                                speech.defaults,
-                                new Random(42),
-                                true,
-                                600,
-                                chunks::add);
-            }
-            float[] pcm = new float[chunks.stream().mapToInt(c -> c.length).sum()];
-            int at = 0;
-            for (float[] chunk : chunks) at = append(pcm, at, chunk);
-            System.out.printf(
-                    "spoke %d frames, %.2f s%n",
-                    frames, pcm.length / (double) Lfm3Speech.SAMPLE_RATE);
-            assertTrue(
-                    frames > 10 && frames < 600, "an utterance that ends: " + frames + " frames");
-
-            for (int i = 0; i < pcm.length; i++) pcm[i] = Math.max(-1f, Math.min(1f, pcm[i]));
-            Media.Audio heard =
-                    AudioCodec.decode(
-                            AudioCodec.wav(new Media.Audio(pcm, Lfm3Speech.SAMPLE_RATE, 1)));
-            Conversation asr =
-                    new Conversation(
-                            List.of(
-                                    Message.system("Perform ASR in English."),
-                                    new Message(Role.USER, List.of(new Content.Media(heard)))),
-                            List.of(),
-                            false);
-            StringBuilder transcript = new StringBuilder();
-            int end = model.tokenizer().vocabulary().id("<|im_end|>");
-            int vocab = model.configuration().vocabularySize();
-            try (Lfm3.State state = model.newState(1024, 512)) {
-                template.encode(asr, 512, batch -> model.ingest(state, batch));
-                for (int step = 0; step < 32; step++) {
-                    float[] logits =
-                            Oracle.rows(
-                                    Views.castToSegmentBacked(model.logits(state, 0), "logits"),
-                                    1,
-                                    vocab);
-                    int next = Oracle.argmax(logits, 0, vocab);
-                    if (next == end) break;
-                    transcript.append(model.tokenizer().decode(new int[] {next}));
-                    model.ingest(state, Batch.step(next));
-                }
-            }
-            String said = transcript.toString().toLowerCase();
-            System.out.println("heard: " + said);
-            for (String word : List.of("hello", "world", "one", "two", "three"))
-                assertTrue(said.contains(word), "'" + word + "' in '" + said + "'");
-        }
+    static int[] ttsPrompt(Lfm3 model, String text) {
+        Lfm3ChatTemplate template = new Lfm3ChatTemplate(model);
+        Conversation tts =
+                new Conversation(
+                        List.of(
+                                Message.system(
+                                        template.speechInstruction("en", null).orElseThrow()),
+                                Message.user(text)),
+                        List.of(),
+                        false);
+        List<Integer> ids = new ArrayList<>();
+        template.encode(
+                tts,
+                4096,
+                batch -> {
+                    for (int id : ((Batch.Input.Tokens) batch.input()).ids()) ids.add(id);
+                });
+        ids.add(model.opener(false));
+        return ids.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private static int append(float[] into, int at, float[] chunk) {

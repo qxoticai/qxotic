@@ -183,6 +183,17 @@ final class Http {
         sendText(exchange, status, "application/json; charset=utf-8", JsonCodec.stringify(value));
     }
 
+    /** Sends a binary body (an audio file) with the given content type. */
+    static void sendBytes(HttpExchange exchange, int status, String contentType, byte[] bytes)
+            throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", contentType);
+        try (OutputStream out = exchange.getResponseBody()) {
+            exchange.sendResponseHeaders(status, 0); // chunked, as sendText explains
+            out.write(bytes);
+            out.flush();
+        }
+    }
+
     /**
      * Sends a body with the given content type (JSON via {@link #sendJson}, Prometheus text, …).
      */

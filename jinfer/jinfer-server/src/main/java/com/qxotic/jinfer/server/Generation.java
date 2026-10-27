@@ -3,10 +3,14 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.toknroll.IntSequence;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -17,6 +21,7 @@ final class Generation {
     private final ServerConfig config;
     private final Metrics metrics;
     private final Sampling defaults;
+    private final SpokenTurns turns = new SpokenTurns();
 
     Generation(ChatEngine engine, ServerConfig config, Metrics metrics) {
         this.engine = engine;
@@ -49,8 +54,26 @@ final class Generation {
     }
 
     Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
-        OpenAiChat.Lowered lowered = OpenAiChat.lower(request, messages, config, defaults);
-        return recorded(run(lowered, sinks));
+        return chat(request, messages, sinks, null);
+    }
+
+    /**
+     * As above; a spoken reply is kept under {@code audioId} - a stream's, named in its chunks
+     * already, so its audio is not sent again - or under a fresh id with its audio encoded.
+     */
+    Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks, String audioId) {
+        OpenAiChat.Lowered lowered = OpenAiChat.lower(request, messages, config, defaults, turns);
+        return recorded(run(lowered, sinks, request, audioId));
+    }
+
+    /** Text to speech: {@code input} read aloud, as a WAV file or raw 16-bit PCM. */
+    byte[] speech(String input, String language, String voice, boolean wav) {
+        Media.Audio audio =
+                engine.speak(input, language, voice, defaults, ChatEngine.ReplySink.NONE)
+                        .reply()
+                        .speech()
+                        .orElseThrow();
+        return wav ? AudioCodec.wav(audio) : AudioCodec.pcm16(audio);
     }
 
     Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
@@ -74,12 +97,35 @@ final class Generation {
         }
     }
 
-    private Reply run(OpenAiChat.Lowered lowered, Sinks sinks) {
+    private Reply run(
+            OpenAiChat.Lowered lowered, Sinks sinks, Map<String, Object> request, String audioId) {
         try (ChatEngine.Prepared prepared = engine.prepare(lowered.request())) {
             WireSink sink = new WireSink(lowered.inlineReasoning(), sinks);
             ChatEngine.Completion completion = engine.complete(prepared, sink);
             sink.finish();
-            return finish(completion, prepared.stops(), sink.inline);
+            Reply reply = finish(completion, prepared.stops(), sink.inline);
+            if (completion.cancelled()) return reply;
+            for (Content part : completion.reply().content()) {
+                if (!(part instanceof Content.Speech speech)) continue;
+                String id = audioId != null ? audioId : SpokenTurns.newId();
+                long expiresAt = turns.put(id, speech, reply.text());
+                String data = null;
+                if (audioId == null) {
+                    boolean wav =
+                            "wav"
+                                    .equals(
+                                            Values.asObject(request.get("audio"), "audio")
+                                                    .get("format"));
+                    data =
+                            Base64.getEncoder()
+                                    .encodeToString(
+                                            wav
+                                                    ? AudioCodec.wav(speech.audio())
+                                                    : AudioCodec.pcm16(speech.audio()));
+                }
+                return reply.withAudio(new Reply.Audio(id, expiresAt, data, reply.text()));
+            }
+            return reply;
         }
     }
 
@@ -122,6 +168,11 @@ final class Generation {
                 }
                 sinks.onText().accept(delta.text());
             }
+        }
+
+        @Override
+        public void onSpeech(Media.Audio speech) {
+            if (sinks.onSpeech() != null) sinks.onSpeech().accept(speech);
         }
 
         void finish() {

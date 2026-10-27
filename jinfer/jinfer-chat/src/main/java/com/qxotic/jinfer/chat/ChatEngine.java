@@ -13,6 +13,8 @@ import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.llm.SpeculativeDecoding;
+import com.qxotic.jinfer.llm.SpeechOutput;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.telemetry.CacheSample;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jinfer.telemetry.MediaCacheSample;
@@ -38,6 +40,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.SplittableRandom;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -47,6 +50,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
+import java.util.random.RandomGenerator;
 
 /**
  * The framework-neutral provider runtime: one loaded model, the two-tier template stack (native
@@ -464,6 +468,8 @@ public final class ChatEngine implements AutoCloseable {
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
      *     {@link #encode} skips the native codec when any key it does not understand is present. A
      *     boolean {@code enable_thinking} here overrides {@code thinking}
+     * @param speech a spoken reply; null = text, which never switches into speech. Offered tools, a
+     *     grammar or a forced call are refused with it
      */
     public record Request(
             List<Message> messages,
@@ -477,7 +483,8 @@ public final class ChatEngine implements AutoCloseable {
             String grammar,
             ForcedTool forcedTool,
             List<String> stops,
-            Map<String, Object> templateKwargs) {
+            Map<String, Object> templateKwargs,
+            Speech speech) {
 
         // ranges, not taste: this is a positional record, so a transposed pair of same-typed
         // knobs would otherwise run silently
@@ -525,6 +532,41 @@ public final class ChatEngine implements AutoCloseable {
             // (which never sees kwargs), the whole-render and the sampler act on one decision
             if (templateKwargs != null
                     && templateKwargs.get("enable_thinking") instanceof Boolean on) thinking = on;
+            // ponytail: speech beside tool calls, a grammar or a forced call is untested, so it is
+            // refused until the transcript lane is shown to carry them
+            if (speech != null && (!tools.isEmpty() || grammar != null))
+                throw new IllegalArgumentException(
+                        "a spoken reply cannot offer tools or follow a grammar");
+        }
+
+        /** As the canonical constructor, answered in text. */
+        public Request(
+                List<Message> messages,
+                List<Tool> tools,
+                boolean thinking,
+                int maxOutputTokens,
+                Integer maxReasoningTokens,
+                String reasoningCutoffMessage,
+                Duration timeout,
+                Sampling sampling,
+                String grammar,
+                ForcedTool forcedTool,
+                List<String> stops,
+                Map<String, Object> templateKwargs) {
+            this(
+                    messages,
+                    tools,
+                    thinking,
+                    maxOutputTokens,
+                    maxReasoningTokens,
+                    reasoningCutoffMessage,
+                    timeout,
+                    sampling,
+                    grammar,
+                    forcedTool,
+                    stops,
+                    templateKwargs,
+                    null);
         }
 
         /**
@@ -558,6 +600,7 @@ public final class ChatEngine implements AutoCloseable {
             private ForcedTool forcedTool = ForcedTool.NONE;
             private List<String> stops = List.of();
             private Map<String, Object> templateKwargs;
+            private Speech speech;
 
             private Builder(List<Message> messages, Sampling sampling) {
                 this.messages = messages;
@@ -614,6 +657,12 @@ public final class ChatEngine implements AutoCloseable {
                 return this;
             }
 
+            /** A spoken reply; see {@link Speech}. */
+            public Builder speech(Speech speech) {
+                this.speech = speech;
+                return this;
+            }
+
             public Request build() {
                 return new Request(
                         messages,
@@ -627,7 +676,8 @@ public final class ChatEngine implements AutoCloseable {
                         grammar,
                         forcedTool,
                         stops,
-                        templateKwargs);
+                        templateKwargs,
+                        speech);
             }
         }
     }
@@ -694,8 +744,22 @@ public final class ChatEngine implements AutoCloseable {
             Duration timeout,
             int promptTokens,
             List<String> stops,
-            Arena memory)
+            Arena memory,
+            Speech speech,
+            long speechSeed)
             implements AutoCloseable {
+
+        /** As the canonical constructor, for a text reply. */
+        public Prepared(
+                Encoded encoded,
+                Sampler sampler,
+                int maxOutputTokens,
+                Duration timeout,
+                int promptTokens,
+                List<String> stops,
+                Arena memory) {
+            this(encoded, sampler, maxOutputTokens, timeout, promptTokens, stops, memory, null, 0);
+        }
 
         /**
          * A pre-encoded prompt (raw completions: the caller already tokenized) lowered directly -
@@ -809,8 +873,18 @@ public final class ChatEngine implements AutoCloseable {
     private Prepared prepare(Request request, Arena memory) {
         requireThinkingRenderable(request.thinking());
         Conversation conversation = conversation(request);
+        SpeechOutput<?> voice = request.speech() == null ? null : voice();
+        if (voice != null && conversation.thinking())
+            throw new UnsupportedOperationException(
+                    "a spoken reply does not reason: ask for it with thinking off");
         Encoded encoded =
                 encode(conversation, request.templateKwargs(), MemoryAllocators.ofArena(memory));
+        if (voice != null) {
+            // the opener ends the prompt: the reply starts in the requested mode, as trained
+            List<Batch> prompt = new ArrayList<>(encoded.prompt());
+            prompt.add(Batch.prefill(new int[] {voice.opener(request.speech().transcript())}));
+            encoded = new Encoded(List.copyOf(prompt), encoded.parser(), encoded.replyPrefix());
+        }
         if (request.tools().isEmpty()) encoded.parser().disableToolCalls();
         Sampler sampler =
                 sampler(
@@ -827,7 +901,9 @@ public final class ChatEngine implements AutoCloseable {
                             !request.tools().isEmpty(),
                             sampler,
                             encoded.replyPrefix());
-        } else if (request.forcedTool() == ForcedTool.NONE) {
+        } else if (request.forcedTool() == ForcedTool.NONE && voice == null) {
+            // a spoken reply offers no tools: there is no call scaffold to guard, and the guard's
+            // walk would read the transcript's lane markers as the end of the turn
             sampler = guarded(sampler, encoded.replyPrefix(), request.tools().isEmpty());
         }
         if (request.forcedTool() != ForcedTool.NONE) {
@@ -869,7 +945,23 @@ public final class ChatEngine implements AutoCloseable {
                 request.timeout(),
                 Batch.positions(encoded.prompt()),
                 request.stops(),
-                memory);
+                memory,
+                request.speech(),
+                // the speech codes draw from the request's seed, like its text; none = fresh
+                request.sampling().seed() != null
+                        ? request.sampling().seed()
+                        : new SplittableRandom().nextLong());
+    }
+
+    /** The loaded model's voice; refused when it has none. */
+    private SpeechOutput<?> voice() {
+        if (loaded.model() instanceof SpeechOutput<?> voice && voice.speaks()) return voice;
+        throw new UnsupportedOperationException(
+                modelName
+                        + " cannot speak"
+                        + (loaded.model() instanceof SpeechOutput<?>
+                                ? ": attach the model's mmproj as the 'media' companion"
+                                : ""));
     }
 
     /**
@@ -1174,6 +1266,9 @@ public final class ChatEngine implements AutoCloseable {
         /** One fragment, already past the stop-sequence holdback on the content lane. */
         default void on(Delta delta) {}
 
+        /** A spoken reply's next stretch of speech, as soon as it is decoded. */
+        default void onSpeech(Media.Audio speech) {}
+
         /** Checked before every token: true ends the pass, and the caller gets no reply. */
         default boolean cancelled() {
             return false;
@@ -1254,6 +1349,32 @@ public final class ChatEngine implements AutoCloseable {
         }
     }
 
+    /**
+     * Text to speech in the model's own voice: {@code text} read aloud and nothing added - the
+     * family's reading instruction as the system turn, the text as the user's, answered with speech
+     * alone. The speech streams to {@code out}; the reply carries it as its {@link Content.Speech}.
+     *
+     * @param language one the family lists; null = its default
+     * @param voice one the family lists; null = its default
+     */
+    public Completion speak(
+            String text, String language, String voice, Sampling sampling, ReplySink out) {
+        if (text == null || text.isBlank()) throw new IllegalArgumentException("nothing to say");
+        voice();
+        String instruction =
+                loaded.template()
+                        .flatMap(template -> template.speechInstruction(language, voice))
+                        .orElseThrow(
+                                () ->
+                                        new UnsupportedOperationException(
+                                                modelName + " has no text-to-speech instruction"));
+        return complete(
+                Request.builder(List.of(Message.system(instruction), Message.user(text)), sampling)
+                        .speech(Speech.only())
+                        .build(),
+                out);
+    }
+
     /** Prepares, completes, and releases one request's copied media rows. */
     public Completion complete(Request request) {
         return complete(request, ReplySink.NONE);
@@ -1286,6 +1407,7 @@ public final class ChatEngine implements AutoCloseable {
     private Completion complete0(
             Prepared prepared, ReplySink out, InferenceEvent event, long startedNanos) {
         ReplyParser parser = prepared.encoded().parser();
+        Spoken spoken = prepared.speech() == null ? null : new Spoken(voice(), prepared, out);
         // the raw lane: no parser, decoded text only (pre-encoded completions)
         PendingUtf8 pending = parser == null ? new PendingUtf8() : null;
         StringBuilder rawText = parser == null ? new StringBuilder() : null;
@@ -1356,7 +1478,8 @@ public final class ChatEngine implements AutoCloseable {
                         prepared.maxOutputTokens(),
                         prepared.timeout(),
                         listener,
-                        out::cancelled);
+                        out::cancelled,
+                        spoken);
         if (out.cancelled()) {
             // a cancelled pass ends silently: no reply, no completion callback upstream
             return new Completion(
@@ -1383,8 +1506,14 @@ public final class ChatEngine implements AutoCloseable {
                             result.promptTime(),
                             result.decodeTime());
         }
+        Message reply = finishReply(parser, pending, rawText);
+        if (spoken != null) {
+            List<Content> content = new ArrayList<>(reply.content());
+            content.add(spoken.content());
+            reply = new Message(reply.role(), content);
+        }
         return new Completion(
-                finishReply(parser, pending, rawText),
+                reply,
                 result,
                 watch.stopped(),
                 prepared.promptTokens(),
@@ -1416,7 +1545,7 @@ public final class ChatEngine implements AutoCloseable {
             int maxOutputTokens,
             Duration timeout,
             Generator.GenerationListener listener) {
-        return generate(prompt, sampler, maxOutputTokens, timeout, listener, () -> false);
+        return generate(prompt, sampler, maxOutputTokens, timeout, listener, () -> false, null);
     }
 
     /** As the public form, with the sink's cancellation consulted between prefill chunks. */
@@ -1427,10 +1556,23 @@ public final class ChatEngine implements AutoCloseable {
             Duration timeout,
             Generator.GenerationListener listener,
             BooleanSupplier cancelled) {
+        return generate(prompt, sampler, maxOutputTokens, timeout, listener, cancelled, null);
+    }
+
+    /** As above, the reply spoken when {@code spoken} is present. */
+    Outcome generate(
+            List<Batch> prompt,
+            Sampler sampler,
+            int maxOutputTokens,
+            Duration timeout,
+            Generator.GenerationListener listener,
+            BooleanSupplier cancelled,
+            Spoken spoken) {
         lock.lock();
         try {
             checkOpen();
-            Outcome outcome = run(prompt, sampler, maxOutputTokens, timeout, listener, cancelled);
+            Outcome outcome =
+                    run(prompt, sampler, maxOutputTokens, timeout, listener, cancelled, spoken);
             // sampled here, on the owning thread, while the lock still excludes other generations
             cacheSnapshot = cache.sample();
             return outcome;
@@ -1458,7 +1600,8 @@ public final class ChatEngine implements AutoCloseable {
             int maxOutputTokens,
             Duration timeout,
             Generator.GenerationListener listener,
-            BooleanSupplier cancelled) {
+            BooleanSupplier cancelled,
+            Spoken spoken) {
         LanguageModel<?, ?, S> model = (LanguageModel<?, ?, S>) loaded.model();
         PromptCache<S> c = (PromptCache<S>) cache;
         // the facade validates the prompt (non-empty, fits the context) before any ingest
@@ -1511,7 +1654,19 @@ public final class ChatEngine implements AutoCloseable {
                     // adopt after the pass - Serving.adopt exists for exactly this shape
                     SpeculativeDecoding.SpeculationResult speculation = null;
                     Generator.GenerationResult result;
-                    if (model instanceof SpeculativeDecoding<?>
+                    if (spoken != null) {
+                        result =
+                                state.exclusively(
+                                        () ->
+                                                speak(
+                                                        model,
+                                                        state,
+                                                        sampler,
+                                                        constraints,
+                                                        listener,
+                                                        serving,
+                                                        spoken));
+                    } else if (model instanceof SpeculativeDecoding<?>
                             && ((SpeculativeDecoding<?>) model).speculationReady()
                             && speculationDepth > 0) {
                         Generator.GenerationListener tokenOnly =
@@ -1555,6 +1710,139 @@ public final class ChatEngine implements AutoCloseable {
                     return new Outcome(result, serving.restored(), serving.tier(), speculation);
                 },
                 interrupt);
+    }
+
+    /**
+     * One spoken reply in the making: the speaker's inputs, and the record and audio it leaves -
+     * every position the reply took (its opener first) and the speech as it streamed out.
+     */
+    static final class Spoken {
+        private final boolean transcript;
+        private final int rate, placeholder;
+        private final RandomGenerator random;
+        private final ReplySink out;
+        private final IntSequence.Builder positions = IntSequence.newBuilder();
+        private final List<int[]> frames = new ArrayList<>();
+        private final List<Media.Audio> audio = new ArrayList<>();
+
+        Spoken(SpeechOutput<?> voice, Prepared prepared, ReplySink out) {
+            this.transcript = prepared.speech().transcript();
+            this.rate = voice.speechRate();
+            this.placeholder = voice.framePlaceholder();
+            this.random = new SplittableRandom(prepared.speechSeed());
+            this.out = out;
+            positions.add(voice.opener(transcript));
+        }
+
+        void speak(float[] pcm) {
+            if (pcm.length == 0) return;
+            Media.Audio chunk = new Media.Audio(pcm, rate, 1);
+            audio.add(chunk);
+            out.onSpeech(chunk);
+        }
+
+        Content.Speech content() {
+            Media.Audio all =
+                    audio.isEmpty()
+                            ? new Media.Audio(new float[0], rate, 1)
+                            : Media.Audio.concat(audio);
+            return new Content.Speech(all, new SpokenTurn(positions.build(), placeholder, frames));
+        }
+    }
+
+    /**
+     * The spoken decode loop, under {@link Generator}'s contract - every sampled token reaches the
+     * listener, the final one is never ingested, the deadline gates new work, the context is the
+     * wall - over positions that are either a text token this loop samples or a frame the model
+     * speaks. Every ingested position joins the cache's stream, a frame by its row's fingerprint,
+     * so the reply stays resumable like any other. Its tokens record a frame as the family's
+     * placeholder id.
+     */
+    @SuppressWarnings("unchecked")
+    private <S extends ContextState> Generator.GenerationResult speak(
+            LanguageModel<?, ?, S> model,
+            S state,
+            Sampler sampler,
+            Generator.Constraints constraints,
+            Generator.GenerationListener listener,
+            PromptCache.Serving serving,
+            Spoken spoken) {
+        int capacity = state.contextCapacity();
+        int room = capacity - state.position();
+        int max =
+                constraints.maxOutputTokens() == Generator.Constraints.UNLIMITED
+                        ? room
+                        : Math.min(constraints.maxOutputTokens(), room);
+        long start = System.nanoTime();
+        long deadline = saturatingDeadline(start, constraints.timeout());
+        int vocab = model.configuration().vocabularySize();
+        IntSequence.Builder generated = IntSequence.newBuilder();
+        Generator.FinishReason finish = Generator.FinishReason.LENGTH;
+        OptionalInt stop = OptionalInt.empty();
+        SpeechOutput<S> voice = (SpeechOutput<S>) model;
+        try (SpeechOutput.Speaker speaker =
+                voice.speaker(state, spoken.transcript, spoken.random)) {
+            for (int n = 0; n < max; ) {
+                if (System.nanoTime() >= deadline) {
+                    finish = Generator.FinishReason.TIMEOUT;
+                    break;
+                }
+                if (!speaker.textNext()) {
+                    if (state.position() >= capacity) break;
+                    SpeechOutput.Frame frame = speaker.frame();
+                    spoken.speak(frame.pcm());
+                    model.ingest(state, frame.row());
+                    serving.tail(frame.row());
+                    spoken.positions.add(spoken.placeholder);
+                    spoken.frames.add(frame.codes().clone());
+                    generated.add(spoken.placeholder);
+                    n++;
+                    if (spoken.out.cancelled()) {
+                        finish = Generator.FinishReason.ABORT;
+                        break;
+                    }
+                    continue;
+                }
+                int token = sampler.sampleToken(model.logits(state));
+                if (token < 0 || token >= vocab)
+                    throw new IllegalArgumentException(
+                            "sampler returned token id "
+                                    + token
+                                    + " out of range [0, "
+                                    + vocab
+                                    + ")");
+                SpeechOutput.Lane lane =
+                        constraints.stopTokens().contains(token)
+                                ? SpeechOutput.Lane.END
+                                : speaker.text(token);
+                boolean keepGoing =
+                        lane == SpeechOutput.Lane.CONTROL
+                                ? !spoken.out.cancelled()
+                                : listener.onToken(token);
+                if (lane == SpeechOutput.Lane.END) {
+                    finish = Generator.FinishReason.STOP;
+                    stop = OptionalInt.of(token);
+                    break;
+                }
+                generated.add(token);
+                n++;
+                if (!keepGoing) {
+                    finish = Generator.FinishReason.ABORT;
+                    break;
+                }
+                if (n >= max || state.position() >= capacity) break; // LENGTH: not ingested
+                model.ingest(state, Batch.step(token));
+                serving.tail(token);
+                spoken.positions.add(token);
+            }
+            spoken.speak(speaker.flush());
+        }
+        return new Generator.GenerationResult(
+                generated.build().toArray(),
+                stop,
+                finish,
+                Duration.ZERO,
+                Duration.ofNanos(System.nanoTime() - start));
     }
 
     /** Cancellation is silent: no reply and no generation result. */

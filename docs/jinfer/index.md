@@ -60,6 +60,11 @@ With its projector attached (`--with media=<mmproj>`), EmbeddingGemma 2 also tak
 A reranker (Qwen3-Reranker, LFM2.5-ColBERT) serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape: `query`, `documents`, `top_n`, `return_documents`.
 Qwen3-Reranker's `relevance_score` is a probability; LFM2.5-ColBERT's is an unbounded MaxSim sum (about 28 to 30 out of 32), so rank by it and never threshold it.
 A speech-to-text model serves `POST /v1/audio/transcriptions`.
+A model that speaks (LFM3-Omni with its projector) also answers chat in speech, in OpenAI's shape: `modalities: ["text", "audio"]` with `audio.format` `wav` or `pcm16`, the reply's `message.audio` carrying the speech and its transcript.
+A stream carries `pcm16` chunks and the transcript in `delta.audio`.
+A later turn refers back to a spoken reply by its `audio.id`, and it replays exactly as the model spoke it, for an hour.
+`audio.voice` does not steer a chat reply: the model speaks in its own voice.
+The same model serves `POST /v1/audio/speech`, with `voice` `female` or `male`, a `language`, and `response_format` `wav` or `pcm`.
 
 Loopback is the default.
 Non-loopback binding requires `--api-key`.
@@ -77,7 +82,7 @@ Architecture dispatch comes from providers on the classpath.
 | Qwen 3 | embeddings, reranking |
 | Qwen 3.5 | chat, vision, MTP |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
-| LFM3 | chat, vision (LFM3-VL, Omni), audio input (Omni) |
+| LFM3 | chat, vision (LFM3-VL, Omni), audio input and speech output (Omni) |
 | Laguna XS 2.1 | chat |
 | Mellum 2 | chat |
 | Ling 3 | chat |
@@ -99,6 +104,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-lfm3`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4`, `jinfer-lfm3` | E2B conformer; LFM3-Omni, 16 kHz |
 | speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
+| speech output | `jinfer-lfm3` | LFM3-Omni, 24 kHz; `Speech` on a chat request, `ChatEngine.speak`, server audio |
 | speech recognition | `jinfer-parakeet` | mono 16 kHz; CLI `transcribe`, server `/v1/audio/transcriptions` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |

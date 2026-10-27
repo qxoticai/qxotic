@@ -394,6 +394,14 @@ public final class CachedSession<S extends ContextState> {
         adopt(IntSequence.wrap(ingested));
     }
 
+    /** As {@link #adopt(IntSequence)} over fingerprints: decode positions that are no token. */
+    void adopt(long[] fingerprints) {
+        if (fingerprints.length == 0) return;
+        int off = len;
+        for (long fingerprint : fingerprints) append(fingerprint);
+        commitSpan(off, len - off);
+    }
+
     /**
      * True when the budget refused a commit and DETACHED this session's tip: the state and stream
      * stay valid (tier-1 reuse unaffected) but nothing further reaches the shared tree. Permanent

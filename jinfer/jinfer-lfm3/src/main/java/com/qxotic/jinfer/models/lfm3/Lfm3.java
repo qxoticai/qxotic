@@ -19,6 +19,8 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.kernels.Trace;
+import com.qxotic.jinfer.llm.SpecialTokens;
+import com.qxotic.jinfer.llm.SpeechOutput;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
@@ -38,6 +40,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.IntConsumer;
+import java.util.random.RandomGenerator;
 
 /**
  * Liquid LFM3: the LFM2 hybrid of gated short convolutions and GQA, where attention alternates
@@ -57,7 +60,9 @@ import java.util.function.IntConsumer;
  * </pre>
  */
 public final class Lfm3
-        implements LanguageModel<Lfm3.Configuration, Lfm3.Weights, Lfm3.State>, Multimodal {
+        implements LanguageModel<Lfm3.Configuration, Lfm3.Weights, Lfm3.State>,
+                Multimodal,
+                SpeechOutput<Lfm3.State> {
 
     /** The short-conv in_proj's row split: B | C | x, each {@code dim} wide. */
     private static final int SHORTCONV_PARTS = 3;
@@ -108,9 +113,37 @@ public final class Lfm3
         return Optional.empty();
     }
 
-    /** LFM3-Omni's speech head, or null; package-private until the speech API is designed. */
+    /** LFM3-Omni's speech head, or null. */
     Lfm3Speech speech() {
         return speech;
+    }
+
+    @Override
+    public boolean speaks() {
+        return speech != null;
+    }
+
+    @Override
+    public int speechRate() {
+        return Lfm3Speech.SAMPLE_RATE;
+    }
+
+    @Override
+    public int opener(boolean transcript) {
+        return SpecialTokens.require(tokenizer, transcript ? "<|mixed_start|>" : "<|audio_start|>");
+    }
+
+    @Override
+    public int framePlaceholder() {
+        return SpecialTokens.require(tokenizer, "<|audio_out|>");
+    }
+
+    @Override
+    public SpeechOutput.Speaker speaker(State state, boolean transcript, RandomGenerator random) {
+        if (speech == null)
+            throw new UnsupportedOperationException("speech needs LFM3-Omni's mmproj");
+        return speech.speaker(
+                this, state, transcript, random, SpecialTokens.require(tokenizer, "<|text_end|>"));
     }
 
     /** The final-normed hidden state of the last ingested row: the speech head's input. */

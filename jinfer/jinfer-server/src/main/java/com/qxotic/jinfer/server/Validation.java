@@ -120,14 +120,35 @@ final class Validation {
         }
     }
 
-    /** Chat fields whose advertised behavior this text-output server cannot honor. */
+    /**
+     * Chat fields whose advertised behavior the server cannot honor. Audio output is OpenAI's
+     * shape: {@code modalities: ["text", "audio"]} with an {@code audio} object, whose {@code
+     * format} is {@code wav} or {@code pcm16} (the only one a stream carries); whether the model
+     * can speak is the engine's to say.
+     */
     static void validateChatOptions(Map<String, Object> request) {
+        boolean speaks = false;
         if (present(request, "modalities")) {
+            List<Object> modalities = Values.asArray(request.get("modalities"), "modalities");
+            speaks = modalities.equals(List.of("text", "audio"));
             require(
-                    Values.asArray(request.get("modalities"), "modalities").equals(List.of("text")),
-                    "Only text output modality is supported");
+                    speaks || modalities.equals(List.of("text")),
+                    "modalities must be [\"text\"] or [\"text\", \"audio\"]");
         }
-        require(!present(request, "audio"), "audio output is not supported");
+        require(
+                speaks == present(request, "audio"),
+                "audio output needs both modalities [\"text\", \"audio\"] and an audio object");
+        if (speaks) {
+            Map<String, Object> audio = Values.asObject(request.get("audio"), "audio");
+            String format = Values.stringValue(audio.get("format"), null);
+            require(
+                    "wav".equals(format) || "pcm16".equals(format),
+                    "audio.format must be wav or pcm16");
+            require(
+                    !Values.booleanValue(request.get("stream"), "stream", false)
+                            || "pcm16".equals(format),
+                    "streamed audio must be pcm16");
+        }
         require(!present(request, "prediction"), "prediction is not supported");
     }
 

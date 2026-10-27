@@ -111,6 +111,15 @@ public interface ChatTemplate {
         return Set.of();
     }
 
+    /**
+     * The system instruction that has this family read a text aloud, in {@code language} (one the
+     * family lists, null = its default) with {@code voice} (null = its default); empty when it
+     * cannot. A value it does not know is refused, never substituted.
+     */
+    default Optional<String> speechInstruction(String language, String voice) {
+        return Optional.empty();
+    }
+
     /** One family's think-span marker spellings. */
     record ThinkMarkers(String open, String close) {
         /** The {@code <think>}/{@code </think>} convention. */

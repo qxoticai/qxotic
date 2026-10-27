@@ -14,10 +14,51 @@ record Reply(
         String reasoning,
         List<Content.ToolCall> toolCalls,
         String finishReason,
-        SpeculativeDecoding.SpeculationResult speculation) {
+        SpeculativeDecoding.SpeculationResult speculation,
+        Audio audio) {
+
+    /**
+     * A spoken reply's {@code audio} object: its id, when the id expires, the encoded speech (null
+     * when it streamed out), and the transcript.
+     */
+    record Audio(String id, long expiresAt, String data, String transcript) {}
 
     Reply {
         toolCalls = List.copyOf(toolCalls);
+    }
+
+    Reply(
+            Generator.GenerationResult result,
+            int promptTokens,
+            int cachedTokens,
+            String text,
+            String reasoning,
+            List<Content.ToolCall> toolCalls,
+            String finishReason,
+            SpeculativeDecoding.SpeculationResult speculation) {
+        this(
+                result,
+                promptTokens,
+                cachedTokens,
+                text,
+                reasoning,
+                toolCalls,
+                finishReason,
+                speculation,
+                null);
+    }
+
+    Reply withAudio(Audio audio) {
+        return new Reply(
+                result,
+                promptTokens,
+                cachedTokens,
+                text,
+                reasoning,
+                toolCalls,
+                finishReason,
+                speculation,
+                audio);
     }
 
     int completionTokens() {

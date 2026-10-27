@@ -10,8 +10,11 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.toknroll.IntSequence;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +23,42 @@ import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 
 class OpenAiChatTest {
+
+    /**
+     * A spoken reply comes back in history by its {@code audio.id}: the kept turn replays as its
+     * transcript and its exact record; an id the server does not hold is refused.
+     */
+    @Test
+    void assistantAudioReplaysTheKeptTurn() {
+        SpokenTurns turns = new SpokenTurns();
+        SpokenTurn turn =
+                new SpokenTurn(IntSequence.of(5, 9, 6, 9), 9, List.of(new int[12], new int[12]));
+        Content.Speech spoken =
+                new Content.Speech(new Media.Audio(new float[480], 24_000, 1), turn);
+        String id = SpokenTurns.newId();
+        assertTrue(turns.put(id, spoken, "Paris.") > System.currentTimeMillis() / 1000);
+        List<Message> messages =
+                OpenAiChat.messages(
+                        List.of(
+                                Map.of("role", "user", "content", "Capital of France?"),
+                                Map.of("role", "assistant", "audio", Map.of("id", id))),
+                        turns);
+        Message replayed = messages.get(1);
+        assertEquals(Role.ASSISTANT, replayed.role());
+        assertEquals("Paris.", replayed.text());
+        assertTrue(replayed.content().get(1) instanceof Content.Speech s && s.turn() == turn);
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        OpenAiChat.messages(
+                                List.of(
+                                        Map.of(
+                                                "role",
+                                                "assistant",
+                                                "audio",
+                                                Map.of("id", "audio_x"))),
+                                turns));
+    }
 
     @Test
     void schemaInstructionsPreserveTheSchemaAndStayStableAcrossTurns() {

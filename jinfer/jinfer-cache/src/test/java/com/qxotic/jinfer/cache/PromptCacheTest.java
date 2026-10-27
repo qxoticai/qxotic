@@ -12,6 +12,7 @@ import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextConfiguration;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.LanguageModel;
+import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
@@ -217,6 +218,53 @@ public final class PromptCacheTest {
             Served turn2 = generate(cache, turns(new int[] {1, 2, 3}, new int[] {7, 8, 4}), 9);
             assertEquals(PromptCache.Tier.SESSION, turn2.tier(), "strict extension = hot");
             assertEquals(5, turn2.restored(), "everything the hot state held is reused");
+        }
+    }
+
+    /**
+     * A decode position that is no token - a speech frame's row, ingested by the pass itself -
+     * joins the stream by its fingerprint: a prompt replaying the same keyed row continues the hot
+     * conversation, and a different row does not.
+     */
+    @Test
+    void aFrameRowTheReplyTookMatchesItsReplay() {
+        MemoryView<MemorySegment> row =
+                Views.allocateF32(MemoryAllocators.ofArena(Arena.ofAuto()), 1, 4);
+        Batch frame = Batch.embeddings(row, 1, false, ContentKey.sha256(new byte[] {1, 2, 3}));
+        Batch other = Batch.embeddings(row, 1, false, ContentKey.sha256(new byte[] {4}));
+        try (var cache = cache(fine(), 2, 1 << 20)) {
+            cache.serve(
+                    turns(new int[] {1, 2, 3}),
+                    (state, serving) -> {
+                        state.resumeAt(state.position() + 1);
+                        serving.tail(7);
+                        state.resumeAt(state.position() + 1);
+                        serving.tail(frame);
+                        state.resumeAt(state.position() + 1);
+                        serving.tail(8);
+                        return null;
+                    });
+            Served replay =
+                    generate(
+                            cache,
+                            List.of(
+                                    Batch.prefill(new int[] {1, 2, 3, 7}),
+                                    frame,
+                                    Batch.prefill(new int[] {8, 4})),
+                            9);
+            assertEquals(PromptCache.Tier.SESSION, replay.tier(), "the spoken turn is hot");
+            assertEquals(6, replay.restored());
+            Served wrong =
+                    generate(
+                            cache,
+                            List.of(
+                                    Batch.prefill(new int[] {1, 2, 3, 7}),
+                                    other,
+                                    Batch.prefill(new int[] {8, 4})),
+                            9);
+            assertNotEquals(PromptCache.Tier.SESSION, wrong.tier());
+            assertTrue(
+                    wrong.restored() <= 4, "nothing past the differing frame: " + wrong.restored());
         }
     }
 

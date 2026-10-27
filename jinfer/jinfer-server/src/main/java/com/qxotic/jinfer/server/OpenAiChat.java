@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.Speech;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.VideoSampler;
@@ -48,17 +49,28 @@ public final class OpenAiChat {
         Validation.validateChatOptions(request);
         Validation.validateGenerationParams(request, servedModel, config);
         return lower(
-                request, Values.asArray(request.get("messages"), "messages"), config, sampling);
+                request,
+                Values.asArray(request.get("messages"), "messages"),
+                config,
+                sampling,
+                null);
     }
 
-    /** The lowering alone, over messages the server already validated. */
+    /**
+     * The lowering alone, over messages the server already validated; {@code turns} holds the
+     * spoken replies history may refer to (null: none can be).
+     */
     static Lowered lower(
             Map<String, Object> request,
             List<Object> messages,
             ServerConfig config,
-            Sampling defaults) {
+            Sampling defaults,
+            SpokenTurns turns) {
         List<Tool> tools = ToolUse.offered(request) ? tools(request) : List.of();
-        List<Message> prompt = messages(messages);
+        List<Message> prompt = messages(messages, turns);
+        // OpenAI's audio output always carries its transcript; audio.voice does not steer a chat
+        // reply - the model speaks in its own voice, and only text to speech picks one
+        Speech speech = request.get("audio") != null ? Speech.withTranscript() : null;
         Map<String, Object> schema = schema(request);
         if (schema != null) describeSchema(prompt, schema);
         String forcedTool = ToolUse.forced(request);
@@ -66,7 +78,9 @@ public final class OpenAiChat {
                 new ChatEngine.Request(
                         prompt,
                         tools,
-                        thinking(request, config.defaults().think()) && forcedTool == null,
+                        thinking(request, config.defaults().think())
+                                && forcedTool == null
+                                && speech == null,
                         maxTokens(request, config),
                         maxReasoningTokensOrDefault(request, config),
                         reasoningCutoffMessageOrDefault(request, config),
@@ -75,7 +89,8 @@ public final class OpenAiChat {
                         grammar(request),
                         forced(request),
                         stops(request.get("stop")),
-                        templateKwargs(request));
+                        templateKwargs(request),
+                        speech);
         boolean inline = "none".equals(Values.stringValue(request.get("reasoning_format"), null));
         return new Lowered(lowered, stops(request.get("stop")), inline);
     }
@@ -208,6 +223,10 @@ public final class OpenAiChat {
     // ---- messages ----
 
     static List<Message> messages(List<Object> values) {
+        return messages(values, null);
+    }
+
+    static List<Message> messages(List<Object> values, SpokenTurns turns) {
         List<Message> out = new ArrayList<>(values.size());
         for (Object value : values) {
             Map<String, Object> message = Values.asObject(value, "message");
@@ -220,6 +239,16 @@ public final class OpenAiChat {
                                         new Content.ToolResult(
                                                 Values.stringValue(message.get("tool_call_id"), ""),
                                                 Values.messageContent(message.get("content"))))));
+                continue;
+            }
+            if ("assistant".equals(role) && message.get("audio") != null) {
+                // a spoken reply, referred to by id: replayed as the model spoke it
+                String audio =
+                        Values.stringValue(
+                                Values.asObject(message.get("audio"), "audio").get("id"), null);
+                if (audio == null || turns == null)
+                    throw new IllegalArgumentException("assistant audio needs the id of a reply");
+                out.add(new Message(Role.ASSISTANT, List.of(turns.get(audio))));
                 continue;
             }
             List<Content> content = content(message.get("content"));

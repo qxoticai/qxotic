@@ -344,6 +344,13 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
          */
         void adopt(int[] tokens);
 
+        /**
+         * As {@link #tail} for a decode position that is no token: a batch the pass ingested on the
+         * state itself (a speech frame's row). It joins the stream by its fingerprint, exactly as
+         * the same batch in a prompt would, so a later prompt replaying it matches.
+         */
+        void tail(Batch batch);
+
         /** Positions served from cache instead of prefill. */
         int restored();
 
@@ -466,7 +473,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         private final CachedSession<S> session;
         private final int restored;
         private final Tier tier;
-        private final List<Integer> reply = new ArrayList<>(); // buffered per-reply tail tokens
+        private final List<Long> reply = new ArrayList<>(); // buffered reply tail fingerprints
         private boolean live = true;
         private Duration promptTime;
         private boolean prefillComplete = true;
@@ -488,7 +495,21 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
             if (tailPerToken) {
                 session.adopt(token);
             } else {
-                reply.add(token); // committed as one block when the pass ends
+                reply.add((long) token); // committed as one block when the pass ends
+            }
+        }
+
+        @Override
+        public void tail(Batch batch) {
+            if (!live) {
+                throw new IllegalStateException(
+                        "the serving is over: tail() is valid only until the pass returns");
+            }
+            long[] fingerprints = CachedSession.fingerprints(List.of(batch));
+            if (tailPerToken) {
+                session.adopt(fingerprints);
+            } else {
+                for (long fingerprint : fingerprints) reply.add(fingerprint);
             }
         }
 
@@ -501,16 +522,17 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
             if (tailPerToken) {
                 session.adopt(tokens); // one block at the frontier - the speculative shape
             } else {
-                for (int token : tokens) reply.add(token); // joins the one-block reply commit
+                for (int token : tokens)
+                    reply.add((long) token); // joins the one-block reply commit
             }
         }
 
         /** Commits a buffered reply as ONE block - the residue-codec tail granularity. */
         void flushReply() {
             if (reply.isEmpty()) return;
-            int[] tokens = new int[reply.size()];
-            for (int i = 0; i < tokens.length; i++) tokens[i] = reply.get(i);
-            session.adopt(tokens);
+            long[] fingerprints = new long[reply.size()];
+            for (int i = 0; i < fingerprints.length; i++) fingerprints[i] = reply.get(i);
+            session.adopt(fingerprints);
         }
 
         @Override

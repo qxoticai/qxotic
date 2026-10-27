@@ -7,6 +7,7 @@ import static com.qxotic.jinfer.models.lfm3.Lfm3.weight;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Activations;
@@ -18,12 +19,14 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
+import com.qxotic.jinfer.llm.SpeechOutput;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.random.RandomGenerator;
 
 /**
@@ -36,7 +39,7 @@ import java.util.random.RandomGenerator;
  *   codes  ─► codec: FSQ lookup, x6 upsample, a causal LFM stack, log-magnitude + phase, ISTFT
  * </pre>
  *
- * Package-private: the public speech API is still to be designed; this is its engine.
+ * The engine drives it through {@link Speaker}, as {@link SpeechOutput} describes.
  */
 final class Lfm3Speech {
 
@@ -419,7 +422,7 @@ final class Lfm3Speech {
         private final MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
         private final Pass depthPass = new Pass(depth, CODEBOOKS, false, arena);
         private final Pass codecPass = new Pass(codec, FRAME_STACK, true, arena);
-        private final MemoryView<MemorySegment> projected, logits, feedbackRows, quantIn, quant;
+        private final MemoryView<MemorySegment> projected, logits, quantIn, quant;
         private final MemoryView<MemorySegment> codecRow, spectra;
         private final MemoryView<MemorySegment>[] depthRows, logitRows;
 
@@ -429,10 +432,11 @@ final class Lfm3Speech {
         /** Where the caller puts the backbone's hidden state before each frame. */
         final MemoryView<MemorySegment> hidden;
 
-        private final int[] feedbackIds = new int[CODEBOOKS], history;
+        private final Feedback feedbacks = new Feedback(arena);
+        private final int[] history;
         private final float[] logitRow = new float[vocab], spectrum = new float[2 * Istft.BINS];
-        private final float[] quantValues = new float[CODEBOOKS * FSQ_LEVELS], feedbackRow;
-        private final double[] feedbackSum, probabilities = new double[vocab];
+        private final float[] quantValues = new float[CODEBOOKS * FSQ_LEVELS];
+        private final double[] probabilities = new double[vocab];
         private final boolean[] seen = new boolean[vocab];
         private final Istft istft = new Istft();
         private int frames, position;
@@ -441,8 +445,7 @@ final class Lfm3Speech {
             int dim = depth.dim;
             projected = Views.allocateF32(arena, 1, CODEBOOKS * dim);
             logits = Views.allocateF32(arena, CODEBOOKS, vocab);
-            feedbackRows = Views.allocateF32(arena, CODEBOOKS, modelDim);
-            feedback = Views.allocateF32(arena, 1, modelDim);
+            feedback = feedbacks.row;
             hidden = Views.allocateF32(arena, 1, modelDim);
             quantIn = Views.allocateF32(arena, 1, CODEBOOKS * FSQ_LEVELS);
             quant = Views.allocateF32(arena, 1, quantOutBias.shape().flatAt(0));
@@ -450,15 +453,14 @@ final class Lfm3Speech {
             spectra = Views.allocateF32(arena, FRAME_STACK, 2 * Istft.BINS);
             depthRows = rows(depthPass.normed, CODEBOOKS);
             logitRows = rows(logits, CODEBOOKS);
-            feedbackRow = new float[modelDim];
-            feedbackSum = new double[modelDim];
             history = new int[Math.max(1, historyFrames) * CODEBOOKS];
         }
 
         /**
          * Samples the frame for {@code hiddenState} (the backbone's final-normed last row) into
          * {@code codes}, revealing the codebooks in {@code order}, 4 per depthformer pass, and sets
-         * {@link #feedback}. False when a codebook picked the end code: the speech is over.
+         * {@link #feedback}. False when a codebook picked the end code: the speech is over, and the
+         * frame is the end frame - every code the end code, its feedback set too.
          */
         boolean frame(
                 MemoryView<MemorySegment> hiddenState,
@@ -477,7 +479,13 @@ final class Lfm3Speech {
                     codes[cb] = sample(logitRow, sampling, rng);
                 }
             }
-            for (int c : codes) if (c == vocab - 1) return false;
+            for (int c : codes) {
+                if (c == vocab - 1) {
+                    Arrays.fill(codes, vocab - 1);
+                    feedback(codes);
+                    return false;
+                }
+            }
             System.arraycopy(
                     codes,
                     0,
@@ -526,18 +534,9 @@ final class Lfm3Speech {
             return logits;
         }
 
-        /** {@link #feedback}: the sum of the frame's code embeddings, accumulated in double. */
+        /** {@link #feedback} for {@code codes}. */
         void feedback(int[] codes) {
-            for (int cb = 0; cb < CODEBOOKS; cb++) feedbackIds[cb] = codes[cb] + cb * vocab;
-            Convert.gatherToF32(outEmbd, feedbackIds, 0, CODEBOOKS, feedbackRows, 0, modelDim);
-            Arrays.fill(feedbackSum, 0);
-            for (int cb = 0; cb < CODEBOOKS; cb++) {
-                Views.copyToArray(
-                        feedbackRows, (long) cb * modelDim, feedbackRow, 0, modelDim, "feedback");
-                for (int i = 0; i < modelDim; i++) feedbackSum[i] += feedbackRow[i];
-            }
-            for (int i = 0; i < modelDim; i++) feedbackRow[i] = (float) feedbackSum[i];
-            Views.copyFromArray(feedback, 0, feedbackRow, 0, modelDim, "feedback");
+            feedbacks.of(codes);
         }
 
         /** The frame's audio: {@value #FRAME_STACK} ISTFT hops, less the start padding at first. */
@@ -628,39 +627,155 @@ final class Lfm3Speech {
     }
 
     /**
-     * Speaks from the state's position - its prompt ingested, ending in {@code <|audio_start|>} -
-     * until the end code or {@code maxFrames}, each frame's PCM to {@code sink} as it decodes, then
-     * the tail. {@code shuffle} reveals the codebooks in a fresh random order per frame, as the
-     * model was trained; false keeps index order, a deterministic reference. Returns the frames
-     * spoken.
+     * A frame's feedback row, the backbone's input for it: the sum of its code embeddings,
+     * accumulated in double. The replay of a spoken turn computes the same rows the live reply fed.
      */
-    int speak(
-            Lfm3 model,
-            Lfm3.State state,
-            Sampling sampling,
-            RandomGenerator rng,
-            boolean shuffle,
-            int maxFrames,
-            Consumer<float[]> sink) {
-        int[] order = new int[CODEBOOKS], codes = new int[CODEBOOKS];
-        try (Stream stream = newStream(sampling)) {
-            int frames = 0;
-            for (; frames < maxFrames; frames++) {
-                model.hiddenState(state, stream.hidden);
-                for (int i = 0; i < CODEBOOKS; i++) order[i] = i;
-                if (shuffle)
-                    for (int i = CODEBOOKS - 1; i > 0; i--) {
-                        int j = rng.nextInt(i + 1), t = order[i];
-                        order[i] = order[j];
-                        order[j] = t;
-                    }
-                if (!stream.frame(stream.hidden, order, sampling, rng, codes)) break;
-                sink.accept(stream.decode(codes));
-                model.ingest(state, Batch.embeddings(stream.feedback, 1, false));
-            }
-            sink.accept(stream.flush());
-            return frames;
+    final class Feedback {
+        private final int[] ids = new int[CODEBOOKS];
+        private final MemoryView<MemorySegment> rows;
+        private final float[] values = new float[modelDim];
+        private final double[] sum = new double[modelDim];
+
+        /** The row {@link #of} writes, {@code [1][modelDim]}. */
+        final MemoryView<MemorySegment> row;
+
+        Feedback(MemoryArena<MemorySegment> arena) {
+            rows = Views.allocateF32(arena, CODEBOOKS, modelDim);
+            row = Views.allocateF32(arena, 1, modelDim);
         }
+
+        MemoryView<MemorySegment> of(int[] codes) {
+            for (int cb = 0; cb < CODEBOOKS; cb++) ids[cb] = codes[cb] + cb * vocab;
+            Convert.gatherToF32(outEmbd, ids, 0, CODEBOOKS, rows, 0, modelDim);
+            Arrays.fill(sum, 0);
+            for (int cb = 0; cb < CODEBOOKS; cb++) {
+                Views.copyToArray(rows, (long) cb * modelDim, values, 0, modelDim, "feedback");
+                for (int i = 0; i < modelDim; i++) sum[i] += values[i];
+            }
+            for (int i = 0; i < modelDim; i++) values[i] = (float) sum[i];
+            Views.copyFromArray(row, 0, values, 0, modelDim, "feedback");
+            return row;
+        }
+    }
+
+    /** The cache identity of a frame's row: its codes, which fix the row. */
+    static ContentKey frameKey(int[] codes) {
+        ByteBuffer bytes = ByteBuffer.allocate(FRAME_DOMAIN.length + 4 * codes.length);
+        bytes.put(FRAME_DOMAIN);
+        for (int code : codes) bytes.putInt(code);
+        return ContentKey.sha256(bytes.array());
+    }
+
+    private static final byte[] FRAME_DOMAIN =
+            "lfm3-speech-frame\0".getBytes(StandardCharsets.US_ASCII);
+
+    Speaker speaker(
+            Lfm3 model, Lfm3.State state, boolean transcript, RandomGenerator random, int textEnd) {
+        return new Speaker(model, state, transcript, random, textEnd);
+    }
+
+    /**
+     * One spoken reply's lanes, as LiquidAI's {@code generate()} and llama.cpp's speech helper run
+     * them. Speech alone speaks to its end frame, then text follows. Interleaved, the reply
+     * alternates {@value #TEXT_SLOTS} text tokens and {@value #AUDIO_SLOTS} frames; {@code
+     * <|text_end|>} ends the transcript and the speech runs on to its end frame. After it, {@code
+     * <|text_end|>} ends the reply. Frames reveal their codebooks in a fresh random order each, as
+     * the model was trained, sampled with the GGUF's settings.
+     */
+    final class Speaker implements SpeechOutput.Speaker {
+        private static final int TEXT_SLOTS = 6, AUDIO_SLOTS = 12;
+        private final Lfm3 model;
+        private final Lfm3.State state;
+        private final RandomGenerator random;
+        private final int textEnd;
+        private final Stream stream = newStream(defaults);
+        private final int[] order = new int[CODEBOOKS], codes = new int[CODEBOOKS];
+        private boolean interleaving, speaking, transcriptDone, flushed;
+        private int slots = TEXT_SLOTS;
+
+        private Speaker(
+                Lfm3 model,
+                Lfm3.State state,
+                boolean transcript,
+                RandomGenerator random,
+                int textEnd) {
+            this.model = model;
+            this.state = state;
+            this.random = random;
+            this.textEnd = textEnd;
+            interleaving = transcript;
+            speaking = !transcript;
+        }
+
+        @Override
+        public boolean textNext() {
+            return !speaking;
+        }
+
+        @Override
+        public SpeechOutput.Lane text(int token) {
+            if (!interleaving)
+                return token == textEnd ? SpeechOutput.Lane.END : SpeechOutput.Lane.TEXT;
+            if (token == textEnd) {
+                transcriptDone = true;
+                speaking = true;
+                return SpeechOutput.Lane.CONTROL; // the switch itself takes no slot
+            }
+            slot();
+            return SpeechOutput.Lane.TEXT;
+        }
+
+        @Override
+        public SpeechOutput.Frame frame() {
+            model.hiddenState(state, stream.hidden);
+            for (int i = 0; i < CODEBOOKS; i++) order[i] = i;
+            for (int i = CODEBOOKS - 1; i > 0; i--) {
+                int j = random.nextInt(i + 1), t = order[i];
+                order[i] = order[j];
+                order[j] = t;
+            }
+            boolean more = stream.frame(stream.hidden, order, defaults, random, codes);
+            float[] pcm;
+            if (more) {
+                pcm = stream.decode(codes);
+                slot();
+            } else {
+                pcm = flush(); // the codec's tail closes the speech; text follows
+                interleaving = false;
+                speaking = false;
+            }
+            return new SpeechOutput.Frame(
+                    codes.clone(),
+                    clamp(pcm),
+                    Batch.embeddings(stream.feedback, 1, false, frameKey(codes)),
+                    !more);
+        }
+
+        /** An interleaved slot taken: the block flips when its count runs out. */
+        private void slot() {
+            if (interleaving && !transcriptDone && --slots == 0) {
+                speaking = !speaking;
+                slots = speaking ? AUDIO_SLOTS : TEXT_SLOTS;
+            }
+        }
+
+        @Override
+        public float[] flush() {
+            if (flushed) return new float[0];
+            flushed = true;
+            return clamp(stream.flush());
+        }
+
+        @Override
+        public void close() {
+            stream.close();
+        }
+    }
+
+    /** PCM within [-1, 1]: the ISTFT can overshoot by a hair, as any WAV writer clips. */
+    private static float[] clamp(float[] pcm) {
+        for (int i = 0; i < pcm.length; i++) pcm[i] = Math.max(-1f, Math.min(1f, pcm[i]));
+        return pcm;
     }
 
     /**

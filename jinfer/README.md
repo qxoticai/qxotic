@@ -29,7 +29,7 @@ AI on the JVM, just a Maven dependency away.
 | [Google Gemma 4](https://deepmind.google/models/gemma/gemma-4) | chat, vision, audio, MTP | `jinfer-gemma4` |
 | [Google EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) | embeddings of text, images, audio and video | `jinfer-gemma-embedding2` |
 | [Liquid AI LFM 2.5](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) | chat, vision, embeddings, reranking | `jinfer-lfm2` |
-| [Liquid AI LFM3](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF) | chat, vision (LFM3-VL), vision and audio (LFM3-Omni) | `jinfer-lfm3` |
+| [Liquid AI LFM3](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF) | chat, vision (LFM3-VL), vision, audio and speech (LFM3-Omni) | `jinfer-lfm3` |
 | [OpenAI gpt-oss](https://openai.com/index/introducing-gpt-oss/) | chat | `jinfer-gptoss` |
 | [Poolside Laguna XS 2.1](https://poolside.ai/blog/introducing-laguna-xs-2-1) | chat | `jinfer-laguna` |
 | [JetBrains Mellum 2](https://blog.jetbrains.com/ai/2026/06/mellum2-goes-open-source-a-fast-model-for-ai-workflows/) | chat | `jinfer-mellum` |
@@ -267,6 +267,22 @@ try (var transcriber = JinferTranscriptionModel.builder()
 The same model behind the CLI's `transcribe` command handles audio files, while `server` serves an
 OpenAI-compatible `POST /v1/audio/transcriptions` (multipart; `response_format` of `json`,
 `text`, or `verbose_json` with word timestamps).
+
+**Spoken replies.** LFM3-Omni answers in speech when a request asks for it; a request that does not is answered in text and never switches on its own:
+
+```java
+ChatEngine.Completion reply = engine.complete(
+        ChatEngine.Request.builder(messages, sampling)
+                .speech(Speech.withTranscript())   // or Speech.only()
+                .build(),
+        new ChatEngine.ReplySink() {
+            @Override public void on(ChatEngine.Delta delta) { show(delta.text()); }
+            @Override public void onSpeech(Media.Audio speech) { play(speech); } // 24 kHz
+        });
+```
+
+The reply carries the transcript as its text and the speech as a `Content.Speech`, whose record replays the turn exactly when the conversation continues.
+`engine.speak(text, language, voice, sampling, sink)` reads a text aloud.
 
 **Streaming transcription.** Feed audio as it arrives and poll the evolving transcript; text
 behind the commit horizon no longer changes, and `finish()` equals the offline transcript:

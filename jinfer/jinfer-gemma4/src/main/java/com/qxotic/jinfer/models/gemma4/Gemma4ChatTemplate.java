@@ -330,6 +330,8 @@ final class Gemma4ChatTemplate implements ChatTemplate {
                             // upstream fix 35b4173: reasoning renders in turns after the last
                             // user message (thought channel), stripped before it
                             case Content.Reasoning r -> assistant;
+                            // another family's speech: the whole-render keeps its transcript
+                            case Content.Speech s -> false;
                         };
                 if (!ok)
                     throw new UnsupportedConversation(

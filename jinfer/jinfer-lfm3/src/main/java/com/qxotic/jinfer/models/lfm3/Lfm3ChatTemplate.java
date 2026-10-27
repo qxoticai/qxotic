@@ -10,6 +10,7 @@ import com.qxotic.jinfer.chat.PromptWriter;
 import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -17,9 +18,12 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
+import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.lang.foreign.Arena;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +55,7 @@ final class Lfm3ChatTemplate implements ChatTemplate {
 
     private final Tokenizer tokenizer;
     private final Multimodal media;
+    private final Lfm3Speech speech; // replays spoken turns; null without the Omni mmproj
     private final int bos, imStart, imEnd, think, endThink, visionOpen, visionClose;
     private final ReplyLanguage.Spans spans;
     private final Set<Integer> speechOpeners; // a text reply's forbidden mode switches
@@ -64,6 +69,7 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     Lfm3ChatTemplate(Tokenizer tokenizer, Multimodal media) {
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.media = media;
+        this.speech = media instanceof Lfm3 model ? model.speech() : null;
         bos = SpecialTokens.require(tokenizer, "<|startoftext|>");
         imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
         imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
@@ -199,6 +205,12 @@ final class Lfm3ChatTemplate implements ChatTemplate {
      * trimmed, behind an empty pair. Then the content and one XML function block per call.
      */
     private void writeAssistant(PromptWriter out, Message message, boolean keepThinking) {
+        for (Content part : message.content()) {
+            if (part instanceof Content.Speech spoken) {
+                writeSpoken(out, spoken.turn());
+                return; // its transcript is in the turn's own record
+            }
+        }
         String content = "";
         String reasoning = null;
         for (Content part : message.content()) {
@@ -232,6 +244,29 @@ final class Lfm3ChatTemplate implements ChatTemplate {
                 out.text(value(argument.getValue())).text("\n").trusted("</parameter>\n");
             }
             out.trusted("</function>\n</tool_call>");
+        }
+    }
+
+    /**
+     * A spoken turn as the model produced it: the empty think span, then every position - text ids
+     * as they were, each frame as its feedback row, keyed by its codes like the live row - so the
+     * prompt cache recognizes the turn it holds.
+     */
+    private void writeSpoken(PromptWriter out, SpokenTurn turn) {
+        if (speech == null)
+            throw new UnsupportedConversation("a spoken turn replays through LFM3-Omni's mmproj");
+        out.id(think).id(endThink);
+        Lfm3Speech.Feedback rows = speech.new Feedback(MemoryAllocators.ofArena(Arena.ofAuto()));
+        Iterator<int[]> frames = turn.frames().iterator();
+        IntSequence positions = turn.positions();
+        for (int i = 0; i < positions.length(); i++) {
+            int id = positions.intAt(i);
+            if (id != turn.placeholder()) {
+                out.id(id);
+                continue;
+            }
+            int[] codes = frames.next();
+            out.batch(Batch.embeddings(rows.of(codes), 1, false, Lfm3Speech.frameKey(codes)));
         }
     }
 
@@ -326,34 +361,19 @@ final class Lfm3ChatTemplate implements ChatTemplate {
                     Map.entry("zh", "Chinese"));
 
     /**
-     * The GGUF's {@code tts} prompt: a system turn naming the language and voice, the text as the
-     * user turn, then the assistant turn opened with an empty think span and {@code
-     * <|audio_start|>}. {@code language} is a code from the template's table or a language name
-     * (null: English); {@code voice} is {@code female} (null) or {@code male}.
+     * The GGUF's {@code tts} system turn: {@code language} a code from its table or a language name
+     * as LiquidAI writes them ("American English"), null = English; {@code voice} {@code female}
+     * (null) or {@code male}.
      */
-    int[] ttsPrompt(String text, String language, String voice) {
+    @Override
+    public Optional<String> speechInstruction(String language, String voice) {
         String code = language == null || language.isEmpty() ? "en" : language.toLowerCase();
         String name = TTS_LANGUAGES.getOrDefault(code, language);
         String v = voice == null ? "female" : voice.toLowerCase();
         if (!v.equals("female") && !v.equals("male"))
             throw new IllegalArgumentException(
                     "LFM3 speaks with a female or a male voice, not '" + voice + "'");
-        List<Integer> ids = new java.util.ArrayList<>();
-        PromptWriter out =
-                new PromptWriter(
-                        tokenizer,
-                        Integer.MAX_VALUE,
-                        batch -> {
-                            for (int id : ((Batch.Input.Tokens) batch.input()).ids()) ids.add(id);
-                        });
-        out.id(bos)
-                .id(imStart)
-                .text("system\nPerform TTS in " + name + " using a " + v + " voice.");
-        out.id(imEnd).text("\n").id(imStart).text("user\n").text(text).id(imEnd).text("\n");
-        out.id(imStart).text("assistant\n").id(think).id(endThink);
-        out.id(SpecialTokens.require(tokenizer, "<|audio_start|>"));
-        out.finish();
-        return ids.stream().mapToInt(Integer::intValue).toArray();
+        return Optional.of("Perform TTS in " + name + " using a " + v + " voice.");
     }
 
     /**

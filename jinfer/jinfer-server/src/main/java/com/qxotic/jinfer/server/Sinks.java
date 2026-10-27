@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.server;
 
+import com.qxotic.jinfer.media.Media;
 import java.util.function.Consumer;
 
 /**
@@ -13,10 +14,16 @@ import java.util.function.Consumer;
  * zeros, a non-standard field that was also never true. Real usage rides the terminal chunk, built
  * from the finished {@link Reply}.
  */
-record Sinks(Consumer<String> onText, Consumer<String> onReasoning) {
+record Sinks(
+        Consumer<String> onText, Consumer<String> onReasoning, Consumer<Media.Audio> onSpeech) {
 
-    /** No streaming: the result carries the full text and usage, so both channels are absent. */
-    static final Sinks NONE = new Sinks(null, null);
+    /** No streaming: the result carries the full text and usage, so every channel is absent. */
+    static final Sinks NONE = new Sinks(null, null, null);
+
+    /** Text and reasoning, no speech. */
+    Sinks(Consumer<String> onText, Consumer<String> onReasoning) {
+        this(onText, onReasoning, null);
+    }
 
     /** A single text channel (completions and the Responses API). */
     static Sinks text(Consumer<String> onText) {

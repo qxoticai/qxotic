@@ -336,6 +336,33 @@ class ValidationTest {
                 () -> Validation.validateChatOptions(Map.of("prediction", Map.of())));
     }
 
+    /** OpenAI's audio output shape; whether the model speaks is the engine's to refuse. */
+    @Test
+    void audioOutputTakesOpenAisShape() {
+        List<String> both = List.of("text", "audio");
+        Validation.validateChatOptions(
+                Map.of("modalities", both, "audio", Map.of("voice", "alloy", "format", "wav")));
+        Validation.validateChatOptions(
+                Map.of("modalities", both, "audio", Map.of("format", "pcm16"), "stream", true));
+        for (Map<String, Object> refused :
+                List.<Map<String, Object>>of(
+                        Map.of("modalities", both),
+                        Map.of("audio", Map.of("format", "wav")),
+                        Map.of("modalities", both, "audio", Map.of()),
+                        Map.of("modalities", both, "audio", Map.of("format", "mp3")),
+                        Map.of(
+                                "modalities",
+                                both,
+                                "audio",
+                                Map.of("format", "wav"),
+                                "stream",
+                                true)))
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Validation.validateChatOptions(refused),
+                    refused.toString());
+    }
+
     @Test
     void rejectsResponsesOptionsWhoseSemanticsAreNotImplemented() {
         Validation.validateResponseOptions(

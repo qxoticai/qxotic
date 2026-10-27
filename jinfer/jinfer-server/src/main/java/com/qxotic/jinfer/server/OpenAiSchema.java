@@ -70,7 +70,12 @@ final class OpenAiSchema {
         // text the model wrote alongside its calls is content (it streamed as such); only a
         // call-only reply carries null
         String text = result.text() == null ? "" : result.text();
-        message.put("content", result.toolCalls().isEmpty() || !text.isEmpty() ? text : null);
+        message.put(
+                "content",
+                result.audio() == null && (result.toolCalls().isEmpty() || !text.isEmpty())
+                        ? text
+                        : null);
+        if (result.audio() != null) message.put("audio", audio(result.audio()));
         if (result.reasoning() != null) message.put("reasoning_content", result.reasoning());
         if (!result.toolCalls().isEmpty())
             message.put("tool_calls", ToolCalls.toWire(result.toolCalls()));
@@ -93,6 +98,18 @@ final class OpenAiSchema {
                 usage(result),
                 "timings",
                 timings(result));
+    }
+
+    /**
+     * OpenAI's {@code message.audio}: the spoken reply, its transcript, and when its id expires.
+     */
+    static Map<String, Object> audio(Reply.Audio audio) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", audio.id());
+        out.put("expires_at", audio.expiresAt());
+        if (audio.data() != null) out.put("data", audio.data());
+        out.put("transcript", audio.transcript());
+        return out;
     }
 
     static Map<String, Object> chatCompletionChunk(

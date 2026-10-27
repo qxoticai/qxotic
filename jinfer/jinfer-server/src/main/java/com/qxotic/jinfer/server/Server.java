@@ -2,7 +2,9 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.llm.SpeechOutput;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.sun.net.httpserver.HttpExchange;
@@ -10,6 +12,7 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,7 +175,18 @@ public final class Server {
         // families whose template renders it, which the projectors cannot say.
         List<String> inputModalities = MediaParts.modalities(model.model(), false);
         modelCard.put("supports_image_input", inputModalities.contains("image"));
-        modelCard.put("architecture", JsonCodec.object("input_modalities", inputModalities));
+        // output too: a model whose speech head is attached answers in audio as well
+        List<String> outputModalities =
+                model.model() instanceof SpeechOutput<?> voice && voice.speaks()
+                        ? List.of("text", "audio")
+                        : List.of("text");
+        modelCard.put(
+                "architecture",
+                JsonCodec.object(
+                        "input_modalities",
+                        inputModalities,
+                        "output_modalities",
+                        outputModalities));
         probe(
                 server,
                 "/v1/models",
@@ -206,6 +220,7 @@ public final class Server {
         route(server, "/v1/chat/completions", exchange -> handleChatCompletion(exchange, config));
         route(server, "/v1/completions", exchange -> handleCompletion(exchange, config));
         route(server, "/v1/responses", exchange -> handleResponse(exchange, config));
+        route(server, "/v1/audio/speech", exchange -> handleSpeech(exchange, config));
         // liveness probes carry no key: /health is open (llama.cpp's is too); it says nothing
         // a probe should not know (up, busy, queue depth)
         jsonProbe(
@@ -528,6 +543,45 @@ public final class Server {
                 });
     }
 
+    /**
+     * OpenAI's text to speech: {@code input} read aloud in the model's own voice. {@code voice} is
+     * one the model has ({@code female} or {@code male} on LFM3-Omni), {@code language} - a jinfer
+     * extension, as llama.cpp's {@code lang} - one it speaks; {@code response_format} is {@code
+     * wav} (the default) or {@code pcm} (16-bit, mono, at the model's rate).
+     */
+    private void handleSpeech(HttpExchange exchange, ServerConfig config) throws IOException {
+        handleGenerationPost(
+                exchange,
+                "/v1/audio/speech",
+                "speech-",
+                request -> {
+                    Validation.validateModel(request, servedModel);
+                    Validation.require(
+                            !Values.stringValue(request.get("input"), "").isBlank(),
+                            "input must not be empty");
+                    // knobs the model cannot honor are refused, never ignored
+                    for (String knob : List.of("speed", "instructions", "stream_format"))
+                        Validation.require(request.get(knob) == null, "%s is not supported", knob);
+                    String format = Values.stringValue(request.get("response_format"), "wav");
+                    Validation.require(
+                            format.equals("wav") || format.equals("pcm"),
+                            "response_format must be wav or pcm");
+                },
+                (request, id) -> {
+                    boolean wav =
+                            Values.stringValue(request.get("response_format"), "wav").equals("wav");
+                    Http.sendBytes(
+                            exchange,
+                            200,
+                            wav ? "audio/wav" : "audio/pcm",
+                            generation.speech(
+                                    Values.stringValue(request.get("input"), ""),
+                                    Values.stringValue(request.get("language"), null),
+                                    Values.stringValue(request.get("voice"), null),
+                                    wav));
+                });
+    }
+
     private void handleCompletion(HttpExchange exchange, ServerConfig config) throws IOException {
         handleGenerationPost(
                 exchange,
@@ -613,10 +667,12 @@ public final class Server {
                         // Ask GENERATION whether forcing really happens - a model with no call
                         // seed ignores tool_choice and generates ordinary prose, which silently
                         // went nowhere while this asked ToolUse.forced(request) on its own.
+                        // a spoken reply streams in OpenAI's delta.audio: the transcript and the
+                        // speech's PCM16 chunks, each naming the one id the reply is kept under
+                        String audioId = request.get("audio") != null ? SpokenTurns.newId() : null;
                         Sinks sinks =
-                                generation.forcedTool(request) != null
-                                        ? Sinks.NONE
-                                        : new Sinks(
+                                audioId != null
+                                        ? new Sinks(
                                                 deltaSink(
                                                         sse,
                                                         t ->
@@ -625,20 +681,78 @@ public final class Server {
                                                                         modelId,
                                                                         created,
                                                                         JsonCodec.object(
-                                                                                "content", t),
+                                                                                "audio",
+                                                                                JsonCodec.object(
+                                                                                        "id",
+                                                                                        audioId,
+                                                                                        "transcript",
+                                                                                        t)),
                                                                         null)),
-                                                deltaSink(
-                                                        sse,
-                                                        t ->
+                                                null,
+                                                speech ->
+                                                        sse.emit(
                                                                 OpenAiSchema.chatCompletionChunk(
                                                                         id,
                                                                         modelId,
                                                                         created,
                                                                         JsonCodec.object(
-                                                                                "reasoning_content",
-                                                                                t),
-                                                                        null)));
-                        Reply result = generation.chat(request, messages, sinks);
+                                                                                "audio",
+                                                                                JsonCodec.object(
+                                                                                        "id",
+                                                                                        audioId,
+                                                                                        "data",
+                                                                                        Base64
+                                                                                                .getEncoder()
+                                                                                                .encodeToString(
+                                                                                                        AudioCodec
+                                                                                                                .pcm16(
+                                                                                                                        speech)))),
+                                                                        null)))
+                                        : generation.forcedTool(request) != null
+                                                ? Sinks.NONE
+                                                : new Sinks(
+                                                        deltaSink(
+                                                                sse,
+                                                                t ->
+                                                                        OpenAiSchema
+                                                                                .chatCompletionChunk(
+                                                                                        id,
+                                                                                        modelId,
+                                                                                        created,
+                                                                                        JsonCodec
+                                                                                                .object(
+                                                                                                        "content",
+                                                                                                        t),
+                                                                                        null)),
+                                                        deltaSink(
+                                                                sse,
+                                                                t ->
+                                                                        OpenAiSchema
+                                                                                .chatCompletionChunk(
+                                                                                        id,
+                                                                                        modelId,
+                                                                                        created,
+                                                                                        JsonCodec
+                                                                                                .object(
+                                                                                                        "reasoning_content",
+                                                                                                        t),
+                                                                                        null)));
+                        Reply result = generation.chat(request, messages, sinks, audioId);
+                        if (result.audio() != null) {
+                            sse.emit(
+                                    OpenAiSchema.chatCompletionChunk(
+                                            id,
+                                            modelId,
+                                            created,
+                                            JsonCodec.object(
+                                                    "audio",
+                                                    JsonCodec.object(
+                                                            "id",
+                                                            result.audio().id(),
+                                                            "expires_at",
+                                                            result.audio().expiresAt())),
+                                            null));
+                        }
                         if (!result.toolCalls().isEmpty()) {
                             sse.emit(
                                     OpenAiSchema.chatCompletionChunk(

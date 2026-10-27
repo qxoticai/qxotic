@@ -93,6 +93,8 @@ final class Estimators implements TokenCountEstimator {
                                 estimateTokenCountInText(r.text());
                         case com.qxotic.jinfer.chat.Content.Reasoning ignored ->
                                 0; // not re-prompted by default
+                        case com.qxotic.jinfer.chat.Content.Speech s ->
+                                s.turn().positions().length(); // replayed position for position
                     };
         }
         return sum;

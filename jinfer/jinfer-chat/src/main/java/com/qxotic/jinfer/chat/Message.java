@@ -4,6 +4,7 @@ import com.qxotic.jinfer.media.Media;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /** One role-tagged message with ordered, interleaved content. */
 public record Message(Role role, List<Content> content) {
@@ -29,6 +30,13 @@ public record Message(Role role, List<Content> content) {
 
     public static Message assistant(String text) {
         return new Message(Role.ASSISTANT, text);
+    }
+
+    /** The speech of a spoken reply, if this is one. */
+    public Optional<Media.Audio> speech() {
+        for (Content part : content)
+            if (part instanceof Content.Speech s) return Optional.of(s.audio());
+        return Optional.empty();
     }
 
     /** Concatenated text projection; structured and media content is omitted. */

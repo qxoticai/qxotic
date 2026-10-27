@@ -59,6 +59,17 @@ public sealed interface Content {
         }
     }
 
+    /**
+     * Speech the model produced: the waveform to play, and the turn's exact record, which a later
+     * turn replays. Its words, when transcribed, are the message's {@link Text}.
+     */
+    record Speech(com.qxotic.jinfer.media.Media.Audio audio, SpokenTurn turn) implements Content {
+        public Speech {
+            Objects.requireNonNull(audio, "audio");
+            Objects.requireNonNull(turn, "turn");
+        }
+    }
+
     /** Decoded media at its exact position in a message. */
     record Media(com.qxotic.jinfer.media.Media value, ContentKey contentKey) implements Content {
         public Media {
