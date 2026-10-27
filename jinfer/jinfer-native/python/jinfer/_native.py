@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import ctypes as C
-import os
-import platform
-from pathlib import Path
+from toknroll._native import locate
 
 OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED, ECANCELLED = 0, -1, -2, -3, -4, -5
 
@@ -21,34 +19,6 @@ class ModelOptions(C.Structure):
         ("prompt_cache", C.c_char_p),
         ("context_capacity", C.c_int32),
     ]
-
-
-def _platform() -> tuple[str, str]:
-    """(platform folder, library file name), as `make python` lays the library out."""
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-    arch = {"x86_64": "x86-64", "amd64": "x86-64", "arm64": "aarch64"}.get(machine, machine)
-    if system == "windows":
-        return f"windows-{arch}", "jinfer.dll"
-    if system == "darwin":
-        return f"darwin-{arch}", "libjinfer.dylib"
-    return f"{system}-{arch}", "libjinfer.so"
-
-
-def _locate() -> Path:
-    """JINFER_LIBRARY, then a source checkout's fresh build, then the library the package carries."""
-    folder, name = _platform()
-    here = Path(__file__).resolve().parent
-    override = os.environ.get("JINFER_LIBRARY")
-    candidates = [Path(override)] if override else []
-    candidates += [here.parent.parent / "target" / name, here / "lib" / folder / name]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise OSError(
-        f"libjinfer not found for {folder}; looked at " + ", ".join(map(str, candidates))
-        + ". Set JINFER_LIBRARY to the shared library, or build it with `make libjinfer`."
-    )
 
 
 def bind(lib: C.CDLL) -> C.CDLL:
@@ -91,4 +61,4 @@ def bind(lib: C.CDLL) -> C.CDLL:
     return lib
 
 
-lib = bind(C.CDLL(str(_locate())))
+lib = bind(C.CDLL(str(locate("jinfer"))))

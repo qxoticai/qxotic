@@ -197,15 +197,14 @@ class ErrorTypesTest(unittest.TestCase):
 
 class LibraryLocationTest(unittest.TestCase):
     def test_platform_names(self):
-        folder, name = N._platform()
-        self.assertRegex(folder, r"^(linux|darwin|windows)-(x86-64|aarch64|\w+)$")
-        self.assertIn(name, ("libtoknroll.so", "libtoknroll.dylib", "toknroll.dll"))
+        located = N.locate("toknroll")
+        self.assertIn(located.name, ("libtoknroll.so", "libtoknroll.dylib", "toknroll.dll"))
 
     def test_env_override_points_at_a_missing_file(self):
         saved = os.environ.get("TOKNROLL_LIBRARY")
         os.environ["TOKNROLL_LIBRARY"] = "/no/such/libtoknroll.so"
         try:
-            located = N._locate()  # the override is tried first, then the checkout and the package
+            located = N.locate("toknroll")  # the override is tried first, then the checkout and the package
             self.assertTrue(located.is_file())
         finally:
             if saved is None:

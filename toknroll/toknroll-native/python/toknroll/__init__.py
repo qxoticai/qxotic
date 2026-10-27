@@ -264,7 +264,9 @@ def configure(*options: str) -> None:
     """Runtime options as on a java command line, once and before the library's first use:
     `"-Dtoknroll.gguf.pre.my-model=alias:qwen2"` names a pre-tokenizer, `"-Dtoknroll.cache.root=..."`
     moves the hub cache, `"-XX:MaxHeapSize=512m"` caps the heap. A later call is refused, a rejected
-    option fails this one, and `TOKNROLL_OPTIONS` in the environment overrides what is given here."""
+    option fails this one, and `TOKNROLL_OPTIONS` in the environment overrides what is given here. This
+    configures libtoknroll: a tokenizer served by libjinfer (`model.tokenizer`) takes the same `-Dtoknroll.*`
+    options through `jinfer.configure` and `JINFER_OPTIONS`."""
     data = (C.c_char_p * len(options))(*(_text(option, "configure") for option in options))
     lib = N.library()
     _check(lib, lib.toknroll_configure(data, len(options)))
