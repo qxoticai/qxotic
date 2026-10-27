@@ -67,6 +67,11 @@ final class Log {
                 };
         installed.setLevel(Level.ALL);
         root.setLevel(Level.ALL);
+        // with the root at ALL the JDK traces every process start, stack trace included; curl runs
+        // as a
+        // process per download chunk, and that trace is the JDK's own, not a line jinfer's debug
+        // level promises
+        Logger.getLogger("java.lang.ProcessBuilder").setLevel(Level.INFO);
         root.addHandler(installed);
     }
 

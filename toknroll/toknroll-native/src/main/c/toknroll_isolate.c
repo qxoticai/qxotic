@@ -4,8 +4,9 @@
  * "JINFER_OPTIONS"), so its jinfer_* and toknroll_* symbols share one isolate and one configure. */
 #define _POSIX_C_SOURCE 200809L   /* strdup */
 #define _DARWIN_C_SOURCE          /* dladdr, RTLD_NOLOAD */
+#ifdef __APPLE__
 #include <dlfcn.h>
-#include <pthread.h>
+#endif
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -13,13 +14,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include "toknroll.h"
+#include "toknroll_port.h"
 
+/* Bare names, stringified here: a quoted -D value would not survive every platform's command line. */
 #ifndef TOKNROLL_PROGRAM
-#define TOKNROLL_PROGRAM "toknroll"                /* argv[0] */
+#define TOKNROLL_PROGRAM toknroll                /* argv[0] */
 #endif
 #ifndef TOKNROLL_OPTIONS_ENV
-#define TOKNROLL_OPTIONS_ENV "TOKNROLL_OPTIONS"    /* options separated by whitespace, applied after configure's */
+#define TOKNROLL_OPTIONS_ENV TOKNROLL_OPTIONS    /* options separated by whitespace, applied after configure's */
 #endif
+#define STR_(x) #x
+#define STR(x) STR_(x)
 
 typedef struct _graal_isolate_t graal_isolate_t;
 typedef struct _graal_isolatethread_t graal_isolatethread_t;
@@ -44,9 +49,9 @@ int graal_attach_thread(graal_isolate_t* isolate, graal_isolatethread_t** thread
 int graal_detach_thread(graal_isolatethread_t* thread);
 
 static graal_isolate_t* isolate;
-static pthread_once_t once = PTHREAD_ONCE_INIT;
-static pthread_key_t key;
-static char* program = TOKNROLL_PROGRAM;    /* argv[0]; GraalVM parses the rest like a java command line */
+static port_once_t once = PORT_ONCE_INIT;
+static port_tls_t key;
+static char* program = STR(TOKNROLL_PROGRAM);    /* argv[0]; GraalVM parses the rest like a java command line */
 static char** argv = &program;
 static int argc = 1;
 static const char* configured_by;          /* the public function configure came through, once */
@@ -76,9 +81,9 @@ static void init(void) {
 #endif
     /* the environment comes last: it overrides what the program configured, later wins as on a command
      * line. Split on whitespace; a value with a space in it goes through configure. ponytail: no quoting */
-    const char* env = getenv(TOKNROLL_OPTIONS_ENV);
+    const char* env = getenv(STR(TOKNROLL_OPTIONS_ENV));
     if (env && *env) {
-        char* copy = strdup(env);
+        char* copy = port_strdup(env);
         char** all = malloc((argc + strlen(env) / 2 + 2) * sizeof *all);   /* a token needs a char and a gap */
         memcpy(all, argv, argc * sizeof *argv);
         argv = all;
@@ -95,23 +100,23 @@ static void init(void) {
         /* the C API returns a code only; the runtime names a rejected option on stderr itself. 22 is
          * ARGUMENT_PARSING_FAILED in GraalVM's CEntryPointErrors, stable across the releases we build with */
         isolate = NULL;
-        const char* source = TOKNROLL_OPTIONS_ENV;
+        const char* source = STR(TOKNROLL_OPTIONS_ENV);
         if (configured_by) source = env && *env ? "configure or the environment" : configured_by;
         if (rc == 22) early(TOKNROLL_ERROR, "the runtime could not be started: an option from %s was rejected, see stderr for which", source);
         else early(TOKNROLL_ERROR, "the runtime could not be started (error %d)", rc);
         return;
     }
-    pthread_key_create(&key, detach);
-    pthread_setspecific(key, thread);
+    port_tls_create(&key, detach);
+    port_tls_set(key, thread);
 }
 
 graal_isolatethread_t* toknroll__thread(void) {
-    pthread_once(&once, init);
+    port_once(&once, init);
     if (!isolate) return NULL;
-    graal_isolatethread_t* t = pthread_getspecific(key);
+    graal_isolatethread_t* t = port_tls_get(key);
     if (!t) {
         if (graal_attach_thread(isolate, &t) != 0) return NULL;   /* ponytail: unreported; attaching fails only out of memory */
-        pthread_setspecific(key, t);
+        port_tls_set(key, t);
     }
     return t;
 }
@@ -141,7 +146,7 @@ int32_t toknroll__configure(const char* const* options, int32_t count, const cha
         if (!options[i]) return early(TOKNROLL_EINVAL, "%s: options[%d] is NULL", who, i);
     argv = malloc((count + 1) * sizeof *argv);
     argv[0] = program;
-    for (int32_t i = 0; i < count; i++) argv[i + 1] = strdup(options[i]);
+    for (int32_t i = 0; i < count; i++) argv[i + 1] = port_strdup(options[i]);
     argc = count + 1;
     configured_by = who;
     return toknroll__thread() ? TOKNROLL_OK : TOKNROLL_ERROR;
