@@ -125,7 +125,8 @@ final class Lfm3Speech {
         headNorms = rows(headNorm, CODEBOOKS);
         outEmbd = weight(tensors, "a.gen.code.out_embd.weight", CODEBOOKS * vocab, modelDim);
 
-        // the codec: liquid-codec's fixed decoder shape; head counts from its tensors
+        // the codec: liquid-codec's decoder, its shape fixed by its config, its sizes read off the
+        // tensors
         MemoryView<MemorySegment> table =
                 f32(tensors, "a.gen.wav.quant.first.codebook.weight", vocab - 1, FSQ_LEVELS);
         fsq = Views.toFloatArray(table, "fsq");
@@ -148,7 +149,6 @@ final class Lfm3Speech {
                                 .flatAt(0));
         codecIn = weight(tensors, "a.gen.wav.tfm.in_proj.weight", codecDim, quantDim);
         codecInBias = f32(tensors, "a.gen.wav.tfm.in_proj.bias", codecDim);
-        // liquid-codec's decoder shape is fixed by its config, its sizes are read off the tensors
         int codecLayers = 0, codecHeadDim = 0, codecKvDim = 0;
         for (;
                 tensors.containsKey("a.gen.wav.tfm.blk." + codecLayers + ".ln1.weight");
@@ -173,9 +173,8 @@ final class Lfm3Speech {
                         codecFfn,
                         1e-5f);
         codecNorm = f32(tensors, "a.gen.wav.tfm.output_norm.weight", codecDim);
-        int bins = Istft.N_FFT / 2 + 1;
-        codecOut = weight(tensors, "a.gen.wav.tfm.out_proj.weight", 2 * bins, codecDim);
-        codecOutBias = f32(tensors, "a.gen.wav.tfm.out_proj.bias", 2 * bins);
+        codecOut = weight(tensors, "a.gen.wav.tfm.out_proj.weight", 2 * Istft.BINS, codecDim);
+        codecOutBias = f32(tensors, "a.gen.wav.tfm.out_proj.bias", 2 * Istft.BINS);
 
         depthRope = RoPE.plain(depth.headDim, 1e6); // the converter pins both rope bases
         codecRope = RoPE.plain(codec.headDim, 1e6);
@@ -683,15 +682,7 @@ final class Lfm3Speech {
                 double theta = 2 * Math.PI * i / N_FFT;
                 SIN[i] = (float) Math.sin((float) theta);
                 COS[i] = (float) Math.cos((float) theta);
-                HANN[i] =
-                        (float)
-                                (0.5
-                                        * (1.0
-                                                - (float)
-                                                        Math.cos(
-                                                                (float)
-                                                                        (2.0 * Math.PI * i
-                                                                                / N_FFT))));
+                HANN[i] = (float) (0.5 * (1.0 - COS[i]));
             }
         }
 
