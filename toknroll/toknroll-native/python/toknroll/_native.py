@@ -5,41 +5,42 @@ import ctypes as C
 import functools
 import os
 import platform
+import sys
 from pathlib import Path
 
 OK, ERROR, EINVAL, ENOTFOUND = 0, -1, -2, -3
 
 
-def _platform() -> tuple[str, str]:
-    """(platform folder, library file name), as `make python` lays the library out."""
-    system = platform.system().lower()
-    machine = platform.machine().lower()
+def locate(name: str) -> Path:
+    """The shared library called `name` (toknroll, jinfer): `<NAME>_LIBRARY`, then a source checkout's fresh
+    build, then the library the package carries, laid out per platform as `make python` does."""
+    system, machine = platform.system().lower(), platform.machine().lower()
     arch = {"x86_64": "x86-64", "amd64": "x86-64", "arm64": "aarch64"}.get(machine, machine)
-    if system == "windows":
-        return f"windows-{arch}", "toknroll.dll"
-    if system == "darwin":
-        return f"darwin-{arch}", "libtoknroll.dylib"
-    return f"{system}-{arch}", "libtoknroll.so"
-
-
-def _locate() -> Path:
-    """TOKNROLL_LIBRARY, then a source checkout's fresh build, then the library the package carries."""
-    folder, name = _platform()
-    here = Path(__file__).resolve().parent
-    override = os.environ.get("TOKNROLL_LIBRARY")
+    folder = f"{system}-{arch}"
+    file = f"{name}.dll" if system == "windows" else f"lib{name}.dylib" if system == "darwin" else f"lib{name}.so"
+    package = Path(sys.modules[name].__file__).resolve().parent
+    override = os.environ.get(f"{name.upper()}_LIBRARY")
     candidates = [Path(override)] if override else []
-    candidates += [here.parent.parent / "target" / name, here / "lib" / folder / name]
+    candidates += [package.parent.parent / "target" / file, package / "lib" / folder / file]
     for candidate in candidates:
         if candidate.is_file():
             return candidate
     raise OSError(
-        f"libtoknroll not found for {folder}; looked at " + ", ".join(map(str, candidates))
-        + ". Set TOKNROLL_LIBRARY to the shared library, or build it with `make libtoknroll`."
+        f"lib{name} not found for {folder}; looked at " + ", ".join(map(str, candidates))
+        + f". Set {name.upper()}_LIBRARY to the shared library, or build it with `make lib{name}`."
     )
 
 
 def bind(lib: C.CDLL) -> C.CDLL:
-    """Types the toknroll_* symbols of a loaded library: libtoknroll, or libjinfer carrying them."""
+    """Types the toknroll_* symbols of a loaded library: libtoknroll, or libjinfer carrying them. The
+    library's face must be this layer's toknroll: a function it lacks would surface as a missing symbol,
+    a changed signature as corruption, so the versions are compared first."""
+    from . import __version__  # at call time, once the package is complete
+
+    lib.toknroll_version.restype = C.c_char_p
+    found = lib.toknroll_version().decode()
+    if found != __version__:  # ponytail: exact while the API is 0.x; same major once it is stable
+        raise OSError(f"toknroll {__version__}'s Python layer cannot drive the toknroll {found} in {lib._name}")
     P, S, I32 = C.c_void_p, C.c_char_p, C.c_int32
     sig = {
         "toknroll_version": ([], S),
@@ -65,4 +66,4 @@ def bind(lib: C.CDLL) -> C.CDLL:
 @functools.cache
 def library() -> C.CDLL:
     """libtoknroll, loaded on first use so that importing the package loads nothing."""
-    return bind(C.CDLL(str(_locate())))
+    return bind(C.CDLL(str(locate("toknroll"))))

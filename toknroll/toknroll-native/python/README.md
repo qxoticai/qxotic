@@ -40,6 +40,12 @@ A `Tokenizer` never changes, so it may be shared between threads; `encode` relea
 Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`); each has `.code`.
 Remote metadata is fetched with `curl`, which must be on the PATH for hub sources only, and cached under `TOKNROLL_CACHE_ROOT`, the platform cache directory by default.
 
+## With jinfer
+
+[jinfer](https://pypi.org/project/jinfer/)'s `model.tokenizer` is this class, served by libjinfer, which carries its own toknroll; the jinfer wheel pins the exact toknroll it embeds, and the class checks the library's version when it binds.
+`toknroll.configure` and `TOKNROLL_OPTIONS` configure libtoknroll only: a model's tokenizer takes the same `-Dtoknroll.*` options through `jinfer.configure` and `JINFER_OPTIONS`.
+Both wheels in one process are two runtimes that never interact, in any order.
+
 ## Install
 
 ```sh

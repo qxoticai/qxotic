@@ -55,14 +55,15 @@ from typing import Any, Callable, Generic, Literal, TypeVar
 
 import array as _array
 
-from . import _native as N
-
 try:
     import toknroll._native  # fails on the monorepo's toknroll/ directory too, an empty namespace package
 except ImportError:  # a source checkout before pip install: the sibling package
     sys.modules.pop("toknroll", None)
     sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "toknroll" / "toknroll-native" / "python"))
     import toknroll
+
+from . import _native as N  # finds the library through toknroll's locate
+
 toknroll._native.bind(N.lib)  # libjinfer carries the toknroll_* symbols: its tokenizers belong to it
 
 __all__ = ["load", "configure", "Model", "LanguageModel", "Embedder", "Reranker", "Speaker", "Transcriber",
@@ -911,7 +912,8 @@ def configure(*options: str) -> None:
     sizes the inference pool, `"-Djinfer.cache.sessions=16"` and `"-Djinfer.cache.budget=8g"` the prompt
     cache, `"-Djinfer.offline=true"` never downloads, any `jinfer.*` or `jam.*` property, `"-XX:MaxHeapSize=4g"`.
     A later call is refused, a rejected option fails this one, and `JINFER_OPTIONS` in the environment
-    overrides what is given here."""
+    overrides what is given here. `-Dtoknroll.*` options reach the model's tokenizers too, which libjinfer
+    serves itself; `TOKNROLL_OPTIONS` and `toknroll.configure` configure the standalone libtoknroll only."""
     _check(N.lib.jinfer_configure(_strings(options, "configure"), len(options)))
 
 

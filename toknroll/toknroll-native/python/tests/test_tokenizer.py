@@ -280,3 +280,19 @@ class PicklingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BindTest(unittest.TestCase):
+    def test_another_toknroll_is_refused_by_version(self):
+        class Fn:
+            restype = None
+
+            def __call__(self):
+                return b"9.9.9"
+
+        class Lib:
+            _name = "libother.so"
+            toknroll_version = Fn()
+
+        with self.assertRaisesRegex(OSError, f"{toknroll.__version__}.*9.9.9.*libother"):
+            toknroll._native.bind(Lib())

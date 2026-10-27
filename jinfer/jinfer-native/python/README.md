@@ -66,8 +66,16 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 - A model's weights stay alive while any reply or speech made from it lives; `close()` drops your reference. Context managers close; so does garbage collection.
 - Embeddings and audio are float32 `array.array` buffers, scores are floats: the standard library, whoever installs the package. `np.asarray(vector)` and `torch.frombuffer(speech.audio, dtype=torch.float32)` are zero-copy.
 - `jinfer.configure("-Djinfer.threads=8", "-Djinfer.cache.sessions=16", "-Djinfer.cache.budget=8g", "-Djinfer.offline=true", "-XX:MaxHeapSize=4g")` passes the runtime the options a java command line would, once and before the first load; the engine's `jinfer.*` and `jam.*` properties are all reachable this way. A later call is refused, and a rejected option fails this one. `JINFER_OPTIONS="-Djinfer.threads=4"` in the environment holds the same options and overrides them, so the box a program runs on can retune it without a code change.
-- `model.tokenizer` runs inside libjinfer, so `jinfer.configure` is what configures it. `toknroll.load(...)` in the same process loads libtoknroll as well, a second runtime with its own `toknroll.configure`, about 60 MB more; a program that only needs a model's tokenizer never loads it.
 - A scalar schema (`int`, `str`, `bool`, `Literal`, `Enum`) travels as `{"value": ...}` on the wire, so the model's first token is anchored; `reply.parsed` is the value, `reply.text` the JSON. Objects and lists go as they are.
+
+## With toknroll
+
+libjinfer carries its own toknroll: a model's tokenizer lives in jinfer's runtime, and `model.tokenizer` is a [`toknroll.Tokenizer`](https://pypi.org/project/toknroll/) served by libjinfer.
+The toknroll wheel is a dependency for that class alone, pinned to the exact toknroll inside libjinfer; the class checks the library's version when it binds, so a mismatched environment fails at `import jinfer` naming both versions rather than later.
+`jinfer.configure` and `JINFER_OPTIONS` configure the model's tokenizers too, `-Dtoknroll.*` options included, as they configure everything in libjinfer.
+`toknroll.configure` and `TOKNROLL_OPTIONS` configure libtoknroll only, which jinfer never loads.
+Using both wheels in one process is fine: `toknroll.load(...)` starts libtoknroll, a second runtime with its own heap and threads, the two never interact, the order they start in does not matter, and every tokenizer remembers the library serving it.
+A knob both need, such as a GGUF pre-tokenizer registration, is given to both.
 
 ## Install
 
