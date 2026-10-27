@@ -25,6 +25,12 @@
     <!-- -O2, the builder's default: -O3 bought 18% encode throughput for 11 MB of code (see the README) -->
     <toknroll.image.opt>-O2</toknroll.image.opt>
     <toknroll.image.march>compatibility</toknroll.image.march>
+    <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
+    <shim.cc>cc</shim.cc>
+    <shim.cflags>-std=c11 -O2 -fPIC -Wall</shim.cflags>
+    <shim.out>-o</shim.out>
+    <shim.obj>.o</shim.obj>
+    <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/toknroll-cc.sh</shim.wrapper>
     <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
     <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
     <maven.deploy.skip>true</maven.deploy.skip>
@@ -42,6 +48,16 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-hf</artifactId>
+    </dependency>
+    <!-- hub references: jinfer's grammar, cache and downloads, one implementation for both products -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-hub</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <!-- the @CEntryPoint annotations and C type views; the image builder supplies them at run time -->
@@ -69,19 +85,8 @@
                 </goals>
                 <phase>prepare-package</phase>
                 <configuration>
-                  <executable>cc</executable>
-                  <arguments>
-                    <argument>-std=c11</argument>
-                    <argument>-O2</argument>
-                    <argument>-fPIC</argument>
-                    <argument>-Wall</argument>
-                    <argument>-DTOKNROLL_BUILD</argument>
-                    <argument>-I${project.basedir}/include</argument>
-                    <argument>-c</argument>
-                    <argument>${project.basedir}/src/main/c/toknroll_shim.c</argument>
-                    <argument>-o</argument>
-                    <argument>${project.build.directory}/toknroll_shim.o</argument>
-                  </arguments>
+                  <executable>${shim.cc}</executable>
+                  <commandlineArgs>${shim.cflags} -DTOKNROLL_BUILD -I${project.basedir}/include -c ${project.basedir}/src/main/c/toknroll_shim.c ${shim.out}${project.build.directory}/toknroll_shim${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
               <execution>
@@ -91,18 +96,8 @@
                 </goals>
                 <phase>prepare-package</phase>
                 <configuration>
-                  <executable>cc</executable>
-                  <arguments>
-                    <argument>-std=c11</argument>
-                    <argument>-O2</argument>
-                    <argument>-fPIC</argument>
-                    <argument>-Wall</argument>
-                    <argument>-I${project.basedir}/include</argument>
-                    <argument>-c</argument>
-                    <argument>${project.basedir}/src/main/c/toknroll_isolate.c</argument>
-                    <argument>-o</argument>
-                    <argument>${project.build.directory}/toknroll_isolate.o</argument>
-                  </arguments>
+                  <executable>${shim.cc}</executable>
+                  <commandlineArgs>${shim.cflags} -I${project.basedir}/include -c ${project.basedir}/src/main/c/toknroll_isolate.c ${shim.out}${project.build.directory}/toknroll_isolate${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
             </executions>
@@ -120,10 +115,10 @@
               <buildArgs>
                 <buildArg>${toknroll.image.opt}</buildArg>
                 <buildArg>-march=${toknroll.image.march}</buildArg>
-                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim.o</buildArg>
-                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate.o</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate${shim.obj}</buildArg>
                 <!-- the shim's toknroll_* symbols are the API; the wrapper adds them to GraalVM's export list -->
-                <buildArg>--native-compiler-path=${project.basedir}/src/main/c/toknroll-cc.sh</buildArg>
+                <buildArg>${shim.wrapper}</buildArg>
                 <buildArg>-ETOKNROLL_CC_LOG</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>
@@ -148,6 +143,25 @@
           </plugin>
         </plugins>
       </build>
+    </profile>
+    <profile>
+      <!-- Windows: the MSVC toolchain native-image requires there. No compiler wrapper: the shim's
+           __declspec(dllexport) names are the export list and link.exe takes nothing else, so the
+           wrapper's slot holds a flag the build has anyway. The DLL keeps Windows' name, no lib prefix. -->
+      <id>windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <toknroll.image.name>toknroll</toknroll.image.name>
+        <shim.cc>cl</shim.cc>
+        <shim.cflags>-nologo -O2 -W3 -D_CRT_SECURE_NO_WARNINGS</shim.cflags>
+        <shim.out>-Fo</shim.out>
+        <shim.obj>.obj</shim.obj>
+        <shim.wrapper>-H:-JNIExportSymbols</shim.wrapper>
+      </properties>
     </profile>
   </profiles>
 </project>

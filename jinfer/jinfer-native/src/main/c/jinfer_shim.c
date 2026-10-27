@@ -2,10 +2,10 @@
  * exports, which takes the isolate thread first. The isolate is toknroll_isolate.c's, shared with the
  * toknroll_* symbols this library carries; jinfer_configure and toknroll_configure feed the same one.
  * Nothing here knows what a model is. */
-#include <pthread.h>
 #include <stdint.h>
 #include <string.h>
 #include "jinfer.h"
+#include "toknroll_port.h"   /* toknroll-native/src/main/c */
 
 typedef struct _graal_isolatethread_t graal_isolatethread_t;
 graal_isolatethread_t* toknroll__thread(void);               /* toknroll_isolate.c */
@@ -18,12 +18,12 @@ void jinfer__log_set(graal_isolatethread_t*, jinfer_log_fn, void*);
 /* a log callback installed before the isolate exists is applied on the first call that has one */
 static jinfer_log_fn pending_log;
 static void* pending_payload;
-static pthread_once_t log_once = PTHREAD_ONCE_INIT;
+static port_once_t log_once = PORT_ONCE_INIT;
 static void apply_log(void) { jinfer__log_set(toknroll__thread(), pending_log, pending_payload); }
 
 static graal_isolatethread_t* thread(void) {
     graal_isolatethread_t* t = toknroll__thread();
-    if (t && pending_log) pthread_once(&log_once, apply_log);
+    if (t && pending_log) port_once(&log_once, apply_log);
     return t;
 }
 

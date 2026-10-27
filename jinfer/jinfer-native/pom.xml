@@ -27,6 +27,16 @@
     <!-- The Vector API width in bits, empty = what the target ISA (-march) can execute, which the
          VectorWidth feature pins at build time. Set it only to build narrower than the target. -->
     <jinfer.image.vectorBits />
+    <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
+    <shim.cc>cc</shim.cc>
+    <shim.cflags>-std=c11 -O2 -fPIC -Wall</shim.cflags>
+    <shim.out>-o</shim.out>
+    <shim.obj>.o</shim.obj>
+    <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/jinfer-cc.sh</shim.wrapper>
+    <!-- libjam linked into the image: the features that bind it and the linker line that pulls the archive in
+         whole; the windows profile leaves both out until jam builds with the MSVC toolchain -->
+    <jam.features>com.qxotic.jinfer.libjinfer.StaticJam,</jam.features>
+    <jam.link>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</jam.link>
     <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
@@ -144,19 +154,8 @@
                 </goals>
                 <phase>prepare-package</phase>
                 <configuration>
-                  <executable>cc</executable>
-                  <arguments>
-                    <argument>-std=c11</argument>
-                    <argument>-O2</argument>
-                    <argument>-fPIC</argument>
-                    <argument>-Wall</argument>
-                    <argument>-I${project.basedir}/include</argument>
-                    <argument>-I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</argument>
-                    <argument>-c</argument>
-                    <argument>${project.basedir}/src/main/c/jinfer_shim.c</argument>
-                    <argument>-o</argument>
-                    <argument>${project.build.directory}/jinfer_shim.o</argument>
-                  </arguments>
+                  <executable>${shim.cc}</executable>
+                  <commandlineArgs>${shim.cflags} -I${project.basedir}/include -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c -c ${project.basedir}/src/main/c/jinfer_shim.c ${shim.out}${project.build.directory}/jinfer_shim${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
               <!-- toknroll's C face too: the shim forwarding to the toknroll__* entry points, and the
@@ -168,19 +167,8 @@
                 </goals>
                 <phase>prepare-package</phase>
                 <configuration>
-                  <executable>cc</executable>
-                  <arguments>
-                    <argument>-std=c11</argument>
-                    <argument>-O2</argument>
-                    <argument>-fPIC</argument>
-                    <argument>-Wall</argument>
-                    <argument>-DTOKNROLL_BUILD</argument>
-                    <argument>-I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</argument>
-                    <argument>-c</argument>
-                    <argument>${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_shim.c</argument>
-                    <argument>-o</argument>
-                    <argument>${project.build.directory}/toknroll_shim.o</argument>
-                  </arguments>
+                  <executable>${shim.cc}</executable>
+                  <commandlineArgs>${shim.cflags} -DTOKNROLL_BUILD -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -c ${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_shim.c ${shim.out}${project.build.directory}/toknroll_shim${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
               <execution>
@@ -190,20 +178,8 @@
                 </goals>
                 <phase>prepare-package</phase>
                 <configuration>
-                  <executable>cc</executable>
-                  <arguments>
-                    <argument>-std=c11</argument>
-                    <argument>-O2</argument>
-                    <argument>-fPIC</argument>
-                    <argument>-Wall</argument>
-                    <argument>-DTOKNROLL_PROGRAM="jinfer"</argument>
-                    <argument>-DTOKNROLL_OPTIONS_ENV="JINFER_OPTIONS"</argument>
-                    <argument>-I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</argument>
-                    <argument>-c</argument>
-                    <argument>${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c</argument>
-                    <argument>-o</argument>
-                    <argument>${project.build.directory}/toknroll_isolate.o</argument>
-                  </arguments>
+                  <executable>${shim.cc}</executable>
+                  <commandlineArgs>${shim.cflags} -DTOKNROLL_PROGRAM=jinfer -DTOKNROLL_OPTIONS_ENV=JINFER_OPTIONS -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -c ${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c ${shim.out}${project.build.directory}/toknroll_isolate${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
             </executions>
@@ -221,12 +197,12 @@
               <buildArgs>
                 <buildArg>${jinfer.image.opt}</buildArg>
                 <buildArg>-march=${jinfer.image.march}</buildArg>
-                <buildArg>-H:NativeLinkerOption=${project.build.directory}/jinfer_shim.o</buildArg>
-                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim.o</buildArg>
-                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate.o</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/jinfer_shim${shim.obj}</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
+                <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate${shim.obj}</buildArg>
                 <!-- the shim's jinfer_* symbols are the API; the wrapper adds them to GraalVM's export
                      list, which otherwise names only the image's own entry points -->
-                <buildArg>--native-compiler-path=${project.basedir}/src/main/c/jinfer-cc.sh</buildArg>
+                <buildArg>${shim.wrapper}</buildArg>
                 <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
                 <buildArg>-EJINFER_CC_LOG</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
@@ -236,13 +212,13 @@
                 <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
                 <!-- libjam linked into the image (StaticJam): the archive jam-native's jam_static target
                      builds, and no bundled copy left to extract at run time -->
-                <buildArg>--features=com.qxotic.jinfer.libjinfer.StaticJam,com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
+                <buildArg>--features=${jam.features}com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
                 <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.hosted.c=ALL-UNNAMED</buildArg>
                 <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
                 <buildArg>-H:CLibraryPath=${maven.multiModuleProjectDirectory}/jam/jam-native/build</buildArg>
                 <!-- nothing in the image references jam's symbols statically (JNI and FFM resolve them
                      by name at run time), so the archive goes in whole or the linker drops every member -->
-                <buildArg>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</buildArg>
+                <buildArg>${jam.link}</buildArg>
                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
                 <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
@@ -258,6 +234,27 @@
           </plugin>
         </plugins>
       </build>
+    </profile>
+    <profile>
+      <!-- Windows: the MSVC toolchain native-image requires there. No compiler wrapper: the shim's
+           __declspec(dllexport) names are the export list and link.exe takes nothing else, so the
+           wrapper's slot holds a flag the build has anyway. The DLL keeps Windows' name, no lib prefix. -->
+      <id>windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <jinfer.image.name>jinfer</jinfer.image.name>
+        <shim.cc>cl</shim.cc>
+        <shim.cflags>-nologo -O2 -W3 -D_CRT_SECURE_NO_WARNINGS</shim.cflags>
+        <shim.out>-Fo</shim.out>
+        <shim.obj>.obj</shim.obj>
+        <shim.wrapper>-H:-JNIExportSymbols</shim.wrapper>
+        <jam.features />
+        <jam.link>-H:-JNIExportSymbols</jam.link>
+      </properties>
     </profile>
   </profiles>
 </project>
