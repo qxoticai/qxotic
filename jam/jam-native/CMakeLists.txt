@@ -20,7 +20,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # The flag spellings below are GCC/Clang (-m..., -march=...); Windows builds use MinGW-w64
 # (cmake/toolchains/windows-*.cmake). Fail fast instead of erroring on the first -m flag.
 if (MSVC)
-    message(FATAL_ERROR "jam builds with GCC/Clang, incl. MinGW-w64 for Windows "
+    message(FATAL_ERROR "jam builds with GCC/Clang: on Windows with clang on the MSVC ABI "
+                        "(-DCMAKE_C_COMPILER=clang -G Ninja) or MinGW-w64 cross from Linux "
                         "(cmake/toolchains/windows-*.cmake); MSVC flag spellings are not maintained")
 endif()
 
@@ -59,7 +60,7 @@ target_compile_definitions(jam PRIVATE JAM_BUILD=1)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)   # -pthread over -lpthread where it matters (GCC/ELF)
 find_package(Threads REQUIRED)
-target_link_libraries(jam PRIVATE Threads::Threads m)   # libm: lrintf/fabsf in the requant floor
+target_link_libraries(jam PRIVATE Threads::Threads $<$<NOT:$<PLATFORM_ID:Windows>>:m>)   # libm: lrintf/fabsf in the requant floor; in the MSVC runtime on Windows
                                                         # (a no-op alias on MinGW, part of libSystem on macOS)
 
 # One per-ISA kernel TU: compiled with its OWN flags and bound at create; the dispatcher (src/jam.c)
@@ -225,6 +226,9 @@ add_custom_target(jam_stage ALL
 get_target_property(JAM_SOURCES jam SOURCES)
 add_library(jam_static STATIC EXCLUDE_FROM_ALL ${JAM_SOURCES})
 set_target_properties(jam_static PROPERTIES OUTPUT_NAME jam)
+if (WIN32)   # the DLL's import library would be jam.lib too: the archive keeps the name, the import library moves
+    set_target_properties(jam PROPERTIES ARCHIVE_OUTPUT_NAME jam_import)
+endif()
 target_include_directories(jam_static PRIVATE $<TARGET_PROPERTY:jam,INCLUDE_DIRECTORIES>)
 target_compile_definitions(jam_static PRIVATE $<TARGET_PROPERTY:jam,COMPILE_DEFINITIONS>)
 target_compile_options(jam_static PRIVATE $<TARGET_PROPERTY:jam,COMPILE_OPTIONS>)
@@ -237,7 +241,7 @@ if (JAM_TESTS)
     add_executable(jam_bench tests/jam_bench.c)
     foreach(t jam_test jam_bench)
         target_include_directories(${t} PRIVATE include tests)
-        target_link_libraries(${t} PRIVATE jam m Threads::Threads)
+        target_link_libraries(${t} PRIVATE jam $<$<NOT:$<PLATFORM_ID:Windows>>:m> Threads::Threads)
     endforeach()
     # jam_test internally covers EVERY supported ISA level (capped contexts) at 1 and 3 threads, so one
     # run exercises all kernels. The env-capped run additionally validates JAM_ISA parsing on the global ctx.

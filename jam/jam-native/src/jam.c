@@ -9,8 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <pthread.h>
+#include "jam_thread.h"
 #include <stdatomic.h>
 
 /* ---- helpers ---- */
@@ -480,7 +479,7 @@ static int ensure_kquant(jam_ctx* c, int seq, int kblocks) {
 /* ---- the lazy, env-configured global context ---- */
 
 static jam_ctx*        g_global;
-static pthread_once_t  g_once = PTHREAD_ONCE_INIT;
+static jam_once_t      g_once = JAM_ONCE_INIT;
 
 static void global_init(void) {
     jam_config cfg;
@@ -491,7 +490,7 @@ static void global_init(void) {
 }
 
 static jam_ctx* jam_global(void) {
-    pthread_once(&g_once, global_init);
+    jam_once(&g_once, global_init);
     return g_global;
 }
 
@@ -506,8 +505,7 @@ static jam_ctx* jam_global(void) {
  * process lifetime. */
 void jam_global_destroy(void) {
     if (g_global) { jam_ctx_destroy(g_global); g_global = NULL; }
-    static const pthread_once_t once_init = PTHREAD_ONCE_INIT;
-    g_once = once_init;
+    jam_once_reset(&g_once);
 }
 
 jam_isa jam_active_isa(const jam_ctx* ctx) {

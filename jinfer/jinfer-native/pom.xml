@@ -32,10 +32,8 @@
     <shim.cflags>-std=c11 -O2 -fPIC -Wall</shim.cflags>
     <shim.out>-o</shim.out>
     <shim.obj>.o</shim.obj>
-    <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/jinfer-cc.sh</shim.wrapper>
-    <!-- libjam linked into the image: the features that bind it and the linker line that pulls the archive in
-         whole; the windows profile leaves both out until jam builds with the MSVC toolchain -->
-    <jam.features>com.qxotic.jinfer.libjinfer.StaticJam,</jam.features>
+    <shim.wrapper>--native-compiler-path=${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/native-cc.sh</shim.wrapper>
+    <!-- the linker line that pulls libjam's archive into the image whole (the windows profile spells it for link.exe) -->
     <jam.link>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</jam.link>
     <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
     <maven.deploy.skip>true</maven.deploy.skip>
@@ -93,7 +91,7 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <!-- StaticJam and VectorWidth: the builder's own hosted API (NativeLibraries, CPUFeatureAccess) -->
+      <!-- VectorWidth: the builder's own hosted API (CPUFeatureAccess) -->
       <groupId>org.graalvm.nativeimage</groupId>
       <artifactId>svm</artifactId>
       <version>${graalvm.sdk.version}</version>
@@ -155,11 +153,12 @@
                 <phase>prepare-package</phase>
                 <configuration>
                   <executable>${shim.cc}</executable>
-                  <commandlineArgs>${shim.cflags} -I${project.basedir}/include -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c -c ${project.basedir}/src/main/c/jinfer_shim.c ${shim.out}${project.build.directory}/jinfer_shim${shim.obj}</commandlineArgs>
+                  <commandlineArgs>${shim.cflags} -DJINFER_BUILD -I${project.basedir}/include -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c -c ${project.basedir}/src/main/c/jinfer_shim.c ${shim.out}${project.build.directory}/jinfer_shim${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
               <!-- toknroll's C face too: the shim forwarding to the toknroll__* entry points, and the
-                   isolate they run in, which jinfer_* shares (jinfer_shim.c has none of its own) -->
+                   isolate they run in, which jinfer_* shares (jinfer_shim.c has none of its own); the isolate
+                   is told the image's own file as jam.native.library.path, where libjam, linked in below, is -->
               <execution>
                 <id>compile-toknroll-shim</id>
                 <goals>
@@ -179,7 +178,7 @@
                 <phase>prepare-package</phase>
                 <configuration>
                   <executable>${shim.cc}</executable>
-                  <commandlineArgs>${shim.cflags} -DTOKNROLL_PROGRAM=jinfer -DTOKNROLL_OPTIONS_ENV=JINFER_OPTIONS -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -c ${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c ${shim.out}${project.build.directory}/toknroll_isolate${shim.obj}</commandlineArgs>
+                  <commandlineArgs>${shim.cflags} -DTOKNROLL_PROGRAM=jinfer -DTOKNROLL_OPTIONS_ENV=JINFER_OPTIONS -DTOKNROLL_SELF_PROPERTY=jam.native.library.path -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -c ${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c ${shim.out}${project.build.directory}/toknroll_isolate${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
             </executions>
@@ -204,20 +203,17 @@
                      list, which otherwise names only the image's own entry points -->
                 <buildArg>${shim.wrapper}</buildArg>
                 <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
-                <buildArg>-EJINFER_CC_LOG</buildArg>
+                <buildArg>-ENATIVE_CC_LOG</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- jinfer_model_options is read through the header itself (Options.Directives), which includes toknroll.h -->
                 <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
-                <!-- libjam linked into the image (StaticJam): the archive jam-native's jam_static target
-                     builds, and no bundled copy left to extract at run time -->
-                <buildArg>--features=${jam.features}com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
-                <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.hosted.c=ALL-UNNAMED</buildArg>
+                <buildArg>--features=com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
                 <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
-                <buildArg>-H:CLibraryPath=${maven.multiModuleProjectDirectory}/jam/jam-native/build</buildArg>
-                <!-- nothing in the image references jam's symbols statically (JNI and FFM resolve them
-                     by name at run time), so the archive goes in whole or the linker drops every member -->
+                <!-- libjam linked into the image, whole: nothing in the image references its symbols statically
+                     (jam resolves them by name at run time, from the image's own file: TOKNROLL_SELF_PROPERTY above),
+                     so without whole-archive the linker would drop every member; no bundled copy is left to extract -->
                 <buildArg>${jam.link}</buildArg>
                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
@@ -252,8 +248,8 @@
         <shim.out>-Fo</shim.out>
         <shim.obj>.obj</shim.obj>
         <shim.wrapper>-H:-JNIExportSymbols</shim.wrapper>
-        <jam.features />
-        <jam.link>-H:-JNIExportSymbols</jam.link>
+        <!-- link.exe's whole-archive: jam.lib is the clang-built static archive, jam_import.lib the DLL's -->
+        <jam.link>-H:NativeLinkerOption=/WHOLEARCHIVE:${maven.multiModuleProjectDirectory}/jam/jam-native/build/jam.lib</jam.link>
       </properties>
     </profile>
   </profiles>

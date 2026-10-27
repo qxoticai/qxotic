@@ -29,11 +29,12 @@ make qa                   # threads, lifetime at interpreter exit, soak, offline
 make python               # stage the library into the Python package
 make wheel                # the platform-tagged wheel -> target/wheel/
 make check-wheel          # the wheel as a user gets it: twine and auditwheel, a fresh venv, pip install, the test from outside the checkout
-make publish              # twine upload to PyPI, after check-wheel; TWINE_REPOSITORY=testpypi rehearses
 make dist                 # release bundle: headers, library, README, LICENSE, wheel -> target/dist/
 ```
 
 `make libjinfer` from the repository root does the same.
+On Windows, `.\build.ps1` in this directory has the same targets.
+Every platform at once, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (RELEASING.md).
 
 ## How it is built
 
@@ -41,8 +42,10 @@ The Java side is `com.qxotic.jinfer.libjinfer`: one `@CEntryPoint` per header fu
 a `Model` of whatever kind the file is, a `State` for the raw door and a `Stream` for every generation.
 Tokenization is toknroll's API, `toknroll.h` in `toknroll/toknroll-native`: libjinfer carries its `toknroll_*` entry points too, and `jinfer_model_tokenizer` hands out a model's tokenizer as a `toknroll_tokenizer`.
 `src/main/c/jinfer_shim.c` is the C face: it forwards to the entry points through the runtime `toknroll_isolate.c` starts at `jinfer_configure` or at the first call, one for the `jinfer_*` and `toknroll_*` symbols alike, and holds a log callback installed before that.
-GraalVM links shared libraries with a version script that names only its own entry points,
-so `src/main/c/jinfer-cc.sh` wraps the C compiler and adds `jinfer_*` to that list at the link step.
+GraalVM links shared libraries with an export list that names only its own entry points,
+so toknroll-native's `src/main/c/native-cc.sh` wraps the C compiler for both libraries and makes the list the shims' globals, `jinfer_*` and `toknroll_*`, at the link step.
+
+libjam is linked into the library whole (jam-native's static archive, pulled in by the pom's whole-archive line) and loaded from the library's own file: the isolate shim hands the runtime its path as `jam.native.library.path`, the knob jam's loader honours, so no copy is extracted and no platform-specific lookup is needed.
 
 `jinfer_model_options` is read through the header itself (`Options.Directives`), so the layout cannot drift.
 

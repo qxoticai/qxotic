@@ -20,6 +20,10 @@
     <maven.deploy.skip>false</maven.deploy.skip>
     <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
     <native.cmake.executable>cmake</native.cmake.executable>
+    <!-- the generator and C compiler CMake is told; the windows profile says Ninja and clang, the MSVC-ABI
+         toolchain jam builds with there (MSVC's own flag spellings are not maintained) -->
+    <jam.cmake.generator>Unix Makefiles</jam.cmake.generator>
+    <jam.cmake.cc>cc</jam.cmake.cc>
     <jam.native.skip>false</jam.native.skip>
     <jam.native.dir>dist/native</jam.native.dir>
     <!-- -Djam.native.skip=true reuses a pre-staged dist/native (the release profile forces it) -->
@@ -88,6 +92,9 @@
                 <argument>-B</argument>
                 <argument>${project.basedir}/build</argument>
                 <argument>-DCMAKE_BUILD_TYPE=Release</argument>
+                <argument>-G</argument>
+                <argument>${jam.cmake.generator}</argument>
+                <argument>-DCMAKE_C_COMPILER=${jam.cmake.cc}</argument>
               </arguments>
               <useMavenLogger>true</useMavenLogger>
             </configuration>
@@ -203,6 +210,18 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <jam.cmake.generator>Ninja</jam.cmake.generator>
+        <jam.cmake.cc>clang</jam.cmake.cc>
+      </properties>
+    </profile>
     <!-- Release: package the shipped set that scripts/natives.sh built into dist/release (linux-x86-64,
          windows-x86-64, darwin-aarch64) - never this host's cmake output. `natives.sh verify` refuses a
          missing, stale, replaced, or foreign library. -->

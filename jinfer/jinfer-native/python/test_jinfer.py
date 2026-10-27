@@ -38,7 +38,7 @@ logging.getLogger("jinfer").addHandler(handler); logging.getLogger("jinfer").set
 # language model
 m = jinfer.load(LM)
 ok(isinstance(m, jinfer.LanguageModel) and not hasattr(m, "embed") and not hasattr(m, "kind"), f"{m!r}")
-ok(("kernels=native" in repr(m) or sys.platform == "win32") and "threads=" in repr(m), f"repr says what runs: {m!r}")   # win32: libjam is not in the DLL until jam builds with the MSVC toolchain
+ok("kernels=native" in repr(m) and "threads=" in repr(m), f"repr says what runs: {m!r}")
 ok(m.context_capacity == min(4096, m.max_context_length) and m.max_context_length >= m.context_capacity and m.name.endswith(".gguf"), f"properties: capacity {m.context_capacity} of {m.max_context_length}")
 with jinfer.load(LM, context_capacity=1024) as small:
     ok(small.context_capacity == 1024 and small.max_context_length == m.max_context_length, "context_capacity=1024 is the state in use, the maximum unchanged")
@@ -406,7 +406,7 @@ if (asr := cached("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf")) is not None
 # the library's lines reached logging.getLogger("jinfer")
 ok(any("loaded" in r.getMessage() for r in records) and any(r.levelno == logging.DEBUG for r in records), f"log records {[r.getMessage() for r in records[:3]]}")
 # the static libjam is found: prefill runs on the native int8 kernels, not the Java fallback
-ok(any("jam providers [native" in r.getMessage() for r in records) or sys.platform == "win32", "native jam linked in")   # win32: not until jam builds with the MSVC toolchain
+ok(any("jam providers [native" in r.getMessage() for r in records), "native jam linked in")
 
 # cancel from another thread: the blocked step returns Cancelled, the result still counts what ran
 m = jinfer.load(LM)
