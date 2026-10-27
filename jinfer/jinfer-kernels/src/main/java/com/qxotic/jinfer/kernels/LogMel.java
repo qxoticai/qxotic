@@ -3,7 +3,8 @@ package com.qxotic.jinfer.kernels;
 import com.qxotic.jinfer.Parallel;
 
 /**
- * Log-mel spectrogram front end shared by audio models (Gemma 4 audio towers, Parakeet ASR).
+ * Log-mel spectrogram front end shared by audio models (Gemma 4 audio towers, Parakeet ASR, the
+ * LFM3-Omni audio encoder).
  *
  * <p>The spec captures where model families disagree: window placement inside the FFT frame, signal
  * padding, optional pre-emphasis, magnitude versus power spectrum, and whether near-zero mel
@@ -13,9 +14,10 @@ import com.qxotic.jinfer.Parallel;
 public final class LogMel {
 
     /**
-     * @param nFft FFT size, a power of two; {@code window} must have this length, with the model's
-     *     analysis window already placed at its position inside the frame (left-aligned for Gemma,
-     *     centered for NeMo) and zeros elsewhere
+     * @param nFft FFT size: radix-2 down to an odd length, which is a direct DFT (llama.cpp's
+     *     transform, so Whisper's 400 works); {@code window} must have this length, with the
+     *     model's analysis window already placed at its position inside the frame (left-aligned for
+     *     Gemma, centered for NeMo) and zeros elsewhere
      * @param hop frame step in samples
      * @param nMels mel bands; {@code filterbank} is {@code [nMels, nFft/2+1]} row-major
      * @param preemphasis {@code x[t] -= preemphasis * x[t-1]} on the raw signal ({@code <= 0} off)
@@ -34,8 +36,8 @@ public final class LogMel {
             float melFloor,
             float logZeroGuard) {
         public Spec {
-            if (nFft <= 0 || Integer.bitCount(nFft) != 1)
-                throw new IllegalArgumentException("nFft must be a power of two, got " + nFft);
+            if (nFft < 2)
+                throw new IllegalArgumentException("nFft must be at least 2, got " + nFft);
             if (hop <= 0) throw new IllegalArgumentException("hop must be positive");
             if (nMels <= 0) throw new IllegalArgumentException("nMels must be positive");
             if (window.length != nFft)
@@ -187,11 +189,28 @@ public final class LogMel {
         }
     }
 
-    /** Radix-2 real FFT; bins {@code 0..n/2} as interleaved re/im pairs. */
+    /**
+     * Radix-2 real FFT, a direct DFT at an odd length; bins {@code 0..n/2} as interleaved re/im
+     * pairs. Twiddles index the one {@code nFft} table, as llama.cpp's do.
+     */
     void fftReal(float[] input, int inputOffset, int n, float[] output, int outputOffset) {
         if (n == 1) {
             output[outputOffset] = input[inputOffset];
             output[outputOffset + 1] = 0;
+            return;
+        }
+        if (n % 2 == 1) {
+            int step = spec.nFft() / n;
+            for (int k = 0; k < n; k++) {
+                float real = 0, imaginary = 0;
+                for (int j = 0; j < n; j++) {
+                    int index = k * j * step % spec.nFft();
+                    real += input[inputOffset + j] * cos[index];
+                    imaginary += -input[inputOffset + j] * sin[index];
+                }
+                output[outputOffset + 2 * k] = real;
+                output[outputOffset + 2 * k + 1] = imaginary;
+            }
             return;
         }
         int half = n / 2;
