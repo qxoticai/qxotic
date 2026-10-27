@@ -12,7 +12,7 @@
     tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 
 `load` takes a tokenizer.json or the directory holding one, a GGUF file, or a hub reference
-(`owner/repo`, `owner/repo:QUANT` for a GGUF's header, `hf:` or `ms:` for the hub); remote
+(`owner/repo`, `owner/repo:QUANT` for a GGUF's header, `modelscope.cn/owner/repo` for the other hub); remote
 sources fetch metadata only, never weights. A `Tokenizer` never changes, so it may be shared
 between threads, and it pickles as its source. Errors are `ToknrollError` subclasses.
 
@@ -148,24 +148,20 @@ class Tokenizer:
         """The text's token ids, an `array('i')`. Special tokens spelled in the text are plain
         text unless `specials=True`, which keeps them whole."""
         lib, data = self._lib, _text(text, "encode")
-        if b"\0" in data:  # a C string ends at a NUL; the batch carries lengths
-            return self.encode_batch([text], specials=specials)[0]
         # prose runs about four bytes a token: one pass almost always, a second when it does not
         capacity = len(data) // 2 + 16
         out = array("i", bytes(4 * capacity))
-        n = _check(lib, lib.toknroll_encode(self._handle, data, specials, out.buffer_info()[0], capacity))
+        n = _check(lib, lib.toknroll_encode(self._handle, data, len(data), specials, out.buffer_info()[0], capacity))
         if n > capacity:
             out = array("i", bytes(4 * n))
-            _check(lib, lib.toknroll_encode(self._handle, data, specials, out.buffer_info()[0], n))
+            _check(lib, lib.toknroll_encode(self._handle, data, len(data), specials, out.buffer_info()[0], n))
         del out[n:]
         return out
 
     def count_tokens(self, text: str, *, specials: bool = False) -> int:
         """`len(encode(text))` without building the list."""
         data = _text(text, "count_tokens")
-        if b"\0" in data:
-            return len(self.encode_batch([text], specials=specials)[0])
-        return _check(self._lib, self._lib.toknroll_encode(self._handle, data, specials, None, 0))
+        return _check(self._lib, self._lib.toknroll_encode(self._handle, data, len(data), specials, None, 0))
 
     def encode_batch(self, texts: Sequence[str], *, specials: bool = False) -> list[array[int]]:
         """`encode` over many texts in one call; the library spreads them over the cores."""
@@ -227,9 +223,7 @@ class Tokenizer:
     def id(self, token: str) -> int | None:
         """The id of a spelling; None when the vocabulary has no such token."""
         data = _text(token, "id")
-        if b"\0" in data:
-            return None  # no vocabulary spells a token with a NUL in it
-        rc = self._lib.toknroll_id(self._handle, data)
+        rc = self._lib.toknroll_id(self._handle, data, len(data))
         return None if rc == N.ENOTFOUND else _check(self._lib, rc)
 
     def close(self) -> None:

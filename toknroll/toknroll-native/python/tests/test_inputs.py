@@ -1,6 +1,10 @@
 """The edges of the binding: id buffers, errors, lifecycle, threads, the library itself."""
+import ctypes
 import gc
 import os
+import subprocess
+import sys
+import textwrap
 import threading
 import unittest
 import weakref
@@ -162,6 +166,103 @@ class ThreadTest(unittest.TestCase):
             self.assertTrue(all(r == results[0] for r in results))
 
 
+@needs_gguf
+@unittest.skipUnless(hasattr(os, "fork"), "no fork on this platform")
+class ForkTest(unittest.TestCase):
+    """A child forked while other threads were inside the library inherited their locks and hung on its
+    first call, until fork learned to wait for every call to leave. Each case runs in its own interpreter
+    under a timeout, so a regression fails the case instead of hanging the suite."""
+
+    def child_process(self, body):
+        code = f"import os, sys, toknroll\nGGUF = {GGUF!r}\n" + textwrap.dedent(body)
+        env = dict(os.environ, PYTHONPATH=str(Path(toknroll.__file__).resolve().parents[1]))
+        try:
+            run = subprocess.run([sys.executable, "-W", "ignore", "-c", code], env=env, capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            self.fail("the test process hung")
+        self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_fork_while_threads_encode(self):
+        self.child_process("""
+            import signal, threading, time
+            t = toknroll.load(GGUF)
+            want, stop, done = list(t.encode("Hello, world!")), threading.Event(), []
+            def busy():  # new words every time, so the runtime allocates and takes its locks
+                i = 0
+                while not stop.is_set():
+                    t.encode_batch([f"busy {i} {i * 7919} text " * 50] * 4)
+                    done.append(i)
+                    i += 1
+            for _ in range(4): threading.Thread(target=busy, daemon=True).start()
+            while len(done) < 20: time.sleep(0.01)
+            for _ in range(30):
+                pid = os.fork()
+                if pid == 0:
+                    signal.alarm(10)  # a hung child dies rather than outlive the test
+                    os._exit(0 if list(t.encode("Hello, world!")) == want and t.decode(want) == "Hello, world!" else 3)
+                rc = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+                assert rc == 0, "the child hung on a lock its parent's thread held" if rc == -signal.SIGALRM else f"the child failed: {rc}"
+                time.sleep(0.01)  # the threads run on between forks
+            stop.set()
+        """)
+
+    def test_a_fork_pool_uses_the_tokenizer_made_before_it(self):
+        self.child_process("""
+            import multiprocessing
+            t = toknroll.load(GGUF)
+            want = list(t.encode("Hello, world!"))
+            def work(text): return list(t.encode(text))
+            with multiprocessing.get_context("fork").Pool(4) as pool:
+                assert pool.map(work, ["Hello, world!"] * 64) == [want] * 64
+        """)
+
+
+@needs_gguf
+class LengthTest(unittest.TestCase):
+    """Text and spellings travel with their length in bytes: a slice of a buffer encodes as its own
+    text, and a NUL is a character like any other."""
+
+    def test_a_slice_encodes_as_its_own_text(self):
+        lib = N.library()
+        with toknroll.load(GGUF) as t:
+            data = b"Hello, world! and the rest of the buffer"
+            self.assertEqual(lib.toknroll_encode(t._handle, data, 13, False, None, 0), len(t.encode("Hello, world!")))
+            self.assertEqual(lib.toknroll_encode(t._handle, None, 0, False, None, 0), 0)   # no text, no pointer
+
+    def test_a_nul_is_a_character(self):
+        with toknroll.load(GGUF) as t:
+            self.assertEqual(t.decode(t.encode("a\0b")), "a\0b")
+            self.assertEqual(t.count_tokens("a\0b"), len(t.encode("a\0b")))
+            self.assertIsNone(t.id("<|im_start|>\0"))   # looked up whole, not cut at the NUL
+            self.assertIsNotNone(t.id("<|im_start|>"))
+
+
+@needs_gguf
+class UnloadTest(unittest.TestCase):
+    def test_a_thread_exits_after_the_host_unloaded_the_library(self):
+        """Its exit hook runs the library's code, as the runtime's own threads do: the library pins itself
+        once started, so an unload succeeds and leaves it in place. Unpinned, the exit crashed."""
+        code = textwrap.dedent(f"""
+            import _ctypes, ctypes, sys, threading
+            lib = ctypes.CDLL({str(N.locate("toknroll"))!r})
+            lib.toknroll_load.restype = ctypes.c_void_p
+            lib.toknroll_vocabulary_size.argtypes = [ctypes.c_void_p]
+            called, unloaded = threading.Event(), threading.Event()
+            def worker():
+                assert lib.toknroll_vocabulary_size(lib.toknroll_load({GGUF!r}.encode())) > 0
+                called.set()
+                unloaded.wait()
+            thread = threading.Thread(target=worker)
+            thread.start()
+            called.wait()
+            (_ctypes.FreeLibrary if sys.platform == "win32" else _ctypes.dlclose)(lib._handle)
+            unloaded.set()
+            thread.join()
+        """)
+        run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+
+
 class ErrorTypesTest(unittest.TestCase):
     def test_hierarchy(self):
         self.assertTrue(issubclass(toknroll.InvalidArgument, toknroll.ToknrollError))
@@ -171,11 +272,22 @@ class ErrorTypesTest(unittest.TestCase):
         self.assertEqual(toknroll.InvalidArgument("m", -2).code, -2)
         self.assertEqual(str(toknroll.NotFound("gone", -3)), "gone")
 
+    @needs_gguf
+    def test_a_success_clears_the_last_error(self):
+        lib, code = N.library(), ctypes.c_int32()
+        with toknroll.load(GGUF) as t:
+            self.assertIsNone(lib.toknroll_load(b"/no/such/file"))
+            self.assertIn(b"such", lib.toknroll_last_error(ctypes.byref(code)))   # the path, spelled as the platform spells it
+            self.assertEqual(code.value, N.ENOTFOUND)
+            self.assertGreater(lib.toknroll_vocabulary_size(t._handle), 0)
+            self.assertEqual(lib.toknroll_last_error(ctypes.byref(code)), b"")
+            self.assertEqual(code.value, N.OK)
+
     def test_codes_match_the_header(self):
         header = (Path(__file__).resolve().parents[2] / "include" / "toknroll.h").read_text()
         for name, value in (("OK", N.OK), ("ERROR", N.ERROR), ("EINVAL", N.EINVAL), ("ENOTFOUND", N.ENOTFOUND)):
             line = next(l for l in header.splitlines() if l.startswith(f"#define TOKNROLL_{name} "))
-            self.assertEqual(int(line.split()[2]), value, name)
+            self.assertEqual(int(line.split()[2].strip("()")), value, name)
 
     def test_versions_agree(self):
         root = Path(__file__).resolve().parents[2]

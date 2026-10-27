@@ -22,11 +22,11 @@ libtoknroll:
 	src/main/c/static.sh include/toknroll.h target/cc.log $(STATIC)
 
 target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
-	cc -std=c99 -Wall -Wextra -Iinclude -o $@ $< -L target -ltoknroll -Wl,-rpath,$(abspath target)
+	cc -std=c99 -Wall -Wextra -Wpedantic -Iinclude -o $@ $< -L target -ltoknroll -Wl,-rpath,$(abspath target)
 
 # The static archive: the example linked against it, no shared library in sight, and only toknroll_* exported.
 target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
-	cc -std=c99 -Wall -Wextra -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
+	cc -std=c99 -Wall -Wextra -Wpedantic -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
 
 check-static: target/tokenize-static
 	@nm --defined-only -g $(STATIC) | awk 'NF == 3 {print $$3}' | sed 's/^_//' | sort > target/static.syms   # NF: the member header and blank lines nm prints for an archive

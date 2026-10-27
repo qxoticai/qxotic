@@ -49,13 +49,13 @@ def bind(lib: C.CDLL) -> C.CDLL:
         "toknroll_load": ([S], P),
         "toknroll_free": ([P], None),
         # the id buffers travel as addresses: an array('i') or a numpy array, in place
-        "toknroll_encode": ([P, S, C.c_bool, P, I32], I32),
+        "toknroll_encode": ([P, S, C.c_size_t, C.c_bool, P, I32], I32),
         "toknroll_decode": ([P, P, I32, C.c_char_p, I32], I32),
         "toknroll_encode_batch": ([P, C.c_char_p, P, I32, C.c_bool, P, I32, P], I32),
         "toknroll_vocabulary_size": ([P], I32),
         "toknroll_token_flags": ([P, I32], C.c_int64),
         "toknroll_token": ([P, I32, C.c_char_p, I32], I32),
-        "toknroll_id": ([P, S], I32),
+        "toknroll_id": ([P, S, C.c_size_t], I32),
     }
     for name, (argtypes, restype) in sig.items():
         fn = getattr(lib, name)

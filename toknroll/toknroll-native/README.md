@@ -6,15 +6,16 @@ Remote sources fetch tokenizer metadata only, never weights.
 
 ```c
 toknroll_tokenizer* t = toknroll_load("Qwen/Qwen3-0.6B");
-int32_t n = toknroll_encode(t, "Hello, world!", false, NULL, 0);   /* capacity 0 counts */
+const char* text = "Hello, world!";
+int32_t n = toknroll_encode(t, text, strlen(text), false, NULL, 0);   /* capacity 0 counts */
 int32_t* ids = malloc(n * sizeof *ids);
-toknroll_encode(t, "Hello, world!", false, ids, n);
-char text[256];
-toknroll_decode(t, ids, n, text, sizeof text);
+toknroll_encode(t, text, strlen(text), false, ids, n);
+char back[256];
+toknroll_decode(t, ids, n, back, sizeof back);
 toknroll_free(t);
 ```
 
-The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, capacity)` buffers follow snprintf; strings are NUL-terminated UTF-8 and borrowed; any thread may call and a tokenizer may be shared.
+The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.
 `libjinfer` carries the same entry points, so `jinfer_model_tokenizer` hands out a model's tokenizer as a `toknroll_tokenizer` and one header serves both libraries.
 
 ## Build and check
