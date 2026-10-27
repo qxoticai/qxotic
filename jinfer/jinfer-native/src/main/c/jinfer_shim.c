@@ -5,15 +5,11 @@
 #include <stdint.h>
 #include <string.h>
 #include "jinfer.h"
-#include "toknroll_port.h"   /* toknroll-native/src/main/c */
+#include "toknroll_isolate.h"   /* toknroll-native/src/main/c */
+#include "toknroll_port.h"
 
-typedef struct _graal_isolatethread_t graal_isolatethread_t;
-graal_isolatethread_t* toknroll__thread(void);               /* toknroll_isolate.c */
-int toknroll__created(void);
-const char* toknroll__early_error(int32_t* code);
-int32_t toknroll__configure(const char* const*, int32_t, const char* who, void (*error_set)(graal_isolatethread_t*, int32_t, const char*));
-void jinfer__error_set(graal_isolatethread_t*, int32_t, const char*);
-void jinfer__log_set(graal_isolatethread_t*, jinfer_log_fn, void*);
+void jinfer__error_set(graal_thread*, int32_t, const char*);
+void jinfer__log_set(graal_thread*, jinfer_log_fn, void*);
 
 /* a log callback installed before the isolate exists is applied on the first call that has one */
 static jinfer_log_fn pending_log;
@@ -21,13 +17,13 @@ static void* pending_payload;
 static port_once_t log_once = PORT_ONCE_INIT;
 static void apply_log(void) { jinfer__log_set(toknroll__thread(), pending_log, pending_payload); }
 
-static graal_isolatethread_t* thread(void) {
-    graal_isolatethread_t* t = toknroll__thread();
+static graal_thread* thread(void) {
+    graal_thread* t = toknroll__thread();
     if (t && pending_log) port_once(&log_once, apply_log);
     return t;
 }
 
-typedef graal_isolatethread_t* T;
+typedef graal_thread* T;
 #define THREAD T t = thread()
 #define STR(x) #x
 #define XSTR(x) STR(x)
@@ -59,8 +55,9 @@ int32_t jinfer__rerank(T, jinfer_model*, const char*, const char* const*, int32_
 int32_t jinfer__prepare(T, jinfer_model*, const char*);
 
 const char* jinfer_version(void) { return XSTR(JINFER_VERSION_MAJOR) "." XSTR(JINFER_VERSION_MINOR) "." XSTR(JINFER_VERSION_PATCH); }
-/* never create the isolate just to report on it */
-const char* jinfer_last_error(int32_t* code) { T t = toknroll__created() ? thread() : NULL; return t ? jinfer__last_error(t, code) : toknroll__early_error(code); }
+/* never create the isolate just to report on it, nor apply a pending log callback: that is a call, and
+ * a call clears the error being read */
+const char* jinfer_last_error(int32_t* code) { T t = toknroll__created() ? toknroll__thread() : NULL; return t ? jinfer__last_error(t, code) : toknroll__early_error(code); }
 void jinfer_log_set(jinfer_log_fn fn, void* payload) {
     if (!toknroll__created()) { pending_log = fn; pending_payload = payload; return; }
     THREAD;

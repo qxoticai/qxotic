@@ -129,12 +129,19 @@ def _check_ptr(ptr):
     return ptr
 
 
+def _utf8(value: str, what: str) -> bytes:
+    """A C string: one with a NUL inside is refused, where C would silently end it there."""
+    if "\0" in value:
+        raise InvalidArgument(f"{what}: contains a NUL character, where a C string would end")
+    return value.encode()
+
+
 def _strings(values, what: str):
     """A C array of UTF-8 strings; anything but str among them is a TypeError."""
     for i, value in enumerate(values):
         if not isinstance(value, str):
             raise TypeError(f"{what}: expected str, got {type(value).__name__} at index {i}")
-    return (C.c_char_p * len(values))(*(value.encode() for value in values))
+    return (C.c_char_p * len(values))(*(_utf8(value, f"{what}[{i}]") for i, value in enumerate(values)))
 
 
 # ---- logging: the library's lines reach Python's logging, silent until the application configures it ----
@@ -861,8 +868,8 @@ class Reranker(_Context):
             raise TypeError(f"query: expected str, got {type(query).__name__}")
         documents = [documents] if isinstance(documents, str) else list(documents)
         buf, ptr = _floats(len(documents))
-        _check(N.lib.jinfer_rerank(self._h, query.encode(), _strings(documents, "rerank"), len(documents),
-                                   instruction.encode() if instruction else None, ptr))
+        _check(N.lib.jinfer_rerank(self._h, _utf8(query, "query"), _strings(documents, "rerank"), len(documents),
+                                   _utf8(instruction, "instruction") if instruction else None, ptr))
         return buf.tolist()
 
 
@@ -940,12 +947,12 @@ def load(ref: str | os.PathLike, *, companions: dict[str, str] | None = None,
         options.companions = _strings([f"{k}={v}" for k, v in companions.items()], "companions")
         options.companion_count = len(companions)
     if prompt_cache:
-        options.prompt_cache = os.fspath(prompt_cache).encode()
+        options.prompt_cache = _utf8(os.fspath(prompt_cache), "prompt_cache")
     # a blocking C call cannot deliver KeyboardInterrupt, so Ctrl-C during a download ends the process,
     # as it would end the jinfer CLI; the partial file resumes next time
     previous = signal.signal(signal.SIGINT, signal.SIG_DFL) if threading.current_thread() is threading.main_thread() else None
     try:
-        ptr = _check_ptr(N.lib.jinfer_model_load(ref.encode(), C.byref(options)))
+        ptr = _check_ptr(N.lib.jinfer_model_load(_utf8(ref, "ref"), C.byref(options)))
     finally:
         if previous is not None:
             signal.signal(signal.SIGINT, previous)

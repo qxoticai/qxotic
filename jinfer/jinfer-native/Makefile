@@ -24,7 +24,7 @@ libjinfer:
 	  -Djinfer.image.opt=$(OPT) -Djinfer.image.march=$(MARCH)
 
 target/chat: examples/c/chat.c $(HEADERS) $(LIB)
-	cc -std=c99 -Wall -Wextra -Iinclude -I$(TOKNROLL)/include -o $@ $< -L target -ljinfer -Wl,-rpath,$(abspath target)
+	cc -std=c99 -Wall -Wextra -Wpedantic -Iinclude -I$(TOKNROLL)/include -o $@ $< -L target -ljinfer -Wl,-rpath,$(abspath target)
 
 check: check-version check-pin check-exports target/chat
 	./target/chat

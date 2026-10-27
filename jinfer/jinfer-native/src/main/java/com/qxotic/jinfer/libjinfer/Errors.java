@@ -5,7 +5,10 @@ import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
 
-/** The calling thread's last error, as the header promises: valid until its next jinfer call. */
+/**
+ * The calling thread's last error, as the header promises: valid until its next jinfer call, which
+ * clears it by succeeding.
+ */
 final class Errors {
     static final int OK = 0,
             DONE = 1,
@@ -33,9 +36,19 @@ final class Errors {
         return new Failure(EUNSUPPORTED, message);
     }
 
-    private static final ThreadLocal<CCharPointerHolder> LAST = new ThreadLocal<>();
-    private static final ThreadLocal<Integer> LAST_CODE = new ThreadLocal<>();
+    /** A thread's last failure; its message stays allocated, unread, once a call succeeds. */
+    private static final class Last {
+        int code = OK;
+        CCharPointerHolder message;
+    }
+
+    private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
     private static CCharPointerHolder none;
+
+    /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
+    static void clear() {
+        LAST.get().code = OK;
+    }
 
     static int code(Throwable t) {
         if (t instanceof ExceptionInInitializerError e && e.getCause() != null)
@@ -55,36 +68,32 @@ final class Errors {
 
     static int set(Throwable t) {
         if (t instanceof java.io.UncheckedIOException u && u.getCause() != null) t = u.getCause();
-        if (t instanceof ExceptionInInitializerError e && e.getCause() != null)
-            t = e.getCause(); // a -Djinfer.* value a flags class refused: its own
-        // message is the one to report
+        // a -Djinfer.* value a flags class refused: its own message is the one to report
+        if (t instanceof ExceptionInInitializerError e && e.getCause() != null) t = e.getCause();
         String message = t.getMessage();
         if (message == null || message.isBlank() || t instanceof NullPointerException) {
             // a message-less failure names its origin, the one thing a C caller cannot recover
             StackTraceElement[] frames = t.getStackTrace();
             message = t.getClass().getSimpleName() + (frames.length > 0 ? " at " + frames[0] : "");
         }
-        set(message);
+        // the full story reaches the host's log callback at debug level, before the error is kept:
+        // the callback may call back in (Python frees a dropped handle there), and a call clears it
+        Log.trace(t);
         int code = code(t);
-        LAST_CODE.set(code);
-        Log.trace(t); // the full story reaches the host's log callback, at debug level
+        Last last = LAST.get();
+        if (last.message != null) last.message.close();
+        last.message = CTypeConversion.toCString(message);
+        last.code = code;
         return code;
     }
 
     static int lastCode() {
-        Integer code = LAST_CODE.get();
-        return code == null ? OK : code;
-    }
-
-    static void set(String message) {
-        CCharPointerHolder previous = LAST.get();
-        if (previous != null) previous.close();
-        LAST.set(CTypeConversion.toCString(message));
+        return LAST.get().code;
     }
 
     static CCharPointer last() {
-        CCharPointerHolder holder = LAST.get();
-        if (holder != null) return holder.get();
+        Last last = LAST.get();
+        if (last.code != OK) return last.message.get();
         if (none == null) none = CTypeConversion.toCString("");
         return none.get();
     }

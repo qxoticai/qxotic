@@ -1,4 +1,5 @@
-/* libjinfer from C: load, chat, stream, free. Build: see ../../Makefile (libjinfer-check). */
+/* libjinfer from C: load, chat, stream, free. cc -Iinclude -I<toknroll>/include chat.c -ljinfer */
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "jinfer.h"
@@ -19,7 +20,7 @@ int main(int argc, char** argv) {
 
     jinfer_model* model = jinfer_model_load(ref, NULL);
     if (!model) { fprintf(stderr, "load: %s\n", jinfer_last_error(NULL)); return 1; }
-    printf("context %d, vocab %d\n", jinfer_model_property(model, JINFER_CONTEXT_CAPACITY), jinfer_model_property(model, JINFER_VOCAB_SIZE));
+    printf("context %" PRId32 ", vocab %" PRId32 "\n", jinfer_model_property(model, JINFER_CONTEXT_CAPACITY), jinfer_model_property(model, JINFER_VOCAB_SIZE));
 
     jinfer_stream* stream = jinfer_chat(model, request);
     if (!stream) { fprintf(stderr, "chat: %s\n", jinfer_last_error(NULL)); return 1; }

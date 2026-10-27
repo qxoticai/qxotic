@@ -29,7 +29,7 @@
     <jinfer.image.vectorBits />
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
     <shim.cc>cc</shim.cc>
-    <shim.cflags>-std=c11 -O2 -fPIC -Wall</shim.cflags>
+    <shim.cflags>-std=c11 -O2 -fPIC -Wall -Wextra -Wpedantic</shim.cflags>
     <shim.out>-o</shim.out>
     <shim.obj>.o</shim.obj>
     <shim.wrapper>--native-compiler-path=${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/native-cc.sh</shim.wrapper>
@@ -178,7 +178,7 @@
                 <phase>prepare-package</phase>
                 <configuration>
                   <executable>${shim.cc}</executable>
-                  <commandlineArgs>${shim.cflags} -DTOKNROLL_PROGRAM=jinfer -DTOKNROLL_OPTIONS_ENV=JINFER_OPTIONS -DTOKNROLL_SELF_PROPERTY=jam.native.library.path -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -c ${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c ${shim.out}${project.build.directory}/toknroll_isolate${shim.obj}</commandlineArgs>
+                  <commandlineArgs>${shim.cflags} -DTOKNROLL_PROGRAM=jinfer -DTOKNROLL_OPTIONS_ENV=JINFER_OPTIONS -DTOKNROLL_SELF_PROPERTY=jam.native.library.path -DTOKNROLL_FORK_REFUSED -I${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include -c ${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/toknroll_isolate.c ${shim.out}${project.build.directory}/toknroll_isolate${shim.obj}</commandlineArgs>
                 </configuration>
               </execution>
             </executions>
@@ -244,7 +244,7 @@
       <properties>
         <jinfer.image.name>jinfer</jinfer.image.name>
         <shim.cc>cl</shim.cc>
-        <shim.cflags>-nologo -O2 -W3 -D_CRT_SECURE_NO_WARNINGS</shim.cflags>
+        <shim.cflags>-nologo -std:c11 -O2 -W4</shim.cflags>
         <shim.out>-Fo</shim.out>
         <shim.obj>.obj</shim.obj>
         <shim.wrapper>-H:-JNIExportSymbols</shim.wrapper>

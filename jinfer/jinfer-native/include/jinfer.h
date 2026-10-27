@@ -17,7 +17,11 @@
  *             one thread at a time; jinfer_stream_cancel is the exception, any thread may
  *             call it. The log callback runs on any thread, inside your own call included,
  *             and must not call jinfer. A download shows its progress on stderr when that is
- *             a terminal, as log lines otherwise.
+ *             a terminal, as log lines otherwise. A child forked once the library has started
+ *             cannot use it, the toknroll_* functions it carries included: its threads stayed in
+ *             the parent, so calls fail there, JINFER_ERROR, and a _free does nothing. Start
+ *             children with spawn or exec. Once started the library stays loaded, as its threads
+ *             run its code: an unload (dlclose, FreeLibrary) succeeds and leaves it in place.
  *   Defaults  A request field left out takes the model file's value, listed by
  *             jinfer_model_info, never the library's.
  *   Downloads run through curl on the PATH: the library carries no TLS stack of its own.
@@ -48,8 +52,10 @@ extern "C" {
 #  define JINFER_API __declspec(dllexport)
 #elif defined(_WIN32)
 #  define JINFER_API __declspec(dllimport)
-#else
+#elif defined(__GNUC__)
 #  define JINFER_API __attribute__((visibility("default")))
+#else
+#  define JINFER_API
 #endif
 
 #define JINFER_VERSION_MAJOR 0
@@ -57,12 +63,12 @@ extern "C" {
 #define JINFER_VERSION_PATCH 1
 
 #define JINFER_OK            0
-#define JINFER_DONE          1   /* a stream has nothing more to produce */
-#define JINFER_ERROR        -1   /* see jinfer_last_error() */
-#define JINFER_EINVAL       -2
-#define JINFER_ENOTFOUND    -3   /* model, file or companion */
-#define JINFER_EUNSUPPORTED -4   /* the model lacks this capability */
-#define JINFER_ECANCELLED   -5
+#define JINFER_DONE          1    /* a stream has nothing more to produce */
+#define JINFER_ERROR        (-1) /* see jinfer_last_error() */
+#define JINFER_EINVAL       (-2)
+#define JINFER_ENOTFOUND    (-3) /* model, file or companion */
+#define JINFER_EUNSUPPORTED (-4) /* the model lacks this capability */
+#define JINFER_ECANCELLED   (-5)
 
 typedef enum { JINFER_LOG_DEBUG, JINFER_LOG_INFO, JINFER_LOG_WARN, JINFER_LOG_ERROR } jinfer_log_level;
 typedef void (*jinfer_log_fn)(jinfer_log_level level, const char* message, void* payload);
@@ -100,11 +106,18 @@ JINFER_API void          jinfer_model_options_init(jinfer_model_options* o);
 JINFER_API jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o);  /* hub ref or path; NULL = defaults */
 JINFER_API void          jinfer_model_free(jinfer_model* m);
 
-typedef enum {
-    JINFER_VOCAB_SIZE = 1, JINFER_CONTEXT_CAPACITY, JINFER_EMBEDDING_DIMENSION, JINFER_SAMPLE_RATE,
-    JINFER_MAX_CONTEXT_LENGTH,   /* what the model was trained for; JINFER_CONTEXT_CAPACITY is what its states hold */
-    JINFER_HAS_CHAT = 100, JINFER_HAS_MEDIA /* images and audio in, through the media companion */, JINFER_HAS_EMBEDDING,
-    JINFER_HAS_RERANK, JINFER_HAS_SPEECH, JINFER_HAS_TRANSCRIPTION
+typedef enum {   /* every value spelled out: they are the ABI */
+    JINFER_VOCAB_SIZE          = 1,
+    JINFER_CONTEXT_CAPACITY    = 2,
+    JINFER_EMBEDDING_DIMENSION = 3,
+    JINFER_SAMPLE_RATE         = 4,
+    JINFER_MAX_CONTEXT_LENGTH  = 5,     /* what the model was trained for; JINFER_CONTEXT_CAPACITY is what its states hold */
+    JINFER_HAS_CHAT            = 100,
+    JINFER_HAS_MEDIA           = 101,   /* images and audio in, through the media companion */
+    JINFER_HAS_EMBEDDING       = 102,
+    JINFER_HAS_RERANK          = 103,
+    JINFER_HAS_SPEECH          = 104,
+    JINFER_HAS_TRANSCRIPTION   = 105
 } jinfer_property;
 
 JINFER_API int32_t     jinfer_model_property(const jinfer_model* m, jinfer_property key);  /* 0 = not applicable; JINFER_EINVAL = unknown key */
