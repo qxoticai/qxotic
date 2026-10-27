@@ -562,14 +562,10 @@ public final class Server {
                     // knobs the model cannot honor are refused, never ignored
                     for (String knob : List.of("speed", "instructions", "stream_format"))
                         Validation.require(request.get(knob) == null, "%s is not supported", knob);
-                    String format = Values.stringValue(request.get("response_format"), "wav");
-                    Validation.require(
-                            format.equals("wav") || format.equals("pcm"),
-                            "response_format must be wav or pcm");
+                    Validation.speechWav(request);
                 },
                 (request, id) -> {
-                    boolean wav =
-                            Values.stringValue(request.get("response_format"), "wav").equals("wav");
+                    boolean wav = Validation.speechWav(request);
                     Http.sendBytes(
                             exchange,
                             200,
@@ -669,51 +665,53 @@ public final class Server {
                         // went nowhere while this asked ToolUse.forced(request) on its own.
                         // a spoken reply streams in OpenAI's delta.audio: the transcript and the
                         // speech's PCM16 chunks, each naming the one id the reply is kept under
-                        String audioId = request.get("audio") != null ? SpokenTurns.newId() : null;
+                        String audioId =
+                                Validation.audioFormat(request) != null
+                                        ? SpokenTurns.newId()
+                                        : null;
                         Function<Map<String, Object>, Map<String, Object>> chunk =
                                 delta ->
                                         OpenAiSchema.chatCompletionChunk(
                                                 id, modelId, created, delta, null);
-                        Sinks sinks =
-                                audioId != null
-                                        ? new Sinks(
-                                                deltaSink(
-                                                        sse,
-                                                        t ->
-                                                                chunk.apply(
-                                                                        audio(
-                                                                                audioId,
-                                                                                "transcript",
-                                                                                t))),
-                                                null,
-                                                speech ->
-                                                        sse.emit(
-                                                                chunk.apply(
-                                                                        audio(
-                                                                                audioId,
-                                                                                "data",
-                                                                                Base64.getEncoder()
-                                                                                        .encodeToString(
-                                                                                                AudioCodec
-                                                                                                        .pcm16(
-                                                                                                                speech))))))
-                                        : generation.forcedTool(request) != null
-                                                ? Sinks.NONE
-                                                : new Sinks(
-                                                        deltaSink(
-                                                                sse,
-                                                                t ->
-                                                                        chunk.apply(
-                                                                                JsonCodec.object(
-                                                                                        "content",
-                                                                                        t))),
-                                                        deltaSink(
-                                                                sse,
-                                                                t ->
-                                                                        chunk.apply(
-                                                                                JsonCodec.object(
-                                                                                        "reasoning_content",
-                                                                                        t))));
+                        Sinks sinks;
+                        if (audioId != null) {
+                            sinks =
+                                    new Sinks(
+                                            deltaSink(
+                                                    sse,
+                                                    t ->
+                                                            chunk.apply(
+                                                                    audio(
+                                                                            audioId,
+                                                                            "transcript",
+                                                                            t))),
+                                            null,
+                                            speech -> {
+                                                String data =
+                                                        Base64.getEncoder()
+                                                                .encodeToString(
+                                                                        AudioCodec.pcm16(speech));
+                                                sse.emit(chunk.apply(audio(audioId, "data", data)));
+                                            });
+                        } else if (generation.forcedTool(request) != null) {
+                            sinks = Sinks.NONE;
+                        } else {
+                            sinks =
+                                    new Sinks(
+                                            deltaSink(
+                                                    sse,
+                                                    t ->
+                                                            chunk.apply(
+                                                                    JsonCodec.object(
+                                                                            "content", t))),
+                                            deltaSink(
+                                                    sse,
+                                                    t ->
+                                                            chunk.apply(
+                                                                    JsonCodec.object(
+                                                                            "reasoning_content",
+                                                                            t))));
+                        }
                         Reply result = generation.chat(request, messages, sinks, audioId);
                         if (result.audio() != null)
                             sse.emit(
@@ -990,15 +988,15 @@ public final class Server {
                         OpenAiSchema.outputText("")));
     }
 
-    /**
-     * A streaming text sink: each chunk of generated text becomes one {@code data:} SSE frame built
-     * by {@code chunkOf}.
-     */
     /** One field of a spoken stream's {@code delta.audio}, naming the reply's audio id. */
     private static Map<String, Object> audio(String audioId, String field, Object value) {
         return JsonCodec.object("audio", JsonCodec.object("id", audioId, field, value));
     }
 
+    /**
+     * A streaming text sink: each chunk of generated text becomes one {@code data:} SSE frame built
+     * by {@code chunkOf}.
+     */
     private static Consumer<String> deltaSink(
             Sse.Stream sse, Function<String, Map<String, Object>> chunkOf) {
         return deltaSink(sse, null, chunkOf);

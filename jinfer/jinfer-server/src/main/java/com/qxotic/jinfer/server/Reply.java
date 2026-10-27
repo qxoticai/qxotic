@@ -27,6 +27,7 @@ record Reply(
         toolCalls = List.copyOf(toolCalls);
     }
 
+    /** A text reply. */
     Reply(
             Generator.GenerationResult result,
             int promptTokens,

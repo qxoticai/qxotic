@@ -127,6 +127,16 @@ final class Validation {
      * can speak is the engine's to say.
      */
     static void validateChatOptions(Map<String, Object> request) {
+        audioFormat(request);
+        require(!present(request, "prediction"), "prediction is not supported");
+    }
+
+    /**
+     * The audio output a validated chat request asks for: {@code "wav"}, {@code "pcm16"}, or null
+     * for a text reply - the one reading every later stage takes. Refuses what {@link
+     * #validateChatOptions} refuses.
+     */
+    static String audioFormat(Map<String, Object> request) {
         boolean speaks = false;
         if (present(request, "modalities")) {
             List<Object> modalities = Values.asArray(request.get("modalities"), "modalities");
@@ -148,8 +158,19 @@ final class Validation {
                     !Values.booleanValue(request.get("stream"), "stream", false)
                             || "pcm16".equals(format),
                     "streamed audio must be pcm16");
+            return format;
         }
-        require(!present(request, "prediction"), "prediction is not supported");
+        return null;
+    }
+
+    /**
+     * Whether a text-to-speech request wants a WAV file ({@code response_format} {@code wav}, the
+     * default) rather than raw {@code pcm}; refuses anything else.
+     */
+    static boolean speechWav(Map<String, Object> request) {
+        String format = Values.stringValue(request.get("response_format"), "wav");
+        require(format.equals("wav") || format.equals("pcm"), "response_format must be wav or pcm");
+        return format.equals("wav");
     }
 
     /** Responses fields that would otherwise be silently accepted without their semantics. */

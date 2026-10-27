@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.models.lfm3;
 
 import com.qxotic.jinfer.Parallel;
-import com.qxotic.jinfer.Segments;
+import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
@@ -19,17 +19,14 @@ final class GeluErf {
 
     /** In place over {@code rows} rows of {@code width}, rows in parallel. */
     static void rows(MemoryView<MemorySegment> t, int rows, int width) {
-        MemorySegment base = t.memory().base();
-        long offset = t.byteOffset();
         Parallel.forLoop(
                 rows,
-                r -> {
-                    for (long i = (long) r * width; i < (long) (r + 1) * width; i++) {
-                        long at = offset + i * Float.BYTES;
-                        float x = Segments.readFloat(base, at);
-                        Segments.writeFloat(base, at, 0.5f * x * (1f + erf(x * SQRT_2_INV)));
-                    }
-                });
+                r ->
+                        Ops.mapInPlace(
+                                t,
+                                (long) r * width,
+                                width,
+                                x -> 0.5f * x * (1f + erf(x * SQRT_2_INV))));
     }
 
     /**

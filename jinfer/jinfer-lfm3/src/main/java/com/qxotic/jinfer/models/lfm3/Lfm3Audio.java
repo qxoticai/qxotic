@@ -75,7 +75,7 @@ final class Lfm3Audio implements MediaProjector<Media.Audio> {
             MemoryView<MemorySegment> ffnUp,
             MemoryView<MemorySegment> ffnDown) {}
 
-    private Lfm3Audio(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
+    Lfm3Audio(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
         require(
                 "lfm3a".equals(gguf.getString("clip.audio.projector_type")),
                 "unsupported audio projector " + gguf.getString("clip.audio.projector_type"));
@@ -153,10 +153,6 @@ final class Lfm3Audio implements MediaProjector<Media.Audio> {
         projectorDown = weight(tensors, "mm.a.mlp.3.weight", modelDim, projectorHidden);
         projectorDownBias = f32(tensors, "mm.a.mlp.3.bias", modelDim);
         rope = RoPE.plain(headDim, 1e6); // the converter pins the encoder's rope_theta
-    }
-
-    static Lfm3Audio load(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
-        return new Lfm3Audio(gguf, tensors, modelDim);
     }
 
     /** A stride-2, pad-1, 3-tap axis: {@code ceil(n / 2)}. */
@@ -266,10 +262,16 @@ final class Lfm3Audio implements MediaProjector<Media.Audio> {
             else attention(layer, s);
             Ops.addRows(s.x, s.mixed, n, dim);
             Norms.rmsnormRowsGgml(s.normed, s.x, layer.norm2, n, dim, eps);
-            MatMul.gemm(layer.ffnGate, s.normed, s.hidden, n);
-            MatMul.gemm(layer.ffnUp, s.normed, s.hidden2, n);
-            Activations.siluMultiplyRows(s.hidden, s.hidden2, n, ffnDim);
-            MatMul.gemm(layer.ffnDown, s.hidden, s.mixed, n);
+            Towers.ffn(
+                    layer.ffnGate,
+                    layer.ffnUp,
+                    layer.ffnDown,
+                    s.normed,
+                    s.hidden,
+                    s.hidden2,
+                    s.mixed,
+                    n,
+                    ffnDim);
             Ops.addRows(s.x, s.mixed, n, dim);
         }
         Norms.rmsnormRowsGgml(s.x, s.x, postNorm, n, dim, eps);
@@ -337,20 +339,26 @@ final class Lfm3Audio implements MediaProjector<Media.Audio> {
         Parallel.forLoop(
                 s.rows,
                 row -> {
-                    for (int h = 0; h < heads; h++)
-                        normRope(
-                                s.query,
-                                (long) row * dim + (long) h * headDim,
-                                layer.queryNorm,
-                                row,
-                                s);
-                    for (int h = 0; h < kvHeads; h++)
-                        normRope(
-                                s.key,
-                                (long) row * kvDim + (long) h * headDim,
-                                layer.keyNorm,
-                                row,
-                                s);
+                    Towers.headNormRope(
+                            s.query,
+                            (long) row * dim,
+                            heads,
+                            headDim,
+                            layer.queryNorm,
+                            eps,
+                            row,
+                            s.cos,
+                            s.sin);
+                    Towers.headNormRope(
+                            s.key,
+                            (long) row * kvDim,
+                            kvHeads,
+                            headDim,
+                            layer.keyNorm,
+                            eps,
+                            row,
+                            s.cos,
+                            s.sin);
                 });
         // ggml's flash attention reads K and V in F16: round them so, keep them F32 for speed;
         // no cache, the clip is its own context
@@ -376,16 +384,6 @@ final class Lfm3Audio implements MediaProjector<Media.Audio> {
                 0,
                 null);
         MatMul.gemm(layer.output, s.normed, s.mixed, s.rows);
-    }
-
-    private void normRope(
-            MemoryView<MemorySegment> t,
-            long at,
-            MemoryView<MemorySegment> norm,
-            int row,
-            Scratch s) {
-        Norms.rmsnormGgml(t, at, t, at, norm, headDim, eps);
-        RoPE.applyNeox(t, at, row, s.cos, s.sin, headDim / 2);
     }
 
     /**

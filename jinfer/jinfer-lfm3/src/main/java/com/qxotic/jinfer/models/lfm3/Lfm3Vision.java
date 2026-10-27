@@ -8,14 +8,12 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.FlashAttention;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
-import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.DataType;
@@ -75,7 +73,7 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
             MemoryView<MemorySegment> ffnUp,
             MemoryView<MemorySegment> ffnDown) {}
 
-    private Lfm3Vision(
+    Lfm3Vision(
             GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim, Arena arena) {
         require(
                 "lfm3vl".equals(gguf.getString("clip.vision.projector_type")),
@@ -194,11 +192,6 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
     /**
      * The tower of an LFM3 mmproj; {@code arena} holds the one derived weight, the patch kernel.
      */
-    static Lfm3Vision load(
-            GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim, Arena arena) {
-        return new Lfm3Vision(gguf, tensors, modelDim, arena);
-    }
-
     private int[] targetSize(Media.Image image) {
         return Lfm3VisionPreprocess.targetSize(
                 image.width(), image.height(), patch * MERGE, minPixels, maxPixels);
@@ -300,10 +293,16 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
             else attention(layer, s);
             Ops.addRows(s.x, s.mixed, s.count, dim);
             Norms.rmsnormRowsGgml(s.normed, s.x, layer.norm2, s.count, dim, eps);
-            MatMul.gemm(layer.ffnGate, s.normed, s.hidden, s.count);
-            MatMul.gemm(layer.ffnUp, s.normed, s.hidden2, s.count);
-            Activations.siluMultiplyRows(s.hidden, s.hidden2, s.count, ffnDim);
-            MatMul.gemm(layer.ffnDown, s.hidden, s.mixed, s.count);
+            Towers.ffn(
+                    layer.ffnGate,
+                    layer.ffnUp,
+                    layer.ffnDown,
+                    s.normed,
+                    s.hidden,
+                    s.hidden2,
+                    s.mixed,
+                    s.count,
+                    ffnDim);
             Ops.addRows(s.x, s.mixed, s.count, dim);
             if (afterLayer != null) afterLayer.accept(s.x, l);
         }
@@ -367,15 +366,27 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
         Parallel.forLoop(
                 s.count,
                 p -> {
-                    for (int h = 0; h < heads; h++)
-                        normRope(
-                                s,
-                                s.query,
-                                (long) p * dim + (long) h * headDim,
-                                layer.queryNorm,
-                                p);
-                    for (int h = 0; h < kvHeads; h++)
-                        normRope(s, s.key, (long) p * kvDim + (long) h * headDim, layer.keyNorm, p);
+                    // the patch's 2D RoPE pairs (j, j + headDim/2), so NeoX over its table
+                    Towers.headNormRope(
+                            s.query,
+                            (long) p * dim,
+                            heads,
+                            headDim,
+                            layer.queryNorm,
+                            eps,
+                            p,
+                            s.cos,
+                            s.sin);
+                    Towers.headNormRope(
+                            s.key,
+                            (long) p * kvDim,
+                            kvHeads,
+                            headDim,
+                            layer.keyNorm,
+                            eps,
+                            p,
+                            s.cos,
+                            s.sin);
                 });
         // ggml's flash attention reads K and V in F16: round them so, keep them F32 for speed
         Towers.roundToHalf(s.key, s.half, s.count * kvDim);
@@ -393,17 +404,6 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
                 heads / kvHeads,
                 1f / (float) Math.sqrt(headDim));
         MatMul.gemm(layer.output, s.normed, s.mixed, s.count);
-    }
-
-    /** Per-head RMS norm, then the patch's 2D RoPE: pairs {@code (j, j + headDim/2)}. */
-    private void normRope(
-            Scratch s,
-            MemoryView<MemorySegment> t,
-            long at,
-            MemoryView<MemorySegment> norm,
-            int p) {
-        Norms.rmsnormGgml(t, at, t, at, norm, headDim, eps);
-        RoPE.applyNeox(t, at, p, s.cos, s.sin, headDim / 2);
     }
 
     /** 2x2 blocks of the raster grid into one row each: (y, x), (y, x+1), (y+1, x), (y+1, x+1). */

@@ -1,13 +1,58 @@
 package com.qxotic.jinfer.models.lfm3;
 
+import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
+import com.qxotic.jinfer.kernels.MatMul;
+import com.qxotic.jinfer.kernels.Norms;
+import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
-/** What the vision and audio towers share: ggml's F16 roundings and the 3x3 conv tap layout. */
+/**
+ * What LFM3's stacks share: the per-head norm and RoPE, the SwiGLU feed-forward, ggml's F16
+ * roundings and the 3x3 conv tap layout.
+ */
 final class Towers {
 
     private Towers() {}
+
+    /**
+     * Per-head RMS norm, then NeoX RoPE at table row {@code row}, over {@code heads} heads of
+     * {@code headDim} starting at {@code at}.
+     */
+    static void headNormRope(
+            MemoryView<MemorySegment> t,
+            long at,
+            int heads,
+            int headDim,
+            MemoryView<MemorySegment> norm,
+            float eps,
+            int row,
+            MemoryView<MemorySegment> cos,
+            MemoryView<MemorySegment> sin) {
+        for (int head = 0; head < heads; head++) {
+            long offset = at + (long) head * headDim;
+            Norms.rmsnormGgml(t, offset, t, offset, norm, headDim, eps);
+            RoPE.applyNeox(t, offset, row, cos, sin, headDim / 2);
+        }
+    }
+
+    /** The SwiGLU feed-forward over {@code rows}: {@code out = down(silu(gate x) * up x)}. */
+    static void ffn(
+            MemoryView<MemorySegment> gate,
+            MemoryView<MemorySegment> up,
+            MemoryView<MemorySegment> down,
+            MemoryView<MemorySegment> x,
+            MemoryView<MemorySegment> hidden,
+            MemoryView<MemorySegment> hidden2,
+            MemoryView<MemorySegment> out,
+            int rows,
+            int ffnDim) {
+        MatMul.gemm(gate, x, hidden, rows);
+        MatMul.gemm(up, x, hidden2, rows);
+        Activations.siluMultiplyRows(hidden, hidden2, rows, ffnDim);
+        MatMul.gemm(down, hidden, out, rows);
+    }
 
     /** {@code values} rounded to F16 in place: ggml_conv_2d's im2col stores its input so. */
     static float[] roundToHalf(float[] values) {

@@ -271,11 +271,16 @@ public final class Lfm3
         Ops.addRows(state.residual, state.branch, rows, dim);
 
         Norms.rmsnormRowsGgml(state.normed, state.residual, w.ffnNorm, rows, dim, eps);
-        MatMul.gemm(w.ffnGate, state.normed, state.hidden, rows);
-        MatMul.gemm(w.ffnUp, state.normed, state.hidden2, rows);
-        Activations.siluMultiplyRows(
-                state.hidden, state.hidden2, rows, configuration.feedForwardLength);
-        MatMul.gemm(w.ffnDown, state.hidden, state.branch, rows);
+        Towers.ffn(
+                w.ffnGate,
+                w.ffnUp,
+                w.ffnDown,
+                state.normed,
+                state.hidden,
+                state.hidden2,
+                state.branch,
+                rows,
+                configuration.feedForwardLength);
         if (w.postFfnNorm != null)
             Norms.rmsnormRowsGgml(state.branch, state.branch, w.postFfnNorm, rows, dim, eps);
         Ops.addRows(state.residual, state.branch, rows, dim);
@@ -313,10 +318,26 @@ public final class Lfm3
         Parallel.forLoop(
                 rows,
                 row -> {
-                    headNormRope(
-                            state.query, (long) row * queryDim, heads, w.queryNorm, row, cos, sin);
-                    headNormRope(
-                            state.batchK, (long) row * kvDim, kvHeads, w.keyNorm, row, cos, sin);
+                    Towers.headNormRope(
+                            state.query,
+                            (long) row * queryDim,
+                            heads,
+                            headSize,
+                            w.queryNorm,
+                            c.rmsNormEps,
+                            row,
+                            cos,
+                            sin);
+                    Towers.headNormRope(
+                            state.batchK,
+                            (long) row * kvDim,
+                            kvHeads,
+                            headSize,
+                            w.keyNorm,
+                            c.rmsNormEps,
+                            row,
+                            cos,
+                            sin);
                 });
 
         int window = swa ? c.slidingWindow : 0, ringMask = swa ? c.slidingWindow - 1 : 0;
@@ -378,23 +399,6 @@ public final class Lfm3
                     }
                 });
         MatMul.gemm(w.output, state.attnOut, state.branch, rows);
-    }
-
-    /** Per-head RMS-norm then NeoX RoPE over one row of {@code heads} heads. */
-    private void headNormRope(
-            MemoryView<MemorySegment> t,
-            long rowOffset,
-            int heads,
-            MemoryView<MemorySegment> norm,
-            int row,
-            MemoryView<MemorySegment> cos,
-            MemoryView<MemorySegment> sin) {
-        int headSize = configuration.headSize;
-        for (int head = 0; head < heads; head++) {
-            long offset = rowOffset + (long) head * headSize;
-            Norms.rmsnormGgml(t, offset, t, offset, norm, headSize, configuration.rmsNormEps);
-            RoPE.applyNeox(t, offset, row, cos, sin, headSize / 2);
-        }
     }
 
     /** This chunk's K/V into the layer's cache: linear for full layers, the ring for SWA. */
@@ -660,15 +664,15 @@ public final class Lfm3
             int dim = configuration.embeddingLength;
             Lfm3Vision v =
                     gguf.getValueOrDefault(boolean.class, "clip.has_vision_encoder", false)
-                            ? Lfm3Vision.load(gguf, tensors, dim, arena)
+                            ? new Lfm3Vision(gguf, tensors, dim, arena)
                             : null;
             Lfm3Audio a =
                     gguf.getValueOrDefault(boolean.class, "clip.has_audio_encoder", false)
-                            ? Lfm3Audio.load(gguf, tensors, dim)
+                            ? new Lfm3Audio(gguf, tensors, dim)
                             : null;
             Lfm3Speech sp =
                     gguf.getValueOrDefault(boolean.class, "clip.has_gen_audio_encoder", false)
-                            ? Lfm3Speech.load(gguf, tensors, dim)
+                            ? new Lfm3Speech(gguf, tensors, dim)
                             : null;
             if (v == null && a == null)
                 throw new IllegalArgumentException(

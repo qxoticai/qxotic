@@ -266,7 +266,7 @@ final class Lfm3ChatTemplate implements ChatTemplate {
                 continue;
             }
             int[] codes = frames.next();
-            out.batch(Batch.embeddings(rows.of(codes), 1, false, Lfm3Speech.frameKey(codes)));
+            out.batch(rows.batch(codes));
         }
     }
 

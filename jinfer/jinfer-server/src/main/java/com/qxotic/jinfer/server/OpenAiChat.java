@@ -70,7 +70,7 @@ public final class OpenAiChat {
         List<Message> prompt = messages(messages, turns);
         // OpenAI's audio output always carries its transcript; audio.voice does not steer a chat
         // reply - the model speaks in its own voice, and only text to speech picks one
-        Speech speech = request.get("audio") != null ? Speech.withTranscript() : null;
+        Speech speech = Validation.audioFormat(request) != null ? Speech.withTranscript() : null;
         Map<String, Object> schema = schema(request);
         if (schema != null) describeSchema(prompt, schema);
         String forcedTool = ToolUse.forced(request);

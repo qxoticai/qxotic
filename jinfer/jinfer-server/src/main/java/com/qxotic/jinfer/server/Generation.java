@@ -68,8 +68,12 @@ final class Generation {
 
     /** Text to speech: {@code input} read aloud, as a WAV file or raw 16-bit PCM. */
     byte[] speech(String input, String language, String voice, boolean wav) {
-        Media.Audio audio = engine.speak(input, language, voice);
-        return wav ? AudioCodec.wav(audio) : AudioCodec.pcm16(audio);
+        return encode(engine.speak(input, language, voice), wav);
+    }
+
+    /** Speech on the wire: a WAV file, or the bare 16-bit samples. */
+    private static byte[] encode(Media.Audio speech, boolean wav) {
+        return wav ? AudioCodec.wav(speech) : AudioCodec.pcm16(speech);
     }
 
     Reply completion(Map<String, Object> request, String prompt, Sinks sinks) {
@@ -105,15 +109,11 @@ final class Generation {
                 if (!(part instanceof Content.Speech speech)) continue;
                 String id = audioId != null ? audioId : SpokenTurns.newId();
                 long expiresAt = turns.put(id, speech, reply.text());
-                String data = null; // a stream has sent it already
-                if (audioId == null) {
-                    Object format = Values.asObject(request.get("audio"), "audio").get("format");
-                    byte[] bytes =
-                            "wav".equals(format)
-                                    ? AudioCodec.wav(speech.audio())
-                                    : AudioCodec.pcm16(speech.audio());
-                    data = Base64.getEncoder().encodeToString(bytes);
-                }
+                boolean wav = "wav".equals(Validation.audioFormat(request));
+                String data = // a stream has sent it already
+                        audioId != null
+                                ? null
+                                : Base64.getEncoder().encodeToString(encode(speech.audio(), wav));
                 return reply.withAudio(new Reply.Audio(id, expiresAt, data, reply.text()));
             }
             return reply;

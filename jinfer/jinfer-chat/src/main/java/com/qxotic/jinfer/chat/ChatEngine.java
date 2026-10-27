@@ -16,6 +16,7 @@ import com.qxotic.jinfer.llm.SpeculativeDecoding;
 import com.qxotic.jinfer.llm.SpeechOutput;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.telemetry.CacheSample;
+import com.qxotic.jinfer.telemetry.DecodeEvent;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.jinfer.telemetry.MediaCacheSample;
 import com.qxotic.jinfer.telemetry.Telemetry;
@@ -1361,11 +1362,7 @@ public final class ChatEngine implements AutoCloseable {
      * @param voice one the family lists; null = its default
      */
     public Media.Audio speak(String text, String language, String voice) {
-        List<Media.Audio> parts = new ArrayList<>();
-        speak(text, language, voice, parts::add);
-        return parts.isEmpty()
-                ? new Media.Audio(new float[0], voice().speechRate(), 1)
-                : Media.Audio.concat(parts);
+        return speak0(text, language, voice, part -> true).reply().speech().orElseThrow();
     }
 
     /**
@@ -1375,6 +1372,11 @@ public final class ChatEngine implements AutoCloseable {
      * alone, sampled with the model's own settings.
      */
     public void speak(String text, String language, String voice, Predicate<Media.Audio> sink) {
+        speak0(text, language, voice, sink);
+    }
+
+    private Completion speak0(
+            String text, String language, String voice, Predicate<Media.Audio> sink) {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("nothing to say");
         voice();
         String instruction =
@@ -1385,7 +1387,7 @@ public final class ChatEngine implements AutoCloseable {
                                         new UnsupportedOperationException(
                                                 modelName + " has no text-to-speech instruction"));
         boolean[] stopped = {false};
-        complete(
+        return complete(
                 Request.builder(
                                 List.of(Message.system(instruction), Message.user(text)),
                                 loaded.samplingDefaults().resolve())
@@ -1763,6 +1765,13 @@ public final class ChatEngine implements AutoCloseable {
             positions.add(voice.opener(transcript));
         }
 
+        /** A frame the reply took: its audio out at once, its place in the record. */
+        void frame(SpeechOutput.Frame frame) {
+            speak(frame.pcm());
+            positions.add(placeholder);
+            frames.add(frame.codes());
+        }
+
         void speak(float[] pcm) {
             if (pcm.length == 0) return;
             Media.Audio chunk = new Media.Audio(pcm, rate, 1);
@@ -1811,58 +1820,64 @@ public final class ChatEngine implements AutoCloseable {
         SpeechOutput<S> voice = (SpeechOutput<S>) model;
         try (SpeechOutput.Speaker speaker =
                 voice.speaker(state, spoken.transcript, spoken.random)) {
-            for (int n = 0; n < max; ) {
+            boolean traced = new DecodeEvent().isEnabled(); // once, as Generator decides
+            for (int n = 0; n < max; n++) {
                 if (System.nanoTime() >= deadline) {
                     finish = Generator.FinishReason.TIMEOUT;
                     break;
                 }
-                if (!speaker.textNext()) {
-                    if (state.position() >= capacity) break;
-                    SpeechOutput.Frame frame = speaker.frame();
-                    spoken.speak(frame.pcm());
-                    model.ingest(state, frame.row());
-                    serving.tail(frame.row());
-                    spoken.positions.add(spoken.placeholder);
-                    spoken.frames.add(frame.codes());
-                    generated.add(spoken.placeholder);
-                    n++;
-                    if (spoken.out.cancelled()) {
+                DecodeEvent decode = traced ? new DecodeEvent() : null;
+                if (decode != null) decode.begin();
+                try {
+                    if (!speaker.textNext()) {
+                        if (state.position() >= capacity) break;
+                        SpeechOutput.Frame frame = speaker.frame();
+                        spoken.frame(frame); // its audio goes out before the backbone steps
+                        model.ingest(state, frame.row());
+                        serving.tail(frame.row());
+                        generated.add(spoken.placeholder);
+                        if (spoken.out.cancelled()) {
+                            finish = Generator.FinishReason.ABORT;
+                            break;
+                        }
+                        continue;
+                    }
+                    int token = sampler.sampleToken(model.logits(state));
+                    if (token < 0 || token >= vocab)
+                        throw new IllegalArgumentException(
+                                "sampler returned token id "
+                                        + token
+                                        + " out of range [0, "
+                                        + vocab
+                                        + ")");
+                    SpeechOutput.Lane lane =
+                            constraints.stopTokens().contains(token)
+                                    ? SpeechOutput.Lane.END
+                                    : speaker.text(token);
+                    boolean keepGoing =
+                            lane == SpeechOutput.Lane.CONTROL
+                                    ? !spoken.out.cancelled()
+                                    : listener.onToken(token);
+                    if (lane == SpeechOutput.Lane.END) {
+                        finish = Generator.FinishReason.STOP;
+                        stop = OptionalInt.of(token);
+                        break;
+                    }
+                    generated.add(token);
+                    if (!keepGoing) {
                         finish = Generator.FinishReason.ABORT;
                         break;
                     }
-                    continue;
+                    if (n + 1 >= max || state.position() >= capacity) break; // LENGTH: not fed
+                    model.ingest(state, Batch.step(token));
+                    serving.tail(token);
+                    spoken.positions.add(token);
+                } finally {
+                    if (decode != null) {
+                        decode.end();
+                        decode.commit();
+                    }
                 }
-                int token = sampler.sampleToken(model.logits(state));
-                if (token < 0 || token >= vocab)
-                    throw new IllegalArgumentException(
-                            "sampler returned token id "
-                                    + token
-                                    + " out of range [0, "
-                                    + vocab
-                                    + ")");
-                SpeechOutput.Lane lane =
-                        constraints.stopTokens().contains(token)
-                                ? SpeechOutput.Lane.END
-                                : speaker.text(token);
-                boolean keepGoing =
-                        lane == SpeechOutput.Lane.CONTROL
-                                ? !spoken.out.cancelled()
-                                : listener.onToken(token);
-                if (lane == SpeechOutput.Lane.END) {
-                    finish = Generator.FinishReason.STOP;
-                    stop = OptionalInt.of(token);
-                    break;
-                }
-                generated.add(token);
-                n++;
-                if (!keepGoing) {
-                    finish = Generator.FinishReason.ABORT;
-                    break;
-                }
-                if (n >= max || state.position() >= capacity) break; // LENGTH: not ingested
-                model.ingest(state, Batch.step(token));
-                serving.tail(token);
-                spoken.positions.add(token);
             }
             spoken.speak(speaker.flush());
         }

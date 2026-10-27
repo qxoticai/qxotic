@@ -49,6 +49,7 @@ final class Lfm3Speech {
     private static final int FRAME_STACK = 6; // codec positions per frame
     private static final int WINDOW = 30, RING = 32; // the codec's attention window, its ring
     private static final int SHORTCONV_TAPS = 7, SHORTCONV_PARTS = 3;
+    private static final int[] ALL_CODEBOOKS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     private static final int FSQ_LEVELS = 4; // [8, 7, 6, 6]: one value per level per code
 
     /** One LFM block of either stack: exactly one of the conv and attention groups is set. */
@@ -92,9 +93,8 @@ final class Lfm3Speech {
     private final float[] fsq; // [vocab - 1][FSQ_LEVELS]
     private final MemoryView<MemorySegment> quantOut, quantOutBias, codecIn, codecInBias;
     private final MemoryView<MemorySegment> codecNorm, codecOut, codecOutBias;
-    private final RoPE.Schedule depthRope, codecRope;
 
-    private Lfm3Speech(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
+    Lfm3Speech(GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
         require(
                 "lfm3a_gen".equals(gguf.getString("clip.gen.audio.projector_type")),
                 "unsupported speech head " + gguf.getString("clip.gen.audio.projector_type"));
@@ -179,8 +179,6 @@ final class Lfm3Speech {
         codecOut = weight(tensors, "a.gen.wav.tfm.out_proj.weight", 2 * Istft.BINS, codecDim);
         codecOutBias = f32(tensors, "a.gen.wav.tfm.out_proj.bias", 2 * Istft.BINS);
 
-        depthRope = RoPE.plain(depth.headDim, 1e6); // the converter pins both rope bases
-        codecRope = RoPE.plain(codec.headDim, 1e6);
         defaults =
                 new Sampling(
                         gguf.getValueOrDefault(float.class, "clip.gen.audio.sampling.temp", 0.4f),
@@ -189,11 +187,6 @@ final class Lfm3Speech {
                                 float.class, "clip.gen.audio.sampling.penalty_repeat", 1.2f),
                         gguf.getValueOrDefault(
                                 int.class, "clip.gen.audio.sampling.penalty_last_n", 64));
-    }
-
-    static Lfm3Speech load(
-            GGUF gguf, Map<String, MemoryView<MemorySegment>> tensors, int modelDim) {
-        return new Lfm3Speech(gguf, tensors, modelDim);
     }
 
     /** A weight's logical size along {@code axis} (rows 0, columns 1), whatever its type. */
@@ -255,16 +248,23 @@ final class Lfm3Speech {
         return new Stack(dim, heads, kvHeads, headDim, ffnDim, eps, blocks);
     }
 
-    /** Buffers for one stack over up to {@code rows} positions; the codec's also keep its state. */
+    /**
+     * Buffers for one stack over up to {@code rows} positions: bidirectional without state (the
+     * depthformer), or causal with its window and conv state kept across calls (the codec).
+     */
     private static final class Pass {
         final Stack stack;
+        final boolean causal;
+        final RoPE.Schedule rope;
         final MemoryView<MemorySegment> x, normed, mixed, wide, query, key, value, gate, attn;
         final MemoryView<MemorySegment> hidden, hidden2, cos, sin;
         final MemoryView<MemorySegment>[] keyRing, valueRing, convState; // codec state, per block
 
         @SuppressWarnings("unchecked")
-        Pass(Stack stack, int rows, boolean stateful, MemoryArena<MemorySegment> arena) {
+        Pass(Stack stack, int rows, boolean causal, MemoryArena<MemorySegment> arena) {
             this.stack = stack;
+            this.causal = causal;
+            this.rope = RoPE.plain(stack.headDim, 1e6); // the converter pins both rope bases
             int dim = stack.dim, kvDim = stack.kvDim();
             x = Views.allocateF32(arena, rows, dim);
             normed = Views.allocateF32(arena, rows, dim);
@@ -283,7 +283,7 @@ final class Lfm3Speech {
             keyRing = new MemoryView[n];
             valueRing = new MemoryView[n];
             convState = new MemoryView[n];
-            if (!stateful) return;
+            if (!causal) return;
             for (int l = 0; l < n; l++) {
                 if (stack.blocks[l].convIn != null) {
                     convState[l] = Views.allocateF32(arena, (long) (SHORTCONV_TAPS - 1) * dim);
@@ -300,10 +300,10 @@ final class Lfm3Speech {
      * Bidirectional without state (the depthformer); causal over a {@link #WINDOW}-position window
      * continuing at {@code start} (the codec).
      */
-    private static void run(Pass p, int rows, int start, boolean causal, RoPE.Schedule rope) {
+    private static void run(Pass p, int rows, int start) {
         Stack s = p.stack;
         int dim = s.dim;
-        RoPE.fill(p.cos, p.sin, start, rows, s.headDim / 2, rope);
+        RoPE.fill(p.cos, p.sin, start, rows, s.headDim / 2, p.rope);
         for (int l = 0; l < s.blocks.length; l++) {
             Block b = s.blocks[l];
             Norms.rmsnormRowsGgml(p.normed, p.x, b.norm1, rows, dim, s.eps);
@@ -320,16 +320,15 @@ final class Lfm3Speech {
                         SHORTCONV_PARTS);
                 MatMul.gemm(b.convOut, p.attn, p.mixed, rows);
             } else {
-                attention(p, b, l, rows, start, causal);
+                attention(p, b, l, rows, start);
             }
             if (b.postNorm1 != null)
                 Norms.rmsnormRowsGgml(p.mixed, p.mixed, b.postNorm1, rows, dim, s.eps);
             Ops.addRows(p.x, p.mixed, rows, dim);
             Norms.rmsnormRowsGgml(p.normed, p.x, b.norm2, rows, dim, s.eps);
-            MatMul.gemm(b.ffnGate, p.normed, p.hidden, rows);
-            MatMul.gemm(b.ffnUp, p.normed, p.hidden2, rows);
-            Activations.siluMultiplyRows(p.hidden, p.hidden2, rows, s.ffnDim);
-            MatMul.gemm(b.ffnDown, p.hidden, p.mixed, rows);
+            Towers.ffn(
+                    b.ffnGate, b.ffnUp, b.ffnDown, p.normed, p.hidden, p.hidden2, p.mixed, rows,
+                    s.ffnDim);
             if (b.postNorm2 != null)
                 Norms.rmsnormRowsGgml(p.mixed, p.mixed, b.postNorm2, rows, dim, s.eps);
             Ops.addRows(p.x, p.mixed, rows, dim);
@@ -337,7 +336,7 @@ final class Lfm3Speech {
     }
 
     /** GQA with per-head Q/K RMS norms, NeoX RoPE and the per-head sigmoid gate; F32 throughout. */
-    private static void attention(Pass p, Block b, int l, int rows, int start, boolean causal) {
+    private static void attention(Pass p, Block b, int l, int rows, int start) {
         Stack s = p.stack;
         int dim = s.dim, kvDim = s.kvDim(), headDim = s.headDim;
         MatMul.gemm(b.query, p.normed, p.query, rows);
@@ -347,13 +346,29 @@ final class Lfm3Speech {
         Parallel.forLoop(
                 rows,
                 r -> {
-                    for (int h = 0; h < s.heads; h++)
-                        normRope(p, p.query, (long) r * dim + (long) h * headDim, b.queryNorm, r);
-                    for (int h = 0; h < s.kvHeads; h++)
-                        normRope(p, p.key, (long) r * kvDim + (long) h * headDim, b.keyNorm, r);
+                    Towers.headNormRope(
+                            p.query,
+                            (long) r * dim,
+                            s.heads,
+                            headDim,
+                            b.queryNorm,
+                            s.eps,
+                            r,
+                            p.cos,
+                            p.sin);
+                    Towers.headNormRope(
+                            p.key,
+                            (long) r * kvDim,
+                            s.kvHeads,
+                            headDim,
+                            b.keyNorm,
+                            s.eps,
+                            r,
+                            p.cos,
+                            p.sin);
                 });
         float scale = 1f / (float) Math.sqrt(headDim);
-        if (causal) {
+        if (p.causal) {
             FlashAttention.slidingWindowPrefill(
                     p.query,
                     p.attn,
@@ -407,12 +422,6 @@ final class Lfm3Speech {
         MatMul.gemm(b.output, p.attn, p.mixed, rows);
     }
 
-    private static void normRope(
-            Pass p, MemoryView<MemorySegment> t, long at, MemoryView<MemorySegment> norm, int row) {
-        Norms.rmsnormGgml(t, at, t, at, norm, p.stack.headDim, p.stack.eps);
-        RoPE.applyNeox(t, at, row, p.cos, p.sin, p.stack.headDim / 2);
-    }
-
     /**
      * One utterance's state: the depthformer's buffers, the codec's window and ISTFT, the recent
      * codes the repetition penalty reads. Everything a frame touches is allocated here, once; close
@@ -428,6 +437,9 @@ final class Lfm3Speech {
 
         /** The last frame's feedback row, the backbone's next input. */
         final MemoryView<MemorySegment> feedback;
+
+        /** {@link #feedback} as the keyed batch the backbone ingests. */
+        private Batch row;
 
         /** Where the caller puts the backbone's hidden state before each frame. */
         final MemoryView<MemorySegment> hidden;
@@ -469,9 +481,10 @@ final class Lfm3Speech {
                 RandomGenerator rng,
                 int[] codes) {
             Arrays.fill(codes, -1);
+            project(hiddenState);
             int k = 0;
             for (int pick : SCHEDULE) {
-                codeLogits(hiddenState, codes);
+                pass(codes, order, k, k + pick);
                 for (int j = 0; j < pick; j++, k++) {
                     int cb = order[k];
                     Views.copyToArray(logits, (long) cb * vocab, logitRow, 0, vocab, "logits");
@@ -499,12 +512,26 @@ final class Lfm3Speech {
 
         /**
          * The depthformer's logits {@code [codebook][vocab]} for the codes known so far (-1
-         * masked).
+         * masked), every codebook's.
          */
         MemoryView<MemorySegment> codeLogits(MemoryView<MemorySegment> hiddenState, int[] codes) {
-            int dim = depth.dim;
+            project(hiddenState);
+            pass(codes, ALL_CODEBOOKS, 0, CODEBOOKS);
+            return logits;
+        }
+
+        /** proj_in of the hidden state, once per frame: every pass starts from it. */
+        private void project(MemoryView<MemorySegment> hiddenState) {
             MatMul.gemv(projIn, hiddenState, projected);
-            Ops.addInPlace(projected, 0, projInBias, 0, CODEBOOKS * dim);
+            Ops.addInPlace(projected, 0, projInBias, 0, CODEBOOKS * depth.dim);
+        }
+
+        /**
+         * One depthformer pass over the codes known so far, its logits for the codebooks {@code
+         * heads[from, to)} alone: the others are not read before the next pass recomputes them.
+         */
+        private void pass(int[] codes, int[] heads, int from, int to) {
+            int dim = depth.dim;
             Convert.copyF32(projected, 0, depthPass.x, 0, (long) CODEBOOKS * dim);
             for (int cb = 0; cb < CODEBOOKS; cb++) {
                 if (codes[cb] >= 0) {
@@ -515,28 +542,27 @@ final class Lfm3Speech {
                     Ops.addInPlace(depthPass.x, (long) cb * dim, maskEmbd, 0, dim);
                 }
             }
-            run(depthPass, CODEBOOKS, 0, false, depthRope);
-            // the stack's norm, then each codebook's own, then its tied embedding table
-            Norms.rmsnormRowsGgml(
-                    depthPass.normed, depthPass.x, depthNorm, CODEBOOKS, dim, depth.eps);
-            for (int cb = 0; cb < CODEBOOKS; cb++) {
-                long row = (long) cb * dim;
+            run(depthPass, CODEBOOKS, 0);
+            // the stack's norm, then the codebook's own, then its tied embedding table
+            for (int i = from; i < to; i++) {
+                long row = (long) heads[i] * dim;
+                Norms.rmsnormGgml(
+                        depthPass.normed, row, depthPass.x, row, depthNorm, dim, depth.eps);
                 Norms.rmsnormGgml(
                         depthPass.normed,
                         row,
                         depthPass.normed,
                         row,
-                        headNorms[cb],
+                        headNorms[heads[i]],
                         dim,
                         depth.eps);
-                MatMul.gemv(codeEmbd[cb], depthRows[cb], logitRows[cb]);
+                MatMul.gemv(codeEmbd[heads[i]], depthRows[heads[i]], logitRows[heads[i]]);
             }
-            return logits;
         }
 
-        /** {@link #feedback} for {@code codes}. */
+        /** {@link #feedback} for {@code codes}, and {@link #row} with it. */
         void feedback(int[] codes) {
-            feedbacks.of(codes);
+            row = feedbacks.batch(codes);
         }
 
         /** The frame's audio: {@value #FRAME_STACK} ISTFT hops, less the start padding at first. */
@@ -554,7 +580,7 @@ final class Lfm3Speech {
             // nearest upsampling: every frame is FRAME_STACK codec positions
             for (int r = 0; r < FRAME_STACK; r++)
                 Convert.copyF32(codecPass.normed, 0, codecPass.x, (long) r * dim, dim);
-            run(codecPass, FRAME_STACK, position, true, codecRope);
+            run(codecPass, FRAME_STACK, position);
             position += FRAME_STACK;
             Norms.rmsnormRowsGgml(
                     codecPass.normed, codecPass.x, codecNorm, FRAME_STACK, dim, codec.eps);
@@ -644,6 +670,14 @@ final class Lfm3Speech {
             row = Views.allocateF32(arena, 1, modelDim);
         }
 
+        /**
+         * The row as the batch a reply ingests and its replay re-emits, keyed by the codes - the
+         * one spelling the prompt cache matches the two by.
+         */
+        Batch batch(int[] codes) {
+            return Batch.embeddings(of(codes), 1, false, frameKey(codes));
+        }
+
         MemoryView<MemorySegment> of(int[] codes) {
             for (int cb = 0; cb < CODEBOOKS; cb++) ids[cb] = codes[cb] + cb * vocab;
             Convert.gatherToF32(outEmbd, ids, 0, CODEBOOKS, rows, 0, modelDim);
@@ -659,7 +693,7 @@ final class Lfm3Speech {
     }
 
     /** The cache identity of a frame's row: its codes, which fix the row. */
-    static ContentKey frameKey(int[] codes) {
+    private static ContentKey frameKey(int[] codes) {
         ByteBuffer bytes = ByteBuffer.allocate(FRAME_DOMAIN.length + 4 * codes.length);
         bytes.put(FRAME_DOMAIN);
         for (int code : codes) bytes.putInt(code);
@@ -744,10 +778,7 @@ final class Lfm3Speech {
                 interleaving = false;
                 speaking = false;
             }
-            return new SpeechOutput.Frame(
-                    codes.clone(),
-                    clamp(pcm),
-                    Batch.embeddings(stream.feedback, 1, false, frameKey(codes)));
+            return new SpeechOutput.Frame(codes.clone(), clamp(pcm), stream.row);
         }
 
         /** An interleaved slot taken: the block flips when its count runs out. */
