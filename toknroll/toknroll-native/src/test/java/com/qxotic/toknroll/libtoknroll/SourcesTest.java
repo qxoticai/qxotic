@@ -177,18 +177,6 @@ class SourcesTest {
     }
 
     @Test
-    void theOldPrefixesSayWhatToWriteInstead() {
-        for (String old : new String[] {"hf:Qwen/Qwen3-0.6B", "ms:Qwen/Qwen3-0.6B"}) {
-            Errors.Failure e =
-                    assertThrows(
-                            Errors.Failure.class,
-                            () -> Sources.locate(old, store(new FakeSource())));
-            assertEquals(Errors.EINVAL, e.code);
-            assertTrue(e.getMessage().contains("hf.co/owner/repo"), e.getMessage());
-        }
-    }
-
-    @Test
     void aMisspelledHostIsInvalidNotAnOwner() {
         Errors.Failure e =
                 assertThrows(

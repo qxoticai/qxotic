@@ -66,12 +66,6 @@ final class Sources {
     static Located locate(String source, ModelStore store) {
         if (source == null || source.isBlank()) throw Errors.invalid("source is empty");
         source = source.strip();
-        if (source.matches("(?i)(hf|ms|huggingface|modelscope):.*")) // the prefixes of 0.3.0
-        throw Errors.invalid(
-                    "'"
-                            + source
-                            + "': a hub is named by its host, hf.co/owner/repo or"
-                            + " modelscope.cn/owner/repo");
         if (!ModelStore.isRef(source)) {
             // a dotted first segment is a misspelled host, never an owner or a missing file
             if (!Files.exists(Path.of(source)) && source.matches("[^/\\\\:]+\\.[^/\\\\:]+/.+"))
