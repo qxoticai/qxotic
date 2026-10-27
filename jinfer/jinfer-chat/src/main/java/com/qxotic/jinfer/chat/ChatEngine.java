@@ -37,6 +37,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -927,7 +928,10 @@ public final class ChatEngine implements AutoCloseable {
             Integer reasoningOverride,
             String reasoningCutoffMessage,
             IntSequence replyPrefix) {
-        Sampler sampler = sampling.sampler(loaded.model().configuration().vocabularySize());
+        Sampler sampler =
+                Sampler.banning(
+                        sampling.sampler(loaded.model().configuration().vocabularySize()),
+                        loaded.template().map(ChatTemplate::replyForbidden).orElse(Set.of()));
         ChatTemplate.ThinkMarkers markers = thinkMarkers();
         if (!think) {
             return Thinking.banMarkers(

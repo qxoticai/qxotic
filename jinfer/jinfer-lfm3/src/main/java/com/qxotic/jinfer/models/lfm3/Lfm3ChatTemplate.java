@@ -19,11 +19,13 @@ import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,6 +53,7 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     private final Multimodal media;
     private final int bos, imStart, imEnd, think, endThink, visionOpen, visionClose;
     private final ReplyLanguage.Spans spans;
+    private final Set<Integer> speechOpeners; // a text reply's forbidden mode switches
 
     private static final Pattern THINK_MARKER = Pattern.compile("</?think>");
 
@@ -68,6 +71,10 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         endThink = SpecialTokens.require(tokenizer, "</think>");
         visionOpen = SpecialTokens.require(tokenizer, "<|vision_start|>");
         visionClose = SpecialTokens.require(tokenizer, "<|vision_end|>");
+        Set<Integer> openers = new HashSet<>();
+        for (String opener : List.of("<|audio_start|>", "<|mixed_start|>"))
+            SpecialTokens.find(tokenizer, opener).ifPresent(openers::add);
+        speechOpeners = Set.copyOf(openers);
         spans =
                 new ReplyLanguage.Spans(
                         "<think>",
@@ -347,6 +354,16 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         out.id(SpecialTokens.require(tokenizer, "<|audio_start|>"));
         out.finish();
         return ids.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    /**
+     * Speech and interleaved replies open with their own token; a text reply forbids both, as
+     * LiquidAI's {@code generation_mode="text"} and llama.cpp's text mode do. Under a voice-chat
+     * system prompt Omni opens {@code <|mixed_start|>} almost surely.
+     */
+    @Override
+    public Set<Integer> replyForbidden() {
+        return speechOpeners;
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -99,6 +100,15 @@ public interface ChatTemplate {
      */
     default int defaultMaxReasoningTokens(int maxOutputTokens) {
         return maxOutputTokens >= 0 ? Math.max(1, maxOutputTokens / 2) : -1;
+    }
+
+    /**
+     * Tokens a reply never samples: the family's mode switches into output this engine is not asked
+     * to produce (LFM3-Omni's speech openers in a text reply). Sampled, any of them would end the
+     * reply on the control rule before a word was written.
+     */
+    default Set<Integer> replyForbidden() {
+        return Set.of();
     }
 
     /** One family's think-span marker spellings. */
