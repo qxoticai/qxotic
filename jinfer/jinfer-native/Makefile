@@ -71,11 +71,12 @@ qa:
 python: $(LIB)
 	mkdir -p python/jinfer/lib/$(PLATFORM) && cp $(LIB) python/jinfer/lib/$(PLATFORM)/
 
-# The release tools, one venv for both packages: build makes the wheel, wheel tags it with the
-# platform, twine checks and uploads it, auditwheel audits the manylinux claim.
-TOOLS := $(ROOT)/target/pytools
+# The release tools, one venv for both packages: build makes the wheel, wheel tags it with the platform,
+# twine checks and uploads it, auditwheel audits the manylinux claim. One venv per Python, since a venv is
+# bound to the interpreter that made it and a build container's differs from the host's.
+TOOLS := $(ROOT)/target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')
 $(TOOLS)/bin/twine:
-	python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
+	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
 
 wheel: python $(TOOLS)/bin/twine
 	cp $(ROOT)/LICENSE python/LICENSE
