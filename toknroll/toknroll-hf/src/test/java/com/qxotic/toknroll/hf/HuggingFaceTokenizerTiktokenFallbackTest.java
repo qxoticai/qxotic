@@ -121,6 +121,27 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
     }
 
     @Test
+    void fromLocal_folderHoldingTiktokenModelLoadsLikeAHubRepository() throws Exception {
+        Path folder = Files.createDirectories(tempDir.resolve("checkout"));
+        Files.writeString(
+                folder.resolve("tiktoken.model"),
+                tiktokenWithBaseBytes(tokenLine("xy", 256)),
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                folder.resolve("tokenizer_config.json"),
+                "{\"auto_map\":{\"AutoTokenizer\":[\"tokenization_demo.CustomTokenizer\"]}}",
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                folder.resolve("tokenization_demo.py"),
+                "pat_str = \"|\".join([\nr\"\"\"xy\"\"\"\n])\n",
+                StandardCharsets.UTF_8);
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(folder);
+
+        assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
+    }
+
+    @Test
     void fromHuggingFace_cacheOnlyCanFallbackToCachedTiktokenModel() throws Exception {
         String previous = System.getProperty(CACHE_ROOT_PROPERTY);
         System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());

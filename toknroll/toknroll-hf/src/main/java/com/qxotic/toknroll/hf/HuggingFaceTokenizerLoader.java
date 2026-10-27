@@ -217,6 +217,11 @@ public final class HuggingFaceTokenizerLoader {
 
     @SuppressWarnings("unchecked")
     private static Tokenizer loadUnchecked(Path input) throws IOException {
+        if (Files.isDirectory(input)
+                && !Files.exists(input.resolve(TOKENIZER_JSON))
+                && Files.exists(input.resolve(TIKTOKEN_MODEL_FILE))) {
+            return loadFromTiktokenFolder(input);
+        }
         Path tokenizerJson = resolveTokenizerJsonPath(input);
 
         Map<String, Object> root = parseObject(tokenizerJson);
@@ -316,6 +321,8 @@ public final class HuggingFaceTokenizerLoader {
             String revision,
             boolean forceRefresh)
             throws IOException {
+        // The cache lands a repository's files in one folder: fetch what the folder form reads
+        // (the auto_map module's name is only known from the config), then read it as a folder.
         Path tiktokenModel =
                 fetchFromSource(
                         source,
@@ -325,10 +332,25 @@ public final class HuggingFaceTokenizerLoader {
                         revision,
                         TIKTOKEN_MODEL_FILE,
                         forceRefresh);
-
         Map<String, Object> tokenizerConfig =
                 loadOptionalTokenizerConfig(
                         source, cache, user, repository, revision, forceRefresh);
+        String module = autoMapModule(tokenizerConfig);
+        if (module != null) {
+            try {
+                fetchFromSource(source, cache, user, repository, revision, module, forceRefresh);
+            } catch (IOException e) {
+                if (!isHttp404(e)) throw e;
+            }
+        }
+        return loadFromTiktokenFolder(tiktokenModel.getParent());
+    }
+
+    /** A folder holding {@code tiktoken.model}: a hub checkout, or the artifact cache's copy. */
+    private static Tokenizer loadFromTiktokenFolder(Path dir) throws IOException {
+        Path tiktokenModel = dir.resolve(TIKTOKEN_MODEL_FILE);
+        Path config = dir.resolve(TOKENIZER_CONFIG_JSON);
+        Map<String, Object> tokenizerConfig = Files.exists(config) ? parseObject(config) : null;
 
         Map<String, Integer> mergeableRanks;
         try (BufferedReader reader =
@@ -342,9 +364,7 @@ public final class HuggingFaceTokenizerLoader {
         List<MergeRule> merges = ImplAccessor.reconstructTiktokenMergeRules(mergeableRanks);
 
         TokenizationModel model = Toknroll.tiktokenModel(vocabulary, merges);
-        String patStr =
-                resolvePatStr(
-                        source, cache, user, repository, revision, tokenizerConfig, forceRefresh);
+        String patStr = resolvePatStr(dir, tokenizerConfig);
         return Toknroll.pipeline(
                 Splitter.regex(Pattern.compile(patStr, UNICODE_REGEX_FLAGS)), model);
     }
@@ -468,34 +488,19 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private static String resolvePatStr(
-            String source,
-            RepositoryArtifactCache cache,
-            String user,
-            String repository,
-            String revision,
-            Map<String, Object> tokenizerConfig,
-            boolean forceRefresh)
+    private static String resolvePatStr(Path dir, Map<String, Object> tokenizerConfig)
             throws IOException {
         String directPatStr = parsePatStrFromTokenizerConfig(tokenizerConfig);
         if (directPatStr != null) {
             return directPatStr;
         }
-        String modulePatStr =
-                tryResolvePatStrFromAutoMapModule(
-                        source, cache, user, repository, revision, tokenizerConfig, forceRefresh);
+        String modulePatStr = tryResolvePatStrFromAutoMapModule(dir, tokenizerConfig);
         if (modulePatStr != null) {
             return modulePatStr;
         }
         throw new IllegalArgumentException(
-                "["
-                        + source
-                        + "] tiktoken.model fallback requires pat_str for "
-                        + user
-                        + "/"
-                        + repository
-                        + "@"
-                        + String.valueOf(revision)
+                "tiktoken.model requires pat_str in "
+                        + dir
                         + " (not found in tokenizer_config.json.pat_str or auto_map module)");
     }
 
@@ -514,15 +519,7 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private static String tryResolvePatStrFromAutoMapModule(
-            String source,
-            RepositoryArtifactCache cache,
-            String user,
-            String repository,
-            String revision,
-            Map<String, Object> tokenizerConfig,
-            boolean forceRefresh)
-            throws IOException {
+    private static String autoMapModule(Map<String, Object> tokenizerConfig) {
         if (tokenizerConfig == null) {
             return null;
         }
@@ -540,23 +537,17 @@ public final class HuggingFaceTokenizerLoader {
         }
         String tokenizerClassRef = (String) first;
         int dot = tokenizerClassRef.indexOf('.');
-        if (dot <= 0) {
+        return dot <= 0 ? null : tokenizerClassRef.substring(0, dot) + ".py";
+    }
+
+    private static String tryResolvePatStrFromAutoMapModule(
+            Path dir, Map<String, Object> tokenizerConfig) throws IOException {
+        String module = autoMapModule(tokenizerConfig);
+        if (module == null || !Files.exists(dir.resolve(module))) {
             return null;
         }
-        String moduleFile = tokenizerClassRef.substring(0, dot) + ".py";
-        Path modulePath;
-        try {
-            modulePath =
-                    fetchFromSource(
-                            source, cache, user, repository, revision, moduleFile, forceRefresh);
-        } catch (IOException e) {
-            if (isHttp404(e)) {
-                return null;
-            }
-            throw e;
-        }
-        String moduleSource = Files.readString(modulePath, StandardCharsets.UTF_8);
-        return parsePatStrFromPythonModule(moduleSource);
+        return parsePatStrFromPythonModule(
+                Files.readString(dir.resolve(module), StandardCharsets.UTF_8));
     }
 
     private static String adaptRegexForJava(String pattern) {
