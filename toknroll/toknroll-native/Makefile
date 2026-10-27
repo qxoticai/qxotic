@@ -89,7 +89,7 @@ $(TOOLS)/bin/twine:
 wheel: python $(TOOLS)/bin/twine
 	cp $(ROOT)/LICENSE python/LICENSE
 	rm -rf target/wheel python/build && $(TOOLS)/bin/python -m build --wheel --outdir target/wheel python
-	$(TOOLS)/bin/wheel tags --remove --platform-tag $(WHEEL_PLAT) target/wheel/*.whl
+	$(TOOLS)/bin/wheel tags --remove --python-tag py3 --abi-tag none --platform-tag $(WHEEL_PLAT) target/wheel/*.whl   # ctypes over a C library: any Python 3
 
 # The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv, tested from outside the checkout.
 check-wheel: wheel

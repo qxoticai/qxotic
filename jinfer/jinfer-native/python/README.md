@@ -72,7 +72,7 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 ## Install
 
 ```sh
-pip install jinfer            # the wheel carries the library: Linux x86_64 with AVX2 (glibc 2.34 or later), macOS 14 or later on Apple silicon
+pip install jinfer            # the wheel carries the library: Linux x86_64 with AVX2 (glibc 2.17 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64 with AVX2
 ```
 
 From a source checkout, `make python` in `jinfer/jinfer-native` stages the freshly built library into the package, then `pip install python/`.

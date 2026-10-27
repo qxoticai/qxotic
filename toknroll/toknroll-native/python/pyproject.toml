@@ -10,12 +10,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "Quixotic AI" }]
+authors = [{ name = "Quixotic AI", email = "hello@qxotic.ai" }]
 keywords = ["tokenizer", "tokenization", "llm", "bpe", "tiktoken", "gguf", "huggingface"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
@@ -36,7 +38,7 @@ Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
 [tool.setuptools]
-packages = ["toknroll"]
+packages = ["toknroll", "toknroll.lib"]
 
 [tool.setuptools.package-data]
 toknroll = ["lib/*/*", "py.typed"]
