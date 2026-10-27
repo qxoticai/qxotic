@@ -36,18 +36,28 @@ final class RepositoryArtifactCache {
             Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
 
     private final Path cacheRoot;
+    private final Transport transport;
     private final Duration downloadTimeout;
     private final String huggingFaceEndpoint;
 
     private RepositoryArtifactCache(
-            Path cacheRoot, Duration downloadTimeout, String huggingFaceEndpoint) {
+            Path cacheRoot,
+            Duration downloadTimeout,
+            String huggingFaceEndpoint,
+            Transport transport) {
         this.cacheRoot = cacheRoot;
         this.downloadTimeout = downloadTimeout;
         this.huggingFaceEndpoint = huggingFaceEndpoint;
+        this.transport = transport;
     }
 
-    static RepositoryArtifactCache create() {
-        return create(resolveCacheRoot());
+    /**
+     * The cache under the configured root, fetching through {@code transport}: the system's, or
+     * offline.
+     */
+    static RepositoryArtifactCache create(Transport transport) {
+        return new RepositoryArtifactCache(
+                resolveCacheRoot(), DEFAULT_DOWNLOAD_TIMEOUT, HUGGINGFACE_ENDPOINT, transport);
     }
 
     static RepositoryArtifactCache create(Path cacheRoot) {
@@ -56,38 +66,41 @@ final class RepositoryArtifactCache {
 
     static RepositoryArtifactCache create(Path cacheRoot, Duration downloadTimeout) {
         return new RepositoryArtifactCache(
-                cacheRoot.toAbsolutePath().normalize(), downloadTimeout, HUGGINGFACE_ENDPOINT);
+                cacheRoot.toAbsolutePath().normalize(),
+                downloadTimeout,
+                HUGGINGFACE_ENDPOINT,
+                Transport.system());
     }
 
     /** Test seam: HuggingFace files resolve against {@code huggingFaceEndpoint}. */
+    static RepositoryArtifactCache create(Path cacheRoot, Transport transport) {
+        return new RepositoryArtifactCache(
+                cacheRoot.toAbsolutePath().normalize(),
+                DEFAULT_DOWNLOAD_TIMEOUT,
+                HUGGINGFACE_ENDPOINT,
+                transport);
+    }
+
     static RepositoryArtifactCache create(Path cacheRoot, String huggingFaceEndpoint) {
         return new RepositoryArtifactCache(
                 cacheRoot.toAbsolutePath().normalize(),
                 DEFAULT_DOWNLOAD_TIMEOUT,
-                huggingFaceEndpoint);
+                huggingFaceEndpoint,
+                Transport.system());
     }
 
-    Path fetchUrl(
-            String url,
-            Map<String, List<String>> headers,
-            boolean useCacheOnly,
-            boolean forceRefresh)
+    Path fetchUrl(String url, Map<String, List<String>> headers, boolean forceRefresh)
             throws IOException {
         Objects.requireNonNull(url, "url");
         String key = sha256(url);
         Path target =
                 cacheRoot.resolve("repository-artifacts").resolve("url").resolve(key + ".bin");
-        return fetchToPath("url", url, target, false, headers, useCacheOnly, forceRefresh);
+        return fetchToPath("url", url, target, false, headers, forceRefresh);
     }
 
     /** Fetches and caches one file from a HuggingFace repository revision. */
     Path fetchHuggingFace(
-            String user,
-            String repository,
-            String revision,
-            String file,
-            boolean useCacheOnly,
-            boolean forceRefresh)
+            String user, String repository, String revision, String file, boolean forceRefresh)
             throws IOException {
         String resolvedRevision = normalizeRevision(revision);
         String url =
@@ -116,7 +129,6 @@ final class RepositoryArtifactCache {
                 target,
                 isImmutable(resolvedRevision),
                 authHeaders(resolveToken(HF_TOKEN_PROPERTY, HF_TOKEN_ENV)),
-                useCacheOnly,
                 forceRefresh);
     }
 
@@ -127,12 +139,7 @@ final class RepositoryArtifactCache {
      * revision strings (including {@code main}) are not rewritten.
      */
     Path fetchModelScope(
-            String user,
-            String repository,
-            String revision,
-            String file,
-            boolean useCacheOnly,
-            boolean forceRefresh)
+            String user, String repository, String revision, String file, boolean forceRefresh)
             throws IOException {
         String resolvedRevision = normalizeModelScopeRevision(revision);
         String url =
@@ -160,14 +167,14 @@ final class RepositoryArtifactCache {
                 target,
                 isImmutable(resolvedRevision),
                 authHeaders(resolveToken(MODELSCOPE_TOKEN_PROPERTY, MODELSCOPE_TOKEN_ENV)),
-                useCacheOnly,
                 forceRefresh);
     }
 
     /**
      * Fetches {@code url} into {@code target}. Throws {@link FileNotFoundException} on HTTP 404 and
-     * {@link NoSuchFileException} on a {@code useCacheOnly} miss. A 404 is remembered only when
-     * {@code immutable} (a commit SHA): under a branch the file may appear later.
+     * {@link NoSuchFileException} on a miss while offline (the transport's refusal). A 404 is
+     * remembered only when {@code immutable} (a commit SHA): under a branch the file may appear
+     * later.
      */
     private Path fetchToPath(
             String source,
@@ -175,7 +182,6 @@ final class RepositoryArtifactCache {
             Path target,
             boolean immutable,
             Map<String, List<String>> headers,
-            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         Path normalizedTarget = target.toAbsolutePath().normalize();
@@ -187,10 +193,6 @@ final class RepositoryArtifactCache {
                         normalizedTarget.getFileName().toString() + ".notfound");
         if (immutable && !forceRefresh && Files.exists(notFoundMarker)) {
             throw new FileNotFoundException("[" + source + "] HTTP 404 (cached): " + url);
-        }
-        if (useCacheOnly) {
-            throw new NoSuchFileException(
-                    "[" + source + "] useCacheOnly=true and artifact not cached: " + url);
         }
 
         Files.createDirectories(normalizedTarget.getParent());
@@ -212,7 +214,7 @@ final class RepositoryArtifactCache {
                         ".partial");
         try (Transport.Response response =
                 Transport.deadline(
-                        Transport.system().follow(URI.create(url), requestHeaders, downloadTimeout),
+                        transport.follow(URI.create(url), requestHeaders, downloadTimeout),
                         downloadTimeout)) {
             int status = response.status();
             if (status < 200 || status >= 300) {

@@ -83,6 +83,7 @@
     <jota.version>0.3.1</jota.version>
     <jam.version>0.3.1</jam.version>
     <toknroll.version>0.3.1</toknroll.version>
+    <jinfer.version>0.3.1</jinfer.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
          (and only) gate, so one switch decides what reaches Maven Central. -->
@@ -204,6 +205,11 @@
         <groupId>com.qxotic</groupId>
         <artifactId>gguf</artifactId>
         <version>${gguf.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-hub</artifactId>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

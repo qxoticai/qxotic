@@ -75,7 +75,7 @@ class TransportTest {
 
     static List<Transport> transports() {
         return CurlTransport.available()
-                ? List.of(new JdkTransport(), Transport.curl())
+                ? List.of(new JdkTransport(), new CurlTransport())
                 : List.of(new JdkTransport());
     }
 
@@ -140,7 +140,7 @@ class TransportTest {
                 assertThrows(
                         IOException.class,
                         () ->
-                                Transport.curl()
+                                new CurlTransport()
                                         .get(URI.create("http://127.0.0.1:9/x"), Map.of(), T));
         assertEquals(
                 true,
@@ -245,7 +245,7 @@ class TransportTest {
         assumeTrue(CurlTransport.available());
         assertThrows(
                 IOException.class,
-                () -> Transport.curl().get(URI.create("-o/etc/passwd"), Map.of(), T));
+                () -> new CurlTransport().get(URI.create("-o/etc/passwd"), Map.of(), T));
     }
 
     @Test

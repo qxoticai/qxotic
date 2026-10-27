@@ -30,8 +30,8 @@ class HuggingFaceTokenizerLoadExceptionTest {
                                             "missing-user", "missing-repo", "main", true, false));
             assertTrue(error.getMessage().contains("[huggingface]"));
             assertTrue(error.getCause() instanceof IOException);
-            assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
-            assertTrue(error.getCause().getMessage().contains("[huggingface]"));
+            assertTrue(error.getCause().getMessage().contains("offline"));
+            assertTrue(error.getCause().getMessage().contains("huggingface.co"));
         } finally {
             restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }
@@ -50,8 +50,8 @@ class HuggingFaceTokenizerLoadExceptionTest {
                                             "missing-user", "missing-repo", null, true, false));
             assertTrue(error.getMessage().contains("[modelscope]"));
             assertTrue(error.getCause() instanceof IOException);
-            assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
-            assertTrue(error.getCause().getMessage().contains("[modelscope]"));
+            assertTrue(error.getCause().getMessage().contains("offline"));
+            assertTrue(error.getCause().getMessage().contains("modelscope.cn"));
         } finally {
             restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }

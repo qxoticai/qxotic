@@ -9,9 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.ServiceLoader;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -25,18 +23,17 @@ import java.util.concurrent.TimeUnit;
  * no TLS stack of its own; the system's does the work.
  */
 public interface Transport {
-
     /** A response: the body is read by the caller and closed with the response. */
     interface Response extends Closeable {
         int status();
 
-        /** The first value of a header, by case-insensitive name; null when absent. */
-        String header(String name);
-
         /** Every value of a header, by case-insensitive name, in order; empty when absent. */
-        default List<String> headers(String name) {
-            String value = header(name);
-            return value == null ? List.of() : List.of(value);
+        List<String> headers(String name);
+
+        /** The first value of a header, by case-insensitive name; null when absent. */
+        default String header(String name) {
+            List<String> values = headers(name);
+            return values.isEmpty() ? null : values.get(0);
         }
 
         InputStream body();
@@ -46,15 +43,15 @@ public interface Transport {
      * One GET; a 3xx comes back as a 3xx. {@code timeout} bounds the wait for the status and
      * headers; the body is the caller's to bound, see {@link #deadline}.
      */
-    Response get(URI url, Map<String, String> headers, Duration timeout) throws IOException;
+    Response get(URI uri, Map<String, String> headers, Duration timeout) throws IOException;
 
     /**
      * A GET that follows up to five redirects. The Authorization header does not follow a redirect
      * to another host: the CDN URL is signed, and some CDNs refuse a credential alongside it.
      */
-    default Response follow(URI url, Map<String, String> headers, Duration timeout)
+    default Response follow(URI uri, Map<String, String> headers, Duration timeout)
             throws IOException {
-        URI current = url;
+        URI current = uri;
         Map<String, String> currentHeaders = headers;
         for (int redirect = 0; ; redirect++) {
             Response response = get(current, currentHeaders, timeout);
@@ -65,9 +62,14 @@ public interface Transport {
             String location = response.header("location");
             response.close();
             if (location == null || redirect == 5) {
-                throw new IOException("redirect loop or missing Location for " + url);
+                throw new IOException("redirect loop or missing Location for " + uri);
             }
-            URI next = current.resolve(location);
+            URI next;
+            try {
+                next = current.resolve(location);
+            } catch (IllegalArgumentException e) {
+                throw new IOException("bad Location '" + location + "' from " + current, e);
+            }
             if (!Objects.equals(current.getHost(), next.getHost())) {
                 Map<String, String> stripped = new LinkedHashMap<>();
                 currentHeaders.forEach(
@@ -86,7 +88,7 @@ public interface Transport {
      */
     static Response deadline(Response response, Duration timeout) {
         ScheduledFuture<?> close =
-                System.DEADLINES.schedule(
+                Transports.DEADLINES.schedule(
                         () -> {
                             // on a thread of its own: a close that waits for the transfer to
                             // unwind must not hold up the other deadlines
@@ -112,8 +114,8 @@ public interface Transport {
             }
 
             @Override
-            public String header(String name) {
-                return response.header(name);
+            public List<String> headers(String name) {
+                return response.headers(name);
             }
 
             @Override
@@ -131,47 +133,16 @@ public interface Transport {
 
     /** The JDK client when its provider is on the class path, otherwise curl on the PATH. */
     static Transport system() {
-        return System.INSTANCE;
+        return Transports.SYSTEM;
     }
 
-    /** curl as a process: the system's HTTP, TLS, certificates and proxy settings. */
-    static Transport curl() {
-        return new CurlTransport();
-    }
-
-    /** Lazily: the choice is made at first use, not at class load. */
-    final class System {
-        static final Transport INSTANCE = choose();
-        static final ScheduledThreadPoolExecutor DEADLINES = deadlines();
-
-        private static ScheduledThreadPoolExecutor deadlines() {
-            ScheduledThreadPoolExecutor executor =
-                    new ScheduledThreadPoolExecutor(
-                            1,
-                            task -> {
-                                Thread thread = new Thread(task, "fetch-deadline");
-                                thread.setDaemon(true);
-                                return thread;
-                            });
-            executor.setRemoveOnCancelPolicy(true);
-            return executor;
-        }
-
-        private static Transport choose() {
-            for (Transport provided : ServiceLoader.load(Transport.class)) {
-                return provided;
-            }
-            if (CurlTransport.available()) {
-                return new CurlTransport();
-            }
-            return (url, headers, timeout) -> {
-                throw new IOException(
-                        "no HTTP transport: this build leaves out the JDK client and curl is not on"
-                                + " the PATH; install curl to fetch "
-                                + url);
-            };
-        }
-
-        private System() {}
+    /**
+     * Offline: every request fails, as a {@link java.nio.file.NoSuchFileException} naming the URL,
+     * before anything is connected. A cache that holds this transport cannot fetch, and a miss
+     * reads as the missing file it is. The mode is decided once, where a program reads its knob,
+     * and handed down; nothing below has a flag to check or forget.
+     */
+    static Transport offline() {
+        return Transports.OFFLINE;
     }
 }

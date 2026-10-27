@@ -38,12 +38,6 @@ class RateLimitTest {
             }
 
             @Override
-            public String header(String name) {
-                List<String> values = headers(name);
-                return values.isEmpty() ? null : values.get(0);
-            }
-
-            @Override
             public List<String> headers(String name) {
                 return map.entrySet().stream()
                         .filter(e -> e.getKey().equalsIgnoreCase(name))

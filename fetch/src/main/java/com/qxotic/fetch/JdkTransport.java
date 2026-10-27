@@ -26,25 +26,26 @@ public final class JdkTransport implements Transport {
                     .build();
 
     @Override
-    public Response get(URI url, Map<String, String> headers, Duration timeout) throws IOException {
-        HttpRequest.Builder request = HttpRequest.newBuilder(url).timeout(timeout).GET();
-        headers.forEach(request::header);
+    public Response get(URI uri, Map<String, String> headers, Duration timeout) throws IOException {
+        Transports.requireHttp(uri);
+        Transports.requireClean(headers);
+        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(timeout).GET();
+        try {
+            headers.forEach(request::header);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("not a header: " + e.getMessage(), e); // one the client reserves
+        }
         HttpResponse<InputStream> response;
         try {
             response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("interrupted while fetching " + url, e);
+            throw new IOException("interrupted while fetching " + uri, e);
         }
         return new Response() {
             @Override
             public int status() {
                 return response.statusCode();
-            }
-
-            @Override
-            public String header(String name) {
-                return response.headers().firstValue(name).orElse(null);
             }
 
             @Override

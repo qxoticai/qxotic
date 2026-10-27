@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.fetch.Transport;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.testkit.TestSystemProperties;
@@ -37,11 +38,10 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
 
         Tokenizer tokenizer =
                 HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
-                        RepositoryArtifactCache.create(tempDir),
+                        RepositoryArtifactCache.create(tempDir, Transport.offline()),
                         "alice",
                         "demo",
                         "main",
-                        true,
                         false);
 
         assertArrayEquals(new int[] {256, 32, 257}, tokenizer.encode("ab cd").toArray());
@@ -74,11 +74,10 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
 
         Tokenizer tokenizer =
                 HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
-                        RepositoryArtifactCache.create(tempDir),
+                        RepositoryArtifactCache.create(tempDir, Transport.offline()),
                         "bob",
                         "demo",
                         "main",
-                        true,
                         false);
 
         assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
@@ -112,11 +111,11 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                         IllegalArgumentException.class,
                         () ->
                                 HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
-                                        RepositoryArtifactCache.create(tempDir),
+                                        RepositoryArtifactCache.create(
+                                                tempDir, Transport.offline()),
                                         "nopat",
                                         "demo",
                                         "main",
-                                        true,
                                         false));
         assertTrue(error.getMessage().contains("requires pat_str"));
     }
@@ -133,8 +132,7 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                                     HuggingFaceTokenizerLoader.fromHuggingFace(
                                             "cacheonly", "demo", "main", true, false));
             assertTrue(error.getCause() instanceof IOException);
-            assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
-            assertTrue(error.getCause().getMessage().contains("artifact not cached"));
+            assertTrue(error.getCause().getMessage().contains("offline"));
         } finally {
             restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }

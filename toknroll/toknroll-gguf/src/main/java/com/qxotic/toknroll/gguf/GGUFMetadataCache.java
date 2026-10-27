@@ -27,43 +27,53 @@ final class GGUFMetadataCache {
     private static final String MODELSCOPE_TOKEN_PROPERTY = "toknroll.modelscope.token";
     private static final String MODELSCOPE_TOKEN_ENV = "MODELSCOPE_TOKEN";
 
+    /**
+     * The one Range request a header is read with, stopped where the header ends, so the ceiling
+     * costs nothing: 32 MB holds every header on record (Gemma 4's 262k vocabulary is 16 MB).
+     */
     private static final int MAX_RANGE_BYTES =
-            Integer.getInteger("toknroll.gguf.maxMetadataBytes", 1024 << 20);
+            Integer.getInteger("toknroll.gguf.maxMetadataBytes", 32 << 20);
 
     private static final Duration DEFAULT_DOWNLOAD_TIMEOUT =
             Duration.ofSeconds(Long.getLong("toknroll.downloadTimeoutSeconds", 300));
 
     private final Path cacheRoot;
+    private final Transport transport;
     private final Duration downloadTimeout;
 
-    private GGUFMetadataCache(Path cacheRoot) {
-        this(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT);
+    private GGUFMetadataCache(Path cacheRoot, Transport transport) {
+        this(cacheRoot, DEFAULT_DOWNLOAD_TIMEOUT, transport);
     }
 
-    private GGUFMetadataCache(Path cacheRoot, Duration downloadTimeout) {
+    private GGUFMetadataCache(Path cacheRoot, Duration downloadTimeout, Transport transport) {
         this.cacheRoot = cacheRoot;
         this.downloadTimeout = downloadTimeout;
+        this.transport = transport;
     }
 
-    static GGUFMetadataCache create() {
-        return new GGUFMetadataCache(resolveCacheRoot());
+    /**
+     * The cache under the configured root, fetching through {@code transport}: the system's, or
+     * offline.
+     */
+    static GGUFMetadataCache create(Transport transport) {
+        return new GGUFMetadataCache(resolveCacheRoot(), transport);
     }
 
     static GGUFMetadataCache create(Path cacheRoot) {
-        return new GGUFMetadataCache(cacheRoot.toAbsolutePath().normalize());
+        return create(cacheRoot, Transport.system());
+    }
+
+    static GGUFMetadataCache create(Path cacheRoot, Transport transport) {
+        return new GGUFMetadataCache(cacheRoot.toAbsolutePath().normalize(), transport);
     }
 
     static GGUFMetadataCache create(Path cacheRoot, Duration downloadTimeout) {
-        return new GGUFMetadataCache(cacheRoot.toAbsolutePath().normalize(), downloadTimeout);
+        return new GGUFMetadataCache(
+                cacheRoot.toAbsolutePath().normalize(), downloadTimeout, Transport.system());
     }
 
     Path fetchHuggingFace(
-            String user,
-            String repository,
-            String revision,
-            String ggufPath,
-            boolean useCacheOnly,
-            boolean forceRefresh)
+            String user, String repository, String revision, String ggufPath, boolean forceRefresh)
             throws IOException {
         String resolvedRevision = normalizeHuggingFaceRevision(revision);
         String normalizedFile = normalizeFilePath(ggufPath);
@@ -85,16 +95,11 @@ final class GGUFMetadataCache {
                         .resolve(resolvedRevision);
         Path target = metadataFilePath(base, normalizedFile);
         String token = resolveToken(HF_TOKEN_PROPERTY, HF_TOKEN_ENV);
-        return fetchPartialMetadata("huggingface", url, target, token, useCacheOnly, forceRefresh);
+        return fetchPartialMetadata("huggingface", url, target, token, forceRefresh);
     }
 
     Path fetchModelScope(
-            String user,
-            String repository,
-            String revision,
-            String ggufPath,
-            boolean useCacheOnly,
-            boolean forceRefresh)
+            String user, String repository, String revision, String ggufPath, boolean forceRefresh)
             throws IOException {
         String resolvedRevision = normalizeModelScopeRevision(revision);
         String normalizedFile = normalizeFilePath(ggufPath);
@@ -116,35 +121,30 @@ final class GGUFMetadataCache {
                         .resolve(resolvedRevision);
         Path target = metadataFilePath(base, normalizedFile);
         String token = resolveToken(MODELSCOPE_TOKEN_PROPERTY, MODELSCOPE_TOKEN_ENV);
-        return fetchPartialMetadata("modelscope", url, target, token, useCacheOnly, forceRefresh);
+        return fetchPartialMetadata("modelscope", url, target, token, forceRefresh);
     }
 
     Path fetchPartialMetadata(
-            String source,
-            String url,
-            Path target,
-            String bearerToken,
-            boolean useCacheOnly,
-            boolean forceRefresh)
+            String source, String url, Path target, String bearerToken, boolean forceRefresh)
             throws IOException {
         Path normalizedTarget = target.toAbsolutePath().normalize();
         if (!forceRefresh && Files.exists(normalizedTarget)) {
             return normalizedTarget;
-        }
-        if (useCacheOnly) {
-            throw new IOException(
-                    "[" + source + "] useCacheOnly=true and artifact not cached: " + url);
         }
 
         Files.createDirectories(normalizedTarget.getParent());
 
         Map<String, String> headers =
                 bearerToken != null && !bearerToken.isBlank()
-                        ? Map.of("Authorization", "Bearer " + bearerToken)
-                        : Map.of();
+                        ? Map.of(
+                                "Authorization",
+                                "Bearer " + bearerToken,
+                                "Range",
+                                "bytes=0-" + (MAX_RANGE_BYTES - 1))
+                        : Map.of("Range", "bytes=0-" + (MAX_RANGE_BYTES - 1));
         Transport.Response response =
                 Transport.deadline(
-                        Transport.system().follow(URI.create(url), headers, downloadTimeout),
+                        transport.follow(URI.create(url), headers, downloadTimeout),
                         downloadTimeout);
 
         try (response) {

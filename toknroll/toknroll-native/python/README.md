@@ -31,7 +31,9 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 |---|---|
 | a `tokenizer.json`, or the directory holding one | `toknroll.load("./my-model/")` |
 | a GGUF file | `toknroll.load("model-Q8_0.gguf")`, the tokenizer read from its header |
-| a hub repository | `toknroll.load("Qwen/Qwen3-0.6B")`, `hf:` by default, `ms:` for ModelScope |
+| a hub repository | `toknroll.load("Qwen/Qwen3-0.6B")`: its `tokenizer.json`; `modelscope.cn/Qwen/Qwen3-0.6B` for ModelScope, `@rev` pins a revision |
+| a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")` or `.../LFM2.5-350M-Q8_0.gguf`: the header only, never the weights |
+| a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file a path names |
 | a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")`, the header fetched, never the weights |
 
 A `Tokenizer` never changes, so it may be shared between threads; `encode` releases the GIL.
@@ -41,7 +43,7 @@ Remote metadata is fetched with `curl`, which must be on the PATH for hub source
 ## Install
 
 ```sh
-pip install toknroll            # the wheel carries the library: Linux x86_64 (glibc 2.34 or later), macOS 14 or later on Apple silicon
+pip install toknroll            # the wheel carries the library: Linux x86_64 (glibc 2.17 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64
 ```
 
 From a source checkout, `make python` in `toknroll/toknroll-native` stages the freshly built library into the package, then `pip install python/`.

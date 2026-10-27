@@ -44,9 +44,8 @@ final class CurlTransport implements Transport {
 
     @Override
     public Response get(URI url, Map<String, String> headers, Duration timeout) throws IOException {
-        String scheme = url.getScheme() == null ? "" : url.getScheme().toLowerCase(Locale.ROOT);
-        if (!scheme.equals("http") && !scheme.equals("https"))
-            throw new IOException("not an http(s) URL: " + url);
+        Transports.requireHttp(url); // http(s) only: the URL can never read as an option
+        Transports.requireClean(headers); // the config block takes a line break as a second line
         long stall = Math.max(1, (timeout.toMillis() + 999) / 1000);
         List<String> command =
                 new ArrayList<>(
@@ -152,12 +151,6 @@ final class CurlTransport implements Transport {
             @Override
             public int status() {
                 return finalStatus;
-            }
-
-            @Override
-            public String header(String name) {
-                List<String> values = headers(name);
-                return values.isEmpty() ? null : values.get(0);
             }
 
             @Override
