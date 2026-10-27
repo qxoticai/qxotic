@@ -147,6 +147,35 @@ release-deploy: ## Stage for Central what it does not hold yet: PROJECT=. for ev
 jam-natives: ## Build, stage and stamp every shipped libjam (linux/windows x86-64 here, darwin-aarch64 on JAM_MAC=user@mac over ssh)
 	jam/jam-native/scripts/natives.sh build
 
+##@ Wheels
+
+include hosts.mk
+LEGS ?= linux-x86_64 linux-aarch64 macos-arm64 windows-x86_64
+REF ?= HEAD
+
+wheels: $(addprefix wheel-,$(LEGS)) ## Both wheels on every leg hosts.mk names, over ssh (REF=<tag> picks the commit) -> target/wheels/
+	@ls -la target/wheels/*.whl | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
+
+wheel-%: ## One leg: wheel-linux-x86_64, wheel-linux-aarch64, wheel-macos-arm64 or wheel-windows-x86_64
+	HOST='$(HOST.$*)' SETUP='$(SETUP.$*)' ./wheels.sh $* $(REF)
+
+wheels-native: ## Both wheels built and checked on THIS machine (what a leg runs; on Linux, inside the container)
+	$(MAKE) -C toknroll/toknroll-native libtoknroll check-wheel
+	$(MAKE) -C jinfer/jinfer-native libjinfer check-wheel
+
+wheels-linux: ## wheels-native inside the manylinux container (docker): the glibc floor the wheels promise, whatever this host runs
+	docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m) -t qxotic-manylinux . >/dev/null
+	docker run --rm -u "$$(id -u):$$(id -g)" -v /etc/passwd:/etc/passwd:ro -e HOME -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$$PWD:/src" -w /src qxotic-manylinux make wheels-native
+
+# The native Makefiles' release-tools venv (build, wheel, twine), shared by path.
+TOOLS := target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')
+$(TOOLS)/bin/twine:
+	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
+
+publish-wheels: $(TOOLS)/bin/twine ## twine check, then upload target/wheels/*.whl (TWINE_REPOSITORY=testpypi rehearses; credentials from ~/.pypirc)
+	$(TOOLS)/bin/twine check --strict target/wheels/*.whl
+	$(TOOLS)/bin/twine upload target/wheels/*.whl
+
 ##@ Miscellaneous
 
 examples: ## Build the demo apps (already in the default reactor; this target just limits the build to them)
@@ -155,10 +184,10 @@ examples: ## Build the demo apps (already in the default reactor; this target ju
 help: ## Show this help
 	@awk 'BEGIN { FS = " *## *" } \
 		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next } \
-		NF >= 2 && $$1 ~ /^[a-zA-Z_-]+:/ { t = $$1; sub(/:.*/, "", t); \
+		NF >= 2 && $$1 ~ /^[a-zA-Z_%-]+:/ { t = $$1; sub(/:.*/, "", t); \
 			printf "  \033[36m%-18s\033[0m %s\n", t, $$2 }' $(MAKEFILE_LIST)
 	@echo
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy
+	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-native wheels-linux publish-wheels

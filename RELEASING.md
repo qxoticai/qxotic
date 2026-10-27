@@ -39,6 +39,18 @@ npm run typecheck
 npm run build
 ```
 
+## Python wheels
+
+The two wheels, `toknroll` and `jinfer`, are built per platform on the machines `hosts.mk` names, over ssh, from a tarball of the release commit.
+
+```sh
+make wheels REF=<tag>        # every leg with a host; make wheel-<leg> for one
+make publish-wheels          # twine check, then upload target/wheels/*.whl
+```
+
+Each leg runs its library's `check-wheel`: the wheel installed into a fresh venv and its suite run from outside the tree.
+Record the legs built, their test totals and skips, and the wheel file names with the release evidence.
+
 ## Consumer artifacts and native libraries
 
 ```sh
