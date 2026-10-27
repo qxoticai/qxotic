@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.models.lfm3;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -64,20 +63,29 @@ final class Lfm3SpokenChatTest {
         Arenas.close(weights);
     }
 
+    /**
+     * Read aloud, streamed in parts, and whole: the parts are the waveform, and the words survive.
+     * Each call draws its own speech, so the recognizer may write the numbers as digits.
+     */
     @Test
     void textToSpeechReadsTheText() throws IOException {
-        Streamed out = new Streamed();
-        ChatEngine.Completion spoken =
-                engine.speak("Hello world, one two three.", "en", "male", SEEDED, out);
-        Content.Speech speech = speech(spoken);
-        System.out.printf(
-                "tts: %d frames, %.2f s%n", speech.turn().frames().size(), seconds(speech.audio()));
-        assertTrue(speech.turn().frames().size() > 10, "frames");
-        assertArrayEquals(speech.audio().pcm(), out.audio().pcm(), "streamed = the reply's audio");
-        String heard = hear(speech.audio());
+        List<Media.Audio> parts = new ArrayList<>();
+        engine.speak("Hello world, one two three.", "en", "male", parts::add);
+        Media.Audio audio = Media.Audio.concat(parts);
+        System.out.printf("tts: %d parts, %.2f s%n", parts.size(), seconds(audio));
+        assertTrue(seconds(audio) > 1, "speech");
+        String heard = hear(audio).replace(",", "").replace(".", "");
         System.out.println("heard: " + heard);
-        for (String word : List.of("hello", "world", "one", "two", "three"))
-            assertTrue(heard.contains(word), "'" + word + "' in '" + heard + "'");
+        assertTrue(heard.contains("hello world"), heard);
+        assertTrue(
+                heard.contains("one two three") || heard.contains("123") || heard.contains("1 2 3"),
+                heard);
+
+        // a sink that stops after a part ends the speech there
+        List<Media.Audio> first = new ArrayList<>();
+        engine.speak("Hello world, one two three.", "en", "male", part -> !first.add(part));
+        assertEquals(1, first.size(), "stopped after one part");
+        assertTrue(seconds(engine.speak("Good morning.", null, null)) > 0.3, "the whole waveform");
     }
 
     @Test
@@ -139,9 +147,7 @@ final class Lfm3SpokenChatTest {
                                         .thinking(true)
                                         .speech(Speech.only())
                                         .build()));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> engine.speak("Hi.", "en", "robot", SEEDED, ChatEngine.ReplySink.NONE));
+        assertThrows(IllegalArgumentException.class, () -> engine.speak("Hi.", "en", "robot"));
     }
 
     private static ChatEngine.Request chat(List<Message> messages) {

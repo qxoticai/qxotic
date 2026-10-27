@@ -68,11 +68,7 @@ final class Generation {
 
     /** Text to speech: {@code input} read aloud, as a WAV file or raw 16-bit PCM. */
     byte[] speech(String input, String language, String voice, boolean wav) {
-        Media.Audio audio =
-                engine.speak(input, language, voice, defaults, ChatEngine.ReplySink.NONE)
-                        .reply()
-                        .speech()
-                        .orElseThrow();
+        Media.Audio audio = engine.speak(input, language, voice);
         return wav ? AudioCodec.wav(audio) : AudioCodec.pcm16(audio);
     }
 

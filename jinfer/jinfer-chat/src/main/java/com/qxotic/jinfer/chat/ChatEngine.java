@@ -50,6 +50,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 import java.util.random.RandomGenerator;
 
 /**
@@ -745,8 +746,7 @@ public final class ChatEngine implements AutoCloseable {
             int promptTokens,
             List<String> stops,
             Arena memory,
-            Speech speech,
-            long speechSeed)
+            Speech speech)
             implements AutoCloseable {
 
         /** As the canonical constructor, for a text reply. */
@@ -758,7 +758,7 @@ public final class ChatEngine implements AutoCloseable {
                 int promptTokens,
                 List<String> stops,
                 Arena memory) {
-            this(encoded, sampler, maxOutputTokens, timeout, promptTokens, stops, memory, null, 0);
+            this(encoded, sampler, maxOutputTokens, timeout, promptTokens, stops, memory, null);
         }
 
         /**
@@ -946,11 +946,14 @@ public final class ChatEngine implements AutoCloseable {
                 Batch.positions(encoded.prompt()),
                 request.stops(),
                 memory,
-                request.speech(),
                 // the speech codes draw from the request's seed, like its text; none = fresh
-                request.sampling().seed() != null
-                        ? request.sampling().seed()
-                        : new SplittableRandom().nextLong());
+                request.speech() == null
+                        ? null
+                        : request.speech()
+                                .seeded(
+                                        request.sampling().seed() != null
+                                                ? request.sampling().seed()
+                                                : new SplittableRandom().nextLong()));
     }
 
     /** The loaded model's voice; refused when it has none. */
@@ -1350,15 +1353,28 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * Text to speech in the model's own voice: {@code text} read aloud and nothing added - the
-     * family's reading instruction as the system turn, the text as the user's, answered with speech
-     * alone. The speech streams to {@code out}; the reply carries it as its {@link Content.Speech}.
+     * Text to speech in the model's own voice: {@code text} read aloud and nothing added. Returns
+     * the whole waveform; see {@link #speak(String, String, String, Predicate)} to play it as it
+     * comes.
      *
      * @param language one the family lists; null = its default
      * @param voice one the family lists; null = its default
      */
-    public Completion speak(
-            String text, String language, String voice, Sampling sampling, ReplySink out) {
+    public Media.Audio speak(String text, String language, String voice) {
+        List<Media.Audio> parts = new ArrayList<>();
+        speak(text, language, voice, parts::add);
+        return parts.isEmpty()
+                ? new Media.Audio(new float[0], voice().speechRate(), 1)
+                : Media.Audio.concat(parts);
+    }
+
+    /**
+     * As {@link #speak(String, String, String)}, streamed: each part of the speech goes to {@code
+     * sink} as soon as it is decoded (80 ms on LFM3-Omni), and the sink returns false to stop. The
+     * family's reading instruction is the system turn and the text the user's, answered with speech
+     * alone, sampled with the model's own settings.
+     */
+    public void speak(String text, String language, String voice, Predicate<Media.Audio> sink) {
         if (text == null || text.isBlank()) throw new IllegalArgumentException("nothing to say");
         voice();
         String instruction =
@@ -1368,11 +1384,24 @@ public final class ChatEngine implements AutoCloseable {
                                 () ->
                                         new UnsupportedOperationException(
                                                 modelName + " has no text-to-speech instruction"));
-        return complete(
-                Request.builder(List.of(Message.system(instruction), Message.user(text)), sampling)
+        boolean[] stopped = {false};
+        complete(
+                Request.builder(
+                                List.of(Message.system(instruction), Message.user(text)),
+                                loaded.samplingDefaults().resolve())
                         .speech(Speech.only())
                         .build(),
-                out);
+                new ReplySink() {
+                    @Override
+                    public void onSpeech(Media.Audio part) {
+                        if (!stopped[0] && !sink.test(part)) stopped[0] = true;
+                    }
+
+                    @Override
+                    public boolean cancelled() {
+                        return stopped[0];
+                    }
+                });
     }
 
     /** Prepares, completes, and releases one request's copied media rows. */
@@ -1729,7 +1758,7 @@ public final class ChatEngine implements AutoCloseable {
             this.transcript = prepared.speech().transcript();
             this.rate = voice.speechRate();
             this.placeholder = voice.framePlaceholder();
-            this.random = new SplittableRandom(prepared.speechSeed());
+            this.random = new SplittableRandom(prepared.speech().seed());
             this.out = out;
             positions.add(voice.opener(transcript));
         }
