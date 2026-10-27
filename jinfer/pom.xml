@@ -497,6 +497,9 @@
               <buildArg>-O3</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
+              <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
+              <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+              <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
               <!-- Correctness flags (Vector/FFM support, add-modules, native-access,
                    build-time init policy and per-class run-time exemptions) come from each module's
                    jar-resident native-image.properties; this recipe only adds the optimization and

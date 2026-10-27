@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.hub;
 
-import java.net.http.HttpHeaders;
+import com.qxotic.fetch.Transport;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -42,14 +42,14 @@ final class RateLimit {
      * an HTTP date), else the {@code RateLimit} reset of an exhausted policy, else {@code
      * RateLimit-Reset}.
      */
-    static Duration requested(HttpHeaders headers, long nowEpochMillis) {
-        String retryAfter = headers.firstValue("retry-after").orElse(null);
+    static Duration requested(Transport.Response response, long nowEpochMillis) {
+        String retryAfter = response.header("retry-after");
         if (retryAfter != null) {
             Duration d = retryAfter(retryAfter.strip(), nowEpochMillis);
             if (d != null) return d;
         }
         long reset = -1;
-        for (String field : headers.allValues("ratelimit")) {
+        for (String field : response.headers("ratelimit")) {
             for (String item : field.split(",")) {
                 Matcher t = ITEM_T.matcher(item);
                 if (!t.find()) continue;
@@ -61,7 +61,8 @@ final class RateLimit {
             if (reset < 0 && dict.find()) reset = Long.parseLong(dict.group(1));
         }
         if (reset < 0) {
-            reset = headers.firstValue("ratelimit-reset").map(RateLimit::seconds).orElse(-1L);
+            String header = response.header("ratelimit-reset");
+            if (header != null) reset = seconds(header);
         }
         return reset < 0 ? null : Duration.ofSeconds(reset);
     }

@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.hub;
+package com.qxotic.fetch;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -9,6 +9,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 /**
  * {@code HTTP_PROXY} / {@code HTTPS_PROXY} / {@code NO_PROXY}, which Java does not read on its own.
@@ -61,7 +62,7 @@ final class Proxies {
                                     // same as "example.com" (curl, requests, wget agree)
                                     .map(s -> s.startsWith(".") ? s.substring(1) : s)
                                     .filter(s -> !s.isEmpty())
-                                    .toList();
+                                    .collect(Collectors.toUnmodifiableList());
         }
 
         private static Proxy parse(String url) {

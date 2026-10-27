@@ -82,7 +82,7 @@ final class CurlTransport implements Transport {
         InputStream out = new BufferedInputStream(process.getInputStream(), 1 << 16);
 
         int status;
-        Map<String, String> received = new HashMap<>();
+        Map<String, List<String>> received = new HashMap<>();
         do { // a 1xx block, should one come, precedes the real one
             String statusLine = line(out);
             if (statusLine == null) throw failure(process, url);
@@ -99,9 +99,10 @@ final class CurlTransport implements Transport {
                     header = line(out)) {
                 int colon = header.indexOf(':');
                 if (colon > 0)
-                    received.putIfAbsent(
-                            header.substring(0, colon).strip().toLowerCase(Locale.ROOT),
-                            header.substring(colon + 1).strip());
+                    received.computeIfAbsent(
+                                    header.substring(0, colon).strip().toLowerCase(Locale.ROOT),
+                                    name -> new ArrayList<>())
+                            .add(header.substring(colon + 1).strip());
             }
         } while (status / 100 == 1);
 
@@ -155,7 +156,13 @@ final class CurlTransport implements Transport {
 
             @Override
             public String header(String name) {
-                return received.get(name.toLowerCase(Locale.ROOT));
+                List<String> values = headers(name);
+                return values.isEmpty() ? null : values.get(0);
+            }
+
+            @Override
+            public List<String> headers(String name) {
+                return received.getOrDefault(name.toLowerCase(Locale.ROOT), List.of());
             }
 
             @Override
