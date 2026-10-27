@@ -1,11 +1,9 @@
 # The Linux build box for libtoknroll, libjinfer and their wheels: manylinux_2_28 (AlmaLinux 8, glibc 2.28)
 # pins the glibc floor the wheels promise, the same on x86_64 and aarch64, whatever the host runs. GraalVM CE
 # 25.0.4 is the floor the C shims need (make check-native-image), Maven the floor the poms enforce.
-#   docker build -f manylinux.Dockerfile -t qxotic-manylinux .                              # x86_64
-#   docker build -f manylinux.Dockerfile --build-arg ARCH=aarch64 -t qxotic-manylinux .     # on an arm64 host
-#   docker run --rm -u "$(id -u):$(id -g)" -v /etc/passwd:/etc/passwd:ro -e HOME -v "$HOME/.m2:$HOME/.m2" -v "$HOME/.cache:$HOME/.cache" \
-#       -v "$PWD:/src" -w /src qxotic-manylinux make -C jinfer/jinfer-native libjinfer check-wheel dist
-# (passwd read-only: the JVM takes the home directory from the uid, and the model and Maven caches live under it)
+#   make wheels-linux    # builds this image for the host's architecture, then both wheels and their checks inside it
+# (the container runs as the caller with /etc/passwd read-only: the JVM takes the home directory from the uid,
+# and the model and Maven caches live under it)
 ARG ARCH=x86_64
 FROM quay.io/pypa/manylinux_2_28_${ARCH}
 ARG ARCH

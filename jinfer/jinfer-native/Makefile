@@ -1,110 +1,47 @@
 # libjinfer: jinfer as a shared library with the C API in include/jinfer.h. `make help` lists the targets.
-ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
-MAVEN ?= mvn
+NAME  := jinfer
 OPT   := $(if $(QUICK),-Ob,-O3)
-OS    := $(shell uname -s | tr A-Z a-z)
-ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
 # The ISA level the image is built for; the kernels' vector width follows it (VectorWidth, at
 # build time). x86-64-v3 (AVX2, 2013) and armv8.1-a are GraalVM's own defaults, spelled out because
 # the plugin cannot leave the flag out; x86-64-v3 is the floor there, below it the kernels are not usable.
 MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,armv8.1-a))
-PLATFORM := $(OS)-$(ARCH)
-LIBFILE := $(if $(filter darwin,$(OS)),libjinfer.dylib,libjinfer.so)
-LIB   := target/$(LIBFILE)
-# the exported (defined, global) symbol names of a shared library or archive; Mach-O names lose their underscore
-EXPORTS = $(if $(filter darwin,$(OS)),nm -gU $(1) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(1) | awk '{print $$3}')
-VERSION := $(shell grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{print $$2}' | paste -sd. -)
-DIST  := libjinfer-$(VERSION)-$(PLATFORM)
-# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
-# floor is read off the library itself, the glibc version on Linux and the minimum macOS on a Mac, so it
-# cannot drift from what was linked; the rest is Python's own platform name.
-GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
-MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
-WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
-# macOS: what the library and the wheel tag promise, 14.0 being what GraalVM 25's own darwin runtime objects
-# are built for. Reaches the pom's cc through the environment and native-image's linker through -E; empty
-# elsewhere, which compilers ignore. (No trailing comment: Apple's make would hand clang the spaces.)
-MACOSX_DEPLOYMENT_TARGET ?= $(if $(filter darwin,$(OS)),14.0)
-export MACOSX_DEPLOYMENT_TARGET
-.DEFAULT_GOAL := help
+TOKNROLL := ../../toknroll/toknroll-native
+HEADERS := include/jinfer.h $(TOKNROLL)/include/toknroll.h   # the library carries toknroll's C face too
+SYMS := jinfer|toknroll
+WHEEL_DEPS = $(TOKNROLL)/target/wheel/*.whl
+WHEEL_TEST = JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
 
-help:
+help::
 	@echo 'make libjinfer             -O3 -march=$(MARCH) (GraalVM'"'"'s default), what ships -> $(LIB); MARCH=x86-64-v4 for AVX-512'
 	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
-	@echo 'make check                 header vs exports, C example, Python test'
+	@echo 'make check                 headers vs exports, C example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
-	@echo 'make python                stage $(LIB) into python/jinfer/lib/$(PLATFORM)/'
-	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
-	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the Python test from outside the checkout'
-	@echo 'make publish               twine upload to PyPI after check-wheel; TWINE_REPOSITORY=testpypi rehearses'
-	@echo 'make dist                  release bundle: header, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
+include ../../native.mk
 
 libjinfer:
 	@$(MAKE) -s -C $(ROOT) check-native-image
-	cd $(ROOT) && $(MAVEN) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
+	cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
 	  -Djinfer.image.opt=$(OPT) -Djinfer.image.march=$(MARCH)
 
-TOKNROLL_INCLUDE := $(ROOT)/toknroll/toknroll-native/include
+target/chat: examples/c/chat.c $(HEADERS) $(LIB)
+	cc -std=c99 -Wall -Wextra -Iinclude -I$(TOKNROLL)/include -o $@ $< -L target -ljinfer -Wl,-rpath,$(abspath target)
 
-# Every function the two headers declare is exported, and nothing jinfer_* or toknroll_* beyond them is.
-check-exports:
-	@grep -hE '^(JINFER|TOKNROLL)_API' include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h | grep -oE '(jinfer|toknroll)_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@$(call EXPORTS,$(LIB)) | grep -E '^(jinfer|toknroll)_' | sort > target/exported.syms
-	@diff target/header.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms) functions"
-
-target/chat: examples/c/chat.c include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h $(LIB)
-	cc -std=c99 -Wall -Wextra -Iinclude -I$(TOKNROLL_INCLUDE) -o $@ $< -L target -ljinfer -Wl,-rpath,$(abspath target)
-
-check-version: ## the header, the wheel and the pom name the same release (__version__ is the library's own string)
-	@h=$$(grep -oE 'JINFER_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/jinfer.h | awk '{printf "%s%s", (NR>1?".":""), $$2}'); \
-	 w=$$(grep -oE '^version = "[^"]+"' python/pyproject.toml | cut -d'"' -f2); \
-	 m=$$(grep -oE '<version>[^<]+</version>' pom.xml | head -1 | sed 's/<[^>]*>//g'); \
-	 [ "$$h" = "$$w" ] && [ "$$h" = "$$m" ] && echo "version $$h everywhere" || { echo "version drift: header $$h, wheel $$w, pom $$m"; exit 1; }
-
-check: check-version check-exports target/chat
+check: check-version check-pin check-exports target/chat
 	./target/chat
 	python3 python/test_jinfer.py
+
+# The wheel pins the toknroll it embeds exactly: toknroll's Python layer is bound to this library, so a
+# newer toknroll wheel calling a function this libjinfer lacks must be refused by pip, not found at import.
+check-pin:
+	@p=$$(grep -oE 'toknroll==[0-9.]+' python/pyproject.toml | cut -d= -f3); \
+	 t=$$(grep -oE 'TOKNROLL_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' $(TOKNROLL)/include/toknroll.h | awk '{printf "%s%s", (NR>1?".":""), $$2}'); \
+	 [ "$$p" = "$$t" ] && echo "the wheel pins toknroll==$$t, the one inside" || { echo "pin drift: the wheel says toknroll==$$p, libjinfer carries $$t"; exit 1; }
 
 qa:
 	python3 python/qa.py
 
-python: $(LIB)
-	mkdir -p python/jinfer/lib/$(PLATFORM) && cp $(LIB) python/jinfer/lib/$(PLATFORM)/
+check-wheel: toknroll-wheel   # the installed wheel needs toknroll's, built from this tree
+toknroll-wheel:
+	$(MAKE) -s -C $(TOKNROLL) wheel
 
-# The release tools, one venv for both packages: build makes the wheel, wheel tags it with the platform,
-# twine checks and uploads it, auditwheel audits the manylinux claim. One venv per Python, since a venv is
-# bound to the interpreter that made it and a build container's differs from the host's.
-TOOLS := $(ROOT)/target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')
-$(TOOLS)/bin/twine:
-	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
-
-wheel: python $(TOOLS)/bin/twine
-	cp $(ROOT)/LICENSE python/LICENSE
-	rm -rf target/wheel python/build && $(TOOLS)/bin/python -m build --wheel --outdir target/wheel python
-	$(TOOLS)/bin/wheel tags --remove --python-tag py3 --abi-tag none --platform-tag $(WHEEL_PLAT) target/wheel/*.whl   # ctypes over a C library: any Python 3
-
-# The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the
-# toknroll wheel it depends on, tested from outside the checkout.
-check-wheel: wheel
-	$(MAKE) -s -C $(ROOT)/toknroll/toknroll-native wheel
-	$(TOOLS)/bin/twine check --strict target/wheel/*.whl
-	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)   # "unsupported ISA extensions" is the x86-64-v3 floor, known and documented
-	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(ROOT)/toknroll/toknroll-native/target/wheel/*.whl
-	cd target && JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
-	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
-
-# TWINE_REPOSITORY=testpypi rehearses; credentials come from ~/.pypirc or TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-...
-publish: check-wheel
-	$(TOOLS)/bin/twine upload target/wheel/*.whl
-
-# What a GitHub release carries per platform. The wheel rides along so pip users need no second download.
-dist: wheel
-	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/include target/dist/$(DIST)/lib/$(PLATFORM) target/dist/$(DIST)/python
-	cp include/jinfer.h $(TOKNROLL_INCLUDE)/toknroll.h target/dist/$(DIST)/include/
-	cp $(LIB) target/dist/$(DIST)/lib/$(PLATFORM)/
-	cp README.md $(ROOT)/LICENSE target/dist/$(DIST)/
-	cp target/wheel/*.whl target/dist/$(DIST)/python/
-	cd target/dist && rm -f $(DIST).zip && zip -qr $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
-	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
-
-.PHONY: help libjinfer check check-version check-exports qa python wheel check-wheel publish dist
+.PHONY: libjinfer check check-pin qa toknroll-wheel

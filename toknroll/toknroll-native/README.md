@@ -27,9 +27,11 @@ make check                  # versions agree, exports vs header, the C example a
 make python                 # stage the shared library into python/toknroll/lib/<platform>/
 make wheel                  # the platform-tagged wheel -> target/wheel/
 make check-wheel            # the wheel as a user gets it: twine and auditwheel, a fresh venv, pip install, the suite from outside the checkout
-make publish                # twine upload to PyPI, after check-wheel; TWINE_REPOSITORY=testpypi rehearses
 make dist                   # release bundle: header, both libraries, README, LICENSE, wheel -> target/dist/
 ```
+
+On Windows, `.\build.ps1` in this directory has the same targets.
+Every platform at once, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (RELEASING.md).
 
 Hub references are fetched through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local files need nothing.
 The shared library is 17 MB and the archive 18 MB at `-O2`, the builder's default; with the JDK's HTTPS stack inside it was 32 MB.

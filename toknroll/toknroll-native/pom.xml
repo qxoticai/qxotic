@@ -30,7 +30,7 @@
     <shim.cflags>-std=c11 -O2 -fPIC -Wall</shim.cflags>
     <shim.out>-o</shim.out>
     <shim.obj>.o</shim.obj>
-    <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/toknroll-cc.sh</shim.wrapper>
+    <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/native-cc.sh</shim.wrapper>
     <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
     <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
     <maven.deploy.skip>true</maven.deploy.skip>
@@ -119,7 +119,8 @@
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate${shim.obj}</buildArg>
                 <!-- the shim's toknroll_* symbols are the API; the wrapper adds them to GraalVM's export list -->
                 <buildArg>${shim.wrapper}</buildArg>
-                <buildArg>-ETOKNROLL_CC_LOG</buildArg>
+                <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
+                <buildArg>-ENATIVE_CC_LOG</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
