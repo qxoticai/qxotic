@@ -10,7 +10,7 @@ import java.util.Objects;
  * back what it said (the transcript alone would put text where it was trained on speech) and the
  * prompt cache recognizes the turn it already holds.
  *
- * @param positions the reply's positions, its opening token first
+ * @param positions the reply's positions, in order
  * @param placeholder the id standing for a frame in {@code positions}
  * @param frames one code array per placeholder, in order
  */

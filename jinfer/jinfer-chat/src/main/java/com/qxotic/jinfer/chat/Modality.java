@@ -1,11 +1,12 @@
 package com.qxotic.jinfer.chat;
 
 /**
- * What a reply is made of, named on {@link ChatEngine.Request#output}. A request names its output
- * and the reply holds exactly that - a text reply never switches into speech on its own. Text
+ * What a reply may be made of, allowed on {@link ChatEngine.Request#output}. The reply holds only
+ * allowed outputs, and where several are allowed the model chooses: text and audio allowed, a reply
+ * in text alone is a fine answer. A model never produces what it lacks, and refuses a request when
+ * it can produce none of the allowed outputs - audio alone from a model that cannot speak. Text
  * arrives as {@link ChatEngine.Delta}s and {@link Content.Text}; generated media as {@link
- * ChatEngine.ReplySink#onMedia} parts, speech also as {@link Content.Speech}. A model refuses an
- * output it cannot produce.
+ * ChatEngine.ReplySink#onMedia} parts, speech also as {@link Content.Speech}.
  */
 public enum Modality {
     /** Words: the transcript, when the reply also speaks. */

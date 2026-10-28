@@ -128,6 +128,33 @@ final class Lfm3SpokenChatTest {
     }
 
     /**
+     * Allowed outputs are a choice the model makes: with text and audio allowed, a prompt that asks
+     * for text gets a reply in text alone, and one that allows an output this model lacks still
+     * answers in what it has.
+     */
+    @Test
+    void allowedOutputsLeaveTheModelItsChoice() {
+        ChatEngine.Completion text =
+                engine.complete(
+                        ChatEngine.Request.builder(
+                                        List.of(Message.system("Respond in text."), france()),
+                                        SEEDED)
+                                .maxOutputTokens(64)
+                                .output(Modality.TEXT, Modality.AUDIO)
+                                .build());
+        System.out.println("text allowed with audio: " + text.reply().text());
+        assertTrue(text.reply().text().contains("Paris"), text.reply().text());
+        assertTrue(text.reply().speech().isEmpty(), "chose text");
+        ChatEngine.Completion drawn =
+                engine.complete(
+                        ChatEngine.Request.builder(List.of(france()), SEEDED)
+                                .maxOutputTokens(64)
+                                .output(Modality.TEXT, Modality.IMAGE)
+                                .build());
+        assertTrue(drawn.reply().text().contains("Paris"), drawn.reply().text());
+    }
+
+    /**
      * A spoken turn replays as the positions the live reply took - frames as their rows, keyed by
      * their codes - so the next turn restores the whole of it from the cache instead of
      * recomputing, and the model reads back what it said.
@@ -182,7 +209,7 @@ final class Lfm3SpokenChatTest {
                 () ->
                         engine.complete(
                                 ChatEngine.Request.builder(List.of(france()), SEEDED)
-                                        .output(Modality.TEXT, Modality.IMAGE)
+                                        .output(Modality.IMAGE)
                                         .build()));
         assertThrows(
                 IllegalArgumentException.class,

@@ -268,12 +268,15 @@ The same model behind the CLI's `transcribe` command handles audio files, while 
 OpenAI-compatible `POST /v1/audio/transcriptions` (multipart; `response_format` of `json`,
 `text`, or `verbose_json` with word timestamps).
 
-**Spoken replies.** A request names what its reply is made of: text (the default), audio, or both. LFM3-Omni speaks when the output includes `AUDIO`; a text request is answered in text and never switches on its own:
+**Spoken replies.** A request names what its reply may be made of: text (the default), audio, or both.
+Where several are allowed the model chooses, as LiquidAI's reference does: under "Respond with interleaved text and audio." LFM3-Omni speaks, under "Respond in text." it writes.
+Audio alone has it speak at once; a request that does not allow audio is answered in text and never switches on its own.
+A model refuses a request only when it can produce none of the allowed outputs:
 
 ```java
 ChatEngine.Completion reply = engine.complete(
         ChatEngine.Request.builder(messages, sampling)
-                .output(Modality.TEXT, Modality.AUDIO)   // or Modality.AUDIO alone
+                .output(Modality.TEXT, Modality.AUDIO)   // the model chooses; AUDIO alone speaks
                 .build(),
         new ChatEngine.ReplySink() {
             @Override public void on(ChatEngine.Delta delta) { show(delta.text()); }
@@ -282,7 +285,7 @@ ChatEngine.Completion reply = engine.complete(
 ```
 
 Each 80 ms part reaches `onMedia` as it is spoken, and `cancelled()` stops the reply.
-The reply carries the transcript as its text and the speech as a `Content.Speech`, whose record replays the turn exactly when the conversation continues.
+A reply that spoke carries the transcript as its text and the speech as a `Content.Speech`, whose record replays the turn exactly when the conversation continues.
 Text to speech is the same call: the family's reading instruction (LFM3's is "Perform TTS in English using a female voice.") as the system turn, the text as the user's, and `Modality.AUDIO` alone.
 The speech draws from the request's `Sampling` seed, so a seeded reading is reproducible, sample for sample.
 

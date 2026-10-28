@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpeechOutput;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
 import com.qxotic.toknroll.IntSequence;
 import com.sun.net.httpserver.HttpExchange;
@@ -679,25 +680,10 @@ public final class Server {
                                         OpenAiSchema.chatCompletionChunk(
                                                 id, modelId, created, delta, null);
                         Sinks sinks;
-                        if (audioId != null) {
-                            sinks =
-                                    new Sinks(
-                                            deltaSink(
-                                                    sse,
-                                                    t ->
-                                                            chunk.apply(
-                                                                    audio(
-                                                                            audioId,
-                                                                            "transcript",
-                                                                            t))),
-                                            null,
-                                            speech -> {
-                                                String data =
-                                                        Base64.getEncoder()
-                                                                .encodeToString(
-                                                                        AudioCodec.pcm16(speech));
-                                                sse.emit(chunk.apply(audio(audioId, "data", data)));
-                                            });
+                        SpokenStream spoken =
+                                audioId != null ? new SpokenStream(sse, chunk, audioId) : null;
+                        if (spoken != null) {
+                            sinks = new Sinks(spoken::text, null, spoken::speech);
                         } else if (generation.forcedTool(request) != null) {
                             sinks = Sinks.NONE;
                         } else {
@@ -718,6 +704,7 @@ public final class Server {
                                                                             t))));
                         }
                         Reply result = generation.chat(request, messages, sinks, audioId);
+                        if (spoken != null) spoken.finish();
                         if (result.audio() != null)
                             sse.emit(
                                     chunk.apply(
@@ -994,6 +981,49 @@ public final class Server {
     }
 
     /** One field of a spoken stream's {@code delta.audio}, naming the reply's audio id. */
+    /**
+     * A stream whose reply may speak: whether it does is known only when its first speech arrives,
+     * so its words wait until then - the speech's transcript in {@code delta.audio} - and go out as
+     * plain {@code delta.content} if it never speaks. A mixed reply speaks after six words.
+     */
+    private static final class SpokenStream {
+        private final Sse.Stream sse;
+        private final Function<Map<String, Object>, Map<String, Object>> chunk;
+        private final String audioId;
+        private final StringBuilder held = new StringBuilder();
+        private boolean speaking;
+
+        SpokenStream(
+                Sse.Stream sse,
+                Function<Map<String, Object>, Map<String, Object>> chunk,
+                String audioId) {
+            this.sse = sse;
+            this.chunk = chunk;
+            this.audioId = audioId;
+        }
+
+        void text(String text) {
+            if (speaking) sse.emit(chunk.apply(audio(audioId, "transcript", text)));
+            else held.append(text);
+        }
+
+        void speech(Media.Audio speech) {
+            if (!speaking) {
+                speaking = true;
+                if (!held.isEmpty())
+                    sse.emit(chunk.apply(audio(audioId, "transcript", held.toString())));
+            }
+            String data = Base64.getEncoder().encodeToString(AudioCodec.pcm16(speech));
+            sse.emit(chunk.apply(audio(audioId, "data", data)));
+        }
+
+        /** The reply ended: words that were never spoken are its content. */
+        void finish() {
+            if (!speaking && !held.isEmpty())
+                sse.emit(chunk.apply(JsonCodec.object("content", held.toString())));
+        }
+    }
+
     private static Map<String, Object> audio(String audioId, String field, Object value) {
         return JsonCodec.object("audio", JsonCodec.object("id", audioId, field, value));
     }

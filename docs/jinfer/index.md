@@ -60,8 +60,9 @@ With its projector attached (`--with media=<mmproj>`), EmbeddingGemma 2 also tak
 A reranker (Qwen3-Reranker, LFM2.5-ColBERT) serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape: `query`, `documents`, `top_n`, `return_documents`.
 Qwen3-Reranker's `relevance_score` is a probability; LFM2.5-ColBERT's is an unbounded MaxSim sum (about 28 to 30 out of 32), so rank by it and never threshold it.
 A speech-to-text model serves `POST /v1/audio/transcriptions`.
-A model that speaks (LFM3-Omni with its projector) also answers chat in speech, in OpenAI's shape: `modalities: ["text", "audio"]` with `audio.format` `wav` or `pcm16`, the reply's `message.audio` carrying the speech and its transcript.
-A stream carries `pcm16` chunks and the transcript in `delta.audio`.
+A model that speaks (LFM3-Omni with its projector) may also answer chat in speech, in OpenAI's shape: `modalities: ["text", "audio"]` with `audio.format` `wav` or `pcm16`, the reply's `message.audio` carrying the speech and its transcript.
+The modalities are allowed, not required: the system prompt steers the choice, and a reply in text alone comes back as plain `content`.
+A stream carries `pcm16` chunks and the transcript in `delta.audio`; its words go out once the first speech does, or as `delta.content` if the reply never speaks.
 A later turn refers back to a spoken reply by its `audio.id`, and it replays exactly as the model spoke it, for an hour.
 `audio.voice` does not steer a chat reply: the model speaks in its own voice.
 The same model serves `POST /v1/audio/speech`, with `voice` `female` or `male`, a `language`, `response_format` `wav` or `pcm`, and an optional integer `seed` that makes the reading reproducible.
