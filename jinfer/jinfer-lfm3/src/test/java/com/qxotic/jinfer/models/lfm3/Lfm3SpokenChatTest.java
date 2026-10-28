@@ -178,6 +178,13 @@ final class Lfm3SpokenChatTest {
                 IllegalArgumentException.class,
                 () -> ChatEngine.Request.builder(List.of(france()), SEEDED).output().build());
         assertThrows(
+                UnsupportedOperationException.class,
+                () ->
+                        engine.complete(
+                                ChatEngine.Request.builder(List.of(france()), SEEDED)
+                                        .output(Modality.TEXT, Modality.IMAGE)
+                                        .build()));
+        assertThrows(
                 IllegalArgumentException.class,
                 () -> engine.loaded().template().orElseThrow().speechInstruction("en", "robot"));
     }

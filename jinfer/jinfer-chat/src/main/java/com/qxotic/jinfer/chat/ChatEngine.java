@@ -885,6 +885,10 @@ public final class ChatEngine implements AutoCloseable {
     private Prepared prepare(Request request, Arena memory) {
         requireThinkingRenderable(request.thinking());
         Conversation conversation = conversation(request);
+        for (Modality drawn : List.of(Modality.IMAGE, Modality.VIDEO))
+            if (request.output().contains(drawn))
+                throw new UnsupportedOperationException(
+                        modelName + " cannot produce " + drawn.name().toLowerCase(Locale.ROOT));
         SpeechOutput<?> voice = request.output().contains(Modality.AUDIO) ? voice() : null;
         if (voice != null && conversation.thinking())
             throw new UnsupportedOperationException(
