@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.vector;
 
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteOrder;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorMask;
@@ -68,12 +70,21 @@ final class Utf8 {
         return n;
     }
 
+    /**
+     * {@code chunk[i, i + lanes)} as a vector, through a segment over the array: GraalVM 25.0.4's
+     * native image reads {@code ShortVector.fromCharArray} four chars past {@code i}.
+     */
+    private static ShortVector load(char[] chunk, int i) {
+        return ShortVector.fromMemorySegment(
+                CHARS, MemorySegment.ofArray(chunk), 2L * i, ByteOrder.nativeOrder());
+    }
+
     private static int utf8Length(char[] chunk, int n) {
         int length = 0;
         int i = 0;
         int lanes = CHARS.length();
         while (i + lanes <= n) {
-            ShortVector v = ShortVector.fromCharArray(CHARS, chunk, i);
+            ShortVector v = load(chunk, i);
             VectorMask<Short> wide = v.compare(VectorOperators.UGE, (short) 0x80);
             if (!wide.anyTrue()) {
                 length += lanes;
@@ -104,7 +115,7 @@ final class Utf8 {
         int i = 0;
         int lanes = CHARS.length();
         while (i + lanes <= n) {
-            ShortVector v = ShortVector.fromCharArray(CHARS, chunk, i);
+            ShortVector v = load(chunk, i);
             if (v.compare(VectorOperators.ULT, (short) 0x80).allTrue()) {
                 ((ByteVector) v.convertShape(VectorOperators.S2B, BYTES, 0)).intoArray(out, o);
                 o += lanes;
