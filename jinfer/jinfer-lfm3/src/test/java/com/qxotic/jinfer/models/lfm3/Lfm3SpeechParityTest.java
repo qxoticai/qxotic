@@ -114,6 +114,15 @@ final class Lfm3SpeechParityTest {
                     at = append(pcm, at, stream.decode(codes));
                 }
                 at = append(pcm, at, stream.flush());
+                // a second stretch of speech decodes afresh, sample for sample like the first
+                float[] again = new float[pcm.length];
+                int n = 0;
+                for (int f = 0; f < expectedCodes.length / cbs; f++) {
+                    System.arraycopy(expectedCodes, f * cbs, codes, 0, cbs);
+                    n = append(again, n, stream.decode(codes));
+                }
+                n = append(again, n, stream.flush());
+                assertArrayEquals(Arrays.copyOf(pcm, at), Arrays.copyOf(again, n), "afresh");
             }
             assertEquals(expectedPcm.length, at, "samples");
             double snr = snr(expectedPcm, pcm);

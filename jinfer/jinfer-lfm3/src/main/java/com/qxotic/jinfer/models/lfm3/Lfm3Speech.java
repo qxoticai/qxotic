@@ -601,9 +601,18 @@ final class Lfm3Speech {
             return n == pcm.length ? pcm : Arrays.copyOf(pcm, n);
         }
 
-        /** The ISTFT's held-back tail, less its padding: the end of the audio. */
+        /**
+         * The ISTFT's held-back tail, less its padding: the end of a stretch of speech. The codec
+         * starts the next stretch afresh, as llama.cpp's does; the penalty's history carries on.
+         */
         float[] flush() {
-            return istft.flush();
+            float[] tail = istft.flush();
+            istft.reset();
+            position = 0; // the window reads no further back than its start
+            for (MemoryView<MemorySegment> taps : codecPass.convState)
+                if (taps != null)
+                    Ops.fillInPlace(taps, 0, Math.toIntExact(taps.shape().size()), 0f);
+            return tail;
         }
 
         /** The CTRL penalty on the codes this codebook took in the recent frames. */
@@ -704,8 +713,14 @@ final class Lfm3Speech {
             "lfm3-speech-frame\0".getBytes(StandardCharsets.US_ASCII);
 
     Speaker speaker(
-            Lfm3 model, Lfm3.State state, boolean transcript, RandomGenerator random, int textEnd) {
-        return new Speaker(model, state, transcript, random, textEnd);
+            Lfm3 model,
+            Lfm3.State state,
+            boolean transcript,
+            RandomGenerator random,
+            int textEnd,
+            int audioStart,
+            int mixedStart) {
+        return new Speaker(model, state, transcript, random, textEnd, audioStart, mixedStart);
     }
 
     /**
@@ -713,32 +728,44 @@ final class Lfm3Speech {
      * them. Speech alone speaks to its end frame, then text follows. Interleaved, the reply
      * alternates {@value #TEXT_SLOTS} text tokens and {@value #AUDIO_SLOTS} frames; {@code
      * <|text_end|>} ends the transcript and the speech runs on to its end frame. After it, {@code
-     * <|text_end|>} ends the reply. Frames reveal their codebooks in a fresh random order each, as
-     * the model was trained, sampled with the GGUF's settings.
+     * <|text_end|>} ends the reply, and an opener starts the next stretch of speech. Frames reveal
+     * their codebooks in a fresh random order each, as the model was trained, sampled with the
+     * GGUF's settings.
      */
     final class Speaker implements SpeechOutput.Speaker {
         private static final int TEXT_SLOTS = 6, AUDIO_SLOTS = 12;
         private final Lfm3 model;
         private final Lfm3.State state;
         private final RandomGenerator random;
-        private final int textEnd;
+        private final int textEnd, audioStart, mixedStart;
         private final Stream stream = newStream(defaults);
         private final int[] order = new int[CODEBOOKS], codes = new int[CODEBOOKS];
-        private boolean interleaving, speaking, transcriptDone, flushed;
-        private int slots = TEXT_SLOTS;
+        private boolean interleaving, speaking, transcriptDone, pending;
+        private int slots;
 
         private Speaker(
                 Lfm3 model,
                 Lfm3.State state,
                 boolean transcript,
                 RandomGenerator random,
-                int textEnd) {
+                int textEnd,
+                int audioStart,
+                int mixedStart) {
             this.model = model;
             this.state = state;
             this.random = random;
             this.textEnd = textEnd;
+            this.audioStart = audioStart;
+            this.mixedStart = mixedStart;
+            open(transcript);
+        }
+
+        /** A stretch of speech opens: interleaved with its transcript, or speech alone. */
+        private void open(boolean transcript) {
             interleaving = transcript;
             speaking = !transcript;
+            transcriptDone = false;
+            slots = TEXT_SLOTS;
         }
 
         @Override
@@ -748,8 +775,14 @@ final class Lfm3Speech {
 
         @Override
         public SpeechOutput.Lane text(int token) {
-            if (!interleaving)
+            if (!interleaving) {
+                // between stretches an opener starts the next one, and takes no slot
+                if (token == audioStart || token == mixedStart) {
+                    open(token == mixedStart);
+                    return SpeechOutput.Lane.CONTROL;
+                }
                 return token == textEnd ? SpeechOutput.Lane.END : SpeechOutput.Lane.TEXT;
+            }
             if (token == textEnd) {
                 transcriptDone = true;
                 speaking = true;
@@ -772,9 +805,10 @@ final class Lfm3Speech {
             float[] pcm;
             if (more) {
                 pcm = stream.decode(codes);
+                pending = true;
                 slot();
             } else {
-                pcm = flush(); // the codec's tail closes the speech; text follows
+                pcm = flush(); // the codec's tail closes the stretch; text follows
                 interleaving = false;
                 speaking = false;
             }
@@ -791,8 +825,8 @@ final class Lfm3Speech {
 
         @Override
         public float[] flush() {
-            if (flushed) return new float[0];
-            flushed = true;
+            if (!pending) return new float[0];
+            pending = false;
             return clamp(stream.flush());
         }
 
@@ -874,6 +908,13 @@ final class Lfm3Speech {
                 tail[i] = windowSum[i] > 1e-8f ? overlap[i] / windowSum[i] : overlap[i];
             shift(N_FFT - HOP);
             return Arrays.copyOf(tail, tail.length - PADDING);
+        }
+
+        /** Back to an empty overlap, its leading padding to drop again. */
+        void reset() {
+            Arrays.fill(overlap, 0f);
+            Arrays.fill(windowSum, 0f);
+            padding = PADDING;
         }
 
         private void shift(int n) {

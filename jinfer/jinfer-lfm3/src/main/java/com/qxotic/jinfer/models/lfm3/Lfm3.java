@@ -143,7 +143,13 @@ public final class Lfm3
         if (speech == null)
             throw new UnsupportedOperationException("speech needs LFM3-Omni's mmproj");
         return speech.speaker(
-                this, state, transcript, random, SpecialTokens.require(tokenizer, "<|text_end|>"));
+                this,
+                state,
+                transcript,
+                random,
+                SpecialTokens.require(tokenizer, "<|text_end|>"),
+                opener(false),
+                opener(true));
     }
 
     /** The final-normed hidden state of the last ingested row: the speech head's input. */

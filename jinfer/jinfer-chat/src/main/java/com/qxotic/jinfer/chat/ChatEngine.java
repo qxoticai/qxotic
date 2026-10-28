@@ -1873,8 +1873,7 @@ public final class ChatEngine implements AutoCloseable {
                     model.ingest(state, Batch.step(token));
                     serving.tail(token);
                     spoken.positions.add(token);
-                    // ponytail: one speech block per reply; LiquidAI's reference reopens after the
-                    // end frame, add it when a reply is seen to
+                    // the first opener starts the speaker; later ones are its own lane markers
                     if (speaker == null && lane == SpeechOutput.Lane.CONTROL)
                         speaker = voice.speaker(state, token == spoken.mixedOpener, spoken.random);
                 } finally {

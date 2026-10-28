@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
@@ -17,6 +18,7 @@ import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.llm.SpeechOutput;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.io.IOException;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -182,6 +185,37 @@ final class Lfm3SpokenChatTest {
                 second.promptTokens());
         assertTrue(second.restoredTokens() >= live, "the spoken turn came from the cache");
         assertTrue(second.reply().text().contains("Berlin"), second.reply().text());
+    }
+
+    /**
+     * A reply may speak again after its speech ends, as LiquidAI's reference and llama.cpp allow:
+     * past the end frame an opener starts a fresh stretch, and the lanes run as they did. That its
+     * codec starts afresh is the parity test's: a second stretch decodes like the first.
+     */
+    @Test
+    void aReplySpeaksAgainAfterItsSpeechEnds() {
+        Lfm3 model = (Lfm3) engine.loaded().model();
+        try (Lfm3.State state = model.newState(512, 64)) {
+            model.ingest(state, Batch.prefill(Lfm3SpeechParityTest.ttsPrompt(model, "Hi.")));
+            try (SpeechOutput.Speaker speaker = model.speaker(state, false, new Random(1))) {
+                int frames = 0;
+                while (!speaker.textNext() && frames++ < 200)
+                    model.ingest(state, speaker.frame().row());
+                assertTrue(speaker.textNext(), "the speech ended in " + frames + " frames");
+                int mixed = model.opener(true);
+                assertEquals(SpeechOutput.Lane.CONTROL, speaker.text(mixed), "reopened");
+                model.ingest(state, Batch.step(mixed));
+                int[] words =
+                        engine.loaded().tokenizer().encode("one two three four five six").toArray();
+                for (int i = 0; i < 6; i++) {
+                    assertTrue(speaker.textNext(), "a text slot");
+                    assertEquals(SpeechOutput.Lane.TEXT, speaker.text(words[i % words.length]));
+                    model.ingest(state, Batch.step(words[i % words.length]));
+                }
+                assertTrue(!speaker.textNext(), "then frames");
+                assertEquals(Lfm3Speech.CODEBOOKS, speaker.frame().codes().length, "a frame");
+            }
+        }
     }
 
     @Test
