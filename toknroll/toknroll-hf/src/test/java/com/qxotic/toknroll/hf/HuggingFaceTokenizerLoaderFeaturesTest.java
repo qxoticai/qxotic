@@ -24,6 +24,35 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
     @TempDir Path tempDir;
 
     @Test
+    void byteLevelPreTokenizerAloneSplitsWithTheGpt2Regex() throws Exception {
+        // A merge across a word boundary applies only when nothing splits the text first.
+        String model =
+                buildBpeModel(
+                        buildByteLevelVocab(Map.of("ab", 256, "b\u0120", 257)),
+                        "[\"b \u0120\", \"a b\"]",
+                        "");
+        Path split =
+                writeTokenizerJson(
+                        "split.json",
+                        buildTokenizerJson(
+                                model,
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false}"));
+        Path unsplit =
+                writeTokenizerJson(
+                        "unsplit.json",
+                        buildTokenizerJson(
+                                model,
+                                "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"use_regex\":false}"));
+
+        assertArrayEquals(
+                new int[] {256, 32, 256},
+                HuggingFaceTokenizerLoader.fromLocal(split).encode("ab ab").toArray());
+        assertArrayEquals(
+                new int[] {97, 257, 256},
+                HuggingFaceTokenizerLoader.fromLocal(unsplit).encode("ab ab").toArray());
+    }
+
+    @Test
     void supportsMergesAsStringSpecs() throws IOException {
         Path tokenizerJson =
                 writeTokenizerJson(
@@ -407,6 +436,11 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                         IllegalArgumentException.class,
                         () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
         assertTrue(error.getMessage().contains("vocab is empty"));
+    }
+
+    private Path writeTokenizerJson(String directory, String json) throws IOException {
+        Path file = Files.createDirectories(tempDir.resolve(directory)).resolve("tokenizer.json");
+        return Files.writeString(file, json, StandardCharsets.UTF_8);
     }
 
     private Path writeTokenizerJson(String json) throws IOException {

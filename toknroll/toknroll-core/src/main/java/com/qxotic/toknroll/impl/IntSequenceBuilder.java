@@ -54,7 +54,8 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         if (newCapacity > MAX_ARRAY_SIZE) {
             newCapacity = hugeCapacity(minCapacity);
         }
-        data = Arrays.copyOf(data, newCapacity);
+        // an empty builder has nothing to carry over: a fresh array, not a copy of zeros
+        data = size == 0 ? new int[newCapacity] : Arrays.copyOf(data, newCapacity);
     }
 
     private static int hugeCapacity(int minCapacity) {
@@ -65,12 +66,28 @@ final class IntSequenceBuilder implements IntSequence.Builder {
     }
 
     public IntSequence build() {
+        // The sequence keeps the array when most of it is in use: nothing here ever writes below
+        // the size again, so the sequence stays what it was. A sparse array is copied down.
+        if (size >= (data.length >>> 1)) {
+            return new ArrayIntSequence(data, 0, size);
+        }
         return new ArrayIntSequence(Arrays.copyOf(this.data, size));
     }
 
     @Override
     public int size() {
         return size;
+    }
+
+    /** The backing array, for a writer that has ensured the capacity and will set the size. */
+    int[] data() {
+        return data;
+    }
+
+    /** Takes {@code data} over as the backing array, its first {@code size} ids in use. */
+    void adopt(int[] data, int size) {
+        this.data = data;
+        this.size = size;
     }
 
     @Override
@@ -81,6 +98,14 @@ final class IntSequenceBuilder implements IntSequence.Builder {
     @Override
     public IntSequence asSequenceView() {
         return new BuilderSequenceView(this, 0, 0, true);
+    }
+
+    /** The element at {@code index}, for a caller in this package that must not allocate a view. */
+    int get(int index) {
+        if (index < 0 || index >= size) {
+            throw new IndexOutOfBoundsException("index " + index + " of " + size);
+        }
+        return data[index];
     }
 
     private static final class BuilderSequenceView extends AbstractIntSequence {

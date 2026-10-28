@@ -102,8 +102,51 @@ public final class ImplAccessor {
         return SentencePieceBpeModel.fromVocabulary(vocabulary, scores);
     }
 
+    /**
+     * Encodes {@code text[start, end)} with a tiktoken model behind its hand-written scanner, which
+     * an engine may take over. False when the pair is anything else, and the caller takes the
+     * general path.
+     */
+    public static boolean encodeUtf8(
+            TokenizationModel model,
+            Splitter splitter,
+            CharSequence text,
+            int start,
+            int end,
+            IntSequence.Builder out) {
+        if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
+            return false;
+        }
+        ((TiktokenModel) model).encode(text, start, end, (TiktokenSplitter) splitter, out);
+        return true;
+    }
+
+    /** {@link #encodeUtf8} for text that is UTF-8 already. */
+    public static boolean encodeUtf8Bytes(
+            TokenizationModel model,
+            Splitter splitter,
+            byte[] utf8,
+            int start,
+            int end,
+            IntSequence.Builder out) {
+        if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
+            return false;
+        }
+        ((TiktokenModel) model).encodeUtf8(utf8, start, end, (TiktokenSplitter) splitter, out);
+        return true;
+    }
+
     public static Splitter createRegexSplitter(Pattern pattern) {
-        return RegexSplitter.create(pattern);
+        return createRegexSplitter(pattern, true);
+    }
+
+    /**
+     * Every match is a piece; with {@code emitGaps}, so is the text between two matches. A known
+     * pattern gets its hand-written scanner; such a pattern matches all text, so it has no gaps.
+     */
+    public static Splitter createRegexSplitter(Pattern pattern, boolean emitGaps) {
+        Splitter scanner = TiktokenSplitter.forPattern(pattern);
+        return scanner != null ? scanner : RegexSplitter.create(pattern, emitGaps);
     }
 
     public static Specials specialsNone() {

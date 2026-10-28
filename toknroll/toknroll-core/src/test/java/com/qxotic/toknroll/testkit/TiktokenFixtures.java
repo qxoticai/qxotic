@@ -47,14 +47,11 @@ public final class TiktokenFixtures {
     private static final String R50K_PATTERN =
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
+    // tiktoken's cl100k pattern as it is; an earlier spelling put \s++$ first, which joins
+    // a newline run at the end of the text with the blanks after it.
     private static final String CL100K_PATTERN =
-            "'(?i:[sdmt]|ll|ve|re)|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+| ?[^\\s\\p{L}\\p{N}]++[\\r"
-                    + "\\n"
-                    + "]*+|\\s++$|\\s*[\\r"
-                    + "\\n"
-                    + "]|\\s+(?!\\S)|\\s";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}|"
+                    + " ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     private static final String O200K_PATTERN =
             String.join(
                     "|",
