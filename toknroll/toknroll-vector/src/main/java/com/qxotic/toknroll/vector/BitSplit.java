@@ -4,6 +4,7 @@ import com.qxotic.toknroll.spi.CharClasses;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
 /**
@@ -22,7 +23,11 @@ import jdk.incubator.vector.VectorSpecies;
  * scalar scanner's is: against the regex, over a fuzz corpus and all of enwik8.
  */
 final class BitSplit {
-    private static final VectorSpecies<Byte> BYTES = ByteVector.SPECIES_512;
+    /** A block is 64 bytes, read as one, two or four of these vectors. */
+    private static final VectorSpecies<Byte> BYTES =
+            VectorSpecies.of(byte.class, VectorShape.forBitSize(Width.BITS));
+
+    private static final int LANES = BYTES.length();
 
     /** Blocks of starts kept before they are popped: a piece boundary may move this far back. */
     private static final int RING = 64;
@@ -109,37 +114,55 @@ final class BitSplit {
      * the bytes still owed above it. Returns the seed for the block after.
      */
     private static int classify(byte[] text, int base, int len, int textEnd, int seed, Block out) {
-        ByteVector v;
-        if (base + 64 <= text.length) {
-            v = ByteVector.fromArray(BYTES, text, base);
-        } else {
-            v = ByteVector.fromArray(BYTES, text, base, BYTES.indexInRange(base, text.length));
+        long high = 0;
+        long upper = 0;
+        long lower = 0;
+        long digits = 0;
+        long nl = 0;
+        long sp = 0;
+        long blanks = 0;
+        long apo = 0;
+        long slash = 0;
+        // a constant trip count, 64 / LANES: the JIT unrolls it, and no vector outlives its step
+        for (int i = 0; i < 64; i += LANES) {
+            int at = base + i;
+            ByteVector v =
+                    at + LANES <= text.length
+                            ? ByteVector.fromArray(BYTES, text, at)
+                            : ByteVector.fromArray(
+                                    BYTES, text, at, BYTES.indexInRange(at, text.length));
+            high |= v.compare(VectorOperators.LT, (byte) 0).toLong() << i;
+            upper |=
+                    v.compare(VectorOperators.GE, (byte) 'A')
+                                    .and(v.compare(VectorOperators.LE, (byte) 'Z'))
+                                    .toLong()
+                            << i;
+            lower |=
+                    v.compare(VectorOperators.GE, (byte) 'a')
+                                    .and(v.compare(VectorOperators.LE, (byte) 'z'))
+                                    .toLong()
+                            << i;
+            digits |=
+                    v.compare(VectorOperators.GE, (byte) '0')
+                                    .and(v.compare(VectorOperators.LE, (byte) '9'))
+                                    .toLong()
+                            << i;
+            nl |=
+                    v.compare(VectorOperators.EQ, (byte) '\n')
+                                    .or(v.compare(VectorOperators.EQ, (byte) '\r'))
+                                    .toLong()
+                            << i;
+            sp |= v.compare(VectorOperators.EQ, (byte) ' ').toLong() << i;
+            blanks |=
+                    v.compare(VectorOperators.GE, (byte) 0x9)
+                                    .and(v.compare(VectorOperators.LE, (byte) 0xD))
+                                    .toLong()
+                            << i;
+            apo |= v.compare(VectorOperators.EQ, (byte) '\'').toLong() << i;
+            slash |= v.compare(VectorOperators.EQ, (byte) '/').toLong() << i;
         }
         long inside = len == 64 ? -1L : (1L << len) - 1;
-        long high = v.compare(VectorOperators.LT, (byte) 0).toLong() & inside;
-        long upper =
-                v.compare(VectorOperators.GE, (byte) 'A')
-                        .and(v.compare(VectorOperators.LE, (byte) 'Z'))
-                        .toLong();
-        long lower =
-                v.compare(VectorOperators.GE, (byte) 'a')
-                        .and(v.compare(VectorOperators.LE, (byte) 'z'))
-                        .toLong();
-        long digits =
-                v.compare(VectorOperators.GE, (byte) '0')
-                        .and(v.compare(VectorOperators.LE, (byte) '9'))
-                        .toLong();
-        long nl =
-                v.compare(VectorOperators.EQ, (byte) '\n')
-                        .or(v.compare(VectorOperators.EQ, (byte) '\r'))
-                        .toLong();
-        long sp = v.compare(VectorOperators.EQ, (byte) ' ').toLong();
-        long blanks =
-                v.compare(VectorOperators.GE, (byte) 0x9)
-                        .and(v.compare(VectorOperators.LE, (byte) 0xD))
-                        .toLong();
-        long apo = v.compare(VectorOperators.EQ, (byte) '\'').toLong();
-        long slash = v.compare(VectorOperators.EQ, (byte) '/').toLong();
+        high &= inside;
         long ascii = ~high & inside;
         out.cont = 0;
         out.lu = upper & ascii;

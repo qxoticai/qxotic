@@ -26,6 +26,10 @@ Without the module, or without the flag, core encodes by itself and produces the
 To rule the engine out, say when chasing a suspected difference, set `-Dtoknroll.engine=none`.
 A tokenizer's `toString()` names the engine once it has encoded through it.
 
+The engine runs at the platform's vector width: 128 bits (NEON, AVX), 256 bits (AVX2) or 512 bits (AVX-512), never more than 512.
+`-Dtoknroll.vector.width=128|256|512` picks one, as an image built for a narrower target than its build machine must.
+On x86 without AVX the JDK leaves these vector operations uncompiled, and the engine is several times slower.
+
 ## Memory and threads
 
 A tokenizer is safe to share between threads and needs nothing from them: no thread-local state, no pools.
@@ -45,7 +49,7 @@ Other tokenizers are untouched.
 
 - The text goes to UTF-8 with vectors: a vector of ASCII chars narrows to bytes in one step.
 - The pre-tokenization split runs as a bitstream program, 64 bytes per step, after the design of Hugging Face's `bitcannon`: one bitmap per character class, every rule as boolean algebra and carry-propagating adds over the bitmaps, no branch per piece or per character.
-- A word seen before is a probe into the thread's word cache, which grows with use up to a million words, and its ids are written straight into the output; a run of such words is a loop of its own.
+- A word seen before is a probe into the tokenizer's word cache, which grows with use up to a million words, and its ids are written straight into the output; a run of such words is a loop of its own.
 - A new word is a token as it is when the merge loop would give it back whole, else merged: by hand up to three bytes, by a scan over flat arrays up to 95, by a heap beyond.
 
 The split is proven exact against the regex on a fuzz corpus and piece for piece over all of enwik8, and the whole encoder against core's on the same.

@@ -16,7 +16,8 @@ final class Utf8 {
     private Utf8() {}
 
     /** Chars per vector; the species are constants so the JIT bakes the shapes in. */
-    private static final VectorSpecies<Short> CHARS = ShortVector.SPECIES_PREFERRED;
+    private static final VectorSpecies<Short> CHARS =
+            VectorSpecies.of(short.class, VectorShape.forBitSize(Width.BITS));
 
     /**
      * Bytes per vector, as many lanes as {@link #CHARS}: what a vector of ASCII chars narrows to.

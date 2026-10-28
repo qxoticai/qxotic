@@ -62,6 +62,39 @@
           <useModulePath>false</useModulePath>
           <argLine>@{argLine} --add-modules jdk.incubator.vector</argLine>
         </configuration>
+        <!-- every test at each vector width the kernels support, whatever this machine prefers -->
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <systemPropertyVariables>
+                <toknroll.vector.width>128</toknroll.vector.width>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <id>width-256</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <systemPropertyVariables>
+                <toknroll.vector.width>256</toknroll.vector.width>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <id>width-512</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <systemPropertyVariables>
+                <toknroll.vector.width>512</toknroll.vector.width>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
