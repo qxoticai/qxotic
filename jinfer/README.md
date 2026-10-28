@@ -268,22 +268,23 @@ The same model behind the CLI's `transcribe` command handles audio files, while 
 OpenAI-compatible `POST /v1/audio/transcriptions` (multipart; `response_format` of `json`,
 `text`, or `verbose_json` with word timestamps).
 
-**Spoken replies.** LFM3-Omni answers in speech when a request asks for it; a request that does not is answered in text and never switches on its own:
+**Spoken replies.** A request names what its reply is made of: text (the default), audio, or both. LFM3-Omni speaks when the output includes `AUDIO`; a text request is answered in text and never switches on its own:
 
 ```java
 ChatEngine.Completion reply = engine.complete(
         ChatEngine.Request.builder(messages, sampling)
-                .speech(Speech.withTranscript())   // or Speech.only()
+                .output(Modality.TEXT, Modality.AUDIO)   // or Modality.AUDIO alone
                 .build(),
         new ChatEngine.ReplySink() {
             @Override public void on(ChatEngine.Delta delta) { show(delta.text()); }
-            @Override public void onSpeech(Media.Audio speech) { play(speech); } // 24 kHz
+            @Override public void onMedia(Media part) { play((Media.Audio) part); } // 24 kHz
         });
 ```
 
+Each 80 ms part reaches `onMedia` as it is spoken, and `cancelled()` stops the reply.
 The reply carries the transcript as its text and the speech as a `Content.Speech`, whose record replays the turn exactly when the conversation continues.
-`engine.speak(text, language, voice)` reads a text aloud and returns the waveform, a fresh take each call; a `long seed` argument makes it reproducible, sample for sample.
-With a `Predicate<Media.Audio>`, each 80 ms part goes to it as it is spoken, and returning false stops.
+Text to speech is the same call: the family's reading instruction (LFM3's is "Perform TTS in English using a female voice.") as the system turn, the text as the user's, and `Modality.AUDIO` alone.
+The speech draws from the request's `Sampling` seed, so a seeded reading is reproducible, sample for sample.
 
 **Streaming transcription.** Feed audio as it arrives and poll the evolving transcript; text
 behind the commit horizon no longer changes, and `finish()` equals the offline transcript:

@@ -4,8 +4,8 @@ import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.Speech;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.VideoSampler;
@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * The OpenAI chat.completions dialect, request and response, as this server speaks it - for a host
@@ -70,7 +71,7 @@ public final class OpenAiChat {
         List<Message> prompt = messages(messages, turns);
         // OpenAI's audio output always carries its transcript; audio.voice does not steer a chat
         // reply - the model speaks in its own voice, and only text to speech picks one
-        Speech speech = Validation.audioFormat(request) != null ? Speech.withTranscript() : null;
+        boolean speaks = Validation.audioFormat(request) != null;
         Map<String, Object> schema = schema(request);
         if (schema != null) describeSchema(prompt, schema);
         String forcedTool = ToolUse.forced(request);
@@ -80,7 +81,7 @@ public final class OpenAiChat {
                         tools,
                         thinking(request, config.defaults().think())
                                 && forcedTool == null
-                                && speech == null,
+                                && !speaks,
                         maxTokens(request, config),
                         maxReasoningTokensOrDefault(request, config),
                         reasoningCutoffMessageOrDefault(request, config),
@@ -90,7 +91,7 @@ public final class OpenAiChat {
                         forced(request),
                         stops(request.get("stop")),
                         templateKwargs(request),
-                        speech);
+                        speaks ? Set.of(Modality.TEXT, Modality.AUDIO) : null);
         boolean inline = "none".equals(Values.stringValue(request.get("reasoning_format"), null));
         return new Lowered(lowered, stops(request.get("stop")), inline);
     }

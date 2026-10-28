@@ -5,6 +5,8 @@ import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -67,15 +69,29 @@ final class Generation {
     }
 
     /**
-     * Text to speech: {@code input} read aloud, as a WAV file or raw 16-bit PCM; the same {@code
-     * seed} gives the same audio, null a fresh take.
+     * Text to speech: {@code input} read aloud - the family's reading instruction as the system
+     * turn, the input as the user's, answered in audio alone - as a WAV file or raw 16-bit PCM; the
+     * same {@code seed} gives the same audio, null a fresh take.
      */
     byte[] speech(String input, String language, String voice, Long seed, boolean wav) {
-        Media.Audio speech =
-                seed == null
-                        ? engine.speak(input, language, voice)
-                        : engine.speak(input, language, voice, seed);
-        return encode(speech, wav);
+        String instruction =
+                engine.loaded()
+                        .template()
+                        .flatMap(template -> template.speechInstruction(language, voice))
+                        .orElseThrow(
+                                () ->
+                                        new UnsupportedOperationException(
+                                                engine.modelName()
+                                                        + " has no text-to-speech instruction"));
+        ChatEngine.Request request =
+                ChatEngine.Request.builder(
+                                List.of(Message.system(instruction), Message.user(input)),
+                                engine.loaded()
+                                        .samplingDefaults()
+                                        .resolve(null, null, null, null, seed))
+                        .output(Modality.AUDIO)
+                        .build();
+        return encode(engine.complete(request).reply().speech().orElseThrow(), wav);
     }
 
     /** Speech on the wire: a WAV file, or the bare 16-bit samples. */
@@ -169,8 +185,9 @@ final class Generation {
         }
 
         @Override
-        public void onSpeech(Media.Audio speech) {
-            if (sinks.onSpeech() != null) sinks.onSpeech().accept(speech);
+        public void onMedia(Media part) {
+            if (part instanceof Media.Audio speech && sinks.onSpeech() != null)
+                sinks.onSpeech().accept(speech);
         }
 
         void finish() {

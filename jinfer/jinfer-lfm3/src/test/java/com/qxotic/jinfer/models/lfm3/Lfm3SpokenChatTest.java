@@ -10,9 +10,9 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.Speech;
 import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.AudioCodec;
@@ -66,16 +66,20 @@ final class Lfm3SpokenChatTest {
     }
 
     /**
-     * Read aloud, streamed in parts, and whole: the parts are the waveform, and the words survive.
-     * Each call draws its own speech, so the recognizer may write the numbers as digits.
+     * Text to speech is a request answered in audio alone: streamed in parts, and whole, the parts
+     * are the waveform, and the words survive. Each call draws its own speech, so the recognizer
+     * may write the numbers as digits.
      */
     @Test
     void textToSpeechReadsTheText() throws IOException {
-        List<Media.Audio> parts = new ArrayList<>();
-        engine.speak("Hello world, one two three.", "en", "male", parts::add);
-        Media.Audio audio = Media.Audio.concat(parts);
-        System.out.printf("tts: %d parts, %.2f s%n", parts.size(), seconds(audio));
+        Streamed out = new Streamed();
+        ChatEngine.Completion done =
+                engine.complete(reading("Hello world, one two three.", "male", null), out);
+        Media.Audio audio = done.reply().speech().orElseThrow();
+        System.out.printf("tts: %d parts, %.2f s%n", out.chunks.size(), seconds(audio));
         assertTrue(seconds(audio) > 1, "speech");
+        assertArrayEquals(audio.pcm(), out.audio().pcm(), "the parts are the waveform");
+        assertEquals("", done.reply().text(), "audio alone");
         String heard = hear(audio).replace(",", "").replace(".", "");
         System.out.println("heard: " + heard);
         assertTrue(heard.contains("hello world"), heard);
@@ -83,26 +87,32 @@ final class Lfm3SpokenChatTest {
                 heard.contains("one two three") || heard.contains("123") || heard.contains("1 2 3"),
                 heard);
 
-        // a sink that stops after a part ends the speech there
-        List<Media.Audio> first = new ArrayList<>();
-        engine.speak("Hello world, one two three.", "en", "male", part -> !first.add(part));
+        // a sink that cancels after a part ends the speech there
+        List<Media> first = new ArrayList<>();
+        engine.complete(
+                reading("Hello world, one two three.", "male", null),
+                new ChatEngine.ReplySink() {
+                    @Override
+                    public void onMedia(Media part) {
+                        first.add(part);
+                    }
+
+                    @Override
+                    public boolean cancelled() {
+                        return !first.isEmpty();
+                    }
+                });
         assertEquals(1, first.size(), "stopped after one part");
-        assertTrue(seconds(engine.speak("Good morning.", null, null)) > 0.3, "the whole waveform");
     }
 
     /** A seed makes a reading reproducible, sample for sample; another seed is another take. */
     @Test
     void aSeededReadingIsReproducible() {
         String text = "The quick brown fox jumps over the lazy dog.";
-        engine.speak(text, "en", "female", 1); // warm: cold JIT code differs by an LSB
-        Media.Audio first = engine.speak(text, "en", "female", 7);
-        List<Media.Audio> parts = new ArrayList<>();
-        engine.speak(text, "en", "female", 7, parts::add);
-        assertArrayEquals(first.pcm(), engine.speak(text, "en", "female", 7).pcm(), "same seed");
-        assertArrayEquals(first.pcm(), Media.Audio.concat(parts).pcm(), "streamed, same seed");
-        assertTrue(
-                !Arrays.equals(first.pcm(), engine.speak(text, "en", "female", 8).pcm()),
-                "another seed, another take");
+        read(text, 1L); // warm: cold JIT code differs by an LSB
+        Media.Audio first = read(text, 7L);
+        assertArrayEquals(first.pcm(), read(text, 7L).pcm(), "same seed");
+        assertTrue(!Arrays.equals(first.pcm(), read(text, 8L).pcm()), "another seed, another take");
     }
 
     @Test
@@ -154,7 +164,7 @@ final class Lfm3SpokenChatTest {
                 () ->
                         ChatEngine.Request.builder(List.of(france()), SEEDED)
                                 .tools(List.of(new Tool("weather", Map.of())))
-                                .speech(Speech.withTranscript())
+                                .output(Modality.TEXT, Modality.AUDIO)
                                 .build());
         assertThrows(
                 UnsupportedOperationException.class,
@@ -162,16 +172,40 @@ final class Lfm3SpokenChatTest {
                         engine.complete(
                                 ChatEngine.Request.builder(List.of(france()), SEEDED)
                                         .thinking(true)
-                                        .speech(Speech.only())
+                                        .output(Modality.AUDIO)
                                         .build()));
-        assertThrows(IllegalArgumentException.class, () -> engine.speak("Hi.", "en", "robot"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ChatEngine.Request.builder(List.of(france()), SEEDED).output().build());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> engine.loaded().template().orElseThrow().speechInstruction("en", "robot"));
     }
 
     private static ChatEngine.Request chat(List<Message> messages) {
         return ChatEngine.Request.builder(messages, SEEDED)
                 .maxOutputTokens(400)
-                .speech(Speech.withTranscript())
+                .output(Modality.TEXT, Modality.AUDIO)
                 .build();
+    }
+
+    /** {@code text} read aloud in English: the family's instruction, answered in audio alone. */
+    private static ChatEngine.Request reading(String text, String voice, Long seed) {
+        String instruction =
+                engine.loaded()
+                        .template()
+                        .orElseThrow()
+                        .speechInstruction("en", voice)
+                        .orElseThrow();
+        return ChatEngine.Request.builder(
+                        List.of(Message.system(instruction), Message.user(text)),
+                        engine.loaded().samplingDefaults().resolve(null, null, null, null, seed))
+                .output(Modality.AUDIO)
+                .build();
+    }
+
+    private static Media.Audio read(String text, Long seed) {
+        return engine.complete(reading(text, "female", seed)).reply().speech().orElseThrow();
     }
 
     private static Message france() {
@@ -217,8 +251,8 @@ final class Lfm3SpokenChatTest {
         }
 
         @Override
-        public void onSpeech(Media.Audio speech) {
-            chunks.add(speech);
+        public void onMedia(Media part) {
+            chunks.add((Media.Audio) part);
         }
 
         Media.Audio audio() {
