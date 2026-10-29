@@ -27,6 +27,7 @@ class LocalRagIT {
                                 .modelPath(
                                         TestModels.require(
                                                 "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"))
+                                .contextCapacity(2048)
                                 .build();
                 JinferChatModel chat =
                         JinferChatModel.builder()

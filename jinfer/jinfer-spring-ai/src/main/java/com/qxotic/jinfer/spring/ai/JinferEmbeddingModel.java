@@ -363,7 +363,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private Map<String, Path> companionPaths; // resolved at build()
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
-        private int contextCapacity = 2048;
+        private int contextCapacity = 8192;
         private ObservationRegistry observationRegistry;
         private EmbeddingModelObservationConvention observationConvention;
 
@@ -436,7 +436,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
         /**
          * Upper bound on the packing window and on each embedded sequence, in tokens. The default
-         * is 2048. A larger value admits longer sequences and can pack more sequences into one
+         * is 8192. A larger value admits longer sequences and can pack more sequences into one
          * forward pass, at the cost of a larger resident state. {@code 0} uses the model's {@code
          * maxContextLength}; otherwise the effective capacity is the smaller of this value and that
          * maximum.

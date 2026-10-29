@@ -50,6 +50,7 @@ class EmbeddingGemma2MediaIT {
                 JinferEmbeddingModel.builder()
                         .modelPath(weights)
                         .companionPath("media", projector)
+                        .contextCapacity(2048)
                         .build();
         for (int warm = 0; warm < 3; warm++)
             embed(EmbeddingInputType.DOCUMENT, ImageContent.from(cat));
@@ -107,7 +108,10 @@ class EmbeddingGemma2MediaIT {
     @Test
     void withoutTheProjectorMediaIsRefusedBeforeAnyDecode() {
         try (var bare =
-                JinferEmbeddingModel.builder().modelPath(TestModels.require(MODEL)).build()) {
+                JinferEmbeddingModel.builder()
+                        .modelPath(TestModels.require(MODEL))
+                        .contextCapacity(2048)
+                        .build()) {
             assertEquals(Set.of(ContentType.TEXT), bare.supportedContentTypes());
             assertThrows(
                     UnsupportedFeatureException.class,

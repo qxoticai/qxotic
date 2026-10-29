@@ -42,6 +42,7 @@ class EmbeddingRetrievalIT {
                         .modelPath(
                                 TestModels.require(
                                         "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
+                        .contextCapacity(2048)
                         .build();
         store = new InMemoryEmbeddingStore<>();
         List<Document> docs =

@@ -90,7 +90,7 @@ class JinferEmbeddingAutoConfigurationTest {
                                 assertThat(
                                                 context.getBean(JinferEmbeddingProperties.class)
                                                         .contextCapacity())
-                                        .isEqualTo(2048));
+                                        .isEqualTo(8192));
     }
 
     @Test

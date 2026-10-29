@@ -106,7 +106,8 @@ class TelemetryEmissionTest {
                 TestModels.require(
                         "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf");
         Path jfr = Files.createTempFile("jinfer-embed", ".jfr");
-        try (var embedder = JinferEmbeddingModel.builder().modelPath(gguf).build()) {
+        try (var embedder =
+                JinferEmbeddingModel.builder().modelPath(gguf).contextCapacity(2048).build()) {
             try (Recording recording = new Recording()) {
                 recording.enable("jinfer.Inference");
                 recording.start();

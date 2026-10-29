@@ -223,7 +223,7 @@ Segments are packed into context-sized ragged batches: one forward pass embeds m
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextCapacity(2048)          // packing upper bound; 0 = the model's maximum
+        .contextCapacity(8192)          // packing upper bound; 0 = the model's maximum
         .build();
 ```
 

@@ -44,6 +44,7 @@ class EmbeddingGemma2MediaIT {
                 JinferEmbeddingModel.builder()
                         .modelPath(weights)
                         .companionPath("media", projector)
+                        .contextCapacity(2048)
                         .build();
         for (int warm = 0; warm < 3; warm++) model.embed(speech);
     }
@@ -80,7 +81,10 @@ class EmbeddingGemma2MediaIT {
     @Test
     void withoutTheProjectorMediaIsRefusedNamingTheCompanion() {
         try (var bare =
-                JinferEmbeddingModel.builder().modelPath(TestModels.require(MODEL)).build()) {
+                JinferEmbeddingModel.builder()
+                        .modelPath(TestModels.require(MODEL))
+                        .contextCapacity(2048)
+                        .build()) {
             IllegalArgumentException e =
                     assertThrows(IllegalArgumentException.class, () -> bare.embed(speech));
             assertTrue(e.getMessage().contains("embeds text only"), e.getMessage());

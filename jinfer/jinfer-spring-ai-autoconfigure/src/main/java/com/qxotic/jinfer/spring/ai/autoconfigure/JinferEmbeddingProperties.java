@@ -14,12 +14,12 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param companions capability to file: media for a multimodal embedder's projector (EmbeddingGemma
  *     2's mmproj); values take the same path-or-ref form as model
  * @param contextCapacity upper bound on the packing window and each embedded sequence (default
- *     2048): larger packs more sequences per forward pass and admits longer sequences, at the cost
+ *     8192): larger packs more sequences per forward pass and admits longer sequences, at the cost
  *     of a bigger resident state; 0 uses the model's maxContextLength; negative values are rejected
  */
 @ConfigurationProperties("spring.ai.jinfer.embedding")
 public record JinferEmbeddingProperties(
-        String model, Map<String, String> companions, @DefaultValue("2048") int contextCapacity) {
+        String model, Map<String, String> companions, @DefaultValue("8192") int contextCapacity) {
 
     @ConstructorBinding
     public JinferEmbeddingProperties {}

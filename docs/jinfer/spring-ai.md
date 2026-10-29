@@ -123,7 +123,7 @@ The catalog is model-identity checked. An edited prompt reuses only its matching
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextCapacity(2048)
+        .contextCapacity(8192)
         .build();
 
 float[] vector = embeddings.embed("search query");

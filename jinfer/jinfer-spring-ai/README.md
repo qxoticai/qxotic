@@ -295,7 +295,7 @@ Its version comes from the Spring AI BOM:
 ```java
 try (var embeddings = JinferEmbeddingModel.builder()
                 .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-                .contextCapacity(2048)
+                .contextCapacity(8192)
                 .build();
         var reranker = JinferDocumentPostProcessor.builder()
                 .model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")
