@@ -209,7 +209,8 @@
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- jinfer_model_options is read through the header itself (Options.Directives), which includes toknroll.h -->
                 <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
-                <buildArg>--features=com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
+                <!-- toknroll's too: its tokenizers' vector width, and core's encoder on a target without AVX -->
+                <buildArg>--features=com.qxotic.jinfer.libjinfer.VectorWidth,com.qxotic.toknroll.libtoknroll.VectorWidth</buildArg>
                 <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
                 <!-- libjam linked into the image, whole: nothing in the image references its symbols statically
                      (jam resolves them by name at run time, from the image's own file: TOKNROLL_SELF_PROPERTY above),
