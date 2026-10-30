@@ -254,6 +254,101 @@ class SpecialsTest {
         assertThrows(NullPointerException.class, () -> specials.encodeInto(tokenizer, "x", null));
     }
 
+    private static final String[] ALPHABET = {"a", "b", "<", "|", ">", "\uD83D\uDE00"};
+
+    /**
+     * The matcher against the alternation regex it replaced, on specials drawn from a tiny alphabet
+     * so that they overlap, share prefixes and cross each other in the text.
+     */
+    @Test
+    void matchesTheLeftmostSpecialAsARegexAlternationWould() {
+        java.util.Random random = new java.util.Random(42);
+        for (int round = 0; round < 300; round++) {
+            Set<String> drawn = new java.util.TreeSet<>();
+            int longest = round % 8 == 0 ? 80 : 6; // some past 64 chars and bytes
+            for (int k = 1 + random.nextInt(12); k > 0; k--) {
+                StringBuilder special = new StringBuilder();
+                for (int len = 1 + random.nextInt(longest); len > 0; len--) {
+                    special.append(ALPHABET[random.nextInt(ALPHABET.length)]);
+                }
+                drawn.add(special.toString());
+            }
+            Set<String> specials = new LinkedHashSet<>();
+            for (String s : drawn) {
+                if (drawn.stream().noneMatch(o -> !o.equals(s) && o.startsWith(s))) specials.add(s);
+            }
+            List<String> texts = new java.util.ArrayList<>();
+            for (int t = 0; t < 20; t++) {
+                StringBuilder text = new StringBuilder();
+                for (int len = random.nextInt(80); len > 0; len--) {
+                    text.append(
+                            random.nextInt(4) == 0
+                                    ? specials.toArray(new String[0])[
+                                            random.nextInt(specials.size())]
+                                    : ALPHABET[random.nextInt(ALPHABET.length)]);
+                }
+                texts.add(text.toString());
+            }
+            assertMatchesAsTheRegex(specials, texts);
+        }
+    }
+
+    @Test
+    void aOneCharSpecialMatches() {
+        // words across the specials: a text that misses one becomes a word
+        List<String> words =
+                List.of("a<", "<b", "b<", "|a", "a|", "a\uD83D\uDE00a", "\uD83D\uDE00a");
+        List<String> texts = new java.util.ArrayList<>(words); // a word is a whole gap when missed
+        texts.addAll(List.of("", "<", "a<b<<", "<b>b>", "a\uD83D\uDE00a", "||a|"));
+        assertMatchesAsTheRegex(Set.of("<"), texts, words);
+        assertMatchesAsTheRegex(Set.of("<", "b>"), texts, words);
+        assertMatchesAsTheRegex(Set.of("a", "\uD83D\uDE00"), texts, words);
+        assertMatchesAsTheRegex(Set.of("|", "<b"), texts, words);
+    }
+
+    private static void assertMatchesAsTheRegex(Set<String> specials, List<String> texts) {
+        assertMatchesAsTheRegex(specials, texts, List.of());
+    }
+
+    private static void assertMatchesAsTheRegex(
+            Set<String> specials, List<String> texts, List<String> words) {
+        Map<String, Integer> ids = new LinkedHashMap<>();
+        for (String unit : ALPHABET) {
+            for (char c : unit.toCharArray()) ids.putIfAbsent(String.valueOf(c), ids.size());
+        }
+        for (String word : words) ids.putIfAbsent(word, ids.size());
+        for (String special : specials) ids.putIfAbsent(special, ids.size());
+        Tokenizer tokenizer = new MiniTokenizer(ids);
+        Specials compiled = Specials.compile(tokenizer.vocabulary(), specials);
+        for (String text : texts) {
+            int[] expected = regexReference(tokenizer, ids, specials, text);
+            assertArrayEquals(
+                    expected,
+                    compiled.encode(tokenizer, text).toArray(),
+                    () -> specials + " in " + text);
+        }
+    }
+
+    private static int[] regexReference(
+            Tokenizer tokenizer, Map<String, Integer> ids, Set<String> specials, String text) {
+        StringBuilder alternation = new StringBuilder("(?:");
+        for (String special : specials) {
+            if (alternation.length() > 3) alternation.append('|');
+            alternation.append(java.util.regex.Pattern.quote(special));
+        }
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile(alternation.append(')').toString()).matcher(text);
+        IntSequence.Builder out = IntSequence.newBuilder();
+        int cursor = 0;
+        while (matcher.find()) {
+            if (matcher.start() > cursor) tokenizer.encodeInto(text, cursor, matcher.start(), out);
+            out.add(ids.get(matcher.group()));
+            cursor = matcher.end();
+        }
+        if (cursor < text.length()) tokenizer.encodeInto(text, cursor, text.length(), out);
+        return out.build().toArray();
+    }
+
     private static Vocabulary vocabulary(Map<String, Integer> tokenToId) {
         return new MapVocabulary(tokenToId);
     }

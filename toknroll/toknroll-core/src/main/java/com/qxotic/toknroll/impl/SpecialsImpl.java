@@ -12,20 +12,92 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.TreeSet;
 
+/**
+ * Finds the specials in text the way Hugging Face's added vocabulary does: a position is a
+ * candidate only when its first two chars can begin a special (two bit tests), and a candidate is
+ * confirmed by hashing the text once up to the longest special and probing a table at each
+ * special's length. No special is a prefix of another, so a position matches at most one, and the
+ * leftmost occurrence of any special is the next match.
+ */
 final class SpecialsImpl implements Specials {
-    private static final SpecialsImpl NONE = new SpecialsImpl(Set.of(), Map.of(), null);
+    private static final SpecialsImpl NONE = new SpecialsImpl(Set.of(), Map.of(), List.of());
 
     private final Set<String> tokens;
     private final Map<String, Integer> specialToId;
-    private final Pattern pattern;
 
-    private SpecialsImpl(Set<String> tokens, Map<String, Integer> specialToId, Pattern pattern) {
+    private final long[] first = new long[1 << 10]; // a special's first char, one bit per char
+    private final long[] second = new long[1 << 10]; // its second char
+    private final long[] alone = new long[1 << 10]; // a one-char special
+    private final int[] lengths; // distinct lengths, ascending
+    private final String[] spellings;
+    private final int[] ids;
+    private final int[] slots; // open addressing on String.hashCode: index + 1, 0 empty
+    private final int[] hashes;
+
+    private SpecialsImpl(
+            Set<String> tokens, Map<String, Integer> specialToId, List<String> sorted) {
         this.tokens = tokens;
         this.specialToId = specialToId;
-        this.pattern = pattern;
+        int count = sorted.size();
+        spellings = sorted.toArray(new String[0]);
+        ids = new int[count];
+        hashes = new int[count];
+        slots = new int[Integer.highestOneBit(Math.max(1, count) * 4)];
+        Set<Integer> distinct = new TreeSet<>();
+        for (int t = 0; t < count; t++) {
+            String special = spellings[t];
+            ids[t] = specialToId.get(special);
+            hashes[t] = special.hashCode();
+            set(first, special.charAt(0));
+            if (special.length() == 1) set(alone, special.charAt(0));
+            else set(second, special.charAt(1));
+            distinct.add(special.length());
+            int slot = hashes[t] & (slots.length - 1);
+            while (slots[slot] != 0) slot = (slot + 1) & (slots.length - 1);
+            slots[slot] = t + 1;
+        }
+        lengths = distinct.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    private static void set(long[] bits, char c) {
+        bits[c >>> 6] |= 1L << c;
+    }
+
+    private static boolean has(long[] bits, char c) {
+        return (bits[c >>> 6] & (1L << c)) != 0;
+    }
+
+    /** The special that starts at {@code i}, or -1. */
+    private int matchAt(CharSequence text, int i, int end) {
+        char c = text.charAt(i);
+        if (!has(first, c)) return -1;
+        if (!has(alone, c) && (i + 1 >= end || !has(second, text.charAt(i + 1)))) return -1;
+        int h = 0;
+        int k = 0;
+        for (int length : lengths) {
+            if (i + length > end) return -1;
+            for (; k < length; k++) h = 31 * h + text.charAt(i + k);
+            for (int slot = h & (slots.length - 1);
+                    slots[slot] != 0;
+                    slot = (slot + 1) & (slots.length - 1)) {
+                int t = slots[slot] - 1;
+                if (hashes[t] == h
+                        && spellings[t].length() == length
+                        && regionEquals(text, i, spellings[t])) {
+                    return t;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static boolean regionEquals(CharSequence text, int i, String special) {
+        for (int k = 0; k < special.length(); k++) {
+            if (text.charAt(i + k) != special.charAt(k)) return false;
+        }
+        return true;
     }
 
     public static Specials none() {
@@ -59,8 +131,7 @@ final class SpecialsImpl implements Specials {
             specialToId.put(special, vocabulary.id(special));
         }
         Set<String> tokens = Collections.unmodifiableSet(new LinkedHashSet<>(sorted));
-        Pattern pattern = Pattern.compile(buildAlternationPattern(sorted));
-        return new SpecialsImpl(tokens, Collections.unmodifiableMap(specialToId), pattern);
+        return new SpecialsImpl(tokens, Collections.unmodifiableMap(specialToId), sorted);
     }
 
     private static void validateNoPrefixConflicts(List<String> sorted) {
@@ -76,21 +147,6 @@ final class SpecialsImpl implements Specials {
                                 + "'");
             }
         }
-    }
-
-    private static String buildAlternationPattern(List<String> specials) {
-        // Use a non-capturing group so alternation applies as one unit without creating
-        // unnecessary capture groups.
-        StringBuilder sb = new StringBuilder();
-        sb.append("(?:");
-        for (int i = 0; i < specials.size(); i++) {
-            if (i != 0) {
-                sb.append('|');
-            }
-            sb.append(Pattern.quote(specials.get(i)));
-        }
-        sb.append(')');
-        return sb.toString();
     }
 
     @Override
@@ -109,24 +165,20 @@ final class SpecialsImpl implements Specials {
             return;
         }
 
-        Matcher matcher = pattern.matcher(text);
+        int n = text.length();
         int cursor = 0;
-        while (matcher.find()) {
-            int start = matcher.start();
-            int end = matcher.end();
-            if (start > cursor) {
-                tokenizer.encodeInto(text, cursor, start, out);
+        for (int i = 0; i < n; i++) {
+            int t = matchAt(text, i, n);
+            if (t < 0) continue;
+            if (i > cursor) {
+                tokenizer.encodeInto(text, cursor, i, out);
             }
-            String matched = matcher.group();
-            Integer tokenId = specialToId.get(matched);
-            if (tokenId == null) {
-                throw new IllegalStateException("Unknown compiled special token: " + matched);
-            }
-            out.add(tokenId);
-            cursor = end;
+            out.add(ids[t]);
+            cursor = i + spellings[t].length();
+            i = cursor - 1;
         }
-        if (cursor < text.length()) {
-            tokenizer.encodeInto(text, cursor, text.length(), out);
+        if (cursor < n) {
+            tokenizer.encodeInto(text, cursor, n, out);
         }
     }
 }
