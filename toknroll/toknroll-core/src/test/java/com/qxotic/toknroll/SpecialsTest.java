@@ -254,6 +254,47 @@ class SpecialsTest {
         assertThrows(NullPointerException.class, () -> specials.encodeInto(tokenizer, "x", null));
     }
 
+    @Test
+    void encodeUtf8IntoChecksItsArgumentsAndItsDefaultDecodes() {
+        Tokenizer tokenizer = new MiniTokenizer(Map.of("a", 1, "b", 2, "<|s|>", 9));
+        Specials compiled = Specials.compile(tokenizer.vocabulary(), Set.of("<|s|>"));
+        byte[] utf8 = "a<|s|>b".getBytes(StandardCharsets.UTF_8);
+        IntSequence.Builder out = IntSequence.newBuilder();
+        assertThrows(
+                IndexOutOfBoundsException.class,
+                () -> compiled.encodeUtf8Into(tokenizer, utf8, 2, 1, out));
+        assertThrows(
+                IndexOutOfBoundsException.class,
+                () -> compiled.encodeUtf8Into(tokenizer, utf8, 0, utf8.length + 1, out));
+        assertThrows(
+                NullPointerException.class,
+                () -> compiled.encodeUtf8Into(null, utf8, 0, utf8.length, out));
+        assertThrows(
+                NullPointerException.class,
+                () -> compiled.encodeUtf8Into(tokenizer, null, 0, 0, out));
+        assertThrows(
+                NullPointerException.class,
+                () -> compiled.encodeUtf8Into(tokenizer, utf8, 0, utf8.length, null));
+        compiled.encodeUtf8Into(tokenizer, utf8, 0, utf8.length, out);
+        assertArrayEquals(new int[] {1, 9, 2}, out.build().toArray());
+        // an implementation of its own gets the decoding default
+        Specials decoding =
+                new Specials() {
+                    @Override
+                    public Set<String> tokens() {
+                        return compiled.tokens();
+                    }
+
+                    @Override
+                    public void encodeInto(Tokenizer t, CharSequence text, IntSequence.Builder o) {
+                        compiled.encodeInto(t, text, o);
+                    }
+                };
+        IntSequence.Builder viaDefault = IntSequence.newBuilder();
+        decoding.encodeUtf8Into(tokenizer, utf8, 1, utf8.length, viaDefault);
+        assertArrayEquals(new int[] {9, 2}, viaDefault.build().toArray());
+    }
+
     private static final String[] ALPHABET = {"a", "b", "<", "|", ">", "\uD83D\uDE00"};
 
     /**
@@ -261,7 +302,7 @@ class SpecialsTest {
      * so that they overlap, share prefixes and cross each other in the text.
      */
     @Test
-    void matchesTheLeftmostSpecialAsARegexAlternationWould() {
+    void matchesTheLeftmostSpecialAsARegexAlternationWouldInCharsAndInUtf8() {
         java.util.Random random = new java.util.Random(42);
         for (int round = 0; round < 300; round++) {
             Set<String> drawn = new java.util.TreeSet<>();
@@ -294,7 +335,7 @@ class SpecialsTest {
     }
 
     @Test
-    void aOneCharSpecialMatches() {
+    void aOneCharSpecialMatchesInCharsAndInUtf8() {
         // words across the specials: a text that misses one becomes a word
         List<String> words =
                 List.of("a<", "<b", "b<", "|a", "a|", "a\uD83D\uDE00a", "\uD83D\uDE00a");
@@ -326,6 +367,14 @@ class SpecialsTest {
                     expected,
                     compiled.encode(tokenizer, text).toArray(),
                     () -> specials + " in " + text);
+            // the same on UTF-8, within a range of a larger array
+            byte[] utf8 = ("<" + text + "|").getBytes(StandardCharsets.UTF_8);
+            IntSequence.Builder fromBytes = IntSequence.newBuilder();
+            compiled.encodeUtf8Into(tokenizer, utf8, 1, utf8.length - 1, fromBytes);
+            assertArrayEquals(
+                    expected,
+                    fromBytes.build().toArray(),
+                    () -> "UTF-8: " + specials + " in " + text);
         }
     }
 
