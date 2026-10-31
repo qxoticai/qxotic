@@ -25,7 +25,8 @@ public final class TokenizationPipeline implements Tokenizer {
         this.model = Objects.requireNonNull(model, "model is required");
         this.normalizer = normalizer;
         this.splitter = splitter;
-        this.hasNormalizer = normalizer != null;
+        // the identity changes nothing, and skipping it keeps UTF-8 on the bytes path
+        this.hasNormalizer = normalizer != null && normalizer != Normalizer.identity();
         this.hasSplitter = splitter != null;
     }
 
