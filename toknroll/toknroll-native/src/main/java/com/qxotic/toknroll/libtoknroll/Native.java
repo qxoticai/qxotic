@@ -6,9 +6,11 @@ import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.ObjectHandle;
@@ -56,57 +58,6 @@ public final class Native {
         }
     }
 
-    /**
-     * The caller's output buffer as a builder: snprintf semantics, written up to capacity, counted
-     * past it. Write-only during the call, so nothing of the caller's memory is retained. The
-     * decode input is copied instead of viewed for the same reason: a view would be sound only as
-     * long as no tokenizer keeps the sequence, which no API promises.
-     */
-    static final class NativeBuilder implements IntSequence.Builder {
-        private final long address; // raw, as above
-        private final int capacity;
-        private int size;
-
-        NativeBuilder(CIntPointer out, int capacity) {
-            this.address = out.rawValue();
-            this.capacity = capacity;
-        }
-
-        @Override
-        public int size() {
-            return size;
-        }
-
-        @Override
-        public void ensureCapacity(int minCapacity) {}
-
-        @Override
-        public IntSequence.Builder add(int value) {
-            if (size < capacity) ((CIntPointer) WordFactory.pointer(address)).write(size, value);
-            size++;
-            return this;
-        }
-
-        @Override
-        public IntSequence build() {
-            // what was written, copied: the caller's buffer is theirs again once the call returns
-            int[] written = new int[Math.min(size, capacity)];
-            CIntPointer out = (CIntPointer) WordFactory.pointer(address);
-            for (int i = 0; i < written.length; i++) written[i] = out.read(i);
-            return IntSequence.wrap(written);
-        }
-
-        @Override
-        public IntSequence snapshot() {
-            return build();
-        }
-
-        @Override
-        public IntSequence asSequenceView() {
-            return build();
-        }
-    }
-
     /** A C handle over a tokenizer another library already holds (libjinfer's models). */
     public static ObjectHandle handle(Tokenizer tokenizer) {
         return HANDLES.create(Loaded.of(tokenizer));
@@ -130,6 +81,65 @@ public final class Native {
         if (length.equal(0)) return "";
         if (value.isNull()) throw Errors.invalid(what + " is NULL");
         return CTypeConversion.toJavaString(value, length, StandardCharsets.UTF_8);
+    }
+
+    /** Room for a text's ids: prose runs about four bytes a token, so a third of its bytes. */
+    private static int estimate(int bytes) {
+        return Math.max(16, bytes / 3);
+    }
+
+    /**
+     * {@code utf8[from, to)} encoded as the tokenizer encodes UTF-8, the specials matched first
+     * when there are any: straight from the bytes when they are well-formed, else decoded first, as
+     * every text was before, a bad sequence a U+FFFD.
+     */
+    private static void encodeUtf8(
+            Tokenizer tokenizer,
+            Specials specials,
+            byte[] utf8,
+            int from,
+            int to,
+            IntSequence.Builder out) {
+        if (WellFormed.utf8(utf8, from, to)) {
+            if (specials == null) tokenizer.encodeUtf8Into(utf8, from, to, out);
+            else specials.encodeUtf8Into(tokenizer, utf8, from, to, out);
+        } else if (specials == null) tokenizer.encodeInto(decoded(utf8, from, to), out);
+        else specials.encodeInto(tokenizer, decoded(utf8, from, to), out);
+    }
+
+    private static String decoded(byte[] utf8, int from, int to) {
+        return new String(utf8, from, to - from, StandardCharsets.UTF_8);
+    }
+
+    /** {@code length} bytes of the caller's memory as a Java array: one copy, read once. */
+    private static byte[] copy(CCharPointer value, int length) {
+        byte[] bytes = new byte[length];
+        copy(value.rawValue(), bytes, length);
+        return bytes;
+    }
+
+    private static void copy(long address, byte[] into, int length) {
+        if (length > 0)
+            CTypeConversion.asByteBuffer(WordFactory.pointer(address), length).get(into, 0, length);
+    }
+
+    /**
+     * Ids moved to the caller's memory at a time: a few pages, so a long text costs no copy of
+     * itself.
+     */
+    private static final int WRITE_CHUNK = 1 << 14;
+
+    /** The first {@code n} of {@code ids} into the caller's memory at {@code address}, in bulk. */
+    private static void write(IntSequence ids, long address, int n) {
+        int[] chunk = new int[Math.min(n, WRITE_CHUNK)];
+        for (int j = 0; j < n; j += chunk.length) {
+            int m = Math.min(chunk.length, n - j);
+            ids.copyTo(j, chunk, 0, m);
+            CTypeConversion.asByteBuffer(WordFactory.pointer(address + 4L * j), 4 * m)
+                    .order(ByteOrder.nativeOrder())
+                    .asIntBuffer()
+                    .put(chunk, 0, m);
+        }
     }
 
     /** snprintf for bytes: writes min(n, capacity) and a NUL when there is room, returns n. */
@@ -189,15 +199,17 @@ public final class Native {
         try {
             Errors.clear();
             Loaded loaded = get(handle);
-            String s = string(text, length, "text");
+            if (length.aboveThan(Integer.MAX_VALUE)) throw Errors.invalid("text is over 2 GiB");
+            if (text.isNull() && length.aboveThan(0)) throw Errors.invalid("text is NULL");
             if (capacity < 0) throw Errors.invalid("capacity must not be negative");
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-            if (capacity == 0 && !specials) return loaded.tokenizer().countTokens(s);
-            NativeBuilder builder =
-                    new NativeBuilder(out, capacity); // ids land in the caller's buffer
-            if (specials) loaded.specials().encodeInto(loaded.tokenizer(), s, builder);
-            else loaded.tokenizer().encodeInto(s, builder);
-            return builder.size();
+            int n = (int) length.rawValue();
+            byte[] utf8 = copy(text, n);
+            IntSequence.Builder ids = IntSequence.newBuilder(estimate(n));
+            encodeUtf8(loaded.tokenizer(), specials ? loaded.specials() : null, utf8, 0, n, ids);
+            IntSequence encoded = ids.build();
+            write(encoded, out.rawValue(), Math.min(encoded.length(), capacity));
+            return encoded.length();
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -222,39 +234,58 @@ public final class Native {
             if ((texts.isNull() || textEnds.isNull() || ends.isNull()) && count > 0)
                 throw Errors.invalid("texts, text_ends and ends must not be NULL");
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-            String[] strings = new String[count];
-            for (int i = 0, start = 0; i < count; i++) {
+            int[] starts = new int[count + 1];
+            for (int i = 0; i < count; i++) {
                 int end = textEnds.read(i);
-                if (end < start) throw Errors.invalid("text_ends must not decrease, at " + i);
-                strings[i] =
-                        CTypeConversion.toJavaString(
-                                texts.addressOf(start),
-                                WordFactory.unsigned(end - start),
-                                StandardCharsets.UTF_8);
-                start = end;
+                if (end < starts[i]) throw Errors.invalid("text_ends must not decrease, at " + i);
+                starts[i + 1] = end;
             }
             Tokenizer tokenizer = loaded.tokenizer();
-            // each text on its own core, then laid end to end in the caller's buffer
-            int[][] ids =
-                    IntStream.range(0, count)
-                            .parallel()
-                            .mapToObj(
-                                    i ->
-                                            specials
-                                                    ? loaded.specials()
-                                                            .encode(tokenizer, strings[i])
-                                                            .toArray()
-                                                    : tokenizer.encodeToArray(strings[i]))
-                            .toArray(int[][]::new);
-            int total = 0;
+            Specials matcher = specials ? loaded.specials() : null;
+            long in = texts.rawValue(); // raw addresses: a lambda in an image cannot capture a word
+            // runs of texts of about equal bytes, several per core so a long text holds no core
+            // back; a run copies its texts in through one buffer and keeps its ids in one array
+            int[] runs = Runs.of(starts, count, 4 * (ForkJoinPool.getCommonPoolParallelism() + 1));
+            int[] counts = new int[count];
+            IntSequence[] ids = new IntSequence[runs.length - 1];
+            IntStream.range(0, ids.length)
+                    .parallel()
+                    .forEach(
+                            r -> {
+                                int first = runs[r];
+                                int last = runs[r + 1];
+                                int longest = 0;
+                                for (int i = first; i < last; i++)
+                                    longest = Math.max(longest, starts[i + 1] - starts[i]);
+                                byte[] text = new byte[longest];
+                                IntSequence.Builder b =
+                                        IntSequence.newBuilder(
+                                                estimate(starts[last] - starts[first]));
+                                for (int i = first; i < last; i++) {
+                                    int length = starts[i + 1] - starts[i];
+                                    copy(in + starts[i], text, length);
+                                    int before = b.size();
+                                    encodeUtf8(tokenizer, matcher, text, 0, length, b);
+                                    counts[i] = b.size() - before;
+                                }
+                                ids[r] = b.build();
+                            });
+            int[] at = new int[count + 1]; // where text i's ids start
             for (int i = 0; i < count; i++) {
-                for (int id : ids[i]) {
-                    if (total < capacity) out.write(total, id);
-                    total++;
-                }
-                ends.write(i, total);
+                at[i + 1] = at[i] + counts[i];
+                ends.write(i, at[i + 1]);
             }
-            return total;
+            // each run's ids written where they belong, on its own core
+            long outAddress = out.rawValue();
+            IntStream.range(0, ids.length)
+                    .parallel()
+                    .forEach(
+                            r -> {
+                                int from = at[runs[r]];
+                                int n = Math.min(ids[r].length(), capacity - from);
+                                if (n > 0) write(ids[r], outAddress + 4L * from, n);
+                            });
+            return at[count];
         } catch (Throwable t) {
             return Errors.set(t);
         }
