@@ -94,21 +94,6 @@ final class GGUFTokenizerDefaults {
 
     private static final String CJK_RANGE = "[一-龥぀-ゟ゠-ヿ]+";
 
-    private static final String LFM2_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)"
-                    + "|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+"
-                    + "|\\p{N}{1,3}"
-                    + "| ?[^\\s\\p{L}\\p{N}]+[\\r"
-                    + "\\n"
-                    + "]*"
-                    + "|\\s*[\\r"
-                    + "\\n"
-                    + "]+"
-                    + "|\\s+(?!\\S)"
-                    + "|\\s+";
-
     private static final String BAILING_PATTERN =
             "'(?:[sSdDmMtT]|[lL][lL]|[vV][eE]|[rR][eE])"
                     + "|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+"
@@ -160,15 +145,14 @@ final class GGUFTokenizerDefaults {
                 "llama3",
                 "llama-v3",
                 "llama-bpe",
-                "pixtral",
                 "smollm3",
-                "llama4",
                 "glm4",
                 "dbrx",
                 "smaug-bpe",
                 "falcon3",
                 "falcon-h1",
-                "jina-v5-nano");
+                "jina-v5-nano",
+                "lfm2");
         registerPreTokenizers(
                 builder,
                 QWEN2_PATTERN,
@@ -179,9 +163,8 @@ final class GGUFTokenizerDefaults {
                 "deepseek-r1-qwen");
         registerPreTokenizers(builder, QWEN35_PATTERN, "qwen35");
         registerPreTokenizers(builder, BAILING_PATTERN, "bailingmoe", "bailingmoe2");
-        registerPreTokenizers(builder, LFM2_PATTERN, "lfm2");
-        registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken");
-        registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "kanana2", "minimax-m2");
+        registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken", "pixtral");
+        registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "llama4", "kanana2", "minimax-m2");
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
         registerPreTokenizers(builder, GEMMA4_PATTERN, "gemma4", "granite-embed-multi-311m");
 
