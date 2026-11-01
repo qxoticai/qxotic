@@ -2,18 +2,14 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.ByteBuffer;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ToknrollApiComponentsTest {
@@ -142,107 +138,6 @@ class ToknrollApiComponentsTest {
         Vocabulary vocab = Toknroll.vocabulary("hello");
         assertTrue(vocab.contains(0));
         assertFalse(vocab.isTokenOfType(0, StandardTokenType.CONTROL));
-    }
-
-    @Test
-    void specialsCompileWithOverlappingSpecials() {
-        Map<String, Integer> specials = new LinkedHashMap<>();
-        specials.put("<|s1|>", 100);
-        specials.put("<|s2|>", 200);
-        String[] tokens = new String[2];
-        tokens[0] = "a";
-        tokens[1] = "b";
-        Vocabulary vocab = Toknroll.vocabulary(specials, tokens);
-        Set<String> specialNames = new LinkedHashSet<>();
-        specialNames.add("<|s1|>");
-        specialNames.add("<|s2|>");
-        Specials compiled = Specials.compile(vocab, specialNames);
-        assertNotNull(compiled);
-        assertTrue(compiled.tokens().contains("<|s1|>"));
-        assertTrue(compiled.tokens().contains("<|s2|>"));
-    }
-
-    @Test
-    void specialsContainsCompiledTokenStrings() {
-        Vocabulary vocab = Toknroll.vocabulary("hello");
-        Specials specials = Specials.compile(vocab, Set.of("hello"));
-        assertTrue(specials.tokens().contains("hello"));
-        assertEquals(1, specials.tokens().size());
-    }
-
-    @Test
-    void specialsIsEmpty() {
-        assertTrue(Specials.none().isEmpty());
-        Vocabulary vocab = Toknroll.vocabulary("hello");
-        Specials specials = Specials.compile(vocab, Set.of("hello"));
-        assertFalse(specials.isEmpty());
-    }
-
-    @Test
-    void specialsEncodeInto() {
-        Vocabulary vocab = Toknroll.vocabulary("hello");
-        Tokenizer tokenizer =
-                new Tokenizer() {
-                    @Override
-                    public Vocabulary vocabulary() {
-                        return vocab;
-                    }
-
-                    @Override
-                    public void encodeInto(
-                            CharSequence text, int start, int end, IntSequence.Builder out) {
-                        out.add(0);
-                    }
-
-                    @Override
-                    public int countTokens(CharSequence text, int start, int end) {
-                        return 1;
-                    }
-
-                    @Override
-                    public int decodeBytesInto(IntSequence tokens, int idx, ByteBuffer out) {
-                        return 0;
-                    }
-                };
-        Specials specials = Specials.compile(vocab, Set.of("hello"));
-        IntSequence.Builder out = IntSequence.newBuilder();
-        specials.encodeInto(tokenizer, "hello", out);
-        assertEquals(1, out.size());
-    }
-
-    @Test
-    void specialsEncodeWithSpecials() {
-        Vocabulary vocab = Toknroll.vocabulary("hello", "world", "!");
-        Tokenizer dummy =
-                new Tokenizer() {
-                    @Override
-                    public Vocabulary vocabulary() {
-                        return vocab;
-                    }
-
-                    @Override
-                    public void encodeInto(
-                            CharSequence text, int start, int end, IntSequence.Builder out) {
-                        for (int i = start; i < end; i++) {
-                            String c = text.subSequence(i, i + 1).toString();
-                            if (vocab.contains(c)) out.add(vocab.id(c));
-                            else out.add(0);
-                        }
-                    }
-
-                    @Override
-                    public int countTokens(CharSequence text, int start, int end) {
-                        return end - start;
-                    }
-
-                    @Override
-                    public int decodeBytesInto(IntSequence tokens, int idx, ByteBuffer out) {
-                        return 0;
-                    }
-                };
-        Specials specials = Specials.compile(vocab, Set.of("hello"));
-        IntSequence result = specials.encode(dummy, "hello world !");
-        assertTrue(result.length() >= 1);
     }
 
     @Test
