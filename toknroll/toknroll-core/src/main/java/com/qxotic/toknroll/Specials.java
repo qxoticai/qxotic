@@ -26,7 +26,9 @@ import java.util.Objects;
  * Tokenizer#encode(CharSequence)} and splice the special tokens in by id, from {@link #tokens()}.
  *
  * <p>In Tiktoken terms, {@link Tokenizer#encode(CharSequence)} is {@code encode_ordinary} and
- * {@link #encode(Tokenizer, CharSequence)} is {@code encode(..., allowed_special="all")}.
+ * {@link #encode(Tokenizer, CharSequence)} is {@code encode(..., allowed_special="all")}; in
+ * Hugging Face's, they are the tokenizer without its added tokens and {@code encode}; in
+ * llama.cpp's, no added token matched and {@code parse_special}.
  */
 public interface Specials {
 

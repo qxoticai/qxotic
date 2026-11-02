@@ -110,14 +110,21 @@ Token-perfect against each model's own tokenizer, with the [known divergences](#
 
 Other BPE-based tokenizers likely work. They just are not parity-tested.
 
+## Raw text and special tokens
+
+`encode` takes its input as raw text: no added token is matched, special or not, as with tiktoken's `encode_ordinary`.
+`Specials.of(tokenizer).encode(tokenizer, text)` matches every added token in the text and substitutes its id, as Hugging Face's `encode` and llama.cpp with `parse_special` do.
+Use it for text you wrote, such as a rendered chat template, never for a user's text.
+Each mode is parity-tested against its own reference: `encode` against the reference with its added tokens switched off, `Specials` against the reference as it is.
+
 ## Known divergences
 
-Where Tok'n'Roll and a reference tokenizer give different ids, by design:
+Where llama.cpp differs from the model's own tokenizer, Tok'n'Roll follows the model's tokenizer:
 
-- Plain `encode` treats non-special added tokens (such as `<think>`, or DeepSeek's `<｜User｜>`) as text, while Hugging Face and llama.cpp match them as tokens.
-  `Specials.of(tokenizer).encode` is the path that matches them as the references do.
-- GGUF loading follows the model's own tokenizer where llama.cpp differs from it.
-  llama.cpp's case-rewriting regexes for gpt-oss, Nemotron and Kimi split words at non-ASCII capitals, and its Laguna regex cuts `\r` from `\n`.
+- llama.cpp's case-rewriting regexes for gpt-oss, Nemotron and Kimi split words at non-ASCII capitals.
+- llama.cpp's Laguna regex cuts `\r` from `\n`.
+- llama.cpp matches gpt-oss's Harmony control tokens even in raw text.
+- llama.cpp retypes a normal token named like an end-of-generation marker (Qwen2's `</s>`) as a control token, so `parse_special` matches it.
 
 ## Benchmarks
 

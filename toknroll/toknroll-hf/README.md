@@ -61,7 +61,7 @@ Artifacts are cached on disk and reused across runs.
 
 ## Tested Models
 
-Token-perfect against each model's own tokenizer, with the [known divergence](#known-divergence) below, tested against tokenizers from 17 model vendors:
+Token-perfect against each model's own tokenizer, in both [modes](#raw-text-and-special-tokens), tested against tokenizers from 17 model vendors:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google** - Gemma 4
@@ -83,7 +83,9 @@ Token-perfect against each model's own tokenizer, with the [known divergence](#k
 
 Other models are likely to work but are not tested against reference Python tokenizers.
 
-## Known divergence
+## Raw text and special tokens
 
-Plain `encode` treats non-special added tokens (such as `<think>`, or DeepSeek's `<｜User｜>`) as text, while Hugging Face matches them as tokens.
-`Specials.of(tokenizer).encode` is the path that matches them as Hugging Face does.
+`encode` takes its input as raw text: no added token is matched, special or not, as with tiktoken's `encode_ordinary`.
+`Specials.of(tokenizer).encode(tokenizer, text)` matches every added token in the text and substitutes its id, as Hugging Face's `encode` does.
+Use it for text you wrote, such as a rendered chat template, never for a user's text.
+Each mode is parity-tested against its own reference: `encode` against the reference with its added tokens switched off, `Specials` against the reference as it is.

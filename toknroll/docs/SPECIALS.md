@@ -8,10 +8,11 @@
 - Control-token handling stays explicit and opt-in instead of being hidden in default encode behavior.
 - Call sites remain auditable: plain text encoding and special-aware encoding are distinct operations.
 
-## Tiktoken mapping
+## The references' terms
 
-- `tokenizer.encode(text)` is analogous to Tiktoken ordinary-text encoding (`encode_ordinary(...)`).
-- `specials.encode(tokenizer, text)` is analogous to Tiktoken special-aware encoding (`encode(..., allowed_special="all")`).
+- `tokenizer.encode(text)` is raw text: tiktoken's `encode_ordinary`, Hugging Face's tokenizer without its added tokens, llama.cpp with no added token matched.
+- `specials.encode(tokenizer, text)` matches every added token: tiktoken's `encode(..., allowed_special="all")`, Hugging Face's `encode`, llama.cpp's `parse_special`.
+- The parity tests check each mode against these references.
 
 ## Usage
 
