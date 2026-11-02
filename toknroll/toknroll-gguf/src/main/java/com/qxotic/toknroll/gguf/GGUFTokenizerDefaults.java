@@ -188,8 +188,12 @@ final class GGUFTokenizerDefaults {
                         ImplAccessor.createSentencePieceSplitter(
                                 gguf.getValue(String[].class, GGUFMetadataKeys.TOKENS), true));
 
+        // joyai-llm: llama.cpp's converter names DeepSeek V4's tokenizer so; it shares the regex
         registerSequencePreTokenizers(
-                builder, new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN}, "deepseek-v3");
+                builder,
+                new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN},
+                "deepseek-v3",
+                "joyai-llm");
         // Digit-first stacks: every digit split apart, then the GPT-2 word-level pass.
         registerSequencePreTokenizers(
                 builder,
