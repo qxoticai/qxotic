@@ -185,12 +185,8 @@ class TiktokenSplitterTest {
     @Test
     void lagunasFirstStageSplitsAsItsRecursiveOriginal() {
         String original = "(?:\\r?\\n)+(?:[^\\r\\n]|\\r(?!\\n))*|(?:[^\\r\\n]|\\r(?!\\n))+";
-        String unrolled = null;
-        for (String stages : TiktokenSplitter.knownStages()) {
-            if (stages.startsWith("(?:\\r?\\n)++")) unrolled = stages.split("\n")[0];
-        }
         RegexSplitter truth = RegexSplitter.create(unicode(original));
-        RegexSplitter fixed = RegexSplitter.create(unicode(unrolled));
+        RegexSplitter fixed = RegexSplitter.create(unicode(TiktokenSplitter.LAGUNA_NEWLINES));
         String[] parts = {
             "a", " ", "\n", "\r", "\r\n", "\n\n", "\r\r", "x\r", "\u00e9", "\uD83D\uDE00"
         };

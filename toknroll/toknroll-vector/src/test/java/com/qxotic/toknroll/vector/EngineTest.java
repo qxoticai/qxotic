@@ -62,9 +62,6 @@ class EngineTest {
                     + "|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     private static final String QWEN2 = ASCII_BOTH + String.format(BODY, "\\p{N}");
     private static final String MINICPM5_MAIN = ASCII_BOTH + String.format(BODY, "\\p{N}+");
-    private static final String LAGUNA_NEWLINES =
-            "(?:\\r?\\n)++[^\\r\\n]*+(?:\\r(?!\\n)[^\\r\\n]*+)*+"
-                    + "|(?=[^\\n])(?!\\r\\n)[^\\r\\n]*+(?:\\r(?!\\n)[^\\r\\n]*+)*+";
     private static final String BAILING =
             "'(?:[sSdDmMtT]|[lL][lL]|[vV][eE]|[rR][eE])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}"
                     + "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]|\\s+(?!\\S)|\\s+";
@@ -84,7 +81,7 @@ class EngineTest {
         pair("bailingmoe", "cl100k_base", BAILING),
         staged("mellum2", "r50k_base", "\\p{N}", GPT2),
         staged("minicpm5", "cl100k_base", "\\p{N}{1,3}", MINICPM5_MAIN),
-        staged("laguna", "cl100k_base", LAGUNA_NEWLINES, QWEN2)
+        staged("laguna", "cl100k_base", ImplAccessor.LAGUNA_NEWLINES, QWEN2)
     };
 
     /**
