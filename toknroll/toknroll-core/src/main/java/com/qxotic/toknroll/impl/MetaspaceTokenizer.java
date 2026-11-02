@@ -6,6 +6,8 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * A SentencePiece tokenizer as the text sees it: its vocabulary spells a space U+2581, the text '
@@ -24,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 final class MetaspaceTokenizer implements Tokenizer {
 
     private static final char METASPACE = '\u2581';
+    private static final byte[] METASPACE_UTF8 =
+            String.valueOf(METASPACE).getBytes(StandardCharsets.UTF_8);
 
     private final Tokenizer base;
     private final boolean prependAlways;
@@ -74,6 +78,21 @@ final class MetaspaceTokenizer implements Tokenizer {
         }
     }
 
+    /** A range of the one text, as {@link #encodeInto}: "first" prepends at its start only. */
+    @Override
+    public void encodeUtf8Into(byte[] utf8, int start, int end, IntSequence.Builder out) {
+        Objects.requireNonNull(utf8, "utf8");
+        Objects.checkFromToIndex(start, end, utf8.length);
+        if (prepends(utf8, start, end)) {
+            byte[] prefixed = new byte[METASPACE_UTF8.length + end - start];
+            System.arraycopy(METASPACE_UTF8, 0, prefixed, 0, METASPACE_UTF8.length);
+            System.arraycopy(utf8, start, prefixed, METASPACE_UTF8.length, end - start);
+            base.encodeUtf8Into(prefixed, 0, prefixed.length, out);
+        } else {
+            base.encodeUtf8Into(utf8, start, end, out);
+        }
+    }
+
     @Override
     public int countTokens(CharSequence text, int start, int end) {
         if (prepends(text, start, end)) {
@@ -87,9 +106,27 @@ final class MetaspaceTokenizer implements Tokenizer {
     // turns a first char into a space (NFKC on U+3000) would need it after
     private boolean prepends(CharSequence text, int start, int end) {
         return start < end
-                && (prependAlways || prependFirst && start == 0)
+                && prependsAt(start == 0)
                 && text.charAt(start) != ' '
                 && text.charAt(start) != METASPACE;
+    }
+
+    private boolean prepends(byte[] utf8, int start, int end) {
+        return start < end
+                && prependsAt(start == 0)
+                && utf8[start] != ' '
+                && !(end - start >= METASPACE_UTF8.length
+                        && Arrays.equals(
+                                utf8,
+                                start,
+                                start + METASPACE_UTF8.length,
+                                METASPACE_UTF8,
+                                0,
+                                METASPACE_UTF8.length));
+    }
+
+    private boolean prependsAt(boolean textStart) {
+        return prependAlways || prependFirst && textStart;
     }
 
     @Override

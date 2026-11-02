@@ -96,6 +96,30 @@ class MetaspaceTokenizerTest {
         assertArrayEquals(model("▁world"), always.build().toArray());
     }
 
+    /** A UTF-8 range is a range of the one text: "first" prepends at the text's start only. */
+    @ParameterizedTest
+    @ValueSource(strings = {"always", "first", "never"})
+    void aUtf8RangeEncodesAsTheSameCharRange(String scheme) {
+        Tokenizer tokenizer = metaspace(scheme, true);
+        for (String text : new String[] {"hello world", "hello  world", "he▁world", "é world"}) {
+            byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);
+            for (int from = 0; from <= text.length(); from++) {
+                for (int to = from; to <= text.length(); to++) {
+                    IntSequence.Builder chars = IntSequence.newBuilder();
+                    tokenizer.encodeInto(text, from, to, chars);
+                    IntSequence.Builder bytes = IntSequence.newBuilder();
+                    int start = text.substring(0, from).getBytes(StandardCharsets.UTF_8).length;
+                    int end = text.substring(0, to).getBytes(StandardCharsets.UTF_8).length;
+                    tokenizer.encodeUtf8Into(utf8, start, end, bytes);
+                    assertArrayEquals(
+                            chars.build().toArray(),
+                            bytes.build().toArray(),
+                            text + " [" + start + ", " + end + ")");
+                }
+            }
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"always", "first", "never"})
     void countTokensIsTheEncodedLength(String scheme) {
