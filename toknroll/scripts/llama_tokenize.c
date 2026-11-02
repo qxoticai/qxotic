@@ -8,6 +8,7 @@
 #include <stdlib.h>
 static void quiet(enum ggml_log_level level, const char * text, void * data) { (void) level; (void) text; (void) data; }
 int main(int argc, char ** argv) {
+    if (argc != 2) { fprintf(stderr, "usage: %s model.gguf < texts\n", argv[0]); return 1; }
     llama_log_set(quiet, NULL);
     llama_backend_init();
     struct llama_model_params params = llama_model_default_params();

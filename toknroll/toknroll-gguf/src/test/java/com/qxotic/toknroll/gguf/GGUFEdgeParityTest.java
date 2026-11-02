@@ -1,23 +1,21 @@
 package com.qxotic.toknroll.gguf;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.DynamicContainer.dynamicContainer;
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
-import com.qxotic.format.json.Json;
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.testkit.EdgeParityGolden;
+import com.qxotic.toknroll.testkit.EdgeParityGolden.Model;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
@@ -35,9 +33,11 @@ import org.junit.jupiter.api.TestFactory;
  *
  * <p>Every divergence fails. A known one fails with its cause in the message: llama.cpp matching a
  * user-defined token in plain text, or a control token its gpt-oss workaround renders, which
- * toknroll encodes as text; llama.cpp's gpt-4o, Tekken and Kimi K2 regexes splitting a word at a
- * non-ASCII capital, where the model's own tokenizer and toknroll do not; and llama.cpp cutting
- * Laguna's newlines apart from carriage returns, which its tokenizer.json keeps together.
+ * toknroll encodes as text; llama.cpp's gpt-4o, Tekken, Pixtral and Kimi K2 regexes splitting a
+ * word at a non-ASCII capital, where the model's own tokenizer and toknroll do not; and llama.cpp
+ * cutting Laguna's newlines apart from carriage returns, which its tokenizer.json keeps together.
+ * The last two are keyed on the file's {@code tokenizer.ggml.pre} and name only a first difference
+ * at such a capital or carriage return.
  */
 @Tag("local-external")
 class GGUFEdgeParityTest {
@@ -45,42 +45,34 @@ class GGUFEdgeParityTest {
     private static final String DIR = System.getProperty("toknroll.test.ggufs");
 
     /**
-     * Files under llama.cpp's rewritten gpt-4o, Tekken and Kimi K2 regexes: every non-ASCII letter
-     * both cases.
+     * The pre-tokenizers whose regex llama.cpp rewrites to take every non-ASCII letter both cases.
      */
     private static final Set<String> LLAMA_CPP_CASE_REWRITE =
-            Set.of(
-                    "gpt-oss-20b-Q8_0.gguf",
-                    "nvidia_Nemotron-Cascade-2-30B-A3B-Q4_K_M.gguf",
-                    "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Q8_0.gguf",
-                    "Kimi-K2.6-UD-Q4_K_XL-00001-of-00014.gguf",
-                    "Kimi-K3-UD-IQ1_M-00001-of-00015.gguf");
+            Set.of("gpt-4o", "tekken", "pixtral", "kimi-k2");
 
     @TestFactory
-    @SuppressWarnings("unchecked")
-    Stream<DynamicContainer> llamaCppParity() throws IOException {
+    Stream<DynamicContainer> llamaCppParity() {
         Assumptions.assumeTrue(DIR != null, "set -Dtoknroll.test.ggufs to the folder of GGUFs");
-        Map<String, Object> golden;
-        try (InputStream in = getClass().getResourceAsStream("/gguf_edge_parity.json")) {
-            golden =
-                    (Map<String, Object>)
-                            Json.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
-        }
-        List<Object> texts = (List<Object>) golden.get("texts");
-        return ((List<Object>) golden.get("models"))
-                .stream().map(m -> container((Map<String, Object>) m, texts));
+        EdgeParityGolden golden =
+                EdgeParityGolden.load(
+                        GGUFEdgeParityTest.class,
+                        "gguf_edge_parity.json",
+                        "toknroll/scripts/gguf_edge_parity.py");
+        return golden.models().stream().map(model -> container(model, golden.texts()));
     }
 
     /**
      * One file's cases; a file toknroll cannot load is one failing test with the loader's error.
      */
-    @SuppressWarnings("unchecked")
-    private static DynamicContainer container(Map<String, Object> model, List<Object> texts) {
-        String file = (String) model.get("file");
+    private static DynamicContainer container(Model model, List<String> texts) {
+        String file = model.name();
         Tokenizer tokenizer;
+        String pre;
         try {
-            tokenizer = load(file);
-        } catch (RuntimeException e) {
+            Path path = Path.of(DIR, file);
+            pre = GGUF.read(path).getValueOrDefault(String.class, "tokenizer.ggml.pre", "default");
+            tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromLocal(path);
+        } catch (IOException | RuntimeException e) {
             return dynamicContainer(
                     file,
                     Stream.of(
@@ -90,35 +82,37 @@ class GGUFEdgeParityTest {
                                         throw e;
                                     })));
         }
-        List<Object> cases = (List<Object>) model.get("cases");
         List<DynamicTest> tests = new ArrayList<>();
-        for (int i = 0; i < cases.size(); i++) {
-            String text = (String) texts.get(i);
-            int[] ids =
-                    ((List<Object>) cases.get(i))
-                            .stream().mapToInt(id -> ((Number) id).intValue()).toArray();
-            tests.add(dynamicTest(printable(text), () -> check(file, tokenizer, text, ids)));
+        for (int i = 0; i < texts.size(); i++) {
+            String text = texts.get(i);
+            int[] ids = model.cases().get(i).ids();
+            tests.add(
+                    dynamicTest(
+                            EdgeParityGolden.printable(text),
+                            () -> check(pre, tokenizer, text, ids)));
         }
         return dynamicContainer(file, tests);
     }
 
-    private static void check(String file, Tokenizer tokenizer, String text, int[] expected) {
+    private static void check(String pre, Tokenizer tokenizer, String text, int[] expected) {
         int[] ids = tokenizer.encode(text).toArray();
-        String known = knownCause(file, tokenizer, text, expected);
-        assertArrayEquals(
-                expected, ids, known == null ? "encode" : "encode, known divergence: " + known);
-        assertEquals(expected.length, tokenizer.countTokens(text), "countTokens");
-        IntSequence sequence = IntSequence.wrap(ids);
-        assertEquals(
-                tokenizer.decode(sequence),
-                new String(tokenizer.decodeBytes(sequence), StandardCharsets.UTF_8),
-                "decode agrees with decodeBytes");
-        assertEquals(tokenizer.decodeBytes(sequence).length, tokenizer.countBytes(sequence));
+        if (!Arrays.equals(expected, ids)) {
+            String known = knownCause(pre, tokenizer, text, expected, ids);
+            assertArrayEquals(
+                    expected, ids, known == null ? "encode" : "encode, known divergence: " + known);
+        }
+        EdgeParityGolden.checkCountsAndBytes(
+                text,
+                expected,
+                tokenizer::countTokens,
+                t -> tokenizer.decode(IntSequence.wrap(t)),
+                t -> tokenizer.decodeBytes(IntSequence.wrap(t)),
+                t -> tokenizer.countBytes(IntSequence.wrap(t)));
     }
 
     /** The cause of a divergence already diagnosed, or null; the test fails either way. */
     private static String knownCause(
-            String file, Tokenizer tokenizer, String text, int[] expected) {
+            String pre, Tokenizer tokenizer, String text, int[] expected, int[] actual) {
         if (Arrays.stream(expected)
                 .anyMatch(
                         id ->
@@ -137,26 +131,35 @@ class GGUFEdgeParityTest {
             return "llama.cpp matches a control token in the text (its gpt-oss workaround renders"
                     + " Harmony's markers); Hugging Face and toknroll encode it as text";
         }
-        if (LLAMA_CPP_CASE_REWRITE.contains(file)
-                && text.codePoints().anyMatch(c -> c > 127 && Character.isUpperCase(c))) {
+        String window = firstDifference(tokenizer, text, expected, actual);
+        if (LLAMA_CPP_CASE_REWRITE.contains(pre)
+                && window.codePoints().anyMatch(c -> c > 127 && Character.isUpperCase(c))) {
             return "llama.cpp's rewritten regex splits at a non-ASCII capital; the model's own"
                     + " tokenizer and toknroll do not";
         }
-        if (file.toLowerCase(Locale.ROOT).startsWith("laguna") && text.contains("\r")) {
+        if ("laguna".equals(pre) && window.indexOf('\r') >= 0) {
             return "llama.cpp's Laguna regex ([^\\n]+|[\\n]+) cuts newlines from carriage returns;"
                     + " Laguna's tokenizer.json keeps CRLF and LF CR together, as toknroll does";
         }
         return null;
     }
 
-    private static Tokenizer load(String file) {
-        return GGUFTokenizerLoader.createBuilderWithBuiltins()
-                .build()
-                .fromLocal(Path.of(DIR, file));
+    /**
+     * The text where the ids first differ: the bytes of the longer of the two differing tokens,
+     * with a char on each side.
+     */
+    private static String firstDifference(
+            Tokenizer tokenizer, String text, int[] expected, int[] actual) {
+        int i = Arrays.mismatch(expected, actual);
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        int start = tokenizer.decodeBytes(IntSequence.wrap(Arrays.copyOf(expected, i))).length;
+        int width = Math.max(tokenBytes(tokenizer, expected, i), tokenBytes(tokenizer, actual, i));
+        int from = Math.max(0, start - 4);
+        int to = Math.min(bytes.length, start + width + 4);
+        return from >= to ? "" : new String(bytes, from, to - from, StandardCharsets.UTF_8);
     }
 
-    private static String printable(String text) {
-        String shown = text.length() > 40 ? text.substring(0, 40) + "..." : text;
-        return "\"" + shown.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + "\"";
+    private static int tokenBytes(Tokenizer tokenizer, int[] ids, int i) {
+        return i < ids.length ? tokenizer.decodeBytes(IntSequence.of(ids[i])).length : 0;
     }
 }
