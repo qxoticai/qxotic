@@ -6,7 +6,7 @@ from toknroll._native import locate
 
 OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED, ECANCELLED = 0, -1, -2, -3, -4, -5
 
-LogFn = C.CFUNCTYPE(None, C.c_int, C.c_char_p, C.c_void_p)
+LogFn = C.CFUNCTYPE(None, C.c_int32, C.c_char_p, C.c_void_p)
 
 
 class ModelOptions(C.Structure):
@@ -32,7 +32,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
         "jinfer_model_options_init": ([C.POINTER(ModelOptions)], None),
         "jinfer_model_load": ([S, C.POINTER(ModelOptions)], P),
         "jinfer_model_free": ([P], None),
-        "jinfer_model_property": ([P, C.c_int], I32),
+        "jinfer_model_property": ([P, I32], I32),
         "jinfer_model_info": ([P], S),
         "jinfer_model_tokenizer": ([P], P),
         "jinfer_state_new": ([P, I32], P),

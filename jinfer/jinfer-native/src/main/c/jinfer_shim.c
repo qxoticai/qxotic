@@ -33,7 +33,7 @@ jinfer_model* jinfer__model_load(T, const char*, const jinfer_model_options*);
 void jinfer__model_free(T, jinfer_model*);
 int32_t jinfer__model_property(T, const jinfer_model*, int32_t);
 const char* jinfer__model_info(T, const jinfer_model*);
-toknroll_tokenizer* jinfer__model_tokenizer(T, jinfer_model*);
+toknroll_tokenizer* jinfer__model_tokenizer(T, const jinfer_model*);
 jinfer_state* jinfer__state_new(T, jinfer_model*, int32_t);
 void jinfer__state_free(T, jinfer_state*);
 int32_t jinfer__state_reset(T, jinfer_state*);
@@ -68,9 +68,9 @@ int32_t jinfer_configure(const char* const* options, int32_t count) { return tok
 void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o); o->struct_size = sizeof *o; }
 jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o) { THREAD; return t ? jinfer__model_load(t, ref, o) : NULL; }
 void jinfer_model_free(jinfer_model* m) { if (!m) return; THREAD; if (t) jinfer__model_free(t, m); }   /* NULL never starts the runtime, here and below */
-int32_t jinfer_model_property(const jinfer_model* m, jinfer_property key) { THREAD; return t ? jinfer__model_property(t, m, (int32_t) key) : JINFER_ERROR; }
+int32_t jinfer_model_property(const jinfer_model* m, int32_t key) { THREAD; return t ? jinfer__model_property(t, m, key) : JINFER_ERROR; }
 const char* jinfer_model_info(const jinfer_model* m) { THREAD; return t ? jinfer__model_info(t, m) : ""; }
-toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m) { THREAD; return t ? jinfer__model_tokenizer(t, m) : NULL; }
+toknroll_tokenizer* jinfer_model_tokenizer(const jinfer_model* m) { THREAD; return t ? jinfer__model_tokenizer(t, m) : NULL; }
 
 jinfer_state* jinfer_state_new(jinfer_model* m, int32_t capacity) { THREAD; return t ? jinfer__state_new(t, m, capacity) : NULL; }
 void jinfer_state_free(jinfer_state* s) { if (!s) return; THREAD; if (t) jinfer__state_free(t, s); }

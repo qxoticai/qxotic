@@ -418,7 +418,7 @@ final class Model {
         return shared;
     }
 
-    /** jinfer_property keys, as the header numbers them. */
+    /** jinfer_model_property's keys, as the header numbers them. */
     int property(int key) {
         return switch (key) {
             case 1 ->
@@ -440,7 +440,7 @@ final class Model {
             case 103 -> kind == Kind.RERANKING ? 1 : 0;
             case 104 -> kind == Kind.SPEECH ? 1 : 0;
             case 105 -> kind == Kind.TRANSCRIPTION ? 1 : 0;
-            default -> throw Errors.invalid("unknown jinfer_property key " + key);
+            default -> throw Errors.invalid("unknown jinfer_model_property key " + key);
         };
     }
 

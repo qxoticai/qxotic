@@ -46,7 +46,6 @@
 #define JINFER_H
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 #include "toknroll.h"   /* the tokenizer API: jinfer_model_tokenizer hands out a toknroll_tokenizer */
 #ifdef __cplusplus
 extern "C" {
@@ -73,8 +72,8 @@ extern "C" {
 #define JINFER_EUNSUPPORTED (-4) /* the model lacks this capability */
 #define JINFER_ECANCELLED   (-5)
 
-typedef enum { JINFER_LOG_DEBUG, JINFER_LOG_INFO, JINFER_LOG_WARN, JINFER_LOG_ERROR } jinfer_log_level;
-typedef void (*jinfer_log_fn)(jinfer_log_level level, const char* message, void* user);
+enum { JINFER_LOG_DEBUG = 0, JINFER_LOG_INFO = 1, JINFER_LOG_WARN = 2, JINFER_LOG_ERROR = 3 };   /* log levels */
+typedef void (*jinfer_log_fn)(int32_t level, const char* message, void* user);
 
 JINFER_API const char* jinfer_version(void);          /* "0.4.0", the jinfer release it was built from */
 JINFER_API const char* jinfer_last_error(int32_t* code);   /* the message; *code = its code unless NULL, JINFER_OK after success */
@@ -109,7 +108,7 @@ JINFER_API void          jinfer_model_options_init(jinfer_model_options* o);
 JINFER_API jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o);  /* hub ref or path; NULL = defaults */
 JINFER_API void          jinfer_model_free(jinfer_model* m);
 
-typedef enum {   /* every value spelled out: they are the ABI */
+enum {   /* jinfer_model_property's keys; every value spelled out: they are the ABI */
     JINFER_VOCAB_SIZE          = 1,
     JINFER_CONTEXT_CAPACITY    = 2,
     JINFER_EMBEDDING_DIMENSION = 3,
@@ -121,12 +120,12 @@ typedef enum {   /* every value spelled out: they are the ABI */
     JINFER_HAS_RERANK          = 103,
     JINFER_HAS_SPEECH          = 104,
     JINFER_HAS_TRANSCRIPTION   = 105
-} jinfer_property;
+};
 
-JINFER_API int32_t     jinfer_model_property(const jinfer_model* m, jinfer_property key);  /* 0 = not applicable; JINFER_EINVAL = unknown key */
+JINFER_API int32_t     jinfer_model_property(const jinfer_model* m, int32_t key);  /* 0 = not applicable; JINFER_EINVAL = unknown key */
 JINFER_API const char* jinfer_model_info(const jinfer_model* m);                           /* JSON: architecture, quantization, defaults; "" on error */
 
-JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m);   /* the model's tokenizer, see toknroll.h; yours to toknroll_tokenizer_free, it outlives the model; a reranker, speaker or transcriber has none */
+JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(const jinfer_model* m);   /* the model's tokenizer, see toknroll.h; yours to toknroll_tokenizer_free, it outlives the model; a reranker, speaker or transcriber has none */
 
 /* --------------------------------------- state: one sequence of your own, the raw door */
 typedef struct jinfer_state jinfer_state;
