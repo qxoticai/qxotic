@@ -5,14 +5,14 @@ One header, [`include/toknroll.h`](include/toknroll.h), twelve functions: load a
 Remote sources fetch tokenizer metadata only, never weights.
 
 ```c
-toknroll_tokenizer* t = toknroll_load("Qwen/Qwen3-0.6B");
+toknroll_tokenizer* t = toknroll_tokenizer_load("Qwen/Qwen3-0.6B");
 const char* text = "Hello, world!";
 int32_t n = toknroll_encode(t, text, strlen(text), 0, NULL, 0);   /* capacity 0 counts */
 int32_t* ids = malloc(n * sizeof *ids);
 toknroll_encode(t, text, strlen(text), 0, ids, n);
 char back[256];
 toknroll_decode(t, ids, n, back, sizeof back);
-toknroll_free(t);
+toknroll_tokenizer_free(t);
 ```
 
 The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.

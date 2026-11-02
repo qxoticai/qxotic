@@ -9,7 +9,7 @@
  *   Strings   UTF-8. Text and token spellings come with their length in bytes, so any byte may be
  *             in them; with length 0 the pointer may be NULL. Sources and options end at their NUL.
  *             The one string returned to you, toknroll_last_error's, is the calling thread's until
- *             its next toknroll call. Nothing is freed but tokenizers, by toknroll_free, which
+ *             its next toknroll call. Nothing is freed but tokenizers, by toknroll_tokenizer_free, which
  *             accepts NULL.
  *   Threads   Any thread may call, and a tokenizer may be shared between threads: it never changes.
  *             A process may fork at any time; the child keeps every tokenizer it inherited.
@@ -88,8 +88,8 @@ TOKNROLL_API const char* toknroll_last_error(int32_t* code);    /* the message; 
 TOKNROLL_API int32_t toknroll_configure(const char* const* options, int32_t count);
 
 /* A tokenizer from a path or a hub reference: Sources, above. */
-TOKNROLL_API toknroll_tokenizer* toknroll_load(const char* source);
-TOKNROLL_API void                toknroll_free(toknroll_tokenizer* t);
+TOKNROLL_API toknroll_tokenizer* toknroll_tokenizer_load(const char* source);
+TOKNROLL_API void                toknroll_tokenizer_free(toknroll_tokenizer* t);
 
 /* Options for toknroll_encode and toknroll_encode_batch, or'ed together; 0 is the default. An
  * unknown bit is TOKNROLL_EINVAL. */

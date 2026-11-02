@@ -123,7 +123,7 @@ typedef enum {   /* every value spelled out: they are the ABI */
 JINFER_API int32_t     jinfer_model_property(const jinfer_model* m, jinfer_property key);  /* 0 = not applicable; JINFER_EINVAL = unknown key */
 JINFER_API const char* jinfer_model_info(const jinfer_model* m);                           /* JSON: architecture, quantization, defaults */
 
-JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m);   /* the model's tokenizer, see toknroll.h; yours to toknroll_free, it outlives the model; a reranker, speaker or transcriber has none */
+JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m);   /* the model's tokenizer, see toknroll.h; yours to toknroll_tokenizer_free, it outlives the model; a reranker, speaker or transcriber has none */
 
 /* --------------------------------------- state: one sequence of your own, the raw door */
 typedef struct jinfer_state jinfer_state;

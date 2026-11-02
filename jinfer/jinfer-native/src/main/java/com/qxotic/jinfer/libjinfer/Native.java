@@ -138,8 +138,8 @@ public final class Native {
     static ObjectHandle modelTokenizer(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            // a toknroll handle over the model's tokenizer, freed by toknroll_free; the tokenizer
-            // is a plain heap object, so it outlives the model
+            // a toknroll handle over the model's tokenizer, freed by toknroll_tokenizer_free; the
+            // tokenizer is a plain heap object, so it outlives the model
             return com.qxotic.toknroll.libtoknroll.Native.handle(
                     get(handle, Model.class, "model").tokenizer());
         } catch (Throwable t) {

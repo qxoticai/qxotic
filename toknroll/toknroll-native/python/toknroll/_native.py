@@ -46,8 +46,8 @@ def bind(lib: C.CDLL) -> C.CDLL:
         "toknroll_version": ([], S),
         "toknroll_last_error": ([C.POINTER(I32)], S),
         "toknroll_configure": ([C.POINTER(C.c_char_p), I32], I32),
-        "toknroll_load": ([S], P),
-        "toknroll_free": ([P], None),
+        "toknroll_tokenizer_load": ([S], P),
+        "toknroll_tokenizer_free": ([P], None),
         # the id buffers travel as addresses: an array('i') or a numpy array, in place
         "toknroll_encode": ([P, S, C.c_size_t, C.c_uint32, P, I32], I32),
         "toknroll_decode": ([P, P, I32, C.c_char_p, I32], I32),

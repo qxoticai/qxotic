@@ -154,7 +154,7 @@ public final class Native {
         return Errors.last();
     }
 
-    @CEntryPoint(name = "toknroll__load")
+    @CEntryPoint(name = "toknroll__tokenizer_load")
     static ObjectHandle load(IsolateThread thread, CCharPointer source) {
         try {
             Errors.clear();
@@ -165,7 +165,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__free")
+    @CEntryPoint(name = "toknroll__tokenizer_free")
     static void free(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();

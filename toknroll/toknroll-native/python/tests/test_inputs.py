@@ -245,11 +245,11 @@ class UnloadTest(unittest.TestCase):
         code = textwrap.dedent(f"""
             import _ctypes, ctypes, sys, threading
             lib = ctypes.CDLL({str(N.locate("toknroll"))!r})
-            lib.toknroll_load.restype = ctypes.c_void_p
+            lib.toknroll_tokenizer_load.restype = ctypes.c_void_p
             lib.toknroll_vocabulary_size.argtypes = [ctypes.c_void_p]
             called, unloaded = threading.Event(), threading.Event()
             def worker():
-                assert lib.toknroll_vocabulary_size(lib.toknroll_load({GGUF!r}.encode())) > 0
+                assert lib.toknroll_vocabulary_size(lib.toknroll_tokenizer_load({GGUF!r}.encode())) > 0
                 called.set()
                 unloaded.wait()
             thread = threading.Thread(target=worker)
@@ -276,7 +276,7 @@ class ErrorTypesTest(unittest.TestCase):
     def test_a_success_clears_the_last_error(self):
         lib, code = N.library(), ctypes.c_int32()
         with toknroll.load(GGUF) as t:
-            self.assertIsNone(lib.toknroll_load(b"/no/such/file"))
+            self.assertIsNone(lib.toknroll_tokenizer_load(b"/no/such/file"))
             self.assertIn(b"such", lib.toknroll_last_error(ctypes.byref(code)))   # the path, spelled as the platform spells it
             self.assertEqual(code.value, N.ENOTFOUND)
             self.assertGreater(lib.toknroll_vocabulary_size(t._handle), 0)

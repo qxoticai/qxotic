@@ -14,8 +14,8 @@ void toknroll__error_set(T, int32_t, const char*);
 #define XSTR(x) STR(x)
 
 const char* toknroll__last_error(T, int32_t*);
-toknroll_tokenizer* toknroll__load(T, const char*);
-void toknroll__free(T, toknroll_tokenizer*);
+toknroll_tokenizer* toknroll__tokenizer_load(T, const char*);
+void toknroll__tokenizer_free(T, toknroll_tokenizer*);
 int32_t toknroll__encode(T, const toknroll_tokenizer*, const char*, size_t, uint32_t, int32_t*, int32_t);
 int32_t toknroll__decode(T, const toknroll_tokenizer*, const int32_t*, int32_t, char*, int32_t);
 int32_t toknroll__encode_batch(T, const toknroll_tokenizer*, const char*, const int32_t*, int32_t, uint32_t, int32_t*, int32_t, int32_t*);
@@ -31,8 +31,8 @@ const char* toknroll_last_error(int32_t* code) {
 }
 int32_t toknroll_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "toknroll_configure", toknroll__error_set); }
 
-toknroll_tokenizer* toknroll_load(const char* source) CALL(toknroll_tokenizer*, NULL, toknroll__load(t, source))
-void toknroll_free(toknroll_tokenizer* tk) { if (tk) CALL_VOID(toknroll__free(t, tk)) }   /* NULL never starts the runtime */
+toknroll_tokenizer* toknroll_tokenizer_load(const char* source) CALL(toknroll_tokenizer*, NULL, toknroll__tokenizer_load(t, source))
+void toknroll_tokenizer_free(toknroll_tokenizer* tk) { if (tk) CALL_VOID(toknroll__tokenizer_free(t, tk)) }   /* NULL never starts the runtime */
 
 int32_t toknroll_encode(const toknroll_tokenizer* tk, const char* text, size_t length, uint32_t flags, int32_t* out, int32_t cap) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode(t, tk, text, length, flags, out, cap))
 int32_t toknroll_decode(const toknroll_tokenizer* tk, const int32_t* ids, int32_t count, char* out, int32_t cap) CALL(int32_t, TOKNROLL_ERROR, toknroll__decode(t, tk, ids, count, out, cap))

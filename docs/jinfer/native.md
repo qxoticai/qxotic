@@ -33,7 +33,7 @@ Everything returned is borrowed from its handle until the next call on that hand
 Errors: pointer-returning functions return NULL, int functions a negative code, `jinfer_last_error(&code)` says what happened, the message and the code.
 
 The raw door, for callers who sample themselves: `jinfer_state_new`, a state of your own holding up to `context_capacity` tokens; `jinfer_state_ingest` (the forward pass), `jinfer_state_logits`, `jinfer_state_embedding`.
-Tokenization is toknroll's API, `toknroll.h`, which `jinfer.h` includes: `jinfer_model_tokenizer` hands out the model's tokenizer as a `toknroll_tokenizer` (`toknroll_encode`, `toknroll_decode`, `toknroll_token`, `toknroll_id`, `toknroll_vocabulary_size`), and `toknroll_load` gives one from a tokenizer.json, a GGUF file or a hub reference without the weights.
+Tokenization is toknroll's API, `toknroll.h`, which `jinfer.h` includes: `jinfer_model_tokenizer` hands out the model's tokenizer as a `toknroll_tokenizer` (`toknroll_encode`, `toknroll_decode`, `toknroll_token`, `toknroll_id`, `toknroll_vocabulary_size`), and `toknroll_tokenizer_load` gives one from a tokenizer.json, a GGUF file or a hub reference without the weights.
 
 ## Python
 

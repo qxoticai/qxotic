@@ -235,7 +235,7 @@ class Tokenizer:
         when no other thread is using it, as with a file."""
         handle, self._h = getattr(self, "_h", None), None
         if handle is not None:
-            self._lib.toknroll_free(handle)
+            self._lib.toknroll_tokenizer_free(handle)
 
     def __enter__(self):
         return self
@@ -279,7 +279,7 @@ def load(source: str | os.PathLike) -> Tokenizer:
     if os.path.exists(text):
         text = os.path.abspath(text)  # the source outlives the working directory: pickling, repr
     lib = N.library()
-    handle = lib.toknroll_load(text.encode())
+    handle = lib.toknroll_tokenizer_load(text.encode())
     if not handle:
         raise _error(lib)
     return Tokenizer(handle, text, lib)
