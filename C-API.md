@@ -51,7 +51,7 @@ Products of counts (`m * k`, `count * dimension`) are computed in 64 bits inside
 ## Flags
 
 A function that may grow options takes a `uint32_t flags` word, never a `bool`.
-Each flag is named after its function, `JAM_SHARE_IMMUTABLE`, `TOKNROLL_ENCODE_SPECIALS`, and the call site reads as a sentence.
+Each flag is named so the call site reads as a sentence: `JAM_SHARE_IMMUTABLE` after its function, `TOKNROLL_SPECIALS` for the two encode functions that share it.
 A bit the library does not define is refused with `EINVAL`, so it stays free to assign later.
 
 ## Results and errors
@@ -85,8 +85,8 @@ The message behind the last result is per thread:
 const char* prefix_last_error(int32_t* code);   /* "" and OK after a success; *code unless NULL */
 ```
 
-Every call sets it, a success clears it, and the string stays valid until the thread's next call into the library.
-A library never reports through `errno`, never calls `abort` or `exit`, and never prints unless asked to (see Configuration).
+Every call sets it, except `_last_error` itself and the functions that cannot fail (`_version`, an options struct's `_init`): a success clears it, and the string stays valid until the thread's next call into the library.
+A library never reports through `errno`, never calls `abort` or `exit`, and writes to stderr only what Configuration lists.
 No Java or C++ exception crosses the boundary: each entry point catches everything and returns a code.
 
 ## Memory and buffers
@@ -112,17 +112,20 @@ A size the library knows up front (`count * dimension`) is answered before any w
 
 ## Options
 
-A function with more than a few optional settings takes a pointer to an options struct.
-Every field's zero value means its default, so `jinfer_model_options options = {0};` in C (`= {};` in C++) is a complete initialization, and a NULL pointer means all defaults.
-Fields are ordered largest first, so the struct has no padding for a binding to mirror.
+A function with more than a few optional settings takes a pointer to an options struct, and a NULL pointer means all defaults.
+Every field's zero value means its default.
+`jam_context_options` needs nothing more: `jam_context_options options = {0};` in C (`= {};` in C++) is a complete initialization, and its fields are ordered largest first, so it has no padding for a binding to mirror.
+`jinfer_model_options` starts with a `size_t struct_size`, which `jinfer_model_options_init` sets while it zeroes the rest; a `struct_size` smaller than the struct the library was built with is `EINVAL`, so a struct that skipped the `_init` is refused instead of misread.
+Its fields keep the header's order, padding included, which a binding mirrors as the header lays it out.
 Before 1.0 a struct simply changes, since the soname changes with it.
-From 1.0 it can only grow: it starts with a `uint32_t size` that the caller sets to `sizeof`, and the library reads the fields that fit and defaults the rest.
+From 1.0 a struct can only grow, at the end, and one that carries its size is read as far as that size reaches, the rest defaulted.
 
 ## Handles and NULL
 
 NULL never stands for a default object: there is no global context to fall back on.
 A NULL, freed or foreign handle returns `EINVAL` (a borrowed string returns `""`, a pointer NULL) wherever the library can tell.
-libtoknroll and libjinfer keep their handles in tables and tag each with its library, so a handle from the other library is refused instead of naming a different object.
+libtoknroll and libjinfer keep their handles in tables and check the kind of object each one names, so a model passed where a tokenizer belongs is refused instead of misread.
+A handle means something only to the library that made it, and a program links one of the two (see Exports).
 
 ## Threads, fork and callbacks
 
@@ -140,9 +143,11 @@ Once a call that replaces or clears a callback returns, the old one is not runni
 ## Configuration
 
 Settings come through the API: an options struct, or `prefix_configure(options, count)` before first use (later it returns `EINVAL`).
-One environment variable per library, `PREFIX_DEBUG`, turns on diagnostics on stderr; a library is otherwise silent.
-`jinfer_log_set` routes jinfer's log lines to the host instead.
+libtoknroll and libjinfer also read one environment variable, `TOKNROLL_OPTIONS` and `JINFER_OPTIONS`: the same options as configure's, separated by whitespace, applied after configure's, so whoever runs the program has the last word.
+libjam reads `JAM_DEBUG`, which prints its dispatch on stderr, and a few `JAM_*` tuning knobs.
 A library reads its environment once, at first use.
+A library writes to stderr only libjam's dispatch under `JAM_DEBUG`, the runtime's name for an option it rejects (libtoknroll, libjinfer), and jinfer's download progress while stderr is a terminal.
+`jinfer_log_set` routes jinfer's log lines, download progress included when no terminal shows it, to the host; without a callback they go nowhere.
 
 ## Headers
 
@@ -154,9 +159,11 @@ The header is the reference; the README and the examples only show it in use, an
 
 ## Exports
 
-A library exports exactly the functions its header declares, and no other library's.
+A library exports exactly the functions its header declares, and nothing of the runtime behind it (GraalVM's `graal_*`, the entry points the shims forward to).
+libjinfer carries two other libraries' faces on purpose: libtoknroll's API, so `jinfer_model_tokenizer` hands out a `toknroll_tokenizer`, and libjam's functions and JNI entry points, linked in whole, which jam's Java side finds by name in the image.
+So a program links one of libjinfer and libtoknroll, never both, and no libjam beside libjinfer: a name defined twice binds the program to whichever library loads first.
 `PREFIX_API` is `__declspec(dllexport)` while building on Windows (`PREFIX_BUILD`), `__declspec(dllimport)` for a Windows caller, nothing with `PREFIX_STATIC`, and `__attribute__((visibility("default")))` elsewhere, where everything else is built hidden.
-`make check-exports` fails when the exported functions differ from the header's.
+`make check-exports` fails when the exported names differ from the header's functions, plus, for libjinfer, the ones it carries.
 One exception: on Windows, GraalVM marks its own runtime functions `dllexport`, and nothing can take them back out of libtoknroll's and libjinfer's DLLs, so there the check covers the prefix's names only.
 
 ## Versions

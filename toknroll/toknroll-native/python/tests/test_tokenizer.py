@@ -278,10 +278,6 @@ class PicklingTest(unittest.TestCase):
             self.assertEqual(list(pool.map(t.count_tokens, ["one", "two three", ""])), [1, 2, 0])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class BindTest(unittest.TestCase):
     def test_another_toknroll_is_refused_by_version(self):
         class Fn:
@@ -296,3 +292,7 @@ class BindTest(unittest.TestCase):
 
         with self.assertRaisesRegex(OSError, f"{toknroll.__version__}.*9.9.9.*libother"):
             toknroll._native.bind(Lib())
+
+
+if __name__ == "__main__":
+    unittest.main()

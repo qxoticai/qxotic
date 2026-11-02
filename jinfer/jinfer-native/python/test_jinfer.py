@@ -46,6 +46,39 @@ nested = logging.Handler(); nested.emit = lambda record: N.lib.jinfer_model_prop
 logging.getLogger("jinfer").addHandler(nested)
 ok(N.lib.jinfer_model_property(m._h, 999) == N.EINVAL and b"999" in N.lib.jinfer_last_error(None), "a call from inside the log callback keeps the error")
 logging.getLogger("jinfer").removeHandler(nested)
+
+# the callback-safe functions, called from inside the callback: the _free functions and last_error
+spare, spare_tk = jinfer.load(LM), None
+freed = []
+def free_inside(record):
+    if not freed:
+        freed.append(N.lib.jinfer_last_error(None) is not None)
+        N.lib.jinfer_model_free(spare._ptr); spare._ptr = None
+        N.lib.toknroll_tokenizer_free(spare_tk)
+spare_tk = N.lib.jinfer_model_tokenizer(spare._h)
+inside = logging.Handler(); inside.emit = free_inside
+logging.getLogger("jinfer").addHandler(inside)
+ok(N.lib.jinfer_model_property(m._h, 999) == N.EINVAL and freed == [True] and b"999" in N.lib.jinfer_last_error(None), "free and last_error from inside the callback")
+logging.getLogger("jinfer").removeHandler(inside)
+
+# replacing the callback: once jinfer_log_set returns the old one never runs again, and a callback
+# always gets its own user pointer, while another thread logs all along
+retired, wrong, stop = set(), [], threading.Event()
+def make(k):
+    def callback(level, message, user):
+        if k in retired or user != k: wrong.append((k, user))
+    return N.LogFn(callback)
+callbacks = [make(k) for k in range(1, 201)]
+def noisy():
+    while not stop.is_set(): N.lib.jinfer_model_property(m._h, 999)  # each failure logs its trace
+noise = threading.Thread(target=noisy); noise.start()
+for k, callback in enumerate(callbacks, 1):
+    N.lib.jinfer_log_set(callback, k)
+    if k > 1: retired.add(k - 1)
+    time.sleep(0.001)
+N.lib.jinfer_log_set(jinfer._log_callback, None); retired.add(len(callbacks))
+stop.set(); noise.join()
+ok(not wrong, f"a replaced callback ran, or got another's user pointer: {wrong[:5]}")
 ok(isinstance(m, jinfer.LanguageModel) and not hasattr(m, "embed") and not hasattr(m, "kind"), f"{m!r}")
 ok("kernels=native" in repr(m) and "threads=" in repr(m), f"repr says what runs: {m!r}")
 ok(m.context_capacity == min(4096, m.max_context_length) and m.max_context_length >= m.context_capacity and m.name.endswith(".gguf"), f"properties: capacity {m.context_capacity} of {m.max_context_length}")
@@ -70,6 +103,18 @@ ids = tk.encode("Hello world, how are you?")
 ok(4 <= len(ids) <= 12 and all(isinstance(i, int) for i in ids), f"tokenizer.encode {ids}")
 ok(tk.decode(ids) == "Hello world, how are you?" and tk.vocabulary_size > 1000 and tk.id(tk.token(ids[0])) == ids[0], "the model's tokenizer is a toknroll.Tokenizer")
 ok(type(tk).__module__ == "toknroll" and repr(tk).startswith("Tokenizer("), f"{type(tk).__module__}.{type(tk).__name__}")
+
+# the C functions themselves: a size is answered, a bad one refused, a string is never NULL
+def last_code():
+    code = ctypes.c_int32(); N.lib.jinfer_last_error(ctypes.byref(code)); return code.value
+state = N.lib.jinfer_state_new(m._h, 64)
+ok(state and N.lib.jinfer_state_ingest(state, (ctypes.c_int32 * 2)(*ids[:2]), 2) == 2, "a state ingests")
+ok(N.lib.jinfer_state_logits(state, None, 0) == tk.vocabulary_size, "capacity 0 sizes the logits")
+ok(N.lib.jinfer_state_logits(state, None, -1) == N.EINVAL and N.lib.jinfer_state_embedding(state, None, -1) in (N.EINVAL, N.EUNSUPPORTED), "a negative capacity is refused")
+N.lib.jinfer_state_free(state)
+ok(N.lib.jinfer_stream_text(m._h) == b"" and last_code() == N.EINVAL, "stream_text on a handle that is not a stream: \"\", the error in last_error")
+ok(N.lib.jinfer_stream_result(None) == b"" and last_code() == N.EINVAL, "stream_result on NULL: \"\"")
+ok(N.lib.jinfer_model_info(None) == b"" and last_code() == N.EINVAL, "model_info on NULL: \"\"")
 
 r = m.chat("What is the capital of France? Answer in one word.", max_tokens=8, temperature=0)
 ok("Paris" in r.text and not hasattr(r, "response") and not hasattr(r, "message"), f"answer: {r.text!r}")
@@ -368,6 +413,19 @@ one = e.embed("AI on the JVM")
 # from the same row inside a batch by ~1e-4 in cosine)
 ok(len(one) == 1 and len(one[0]) == e.dimension and abs(cos(list(map(float, one[0])), rows[0]) - 1) < 1e-3, "one string is a batch of one")
 ok(len(e.embed(["word " * 4000] * 3)) == 3, "texts of thousands of tokens embed whole")
+# the size is count x dimension, answered before the model runs: a text the model would refuse
+# does not fail the sizing call, and a size past int32 is refused rather than wrapped
+with jinfer.load(EMB, context_capacity=600) as short:
+    too_long = jinfer._strings(["word " * 2000, "a"], "texts")
+    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, None, 0) == 2 * short.dimension and last_code() == N.OK, "sizing runs no model")
+    room = (ctypes.c_float * (2 * short.dimension - 1))()
+    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, room, len(room)) == 2 * short.dimension, "too little room: the size, no model run")
+    out = (ctypes.c_float * (2 * short.dimension))()
+    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, out, len(out)) == N.EINVAL and b"600" in N.lib.jinfer_last_error(None), "the run refuses the text")
+n = 2**31 // e.dimension + 1
+many = (ctypes.c_char_p * n)(*([b"a"] * n))
+ok(N.lib.jinfer_embed(e._h, many, n, 0, None, 0) == N.EINVAL and b"2^31" in N.lib.jinfer_last_error(None), "a size past int32 is refused")
+del many
 try:
     e.embed("a", dimension=-1); ok(False, "a negative dimension must be refused")
 except jinfer.InvalidArgument as err:
@@ -438,6 +496,23 @@ t.join(timeout=30)
 ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} after {len(seen)} chunks")
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
 ok(jinfer.__version__ == "0.4.0" == N.lib.jinfer_version().decode(), f"version {jinfer.__version__}")
+
+# a stream takes one call at a time: a second thread's call while a step blocks is JINFER_EBUSY
+r = m.chat("Write a very long story about the sea.", max_tokens=200)
+steps = []
+def step_all():  # steps to the end, waiting out the main thread's steps
+    while (rc := N.lib.jinfer_stream_step(r._ptr)) in (N.OK, N.EBUSY): steps.append(rc)
+    steps.append(rc)
+t = threading.Thread(target=step_all); t.start()
+while not steps: time.sleep(0.001)
+busy = [N.lib.jinfer_stream_step(r._ptr) for _ in range(50)]  # the other thread is inside a step nearly always
+texts = [(N.lib.jinfer_stream_text(r._ptr), last_code()) for _ in range(2000)]
+N.lib.jinfer_stream_cancel(r._ptr)  # exempt: any thread, any time
+t.join(timeout=60)
+ok(N.EBUSY in busy and set(busy) <= {N.EBUSY, N.OK, 1, N.ECANCELLED}, f"a concurrent step: {sorted(set(busy))}")
+ok((b"", N.EBUSY) in texts and all(code in (N.OK, N.EBUSY) for _, code in texts), "a concurrent stream_text: \"\" and JINFER_EBUSY")
+ok(not t.is_alive(), "the stepping thread ended")
+r.close()
 
 # a child forked once the library started is refused at once, where it would hang; the parent carries on
 if hasattr(os, "fork"):

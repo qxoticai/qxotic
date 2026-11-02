@@ -5,14 +5,14 @@ One header, [`include/toknroll.h`](include/toknroll.h), twelve functions: load a
 Remote sources fetch tokenizer metadata only, never weights.
 
 ```c
-toknroll_tokenizer* t = toknroll_load("Qwen/Qwen3-0.6B");
+toknroll_tokenizer* t = toknroll_tokenizer_load("Qwen/Qwen3-0.6B");
 const char* text = "Hello, world!";
 int32_t n = toknroll_encode(t, text, strlen(text), 0, NULL, 0);   /* capacity 0 counts */
 int32_t* ids = malloc(n * sizeof *ids);
 toknroll_encode(t, text, strlen(text), 0, ids, n);
 char back[256];
 toknroll_decode(t, ids, n, back, sizeof back);
-toknroll_free(t);
+toknroll_tokenizer_free(t);
 ```
 
 The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.
@@ -38,8 +38,10 @@ Hub references are fetched through `curl` on the PATH (the `fetch` module's proc
 The shared library is 17 MB and the archive 18 MB at `-O2`, the builder's default; with the JDK's HTTPS stack inside it was 32 MB.
 The size follows the code: `-O3` is 12 MB larger for 18% more encode throughput, `-Os` 6 MB smaller for 19% less, and the floor, one entry point and the runtime, is 8 MB.
 
-The shared library exports the header's twelve functions and GraalVM's `graal_*` runtime API, nothing of its own entry points.
+The shared library's soname follows the version, `libtoknroll.so.0.4` (`@rpath/libtoknroll.0.4.dylib` on a Mac); the build links `target/libtoknroll.so.0.4` to the library, and the release bundle carries the file under that name.
+The shared library exports the header's twelve functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.
 `libtoknroll.a` is the same image as one relocatable object with every symbol but the header's twelve made local: nothing of the runtime behind it is visible to the program that links it, and it needs only the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS.
+A program that links it defines `TOKNROLL_STATIC` before including the header, so `TOKNROLL_API` asks for no import.
 It is for programs that want no shared library; a GraalVM host image cannot link it (two runtimes in one image), so libjinfer compiles the entry points into its own image instead.
 
 `src/main/c/toknroll_shim.c` forwards each header function to the `toknroll__*` entry points in `Native.java`; `toknroll_isolate.c` owns the runtime: it starts at `toknroll_configure` or at the first call, with configure's options and then `TOKNROLL_OPTIONS` from the environment, and libjinfer compiles both files into its own image so one runtime serves both APIs.

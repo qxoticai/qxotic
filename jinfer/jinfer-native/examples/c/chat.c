@@ -6,8 +6,8 @@
 
 /* The library is silent until asked: this prints everything it says. A program keeps what it wants
  * by level: downloads and warnings are INFO and above, loads and kernel choices DEBUG. */
-static void log_line(jinfer_log_level level, const char* message, void* payload) {
-    (void) level; (void) payload;
+static void log_line(int32_t level, const char* message, void* user) {
+    (void) level; (void) user;
     fprintf(stderr, "%s\n", message);
 }
 

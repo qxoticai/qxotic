@@ -13,7 +13,7 @@ static int fail(const char* what) {
 
 int main(int argc, char** argv) {
     if (argc != 3) { fprintf(stderr, "usage: tokenize SOURCE TEXT\n"); return 2; }
-    toknroll_tokenizer* t = toknroll_load(argv[1]);
+    toknroll_tokenizer* t = toknroll_tokenizer_load(argv[1]);
     if (!t) return fail("load");
 
     size_t length = strlen(argv[2]);
@@ -29,6 +29,6 @@ int main(int argc, char** argv) {
     printf("%s\n%" PRId32 " tokens, vocabulary %" PRId32 ", toknroll %s\n", text, n, toknroll_vocabulary_size(t), toknroll_version());
 
     free(ids);
-    toknroll_free(t);
+    toknroll_tokenizer_free(t);
     return 0;
 }

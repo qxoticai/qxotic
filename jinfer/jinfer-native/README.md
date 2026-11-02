@@ -12,10 +12,10 @@ jinfer_stream_free(s);
 jinfer_model_free(model);
 ```
 
-The header's opening comment states the whole contract: errors, buffers, ownership, threads, stability.
+The header's opening comment states the whole contract: errors, buffers, text, ownership, threads, fork, settings, stability.
 In short: pointer-returning functions return NULL and int functions a negative code, `jinfer_last_error(&code)` has the message and the code;
 `(out, capacity)` buffers follow `snprintf`; everything returned is borrowed until the next call on that handle;
-a model is reference-counted by its states and streams; any thread may call, one thread at a time per state or stream.
+a model is reference-counted by its states and streams; any thread may call, one call at a time per state or stream (a second at once is `JINFER_EBUSY`).
 
 ## Build
 
@@ -42,8 +42,9 @@ The Java side is `com.qxotic.jinfer.libjinfer`: one `@CEntryPoint` per header fu
 a `Model` of whatever kind the file is, a `State` for the raw door and a `Stream` for every generation.
 Tokenization is toknroll's API, `toknroll.h` in `toknroll/toknroll-native`: libjinfer carries its `toknroll_*` entry points too, and `jinfer_model_tokenizer` hands out a model's tokenizer as a `toknroll_tokenizer`.
 `src/main/c/jinfer_shim.c` is the C face: it forwards to the entry points through the runtime `toknroll_isolate.c` starts at `jinfer_configure` or at the first call, one for the `jinfer_*` and `toknroll_*` symbols alike, and holds a log callback installed before that.
-GraalVM links shared libraries with an export list that names only its own entry points,
-so toknroll-native's `src/main/c/native-cc.sh` wraps the C compiler for both libraries and makes the list the shims' globals, `jinfer_*` and `toknroll_*`, at the link step.
+GraalVM links shared libraries with an export list that names its own runtime API and entry points,
+so toknroll-native's `src/main/c/native-cc.sh` wraps the C compiler for both libraries and makes the list the shims' globals, `jinfer_*` and `toknroll_*`, and libjam's names, at the link step.
+The wrapper also gives the library its soname, derived from the version: `libjinfer.so.0.4`, or `@rpath/libjinfer.0.4.dylib` on a Mac; the build links `target/libjinfer.so.0.4` to the library, and the release bundle carries the file under that name.
 
 libjam is linked into the library whole (jam-native's static archive, pulled in by the pom's whole-archive line) and loaded from the library's own file: the isolate shim hands the runtime its path as `jam.native.library.path`, the knob jam's loader honours, so no copy is extracted and no platform-specific lookup is needed.
 
@@ -52,7 +53,7 @@ libjam is linked into the library whole (jam-native's static archive, pulled in 
 The chat dialect is jinfer-server's own: `OpenAiChat` is the public seam the server exposes, so the library and
 `/v1/chat/completions` lower and answer identically. Downloads run through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local models need nothing. Download progress is jinfer-hub's: a board on stderr at a terminal, log lines otherwise. libjam is linked into the image (`StaticJam`, jam-native's `jam_static` archive linked
 whole, its symbols exported by the wrapper), so nothing is extracted at run time.
-`JINFER_CC_LOG=<file> make libjinfer` records every compiler and linker line the build ran.
+`NATIVE_CC_LOG=<file> make libjinfer` records every compiler and linker line the build ran.
 
 The image is built for one ISA level, `-march`, and `VectorWidth` pins the kernels' Vector API width to that level
 from the target CPU features the builder reports: left to its default, the width would be the build host's, and an AVX2

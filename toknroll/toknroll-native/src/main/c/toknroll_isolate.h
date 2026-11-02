@@ -1,5 +1,6 @@
 /* What the shims need from toknroll_isolate.c: the calling thread's isolate thread, the state before there
- * is a runtime, and configure. Private to the libraries: nothing declared here is exported. */
+ * is a runtime, and configure; and what Workers.java needs. Private to the libraries: nothing declared
+ * here is exported. */
 #ifndef TOKNROLL_ISOLATE_H
 #define TOKNROLL_ISOLATE_H
 #include <stdint.h>
@@ -16,4 +17,11 @@ const char* toknroll__early_error(int32_t* code);   /* the last failure no runti
 /* configure for the public function `who`; error_set reports through that API's own last error */
 int32_t toknroll__configure(const char* const* options, int32_t count, const char* who,
                             void (*error_set)(graal_thread*, int32_t, const char*));
+/* Batch workers, for Workers.java (toknroll_isolate.c says why): whether there are any here; a
+ * worker's record, NULL out of memory; its wait for the generation after seen, returned busy; and the
+ * call that moves the generation on. */
+int toknroll__workers(void);
+void* toknroll__worker_new(void);
+int64_t toknroll__worker_wait(void* worker, int64_t seen);
+void toknroll__workers_wake(void);
 #endif

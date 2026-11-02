@@ -32,6 +32,7 @@ final class Stream {
 
     private final Model model;
     private final LinkedBlockingQueue<Object> chunks = new LinkedBlockingQueue<>();
+    final Exclusive exclusive = new Exclusive("stream");
     private volatile boolean cancelled;
     private volatile boolean finished;
     String text = "";

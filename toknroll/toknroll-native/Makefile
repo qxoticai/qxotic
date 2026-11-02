@@ -17,8 +17,9 @@ include ../../native.mk
 libtoknroll:
 	@$(MAKE) -s -C $(ROOT) check-native-image
 	rm -f target/cc.log
-	cd $(ROOT) && NATIVE_CC_LOG=$(abspath target/cc.log) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
+	cd $(ROOT) && NATIVE_CC_LOG=$(abspath target/cc.log) NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
 	  -Dtoknroll.image.opt=$(OPT) -Dtoknroll.image.march=$(MARCH)
+	ln -sf $(notdir $(LIB)) target/$(SONAME)
 	src/main/c/static.sh include/toknroll.h target/cc.log $(STATIC)
 
 target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
@@ -26,7 +27,7 @@ target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
 
 # The static archive: the example linked against it, no shared library in sight, and only toknroll_* exported.
 target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
-	cc -std=c99 -Wall -Wextra -Wpedantic -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
+	cc -std=c99 -Wall -Wextra -Wpedantic -DTOKNROLL_STATIC -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
 
 check-static: target/tokenize-static
 	@nm --defined-only -g $(STATIC) | awk 'NF == 3 {print $$3}' | sed 's/^_//' | sort > target/static.syms   # NF: the member header and blank lines nm prints for an archive

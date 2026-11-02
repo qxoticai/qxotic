@@ -84,6 +84,18 @@ class IdBufferTest(unittest.TestCase):
         self.assertEqual(self.t.decode(ids), "word " * 250_000)
         self.assertEqual(len(self.t.decode_bytes(ids)), len("word " * 250_000))
 
+    def test_byte_sizes_are_64_bit(self):
+        """decode and token take and return int64_t: a capacity of -2^40 is refused, where a binding
+        cut to 32 bits would read it as 0 and ask for the size. Over 4096 ids the size is counted in
+        chunks first, and still exact."""
+        lib, h, text = self.t._lib, self.t._handle, "word " * 5000
+        ids = self.t.encode(text)
+        self.assertGreater(len(ids), 4096)
+        address = ids.buffer_info()[0]
+        self.assertEqual(lib.toknroll_decode(h, address, len(ids), None, 0), len(text.encode()))
+        self.assertEqual(lib.toknroll_decode(h, address, len(ids), None, -(1 << 40)), N.EINVAL)
+        self.assertEqual(lib.toknroll_token(h, ids[0], None, -(1 << 40)), N.EINVAL)
+
 
 @needs_gguf
 class LifecycleTest(unittest.TestCase):
@@ -206,6 +218,29 @@ class ForkTest(unittest.TestCase):
             stop.set()
         """)
 
+    def test_a_child_encodes_batches(self):
+        """A batch runs on the runtime's pool, whose threads stay in the parent: a child forked while
+        the parent's batches kept them busy must still finish its own."""
+        self.child_process("""
+            import signal, threading
+            t = toknroll.load(GGUF)
+            texts = [f"text {i} {i * 7919} " * 40 for i in range(2000)]  # big enough to split over every core
+            want = [list(ids) for ids in t.encode_batch(texts)]
+            stop = threading.Event()
+            def busy():
+                while not stop.is_set():
+                    t.encode_batch(texts)
+            for _ in range(2): threading.Thread(target=busy, daemon=True).start()
+            for _ in range(20):
+                pid = os.fork()
+                if pid == 0:
+                    signal.alarm(20)  # a hung child dies rather than outlive the test
+                    os._exit(0 if [list(ids) for ids in t.encode_batch(texts)] == want else 3)
+                rc = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+                assert rc == 0, "the child hung on a batch" if rc == -signal.SIGALRM else f"the child failed: {rc}"
+            stop.set()
+        """)
+
     def test_a_fork_pool_uses_the_tokenizer_made_before_it(self):
         self.child_process("""
             import multiprocessing
@@ -245,11 +280,11 @@ class UnloadTest(unittest.TestCase):
         code = textwrap.dedent(f"""
             import _ctypes, ctypes, sys, threading
             lib = ctypes.CDLL({str(N.locate("toknroll"))!r})
-            lib.toknroll_load.restype = ctypes.c_void_p
+            lib.toknroll_tokenizer_load.restype = ctypes.c_void_p
             lib.toknroll_vocabulary_size.argtypes = [ctypes.c_void_p]
             called, unloaded = threading.Event(), threading.Event()
             def worker():
-                assert lib.toknroll_vocabulary_size(lib.toknroll_load({GGUF!r}.encode())) > 0
+                assert lib.toknroll_vocabulary_size(lib.toknroll_tokenizer_load({GGUF!r}.encode())) > 0
                 called.set()
                 unloaded.wait()
             thread = threading.Thread(target=worker)
@@ -276,7 +311,7 @@ class ErrorTypesTest(unittest.TestCase):
     def test_a_success_clears_the_last_error(self):
         lib, code = N.library(), ctypes.c_int32()
         with toknroll.load(GGUF) as t:
-            self.assertIsNone(lib.toknroll_load(b"/no/such/file"))
+            self.assertIsNone(lib.toknroll_tokenizer_load(b"/no/such/file"))
             self.assertIn(b"such", lib.toknroll_last_error(ctypes.byref(code)))   # the path, spelled as the platform spells it
             self.assertEqual(code.value, N.ENOTFOUND)
             self.assertGreater(lib.toknroll_vocabulary_size(t._handle), 0)

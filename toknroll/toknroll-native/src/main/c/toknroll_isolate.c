@@ -14,7 +14,13 @@
  * gated; 200 forks never caught it holding a lock. libjinfer (TOKNROLL_FORK_REFUSED) generates on threads
  * of its own, which a child does not inherit, and calls back into the host while holding a call open, so
  * it takes no gate: a forked child is refused, every call failing with the reason, every free a no-op,
- * where it would hang. Windows has no fork. */
+ * where it would hang. Windows has no fork.
+ *
+ * Batch workers. A thread of the runtime caught running Java code at fork hangs the child at its first
+ * garbage collection, which waits for every thread the runtime knows, gone or not. So libtoknroll's batches
+ * run on workers of its own, held to the same gate: a worker runs Java code only between leaving
+ * toknroll__worker_wait, marked busy, and calling it again, and waits for work here, in C, where fork
+ * finds it idle. The child has none of them, and encodes its batches on the calling thread. */
 #define _GNU_SOURCE               /* dladdr */
 #define _DARWIN_C_SOURCE
 #ifndef _WIN32
@@ -31,6 +37,8 @@
 #include "toknroll.h"
 #include "toknroll_isolate.h"
 #include "toknroll_port.h"
+
+_Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 64-bit platform");
 
 /* Bare names, stringified here: a quoted -D value would not survive every platform's command line. */
 #ifndef TOKNROLL_PROGRAM
@@ -127,6 +135,10 @@ static void fork_done(void) {
     __atomic_store_n(&forking, 0, __ATOMIC_SEQ_CST);
     gate_unlock();
 }
+/* the work generation, bumped by toknroll__workers_wake; workers sleep until it moves */
+static int64_t generation;
+static pthread_mutex_t work_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t work = PTHREAD_COND_INITIALIZER;
 #else
 static void gate_lock(void) {}
 static void gate_unlock(void) {}
@@ -319,6 +331,52 @@ void toknroll__leave(void) {
 #else
 graal_thread* toknroll__enter(void) { return toknroll__thread(); }
 void toknroll__leave(void) {}
+#endif
+
+#ifdef GATE
+int toknroll__workers(void) { return 1; }
+
+/* listed with the callers, so fork waits for it; never freed, as a worker lives as long as the runtime.
+ * Busy from the start: the thread is in Java code until its first wait. */
+void* toknroll__worker_new(void) {
+    caller* c = calloc(1, sizeof *c);
+    if (!c) return NULL;
+    c->busy = 1;
+    gate_lock();
+    c->next = callers;
+    callers = c;
+    gate_unlock();
+    return c;
+}
+
+int64_t toknroll__worker_wait(void* worker, int64_t seen) {
+    caller* c = worker;
+    __atomic_store_n(&c->busy, 0, __ATOMIC_SEQ_CST);
+    pthread_mutex_lock(&work_lock);
+    while (generation == seen) pthread_cond_wait(&work, &work_lock);
+    int64_t now = generation;
+    pthread_mutex_unlock(&work_lock);
+    for (;;) {   /* back into Java code through the gate, as toknroll__enter does */
+        __atomic_store_n(&c->busy, 1, __ATOMIC_SEQ_CST);
+        if (!__atomic_load_n(&forking, __ATOMIC_SEQ_CST)) return now;
+        __atomic_store_n(&c->busy, 0, __ATOMIC_SEQ_CST);
+        gate_lock();
+        gate_unlock();
+    }
+}
+
+void toknroll__workers_wake(void) {
+    pthread_mutex_lock(&work_lock);
+    generation++;
+    pthread_cond_broadcast(&work);
+    pthread_mutex_unlock(&work_lock);
+}
+#else
+/* no fork to guard against (Windows), or a child refused anyway (libjinfer): batches use the common pool */
+int toknroll__workers(void) { return 0; }
+void* toknroll__worker_new(void) { return NULL; }
+int64_t toknroll__worker_wait(void* worker, int64_t seen) { (void) worker; return seen; }
+void toknroll__workers_wake(void) {}
 #endif
 
 int toknroll__created(void) { return port_load(&created) != 0; }

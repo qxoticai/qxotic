@@ -321,13 +321,36 @@ final class Model {
         };
     }
 
-    /** jinfer_embed: count x dimension, row-major; one pass over a fresh state. */
-    synchronized float[] embed(List<String> texts, int dimension) {
+    /** The dimension jinfer_embed's vectors have: the one asked for, 0 the native. */
+    private int dimension(int dimension) {
         if (embedder == null)
             throw Errors.unsupported(name + " is " + article() + ", not an embedding model");
         if (dimension < 0) throw Errors.invalid("dimension must not be negative; 0 = native");
-        int dim = dimension <= 0 ? embedder.dimension() : dimension;
-        float[] all = new float[texts.size() * dim];
+        if (dimension == 0) return embedder.dimension();
+        int min = embedder.minimumDimension(), max = embedder.dimension();
+        if (dimension < min || dimension > max) {
+            String supported =
+                    min == max
+                            ? " has a fixed embedding dimension of " + max
+                            : " supports embedding dimensions " + min + ".." + max;
+            throw Errors.invalid(name + supported + "; requested " + dimension);
+        }
+        return dimension;
+    }
+
+    /** jinfer_embed's result size, count x dimension floats, refused past int32. */
+    int embedSize(int count, int dimension) {
+        int dim = dimension(dimension);
+        long size = (long) count * dim;
+        if (size > Integer.MAX_VALUE)
+            throw Errors.invalid(count + " embeddings of " + dim + " floats are over 2^31");
+        return (int) size;
+    }
+
+    /** jinfer_embed: count x dimension, row-major; one pass over a fresh state. */
+    synchronized float[] embed(List<String> texts, int dimension) {
+        int dim = dimension(dimension);
+        float[] all = new float[embedSize(texts.size(), dimension)];
         int[] at = {0};
         embedder.embedAll(
                 sharedState(longest(texts)),
@@ -395,7 +418,7 @@ final class Model {
         return shared;
     }
 
-    /** jinfer_property keys, as the header numbers them. */
+    /** jinfer_model_property's keys, as the header numbers them. */
     int property(int key) {
         return switch (key) {
             case 1 ->
@@ -417,7 +440,7 @@ final class Model {
             case 103 -> kind == Kind.RERANKING ? 1 : 0;
             case 104 -> kind == Kind.SPEECH ? 1 : 0;
             case 105 -> kind == Kind.TRANSCRIPTION ? 1 : 0;
-            default -> throw Errors.invalid("unknown jinfer_property key " + key);
+            default -> throw Errors.invalid("unknown jinfer_model_property key " + key);
         };
     }
 

@@ -8,14 +8,16 @@
 #include "toknroll_isolate.h"   /* toknroll-native/src/main/c */
 #include "toknroll_port.h"
 
+_Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 64-bit platform");
+
 void jinfer__error_set(graal_thread*, int32_t, const char*);
 void jinfer__log_set(graal_thread*, jinfer_log_fn, void*);
 
 /* a log callback installed before the isolate exists is applied on the first call that has one */
 static jinfer_log_fn pending_log;
-static void* pending_payload;
+static void* pending_user;
 static port_once_t log_once = PORT_ONCE_INIT;
-static void apply_log(void) { jinfer__log_set(toknroll__thread(), pending_log, pending_payload); }
+static void apply_log(void) { jinfer__log_set(toknroll__thread(), pending_log, pending_user); }
 
 static graal_thread* thread(void) {
     graal_thread* t = toknroll__thread();
@@ -33,7 +35,7 @@ jinfer_model* jinfer__model_load(T, const char*, const jinfer_model_options*);
 void jinfer__model_free(T, jinfer_model*);
 int32_t jinfer__model_property(T, const jinfer_model*, int32_t);
 const char* jinfer__model_info(T, const jinfer_model*);
-toknroll_tokenizer* jinfer__model_tokenizer(T, jinfer_model*);
+toknroll_tokenizer* jinfer__model_tokenizer(T, const jinfer_model*);
 jinfer_state* jinfer__state_new(T, jinfer_model*, int32_t);
 void jinfer__state_free(T, jinfer_state*);
 int32_t jinfer__state_reset(T, jinfer_state*);
@@ -58,19 +60,19 @@ const char* jinfer_version(void) { return XSTR(JINFER_VERSION_MAJOR) "." XSTR(JI
 /* never create the isolate just to report on it, nor apply a pending log callback: that is a call, and
  * a call clears the error being read */
 const char* jinfer_last_error(int32_t* code) { T t = toknroll__created() ? toknroll__thread() : NULL; return t ? jinfer__last_error(t, code) : toknroll__early_error(code); }
-void jinfer_log_set(jinfer_log_fn fn, void* payload) {
-    if (!toknroll__created()) { pending_log = fn; pending_payload = payload; return; }
+void jinfer_log_set(jinfer_log_fn fn, void* user) {
+    if (!toknroll__created()) { pending_log = fn; pending_user = user; return; }
     THREAD;
-    if (t) jinfer__log_set(t, fn, payload);
+    if (t) jinfer__log_set(t, fn, user);
 }
 int32_t jinfer_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "jinfer_configure", jinfer__error_set); }
 
 void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o); o->struct_size = sizeof *o; }
 jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o) { THREAD; return t ? jinfer__model_load(t, ref, o) : NULL; }
 void jinfer_model_free(jinfer_model* m) { if (!m) return; THREAD; if (t) jinfer__model_free(t, m); }   /* NULL never starts the runtime, here and below */
-int32_t jinfer_model_property(const jinfer_model* m, jinfer_property key) { THREAD; return t ? jinfer__model_property(t, m, (int32_t) key) : JINFER_ERROR; }
-const char* jinfer_model_info(const jinfer_model* m) { THREAD; return t ? jinfer__model_info(t, m) : NULL; }
-toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m) { THREAD; return t ? jinfer__model_tokenizer(t, m) : NULL; }
+int32_t jinfer_model_property(const jinfer_model* m, int32_t key) { THREAD; return t ? jinfer__model_property(t, m, key) : JINFER_ERROR; }
+const char* jinfer_model_info(const jinfer_model* m) { THREAD; return t ? jinfer__model_info(t, m) : ""; }
+toknroll_tokenizer* jinfer_model_tokenizer(const jinfer_model* m) { THREAD; return t ? jinfer__model_tokenizer(t, m) : NULL; }
 
 jinfer_state* jinfer_state_new(jinfer_model* m, int32_t capacity) { THREAD; return t ? jinfer__state_new(t, m, capacity) : NULL; }
 void jinfer_state_free(jinfer_state* s) { if (!s) return; THREAD; if (t) jinfer__state_free(t, s); }
@@ -83,7 +85,7 @@ int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t cap) {
 int32_t jinfer_stream_step(jinfer_stream* s) { THREAD; return t ? jinfer__stream_step(t, s) : JINFER_ERROR; }
 const char* jinfer_stream_text(const jinfer_stream* s) { THREAD; return t ? jinfer__stream_text(t, s) : ""; }
 const float* jinfer_stream_samples(const jinfer_stream* s, int32_t* count) { THREAD; if (!t) { if (count) *count = 0; return NULL; } return jinfer__stream_samples(t, s, count); }
-const char* jinfer_stream_result(const jinfer_stream* s) { THREAD; return t ? jinfer__stream_result(t, s) : NULL; }
+const char* jinfer_stream_result(const jinfer_stream* s) { THREAD; return t ? jinfer__stream_result(t, s) : ""; }
 void jinfer_stream_cancel(jinfer_stream* s) { if (!s) return; THREAD; if (t) jinfer__stream_cancel(t, s); }
 void jinfer_stream_free(jinfer_stream* s) { if (!s) return; THREAD; if (t) jinfer__stream_free(t, s); }
 

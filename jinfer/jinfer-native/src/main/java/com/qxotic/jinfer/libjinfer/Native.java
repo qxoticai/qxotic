@@ -46,9 +46,10 @@ public final class Native {
     }
 
     /** snprintf for floats: writes min(n, capacity), returns n. */
-    private static int floats(float[] values, CFloatPointer out, long capacity) {
+    private static int floats(float[] values, CFloatPointer out, int capacity) {
+        if (capacity < 0) throw Errors.invalid("capacity must not be negative");
         if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-        int n = Math.min(values.length, (int) Math.min(capacity, Integer.MAX_VALUE));
+        int n = Math.min(values.length, capacity);
         for (int i = 0; i < n; i++) out.write(i, values[i]);
         return values.length;
     }
@@ -73,10 +74,10 @@ public final class Native {
     }
 
     @CEntryPoint(name = "jinfer__log_set")
-    static void logSet(IsolateThread thread, Log.Fn fn, VoidPointer payload) {
+    static void logSet(IsolateThread thread, Log.Fn fn, VoidPointer user) {
         try {
             Errors.clear();
-            Log.set(fn, payload);
+            Log.set(fn, user);
         } catch (Throwable t) {
             Errors.set(t);
         }
@@ -130,7 +131,7 @@ public final class Native {
             return get(handle, Model.class, "model").info().get();
         } catch (Throwable t) {
             Errors.set(t);
-            return WordFactory.nullPointer();
+            return Errors.empty();
         }
     }
 
@@ -138,8 +139,8 @@ public final class Native {
     static ObjectHandle modelTokenizer(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            // a toknroll handle over the model's tokenizer, freed by toknroll_free; the tokenizer
-            // is a plain heap object, so it outlives the model
+            // a toknroll handle over the model's tokenizer, freed by toknroll_tokenizer_free; the
+            // tokenizer is a plain heap object, so it outlives the model
             return com.qxotic.toknroll.libtoknroll.Native.handle(
                     get(handle, Model.class, "model").tokenizer());
         } catch (Throwable t) {
@@ -179,7 +180,13 @@ public final class Native {
     static int stateReset(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            get(handle, State.class, "state").reset();
+            State state = get(handle, State.class, "state");
+            state.exclusive.enter();
+            try {
+                state.reset();
+            } finally {
+                state.exclusive.leave();
+            }
             return Errors.OK;
         } catch (Throwable t) {
             return Errors.set(t);
@@ -190,7 +197,13 @@ public final class Native {
     static int statePosition(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            return get(handle, State.class, "state").position();
+            State state = get(handle, State.class, "state");
+            state.exclusive.enter();
+            try {
+                return state.position();
+            } finally {
+                state.exclusive.leave();
+            }
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -205,7 +218,12 @@ public final class Native {
             if (tokens.isNull() && count > 0) throw Errors.invalid("tokens is NULL");
             int[] ids = new int[count];
             for (int i = 0; i < count; i++) ids[i] = tokens.read(i);
-            return state.ingest(ids);
+            state.exclusive.enter();
+            try {
+                return state.ingest(ids);
+            } finally {
+                state.exclusive.leave();
+            }
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -215,7 +233,13 @@ public final class Native {
     static int logits(IsolateThread thread, ObjectHandle handle, CFloatPointer out, int capacity) {
         try {
             Errors.clear();
-            return floats(get(handle, State.class, "state").logits(), out, capacity);
+            State state = get(handle, State.class, "state");
+            state.exclusive.enter();
+            try {
+                return floats(state.logits(), out, capacity);
+            } finally {
+                state.exclusive.leave();
+            }
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -226,7 +250,13 @@ public final class Native {
             IsolateThread thread, ObjectHandle handle, CFloatPointer out, int capacity) {
         try {
             Errors.clear();
-            return floats(get(handle, State.class, "state").embedding(), out, capacity);
+            State state = get(handle, State.class, "state");
+            state.exclusive.enter();
+            try {
+                return floats(state.embedding(), out, capacity);
+            } finally {
+                state.exclusive.leave();
+            }
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -238,7 +268,13 @@ public final class Native {
     static int streamStep(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            return get(handle, Stream.class, "stream").step();
+            Stream stream = get(handle, Stream.class, "stream");
+            stream.exclusive.enter();
+            try {
+                return stream.step();
+            } finally {
+                stream.exclusive.leave();
+            }
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -248,10 +284,16 @@ public final class Native {
     static CCharPointer streamText(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            return get(handle, Stream.class, "stream").cText();
+            Stream stream = get(handle, Stream.class, "stream");
+            stream.exclusive.enter();
+            try {
+                return stream.cText();
+            } finally {
+                stream.exclusive.leave();
+            }
         } catch (Throwable t) {
             Errors.set(t);
-            return Errors.last(); // never NULL for text, as the header says
+            return Errors.empty();
         }
     }
 
@@ -261,9 +303,14 @@ public final class Native {
         try {
             Errors.clear();
             Stream stream = get(handle, Stream.class, "stream");
-            float[] pcm = stream.samples;
-            if (count.isNonNull()) count.write(pcm == null ? 0 : pcm.length);
-            return stream.cSamples();
+            stream.exclusive.enter();
+            try {
+                float[] pcm = stream.samples;
+                if (count.isNonNull()) count.write(pcm == null ? 0 : pcm.length);
+                return stream.cSamples();
+            } finally {
+                stream.exclusive.leave();
+            }
         } catch (Throwable t) {
             Errors.set(t);
             if (count.isNonNull()) count.write(0);
@@ -275,10 +322,16 @@ public final class Native {
     static CCharPointer streamResult(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
-            return get(handle, Stream.class, "stream").cResult();
+            Stream stream = get(handle, Stream.class, "stream");
+            stream.exclusive.enter();
+            try {
+                return stream.cResult();
+            } finally {
+                stream.exclusive.leave();
+            }
         } catch (Throwable t) {
             Errors.set(t);
-            return WordFactory.nullPointer();
+            return Errors.empty();
         }
     }
 
@@ -368,8 +421,13 @@ public final class Native {
             Errors.clear();
             Model model = get(handle, Model.class, "model");
             if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-            float[] all = model.embed(strings(texts, count, "texts"), dimension);
-            return floats(all, out, capacity);
+            if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
+            List<String> list = strings(texts, count, "texts");
+            // known before the model runs: a call that only sizes, or has too little room, costs
+            // nothing
+            int size = model.embedSize(count, dimension);
+            if (size > capacity) return size;
+            return floats(model.embed(list, dimension), out, capacity);
         } catch (Throwable t) {
             return Errors.set(t);
         }

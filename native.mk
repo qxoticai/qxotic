@@ -11,12 +11,21 @@ UPPER := $(shell echo $(NAME) | tr a-z A-Z)
 LIB   := target/lib$(NAME).$(if $(filter darwin,$(OS)),dylib,so)
 VERSION := $(shell grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -)
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
+# The soname follows the version, never set by hand: the minor while the major is 0 (any minor may break),
+# the major from 1.0. The build names the library by it (native-cc.sh) and links target/$(SONAME) to it, so
+# a program linked against target/ runs from there.
+MAJOR := $(word 1,$(subst ., ,$(VERSION)))
+SOVERSION := $(if $(filter 0,$(MAJOR)),0.$(word 2,$(subst ., ,$(VERSION))),$(MAJOR))
+SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).so.$(SOVERSION))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
-# SYMS, the exported symbol prefixes the headers declare; HEADERS, the headers whose functions the library
-# exports; DIST_LIBS, what the release bundle carries beside the headers; WHEEL_DEPS, other wheels the
+# SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
+# EXPORT_HEADERS, those whose functions the library exports; EXTRA_EXPORTS, the exported names no header
+# declares; DIST_LIBS, what the release bundle carries beside the headers; WHEEL_DEPS, other wheels the
 # installed one needs; WHEEL_TEST, the tests run from target/ with wheelenv's python.
 SYMS ?= $(NAME)
 HEADERS ?= include/$(NAME).h
+EXPORT_HEADERS ?= $(HEADERS)
+EXTRA_EXPORTS ?=
 DIST_LIBS ?= $(LIB)
 WHEEL_DEPS ?=
 # the exported (defined, global) symbol names of a shared library or archive; Mach-O names lose their underscore
@@ -48,11 +57,13 @@ check-version:   # the header, the wheel, the pom and (where it is a literal) th
 	 p=$$(grep -oE '^__version__ = "[^"]+"' python/$(NAME)/__init__.py | cut -d'"' -f2); \
 	 [ "$$h" = "$$w" ] && [ "$$h" = "$$m" ] && [ "$$h" = "$${p:-$$h}" ] && echo "version $$h everywhere" || { echo "version drift: header $$h, wheel $$w, pom $$m, package $$p"; exit 1; }
 
-# Every function the headers declare is exported, and nothing with the headers' prefixes beyond them is.
+# The library exports every function the headers declare, the EXTRA_EXPORTS, and nothing else: none of the
+# runtime behind it (graal_*, the entry points), whose names would collide with another library's.
 check-exports:
-	@grep -hE '^[A-Z]+_API' $(HEADERS) | grep -oE '($(SYMS))_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@$(call EXPORTS,$(LIB)) | grep -E '^($(SYMS))_' | sort > target/exported.syms
-	@diff target/header.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions"
+	@grep -hE '^[A-Z]+_API' $(EXPORT_HEADERS) | grep -oE '($(SYMS))_[a-z0-9_]+\(' | tr -d '(' | sort > target/header.syms
+	@{ cat target/header.syms; printf '%s\n' $(EXTRA_EXPORTS); } | grep . | sort > target/expected.syms
+	@$(call EXPORTS,$(LIB)) | sort > target/exported.syms
+	@diff target/expected.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions$(if $(EXTRA_EXPORTS), and $(words $(EXTRA_EXPORTS)) more)"
 
 python: $(LIB)
 	mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
@@ -83,9 +94,10 @@ dist: wheel
 	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/include target/dist/$(DIST)/lib/$(PLATFORM) target/dist/$(DIST)/python
 	cp $(HEADERS) target/dist/$(DIST)/include/
 	cp $(DIST_LIBS) target/dist/$(DIST)/lib/$(PLATFORM)/
+	cd target/dist/$(DIST)/lib/$(PLATFORM) && mv $(notdir $(LIB)) $(SONAME) && ln -s $(SONAME) $(notdir $(LIB))   # the file by its soname, the name a linker looks for beside it
 	cp README.md $(ROOT)/LICENSE target/dist/$(DIST)/
 	cp target/wheel/*.whl target/dist/$(DIST)/python/
-	cd target/dist && rm -f $(DIST).zip && zip -qr $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
+	cd target/dist && rm -f $(DIST).zip && zip -qry $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
 	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
 
 .PHONY: help check-version check-exports python wheel check-wheel dist

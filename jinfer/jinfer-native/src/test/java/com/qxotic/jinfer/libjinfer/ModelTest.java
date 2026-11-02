@@ -139,6 +139,14 @@ class ModelTest {
             Errors.Failure e =
                     assertThrows(Errors.Failure.class, () -> emb.embed(List.of("a"), -1));
             assertEquals(Errors.EINVAL, e.code);
+            // the size jinfer_embed answers before running anything, refused past int32
+            assertEquals(3 * dimension, emb.embedSize(3, 0));
+            Errors.Failure over =
+                    assertThrows(Errors.Failure.class, () -> emb.embedSize(Integer.MAX_VALUE, 0));
+            assertEquals(Errors.EINVAL, over.code);
+            assertEquals(
+                    Errors.EUNSUPPORTED,
+                    assertThrows(Errors.Failure.class, () -> lm.embedSize(1, 0)).code);
         } finally {
             emb.release();
         }
