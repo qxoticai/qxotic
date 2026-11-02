@@ -50,7 +50,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#if defined(_WIN32) && defined(JINFER_BUILD)
+#if defined(JINFER_STATIC)
+#  define JINFER_API
+#elif defined(_WIN32) && defined(JINFER_BUILD)
 #  define JINFER_API __declspec(dllexport)
 #elif defined(_WIN32)
 #  define JINFER_API __declspec(dllimport)

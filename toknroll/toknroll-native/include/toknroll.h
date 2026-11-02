@@ -46,7 +46,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#if defined(_WIN32) && defined(TOKNROLL_BUILD)
+#if defined(TOKNROLL_STATIC)
+#  define TOKNROLL_API
+#elif defined(_WIN32) && defined(TOKNROLL_BUILD)
 #  define TOKNROLL_API __declspec(dllexport)
 #elif defined(_WIN32)
 #  define TOKNROLL_API __declspec(dllimport)

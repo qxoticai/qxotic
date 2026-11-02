@@ -41,6 +41,7 @@ The size follows the code: `-O3` is 12 MB larger for 18% more encode throughput,
 The shared library's soname follows the version, `libtoknroll.so.0.4` (`@rpath/libtoknroll.0.4.dylib` on a Mac); the build links `target/libtoknroll.so.0.4` to the library, and the release bundle carries the file under that name.
 The shared library exports the header's twelve functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.
 `libtoknroll.a` is the same image as one relocatable object with every symbol but the header's twelve made local: nothing of the runtime behind it is visible to the program that links it, and it needs only the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS.
+A program that links it defines `TOKNROLL_STATIC` before including the header, so `TOKNROLL_API` asks for no import.
 It is for programs that want no shared library; a GraalVM host image cannot link it (two runtimes in one image), so libjinfer compiles the entry points into its own image instead.
 
 `src/main/c/toknroll_shim.c` forwards each header function to the `toknroll__*` entry points in `Native.java`; `toknroll_isolate.c` owns the runtime: it starts at `toknroll_configure` or at the first call, with configure's options and then `TOKNROLL_OPTIONS` from the environment, and libjinfer compiles both files into its own image so one runtime serves both APIs.
