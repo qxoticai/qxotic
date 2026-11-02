@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Generate the special-token goldens (test-fixtures/golden/specials/<org>__<repo>.json): Hugging Face
-`tokenizers` ids for text full of each model's added tokens, which HuggingFaceSpecialsGoldenTest
-checks against Specials.of(tokenizer).encode, toknroll's special-aware path.
+Generate the special-token goldens (toknroll-hf/src/test/resources/specials/<org>__<repo>.json):
+Hugging Face `tokenizers` ids for text full of each model's added tokens, which
+HuggingFaceSpecialsGoldenTest checks against Specials.of(tokenizer).encode, toknroll's
+special-aware path.
 
-    python3 -m venv .venv && .venv/bin/pip install tokenizers
+    python3 -m venv .venv && .venv/bin/pip install tokenizers==0.23.3
     .venv/bin/python toknroll-benchmarks/generate_specials_golden.py [--out DIR] [--model ORG/REPO]
+
+The goldens were made with tokenizers 0.23.3; the script refuses another version.
 
 Hugging Face matches every added token whole (special or not) with encode(text,
 add_special_tokens=False): the ids recorded here. Each model is pinned to a commit. The texts are
@@ -21,8 +24,11 @@ import sys
 import urllib.request
 from pathlib import Path
 
+TOKENIZERS_VERSION = "0.23.3"
+
 # Every supported tokenizer.json model, pinned. phi-4 is not supported: its added tokens set
-# lstrip/rstrip, which toknroll refuses.
+# lstrip/rstrip, which toknroll refuses. Nor is Gemma 3: its added tokens spelled as runs of U+2581
+# match only as their decoded text, spaces.
 MODELS = [
     ("deepseek-ai/DeepSeek-V3.2", "a7e62ac04ecb2c0a54d736dc46601c5606cf10a6"),
     ("deepseek-ai/DeepSeek-V4.1-Flash", "314113f8a7dadb388215396ba5fbee2c610a04d6"),
@@ -45,7 +51,6 @@ MODELS = [
     ("Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"),
     ("Qwen/Qwen3.6-27B", "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"),
     ("Qwen/Qwen3.6-35B-A3B", "995ad96eacd98c81ed38be0c5b274b04031597b0"),
-    ("unsloth/gemma-3-4b-it", "bf46152c47f5dd20b896357cb51abc4c03b8ee8c"),
     ("unsloth/Llama-3.2-1B-Instruct", "5a8abab4a5d6f164389b1079fb721cfab8d7126c"),
     ("unsloth/NVIDIA-Nemotron-3-Nano-4B", "b604b1379531cfac85a3cb195c387cc698aabdeb"),
     ("Xenova/gpt-4", "1d9f1f1b1fae88c0e4df1dab0a397f8de6229075"),
@@ -98,14 +103,17 @@ def read_token():
 
 
 def main():
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[1]
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--out", default=str(root / "test-fixtures" / "golden" / "specials"))
+    p.add_argument("--out", default=str(root / "toknroll-hf" / "src" / "test" / "resources" / "specials"))
     p.add_argument("--model", action="append", help="only this ORG/REPO (repeatable)")
     args = p.parse_args()
 
     import tokenizers
     from tokenizers import Tokenizer
+
+    if tokenizers.__version__ != TOKENIZERS_VERSION:
+        sys.exit(f"tokenizers {tokenizers.__version__}: the goldens need {TOKENIZERS_VERSION}")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -127,7 +135,7 @@ def main():
             "cases": cases,
         }
         target = out / (model.replace("/", "__") + ".json")
-        target.write_text(json.dumps(golden, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        target.write_text(json.dumps(golden, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
         print(f"{model:44} {len(cases):5} cases -> {target}")
 
 
