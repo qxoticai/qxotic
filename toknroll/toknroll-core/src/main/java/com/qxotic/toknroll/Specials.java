@@ -36,9 +36,10 @@ public interface Specials {
 
     /**
      * The special tokens of {@code tokenizer}: the tokens its vocabulary types CONTROL,
-     * USER_DEFINED or UNKNOWN, each by the text {@code tokenizer} decodes it to. A token that
-     * decodes to no text is left out; where two tokens decode to the same text, the lower id wins.
-     * Build once and reuse: it scans the whole vocabulary.
+     * USER_DEFINED or UNKNOWN, each by the text {@code tokenizer} decodes it to after another
+     * token, so a space a decoder trims from the start of the text stays. A token that decodes to
+     * no text is left out; where two tokens decode to the same text, the lower id wins. Build once
+     * and reuse: it scans the whole vocabulary.
      *
      * @param tokenizer the tokenizer whose special tokens to match
      * @return the special tokens, {@link #none()} when the vocabulary types none

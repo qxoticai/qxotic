@@ -59,11 +59,21 @@ final class SpecialsImpl implements Specials {
         Map<String, Integer> tokens = new HashMap<>();
         for (int id = ids.nextSetBit(0); id >= 0; id = ids.nextSetBit(id + 1)) {
             if (isSpecial(vocabulary, id)) {
-                String text = tokenizer.decode(IntSequence.of(id));
+                String text = textAfterAnother(tokenizer, id);
                 if (!text.isEmpty()) tokens.merge(text, id, Math::min);
             }
         }
         return tokens.isEmpty() ? NONE : new SpecialsImpl(tokens);
+    }
+
+    /**
+     * The text of {@code id} as a token after another decodes: a decoder may trim the start of the
+     * text, as Metaspace's leading space, and the token keeps it anywhere else.
+     */
+    private static String textAfterAnother(Tokenizer tokenizer, int id) {
+        int first = tokenizer.countBytes(IntSequence.of(id));
+        byte[] twice = tokenizer.decodeBytes(IntSequence.of(id, id));
+        return new String(twice, first, twice.length - first, StandardCharsets.UTF_8);
     }
 
     private static boolean isSpecial(Vocabulary vocabulary, int id) {
