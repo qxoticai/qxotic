@@ -69,7 +69,12 @@ class HFAdapter:
             self.tokenizer = None
             self.tiktoken_encoding = self._tiktoken_encoding()
         else:
-            self.tokenizer = RawTokenizer.from_file(tokenizer_path)
+            # toknroll's encode is raw text: the tokenizer.json without its added tokens, so no
+            # added token is matched, as with tiktoken's encode_ordinary below
+            with open(tokenizer_path, encoding="utf-8") as f:
+                raw = json.load(f)
+            raw["added_tokens"] = []
+            self.tokenizer = RawTokenizer.from_str(json.dumps(raw))
             self.tiktoken_encoding = None
 
     def _tiktoken_encoding(self):
@@ -91,7 +96,7 @@ class HFAdapter:
     def encode(self, text):
         if self.tokenizer is not None:
             return self.tokenizer.encode(text, add_special_tokens=False).ids
-        return self.tiktoken_encoding.encode(text, disallowed_special=())
+        return self.tiktoken_encoding.encode_ordinary(text)
 
     def decode(self, tokens):
         if self.tokenizer is not None:
@@ -407,7 +412,7 @@ def generate_test_cases(encoding_name, max_cases=100):
     for text in test_strings[:max_cases]:
         safe_text = text.replace("\x00", "\ufffd")  # JSON-safe
         # Raw text: special-token spellings are text
-        tokens = enc.encode(safe_text, disallowed_special=())
+        tokens = enc.encode_ordinary(safe_text)
         # text and tokens are the whole truth: tiktoken round-trips, so the decoded text is the
         # text, its bytes are its UTF-8, the count is len(tokens)
         assert enc.decode(tokens) == safe_text, (encoding_name, safe_text)

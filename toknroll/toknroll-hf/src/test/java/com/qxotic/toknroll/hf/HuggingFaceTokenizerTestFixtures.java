@@ -1,9 +1,6 @@
 package com.qxotic.toknroll.hf;
 
 import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.StandardTokenType;
-import com.qxotic.toknroll.Tokenizer;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -14,21 +11,6 @@ import java.util.Map;
 final class HuggingFaceTokenizerTestFixtures {
 
     private HuggingFaceTokenizerTestFixtures() {}
-
-    /**
-     * The cause of a divergence from a Hugging Face golden already diagnosed, or null: an expected
-     * id the vocabulary types USER_DEFINED is a non-special added token Hugging Face matched.
-     */
-    static String knownDivergence(Tokenizer tokenizer, int[] expected) {
-        return Arrays.stream(expected)
-                        .anyMatch(
-                                id ->
-                                        tokenizer
-                                                .vocabulary()
-                                                .isTokenOfType(id, StandardTokenType.USER_DEFINED))
-                ? "Hugging Face matches a non-special added token; toknroll encodes it as text"
-                : null;
-    }
 
     /**
      * A small SentencePiece BPE model, as real ones are: byte fallback, and merges that build every
