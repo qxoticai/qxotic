@@ -8,10 +8,11 @@
  *    decodes a weight block once and reuses it across TN columns).
  * MSL is compiled at runtime (no .metallib). Output is token-major C[j*ldc+i].
  *
- * Zero-copy over unified memory: W/A/C are borrowed per call through page-rounded
- * newBufferWithBytesNoCopy views (nil deallocator - the caller owns every byte) and released after
- * the synchronous wait. No uploads, no result copies, no persistent state; strides (ldw/ldb/ldc)
- * ride in mm_params, so strided views are consumed directly instead of packed. APPLE-only TU. */
+ * Zero-copy over unified memory: W/A/C are viewed through page-rounded newBufferWithBytesNoCopy
+ * buffers (nil deallocator - the caller owns every byte). An operand inside a jam_share uses that
+ * share's long-lived buffer from the context's share table; any other gets a view made for the call,
+ * released after the synchronous wait. No uploads, no result copies; strides (ldw/ldb/ldc) ride in
+ * mm_params, so strided views are consumed directly instead of packed. APPLE-only TU. */
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
 #include "jam_internal.h"
@@ -396,9 +397,10 @@ struct jam_metal {
     int nshares, share_cap;
 };
 
-/* A per-call Metal view over caller-owned VM pages: page-rounded MTLBuffer + the offset of the
- * tensor inside it. Released before the synchronous jam_mm returns; newBufferWithBytesNoCopy with
- * a nil deallocator never owns or frees the caller's bytes. */
+/* An operand's Metal view over caller-owned VM pages: a page-rounded MTLBuffer (its share's, or one
+ * made for the call) + the offset of the tensor inside it. The call's reference is released before
+ * the synchronous jam_mm returns; newBufferWithBytesNoCopy with a nil deallocator never owns or frees
+ * the caller's bytes. */
 typedef struct {
     id<MTLBuffer> buffer;
     size_t offset;
@@ -567,6 +569,7 @@ extern "C" jam_metal* jam_metal_create(void) {
             [dev release]; return NULL;
         }
         jam_metal* m = (jam_metal*) calloc(1, sizeof(jam_metal));
+        if (!m) { [lib release]; [dev release]; return NULL; }
         m->dev   = dev;                                  /* +1 from Create, owned */
         m->queue = [dev newCommandQueue];
         m->command_desc = [MTLCommandBufferDescriptor new];
@@ -627,7 +630,6 @@ static jam_status jam_metal_prepare_mm(jam_metal* m, jam_metal_resources* resour
                                        void* c, jam_dtype ct, int ldc,
                                        int M, int N, int K) {
     if (bt != JAM_F32 || ct != JAM_F32) return JAM_EUNSUPPORTED;
-    if (lda < K || ldb < K)             return JAM_EINVAL;
     const jam_dtype base = (jam_dtype)(at & ~JAM_PACKED);
     int i = 0;
     while (i < JAM_METAL_NKINDS && JAM_METAL_KINDS[i].dtype != base) i++;
@@ -661,11 +663,11 @@ static jam_status jam_metal_prepare_mm(jam_metal* m, jam_metal_resources* resour
     if (plan->mma) {
         plan->grid=MTLSizeMake((N+31)/32,(M+63)/64,1);
         plan->threads=MTLSizeMake(128,1,1);
-        ++m->profile_mma;
+        if (m->profile) ++m->profile_mma;
     } else {
         plan->grid=MTLSizeMake((N+JAM_MTN-1)/JAM_MTN,M,1);
         plan->threads=MTLSizeMake(8,16,1);
-        ++m->profile_tiled;
+        if (m->profile) ++m->profile_tiled;
     }
     return JAM_OK;
 }
