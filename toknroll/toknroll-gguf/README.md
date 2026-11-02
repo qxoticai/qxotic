@@ -90,7 +90,7 @@ Use `createEmptyBuilder()` to start with an empty registry and register only wha
 
 ## Tested Models
 
-Token-perfect tested against tokenizers from 18 model vendors:
+Token-perfect against each model's own tokenizer, with the [known divergences](#known-divergences) below, tested against tokenizers from 18 model vendors:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google** - Gemma 4
@@ -105,9 +105,19 @@ Token-perfect tested against tokenizers from 18 model vendors:
 - **HuggingFace** - SmolLM3
 - **NVIDIA** - Nemotron 3
 - **Z.ai** - GLM 5.1
-- **MiniMax** - M2.7, M3
+- **MiniMax** - M2.7
 - **Xiaomi** - MiMo V2
-- **Poolside** - Laguna XS 2.1
+- **Poolside** - Laguna XS 2.1, Laguna S 2.1
+- **inclusionAI** - Ling 3.0, Ling 3.1
 - **JetBrains** - Mellum 2
 
 Other models are likely to work but are not tested against the Hugging Face or llama.cpp reference tokenizers.
+
+## Known divergences
+
+Where Tok'n'Roll and a reference tokenizer give different ids, by design:
+
+- Plain `encode` treats non-special added tokens (such as `<think>`, or DeepSeek's `<｜User｜>`) as text, while Hugging Face and llama.cpp match them as tokens.
+  `Specials.of(tokenizer).encode` is the path that matches them as the references do.
+- GGUF loading follows the model's own tokenizer where llama.cpp differs from it.
+  llama.cpp's case-rewriting regexes for gpt-oss, Nemotron and Kimi split words at non-ASCII capitals, and its Laguna regex cuts `\r` from `\n`.

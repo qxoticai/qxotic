@@ -1,14 +1,14 @@
 # Tok'n'Roll
 
-**Token-perfect LLM tokenization.** Pure Java. Zero dependencies.
+**Token-perfect LLM tokenization**, against each model's own tokenizer. Pure Java. Zero dependencies.
 
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-Tok'n'Roll matches the reference Python tokenizers token for token, verified by parity tests, while
-staying competitive with native implementations. No C extensions, no Rust bindings, no JNI. Java
-11+, and it compiles to GraalVM native images out of the box.
+Tok'n'Roll matches the reference Python tokenizers token for token, verified by parity tests, with the [known divergences](#known-divergences) below, while staying competitive with native implementations.
+No C extensions, no Rust bindings, no JNI.
+Java 11+, and it compiles to GraalVM native images out of the box.
 
 ## Tokenize in three lines
 
@@ -49,7 +49,7 @@ See [toknroll-native](toknroll-native/).
 
 ## Why Tok'n'Roll
 
-- **Token-perfect.** Byte-exact parity with the reference tokenizers of [18 model vendors](#tested-implementations), not "close enough".
+- **Token-perfect.** Byte-exact parity with each model's own tokenizer, for [18 model vendors](#tested-implementations) and with the [known divergences](#known-divergences), not "close enough".
 - **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model family,
   and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
 - **Loads existing files.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
@@ -87,7 +87,7 @@ Tokenizer tokenizer = Toknroll.pipeline(splitter, model);
 
 ## Tested implementations
 
-Token-perfect, backed by parity tests against the Hugging Face and llama.cpp reference tokenizers:
+Token-perfect against each model's own tokenizer, with the [known divergences](#known-divergences) below, backed by parity tests against the Hugging Face and llama.cpp reference tokenizers:
 
 - **OpenAI**: tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google**: Gemma 4
@@ -102,12 +102,22 @@ Token-perfect, backed by parity tests against the Hugging Face and llama.cpp ref
 - **HuggingFace**: SmolLM3
 - **NVIDIA**: Nemotron 3
 - **Z.ai**: GLM 5.1
-- **MiniMax**: M2.7, M3
+- **MiniMax**: M2.7
 - **Xiaomi**: MiMo V2
-- **Poolside**: Laguna XS 2.1
+- **Poolside**: Laguna XS 2.1, Laguna S 2.1
+- **inclusionAI**: Ling 3.0, Ling 3.1
 - **JetBrains**: Mellum 2
 
 Other BPE-based tokenizers likely work. They just are not parity-tested.
+
+## Known divergences
+
+Where Tok'n'Roll and a reference tokenizer give different ids, by design:
+
+- Plain `encode` treats non-special added tokens (such as `<think>`, or DeepSeek's `<｜User｜>`) as text, while Hugging Face and llama.cpp match them as tokens.
+  `Specials.of(tokenizer).encode` is the path that matches them as the references do.
+- GGUF loading follows the model's own tokenizer where llama.cpp differs from it.
+  llama.cpp's case-rewriting regexes for gpt-oss, Nemotron and Kimi split words at non-ASCII capitals, and its Laguna regex cuts `\r` from `\n`.
 
 ## Benchmarks
 
