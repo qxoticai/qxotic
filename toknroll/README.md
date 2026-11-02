@@ -92,7 +92,7 @@ Token-perfect, backed by parity tests against the Hugging Face and llama.cpp ref
 - **OpenAI**: tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google**: Gemma 4
 - **Alibaba**: Qwen 3.5+
-- **Liquid AI**: LFM 2.5
+- **Liquid AI**: LFM 2.5, LFM 3
 - **OpenBMB**: MiniCPM5
 - **Moonshot AI**: Kimi 2.5+, Kimi K3
 - **DeepSeek**: DeepSeek 3.2, DeepSeek 4
