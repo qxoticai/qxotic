@@ -26,7 +26,7 @@ struct jam_pool {
     jam_worker*     wargs;
     jam_mutex_t     mtx;
     jam_cond_t      cv;           /* parked workers wait here for a job */
-    jam_job_fn     fn;
+    jam_job_fn      fn;
     void*           arg;
     int             n;
     _Atomic uint32_t seq;         /* (generation << 16) | participants: one read = one consistent job */

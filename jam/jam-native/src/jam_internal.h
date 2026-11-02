@@ -74,33 +74,32 @@ struct jam_context {
     _Atomic int      bad_slot;       /* a host task arrived with a slot >= threads: the call fails with EINVAL */
     jam_isa          active;         /* the bound ISA level (reported by jam_context_isa) */
     _Atomic int      busy;           /* serial-stream guard: jam_mm try-acquires (1 exchange); else EBUSY */
-    jam_job_fn      f32_kernel;     /* best F32 row-range kernel for `active`, resolved at create */
-    jam_job_fn      q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
-                                      * by explicit feature check - AVX-VNNI is orthogonal to the ladder. */
-    jam_job_fn      q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
-                                        * SMMLA's two-dimensional tile cannot help a one-column GEMV. */
-    jam_job_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
-    jam_job_fn      mxfp4_decode_kernel; /* MXFP4 n==1 override; direct-layout 4x1 SDOT on ARM. */
-    jam_job_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
-    jam_job_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> q1_0_floor (float). Int8 pipeline. */
-    jam_job_fn      q1_0_floor;     /* Q1_0 float floor (generic, or the SSE3 tile with the same results) */
-    jam_job_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
-    jam_job_fn      q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
-    jam_job_fn      q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
-    jam_job_fn      q4_0_decode_kernel; /* Q4_0 n==1 override; direct-layout 4x1 SDOT on ARM. */
-    jam_job_fn      kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
-    jam_job_fn      kq_decode[JAM_KQ_N]; /* n==1 overrides: 4-row shared-activation GEMVs on ARM */
-    jam_job_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
-    jam_job_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
-    jam_job_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
-    jam_job_fn      bf16z_kernel;       /* AVX512-BF16 vdpbf16ps tile (k%32==0); NULL -> dense_bf16 */
-    jam_job_fn      bf16z_cvt;          /* its phase 1: F32 activations -> bf16 scratch */
-    jam_job_fn      bf16zp_kernel;      /* packed-panel vdpbf16ps microkernel (k%2==0, n>=8) */
-    jam_job_fn      bf16zp_pack;        /* its phase 1: convert+transpose into token panels */
+    jam_job_fn       f32_kernel;     /* best F32 row-range kernel for `active`, resolved at create */
+    jam_job_fn       q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
+                                       * by explicit feature check - AVX-VNNI is orthogonal to the ladder. */
+    jam_job_fn       q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
+                                         * SMMLA's two-dimensional tile cannot help a one-column GEMV. */
+    jam_job_fn       mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
+    jam_job_fn       mxfp4_decode_kernel; /* MXFP4 n==1 override; direct-layout 4x1 SDOT on ARM. */
+    jam_job_fn       nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
+    jam_job_fn       q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> q1_0_floor (float). Int8 pipeline. */
+    jam_job_fn       q1_0_floor;     /* Q1_0 float floor (generic, or the SSE3 tile with the same results) */
+    jam_job_fn       q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
+    jam_job_fn       q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
+    jam_job_fn       q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
+    jam_job_fn       q4_0_decode_kernel; /* Q4_0 n==1 override; direct-layout 4x1 SDOT on ARM. */
+    jam_job_fn       kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
+    jam_job_fn       kq_decode[JAM_KQ_N]; /* n==1 overrides: 4-row shared-activation GEMVs on ARM */
+    jam_job_fn       dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
+    jam_job_fn       dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
+    jam_job_fn       dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
+    jam_job_fn       bf16z_kernel;       /* AVX512-BF16 vdpbf16ps tile (k%32==0); NULL -> dense_bf16 */
+    jam_job_fn       bf16z_cvt;          /* its phase 1: F32 activations -> bf16 scratch */
+    jam_job_fn       bf16zp_kernel;      /* packed-panel vdpbf16ps microkernel (k%2==0, n>=8) */
+    jam_job_fn       bf16zp_pack;        /* its phase 1: convert+transpose into token panels */
 
-    /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). Assumes a context is used
-     * serially; concurrent jam_mm on ONE ctx would race
-     * this - TODO for a concurrent-safe variant. The generic path needs none of it. */
+    /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). The busy guard makes one
+     * jam_mm at a time its only user. The generic path needs none of it. */
     void*  q_aq;   size_t q_aq_cap;   /* int8 [n*k] requantized activations */
     void*  q_ad;   size_t q_d_cap;   /* float [n*nb] per-block scales (q_asum shares this cap) */
     void*  q_asum;                    /* float [n*nb] per-block Σ int8 acts (K-quant min term) */
