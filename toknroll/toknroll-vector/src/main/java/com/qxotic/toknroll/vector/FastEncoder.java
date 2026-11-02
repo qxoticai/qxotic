@@ -250,7 +250,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     }
 
     /** The merge loop for a word of {@code text[start, end)}, by its length. */
-    private void merge(byte[] text, int start, int end, IdBuffer out, Scratch s) {
+    void merge(byte[] text, int start, int end, IdBuffer out, Scratch s) {
         int length = end - start;
         if (length <= 3) {
             mergeTiny(text, start, length, out);
@@ -376,6 +376,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         }
         next[n - 1] = NO_INDEX;
 
+        s.stamp = 0; // every edge's stamp is 0 now, none live
         s.heapSize = 0;
         for (int left = 0; left + 1 < n; left++) {
             refreshEdge(left, s);
@@ -518,7 +519,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     }
 
     /** What one call works with: the piece ends, its view of the cache, the merge arrays. */
-    private static final class Scratch {
+    static final class Scratch {
         final int[] pieceEnds = new int[BATCH];
         final BitSplit.Registers registers = new BitSplit.Registers();
         final WordCache.Probe probe;
@@ -532,7 +533,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         int[] edgeRight = new int[0];
         int[] edgeRank = new int[0];
         int[] edgeMergeId = new int[0];
-        private int stamp = 1;
+        int stamp; // the last edge stamp handed out
         int[] heapRank = new int[0];
         long[] heapNode = new long[0];
         int heapSize;
@@ -579,13 +580,9 @@ final class FastEncoder implements TiktokenEngine.Encoder {
             }
         }
 
-        /** A stamp no live edge has; on wrapping, every edge is cleared first. */
+        /** A stamp no live edge has: from 1 per merge, at most three a byte, so it never wraps. */
         int nextStamp() {
-            if (++stamp == 0) {
-                Arrays.fill(edgeStamp, 0);
-                stamp = 1;
-            }
-            return stamp;
+            return ++stamp;
         }
 
         private static int grow(int current, int needed) {
