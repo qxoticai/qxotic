@@ -2,57 +2,37 @@ package com.qxotic.toknroll.testkit;
 
 import java.util.List;
 
-/** Shared declarative model-family test configuration. */
+/** The families of generate_ground_truth.py; each must be in the golden, and is tested. */
 public final class FamilyTestSpecs {
 
     private FamilyTestSpecs() {}
 
-    public static final List<String> SMOKE_TEXTS =
+    public static final List<String> FAMILIES =
             List.of(
-                    "Hello world",
-                    "Tokenizer family validation",
-                    "Whitespace\n\tand unicode 😀",
-                    "cafe and symbols <>[]{}");
-
-    public static final List<FamilySpec> FAMILIES =
-            List.of(
-                    new FamilySpec("google.gemma4", 1, 0),
-                    new FamilySpec("nvidia.nemotron3_nano4b", 1, 0),
-                    new FamilySpec("meta.llama3", 1, 0),
-                    new FamilySpec("moonshot.kimi2_5", 1, 0),
-                    new FamilySpec("huggingface.smollm3", 1, 0),
-                    new FamilySpec("alibaba.qwen3_5", 1, 0),
-                    new FamilySpec("ibm.granite4_0", 1, 0),
-                    new FamilySpec("microsoft.phi4", 1, 0),
-                    new FamilySpec("mistral.gpt2_pretekken", 1, 0),
-                    new FamilySpec("openai.gpt-oss", 1, 0),
-                    new FamilySpec("deepseek.v3_2", 1, 0),
-                    new FamilySpec("deepseek.v4_pro", 1, 0),
-                    new FamilySpec("zai.glm5_1", 1, 0),
-                    new FamilySpec("minimax.m2_7", 1, 0),
-                    new FamilySpec("xiaomi.mimo_v2_flash", 1, 0));
-
-    public static final class FamilySpec {
-        private final String familyId;
-        private final double minExactRatio;
-        private final int maxEncodeErrors;
-
-        public FamilySpec(String familyId, double minExactRatio, int maxEncodeErrors) {
-            this.familyId = familyId;
-            this.minExactRatio = minExactRatio;
-            this.maxEncodeErrors = maxEncodeErrors;
-        }
-
-        public String familyId() {
-            return familyId;
-        }
-
-        public double minExactRatio() {
-            return minExactRatio;
-        }
-
-        public int maxEncodeErrors() {
-            return maxEncodeErrors;
-        }
-    }
+                    "google.gemma3",
+                    "google.gemma4",
+                    "nvidia.nemotron3_nano4b",
+                    "meta.llama3",
+                    "moonshot.kimi2_5",
+                    "huggingface.smollm3",
+                    "alibaba.qwen3_5",
+                    "ibm.granite4_0",
+                    "microsoft.phi4",
+                    "mistral.gpt2_pretekken",
+                    "mistral.v0_3",
+                    "mistral.tekken",
+                    "openai.gpt-oss",
+                    "deepseek.v3_2",
+                    "deepseek.v4_pro",
+                    "zai.glm5_1",
+                    "minimax.m2_7",
+                    "xiaomi.mimo_v2_flash",
+                    "liquid.lfm3",
+                    "moonshot.kimi3",
+                    "deepseek.v4_1",
+                    "alibaba.qwen3_6",
+                    "poolside.laguna_xs2_1",
+                    "poolside.laguna_s2_1",
+                    "inclusion.ling3_0",
+                    "inclusion.ling3_1");
 }

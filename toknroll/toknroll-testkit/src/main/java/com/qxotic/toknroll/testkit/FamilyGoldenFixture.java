@@ -20,73 +20,49 @@ public final class FamilyGoldenFixture {
         this.families = families;
     }
 
+    /** Reads the golden; a family or case missing a field fails here, never drops out. */
+    @SuppressWarnings("unchecked")
     public static FamilyGoldenFixture load() {
-        Map<String, Object> root = loadRawJson();
-        Object familiesObj = root.get("families");
-        if (!(familiesObj instanceof Map<?, ?>)) {
-            return new FamilyGoldenFixture(Collections.emptyMap());
+        Map<String, Object> families = (Map<String, Object>) loadRawJson().get("families");
+        if (families == null) {
+            throw new IllegalStateException("family golden fixture has no families");
         }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> familiesMap = (Map<String, Object>) familiesObj;
         Map<String, Family> parsed = new LinkedHashMap<>();
-
-        for (Map.Entry<String, Object> familyEntry : familiesMap.entrySet()) {
-            if (!(familyEntry.getValue() instanceof Map<?, ?>)) {
-                continue;
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> familyMap = (Map<String, Object>) familyEntry.getValue();
-            String modelRef = asString(familyMap.get("model_ref"));
-            String revision = asString(familyMap.get("revision"));
-
-            Object casesObj = familyMap.get("cases");
+        for (Map.Entry<String, Object> familyEntry : families.entrySet()) {
+            String familyId = familyEntry.getKey();
+            Map<String, Object> family = (Map<String, Object>) familyEntry.getValue();
+            Map<String, Object> caseMap = (Map<String, Object>) require(family, "cases", familyId);
             List<CaseData> cases = new ArrayList<>();
-            if (casesObj instanceof Map<?, ?>) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> caseMap = (Map<String, Object>) casesObj;
-                for (Map.Entry<String, Object> caseEntry : caseMap.entrySet()) {
-                    if (!(caseEntry.getValue() instanceof Map<?, ?>)) {
-                        continue;
-                    }
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> c = (Map<String, Object>) caseEntry.getValue();
-                    String text = asString(c.get("text"));
-                    List<Object> tokenValues = asList(c.get("tokens"));
-                    if (text == null || tokenValues == null) {
-                        continue;
-                    }
-                    int[] tokens = toIntArray(tokenValues);
-                    String decoded = asString(c.get("decoded"));
-                    int tokenCount =
-                            c.get("token_count") instanceof Number
-                                    ? ((Number) c.get("token_count")).intValue()
-                                    : tokens.length;
-                    cases.add(
-                            new CaseData(
-                                    caseEntry.getKey(),
-                                    text,
-                                    decoded != null ? decoded : text,
-                                    tokens,
-                                    tokenCount));
-                }
+            for (Map.Entry<String, Object> caseEntry : caseMap.entrySet()) {
+                String caseId = familyId + "/" + caseEntry.getKey();
+                Map<String, Object> c = (Map<String, Object>) caseEntry.getValue();
+                String text = (String) require(c, "text", caseId);
+                int[] tokens = toIntArray((List<Object>) require(c, "tokens", caseId));
+                String decoded = (String) c.get("decoded");
+                cases.add(
+                        new CaseData(
+                                caseEntry.getKey(),
+                                text,
+                                decoded != null ? decoded : text,
+                                tokens,
+                                (String) c.get("known")));
             }
-
-            parsed.put(familyEntry.getKey(), new Family(modelRef, revision, List.copyOf(cases)));
+            parsed.put(
+                    familyId,
+                    new Family(
+                            (String) require(family, "model_ref", familyId),
+                            (String) family.get("revision"),
+                            List.copyOf(cases)));
         }
-
         return new FamilyGoldenFixture(Collections.unmodifiableMap(parsed));
     }
 
-    public List<CaseData> getCases(String familyId) {
-        Family family = families.get(familyId);
-        return family == null ? Collections.emptyList() : family.cases();
-    }
-
-    public List<CaseData> getSampledCases(String familyId, int maxCases) {
-        List<CaseData> cases = getCases(familyId);
-        int limit = Math.max(0, Math.min(maxCases, cases.size()));
-        return List.copyOf(cases.subList(0, limit));
+    private static Object require(Map<String, Object> map, String key, String where) {
+        Object value = map.get(key);
+        if (value == null) {
+            throw new IllegalStateException("family golden fixture: " + where + " has no " + key);
+        }
+        return value;
     }
 
     public Map<String, Family> families() {
@@ -122,14 +98,15 @@ public final class FamilyGoldenFixture {
         private final String text;
         private final String decoded;
         private final int[] tokens;
-        private final int tokenCount;
+        private final String known;
 
-        public CaseData(String caseId, String text, String decoded, int[] tokens, int tokenCount) {
+        /** {@code known} names the cause of a divergence already diagnosed, or is null. */
+        public CaseData(String caseId, String text, String decoded, int[] tokens, String known) {
             this.caseId = caseId;
             this.text = text;
             this.decoded = decoded;
             this.tokens = tokens;
-            this.tokenCount = tokenCount;
+            this.known = known;
         }
 
         public String caseId() {
@@ -148,18 +125,9 @@ public final class FamilyGoldenFixture {
             return tokens;
         }
 
-        public int tokenCount() {
-            return tokenCount;
+        public String known() {
+            return known;
         }
-    }
-
-    private static String asString(Object value) {
-        return value instanceof String ? (String) value : null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<Object> asList(Object value) {
-        return value instanceof List<?> ? (List<Object>) value : null;
     }
 
     private static int[] toIntArray(List<Object> values) {
