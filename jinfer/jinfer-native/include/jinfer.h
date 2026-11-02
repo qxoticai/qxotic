@@ -16,7 +16,10 @@
  *   Threads   Any thread may call. A model may be shared. A state or a stream is used by
  *             one thread at a time; jinfer_stream_cancel is the exception, any thread may
  *             call it. The log callback runs on any thread, inside your own call included,
- *             and must not call jinfer. A download shows its progress on stderr when that is
+ *             and may call only jinfer_last_error, toknroll_last_error and the _free functions,
+ *             on a handle no call is using (a stream still generating is in use). Once
+ *             jinfer_log_set returns, the callback it replaced is not running and is never
+ *             called again, so its user pointer may be freed. A download shows its progress on stderr when that is
  *             a terminal, as log lines otherwise. A child forked once the library has started
  *             cannot use it, the toknroll_* functions it carries included: its threads stayed in
  *             the parent, so calls fail there, JINFER_ERROR, and a _free does nothing. Start
@@ -71,11 +74,11 @@ extern "C" {
 #define JINFER_ECANCELLED   (-5)
 
 typedef enum { JINFER_LOG_DEBUG, JINFER_LOG_INFO, JINFER_LOG_WARN, JINFER_LOG_ERROR } jinfer_log_level;
-typedef void (*jinfer_log_fn)(jinfer_log_level level, const char* message, void* payload);
+typedef void (*jinfer_log_fn)(jinfer_log_level level, const char* message, void* user);
 
 JINFER_API const char* jinfer_version(void);          /* "0.4.0", the jinfer release it was built from */
 JINFER_API const char* jinfer_last_error(int32_t* code);   /* the message; *code = its code unless NULL, JINFER_OK after success */
-JINFER_API void        jinfer_log_set(jinfer_log_fn fn, void* payload);   /* NULL = silent, the default */
+JINFER_API void        jinfer_log_set(jinfer_log_fn fn, void* user);   /* NULL = silent, the default */
 /* Runtime options, as on a java command line: "-Djinfer.threads=8" sizes the process's pool, "-Djinfer.cache.sessions=16"
  * keeps that many conversations warm (4), "-Djinfer.cache.budget=8g" bounds the prompt cache's KV blocks (2g, 0 = off),
  * "-Djinfer.offline=true" never downloads, "-Djinfer.trace=true", "-Djam.*" and the other jinfer.* properties steer the

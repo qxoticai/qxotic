@@ -46,6 +46,39 @@ nested = logging.Handler(); nested.emit = lambda record: N.lib.jinfer_model_prop
 logging.getLogger("jinfer").addHandler(nested)
 ok(N.lib.jinfer_model_property(m._h, 999) == N.EINVAL and b"999" in N.lib.jinfer_last_error(None), "a call from inside the log callback keeps the error")
 logging.getLogger("jinfer").removeHandler(nested)
+
+# the callback-safe functions, called from inside the callback: the _free functions and last_error
+spare, spare_tk = jinfer.load(LM), None
+freed = []
+def free_inside(record):
+    if not freed:
+        freed.append(N.lib.jinfer_last_error(None) is not None)
+        N.lib.jinfer_model_free(spare._ptr); spare._ptr = None
+        N.lib.toknroll_tokenizer_free(spare_tk)
+spare_tk = N.lib.jinfer_model_tokenizer(spare._h)
+inside = logging.Handler(); inside.emit = free_inside
+logging.getLogger("jinfer").addHandler(inside)
+ok(N.lib.jinfer_model_property(m._h, 999) == N.EINVAL and freed == [True] and b"999" in N.lib.jinfer_last_error(None), "free and last_error from inside the callback")
+logging.getLogger("jinfer").removeHandler(inside)
+
+# replacing the callback: once jinfer_log_set returns the old one never runs again, and a callback
+# always gets its own user pointer, while another thread logs all along
+retired, wrong, stop = set(), [], threading.Event()
+def make(k):
+    def callback(level, message, user):
+        if k in retired or user != k: wrong.append((k, user))
+    return N.LogFn(callback)
+callbacks = [make(k) for k in range(1, 201)]
+def noisy():
+    while not stop.is_set(): N.lib.jinfer_model_property(m._h, 999)  # each failure logs its trace
+noise = threading.Thread(target=noisy); noise.start()
+for k, callback in enumerate(callbacks, 1):
+    N.lib.jinfer_log_set(callback, k)
+    if k > 1: retired.add(k - 1)
+    time.sleep(0.001)
+N.lib.jinfer_log_set(jinfer._log_callback, None); retired.add(len(callbacks))
+stop.set(); noise.join()
+ok(not wrong, f"a replaced callback ran, or got another's user pointer: {wrong[:5]}")
 ok(isinstance(m, jinfer.LanguageModel) and not hasattr(m, "embed") and not hasattr(m, "kind"), f"{m!r}")
 ok("kernels=native" in repr(m) and "threads=" in repr(m), f"repr says what runs: {m!r}")
 ok(m.context_capacity == min(4096, m.max_context_length) and m.max_context_length >= m.context_capacity and m.name.endswith(".gguf"), f"properties: capacity {m.context_capacity} of {m.max_context_length}")

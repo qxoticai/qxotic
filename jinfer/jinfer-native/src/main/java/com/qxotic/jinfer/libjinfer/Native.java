@@ -74,10 +74,10 @@ public final class Native {
     }
 
     @CEntryPoint(name = "jinfer__log_set")
-    static void logSet(IsolateThread thread, Log.Fn fn, VoidPointer payload) {
+    static void logSet(IsolateThread thread, Log.Fn fn, VoidPointer user) {
         try {
             Errors.clear();
-            Log.set(fn, payload);
+            Log.set(fn, user);
         } catch (Throwable t) {
             Errors.set(t);
         }
