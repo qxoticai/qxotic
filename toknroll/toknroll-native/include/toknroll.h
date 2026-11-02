@@ -1,43 +1,46 @@
 /* toknroll.h - token-perfect LLM tokenization for any language. C99, one header, no dependencies.
  *
- *   Errors    Pointer-returning functions return NULL, int32_t-returning functions return a
- *             negative TOKNROLL_E* code. toknroll_last_error() has the message and, when asked,
- *             the code, per calling thread, until its next toknroll call; after one that succeeds,
- *             "" and TOKNROLL_OK. Reading does not clear it.
- *   Buffers   (out, capacity) follows snprintf: at most capacity elements are written, the
- *             number needed is returned, strings get a NUL when there is room. Capacity 0 sizes.
- *   Strings   UTF-8. Text and token spellings come with their length in bytes, so any byte may be
- *             in them; with length 0 the pointer may be NULL. Sources and options end at their NUL.
- *             The one string returned to you, toknroll_last_error's, is the calling thread's until
- *             its next toknroll call. Nothing is freed but tokenizers, by toknroll_tokenizer_free, which
- *             accepts NULL.
- *   Threads   Any thread may call, and a tokenizer may be shared between threads: it never changes.
- *             A process may fork at any time; the child keeps every tokenizer it inherited.
- *   Runtime   The library is a Java runtime compiled ahead of time; toknroll_configure passes it
- *             options as a java command line would, before the first call, and the TOKNROLL_OPTIONS
- *             environment variable adds to or overrides them. Nothing requires either. Once
- *             started the library stays loaded, as its threads run its code: an unload (dlclose,
- *             FreeLibrary) succeeds and leaves it in place.
- *   Sources   A path, or a reference to a hub. Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x,
- *             a backslash, owner/file.gguf or a name that exists on disk is a path; anything else
- *             is a reference, [host/]owner/repo[@revision][/path][:quant], the host hf.co (the
- *             default), huggingface.co or modelscope.cn. To force the hub, write the host; to force
- *             the disk, write ./ What is reached decides the format: a file by its content, the
- *             GGUF magic or a JSON tokenizer.json, whatever its name; a folder by name, its
- *             tokenizer.json. A bare owner/repo is the repository root, a folder: it never opens a
- *             GGUF. A GGUF on a hub, named by :quant or a /path ending in .gguf, is read for its
- *             header only, never its weights. Files land in the cache jinfer shares;
- *             -Dtoknroll.cache.root moves it, -Dtoknroll.offline=true never fetches. Missing is
- *             TOKNROLL_ENOTFOUND; a malformed reference, an unknown host, a file named twice (by
- *             /path and :quant) or a file of no known kind is TOKNROLL_EINVAL.
- *               Qwen/Qwen3-0.6B                         the repository's tokenizer.json
- *               LiquidAI/LFM2.5-350M-GGUF:Q8_0          the header of that GGUF
- *               org/repo/tokenizers/v2                  a folder inside a repository
- *               modelscope.cn/Qwen/Qwen3-0.6B@v1        the other hub, a pinned revision
- *               ~/.ollama/models/blobs/sha256-3f1a...   a GGUF with no extension
- *   Stability MAJOR breaks the ABI, MINOR only adds, PATCH only fixes; 0.x is held to the same
- *             rule as 1.x. A shipped signature, name or default never changes. toknroll__* is
- *             private.
+ *   Errors     A function returns its result; a negative value is a TOKNROLL_E* code, NULL for a
+ *              pointer. toknroll_last_error has the message and the code, per thread, until the
+ *              thread's next toknroll call (reading it changes nothing); after a success, "" and
+ *              TOKNROLL_OK. Every call sets it but toknroll_version and toknroll_last_error.
+ *   Buffers    (out, capacity) follows snprintf: at most capacity elements are written and the number
+ *              needed is returned. Text is NUL-terminated whenever capacity is not 0, cut to
+ *              capacity - 1 bytes when longer, so it is whole when the return is below capacity.
+ *              Capacity 0 sizes. Ids are counted in int32_t, bytes in int64_t.
+ *   Text       UTF-8. Text and token spellings come with their length in bytes, so any byte may be in
+ *              them; with length 0 the pointer may be NULL. Sources and options end at their NUL.
+ *   Ownership  What you pass is borrowed for the call; no buffer is kept. A tokenizer is yours until
+ *              toknroll_tokenizer_free, which accepts NULL. The one string returned to you,
+ *              toknroll_last_error's, is the calling thread's until its next toknroll call.
+ *   Threads    Any thread may call, and a tokenizer may be shared between threads: it never changes.
+ *              toknroll_tokenizer_free is the exception: not during another call on the same tokenizer.
+ *   Fork       A process may fork at any time; the child keeps every tokenizer it inherited.
+ *   Settings   The library is a Java runtime compiled ahead of time. toknroll_configure passes it
+ *              options as a java command line would, before the first call, and the TOKNROLL_OPTIONS
+ *              environment variable adds to or overrides them; nothing requires either. The library
+ *              writes nothing to stdout or stderr, but for the runtime naming an option it rejects.
+ *              Once started it stays loaded, as its threads run its code: an unload (dlclose,
+ *              FreeLibrary) succeeds and leaves it in place.
+ *   Sources    A path, or a reference to a hub. Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x, a
+ *              backslash, owner/file.gguf or a name that exists on disk is a path; anything else is a
+ *              reference, [host/]owner/repo[@revision][/path][:quant], the host hf.co (the default),
+ *              huggingface.co or modelscope.cn. To force the hub, write the host; to force the disk,
+ *              write ./ What is reached decides the format: a file by its content, the GGUF magic or a
+ *              JSON tokenizer.json, whatever its name; a folder by name, its tokenizer.json. A bare
+ *              owner/repo is the repository root, a folder: it never opens a GGUF. A GGUF on a hub,
+ *              named by :quant or a /path ending in .gguf, is read for its header only, never its
+ *              weights. Files land in the cache jinfer shares; -Dtoknroll.cache.root moves it,
+ *              -Dtoknroll.offline=true never fetches. Missing is TOKNROLL_ENOTFOUND; a malformed
+ *              reference, an unknown host, a file named twice (by /path and :quant) or a file of no
+ *              known kind is TOKNROLL_EINVAL.
+ *                Qwen/Qwen3-0.6B                         the repository's tokenizer.json
+ *                LiquidAI/LFM2.5-350M-GGUF:Q8_0          the header of that GGUF
+ *                org/repo/tokenizers/v2                  a folder inside a repository
+ *                modelscope.cn/Qwen/Qwen3-0.6B@v1        the other hub, a pinned revision
+ *                ~/.ollama/models/blobs/sha256-3f1a...   a GGUF with no extension
+ *   Stability  Before 1.0 any release may break this API. From 1.0 a PATCH changes nothing a caller
+ *              relies on, a MINOR only adds, a MAJOR may break, and every release is checked.
  */
 #ifndef TOKNROLL_H
 #define TOKNROLL_H
@@ -78,8 +81,11 @@ extern "C" {
 
 typedef struct toknroll_tokenizer toknroll_tokenizer;
 
-TOKNROLL_API const char* toknroll_version(void);                /* "0.4.0", the toknroll release it was built from */
-TOKNROLL_API const char* toknroll_last_error(int32_t* code);    /* the message; *code = its code unless NULL, TOKNROLL_OK after success */
+/* "0.4.0", the toknroll release the library was built from. */
+TOKNROLL_API const char* toknroll_version(void);
+/* The message of the thread's last call; *code = its code unless code is NULL. "" and TOKNROLL_OK after a
+ * success. */
+TOKNROLL_API const char* toknroll_last_error(int32_t* code);
 /* Runtime options, as on a java command line: "-Dtoknroll.gguf.pre.my-model=alias:qwen2" registers a
  * pre-tokenizer, "-Dtoknroll.cache.root=/srv/cache" moves the hub cache, "-XX:MaxHeapSize=512m" caps the
  * heap. Once, before any other call into the library; a later call is TOKNROLL_EINVAL. An option the
@@ -108,7 +114,7 @@ TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t*
  * out, text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold
  * count + 1 entries. Encoded on all cores, a forked child's on the calling thread. Returns the
  * total, offsets[count]; over capacity, out gets a prefix and offsets is still complete, so
- * capacity 0 counts. No buffer is kept. */
+ * capacity 0 counts. */
 TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const char* texts,
                                            const int32_t* text_offsets, int32_t count, uint32_t flags,
                                            int32_t* out, int32_t capacity, int32_t* offsets);
