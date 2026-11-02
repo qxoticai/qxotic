@@ -1,6 +1,6 @@
 # Specials API
 
-`Specials` provides an explicit control-token path for inference workloads.
+`Specials` provides an explicit special-token path for inference workloads: the tokens a vocabulary types control, user-defined or unknown, matched whole.
 
 ## Why it is separate from Tokenizer
 
@@ -39,7 +39,7 @@ IntSequence ids = none.encode(tokenizer, "just text");
 
 ## Behavioral notes
 
-- Compile `Specials` with the same vocabulary exposed by the tokenizer used at encode time.
+- Build `Specials` with `Specials.of(tokenizer)` from the same tokenizer used at encode time.
 - Matching runs on raw input before tokenizer preprocessing (normalizer/splitter).
 - Non-special spans still go through tokenizer preprocessing and encoding.
 - If a `Specials` instance is used with an incompatible tokenizer vocabulary mapping, behavior is undefined.

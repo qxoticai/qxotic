@@ -13,9 +13,6 @@ final class HuggingFaceTokenizerTestFixtures {
     private HuggingFaceTokenizerTestFixtures() {}
 
     /**
-     * Builds a tokenizer.json root object wrapping the given model JSON and optional root fields.
-     */
-    /**
      * A small SentencePiece BPE model, as real ones are: byte fallback, and merges that build every
      * token ("▁ello" from "▁" and "ello", "▁hi" from "▁h" and "i").
      */
@@ -52,6 +49,9 @@ final class HuggingFaceTokenizerTestFixtures {
                     + "{\"type\":\"ByteFallback\"},{\"type\":\"Fuse\"},"
                     + "{\"type\":\"Strip\",\"content\":\" \",\"start\":1,\"stop\":0}]}";
 
+    /**
+     * Builds a tokenizer.json root object wrapping the given model JSON and optional root fields.
+     */
     static String buildTokenizerJson(String modelJson, String... rootFields) {
         StringBuilder sb = new StringBuilder();
         sb.append('{').append("\"model\":").append(modelJson);

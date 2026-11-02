@@ -166,8 +166,7 @@ class HuggingFaceTokenizerInvariantTest {
 
     /**
      * Ranked merging, as Hugging Face: merges b+c, a+b, ab+c, abc+d make "abcd" a, bc, d, though
-     * "abcd" is a token; only ignore_merges takes a word that is a token whole. The external review
-     * of 2026-11-02 found the whole-token shortcut taken regardless on main.
+     * "abcd" is a token; only ignore_merges takes a word that is a token whole.
      */
     @Test
     void mergesKeepTheirRankEvenWhenTheWordIsAToken() throws IOException {

@@ -22,9 +22,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Hugging Face's ids and text for each family's golden cases, from {@code
  * toknroll-benchmarks/generate_ground_truth.py}, with the tokenizer.json at the pinned revision and
- * at main. Every divergence fails, all of them listed, a known one with its cause. At main, one
- * also fails when the repository moved past the pinned revision: the golden is then due for
- * regeneration.
+ * at main. Every divergence fails, all of them listed, a known one with its cause. The run at main
+ * compares the same ids against the repository's current tokenizer.json.
  */
 @Tag("local-external")
 class HuggingFaceFamilyGoldenTest {
