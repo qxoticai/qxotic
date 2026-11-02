@@ -440,8 +440,8 @@ public final class HuggingFaceTokenizerLoader {
 
     /**
      * tokenizer_config.json's {@code added_tokens_decoder}, the added tokens of a tiktoken-format
-     * model: each one's text to its id, and the texts of those not marked special, which are
-     * matched whole all the same (Kimi's tool-call markers).
+     * model: each one's text to its id, and the texts of those not marked special, which {@link
+     * com.qxotic.toknroll.Specials} matches whole all the same (Kimi's tool-call markers).
      */
     private static void readAddedTokensDecoder(
             Map<String, Object> tokenizerConfig,
@@ -699,8 +699,8 @@ public final class HuggingFaceTokenizerLoader {
                     // but do not clobber normal vocab entries.
                     tokens[id] = (String) contentObj;
                 }
-                // Every added token is matched whole, as Hugging Face matches it: the flag says
-                // only whether decoding may hide it. Specials.of takes both kinds.
+                // Specials.of matches every added token whole, as Hugging Face matches it: the
+                // flag says only whether decoding may hide it.
                 tokenTypes[id] =
                         special
                                 ? StandardTokenType.CONTROL.getId()
@@ -1019,6 +1019,9 @@ public final class HuggingFaceTokenizerLoader {
         return splitter == Splitter.identity();
     }
 
+    /** Laguna's first pre-tokenizer stage, a Split with MergedWithNext. */
+    static final String LAGUNA_SPLIT_REGEX = "(?:\\r?\\n)+(?!\\r?\\n)";
+
     @SuppressWarnings("unchecked")
     private static Splitter parseSplitPreTokenizer(Map<String, Object> preTokenizer) {
         Object patternObj = preTokenizer.get("pattern");
@@ -1048,7 +1051,7 @@ public final class HuggingFaceTokenizerLoader {
             // pieces as one possessive match each, followed by Qwen2's regex, take the scanner.
             if ("MergedWithNext".equals(behavior)
                     && !invert
-                    && "(?:\\r?\\n)+(?!\\r?\\n)".equals(regexPattern)) {
+                    && LAGUNA_SPLIT_REGEX.equals(regexPattern)) {
                 return ImplAccessor.createRegexSplitter(
                         Pattern.compile(ImplAccessor.LAGUNA_NEWLINES, UNICODE_REGEX_FLAGS), true);
             }
