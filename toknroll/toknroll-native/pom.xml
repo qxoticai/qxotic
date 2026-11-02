@@ -25,6 +25,7 @@
     <!-- -O2, the builder's default: -O3 bought 18% encode throughput for 11 MB of code (see the README) -->
     <toknroll.image.opt>-O2</toknroll.image.opt>
     <toknroll.image.march>compatibility</toknroll.image.march>
+    <toknroll.image.skip>false</toknroll.image.skip>
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
     <shim.cc>cc</shim.cc>
     <shim.cflags>-std=c11 -O2 -fPIC -Wall -Wextra -Wpedantic</shim.cflags>
@@ -122,6 +123,8 @@
             <extensions>true</extensions>
             <configuration>
               <imageName>${toknroll.image.name}</imageName>
+              <!-- true when libjinfer's build passes through: its own image carries this one's entry points -->
+              <skip>${toknroll.image.skip}</skip>
               <sharedLibrary>true</sharedLibrary>
               <!-- a fallback image would need a JDK at run time: a library that is not standalone is a failure -->
               <fallback>false</fallback>

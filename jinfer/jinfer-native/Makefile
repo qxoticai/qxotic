@@ -25,7 +25,7 @@ include ../../native.mk
 libjinfer:
 	@$(MAKE) -s -C $(ROOT) check-native-image
 	cd $(ROOT) && NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
-	  -Djinfer.image.opt=$(OPT) -Djinfer.image.march=$(MARCH)
+	  -Djinfer.image.opt=$(OPT) -Djinfer.image.march=$(MARCH) -Dtoknroll.image.skip=true
 	ln -sf $(notdir $(LIB)) target/$(SONAME)
 
 target/chat: examples/c/chat.c $(HEADERS) $(LIB)
