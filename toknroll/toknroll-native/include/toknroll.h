@@ -58,8 +58,8 @@ extern "C" {
 #endif
 
 #define TOKNROLL_VERSION_MAJOR 0
-#define TOKNROLL_VERSION_MINOR 3
-#define TOKNROLL_VERSION_PATCH 1
+#define TOKNROLL_VERSION_MINOR 4
+#define TOKNROLL_VERSION_PATCH 0
 
 #define TOKNROLL_OK         0
 #define TOKNROLL_ERROR     (-1) /* see toknroll_last_error() */
@@ -77,7 +77,7 @@ extern "C" {
 
 typedef struct toknroll_tokenizer toknroll_tokenizer;
 
-TOKNROLL_API const char* toknroll_version(void);                /* "0.3.1", the toknroll release it was built from */
+TOKNROLL_API const char* toknroll_version(void);                /* "0.4.0", the toknroll release it was built from */
 TOKNROLL_API const char* toknroll_last_error(int32_t* code);    /* the message; *code = its code unless NULL, TOKNROLL_OK after success */
 /* Runtime options, as on a java command line: "-Dtoknroll.gguf.pre.my-model=alias:qwen2" registers a
  * pre-tokenizer, "-Dtoknroll.cache.root=/srv/cache" moves the hub cache, "-XX:MaxHeapSize=512m" caps the

@@ -59,8 +59,8 @@ extern "C" {
 #endif
 
 #define JINFER_VERSION_MAJOR 0
-#define JINFER_VERSION_MINOR 3
-#define JINFER_VERSION_PATCH 1
+#define JINFER_VERSION_MINOR 4
+#define JINFER_VERSION_PATCH 0
 
 #define JINFER_OK            0
 #define JINFER_DONE          1    /* a stream has nothing more to produce */
@@ -73,7 +73,7 @@ extern "C" {
 typedef enum { JINFER_LOG_DEBUG, JINFER_LOG_INFO, JINFER_LOG_WARN, JINFER_LOG_ERROR } jinfer_log_level;
 typedef void (*jinfer_log_fn)(jinfer_log_level level, const char* message, void* payload);
 
-JINFER_API const char* jinfer_version(void);          /* "0.3.1", the jinfer release it was built from */
+JINFER_API const char* jinfer_version(void);          /* "0.4.0", the jinfer release it was built from */
 JINFER_API const char* jinfer_last_error(int32_t* code);   /* the message; *code = its code unless NULL, JINFER_OK after success */
 JINFER_API void        jinfer_log_set(jinfer_log_fn fn, void* payload);   /* NULL = silent, the default */
 /* Runtime options, as on a java command line: "-Djinfer.threads=8" sizes the process's pool, "-Djinfer.cache.sessions=16"

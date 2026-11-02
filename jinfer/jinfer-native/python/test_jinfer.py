@@ -24,7 +24,7 @@ def ok(cond, what):
 
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it
-ok(jinfer.__version__ == "0.3.1", "version")
+ok(jinfer.__version__ == "0.4.0", "version")
 ok(not hasattr(jinfer, "Context") and not hasattr(jinfer, "Timings") and not hasattr(jinfer.LanguageModel, "decide") and "OpenAI" not in jinfer.__all__, "the surface is the documented one")
 try:
     jinfer.load("nobody/does-not-exist-GGUF:Q8_0")
@@ -437,7 +437,7 @@ N.lib.jinfer_stream_cancel(r._ptr)
 t.join(timeout=30)
 ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} after {len(seen)} chunks")
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
-ok(jinfer.__version__ == "0.3.1" == N.lib.jinfer_version().decode(), f"version {jinfer.__version__}")
+ok(jinfer.__version__ == "0.4.0" == N.lib.jinfer_version().decode(), f"version {jinfer.__version__}")
 
 # a child forked once the library started is refused at once, where it would hang; the parent carries on
 if hasattr(os, "fork"):

@@ -33,7 +33,7 @@ from itertools import accumulate
 from . import _native as N
 
 __all__ = ["load", "configure", "Tokenizer", "TokenFlags", "ToknrollError", "InvalidArgument", "NotFound"]
-__version__ = "0.3.1"  # the toknroll release the library was built from; make check-version keeps the four spellings equal
+__version__ = "0.4.0"  # the toknroll release the library was built from; make check-version keeps the four spellings equal
 
 
 class TokenFlags(IntFlag):
