@@ -11,6 +11,12 @@ UPPER := $(shell echo $(NAME) | tr a-z A-Z)
 LIB   := target/lib$(NAME).$(if $(filter darwin,$(OS)),dylib,so)
 VERSION := $(shell grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -)
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
+# The soname follows the version, never set by hand: the minor while the major is 0 (any minor may break),
+# the major from 1.0. The build names the library by it (native-cc.sh) and links target/$(SONAME) to it, so
+# a program linked against target/ runs from there.
+MAJOR := $(word 1,$(subst ., ,$(VERSION)))
+SOVERSION := $(if $(filter 0,$(MAJOR)),0.$(word 2,$(subst ., ,$(VERSION))),$(MAJOR))
+SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).so.$(SOVERSION))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
 # SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
 # EXPORT_HEADERS, those whose functions the library exports; EXTRA_EXPORTS, the exported names no header
@@ -88,9 +94,10 @@ dist: wheel
 	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/include target/dist/$(DIST)/lib/$(PLATFORM) target/dist/$(DIST)/python
 	cp $(HEADERS) target/dist/$(DIST)/include/
 	cp $(DIST_LIBS) target/dist/$(DIST)/lib/$(PLATFORM)/
+	cd target/dist/$(DIST)/lib/$(PLATFORM) && mv $(notdir $(LIB)) $(SONAME) && ln -s $(SONAME) $(notdir $(LIB))   # the file by its soname, the name a linker looks for beside it
 	cp README.md $(ROOT)/LICENSE target/dist/$(DIST)/
 	cp target/wheel/*.whl target/dist/$(DIST)/python/
-	cd target/dist && rm -f $(DIST).zip && zip -qr $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
+	cd target/dist && rm -f $(DIST).zip && zip -qry $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
 	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
 
 .PHONY: help check-version check-exports python wheel check-wheel dist

@@ -17,8 +17,9 @@ include ../../native.mk
 libtoknroll:
 	@$(MAKE) -s -C $(ROOT) check-native-image
 	rm -f target/cc.log
-	cd $(ROOT) && NATIVE_CC_LOG=$(abspath target/cc.log) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
+	cd $(ROOT) && NATIVE_CC_LOG=$(abspath target/cc.log) NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
 	  -Dtoknroll.image.opt=$(OPT) -Dtoknroll.image.march=$(MARCH)
+	ln -sf $(notdir $(LIB)) target/$(SONAME)
 	src/main/c/static.sh include/toknroll.h target/cc.log $(STATIC)
 
 target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)

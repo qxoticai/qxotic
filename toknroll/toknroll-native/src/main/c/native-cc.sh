@@ -5,6 +5,8 @@
 # on the line (toknroll_*, jinfer_*), plus libjam's names when its archive is linked in (jam's Java side
 # resolves them with dlsym at run time). GraalVM links with -Bsymbolic-functions on Linux, and Mach-O binds
 # two-level, so the library's own calls never reach a same-named symbol of another library.
+# NATIVE_SONAME=libx.so.0.4 (libx.0.4.dylib on a Mac) names the shared library its soname (install name,
+# under @rpath): the Makefiles derive it from the version.
 # NATIVE_CC_LOG=file appends every command line (static.sh replays the link from it); NATIVE_CC picks the compiler.
 [ -n "$NATIVE_CC_LOG" ] && printf '%s\n' "$*" >> "$NATIVE_CC_LOG"
 set -f   # the jam_* patterns below are for the linker, not the shell
@@ -26,7 +28,12 @@ for arg in "$@"; do
     -Wl,*exported_symbols.list)   # ld64, after -Wl,-exported_symbols_list: one name per line
       list=${arg#-Wl,}
       printf '%s\n' $api > "$list" ;;
+    -Wl,-install_name,*)   # GraalVM's own, the file's name: NATIVE_SONAME's below takes its place
+      [ -n "$NATIVE_SONAME" ] && continue ;;
   esac
   set -- "$@" "$arg"
 done
+case " $* " in *" -shared "*) if [ -n "$NATIVE_SONAME" ]; then
+  if [ -n "$darwin" ]; then set -- "$@" "-Wl,-install_name,@rpath/$NATIVE_SONAME"; else set -- "$@" "-Wl,-soname,$NATIVE_SONAME"; fi
+fi ;; esac
 exec "${NATIVE_CC:-cc}" "$@"

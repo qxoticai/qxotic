@@ -136,6 +136,8 @@
                 <buildArg>${shim.wrapper}</buildArg>
                 <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
                 <buildArg>-ENATIVE_CC_LOG</buildArg>
+                <!-- and the soname the Makefile derives from the version -->
+                <buildArg>-ENATIVE_SONAME</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>
                 <!-- the vector width the target executes, pinned before the engine's classes initialize -->
