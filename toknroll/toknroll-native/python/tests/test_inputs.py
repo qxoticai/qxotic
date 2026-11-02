@@ -84,6 +84,18 @@ class IdBufferTest(unittest.TestCase):
         self.assertEqual(self.t.decode(ids), "word " * 250_000)
         self.assertEqual(len(self.t.decode_bytes(ids)), len("word " * 250_000))
 
+    def test_byte_sizes_are_64_bit(self):
+        """decode and token take and return int64_t: a capacity of -2^40 is refused, where a binding
+        cut to 32 bits would read it as 0 and ask for the size. Over 4096 ids the size is counted in
+        chunks first, and still exact."""
+        lib, h, text = self.t._lib, self.t._handle, "word " * 5000
+        ids = self.t.encode(text)
+        self.assertGreater(len(ids), 4096)
+        address = ids.buffer_info()[0]
+        self.assertEqual(lib.toknroll_decode(h, address, len(ids), None, 0), len(text.encode()))
+        self.assertEqual(lib.toknroll_decode(h, address, len(ids), None, -(1 << 40)), N.EINVAL)
+        self.assertEqual(lib.toknroll_token(h, ids[0], None, -(1 << 40)), N.EINVAL)
+
 
 @needs_gguf
 class LifecycleTest(unittest.TestCase):

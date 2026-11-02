@@ -41,7 +41,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
     found = lib.toknroll_version().decode()
     if found != __version__:  # ponytail: exact while the API is 0.x; same major once it is stable
         raise OSError(f"toknroll {__version__}'s Python layer cannot drive the toknroll {found} in {lib._name}")
-    P, S, I32 = C.c_void_p, C.c_char_p, C.c_int32
+    P, S, I32, I64 = C.c_void_p, C.c_char_p, C.c_int32, C.c_int64
     sig = {
         "toknroll_version": ([], S),
         "toknroll_last_error": ([C.POINTER(I32)], S),
@@ -50,11 +50,11 @@ def bind(lib: C.CDLL) -> C.CDLL:
         "toknroll_tokenizer_free": ([P], None),
         # the id buffers travel as addresses: an array('i') or a numpy array, in place
         "toknroll_encode": ([P, S, C.c_size_t, C.c_uint32, P, I32], I32),
-        "toknroll_decode": ([P, P, I32, C.c_char_p, I32], I32),
+        "toknroll_decode": ([P, P, I32, C.c_char_p, I64], I64),
         "toknroll_encode_batch": ([P, C.c_char_p, P, I32, C.c_uint32, P, I32, P], I32),
         "toknroll_vocabulary_size": ([P], I32),
-        "toknroll_token_flags": ([P, I32], C.c_int64),
-        "toknroll_token": ([P, I32, C.c_char_p, I32], I32),
+        "toknroll_token_flags": ([P, I32], I64),
+        "toknroll_token": ([P, I32, C.c_char_p, I64], I64),
         "toknroll_id": ([P, S, C.c_size_t], I32),
     }
     for name, (argtypes, restype) in sig.items():

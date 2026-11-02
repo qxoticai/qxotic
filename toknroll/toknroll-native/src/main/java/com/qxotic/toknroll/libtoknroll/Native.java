@@ -131,15 +131,38 @@ public final class Native {
         }
     }
 
-    /** snprintf for bytes: writes min(n, capacity) and a NUL when there is room, returns n. */
-    private static int bytes(byte[] value, CCharPointer out, int capacity) {
+    /**
+     * snprintf for bytes: writes min(n, capacity) and a NUL, at capacity - 1 when they do not fit,
+     * unless capacity is 0; returns n.
+     */
+    private static long bytes(byte[] value, CCharPointer out, long capacity) {
         if (capacity < 0) throw Errors.invalid("capacity must not be negative");
         if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-        int n = Math.min(value.length, capacity);
+        int n = (int) Math.min(value.length, capacity);
         for (int i = 0; i < n; i++) out.write(i, value[i]);
         if (capacity > value.length) out.write(value.length, (byte) 0);
-        else if (capacity > 0) out.write(capacity - 1, (byte) 0);
+        else if (capacity > 0) out.write((int) capacity - 1, (byte) 0); // capacity <= n here
         return value.length;
+    }
+
+    /** Tokens counted at a time, so no count can wrap: a token would need 512 KiB to do it. */
+    private static final int COUNT_CHUNK = 1 << 12;
+
+    /**
+     * The bytes {@code tokens} decode to, refused past 2 GiB, where an int count would wrap.
+     * Counted in chunks summed in 64 bits first; a chunk may count a byte short of what it decodes
+     * to (Metaspace trims its first token's space), so the whole is counted once the sum fits, and
+     * a total that overflows by that little wraps negative.
+     */
+    private static int countBytes(Tokenizer tokenizer, IntSequence tokens) {
+        int n = tokens.length();
+        if (n <= COUNT_CHUNK) return tokenizer.countBytes(tokens);
+        long sum = 0;
+        for (int i = 0; i < n; i += COUNT_CHUNK)
+            sum += tokenizer.countBytes(tokens.subSequence(i, Math.min(n, i + COUNT_CHUNK)));
+        int exact = sum > Integer.MAX_VALUE ? -1 : tokenizer.countBytes(tokens);
+        if (exact < 0) throw Errors.invalid("the decoded text is over 2 GiB");
+        return exact;
     }
 
     /** The shim's own failures (a configure call after the isolate exists) use the same channel. */
@@ -269,7 +292,9 @@ public final class Native {
             int[] at = new int[count + 1]; // where text i's ids start
             offsets.write(0, 0);
             for (int i = 0; i < count; i++) {
-                at[i + 1] = at[i] + counts[i];
+                long next = (long) at[i] + counts[i];
+                if (next > Integer.MAX_VALUE) throw Errors.invalid("the batch is over 2^31 ids");
+                at[i + 1] = (int) next;
                 offsets.write(i + 1, at[i + 1]);
             }
             // each run's ids written where they belong, on its own core
@@ -289,13 +314,13 @@ public final class Native {
     }
 
     @CEntryPoint(name = "toknroll__decode")
-    static int decode(
+    static long decode(
             IsolateThread thread,
             ObjectHandle handle,
             CIntPointer ids,
             int count,
             CCharPointer out,
-            int capacity) {
+            long capacity) {
         try {
             Errors.clear();
             Loaded loaded = get(handle);
@@ -318,17 +343,18 @@ public final class Native {
             }
             IntSequence tokens = IntSequence.wrap(copy);
             Tokenizer tokenizer = loaded.tokenizer();
-            if (capacity == 0) return tokenizer.countBytes(tokens);
+            if (capacity == 0) return countBytes(tokenizer, tokens);
             // the tokens' own bytes, not a re-encoded string, so a partial UTF-8 sequence comes
             // back as it is (decode_bytes); they land in the caller's buffer, and only when they
             // do not fit are they sized and a prefix copied, as snprintf would
-            ByteBuffer buffer = CTypeConversion.asByteBuffer(out, capacity - 1);
+            int room = (int) Math.min(capacity - 1, Integer.MAX_VALUE);
+            ByteBuffer buffer = CTypeConversion.asByteBuffer(out, room);
             try {
                 decodeInto(tokenizer, tokens, buffer);
                 out.write(buffer.position(), (byte) 0);
                 return buffer.position();
             } catch (IllegalArgumentException full) {
-                ByteBuffer whole = ByteBuffer.allocate(tokenizer.countBytes(tokens));
+                ByteBuffer whole = ByteBuffer.allocate(countBytes(tokenizer, tokens));
                 decodeInto(tokenizer, tokens, whole);
                 return bytes(whole.array(), out, capacity);
             }
@@ -373,8 +399,8 @@ public final class Native {
     }
 
     @CEntryPoint(name = "toknroll__token")
-    static int token(
-            IsolateThread thread, ObjectHandle handle, int id, CCharPointer out, int capacity) {
+    static long token(
+            IsolateThread thread, ObjectHandle handle, int id, CCharPointer out, long capacity) {
         try {
             Errors.clear();
             Vocabulary vocab = get(handle).tokenizer().vocabulary();

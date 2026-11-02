@@ -100,8 +100,8 @@ TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* te
                                      uint32_t flags, int32_t* out, int32_t capacity);
 /* The tokens' bytes: UTF-8, except where a token holds part of a character. An id outside the
  * vocabulary is TOKNROLL_EINVAL. */
-TOKNROLL_API int32_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
-                                     char* out, int32_t capacity);
+TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
+                                     char* out, int64_t capacity);
 /* count texts, text i the bytes [text_offsets[i], text_offsets[i + 1]) of texts; their ids go to
  * out, text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold
  * count + 1 entries. Encoded on all cores. Returns the total, offsets[count]; over capacity, out
@@ -114,7 +114,7 @@ TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
 /* An id's TOKNROLL_TOKEN_* flags; negative, TOKNROLL_ENOTFOUND, when there is no such id. */
 TOKNROLL_API int64_t toknroll_token_flags(const toknroll_tokenizer* t, int32_t id);
 /* The spelling of an id, as the vocabulary writes it; TOKNROLL_ENOTFOUND when there is no such id. */
-TOKNROLL_API int32_t toknroll_token(const toknroll_tokenizer* t, int32_t id, char* out, int32_t capacity);
+TOKNROLL_API int64_t toknroll_token(const toknroll_tokenizer* t, int32_t id, char* out, int64_t capacity);
 /* The id of a spelling, length bytes of it; TOKNROLL_ENOTFOUND when the vocabulary has no such token. */
 TOKNROLL_API int32_t toknroll_id(const toknroll_tokenizer* t, const char* token, size_t length);
 
