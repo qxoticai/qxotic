@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * SentencePiece-flavored BPE model.
@@ -57,9 +58,9 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
      * Words to ids, one slot per hash, shared by every thread without a lock: an entry is
      * immutable, so a thread that sees one sees it whole, and one lost to a race or overwritten by
      * another word is only a miss. Unlike a map cleared when full, it degrades gradually as words
-     * outnumber slots.
+     * outnumber slots. Made on first use, so a model that encodes no word keeps none.
      */
-    private final Entry[] cache = new Entry[CACHE_SLOTS];
+    private final AtomicReference<Entry[]> cache = new AtomicReference<>();
 
     private static final class Entry {
         final String word;
@@ -354,9 +355,14 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         }
         String word = text.toString();
         int slot = (word.hashCode() * 0x9E3779B9) >>> (32 - CACHE_BITS); // Fibonacci hashing
-        Entry entry = cache[slot];
+        Entry[] slots = cache.get();
+        if (slots == null) {
+            cache.compareAndSet(null, new Entry[CACHE_SLOTS]);
+            slots = cache.get();
+        }
+        Entry entry = slots[slot];
         if (entry == null || !entry.word.equals(word)) {
-            cache[slot] = entry = new Entry(word, merged(text));
+            slots[slot] = entry = new Entry(word, merged(text));
         }
         return entry.ids;
     }
