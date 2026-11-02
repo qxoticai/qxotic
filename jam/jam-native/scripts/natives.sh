@@ -35,10 +35,10 @@ SHIPPED="linux-x86-64 windows-x86-64 darwin-aarch64"
 STAMP=jam-native.stamp
 GLIBC_FLOOR=2.17
 ZIG_EXPECTED=0.16
-# Every exported symbol: jam.h's functions and the JNI entry points the Java side binds. Mach-O
-# prefixes an underscore, so match bare names.
-SYMBOLS="$(sed -n 's/^JAM_API .*[ *]\(jam_[a-z_]*\)(.*/\1/p' include/jam.h | tr '\n' ' ')\
-Java_com_qxotic_jam_libjam_NativeJAM_mmJni Java_com_qxotic_jam_libjam_NativeJAM_newJni Java_com_qxotic_jam_libjam_NativeJAM_freeJni"
+# Every exported symbol: jam.h's functions and the JNI entry points jam_jni.c defines (the same lists
+# ctest's exports check derives). Mach-O prefixes an underscore, so match bare names.
+SYMBOLS="$(sed -nE 's/^JAM_API .*[ *](jam_[a-z0-9_]+)\(.*/\1/p' include/jam.h | tr '\n' ' ')\
+$(sed -nE 's/^((Java|JNI_OnLoad)_[A-Za-z0-9_]+)\(.*/\1/p' src/jam_jni.c | tr '\n' ' ')"
 
 die() { echo "natives: $*" >&2; exit 1; }
 
@@ -162,6 +162,8 @@ build_darwin_aarch64() {
     rsync -a --delete \
         --exclude 'build*/' --exclude 'dist/' --exclude 'target/' --exclude 'src/main/' --exclude 'src/test/' \
         ./ "$JAM_MAC:$MAC_DIR/src/"
+    # The Mac's ctest is the real gate for jam_share and the Metal paths: everywhere else a share is
+    # declined (EUNSUPPORTED), so only this leg exercises the share table on a device.
     mac "cd '$MAC_DIR/src' \
         && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON \
         && cmake --build build -j \

@@ -43,6 +43,9 @@ endif()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pom.xml")   # absent in a copy of jam-native alone
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../pom.xml" JAM_POM)
     string(FIND "${JAM_POM}" "<artifactId>jam</artifactId>" JAM_POM_AT)
+    if (JAM_POM_AT EQUAL -1)
+        message(FATAL_ERROR "jam/pom.xml has no <artifactId>jam</artifactId> to read the version after")
+    endif()
     string(SUBSTRING "${JAM_POM}" ${JAM_POM_AT} -1 JAM_POM)
     string(REGEX MATCH "<version>([^<]+)</version>" _ "${JAM_POM}")
     if (NOT CMAKE_MATCH_1 STREQUAL JAM_VERSION)
@@ -289,7 +292,8 @@ if (JAM_TESTS)
     # exports only what is marked, so Windows needs no check).
     if (NOT WIN32)
         add_test(NAME exports COMMAND ${CMAKE_COMMAND} -DLIB=$<TARGET_FILE:jam>
-                 -DHEADER=${CMAKE_CURRENT_SOURCE_DIR}/include/jam.h -DJNI=${JAM_JNI}
+                 -DHEADER=${CMAKE_CURRENT_SOURCE_DIR}/include/jam.h
+                 -DJNI_SOURCE=$<$<BOOL:${JAM_JNI}>:${CMAKE_CURRENT_SOURCE_DIR}/src/jam_jni.c>
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_exports.cmake)
     endif()
 endif()
