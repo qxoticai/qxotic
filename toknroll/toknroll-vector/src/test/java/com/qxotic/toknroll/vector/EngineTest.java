@@ -17,12 +17,17 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -164,6 +169,58 @@ class EngineTest {
                         random.nextInt(16) == 0 ? piece.repeat(1 + random.nextInt(120)) : piece);
             }
             same(pair, text.toString());
+        }
+    }
+
+    /**
+     * Threads sharing one engine, its word cache and its kept scratches, each get the reference's
+     * ids: real merges, long texts and giant words among short ones.
+     */
+    @Test
+    void manyThreadsAtOnceGetTheReferenceIds() throws Exception {
+        Pair pair = PAIRS[1]; // cl100k_base
+        Random random = new Random(0x7E4D5L);
+        List<String> texts = new ArrayList<>();
+        for (int t = 0; t < 48; t++) {
+            StringBuilder text = new StringBuilder();
+            int count = t % 8 == 0 ? 3000 : 1 + random.nextInt(40);
+            for (int i = 0; i < count; i++) {
+                text.append(BitSplitTest.PIECES[random.nextInt(BitSplitTest.PIECES.length)]);
+            }
+            texts.add(text.toString());
+        }
+        texts.add("x".repeat(70_000) + " and after it, words");
+        texts.add("ab".repeat(500) + " " + "Zz".repeat(300));
+        List<int[]> expected = new ArrayList<>();
+        List<byte[]> utf8 = new ArrayList<>();
+        for (String text : texts) {
+            expected.add(pair.reference().encode(text).toArray());
+            utf8.add(Utf8Reference.encode(text, 0, text.length(), 0));
+        }
+        int threads = 2 * Runtime.getRuntime().availableProcessors();
+        try (var pool = Executors.newFixedThreadPool(threads)) {
+            List<Future<?>> runs = new ArrayList<>();
+            for (int t = 0; t < 4 * threads; t++) {
+                int first = t;
+                runs.add(
+                        pool.submit(
+                                () -> {
+                                    for (int k = 0; k < texts.size(); k++) {
+                                        int i = (first + k) % texts.size();
+                                        String text = texts.get(i);
+                                        IntSequence ids =
+                                                (first & 1) == 0
+                                                        ? pair.engine().encode(text)
+                                                        : pair.engine().encodeUtf8(utf8.get(i));
+                                        assertArrayEquals(
+                                                expected.get(i), ids.toArray(), () -> shown(text));
+                                    }
+                                    return null;
+                                }));
+            }
+            for (Future<?> run : runs) {
+                run.get();
+            }
         }
     }
 
