@@ -1019,13 +1019,9 @@ final class BitSplit {
     /**
      * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
      * until the array is full or the text ends; returns how many. {@code start} must be a piece
-     * boundary; nothing past {@code end} is read.
+     * boundary. The blocks are loaded whole, so bytes past {@code end} may be read, but they do not
+     * affect the result. Works in the caller's {@code registers}, one split at a time.
      */
-    int split(byte[] text, int start, int end, int[] ends) {
-        return split(text, start, end, ends, new Registers());
-    }
-
-    /** {@link #split(byte[], int, int, int[])} in the caller's registers. */
     int split(byte[] text, int start, int end, int[] ends, Registers registers) {
         if (end <= start) {
             return 0;

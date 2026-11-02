@@ -32,11 +32,12 @@ class BitSplitCorpusTest {
         byteAt[text.length()] = end;
         Matcher m = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS).matcher(text);
         BitSplit split = BitSplit.forRules(rules);
+        BitSplit.Registers registers = new BitSplit.Registers();
         int[] ends = new int[1024];
         int cursor = 0;
         long pieces = 0;
         while (cursor < end) {
-            int n = split.split(utf8, cursor, end, ends);
+            int n = split.split(utf8, cursor, end, ends, registers);
             for (int k = 0; k < n; k++) {
                 assertEquals(true, m.find(), "regex ran out at piece " + pieces);
                 assertEquals(byteAt[m.end()], ends[k], "piece " + pieces + " at " + cursor);

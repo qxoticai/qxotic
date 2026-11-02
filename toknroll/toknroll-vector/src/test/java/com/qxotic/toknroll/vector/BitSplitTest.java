@@ -220,7 +220,7 @@ class BitSplitTest {
             for (String text : texts) {
                 byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);
                 long t0 = System.nanoTime();
-                int n = split.split(utf8, 0, utf8.length, ends);
+                int n = split.split(utf8, 0, utf8.length, ends, new BitSplit.Registers());
                 long millis = (System.nanoTime() - t0) / 1_000_000;
                 assertTrue(n > 0 && ends[n - 1] == utf8.length);
                 assertTrue(millis < 2_000, () -> millis + " ms for " + text.length() + " chars");
@@ -319,7 +319,7 @@ class BitSplitTest {
         int cursor = 0;
         BitSplit split = BitSplit.forRules(rules);
         while (cursor < end) {
-            int n = split.split(utf8, cursor, end, ends);
+            int n = split.split(utf8, cursor, end, ends, new BitSplit.Registers());
             assertTrue(n > 0, "no progress at " + cursor + " in " + chars);
             for (int k = 0; k < n; k++) {
                 actual.add(ends[k]);

@@ -15,6 +15,16 @@ import org.junit.jupiter.api.Test;
 
 class WordCacheTest {
 
+    /**
+     * The word {@code text[0, length)} looked up in the probe's table, its ids written to {@code
+     * ids} from {@code at}: their count, or 0 on a miss, after which {@link WordCache#insert} may
+     * follow.
+     */
+    private static int lookup(byte[] text, int length, int[] ids, int at, WordCache.Probe probe) {
+        long ran = WordCache.run(text, new int[] {length}, 0, 1, 0, ids, at, null, probe);
+        return (int) ran - at;
+    }
+
     /** A word's ids are a function of the word, so any hit can be checked. */
     private static int[] idsOf(byte[] word, int length) {
         int h = 17;
@@ -47,7 +57,7 @@ class WordCacheTest {
                 }
                 int[] ids = idsOf(text, length);
                 cache.refresh(probe); // follows the table through its doublings
-                int count = WordCache.lookup(text, 0, length, found, 3, probe);
+                int count = lookup(text, length, found, 3, probe);
                 if (count > 0) {
                     hits++;
                     assertEquals(ids.length, count);
@@ -71,12 +81,12 @@ class WordCacheTest {
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
             byte[] text = new byte[length + FastEncoder.PADDING];
             Arrays.fill(text, 0, length, (byte) 'x');
-            assertEquals(0, WordCache.lookup(text, 0, length, found, 0, probe));
+            assertEquals(0, lookup(text, length, found, 0, probe));
             cache.insert(new int[] {length}, 0, 1, probe);
         }
         for (int length = 2; length <= WordCache.MAX_BYTES; length++) {
             byte[] text = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".getBytes(StandardCharsets.US_ASCII);
-            assertEquals(1, WordCache.lookup(text, 0, length, found, 0, probe));
+            assertEquals(1, lookup(text, length, found, 0, probe));
             assertEquals(length, found[0]);
         }
     }
@@ -107,8 +117,7 @@ class WordCacheTest {
                                         if ((w & 255) == 0) {
                                             cache.refresh(probe);
                                         }
-                                        int count =
-                                                WordCache.lookup(text, 0, length, found, 0, probe);
+                                        int count = lookup(text, length, found, 0, probe);
                                         if (count == 0) {
                                             cache.insert(ids, 0, ids.length, probe);
                                             continue;
