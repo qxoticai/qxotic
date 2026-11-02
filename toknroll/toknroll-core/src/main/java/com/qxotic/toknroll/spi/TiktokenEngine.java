@@ -13,9 +13,17 @@ package com.qxotic.toknroll.spi;
 public interface TiktokenEngine {
 
     /**
-     * The regex of cl100k and Llama 3: {@code
-     * (?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+| \p{N}{1,3}|
-     * ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+}.
+     * The regex of cl100k and Llama 3, an alternative per line:
+     *
+     * <pre>{@code
+     * (?i:'s|'t|'re|'ve|'m|'ll|'d)
+     * |[^\r\n\p{L}\p{N}]?\p{L}+
+     * |\p{N}{1,3}
+     * | ?[^\s\p{L}\p{N}]+[\r\n]*
+     * |\s*[\r\n]+
+     * |\s+(?!\S)
+     * |\s+
+     * }</pre>
      */
     int CL100K = 0;
 
@@ -29,15 +37,31 @@ public interface TiktokenEngine {
     int QWEN2_ASCII = 3;
 
     /**
-     * The regex of r50k and GPT-2's byte level pre-tokenizer: {@code 's|'t|'re|'ve|'m|'ll|'d|
-     * ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+}.
+     * The regex of r50k and GPT-2's byte level pre-tokenizer, an alternative per line:
+     *
+     * <pre>{@code
+     * 's|'t|'re|'ve|'m|'ll|'d
+     * | ?\p{L}+
+     * | ?\p{N}+
+     * | ?[^\s\p{L}\p{N}]+
+     * |\s+(?!\S)
+     * |\s+
+     * }</pre>
      */
     int R50K = 4;
 
     /**
-     * The regex of o200k, gpt-4o and gpt-oss: {@code [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}
-     * \p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|} the same with {@code +} and
-     * {@code *} swapped {@code |\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+}.
+     * The regex of o200k, gpt-4o and gpt-oss, an alternative per line:
+     *
+     * <pre>{@code
+     * [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?
+     * |[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?
+     * |\p{N}{1,3}
+     * | ?[^\s\p{L}\p{N}]+[\r\n/]*
+     * |\s*[\r\n]+
+     * |\s+(?!\S)
+     * |\s+
+     * }</pre>
      */
     int O200K = 5;
 
@@ -45,7 +69,7 @@ public interface TiktokenEngine {
     int TEKKEN = 6;
 
     /**
-     * {@link #R50K} after a first stage {@code \p{N}} that cuts around every number: each number a
+     * {@link #R50K} after a first stage {@code \p{N}} that cuts around every digit: each digit a
      * piece of its own, and the text before one split as if it ended there. SmolLM, Command R,
      * EXAONE and Mellum 2.
      */

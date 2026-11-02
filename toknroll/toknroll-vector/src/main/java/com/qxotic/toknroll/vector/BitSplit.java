@@ -17,7 +17,7 @@ import jdk.incubator.vector.VectorSpecies;
  * letter run's case, a whitespace run's last newline) are answered by looking ahead by hand, which
  * is rare. The result is a bitmap of piece starts, popped one trailing-zero count at a time.
  *
- * <p>Three grammars: r50k (GPT-2's byte level regex, alone or after a stage that cuts every number
+ * <p>Three grammars: r50k (GPT-2's byte level regex, alone or after a stage that cuts every digit
  * apart), the cl100k family (Llama 3, Qwen2) and the o200k family (gpt-4o, gpt-oss, Tekken). After
  * Hugging Face's {@code bitcannon}, rule for rule; the doc comments there say why each rule is
  * stated the way it is. Exactness is proven as the scalar scanner's is: against the regex, over a
@@ -617,7 +617,7 @@ final class BitSplit {
      * character.
      */
     private static final class R50k extends Run {
-        private final boolean numbers; // R50K_NUMBERS: a stage before cut around every number
+        private final boolean numbers; // R50K_NUMBERS: a stage before it cut around every digit
 
         R50k(byte[] text, int start, int end, Registers r, boolean numbers) {
             super(text, start, end, r);

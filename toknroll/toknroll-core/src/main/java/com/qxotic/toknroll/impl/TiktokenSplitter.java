@@ -302,7 +302,7 @@ final class TiktokenSplitter implements Splitter {
 
         // Two stages one scanner splits in a pass: the second stage's, cut where the first cuts,
         // each piece as if the text ended there.
-        // SmolLM, Command R, EXAONE, Mellum 2: every number apart, then GPT-2
+        // SmolLM, Command R, EXAONE, Mellum 2: every digit apart, then GPT-2
         staged(r50k, EACH_NUMBER, "\\p{N}", gpt2);
         // MiniCPM5: runs of up to three numbers, then cl100k with whole runs; a piece of the first
         // stage holds three at most, so cl100k's own '\p{N}{1,3}' cuts it alike
