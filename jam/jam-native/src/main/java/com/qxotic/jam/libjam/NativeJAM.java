@@ -16,6 +16,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.ref.Reference;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -223,28 +224,30 @@ public final class NativeJAM implements JAM, AutoCloseable {
         }
     }
 
-    /** A jam.h {@code JAM_ISA_*} value by its {@code jam_isa_name}; "" and "auto" are no cap. */
+    /**
+     * A jam.h {@code JAM_ISA_*} value by its {@code jam_isa_name}, asked of the library itself; ""
+     * and "auto" are no cap.
+     */
     static int isa(String name) {
-        return switch (name.toLowerCase(Locale.ROOT)) {
-            case "", "auto" -> 0;
-            case "generic" -> 1;
-            case "sse3" -> 2;
-            case "ssse3" -> 3;
-            case "avx2" -> 4;
-            case "avx_vnni" -> 5;
-            case "avx512" -> 6;
-            case "avx512_vnni" -> 7;
-            case "neon" -> 16;
-            case "dotprod" -> 17;
-            case "i8mm" -> 18;
-            case "metal" -> 19;
-            default ->
-                    throw new IllegalArgumentException(
-                            "jam.native.isa="
-                                    + name
-                                    + " names no level: generic, sse3, ssse3, avx2, avx_vnni,"
-                                    + " avx512, avx512_vnni, neon, dotprod, i8mm or metal");
-        };
+        String wanted = name.toLowerCase(Locale.ROOT);
+        if (wanted.isEmpty()) return 0;
+        List<String> known = new ArrayList<>();
+        for (int level = 0; level < 32; level++) { // jam.h's levels sit below 32
+            String levelName = isaName(level);
+            if (levelName.equals(wanted)) return level;
+            if (!levelName.isEmpty()) known.add(levelName);
+        }
+        throw new IllegalArgumentException(
+                "jam.native.isa=" + name + " names no level: " + String.join(", ", known));
+    }
+
+    private static String isaName(int level) {
+        try {
+            long name = (long) ISA_NAME_FFM.invokeExact(level);
+            return MemorySegment.ofAddress(name).reinterpret(Long.MAX_VALUE).getString(0);
+        } catch (Throwable t) {
+            throw new AssertionError("unreachable: jam_isa_name", t);
+        }
     }
 
     /**
@@ -478,7 +481,11 @@ public final class NativeJAM implements JAM, AutoCloseable {
     /** {@code jam_pack_abi()} of the loaded library, read once. */
     private static final int PACK_ABI_NATIVE;
 
-    private static final MethodHandle PACK_SIZE_FFM, SHARE_FFM, UNSHARE_FFM, LAST_ERROR_FFM;
+    private static final MethodHandle PACK_SIZE_FFM,
+            SHARE_FFM,
+            UNSHARE_FFM,
+            LAST_ERROR_FFM,
+            ISA_NAME_FFM;
 
     static {
         if (ADDRESS.byteSize() != 8
@@ -513,6 +520,8 @@ public final class NativeJAM implements JAM, AutoCloseable {
         UNSHARE_FFM = bind("jam_unshare", FunctionDescriptor.ofVoid(C_POINTER, C_POINTER));
         // const char* jam_last_error(int32_t* code)
         LAST_ERROR_FFM = bind("jam_last_error", FunctionDescriptor.of(C_POINTER, C_POINTER));
+        // const char* jam_isa_name(int32_t isa)
+        ISA_NAME_FFM = bind("jam_isa_name", FunctionDescriptor.of(C_POINTER, C_INT32));
         try {
             PACK_ABI_NATIVE = (int) abi.invokeExact();
         } catch (Throwable t) {
