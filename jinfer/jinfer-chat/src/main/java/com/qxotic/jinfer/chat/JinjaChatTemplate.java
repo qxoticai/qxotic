@@ -45,7 +45,7 @@ final class JinjaChatTemplate {
         // reasoning display, not roles - the injection vectors that matter are the turn/role
         // scaffold.
         this.specialNames =
-                specials.tokens().stream()
+                specials.tokens().keySet().stream()
                         .filter(n -> !n.equals("<think>") && !n.equals("</think>"))
                         .sorted((a, b) -> b.length() - a.length())
                         .toList();

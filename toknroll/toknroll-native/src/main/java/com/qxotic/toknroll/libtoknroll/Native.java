@@ -8,8 +8,6 @@ import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
 import org.graalvm.nativeimage.IsolateThread;
@@ -32,29 +30,10 @@ import org.graalvm.word.WordFactory;
 public final class Native {
     private static final ObjectHandles HANDLES = ObjectHandles.getGlobal();
 
-    /**
-     * A tokenizer and its specials matcher, compiled once: every non-normal spelling, longest wins.
-     */
+    /** A tokenizer and its special tokens, built once per handle. */
     record Loaded(Tokenizer tokenizer, Specials specials) {
         static Loaded of(Tokenizer tokenizer) {
-            Vocabulary vocab = tokenizer.vocabulary();
-            Set<String> names = new HashSet<>();
-            for (int id = 0; id < vocab.size(); id++) {
-                if (vocab.contains(id) && !vocab.isTokenOfType(id, StandardTokenType.NORMAL))
-                    names.add(vocab.token(id));
-            }
-            // a spelling that prefixes another is dropped: the matcher takes the longer one anyway
-            Set<String> kept = new HashSet<>(names);
-            for (String s : names) {
-                for (String o : names) {
-                    if (!s.equals(o) && o.startsWith(s)) {
-                        kept.remove(s);
-                        break;
-                    }
-                }
-            }
-            return new Loaded(
-                    tokenizer, kept.isEmpty() ? Specials.none() : Specials.compile(vocab, kept));
+            return new Loaded(tokenizer, Specials.of(tokenizer));
         }
     }
 

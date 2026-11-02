@@ -153,8 +153,8 @@ public final class ImplAccessor {
         return SpecialsImpl.none();
     }
 
-    public static Specials compileSpecials(Vocabulary vocabulary, Set<String> specials) {
-        return SpecialsImpl.compile(vocabulary, specials);
+    public static Specials specialsOf(Tokenizer tokenizer) {
+        return SpecialsImpl.of(tokenizer);
     }
 
     public static Map<String, Integer> loadTiktokenMergeableRanks(BufferedReader reader) {

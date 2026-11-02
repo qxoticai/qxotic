@@ -106,27 +106,11 @@ public final class SpecialTokens {
     }
 
     /**
-     * A specials-aware encoder: maps special-token STRINGS in the text to their ids (plain {@code
-     * encode} never does). Compile once and reuse - callers own the lifecycle.
-     *
-     * <p>toknroll's matcher rejects a set where one token is a strict prefix of another (e.g.
-     * MiniCPM's {@code <param} vs {@code <parameters>}). Drop the shorter token, which under
-     * longest-match is only reachable as a substring of the longer one - rendered control-token
-     * streams never emit it standalone, so this is loss-free in practice.
+     * A specials-aware encoder: maps special-token text to its id (plain {@code encode} never
+     * does). Build once and reuse - callers own the lifecycle.
      */
     public static Specials encoder(Tokenizer tokenizer) {
-        Vocabulary vocab = tokenizer.vocabulary();
-        Set<String> names = spellings(tokenizer);
-        Set<String> kept = new HashSet<>(names);
-        for (String s : names) {
-            for (String o : names) {
-                if (!s.equals(o) && o.startsWith(s)) {
-                    kept.remove(s);
-                    break;
-                }
-            }
-        }
-        return Specials.compile(vocab, kept);
+        return Specials.of(tokenizer);
     }
 
     /** One-shot {@link #encoder} encode; prefer holding the encoder on hot paths. */

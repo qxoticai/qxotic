@@ -1,83 +1,75 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.ImplAccessor;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
- * Precompiled special-token matcher for explicit special-aware encoding.
+ * A tokenizer's special tokens, matched whole for explicit special-aware encoding.
  *
- * <p>Special matching runs on raw input text before any tokenizer preprocessing, including a
- * configured normalizer and splitter. Non-special spans are then encoded via {@link
- * Tokenizer#encodeInto(CharSequence, int, int, IntSequence.Builder)}, so tokenizer preprocessing
- * still applies to ordinary text. Matched specials are injected as atomic token IDs resolved from
- * the provided {@link Vocabulary} at compile time.
+ * <p>The special tokens are the ones a tokenizer's vocabulary types {@link
+ * StandardTokenType#CONTROL CONTROL}, {@link StandardTokenType#USER_DEFINED USER_DEFINED} or {@link
+ * StandardTokenType#UNKNOWN UNKNOWN}, each known by the text it decodes to. Neither the vocabulary
+ * nor the tokenizer matches them: {@link Tokenizer#encode(CharSequence)} treats every character as
+ * text, and only {@link #encode(Tokenizer, CharSequence)} turns a special token's text into its id.
  *
- * <p>A {@link Specials} instance must be used only with tokenizers that expose a compatible
- * vocabulary mapping for the compiled special tokens; otherwise behavior is undefined.
+ * <p>Matching runs on the raw input, before any normalizer or splitter. At each position the
+ * longest special token that starts there wins, and the scan continues after it, so where one
+ * special token begins another (Laguna's {@code 〈|} and {@code 〈|EOS|〉}) both stay reachable. This
+ * is Hugging Face's rule; llama.cpp gives the same ids wherever special tokens do not overlap at
+ * different positions. The text between special tokens is encoded with {@link
+ * Tokenizer#encodeInto(CharSequence, int, int, IntSequence.Builder)}, as ranges of the one input.
  *
- * <p>This API is intentionally separate from {@link Tokenizer} to keep core tokenization focused on
- * round-trip integrity for ordinary text and free from special-token policy. In Tiktoken terms,
- * {@link Tokenizer#encode(CharSequence)} corresponds to an ordinary-text path, while {@link
- * #encode(Tokenizer, CharSequence)} provides an explicit special-aware path.
+ * <p>Use it for text you wrote, such as a rendered chat template: a user's text containing a
+ * special token's spelling would become that token. Encode user text with {@link
+ * Tokenizer#encode(CharSequence)} and splice the special tokens in by id, from {@link #tokens()}.
  *
- * <p>Special-aware encoding is deterministic but policy-driven. It is not part of the ordinary text
- * round-trip guarantee.
+ * <p>In Tiktoken terms, {@link Tokenizer#encode(CharSequence)} is {@code encode_ordinary} and
+ * {@link #encode(Tokenizer, CharSequence)} is {@code encode(..., allowed_special="all")}.
  */
 public interface Specials {
 
-    /** Returns a singleton instance with no configured specials. */
+    /** No special tokens: encoding with it is {@link Tokenizer#encode(CharSequence)}. */
     static Specials none() {
         return ImplAccessor.specialsNone();
     }
 
     /**
-     * Compiles a special token set against a vocabulary.
+     * The special tokens of {@code tokenizer}: the tokens its vocabulary types CONTROL,
+     * USER_DEFINED or UNKNOWN, each by the text {@code tokenizer} decodes it to. A token that
+     * decodes to no text is left out; where two tokens decode to the same text, the lower id wins.
+     * Build once and reuse: it scans the whole vocabulary.
      *
-     * <p>Validation rules:
-     *
-     * <ul>
-     *   <li>{@code specials} may be empty (equivalent to {@link #none()}).
-     *   <li>Each special token string must be non-null and non-empty.
-     *   <li>Each special must exist in {@code vocabulary}.
-     *   <li>No special may be a prefix of another special.
-     * </ul>
-     *
-     * @param vocabulary vocabulary to resolve special tokens against
-     * @param specials set of special token strings
-     * @return compiled specials instance
-     * @throws NullPointerException if {@code vocabulary} or {@code specials} is null
-     * @throws IllegalArgumentException if validation fails
+     * @param tokenizer the tokenizer whose special tokens to match
+     * @return the special tokens, {@link #none()} when the vocabulary types none
+     * @throws NullPointerException if {@code tokenizer} is null
      */
-    static Specials compile(Vocabulary vocabulary, Set<String> specials) {
-        return ImplAccessor.compileSpecials(
-                Objects.requireNonNull(vocabulary, "vocabulary"),
-                Objects.requireNonNull(specials, "specials"));
+    static Specials of(Tokenizer tokenizer) {
+        return ImplAccessor.specialsOf(Objects.requireNonNull(tokenizer, "tokenizer"));
     }
 
     /**
-     * Returns an immutable view of configured special token strings.
+     * The special tokens by their text, unmodifiable: a special token's id is {@code
+     * tokens().get(text)}.
      *
-     * @return immutable set of special token strings
+     * @return text to id
      */
-    Set<String> tokens();
+    Map<String, Integer> tokens();
 
     /**
-     * Returns {@code true} if no special tokens are configured.
+     * Returns {@code true} if there are no special tokens.
      *
-     * @return {@code true} if the specials set is empty
+     * @return {@code true} if {@link #tokens()} is empty
      */
     default boolean isEmpty() {
         return tokens().isEmpty();
     }
 
     /**
-     * Encodes text with special-token injection and appends token IDs into {@code out}.
+     * Encodes {@code text}, special tokens matched whole, and appends the ids to {@code out}.
      *
-     * <p>Matching happens on raw input text before tokenizer preprocessing (including normalizer
-     * and splitter). Non-special spans are encoded through {@code tokenizer.encodeInto(...)}.
-     *
-     * @param tokenizer tokenizer for non-special spans
+     * @param tokenizer the tokenizer for the text between special tokens, the one these special
+     *     tokens came from
      * @param text input text
      * @param out builder to append token IDs to
      * @throws NullPointerException if {@code tokenizer}, {@code text}, or {@code out} is null
@@ -87,12 +79,13 @@ public interface Specials {
     /**
      * Encodes UTF-8 text with special-token injection and appends token IDs into {@code out}: for
      * well-formed UTF-8, the same IDs as {@link #encodeInto(Tokenizer, CharSequence,
-     * IntSequence.Builder)} gives the decoded text. The specials {@link #compile} returns are
+     * IntSequence.Builder)} gives the decoded text. The special tokens {@link #of} finds are
      * matched on the bytes, and the text between them is encoded through {@code
      * tokenizer.encodeUtf8Into(...)}, so it is never decoded; this default implementation decodes
      * the range and calls {@code encodeInto}.
      *
-     * @param tokenizer tokenizer for non-special spans
+     * @param tokenizer the tokenizer for the text between special tokens, the one these special
+     *     tokens came from
      * @param utf8 the text, as UTF-8
      * @param startInclusive start of the range to encode (inclusive)
      * @param endExclusive end of the range to encode (exclusive)
@@ -121,12 +114,10 @@ public interface Specials {
     }
 
     /**
-     * Encodes text with special-token injection.
+     * Encodes {@code text}, special tokens matched whole.
      *
-     * <p>This method is implemented in terms of {@link #encodeInto(Tokenizer, CharSequence,
-     * IntSequence.Builder)}.
-     *
-     * @param tokenizer tokenizer for non-special spans
+     * @param tokenizer the tokenizer for the text between special tokens, the one these special
+     *     tokens came from
      * @param text input text
      * @return immutable token sequence
      * @throws NullPointerException if {@code tokenizer} or {@code text} is null

@@ -5,7 +5,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -120,10 +119,7 @@ class Snippets {
     void specialsEncode() {
         // --8<-- [start:specials-encode]
         Tokenizer tokenizer = null; // loaded from HF or GGUF
-        Specials specials =
-                Specials.compile(
-                        tokenizer.vocabulary(),
-                        Set.of("<|endoftext|>", "<|im_start|>", "<|im_end|>"));
+        Specials specials = Specials.of(tokenizer); // its special tokens; build once, reuse
         IntSequence ids = specials.encode(tokenizer, "hello <|endoftext|>");
         // --8<-- [end:specials-encode]
     }
@@ -131,7 +127,7 @@ class Snippets {
     void specialsEncodeInto() {
         // --8<-- [start:specials-encode-into]
         Tokenizer tokenizer = null; // ...
-        Specials specials = Specials.compile(tokenizer.vocabulary(), Set.of("<|endoftext|>"));
+        Specials specials = Specials.of(tokenizer);
         IntSequence.Builder out = IntSequence.newBuilder();
         specials.encodeInto(tokenizer, "prefix <|endoftext|> suffix", out);
         IntSequence ids = out.build();

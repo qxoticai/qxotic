@@ -19,8 +19,8 @@
 Vocabulary vocab = Toknroll.vocabulary(specialTokens, rankedTokens);
 Tokenizer tokenizer = Toknroll.pipeline(splitter, Toknroll.tiktokenModel(vocab, mergeRules));
 
-// Compile once and reuse.
-Specials specials = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());
+// Build once and reuse.
+Specials specials = Specials.of(tokenizer); // the vocabulary's special tokens, by their text
 
 IntSequence ids = specials.encode(tokenizer, "hello <|endoftext|>");
 ```

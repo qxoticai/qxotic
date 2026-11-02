@@ -9,15 +9,22 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.toknroll.impl.ImplAccessor;
 import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
@@ -37,6 +44,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * has x = 0 and &lt;|s|&gt; = 1.
  */
 class SpecialsTest {
+
+    // ---- every way in: chars, UTF-8, and the default that decodes ----
 
     interface Way {
         void encodeInto(Specials s, Tokenizer t, String text, IntSequence.Builder out);
@@ -69,65 +78,39 @@ class SpecialsTest {
         s.encodeUtf8Into(t, padded, 2, padded.length - 2, out);
     }
 
+    /** What {@link Specials#of} finds, as the ways in see it. */
     @Nested
-    class Compile {
+    class Of {
 
         @Test
-        void anEmptySetIsNone() {
-            assertSame(Specials.none(), Specials.compile(Toknroll.vocabulary("x"), Set.of()));
+        void aTokenizerWithoutSpecialTokensHasNone() {
+            assertSame(Specials.none(), Specials.of(Mini.of("x")));
             assertTrue(Specials.none().isEmpty());
             assertTrue(Specials.none().tokens().isEmpty());
         }
 
         @Test
-        void rejects() {
-            Vocabulary vocabulary = Toknroll.vocabulary("x", "<|a|>", "<|a|>x", "<|z|>");
-            Set<String> withNull = new LinkedHashSet<>();
-            withNull.add(null);
+        void specialsMayShareAPrefixAndBeAPrefixOfAnother() {
+            Set<String> names = Set.of("<|im_start|>", "<|im_end|>", "<|i|>", "<|im_end|>x");
+            Specials specials = specials(Mini.of(names.toArray(new String[0])), names);
 
-            assertThrows(NullPointerException.class, () -> Specials.compile(null, Set.of("x")));
-            assertThrows(NullPointerException.class, () -> Specials.compile(vocabulary, null));
-            assertRejected("cannot be null", vocabulary, withNull);
-            assertRejected("cannot be empty", vocabulary, Set.of(""));
-            assertRejected("not present in vocabulary", vocabulary, Set.of("<|missing|>"));
-            for (List<String> order :
-                    List.of(
-                            List.of("<|a|>", "<|a|>x"),
-                            List.of("<|a|>x", "<|a|>"),
-                            List.of("<|z|>", "<|a|>x", "<|a|>"))) {
-                assertRejected("prefix conflict", vocabulary, new LinkedHashSet<>(order));
-            }
-        }
-
-        private void assertRejected(String why, Vocabulary vocabulary, Set<String> specials) {
-            IllegalArgumentException error =
-                    assertThrows(
-                            IllegalArgumentException.class,
-                            () -> Specials.compile(vocabulary, specials));
-            assertTrue(error.getMessage().contains(why), error::getMessage);
-        }
-
-        @Test
-        void specialsMayShareAPrefixWhenNoneIsAPrefixOfAnother() {
-            Set<String> names = Set.of("<|im_start|>", "<|im_end|>", "<|i|>");
-            Vocabulary vocabulary = Toknroll.vocabulary(names.toArray(new String[0]));
-            Specials specials = Specials.compile(vocabulary, names);
-
-            assertEquals(names, specials.tokens());
+            assertEquals(names, specials.tokens().keySet());
             assertFalse(specials.isEmpty());
-            assertThrows(UnsupportedOperationException.class, () -> specials.tokens().add("x"));
+            assertThrows(UnsupportedOperationException.class, () -> specials.tokens().put("x", 0));
         }
 
         @Test
         void idsComeFromAVocabularyThatHoldsItsSpecialsApart() {
             Vocabulary vocabulary =
                     Toknroll.vocabulary(Map.of("<|s1|>", 100, "<|s2|>", 200), "a", "b");
-            Specials specials = Specials.compile(vocabulary, Set.of("<|s1|>", "<|s2|>"));
+            Mini tokenizer = new Mini(vocabulary, false);
+            Specials specials = Specials.of(tokenizer);
 
+            assertEquals(Map.of("<|s1|>", 100, "<|s2|>", 200), specials.tokens());
             for (Input input : Input.values()) {
                 assertArrayEquals(
                         new int[] {0, 100, 1, 200},
-                        input.encode(specials, new Mini(vocabulary, false), "a<|s1|>b<|s2|>"),
+                        input.encode(specials, tokenizer, "a<|s1|>b<|s2|>"),
                         input::name);
             }
         }
@@ -140,7 +123,7 @@ class SpecialsTest {
         @EnumSource(Input.class)
         void specialsBecomeTheirIdsAndTheTextBetweenIsEncoded(Input input) {
             Tokenizer t = Mini.of("<|a|>", "<|b|>", "x", "<", "|", ">", "a", "mid");
-            Specials specials = Specials.compile(t.vocabulary(), Set.of("<|a|>", "<|b|>"));
+            Specials specials = specials(t, Set.of("<|a|>", "<|b|>"));
             Map<String, int[]> cases =
                     Map.of(
                             "", new int[0],
@@ -167,7 +150,7 @@ class SpecialsTest {
         @EnumSource(Input.class)
         void specialsAreMatchedBeforeTheTokenizerPreprocesses(Input input) {
             Tokenizer t = Mini.lowercasing("a", "b", "a<|up|>b", "<|UP|>", "a<|other|>b");
-            Specials specials = Specials.compile(t.vocabulary(), Set.of("<|UP|>"));
+            Specials specials = specials(t, Set.of("<|UP|>"));
 
             assertArrayEquals(new int[] {2}, t.encode("A<|UP|>B").toArray());
             assertArrayEquals(new int[] {0, 3, 1}, input.encode(specials, t, "A<|UP|>B"));
@@ -179,7 +162,7 @@ class SpecialsTest {
         void regexMetacharactersAreLiteral(Input input) {
             String meta = "(.*)?+[]{}|^$\\";
             Tokenizer t = Mini.of("x", "y", meta);
-            Specials specials = Specials.compile(t.vocabulary(), Set.of(meta));
+            Specials specials = specials(t, Set.of(meta));
 
             assertArrayEquals(new int[] {0, 2, 1}, input.encode(specials, t, "x" + meta + "y"));
         }
@@ -190,7 +173,7 @@ class SpecialsTest {
             String deepseek = "<｜end▁of▁sentence｜>"; // full-width bars
             String emoji = "😀";
             Tokenizer t = Mini.of("你", "好", deepseek, emoji);
-            Specials specials = Specials.compile(t.vocabulary(), Set.of(deepseek, emoji));
+            Specials specials = specials(t, Set.of(deepseek, emoji));
             String text = "你" + deepseek + "好" + emoji + "你";
 
             assertArrayEquals(new int[] {0, 2, 1, 3, 0}, input.encode(specials, t, text));
@@ -200,7 +183,7 @@ class SpecialsTest {
         @EnumSource(Input.class)
         void aOneCharSpecialSplitsTheTextAroundIt(Input input) {
             Tokenizer t = Mini.of("a", "<", "b", "a<"); // a missed "<" would be the word "a<"
-            Specials specials = Specials.compile(t.vocabulary(), Set.of("<"));
+            Specials specials = specials(t, Set.of("<"));
 
             assertArrayEquals(new int[] {0, 1}, input.encode(specials, t, "a<"));
             assertArrayEquals(new int[] {0, 1, 2, 1}, input.encode(specials, t, "a<b<"));
@@ -210,7 +193,7 @@ class SpecialsTest {
         @EnumSource(Input.class)
         void idsAreAppendedAndDecodeBackToTheText(Input input) {
             Tokenizer t = Mini.of("hello ", " world", "<|special|>");
-            Specials specials = Specials.compile(t.vocabulary(), Set.of("<|special|>"));
+            Specials specials = specials(t, Set.of("<|special|>"));
             IntSequence.Builder out = IntSequence.newBuilder();
             out.add(1);
 
@@ -224,7 +207,7 @@ class SpecialsTest {
         void encodeAndEncodeIntoRejectNulls() {
             Tokenizer t = Mini.of("x", "<|s|>");
             IntSequence.Builder out = IntSequence.newBuilder();
-            Specials compiled = Specials.compile(t.vocabulary(), Set.of("<|s|>"));
+            Specials compiled = specials(t, Set.of("<|s|>"));
             for (Specials s : List.of(compiled, Specials.none())) {
                 assertThrows(NullPointerException.class, () -> s.encode(null, "x"));
                 assertThrows(NullPointerException.class, () -> s.encode(t, null));
@@ -240,7 +223,7 @@ class SpecialsTest {
     class EncodeUtf8Into {
 
         private final Tokenizer t = Mini.of("a", "b", "<", "|", "s", ">", "<|s|>");
-        private final Specials compiled = Specials.compile(t.vocabulary(), Set.of("<|s|>"));
+        private final Specials compiled = specials(t, Set.of("<|s|>"));
         private final byte[] utf8 = "a<|s|>b".getBytes(UTF_8);
         private final List<Specials> all = List.of(compiled, Specials.none(), delegating(compiled));
 
@@ -342,9 +325,7 @@ class SpecialsTest {
                     }
                     drawn.add(special.toString());
                 }
-                Set<String> specials = new LinkedHashSet<>(drawn);
-                specials.removeIf(
-                        s -> drawn.stream().anyMatch(o -> !o.equals(s) && o.startsWith(s)));
+                Set<String> specials = new LinkedHashSet<>(drawn); // prefixes of one another too
                 String[] pool = specials.toArray(new String[0]);
                 List<String> texts = new ArrayList<>();
                 for (int t = 0; t < 20; t++) {
@@ -459,7 +440,8 @@ class SpecialsTest {
             Tokenizer tokenizer = TestTokenizers.tiktoken(encoding);
             Tokenizer jtokkit = TestTokenizers.tiktokenReference(encoding);
             Set<String> names = TiktokenFixtures.encoding(encoding).specialTokens().keySet();
-            Specials specials = Specials.compile(tokenizer.vocabulary(), names);
+            Specials specials = Specials.of(tokenizer);
+            assertEquals(names, specials.tokens().keySet(), "the specials are the fixture's");
             List<String> texts = new ArrayList<>(List.of("only <| and |> and <|endof"));
             for (String special : names) {
                 texts.add(special);
@@ -486,7 +468,7 @@ class SpecialsTest {
         void illFormedUtf8IsEncodedAsTheTokenizerEncodesItsBytes(String encoding) {
             Tokenizer tokenizer = TestTokenizers.tiktoken(encoding);
             Set<String> names = TiktokenFixtures.encoding(encoding).specialTokens().keySet();
-            Specials specials = Specials.compile(tokenizer.vocabulary(), names);
+            Specials specials = Specials.of(tokenizer);
             byte[] bad = "â\u0082".getBytes(ISO_8859_1); // a three-byte sequence cut short
             byte[] text = "â\u0082<|endoftext|>â\u0082".getBytes(ISO_8859_1);
             IntSequence.Builder out = IntSequence.newBuilder();
@@ -505,7 +487,7 @@ class SpecialsTest {
     void oneInstanceServesManyThreads() {
         Tokenizer tokenizer = TestTokenizers.tiktoken("cl100k_base");
         Set<String> names = TiktokenFixtures.encoding("cl100k_base").specialTokens().keySet();
-        Specials specials = Specials.compile(tokenizer.vocabulary(), names);
+        Specials specials = Specials.of(tokenizer);
         String text = "Hi <|endoftext|> world <|fim_prefix|>日本<|fim_suffix|> ".repeat(200);
         Input[] inputs = Input.values();
         int[][] expected =
@@ -529,7 +511,7 @@ class SpecialsTest {
     private static Specials delegating(Specials compiled) {
         return new Specials() {
             @Override
-            public Set<String> tokens() {
+            public Map<String, Integer> tokens() {
                 return compiled.tokens();
             }
 
@@ -539,6 +521,27 @@ class SpecialsTest {
                 compiled.encodeInto(tokenizer, text, out);
             }
         };
+    }
+
+    /**
+     * {@link Specials#of} a tokenizer like {@code t} in which the {@code names} are typed CONTROL:
+     * the matcher {@code Specials.compile(vocabulary, names)} built before special tokens were
+     * found by type.
+     */
+    private static Specials specials(Tokenizer t, Set<String> names) {
+        Vocabulary vocabulary = t.vocabulary();
+        String[] tokens = new String[vocabulary.size()];
+        int[] types = new int[tokens.length];
+        for (int id = 0; id < tokens.length; id++) {
+            tokens[id] = vocabulary.token(id);
+            types[id] =
+                    (names.contains(tokens[id])
+                                    ? StandardTokenType.CONTROL
+                                    : StandardTokenType.NORMAL)
+                            .getId();
+        }
+        assertTrue(Arrays.asList(tokens).containsAll(names), "every name is a token");
+        return Specials.of(new Mini(ImplAccessor.createVocabulary(tokens, types), false));
     }
 
     /** Each char of the units, once, in order. */
@@ -556,7 +559,7 @@ class SpecialsTest {
         Set<String> vocabulary = new LinkedHashSet<>(tokens);
         vocabulary.addAll(specials);
         Tokenizer tokenizer = Mini.of(vocabulary.toArray(new String[0]));
-        Specials compiled = Specials.compile(tokenizer.vocabulary(), specials);
+        Specials compiled = specials(tokenizer, specials);
         for (String text : texts) {
             int[] expected = regexReference(tokenizer, specials, text);
             for (Input input : Input.values()) {
@@ -569,11 +572,16 @@ class SpecialsTest {
     }
 
     /**
-     * The specials split out by an alternation regex, the text between encoded by the tokenizer.
+     * The specials split out by an alternation regex, leftmost-longest, the text between encoded by
+     * the tokenizer.
      */
     private static int[] regexReference(Tokenizer tokenizer, Set<String> specials, String text) {
+        // longest first: a regex alternation takes the first alternative that matches, so this
+        // finds the leftmost special and, there, the longest
+        List<String> longestFirst = new ArrayList<>(specials);
+        longestFirst.sort(Comparator.comparingInt(String::length).reversed());
         StringBuilder alternation = new StringBuilder();
-        for (String special : specials) {
+        for (String special : longestFirst) {
             alternation.append(alternation.length() == 0 ? "" : "|").append(Pattern.quote(special));
         }
         Matcher matcher = Pattern.compile(alternation.toString()).matcher(text);
@@ -677,6 +685,498 @@ class SpecialsTest {
         @Override
         public int countTokens(CharSequence text, int start, int end) {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    // ---- Specials.of, leftmost-longest, gaps as ranges ----
+
+    @Test
+    void noneDelegatesToTokenizerEncode() {
+        Tokenizer tokenizer = tokenizer(Map.of("hello", 1), Map.of());
+
+        IntSequence expected = tokenizer.encode("hello");
+        IntSequence actual = Specials.none().encode(tokenizer, "hello");
+
+        assertArrayEquals(expected.toArray(), actual.toArray());
+        assertTrue(Specials.none().tokens().isEmpty());
+    }
+
+    @Test
+    void ofReturnsNoneWhenNoTokenIsSpecial() {
+        Specials specials = Specials.of(tokenizer(Map.of("x", 1), Map.of()));
+
+        assertSame(Specials.none(), specials);
+        assertTrue(specials.tokens().isEmpty());
+    }
+
+    @Test
+    void ofRejectsNullTokenizer() {
+        assertThrows(NullPointerException.class, () -> Specials.of(null));
+    }
+
+    @Test
+    void ofTakesOnlyControlUserDefinedAndUnknownTokens() {
+        Map<String, Integer> ids = new LinkedHashMap<>();
+        Map<Integer, StandardTokenType> types = new HashMap<>();
+        StandardTokenType[] all = StandardTokenType.values();
+        for (int i = 0; i < all.length; i++) {
+            ids.put("<" + all[i] + ">", i);
+            types.put(i, all[i]);
+        }
+        Specials specials = Specials.of(new MiniTokenizer(ids, types, Map.of(), false));
+
+        assertEquals(
+                Map.of(
+                        "<CONTROL>", ids.get("<CONTROL>"),
+                        "<USER_DEFINED>", ids.get("<USER_DEFINED>"),
+                        "<UNKNOWN>", ids.get("<UNKNOWN>")),
+                specials.tokens());
+    }
+
+    @Test
+    void ofSkipsTokensThatDecodeToNoText() {
+        Tokenizer tokenizer =
+                new MiniTokenizer(
+                        Map.of("<|empty|>", 1, "<|s|>", 2),
+                        Map.of(1, StandardTokenType.CONTROL, 2, StandardTokenType.CONTROL),
+                        Map.of(1, ""),
+                        false);
+
+        assertEquals(Map.of("<|s|>", 2), Specials.of(tokenizer).tokens());
+    }
+
+    /** DeepSeek's case: the vocabulary spells a special token differently from its text. */
+    @Test
+    void ofKnowsSpecialTokensByTheirDecodedTextNotTheirSpelling() {
+        String text = "<｜User｜>", spelling = "<ï½ľUserï½ľ>"; // the byte-level spelling of text
+        Tokenizer tokenizer =
+                new MiniTokenizer(
+                        Map.of(spelling, 128803, "hi", 1),
+                        Map.of(128803, StandardTokenType.CONTROL),
+                        Map.of(128803, text),
+                        false);
+        Specials specials = Specials.of(tokenizer);
+
+        assertEquals(Map.of(text, 128803), specials.tokens());
+        assertArrayEquals(new int[] {128803, 1}, specials.encode(tokenizer, text + "hi").toArray());
+    }
+
+    @Test
+    void ofGivesTheLowerIdWhenTwoTokensDecodeToTheSameText() {
+        Tokenizer tokenizer =
+                new MiniTokenizer(
+                        Map.of("<a>", 7, "<b>", 3),
+                        Map.of(7, StandardTokenType.CONTROL, 3, StandardTokenType.CONTROL),
+                        Map.of(7, "<s>", 3, "<s>"),
+                        false);
+
+        assertEquals(Map.of("<s>", 3), Specials.of(tokenizer).tokens());
+    }
+
+    /** Laguna's case: {@code 〈|} begins 60 others; every one of them stays reachable. */
+    @Test
+    void longestSpecialWinsWhereOneBeginsAnother() {
+        Tokenizer tokenizer =
+                tokenizer(Map.of("x", 1), Map.of("〈|", 14, "〈|EOS|〉", 2, "〈|UNK|〉", 0));
+        Specials specials = Specials.of(tokenizer);
+
+        assertArrayEquals(new int[] {2}, specials.encode(tokenizer, "〈|EOS|〉").toArray());
+        assertArrayEquals(new int[] {0, 14}, specials.encode(tokenizer, "〈|UNK|〉〈|").toArray());
+        assertArrayEquals(new int[] {14, 1}, specials.encode(tokenizer, "〈|x").toArray());
+    }
+
+    @Test
+    void longestSpecialWinsRegardlessOfVocabularyOrder() {
+        Map<String, Integer> specials = new LinkedHashMap<>();
+        specials.put("<|z|>", 12);
+        specials.put("<|a|>x", 11);
+        specials.put("<|a|>", 10);
+        Tokenizer tokenizer = tokenizer(Map.of("y", 1), specials);
+
+        assertArrayEquals(
+                new int[] {11, 10, 1, 12},
+                Specials.of(tokenizer).encode(tokenizer, "<|a|>x<|a|>y<|z|>").toArray());
+    }
+
+    /** Overlap at different positions: the leftmost match wins, as in Hugging Face. */
+    @Test
+    void leftmostSpecialWinsOverALongerOneStartingLater() {
+        Tokenizer tokenizer = tokenizer(Map.of("c", 3, "d", 4), Map.of("ab", 10, "bcd", 11));
+
+        assertArrayEquals(
+                new int[] {10, 3, 4}, Specials.of(tokenizer).encode(tokenizer, "abcd").toArray());
+    }
+
+    @Test
+    void tokensMapsTextToIdAndIsImmutable() {
+        Specials specials = Specials.of(tokenizer(Map.of(), Map.of("<|b|>", 2, "<|a|>", 1)));
+
+        assertEquals(Map.of("<|a|>", 1, "<|b|>", 2), specials.tokens());
+        assertThrows(UnsupportedOperationException.class, () -> specials.tokens().put("<|c|>", 3));
+    }
+
+    @Test
+    void encodeInjectsSpecialIdsAndEncodesGaps() {
+        Tokenizer tokenizer = tokenizer(Map.of("hi ", 10, " there", 11), Map.of("<|special|>", 42));
+
+        IntSequence encoded = Specials.of(tokenizer).encode(tokenizer, "hi <|special|> there");
+
+        assertArrayEquals(new int[] {10, 42, 11}, encoded.toArray());
+    }
+
+    @Test
+    void encodeEmptyTextProducesEmptySequence() {
+        Tokenizer tokenizer = tokenizer(Map.of(), Map.of("<|s|>", 9));
+
+        assertTrue(Specials.of(tokenizer).encode(tokenizer, "").isEmpty());
+    }
+
+    @Test
+    void encodeSingleSpecialProducesSingleSpecialId() {
+        Tokenizer tokenizer = tokenizer(Map.of(), Map.of("<|s|>", 9));
+
+        assertArrayEquals(
+                new int[] {9}, Specials.of(tokenizer).encode(tokenizer, "<|s|>").toArray());
+    }
+
+    @Test
+    void encodeHandlesSpecialsAtBothTextBoundaries() {
+        Tokenizer tokenizer = tokenizer(Map.of("mid", 2), Map.of("<|a|>", 1, "<|b|>", 3));
+
+        IntSequence encoded = Specials.of(tokenizer).encode(tokenizer, "<|a|>mid<|b|>");
+
+        assertArrayEquals(new int[] {1, 2, 3}, encoded.toArray());
+    }
+
+    @Test
+    void encodeHandlesAdjacentAndRepeatedSpecials() {
+        Tokenizer tokenizer = tokenizer(Map.of("x", 3), Map.of("<|a|>", 1, "<|b|>", 2));
+
+        IntSequence encoded = Specials.of(tokenizer).encode(tokenizer, "<|a|><|b|><|a|>x");
+
+        assertArrayEquals(new int[] {1, 2, 1, 3}, encoded.toArray());
+    }
+
+    @Test
+    void encodeWithSpecialsRoundTripsToOriginalText() {
+        Tokenizer tokenizer =
+                tokenizer(Map.of("hello ", 1, " world", 2), Map.of("<|special|>", 42));
+
+        String text = "hello <|special|> world";
+        IntSequence encoded = Specials.of(tokenizer).encode(tokenizer, text);
+
+        assertEquals(text, tokenizer.decode(encoded));
+    }
+
+    @Test
+    void encodeTreatsANormalTokenSpellingLikeText() {
+        Tokenizer tokenizer =
+                new MiniTokenizer(
+                        Map.of("a<|other|>b", 55, "<|special|>", 99, "a", 1, "b", 2),
+                        Map.of(99, StandardTokenType.CONTROL),
+                        Map.of(),
+                        true);
+
+        assertArrayEquals(
+                new int[] {55}, Specials.of(tokenizer).encode(tokenizer, "A<|other|>B").toArray());
+    }
+
+    @Test
+    void encodeSupportsRegexMetaCharactersInSpecials() {
+        String meta = "(.*)?+[]{}|^$\\";
+        Tokenizer tokenizer = tokenizer(Map.of("x", 1, "y", 2), Map.of(meta, 77));
+
+        IntSequence encoded = Specials.of(tokenizer).encode(tokenizer, "x" + meta + "y");
+
+        assertArrayEquals(new int[] {1, 77, 2}, encoded.toArray());
+    }
+
+    @Test
+    void encodeMatchesWhitespaceOnlyAndSupplementarySpecials() {
+        Tokenizer tokenizer =
+                tokenizer(Map.of("a", 1, " ", 2), Map.of("\n\n", 30, "🙂!", 31, "🙂🙂", 32));
+        Specials specials = Specials.of(tokenizer);
+
+        assertArrayEquals(
+                new int[] {1, 30, 31, 32, 2},
+                specials.encode(tokenizer, "a\n\n🙂!🙂🙂 ").toArray());
+    }
+
+    @Test
+    void specialsAreSplitBeforeTokenizerPreprocessing() {
+        Tokenizer tokenizer =
+                new MiniTokenizer(
+                        Map.of("a", 1, "b", 2, "a<|up|>b", 7, "<|UP|>", 99),
+                        Map.of(99, StandardTokenType.CONTROL),
+                        Map.of(),
+                        true);
+
+        assertArrayEquals(new int[] {7}, tokenizer.encode("A<|UP|>B").toArray());
+        assertArrayEquals(
+                new int[] {1, 99, 2},
+                Specials.of(tokenizer).encode(tokenizer, "A<|UP|>B").toArray());
+    }
+
+    /** SentencePiece tokenizers need the gaps as ranges of the one input, empty ones skipped. */
+    @Test
+    void gapsAreEncodedAsRangesOfTheInputAndEmptyOnesSkipped() {
+        MiniTokenizer tokenizer =
+                (MiniTokenizer) tokenizer(Map.of("x", 1, "y", 2), Map.of("<a>", 10, "<b>", 11));
+        Specials specials = Specials.of(tokenizer);
+
+        specials.encode(tokenizer, "<a>x<a><b>yy<b>");
+
+        assertEquals(List.of("3-4", "10-12"), tokenizer.ranges);
+    }
+
+    @Test
+    void encodeIntoAppendsToProvidedBuilder() {
+        Tokenizer tokenizer = tokenizer(Map.of("x", 1), Map.of("<|s|>", 9));
+
+        IntSequence.Builder out = IntSequence.newBuilder();
+        out.add(1000);
+        Specials.of(tokenizer).encodeInto(tokenizer, "x<|s|>x", out);
+
+        assertArrayEquals(new int[] {1000, 1, 9, 1}, out.build().toArray());
+    }
+
+    @Test
+    void noneEncodeIntoAppendsLikeTokenizerEncodeInto() {
+        Tokenizer tokenizer = tokenizer(Map.of("x", 1), Map.of());
+        IntSequence.Builder out = IntSequence.newBuilder();
+        out.add(7);
+
+        Specials.none().encodeInto(tokenizer, "x", out);
+
+        assertArrayEquals(new int[] {7, 1}, out.build().toArray());
+    }
+
+    @Test
+    void encodeAndEncodeIntoValidateNulls() {
+        Tokenizer tokenizer = tokenizer(Map.of("x", 1), Map.of("<|s|>", 9));
+        Specials specials = Specials.of(tokenizer);
+        IntSequence.Builder out = IntSequence.newBuilder();
+
+        assertThrows(NullPointerException.class, () -> specials.encode(null, "x"));
+        assertThrows(NullPointerException.class, () -> specials.encode(tokenizer, null));
+        assertThrows(NullPointerException.class, () -> specials.encodeInto(null, "x", out));
+        assertThrows(NullPointerException.class, () -> specials.encodeInto(tokenizer, null, out));
+        assertThrows(NullPointerException.class, () -> specials.encodeInto(tokenizer, "x", null));
+    }
+
+    /**
+     * The matching rule against its definition, on random texts and heavily overlapping special
+     * tokens: at each position the longest special token starting there wins.
+     */
+    @Test
+    void matchesTheBruteForceDefinitionOnRandomInput() {
+        Random random = new Random(42);
+        String alphabet = "ab<|>";
+        for (int round = 0; round < 10_000; round++) {
+            Map<String, Integer> normal = new HashMap<>();
+            for (int i = 0; i < alphabet.length(); i++) normal.put(alphabet.substring(i, i + 1), i);
+            Map<String, Integer> specials = new HashMap<>();
+            for (int i = 0, n = 1 + random.nextInt(6); i < n; i++) {
+                String special = randomText(random, alphabet, 1 + random.nextInt(4));
+                if (!normal.containsKey(special)) specials.putIfAbsent(special, 100 + i);
+            }
+            Tokenizer tokenizer = tokenizer(normal, specials);
+            String text = randomText(random, alphabet, random.nextInt(30));
+
+            assertEquals(
+                    bruteForce(tokenizer, specials, text),
+                    toList(Specials.of(tokenizer).encode(tokenizer, text)),
+                    () -> "specials " + specials + ", text '" + text + "'");
+        }
+    }
+
+    private static List<Integer> bruteForce(
+            Tokenizer tokenizer, Map<String, Integer> specials, String text) {
+        IntSequence.Builder out = IntSequence.newBuilder();
+        int gap = 0, at = 0;
+        while (at < text.length()) {
+            String best = null;
+            for (String special : specials.keySet()) {
+                if (text.startsWith(special, at)
+                        && (best == null || special.length() > best.length())) best = special;
+            }
+            if (best == null) {
+                at++;
+                continue;
+            }
+            if (at > gap) tokenizer.encodeInto(text, gap, at, out);
+            out.add(specials.get(best));
+            at += best.length();
+            gap = at;
+        }
+        if (gap < text.length()) tokenizer.encodeInto(text, gap, text.length(), out);
+        return toList(out.build());
+    }
+
+    private static String randomText(Random random, String alphabet, int length) {
+        StringBuilder text = new StringBuilder(length);
+        for (int i = 0; i < length; i++)
+            text.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        return text.toString();
+    }
+
+    private static List<Integer> toList(IntSequence ids) {
+        List<Integer> list = new ArrayList<>(ids.length());
+        for (int i = 0; i < ids.length(); i++) list.add(ids.intAt(i));
+        return list;
+    }
+
+    /** A tokenizer whose {@code specials} are CONTROL tokens, each decoding to its spelling. */
+    private static Tokenizer tokenizer(Map<String, Integer> normal, Map<String, Integer> specials) {
+        Map<String, Integer> all = new LinkedHashMap<>(normal);
+        all.putAll(specials);
+        Map<Integer, StandardTokenType> types = new HashMap<>();
+        for (int id : specials.values()) types.put(id, StandardTokenType.CONTROL);
+        return new MiniTokenizer(all, types, Map.of(), false);
+    }
+
+    /**
+     * Encodes a range whole when the vocabulary has it, else character by character; decodes an id
+     * to its {@code decoded} text, else its spelling. Records the ranges it is asked to encode.
+     */
+    private static final class MiniTokenizer implements Tokenizer {
+        private final MapVocabulary vocabulary;
+        private final Map<Integer, String> decoded;
+        private final boolean lowercaseBeforeEncode;
+        final List<String> ranges = new ArrayList<>();
+
+        MiniTokenizer(
+                Map<String, Integer> tokenToId,
+                Map<Integer, StandardTokenType> types,
+                Map<Integer, String> decoded,
+                boolean lowercaseBeforeEncode) {
+            this.vocabulary = new MapVocabulary(tokenToId, types);
+            this.decoded = decoded;
+            this.lowercaseBeforeEncode = lowercaseBeforeEncode;
+        }
+
+        @Override
+        public Vocabulary vocabulary() {
+            return vocabulary;
+        }
+
+        @Override
+        public void encodeInto(
+                CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
+            ranges.add(startInclusive + "-" + endExclusive);
+            String slice = text.subSequence(startInclusive, endExclusive).toString();
+            if (lowercaseBeforeEncode) {
+                slice = slice.toLowerCase(Locale.ROOT);
+            }
+            Integer whole = vocabulary.tokenToId.get(slice);
+            if (whole != null) {
+                out.add(whole);
+                return;
+            }
+            for (int i = 0; i < slice.length(); ) {
+                int width = Character.charCount(slice.codePointAt(i));
+                String unit = slice.substring(i, i + width);
+                Integer id = vocabulary.tokenToId.get(unit);
+                if (id == null) {
+                    throw new NoSuchElementException(unit);
+                }
+                out.add(id);
+                i += width;
+            }
+        }
+
+        @Override
+        public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+            int length = tokens.length();
+            if (tokenStartIndex < 0 || tokenStartIndex > length) {
+                throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
+            }
+            if (tokenStartIndex == length) {
+                return 0;
+            }
+            int id = tokens.intAt(tokenStartIndex);
+            String token = decoded.getOrDefault(id, vocabulary.token(id));
+            byte[] bytes = token.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > out.remaining()) {
+                throw new IllegalArgumentException("Not enough output space");
+            }
+            out.put(bytes);
+            return 1;
+        }
+
+        @Override
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+            IntSequence.Builder out = IntSequence.newBuilder();
+            encodeInto(text, startInclusive, endExclusive, out);
+            return out.size();
+        }
+    }
+
+    private static final class MapVocabulary implements Vocabulary {
+        private final Map<String, Integer> tokenToId;
+        private final Map<Integer, String> idToToken;
+        private final Map<Integer, StandardTokenType> types;
+
+        MapVocabulary(Map<String, Integer> tokenToId, Map<Integer, StandardTokenType> types) {
+            this.tokenToId = new LinkedHashMap<>(tokenToId);
+            this.idToToken = new LinkedHashMap<>();
+            this.types = types;
+            for (Map.Entry<String, Integer> entry : tokenToId.entrySet()) {
+                String previous = idToToken.put(entry.getValue(), entry.getKey());
+                if (previous != null && !previous.equals(entry.getKey())) {
+                    throw new IllegalArgumentException(
+                            "Duplicate id "
+                                    + entry.getValue()
+                                    + " for "
+                                    + previous
+                                    + " and "
+                                    + entry.getKey());
+                }
+            }
+        }
+
+        @Override
+        public int size() {
+            return tokenToId.size();
+        }
+
+        @Override
+        public String token(int id) {
+            String token = idToToken.get(id);
+            if (token == null) {
+                throw new NoSuchElementException(String.valueOf(id));
+            }
+            return token;
+        }
+
+        @Override
+        public int id(String text) {
+            Integer id = tokenToId.get(text);
+            if (id == null) {
+                throw new NoSuchElementException(text);
+            }
+            return id;
+        }
+
+        @Override
+        public boolean contains(int id) {
+            return idToToken.containsKey(id);
+        }
+
+        @Override
+        public boolean contains(String text) {
+            return tokenToId.containsKey(text);
+        }
+
+        @Override
+        public boolean isTokenOfType(int id, TokenType type) {
+            token(id);
+            return types.getOrDefault(id, StandardTokenType.NORMAL) == type;
+        }
+
+        @Override
+        public Iterator<Map.Entry<String, Integer>> iterator() {
+            return tokenToId.entrySet().iterator();
         }
     }
 }
