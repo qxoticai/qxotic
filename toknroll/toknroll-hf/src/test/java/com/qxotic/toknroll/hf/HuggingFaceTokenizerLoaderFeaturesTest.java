@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.GEMMA_DECODER;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.MISTRAL_DECODER;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildBpeModel;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
@@ -144,9 +145,47 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                             IllegalArgumentException.class,
                             () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
             assertTrue(
-                    error.getMessage().contains("added token <|end|> sets " + flag),
+                    error.getMessage().contains("added_tokens." + flag + ": <|end|>"),
                     error.getMessage());
         }
+    }
+
+    /**
+     * Hugging Face matches a {@code normalized} added token in the normalized text, the token's own
+     * text normalized too: under Lowercase, {@code <THINK>} matches "<think>" and "<Think>".
+     * Specials matches the raw text, so a token the normalizer changes is refused.
+     */
+    @Test
+    void refusesANormalizedAddedTokenTheNormalizerChanges() throws IOException {
+        Path tokenizerJson = writeNormalizedAddedToken("<THINK>");
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
+        assertTrue(
+                error.getMessage().contains("added_tokens.normalized: <THINK>"),
+                error.getMessage());
+    }
+
+    /**
+     * A normalized added token the normalizer leaves unchanged matches the same text either way.
+     */
+    @Test
+    void loadsANormalizedAddedTokenTheNormalizerKeeps() throws IOException {
+        Tokenizer tokenizer =
+                HuggingFaceTokenizerLoader.fromLocal(writeNormalizedAddedToken("<think>"));
+        assertArrayEquals(
+                new int[] {256}, Specials.of(tokenizer).encode(tokenizer, "<think>").toArray());
+    }
+
+    private Path writeNormalizedAddedToken(String content) throws IOException {
+        return writeTokenizerJson(
+                buildTokenizerJson(
+                        buildBpeModel(buildByteLevelVocab(Map.of()), "[]", ""),
+                        "\"normalizer\":{\"type\":\"Lowercase\"}",
+                        "\"added_tokens\":[{\"id\":256,\"content\":\""
+                                + content
+                                + "\",\"special\":false,\"normalized\":true}]"));
     }
 
     @Test
@@ -404,7 +443,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                         buildTokenizerJson(
                                 buildBpeModel("{\"▁hi\":0}", "[]", ""),
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                        + " \"},\"content\":\"▁\"}"));
+                                        + " \"},\"content\":\"▁\"}",
+                                GEMMA_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertEquals(" hi", tokenizer.decode(IntSequence.of(0)));

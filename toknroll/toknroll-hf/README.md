@@ -2,8 +2,8 @@
 
 Loads a Tok'n'Roll `Tokenizer` from a HuggingFace `tokenizer.json`.
 
-Unsupported features (e.g. `post_processor`, custom `decoders`) fail fast
-instead of introducing silent incompatibilities.
+Unsupported features fail fast instead of introducing silent incompatibilities: an unknown model, normalizer or pre-tokenizer, an added token Hugging Face would match other than by its exact text (`lstrip`, `rstrip`, `single_word`, or `normalized` under a normalizer that changes it), a SentencePiece pre-tokenizer stage or decoder step toknroll cannot reproduce.
+The `post_processor` is not read: encoding is pure tokenization, with no BOS or EOS added.
 
 ## Maven
 
@@ -61,12 +61,14 @@ Artifacts are cached on disk and reused across runs.
 
 ## Tested Models
 
-Token-perfect tested against 15 model families:
+Token-perfect against each model's own tokenizer, with the [known divergence](#known-divergence) below, tested against tokenizers from 17 model vendors:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google** - Gemma 4
 - **Alibaba** - Qwen 3.5+
-- **Moonshot AI** - Kimi 2.5+
+- **Liquid AI** - LFM 2.5, LFM 3
+- **OpenBMB** - MiniCPM5
+- **Moonshot AI** - Kimi 2.5+, Kimi K3
 - **DeepSeek** - DeepSeek 3.2, DeepSeek 4
 - **Mistral AI** - Tekken
 - **IBM** - Granite 4+
@@ -76,6 +78,12 @@ Token-perfect tested against 15 model families:
 - **Z.ai** - GLM 5.1
 - **MiniMax** - M2.7
 - **Xiaomi** - MiMo V2
-- **Poolside** - Laguna XS 2.1
+- **Poolside** - Laguna XS 2.1, Laguna S 2.1
+- **inclusionAI** - Ling 3.0, Ling 3.1
 
 Other models are likely to work but are not tested against reference Python tokenizers.
+
+## Known divergence
+
+Plain `encode` treats non-special added tokens (such as `<think>`, or DeepSeek's `<｜User｜>`) as text, while Hugging Face matches them as tokens.
+`Specials.of(tokenizer).encode` is the path that matches them as Hugging Face does.

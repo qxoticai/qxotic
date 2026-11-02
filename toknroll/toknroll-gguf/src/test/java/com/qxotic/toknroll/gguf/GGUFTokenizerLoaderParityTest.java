@@ -98,14 +98,6 @@ class GGUFTokenizerLoaderParityTest {
                     "Ministral-3-3B-Instruct-2512-Q8_0.gguf",
                     "gpt2");
 
-    private static final FamilyCase PHI4_MINI_UNSLOTH =
-            new FamilyCase(
-                    "phi4-mini-unsloth",
-                    "unsloth",
-                    "Phi-4-mini-instruct-GGUF",
-                    "Phi-4-mini-instruct.Q8_0.gguf",
-                    null);
-
     private static final FamilyCase GRANITE4_1_3B_UNSLOTH =
             new FamilyCase(
                     "granite4-1-3b-unsloth",
@@ -198,11 +190,6 @@ class GGUFTokenizerLoaderParityTest {
     @Test
     void ministral33bFromUnsloth_localAndHfParity() {
         assertLocalAndHfParity(MINISTRAL_3_3B_UNSLOTH);
-    }
-
-    @Test
-    void phi4MiniFromUnsloth_localAndHfParity() {
-        assertLocalAndHfParity(PHI4_MINI_UNSLOTH);
     }
 
     @Test

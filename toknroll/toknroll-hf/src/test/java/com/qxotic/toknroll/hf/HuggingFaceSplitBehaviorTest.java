@@ -389,8 +389,6 @@ class HuggingFaceSplitBehaviorTest {
         assertEquals(pieces, pieces(split(kind, pattern, behavior, invert), text));
     }
 
-    private static final String LAGUNA_NEWLINES = "(?:\\r?\\n)+(?!\\r?\\n)";
-
     /**
      * Laguna's newline stage takes a possessive regex of the same pieces (java.util.regex recursed
      * per newline on the file's own); every text of up to 8 chars over 'a', CR and LF cuts as
@@ -398,7 +396,12 @@ class HuggingFaceSplitBehaviorTest {
      */
     @Test
     void lagunaNewlineStageCutsAsMergedWithNext() {
-        Splitter split = split("Regex", LAGUNA_NEWLINES, "MergedWithNext", false);
+        Splitter split =
+                split(
+                        "Regex",
+                        HuggingFaceTokenizerLoader.LAGUNA_SPLIT_REGEX,
+                        "MergedWithNext",
+                        false);
         char[] alphabet = {'a', '\r', '\n'};
         for (int length = 0; length <= 8; length++) {
             for (int n = 0; n < Math.pow(alphabet.length, length); n++) {
@@ -430,7 +433,10 @@ class HuggingFaceSplitBehaviorTest {
                                                 "type",
                                                 "Split",
                                                 "pattern",
-                                                Map.of("Regex", LAGUNA_NEWLINES),
+                                                Map.of(
+                                                        "Regex",
+                                                        HuggingFaceTokenizerLoader
+                                                                .LAGUNA_SPLIT_REGEX),
                                                 "behavior",
                                                 "MergedWithNext",
                                                 "invert",
@@ -461,7 +467,7 @@ class HuggingFaceSplitBehaviorTest {
     /** Hugging Face's MergedWithNext: each match joins the text after it, up to the next match. */
     private static List<String> mergedWithNext(String text) {
         List<String> pieces = new ArrayList<>();
-        Matcher m = Pattern.compile(LAGUNA_NEWLINES).matcher(text);
+        Matcher m = Pattern.compile(HuggingFaceTokenizerLoader.LAGUNA_SPLIT_REGEX).matcher(text);
         int start = 0;
         while (m.find()) {
             if (m.start() > start) {

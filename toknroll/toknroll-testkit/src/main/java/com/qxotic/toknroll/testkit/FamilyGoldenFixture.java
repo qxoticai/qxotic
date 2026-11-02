@@ -44,8 +44,7 @@ public final class FamilyGoldenFixture {
                                 caseEntry.getKey(),
                                 text,
                                 decoded != null ? decoded : text,
-                                tokens,
-                                (String) c.get("known")));
+                                tokens));
             }
             parsed.put(
                     familyId,
@@ -98,15 +97,12 @@ public final class FamilyGoldenFixture {
         private final String text;
         private final String decoded;
         private final int[] tokens;
-        private final String known;
 
-        /** {@code known} names the cause of a divergence already diagnosed, or is null. */
-        public CaseData(String caseId, String text, String decoded, int[] tokens, String known) {
+        public CaseData(String caseId, String text, String decoded, int[] tokens) {
             this.caseId = caseId;
             this.text = text;
             this.decoded = decoded;
             this.tokens = tokens;
-            this.known = known;
         }
 
         public String caseId() {
@@ -123,10 +119,6 @@ public final class FamilyGoldenFixture {
 
         public int[] tokens() {
             return tokens;
-        }
-
-        public String known() {
-            return known;
         }
     }
 

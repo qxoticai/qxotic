@@ -9,7 +9,6 @@ public final class FamilyTestSpecs {
 
     public static final List<String> FAMILIES =
             List.of(
-                    "google.gemma3",
                     "google.gemma4",
                     "nvidia.nemotron3_nano4b",
                     "meta.llama3",

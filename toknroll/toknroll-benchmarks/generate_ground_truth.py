@@ -1,47 +1,32 @@
 #!/usr/bin/env python3
 """
-Generate ground_truth_tokens.json for tokenizer golden tests.
-This creates a subset of test cases for each tiktoken encoding.
+Generate the tokenizer goldens: ground_truth_tokens.json (tiktoken's r50k_base, cl100k_base and
+o200k_base) and toknroll-core/src/test/resources/ground_truth_model_families.json (each family's
+reference tokenizer at its pinned revision), from GOLDEN_TEST_STRINGS.
+
+Run it from toknroll/ with the versions pinned in requirements.txt (the script refuses others):
+
+    python3 -m venv .venv && .venv/bin/pip install -r toknroll-benchmarks/requirements.txt
+    .venv/bin/python toknroll-benchmarks/generate_ground_truth.py
 """
 
 import argparse
 import json
-import base64
 import re
 import sys
 from datetime import datetime, timezone
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 
-# Add parent directory to path to import tiktoken
-try:
-    import tiktoken
-    from tiktoken import load as tiktoken_load
-except ImportError:
-    print("Error: tiktoken not installed. Run: pip install tiktoken")
-    print("Or use the system Python with tiktoken installed.")
-    sys.exit(1)
+import tiktoken
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError
+from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
+from tiktoken import load as tiktoken_load
+from tokenizers import Tokenizer as RawTokenizer
 
-try:
-    from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
-except ImportError:
-    MistralTokenizer = None
-
-try:
-    from gemma import gm
-except ImportError:
-    gm = None
-
-try:
-    from huggingface_hub import HfApi, hf_hub_download
-except ImportError:
-    HfApi = None
-    hf_hub_download = None
-
-try:
-    from tokenizers import Tokenizer as RawTokenizer
-except ImportError:
-    RawTokenizer = None
+# The libraries whose answers the goldens record, at the versions requirements.txt pins.
+PINNED = ("tiktoken", "tokenizers", "huggingface_hub", "mistral-common")
 
 
 def package_version(name):
@@ -51,101 +36,73 @@ def package_version(name):
         return None
 
 
+def check_versions():
+    pins = {}
+    requirements = Path(__file__).resolve().parent / "requirements.txt"
+    for line in requirements.read_text(encoding="utf-8").splitlines():
+        name, _, version = line.strip().partition("==")
+        pins[name] = version
+    wrong = [
+        f"{name} {package_version(name)} (requirements.txt: {pins[name]})"
+        for name in PINNED
+        if package_version(name) != pins[name]
+    ]
+    if wrong:
+        sys.exit("the goldens need the pinned versions: " + ", ".join(wrong))
+
+
 def resolve_hf_revision(model_id, revision):
-    if HfApi is None:
-        return revision
-    try:
-        info = HfApi().model_info(model_id, revision=revision)
-        return info.sha or revision
-    except Exception:
-        return revision
+    return HfApi().model_info(model_id, revision=revision).sha
 
 
 class HFAdapter:
-    def __init__(self, model_candidates, revision="main"):
-        self.model_candidates = model_candidates
-        self.revision = revision
-        self.tokenizer = None
-        self.tiktoken_encoding = None
-        self.model_id = None
-        self.resolved_revision = None
-        self.failures = []
+    """A repository's tokenizer.json, or its tiktoken.model when it has none (Kimi)."""
 
-    def available(self):
-        if hf_hub_download is None or RawTokenizer is None:
-            self.failures.append(
-                "huggingface_hub and tokenizers are required for raw tokenizer.json loading"
+    def __init__(self, model_id, revision):
+        self.model_id = model_id
+        self.resolved_revision = resolve_hf_revision(model_id, revision)
+        try:
+            tokenizer_path = hf_hub_download(
+                repo_id=model_id, filename="tokenizer.json", revision=self.resolved_revision
             )
-            return False
-        for model_id in self.model_candidates:
-            try:
-                tokenizer_path = hf_hub_download(
-                    repo_id=model_id,
-                    filename="tokenizer.json",
-                    revision=self.revision,
-                )
-                self.tokenizer = RawTokenizer.from_file(tokenizer_path)
-                self.non_special_added = {
-                    i: t.content
-                    for i, t in self.tokenizer.get_added_tokens_decoder().items()
-                    if not t.special
-                }
-                self.model_id = model_id
-                self.resolved_revision = resolve_hf_revision(model_id, self.revision)
-                return True
-            except Exception as exc:
-                self.failures.append(f"{model_id}: {exc}")
+        except EntryNotFoundError:
+            self.tokenizer = None
+            self.tiktoken_encoding = self._tiktoken_encoding()
+        else:
+            self.tokenizer = RawTokenizer.from_file(tokenizer_path)
+            self.tiktoken_encoding = None
 
-            try:
-                tiktoken_path = hf_hub_download(
-                    repo_id=model_id,
-                    filename="tiktoken.model",
-                    revision=self.revision,
-                )
-                mergeable_ranks = tiktoken_load.load_tiktoken_bpe(tiktoken_path)
-                tokenizer_config = _try_load_hf_json(
-                    model_id, "tokenizer_config.json", self.revision
-                )
-                pat_str = _resolve_tiktoken_pat_str(
-                    model_id, tokenizer_config, self.revision
-                )
-                special_tokens = _extract_special_tokens(tokenizer_config)
-                self.tiktoken_encoding = tiktoken.Encoding(
-                    name=model_id,
-                    pat_str=pat_str,
-                    mergeable_ranks=mergeable_ranks,
-                    special_tokens=special_tokens,
-                )
-                self.model_id = model_id
-                self.resolved_revision = resolve_hf_revision(model_id, self.revision)
-                return True
-            except Exception as exc:
-                self.failures.append(f"{model_id} (tiktoken.model): {exc}")
-        return False
+    def _tiktoken_encoding(self):
+        tiktoken_path = hf_hub_download(
+            repo_id=self.model_id, filename="tiktoken.model", revision=self.resolved_revision
+        )
+        tokenizer_config = _try_load_hf_json(
+            self.model_id, "tokenizer_config.json", self.resolved_revision
+        )
+        return tiktoken.Encoding(
+            name=self.model_id,
+            pat_str=_resolve_tiktoken_pat_str(
+                self.model_id, tokenizer_config, self.resolved_revision
+            ),
+            mergeable_ranks=tiktoken_load.load_tiktoken_bpe(tiktoken_path),
+            special_tokens=_extract_special_tokens(tokenizer_config),
+        )
 
     def encode(self, text):
         if self.tokenizer is not None:
             return self.tokenizer.encode(text, add_special_tokens=False).ids
-        if self.tiktoken_encoding is not None:
-            return self.tiktoken_encoding.encode(text, disallowed_special=())
-        raise RuntimeError("HFAdapter.encode called before tokenizer initialization")
+        return self.tiktoken_encoding.encode(text, disallowed_special=())
 
     def decode(self, tokens):
         if self.tokenizer is not None:
             return self.tokenizer.decode(tokens, skip_special_tokens=False)
-        if self.tiktoken_encoding is not None:
-            return self.tiktoken_encoding.decode(tokens)
-        raise RuntimeError("HFAdapter.decode called before tokenizer initialization")
-
-    def decode_bytes(self, tokens):
-        # HF tokenizers may not expose canonical token-by-token byte decode consistently.
-        return None
+        return self.tiktoken_encoding.decode(tokens)
 
 
 def _try_load_hf_json(model_id, filename, revision):
     try:
         path = hf_hub_download(repo_id=model_id, filename=filename, revision=revision)
-    except Exception:
+    except EntryNotFoundError:
         return None
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -218,84 +175,17 @@ def _parse_pat_str_from_python_module(source):
 
 
 class MistralTekkenAdapter:
-    def __init__(self, repo_candidates, revision="main"):
-        self.repo_candidates = repo_candidates
-        self.revision = revision
-        self.repo_id = None
-        self.resolved_revision = None
-        self._base = None
-
-    def available(self):
-        if MistralTokenizer is None:
-            return False
-        for repo_id in self.repo_candidates:
-            try:
-                mtok = MistralTokenizer.from_hf_hub(
-                    repo_id=repo_id, revision=self.revision
-                )
-                self._base = mtok.instruct_tokenizer.tokenizer
-                self.repo_id = repo_id
-                self.resolved_revision = resolve_hf_revision(repo_id, self.revision)
-                return True
-            except Exception:
-                continue
-        return False
+    def __init__(self, repo_id, revision):
+        self.model_id = repo_id
+        self.resolved_revision = resolve_hf_revision(repo_id, revision)
+        mtok = MistralTokenizer.from_hf_hub(repo_id=repo_id, revision=self.resolved_revision)
+        self._base = mtok.instruct_tokenizer.tokenizer
 
     def encode(self, text):
         return self._base.encode(text, bos=False, eos=False)
 
     def decode(self, tokens):
         return self._base.decode(tokens)
-
-    def decode_bytes(self, tokens):
-        # Tekken decode-bytes API is not uniform across versions in mistral-common.
-        return None
-
-
-class Gemma3Adapter:
-    def __init__(self, hf_model_candidates, revision="main"):
-        self.hf_model_candidates = hf_model_candidates
-        self.revision = revision
-        self.model_ref = None
-        self.resolved_revision = None
-        self._gemma_tokenizer = None
-        self._hf = None
-
-    def available(self):
-        # Prefer the official Gemma tokenizer package when available.
-        if gm is not None:
-            try:
-                self._gemma_tokenizer = gm.text.Gemma3Tokenizer()
-                self.model_ref = "gemma:gm.text.Gemma3Tokenizer"
-                self.resolved_revision = package_version("gemma")
-                return True
-            except Exception:
-                pass
-
-        # Fallback to HF-compatible Gemma tokenizer repos.
-        self._hf = HFAdapter(self.hf_model_candidates, revision=self.revision)
-        if self._hf.available():
-            self.model_ref = self._hf.model_id
-            self.resolved_revision = self._hf.resolved_revision
-            return True
-        return False
-
-    @property
-    def non_special_added(self):
-        return self._hf.non_special_added if self._hf is not None else {}
-
-    def encode(self, text):
-        if self._gemma_tokenizer is not None:
-            return self._gemma_tokenizer.encode(text)
-        return self._hf.encode(text)
-
-    def decode(self, tokens):
-        if self._gemma_tokenizer is not None:
-            return self._gemma_tokenizer.decode(tokens)
-        return self._hf.decode(tokens)
-
-    def decode_bytes(self, tokens):
-        return None
 
 
 # Single source of truth for both tiktoken and model-family fixtures.
@@ -525,273 +415,49 @@ def generate_test_cases(encoding_name, max_cases=100):
     return cases
 
 
-def generate_cases_with_adapter(adapter, max_cases=100):
-    test_strings = GOLDEN_TEST_STRINGS
-
+def generate_cases_with_adapter(adapter):
     cases = {}
-    for text in test_strings[:max_cases]:
+    for text in GOLDEN_TEST_STRINGS:
         safe_text = text.replace("\x00", "\ufffd")  # JSON-safe
         tokens = adapter.encode(safe_text)
         case = {"text": safe_text, "tokens": tokens}
         decoded = adapter.decode(tokens)
         if decoded != safe_text:  # e.g. a SentencePiece decoder drops the leading space
             case["decoded"] = decoded
-        added = getattr(adapter, "non_special_added", {})
-        matched = sorted({added[i].replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-                          for i in tokens if i in added})
-        if matched:  # toknroll: everything is text; the test fails on it, with this cause
-            case["known"] = ("Hugging Face matches non-special added tokens "
-                             + ", ".join(matched) + "; toknroll encodes them as text")
         cases[f"case_{len(cases):03d}"] = case
     return cases
 
 
-def generate_model_family_ground_truth():
-    families = [
-        {
-            "family_id": "google.gemma3",
-            "backend": "gemma3",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "unsloth/gemma-3-4b-it",
-            ],
-        },
-        {
-            "family_id": "google.gemma4",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "google/gemma-4-e2b-it",
-                "google/gemma-4-9b-it",
-            ],
-        },
-        {
-            "family_id": "nvidia.nemotron3_nano4b",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "unsloth/NVIDIA-Nemotron-3-Nano-4B",
-                "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
-            ],
-        },
-        {
-            "family_id": "alibaba.qwen3_5",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "Qwen/Qwen3.5-0.8B",
-                "Qwen/Qwen3.5-0.6B",
-                "Qwen/Qwen3-0.6B",
-            ],
-        },
-        {
-            "family_id": "meta.llama3",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "unsloth/Llama-3.2-1B-Instruct",
-            ],
-        },
-        {
-            "family_id": "moonshot.kimi2_5",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "moonshotai/Kimi-K2.6",
-                "moonshotai/Kimi-K2.5",
-                "moonshotai/Kimi-K2-Instruct-0905",
-                "moonshotai/Kimi-K2-Instruct",
-                "moonshotai/Kimi-Dev-72B",
-            ],
-        },
-        {
-            "family_id": "ibm.granite4_0",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "ibm-granite/granite-4.0-h-1b",
-                "ibm-granite/granite-4.0-1b",
-            ],
-        },
-        {
-            "family_id": "huggingface.smollm3",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "HuggingFaceTB/SmolLM3-3B",
-                "HuggingFaceTB/SmolLM3-3B-Base",
-            ],
-        },
-        {
-            "family_id": "mistral.gpt2_pretekken",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "mistralai/Mistral-Small-24B-Instruct-2501",
-                "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-                "mistralai/Mistral-Nemo-Instruct-2407",
-            ],
-        },
-        {
-            "family_id": "mistral.v0_3",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "mistralai/Mistral-7B-Instruct-v0.3",
-            ],
-        },
-        {
-            "family_id": "deepseek.v3_2",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "deepseek-ai/DeepSeek-V3.2",
-                "deepseek-ai/DeepSeek-V3.1",
-                "deepseek-ai/DeepSeek-V3",
-                "deepseek-ai/DeepSeek-R1-0528",
-            ],
-        },
-        {
-            "family_id": "deepseek.v4_pro",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "deepseek-ai/DeepSeek-V4-Pro",
-                "deepseek-ai/DeepSeek-V3.1",
-            ],
-        },
-        {
-            "family_id": "mistral.tekken",
-            "backend": "mistral-common",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "mistralai/ministral-8b-instruct-2410",
-                "mistralai/open-mistral-nemo-2407",
-            ],
-        },
-        {
-            "family_id": "zai.glm5_1",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "zai-org/GLM-5.1",
-            ],
-        },
-        {
-            "family_id": "minimax.m2_7",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "MiniMaxAI/MiniMax-M2.7",
-            ],
-        },
-        {
-            "family_id": "xiaomi.mimo_v2_flash",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "XiaomiMiMo/MiMo-V2-Flash",
-            ],
-        },
-        {
-            "family_id": "moonshot.kimi3",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "moonshotai/Kimi-K3",
-            ],
-        },
-        {
-            "family_id": "deepseek.v4_1",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "deepseek-ai/DeepSeek-V4.1-Flash",
-            ],
-        },
-        {
-            "family_id": "alibaba.qwen3_6",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "Qwen/Qwen3.6-27B",
-            ],
-        },
-        {
-            "family_id": "poolside.laguna_xs2_1",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "poolside/Laguna-XS-2.1",
-            ],
-        },
-        {
-            "family_id": "poolside.laguna_s2_1",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "poolside/Laguna-S-2.1",
-            ],
-        },
-        {
-            "family_id": "inclusion.ling3_0",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "inclusionAI/Ling-3.0-tiny",
-            ],
-        },
-        {
-            "family_id": "inclusion.ling3_1",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "inclusionAI/Ling-3.1-flash",
-            ],
-        },
-        {
-            "family_id": "liquid.lfm3",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "LiquidAI/LFM3-1.7B",
-            ],
-        },
-        {
-            "family_id": "openai.gpt-oss",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": [
-                "openai/gpt-oss-20b",
-            ],
-        },
-    ]
+# Each family's reference tokenizer: (family id, backend, repository, pinned revision).
+FAMILIES = [
+    ("google.gemma4", "hf", "google/gemma-4-e2b-it", "3e22461f65e89153144f8adb70e3b8c2cc9845a7"),
+    ("nvidia.nemotron3_nano4b", "hf", "unsloth/NVIDIA-Nemotron-3-Nano-4B", "b604b1379531cfac85a3cb195c387cc698aabdeb"),
+    ("alibaba.qwen3_5", "hf", "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"),
+    ("meta.llama3", "hf", "unsloth/Llama-3.2-1B-Instruct", "5a8abab4a5d6f164389b1079fb721cfab8d7126c"),
+    ("moonshot.kimi2_5", "hf", "moonshotai/Kimi-K2.6", "7eb5002f6aadc958aed6a9177b7ed26bb94011bb"),
+    ("ibm.granite4_0", "hf", "ibm-granite/granite-4.0-h-1b", "d18cca4c121edb87d022116d281ce212c9136f57"),
+    ("huggingface.smollm3", "hf", "HuggingFaceTB/SmolLM3-3B", "a07cc9a04f16550a088caea529712d1d335b0ac1"),
+    ("mistral.gpt2_pretekken", "hf", "mistralai/Mistral-Small-24B-Instruct-2501", "9527884be6e5616bdd54de542f9ae13384489724"),
+    ("mistral.v0_3", "hf", "mistralai/Mistral-7B-Instruct-v0.3", "c170c708c41dac9275d15a8fff4eca08d52bab71"),
+    ("deepseek.v3_2", "hf", "deepseek-ai/DeepSeek-V3.2", "a7e62ac04ecb2c0a54d736dc46601c5606cf10a6"),
+    ("deepseek.v4_pro", "hf", "deepseek-ai/DeepSeek-V4-Pro", "b5968e9190ef611bbf34a7229255be88a0e937c1"),
+    ("mistral.tekken", "mistral-common", "mistralai/ministral-8b-instruct-2410", "2f494a194c5b980dfb9772cb92d26cbb671fce5a"),
+    ("zai.glm5_1", "hf", "zai-org/GLM-5.1", "26e1bd6e011feb778d25ae34b09b07074139d92d"),
+    ("minimax.m2_7", "hf", "MiniMaxAI/MiniMax-M2.7", "0a6536713b0b03f3be97494e5cf8d22f668a3164"),
+    ("xiaomi.mimo_v2_flash", "hf", "XiaomiMiMo/MiMo-V2-Flash", "8b60b288e8325b7890fcdfe32bbb1d172c591a2d"),
+    ("moonshot.kimi3", "hf", "moonshotai/Kimi-K3", "f831ab66814297da540d832a5235f8e904f29d06"),
+    ("deepseek.v4_1", "hf", "deepseek-ai/DeepSeek-V4.1-Flash", "314113f8a7dadb388215396ba5fbee2c610a04d6"),
+    ("alibaba.qwen3_6", "hf", "Qwen/Qwen3.6-27B", "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"),
+    ("poolside.laguna_xs2_1", "hf", "poolside/Laguna-XS-2.1", "c5f36269bbdbd3f27fddc9a9f9dbae0cf2cf57db"),
+    ("poolside.laguna_s2_1", "hf", "poolside/Laguna-S-2.1", "0f573140834b11cfac0c2af97a101a7a69a13e22"),
+    ("inclusion.ling3_0", "hf", "inclusionAI/Ling-3.0-tiny", "9a98e35fe1c9ee255f78dd64771c7ae15a799481"),
+    ("inclusion.ling3_1", "hf", "inclusionAI/Ling-3.1-flash", "276cca72bbd8b95693032848bfd638460b529b8b"),
+    ("liquid.lfm3", "hf", "LiquidAI/LFM3-1.7B", "ac2586a34f1a1c03329dbdcdefabd8b6478ddaa7"),
+    ("openai.gpt-oss", "hf", "openai/gpt-oss-20b", "6cee5e81ee83917806bbde320786a8fb61efebee"),
+]
 
+
+def generate_model_family_ground_truth():
     result = {
         "_meta": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -805,48 +471,18 @@ def generate_model_family_ground_truth():
         },
         "families": {},
     }
-
-    for family in families:
-        family_id = family["family_id"]
-        backend = family["backend"]
+    adapters = {"hf": HFAdapter, "mistral-common": MistralTekkenAdapter}
+    for family_id, backend, model_id, revision in FAMILIES:
         print(f"Generating family ground truth for {family_id} ({backend})...")
-        if backend == "hf":
-            adapter = HFAdapter(
-                family["model_candidates"],
-                revision=family["revision"],
-            )
-        elif backend == "gemma3":
-            adapter = Gemma3Adapter(
-                family["model_candidates"], revision=family["revision"]
-            )
-        elif backend == "mistral-common":
-            adapter = MistralTekkenAdapter(
-                family["model_candidates"], revision=family["revision"]
-            )
-        else:
-            continue
-
-        if not adapter.available():
-            details = getattr(adapter, "failures", None)
-            detail_msg = ""
-            if details:
-                detail_msg = "\n    " + "\n    ".join(details)
-            raise RuntimeError(
-                f"Failed to initialize backend for {family_id} ({backend}){detail_msg}"
-            )
-
-        cases = generate_cases_with_adapter(adapter, family["max_cases"])
+        adapter = adapters[backend](model_id, revision)
+        cases = generate_cases_with_adapter(adapter)
         result["families"][family_id] = {
             "backend": backend,
-            "model_ref": getattr(adapter, "model_ref", None)
-            or getattr(adapter, "model_id", None)
-            or getattr(adapter, "repo_id", None),
-            "revision": getattr(adapter, "resolved_revision", None)
-            or family["revision"],
+            "model_ref": adapter.model_id,
+            "revision": adapter.resolved_revision,
             "cases": cases,
         }
-        print(f"  ✓ Generated {len(cases)} cases")
-
+        print(f"  generated {len(cases)} cases")
     return result
 
 
@@ -859,64 +495,35 @@ def main():
         help="Only generate ground_truth_tokens.json and skip model family fixture generation",
     )
     args = parser.parse_args()
+    check_versions()
 
     print("Generating ground_truth_tokens.json...")
-    print()
-
-    # Encodings to generate
-    encodings = {
-        "r50k_base": len(GOLDEN_TEST_STRINGS),  # GPT-2
-        "cl100k_base": len(GOLDEN_TEST_STRINGS),  # GPT-4, ChatGPT
-        "o200k_base": len(GOLDEN_TEST_STRINGS),  # GPT-4o
-    }
-
     ground_truth = {}
-
-    for enc_name, max_cases in encodings.items():
-        print(f"Generating {max_cases} test cases for {enc_name}...")
-        cases = generate_test_cases(enc_name, max_cases)
-        if cases:
-            ground_truth[enc_name] = cases
-            print(f"  ✓ Generated {len(cases)} cases")
-        else:
-            print(f"  ✗ Failed to generate cases")
+    for enc_name in ("r50k_base", "cl100k_base", "o200k_base"):  # GPT-2, GPT-4, GPT-4o
+        ground_truth[enc_name] = generate_test_cases(enc_name, len(GOLDEN_TEST_STRINGS))
+        print(f"  {enc_name}: {len(ground_truth[enc_name])} cases")
 
     # Write output: compact, where `make test-fixtures` downloads it. The published copy lives in
     # the qxoticai/assets repository as toknroll/ground_truth_tokens.json - push it there after
     # regenerating, so every clone fetches the same truth.
     output_path = Path("../test-fixtures/tiktoken/ground_truth_tokens.json")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    print()
-    print(f"Writing to {output_path}...")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(ground_truth, f, separators=(",", ":"), ensure_ascii=False)
-
-    # Print stats
-    total_cases = sum(len(cases) for cases in ground_truth.values())
-    print()
-    print(f"✓ Generated ground truth file with {total_cases} total test cases")
-    print(f"  - r50k_base: {len(ground_truth.get('r50k_base', {}))} cases")
-    print(f"  - cl100k_base: {len(ground_truth.get('cl100k_base', {}))} cases")
-    print(f"  - o200k_base: {len(ground_truth.get('o200k_base', {}))} cases")
-    print()
-    print(f"File size: {output_path.stat().st_size / 1024:.1f} KB")
+    print(f"Wrote {output_path} ({output_path.stat().st_size / 1024:.1f} KB)")
 
     if args.skip_model_families:
         print("Skipping model family fixture generation (--skip-model-families).")
         return
 
-    # Also generate modern model-family fixtures (best effort, optional deps).
-    print()
     print("Generating model family ground truth...")
     family_truth = generate_model_family_ground_truth()
-    family_output = Path(
-        "toknroll-core/src/test/resources/ground_truth_model_families.json"
-    )
+    family_output = Path("toknroll-core/src/test/resources/ground_truth_model_families.json")
     family_output.parent.mkdir(parents=True, exist_ok=True)
     with open(family_output, "w", encoding="utf-8") as f:
-        json.dump(family_truth, f, indent=2, ensure_ascii=False)
-    print(f"✓ Wrote model family fixture to {family_output}")
+        json.dump(family_truth, f, separators=(",", ":"), ensure_ascii=False)
+        f.write("\n")
+    print(f"Wrote {family_output}")
 
 
 if __name__ == "__main__":

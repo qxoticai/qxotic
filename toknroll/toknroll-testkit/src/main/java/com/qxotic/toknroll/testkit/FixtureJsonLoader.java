@@ -11,12 +11,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-final class FixtureJsonLoader {
+/** Reads a JSON fixture from the test classpath, else from the repository's test-fixtures. */
+public final class FixtureJsonLoader {
+
+    private static final String GROUND_TRUTH_GENERATOR =
+            "python3 toknroll-benchmarks/generate_ground_truth.py";
 
     private FixtureJsonLoader() {}
 
-    @SuppressWarnings("unchecked")
     static Map<String, Object> loadMap(Class<?> owner, String resourceName, String failureContext) {
+        return loadMap(owner, resourceName, failureContext, GROUND_TRUTH_GENERATOR);
+    }
+
+    /**
+     * The fixture's top-level object; a missing fixture fails with the command that generates it.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> loadMap(
+            Class<?> owner, String resourceName, String failureContext, String generator) {
         try (InputStream is = owner.getClassLoader().getResourceAsStream(resourceName)) {
             if (is != null) {
                 String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
@@ -30,7 +42,8 @@ final class FixtureJsonLoader {
             }
 
             throw new IllegalStateException(
-                    missingFixtureMessage(resourceName, candidateFixturePaths(resourceName)));
+                    missingFixtureMessage(
+                            resourceName, candidateFixturePaths(resourceName), generator));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load " + failureContext, e);
         }
@@ -67,11 +80,13 @@ final class FixtureJsonLoader {
         return candidates;
     }
 
-    private static String missingFixtureMessage(String resourceName, List<Path> checkedPaths) {
+    private static String missingFixtureMessage(
+            String resourceName, List<Path> checkedPaths, String generator) {
         return "Missing fixture "
                 + resourceName
                 + " (also checked "
                 + checkedPaths
-                + "). Generate fixtures with: python3 toknroll-benchmarks/generate_ground_truth.py";
+                + "). Generate it with: "
+                + generator;
     }
 }

@@ -64,11 +64,6 @@ final class GGUFTokenizerDefaults {
 
     private static final String GEMMA4_PATTERN = "[^\\n]+|[\\n]+";
 
-    // Laguna's first stage (tokenizer.json: Split "(?:\r?\n)+(?!\r?\n)" MergedWithNext): a
-    // newline run, CRLF included, travels with the text that follows it, so "\r\n" reaches the
-    // second stage whole and becomes one token. A lone "\r" is ordinary text. Written as
-    // "(?:\r?\n)+(?:[^\r\n]|\r(?!\n))*|(?:[^\r\n]|\r(?!\n))+" it recursed once per char in
-    // java.util.regex, a stack overflow on a long line; unrolled and possessive, it does not.
     // llama.cpp's kimi-k2 custom splitter excludes combining marks from letter runs, despite the
     // historical regex comment.
     static final String KIMI_K2_PATTERN =

@@ -1,5 +1,5 @@
 {
-"about": "The text lists of toknroll's test suite (and generate_ground_truth.py's GOLDEN_TEST_STRINGS), each once, without the edge texts of hf_edge_parity.py. Texts holding a lone surrogate are left out: they are not Unicode text, so no reference tokenizer takes them. Harvested 2026-11-02 from the lists below.",
+"about": "The text lists of toknroll's test suite (and generate_ground_truth.py's GOLDEN_TEST_STRINGS), each once, without the edge texts of hf_edge_parity.py. Harvested 2026-11-02: the static List<String> or String[] fields named in sources, read by reflection from the compiled test classes, in that order, then GOLDEN_TEST_STRINGS with U+0000 written as U+FFFD, as that generator writes it; a text kept at its first occurrence, the EDGE_TEXTS of hf_edge_parity.py and texts holding a lone surrogate (not Unicode text, so no reference tokenizer takes them) left out.",
 "sources": [
 "SplitterUnicodeWhitespaceRegressionTest.UNICODE_WHITESPACE_SAMPLES",
 "TokenizerUnicodeCornerCaseTest.ROUND_TRIP_TEXTS",

@@ -5,18 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.DynamicContainer.dynamicContainer;
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
-import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import com.qxotic.toknroll.testkit.EdgeParityGolden;
+import com.qxotic.toknroll.testkit.EdgeParityGolden.Expected;
+import com.qxotic.toknroll.testkit.EdgeParityGolden.Model;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicContainer;
 import org.junit.jupiter.api.DynamicTest;
@@ -26,12 +24,13 @@ import org.junit.jupiter.api.TestFactory;
 /**
  * Hugging Face's own answers on edge-case texts (leading and trailing spaces, empty text, CRLF,
  * byte fallback, emoji, special-token spellings, literal U+2581, long runs), across tokenizer.json
- * families: ids, text, bytes and counts. The goldens come from {@code scripts/hf_edge_parity.py}.
- * Every divergence fails. A known one, Hugging Face matching a non-special added token that
- * toknroll encodes as text, fails with its cause in the message.
+ * families: ids, text, bytes and counts. The goldens come from {@code scripts/hf_edge_parity.py},
+ * each model at its pinned revision. Every divergence fails. A known one, Hugging Face matching a
+ * non-special added token that toknroll encodes as text, fails with its cause in the message.
  *
- * <p>Tokenizers load from the hub, or with {@code -Dtoknroll.test.tokenizers=DIR} from {@code
- * DIR/owner__repo/tokenizer.json}, the files the goldens were made from.
+ * <p>Tokenizers load from the hub at the golden's revision, or with {@code
+ * -Dtoknroll.test.tokenizers=DIR} from {@code DIR/owner__repo/tokenizer.json}, which must be that
+ * revision's file.
  */
 @Tag("local-external")
 @Tag("network")
@@ -40,89 +39,73 @@ class HuggingFaceEdgeParityTest {
     private static final String LOCAL = System.getProperty("toknroll.test.tokenizers");
 
     @TestFactory
-    @SuppressWarnings("unchecked")
-    Stream<DynamicContainer> hfParity() throws IOException {
-        Map<String, Object> golden;
-        try (InputStream in = getClass().getResourceAsStream("/hf_edge_parity.json")) {
-            golden =
-                    (Map<String, Object>)
-                            Json.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+    Stream<DynamicContainer> hfParity() {
+        EdgeParityGolden golden =
+                EdgeParityGolden.load(
+                        HuggingFaceEdgeParityTest.class,
+                        "hf_edge_parity.json",
+                        "toknroll/scripts/hf_edge_parity.py");
+        return golden.models().stream().map(model -> container(model, golden.texts()));
+    }
+
+    /** One model's cases; a tokenizer that does not load is one failing test with the error. */
+    private static DynamicContainer container(Model model, List<String> texts) {
+        String name = model.name() + "@" + model.revision();
+        Tokenizer tokenizer;
+        try {
+            tokenizer = load(model);
+        } catch (RuntimeException e) {
+            return dynamicContainer(
+                    name,
+                    Stream.of(
+                            dynamicTest(
+                                    "loads",
+                                    () -> {
+                                        throw e;
+                                    })));
         }
-        List<Object> texts = (List<Object>) golden.get("texts");
-        return ((List<Object>) golden.get("models"))
-                .stream()
-                        .map(
-                                m -> {
-                                    Map<String, Object> model = (Map<String, Object>) m;
-                                    String ref = (String) model.get("ref");
-                                    Supplier<Tokenizer> tokenizer = memoize(() -> load(ref));
-                                    List<Object> cases = (List<Object>) model.get("cases");
-                                    List<DynamicTest> tests = new ArrayList<>();
-                                    for (int i = 0; i < cases.size(); i++) {
-                                        String text = (String) texts.get(i);
-                                        Map<String, Object> expected =
-                                                (Map<String, Object>) cases.get(i);
-                                        tests.add(
-                                                dynamicTest(
-                                                        printable(text),
-                                                        () ->
-                                                                check(
-                                                                        tokenizer.get(),
-                                                                        text,
-                                                                        expected)));
-                                    }
-                                    return dynamicContainer(ref, tests);
-                                });
+        List<DynamicTest> tests = new ArrayList<>();
+        for (int i = 0; i < texts.size(); i++) {
+            String text = texts.get(i);
+            Expected expected = model.cases().get(i);
+            tests.add(
+                    dynamicTest(
+                            EdgeParityGolden.printable(text),
+                            () -> check(tokenizer, text, expected)));
+        }
+        return dynamicContainer(name, tests);
     }
 
-    @SuppressWarnings("unchecked")
-    private static void check(Tokenizer tokenizer, String text, Map<String, Object> expected) {
-        int[] ids =
-                ((List<Object>) expected.get("ids"))
-                        .stream().mapToInt(id -> ((Number) id).intValue()).toArray();
-        String decoded = (String) expected.get("decoded");
-        String known = (String) expected.get("known");
-        assertArrayEquals(
+    private static void check(Tokenizer tokenizer, String text, Expected expected) {
+        int[] ids = expected.ids();
+        int[] actual = tokenizer.encode(text).toArray();
+        if (!Arrays.equals(ids, actual)) {
+            String known = HuggingFaceTokenizerTestFixtures.knownDivergence(tokenizer, ids);
+            assertArrayEquals(
+                    ids, actual, known == null ? "encode" : "encode, known divergence: " + known);
+        }
+        assertEquals(expected.decoded(), tokenizer.decode(IntSequence.wrap(ids)), "decode");
+        EdgeParityGolden.checkCountsAndBytes(
+                text,
                 ids,
-                tokenizer.encode(text).toArray(),
-                known == null ? "encode" : "encode, known divergence: " + known);
-        assertEquals(ids.length, tokenizer.countTokens(text), "countTokens");
-        IntSequence sequence = IntSequence.wrap(ids);
-        assertEquals(decoded, tokenizer.decode(sequence), "decode");
-        assertEquals(
-                decoded,
-                new String(tokenizer.decodeBytes(sequence), StandardCharsets.UTF_8),
-                "decodeBytes");
-        assertEquals(tokenizer.decodeBytes(sequence).length, tokenizer.countBytes(sequence));
+                tokenizer::countTokens,
+                t -> tokenizer.decode(IntSequence.wrap(t)),
+                t -> tokenizer.decodeBytes(IntSequence.wrap(t)),
+                t -> tokenizer.countBytes(IntSequence.wrap(t)));
     }
 
-    private static Tokenizer load(String ref) {
+    private static Tokenizer load(Model model) {
+        if (model.revision() == null) {
+            throw new IllegalStateException(model.name() + " has no revision in the golden");
+        }
         if (LOCAL != null) {
-            Path file = Path.of(LOCAL, ref.replace("/", "__"), "tokenizer.json");
+            Path file = Path.of(LOCAL, model.name().replace("/", "__"), "tokenizer.json");
             if (Files.exists(file)) {
                 return HuggingFaceTokenizerLoader.fromLocal(file);
             }
         }
-        String[] ownerRepo = ref.split("/", 2);
-        return HuggingFaceTokenizerLoader.fromHuggingFace(ownerRepo[0], ownerRepo[1]);
-    }
-
-    private static <T> Supplier<T> memoize(Supplier<T> supplier) {
-        return new Supplier<>() {
-            private T value;
-
-            @Override
-            public synchronized T get() {
-                if (value == null) {
-                    value = supplier.get();
-                }
-                return value;
-            }
-        };
-    }
-
-    private static String printable(String text) {
-        String shown = text.length() > 40 ? text.substring(0, 40) + "..." : text;
-        return "\"" + shown.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + "\"";
+        String[] ownerRepo = model.name().split("/", 2);
+        return HuggingFaceTokenizerLoader.fromHuggingFace(
+                ownerRepo[0], ownerRepo[1], model.revision(), false, false);
     }
 }

@@ -4,14 +4,14 @@ sidebar_position: 1
 
 # Tok'n'Roll
 
-**Token-perfect LLM tokenization. Pure Java. Zero dependencies.**
+**Token-perfect LLM tokenization, against each model's own tokenizer. Pure Java. Zero dependencies.**
 
-Fast, composable tokenization with byte-exact parity against the reference Python implementations.
+Fast, composable tokenization with byte-exact parity against the reference Python implementations, with the [known divergences](#known-divergences).
 Runs on Java 11+, needs no native bindings, and compiles to GraalVM native images out of the box.
 
 Key properties:
 
-- **Token-perfect parity.** Matches reference Python tokenizer implementations.
+- **Token-perfect parity.** Matches each model's own tokenizer, with the [known divergences](#known-divergences).
 - **Compatible with industry standards.** Spawn Tok'n'Roll tokenizers from HuggingFace's `tokenizer.json` and llama.cpp's GGUF model files.
 - **Zero-allocation, zero-copy APIs.** `encodeInto(...)`, `decodeBytesInto(...)`, and `IntSequence` support low-GC hot paths.
 - **Fast and efficient.** Performant BPE implementations, with strong algorithmic guarantees and optimized fast-paths, competitive with native alternatives.
@@ -226,12 +226,12 @@ First run caches the tokenizer on disk. Public models need no API key.
 
 ## Tested Models
 
-Token-perfect, backed by parity tests against the Hugging Face and llama.cpp reference tokenizers:
+Token-perfect against each model's own tokenizer, with the [known divergences](#known-divergences) below, backed by parity tests against the Hugging Face and llama.cpp reference tokenizers:
 
 - **OpenAI**: tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o), gpt-oss
 - **Google**: Gemma 4
 - **Alibaba**: Qwen 3.5+
-- **Liquid AI**: LFM 2.5
+- **Liquid AI**: LFM 2.5, LFM 3
 - **OpenBMB**: MiniCPM5
 - **Moonshot AI**: Kimi 2.5+, Kimi K3
 - **DeepSeek**: DeepSeek 3.2, DeepSeek 4
@@ -241,10 +241,20 @@ Token-perfect, backed by parity tests against the Hugging Face and llama.cpp ref
 - **HuggingFace**: SmolLM3
 - **NVIDIA**: Nemotron 3
 - **Z.ai**: GLM 5.1
-- **MiniMax**: M2.7, M3
+- **MiniMax**: M2.7
 - **Xiaomi**: MiMo V2
-- **Poolside**: Laguna XS 2.1
+- **Poolside**: Laguna XS 2.1, Laguna S 2.1
+- **inclusionAI**: Ling 3.0, Ling 3.1
 - **JetBrains**: Mellum 2
+
+## Known divergences
+
+Where Tok'n'Roll and a reference tokenizer give different ids, by design:
+
+- Plain `encode` treats non-special added tokens (such as `<think>`, or DeepSeek's `<｜User｜>`) as text, while Hugging Face and llama.cpp match them as tokens.
+  `Specials.of(tokenizer).encode` is the path that matches them as the references do.
+- GGUF loading follows the model's own tokenizer where llama.cpp differs from it.
+  llama.cpp's case-rewriting regexes for gpt-oss, Nemotron and Kimi split words at non-ASCII capitals, and its Laguna regex cuts `\r` from `\n`.
 
 See the module pages for exact feature support and known limitations:
 

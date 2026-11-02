@@ -79,7 +79,6 @@ public class MeasureTokensPerCharLarge {
 
         System.out.println("\\n=== Model Families ===");
         String[] families = {
-            "google.gemma3",
             "google.gemma4",
             "alibaba.qwen3_5",
             "meta.llama3",
