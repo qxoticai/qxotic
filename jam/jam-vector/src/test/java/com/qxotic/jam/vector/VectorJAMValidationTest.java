@@ -138,6 +138,16 @@ class VectorJAMValidationTest {
             assertEquals(
                     JAM.EINVAL,
                     VECTOR.mm(w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K, r, 0, JAM.F32, M - 1, M, N, K));
+            // n <= 0 is a bad call, as in native, not the decode decline n == 1 gets
+            assertEquals(
+                    JAM.EINVAL,
+                    VECTOR.mm(w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K, r, 0, JAM.F32, M, M, 0, K));
+            assertEquals(
+                    JAM.EINVAL,
+                    VECTOR.mm(w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K, r, 0, JAM.F32, M, M, -1, K));
+            assertEquals(
+                    JAM.EUNSUPPORTED,
+                    VECTOR.mm(w, 0, JAM.Q8_0, K, a, 0, JAM.F32, K, r, 0, JAM.F32, M, M, 1, K));
         }
     }
 

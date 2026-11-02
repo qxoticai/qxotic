@@ -89,11 +89,13 @@ public final class VectorJAM implements JAM {
         MemoryChecks.requireNative(w, "weight W");
         MemoryChecks.requireNative(a, "activation A");
         MemoryChecks.requireNative(r, "result R");
-        if (n <= 1 || at != F32 || rt != F32 || VectorSupport.F_SPECIES.vectorBitSize() < 128)
+        if (m <= 0 || n <= 0 || k <= 0 || ldw < k || lda < k || ldr < m)
+            return EINVAL; // a shape no call can have, refused first as native does
+        if (n == 1 || at != F32 || rt != F32 || VectorSupport.F_SPECIES.vectorBitSize() < 128)
             return EUNSUPPORTED;
         GGMLType t = GGMLType.byCode(wt);
         if (t == null) return EUNSUPPORTED; // unknown tag; untiled dtypes hit the switch default
-        if (m <= 0 || k <= 0 || k % t.elementsPerBlock() != 0 || ldw < k || lda < k || ldr < m)
+        if (k % t.elementsPerBlock() != 0 || ldw % t.elementsPerBlock() != 0)
             return EINVAL; // a shape the type cannot have
         if (ldw != k) return EUNSUPPORTED; // only contiguous weight rows
 
