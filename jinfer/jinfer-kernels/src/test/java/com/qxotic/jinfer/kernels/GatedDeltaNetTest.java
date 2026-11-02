@@ -221,6 +221,62 @@ class GatedDeltaNetTest {
                 .toArray(ValueLayout.JAVA_FLOAT);
     }
 
+    /** Per-head RMSNorm times SiLU(z) against a double-precision oracle, vector body and tail. */
+    @Test
+    void postNormMatchesOracle() {
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3, heads = 2, dim = 37;
+            float[] x = values(rows * heads * dim, .7f, .05f);
+            float[] z = values(rows * heads * dim, 1.3f, -.02f);
+            float[] w = values(dim, .4f, 1f);
+            MemorySegment out = arena.allocate(4L * x.length, 64);
+            GatedDeltaNet.postNorm(
+                    view(arena, x),
+                    view(arena, z),
+                    view(arena, w),
+                    Oracles.f32View(out, x.length),
+                    rows,
+                    heads,
+                    dim,
+                    1e-6f);
+            float[] actual = out.toArray(ValueLayout.JAVA_FLOAT);
+            for (int base = 0; base < x.length; base += dim) {
+                double ss = 0;
+                for (int d = 0; d < dim; d++) ss += (double) x[base + d] * x[base + d];
+                double inv = 1 / Math.sqrt(ss / dim + 1e-6);
+                for (int d = 0; d < dim; d++) {
+                    double zv = z[base + d];
+                    double expected = x[base + d] * inv * w[d] * zv / (1 + Math.exp(-zv));
+                    assertEquals(expected, actual[base + d], 1e-5 * Math.abs(expected) + 1e-7);
+                }
+            }
+        }
+    }
+
+    /**
+     * {@code values *= sigmoid(gate)} against a double-precision oracle, vector body and tail,
+     * gates out to +-12: the error stays within 2e-5 of the gated value (the tanh form's absolute
+     * error), however small sigmoid itself gets.
+     */
+    @Test
+    void sigmoidMultiplyMatchesOracle() {
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3, dim = 37;
+            float[] x = values(rows * dim, .7f, .05f);
+            float[] g = new float[rows * dim];
+            for (int i = 0; i < g.length; i++) g[i] = 12f * (float) Math.sin(i * .37f);
+            MemorySegment out = arena.allocate(4L * x.length, 64);
+            out.copyFrom(MemorySegment.ofArray(x));
+            GatedDeltaNet.sigmoidMultiply(
+                    Oracles.f32View(out, x.length), view(arena, g), rows, dim);
+            float[] actual = out.toArray(ValueLayout.JAVA_FLOAT);
+            for (int i = 0; i < x.length; i++) {
+                double expected = x[i] / (1 + Math.exp(-g[i]));
+                assertEquals(expected, actual[i], 2e-5 * Math.abs(x[i]) + 1e-9);
+            }
+        }
+    }
+
     private static float[] values(int size, float frequency, float offset) {
         float[] result = new float[size];
         for (int i = 0; i < size; i++) result[i] = .1f * (float) Math.sin(i * frequency) + offset;

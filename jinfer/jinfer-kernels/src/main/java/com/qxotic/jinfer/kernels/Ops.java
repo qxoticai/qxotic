@@ -687,8 +687,13 @@ public final class Ops {
      */
     @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call")
     static FloatVector siluVec(FloatVector g) {
-        FloatVector tanh = tanhVec(g.mul(0.5f)); // tanh(g/2)
-        return g.mul(tanh.mul(0.5f).add(0.5f)); // g * sigmoid(g)
+        return g.mul(sigmoidVec(g));
+    }
+
+    /** Vectorized sigmoid {@code 0.5+0.5*tanh(x/2)}: within ~1e-5 of 1/(1+e^-x), absolute. */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call")
+    static FloatVector sigmoidVec(FloatVector x) {
+        return tanhVec(x.mul(0.5f)).mul(0.5f).add(0.5f);
     }
 
     /** Vectorized tanh(x) via the njuffa minimax rational above. Shared by SiLU and GELU. */

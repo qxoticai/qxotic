@@ -157,62 +157,110 @@ public final class Convolutions {
         Raw b = bias == null ? null : Raw.f32(bias, "bias");
         Raw state = Raw.f32(history, "history");
         Raw out = Raw.f32(output, "output");
-        int hist = kernel - 1;
-        Parallel.forLoop(
-                0,
-                channels,
-                c -> {
-                    for (int row = 0; row < rows; row++) {
-                        float sum =
-                                b == null
-                                        ? 0f
-                                        : readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES);
-                        for (int k = 0; k < kernel; k++) {
-                            int pos = row - hist + k;
-                            float value =
-                                    pos < 0
-                                            ? readFloat(
-                                                    state.vseg(),
-                                                    state.vbase()
-                                                            + ((long) (pos + hist) * channels + c)
-                                                                    * Float.BYTES)
-                                            : readFloat(
-                                                    x.vseg(),
-                                                    x.vbase()
-                                                            + ((long) pos * channels + c)
-                                                                    * Float.BYTES);
-                            sum +=
-                                    readFloat(
-                                                    w.vseg(),
-                                                    w.vbase()
-                                                            + ((long) c * kernel + k) * Float.BYTES)
-                                            * value;
-                        }
-                        writeFloat(
-                                out.vseg(),
-                                out.vbase() + ((long) row * channels + c) * Float.BYTES,
-                                sum * (1.0f / (1.0f + (float) Math.exp(-sum))));
-                    }
-                    for (int k = 0; k < hist; k++) {
-                        int pos = rows - hist + k;
-                        float value =
-                                pos < 0
-                                        ? readFloat(
-                                                state.vseg(),
-                                                state.vbase()
-                                                        + ((long) (pos + hist) * channels + c)
-                                                                * Float.BYTES)
-                                        : readFloat(
-                                                x.vseg(),
-                                                x.vbase()
-                                                        + ((long) pos * channels + c)
-                                                                * Float.BYTES);
-                        writeFloat(
-                                state.vseg(),
-                                state.vbase() + ((long) k * channels + c) * Float.BYTES,
-                                value);
-                    }
-                });
+        // Bands of channels, rows outer: every row reads and writes a contiguous run of channels.
+        // A channel walked down the rows strides a power-of-two row width, so its lines collide
+        // in the same cache sets (that walk was ~0.5 s of a 512-token Qwen3.5-4B prefill on an
+        // M3). SiLU is the shared vector one (as in every SwiGLU) on every channel below the last
+        // whole vector; band edges sit on vector boundaries so the thread count never moves a
+        // channel between the two.
+        Parallel parallel = Parallel.shared();
+        int bands = Math.min(channels, 2 * parallel.width());
+        int lanes = USE_VECTOR_API ? F_SPECIES.length() : 1;
+        parallel.run(
+                bands,
+                (band, slot) ->
+                        depthwiseSiluBand(
+                                x,
+                                w,
+                                b,
+                                state,
+                                out,
+                                rows,
+                                channels,
+                                kernel,
+                                bandEdge(channels, bands, lanes, band),
+                                bandEdge(channels, bands, lanes, band + 1)));
+    }
+
+    /** Vector-aligned start of {@code band}; the last band ends at {@code channels}. */
+    private static int bandEdge(int channels, int bands, int lanes, int band) {
+        return band == bands ? channels : (int) ((long) channels * band / bands) / lanes * lanes;
+    }
+
+    private static void depthwiseSiluBand(
+            Raw x,
+            Raw w,
+            Raw b,
+            Raw state,
+            Raw out,
+            int rows,
+            int channels,
+            int kernel,
+            int c0,
+            int c1) {
+        int hist = kernel - 1, width = c1 - c0;
+        float[] taps = new float[kernel * width]; // [k][channel]: one vector load per tap
+        for (int c = c0; c < c1; c++)
+            for (int k = 0; k < kernel; k++)
+                taps[k * width + c - c0] =
+                        readFloat(w.vseg(), w.vbase() + ((long) c * kernel + k) * Float.BYTES);
+        int vectorEnd = USE_VECTOR_API ? c0 + F_SPECIES.loopBound(width) : c0;
+        for (int row = 0; row < rows; row++) {
+            long outRow = out.vbase() + (long) row * channels * Float.BYTES;
+            int c = c0;
+            // the scalar tail's order of operations, a lane at a time
+            for (; c < vectorEnd; c += F_SPECIES.length()) {
+                FloatVector sum =
+                        b == null
+                                ? FloatVector.zero(F_SPECIES)
+                                : FloatVector.fromMemorySegment(
+                                        F_SPECIES,
+                                        b.vseg(),
+                                        b.vbase() + (long) c * Float.BYTES,
+                                        LE);
+                for (int k = 0; k < kernel; k++) {
+                    int pos = row - hist + k;
+                    Raw source = pos < 0 ? state : x;
+                    long at =
+                            source.vbase()
+                                    + ((long) (pos < 0 ? pos + hist : pos) * channels + c)
+                                            * Float.BYTES;
+                    sum =
+                            sum.add(
+                                    FloatVector.fromArray(F_SPECIES, taps, k * width + c - c0)
+                                            .mul(
+                                                    FloatVector.fromMemorySegment(
+                                                            F_SPECIES, source.vseg(), at, LE)));
+                }
+                Ops.siluVec(sum).intoMemorySegment(out.vseg(), outRow + (long) c * Float.BYTES, LE);
+            }
+            for (; c < c1; c++) {
+                float sum =
+                        b == null ? 0f : readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES);
+                for (int k = 0; k < kernel; k++)
+                    sum +=
+                            taps[k * width + c - c0]
+                                    * tap(x, state, row - hist + k, hist, channels, c);
+                writeFloat(out.vseg(), outRow + (long) c * Float.BYTES, Activations.silu(sum));
+            }
+        }
+        // roll the history: the new rows are the last hist of (old history, input); ascending k
+        // only reads a history row at or past the one it writes
+        for (int k = 0; k < hist; k++)
+            for (int c = c0; c < c1; c++)
+                writeFloat(
+                        state.vseg(),
+                        state.vbase() + ((long) k * channels + c) * Float.BYTES,
+                        tap(x, state, rows - hist + k, hist, channels, c));
+    }
+
+    /** Row {@code pos} of (history, input) at channel {@code c}; negative rows are history. */
+    private static float tap(Raw x, Raw state, int pos, int hist, int channels, int c) {
+        return pos < 0
+                ? readFloat(
+                        state.vseg(),
+                        state.vbase() + ((long) (pos + hist) * channels + c) * Float.BYTES)
+                : readFloat(x.vseg(), x.vbase() + ((long) pos * channels + c) * Float.BYTES);
     }
 
     /**

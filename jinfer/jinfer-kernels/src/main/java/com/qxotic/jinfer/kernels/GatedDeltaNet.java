@@ -1,5 +1,7 @@
 package com.qxotic.jinfer.kernels;
 
+import static com.qxotic.jinfer.Segments.F_SPECIES;
+import static com.qxotic.jinfer.Segments.USE_VECTOR_API;
 import static com.qxotic.jinfer.Segments.readFloat;
 import static com.qxotic.jinfer.Segments.writeFloat;
 
@@ -7,10 +9,14 @@ import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
+import java.nio.ByteOrder;
+import jdk.incubator.vector.FloatVector;
 
 /** Preparation kernels and dispatched recurrent scan used by Qwen3.5 gated-delta layers. */
 public final class GatedDeltaNet {
     private GatedDeltaNet() {}
+
+    private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
 
     /** Unpack per-head {@code [Q, gate]} projection rows into separate packed Q and gate rows. */
     public static void unpackAttentionQGate(
@@ -43,7 +49,8 @@ public final class GatedDeltaNet {
 
     /**
      * {@code values *= sigmoid(gate)} over {@code rows} rows of {@code rowDim} lanes, one row per
-     * job, using the legacy scalar Math.exp arithmetic.
+     * job: the shared vector sigmoid (tanh form, within ~2e-5 of the gated value) below the row's
+     * last whole vector, {@link Activations#sigmoid} past it.
      */
     public static void sigmoidMultiply(
             MemoryView<MemorySegment> values,
@@ -51,15 +58,23 @@ public final class GatedDeltaNet {
             int rows,
             int rowDim) {
         Raw v = Raw.f32(values, "values"), g = Raw.f32(gate, "gate");
-        Parallel.forLoop(
-                rows,
-                row -> {
-                    long end = (long) (row + 1) * rowDim;
-                    for (long i = (long) row * rowDim; i < end; i++) {
-                        float x = get(g, i);
-                        set(v, i, get(v, i) * (1.0f / (1.0f + (float) Math.exp(-x))));
-                    }
-                });
+        Parallel.forLoop(rows, row -> sigmoidMultiplyRow(v, g, (long) row * rowDim, rowDim));
+    }
+
+    private static void sigmoidMultiplyRow(Raw v, Raw g, long start, int size) {
+        int i = 0;
+        if (USE_VECTOR_API) {
+            for (int end = F_SPECIES.loopBound(size); i < end; i += F_SPECIES.length()) {
+                long at = (start + i) * Float.BYTES;
+                FloatVector x =
+                        FloatVector.fromMemorySegment(F_SPECIES, g.vseg(), g.vbase() + at, LE);
+                FloatVector.fromMemorySegment(F_SPECIES, v.vseg(), v.vbase() + at, LE)
+                        .mul(Ops.sigmoidVec(x))
+                        .intoMemorySegment(v.vseg(), v.vbase() + at, LE);
+            }
+        }
+        for (; i < size; i++)
+            set(v, start + i, get(v, start + i) * Activations.sigmoid(get(g, start + i)));
     }
 
     /** Grouped Q/K L2 normalization, group expansion, and V extraction from convolved QKV. */
@@ -233,7 +248,7 @@ public final class GatedDeltaNet {
                 });
     }
 
-    /** Per-head RMSNorm followed by the exact scalar SiLU(z) gate. */
+    /** Per-head RMSNorm followed by the SiLU(z) gate (the shared vector SiLU, as in SwiGLU). */
     public static void postNorm(
             MemoryView<MemorySegment> input,
             MemoryView<MemorySegment> z,
@@ -250,19 +265,38 @@ public final class GatedDeltaNet {
                 row -> {
                     for (int head = 0; head < heads; head++) {
                         int base = (row * heads + head) * headDim;
-                        float ss = 0f;
-                        for (int d = 0; d < headDim; d++) {
-                            float value = get(in, base + d);
-                            ss += value * value;
-                        }
+                        float ss = Norms.sumOfSquares(input, base, headDim);
                         float inv = (float) (1.0 / Math.sqrt(ss / headDim + eps));
-                        for (int d = 0; d < headDim; d++) {
-                            float zv = get(zr, base + d);
-                            float silu = zv * (1.0f / (1.0f + (float) Math.exp(-zv)));
-                            set(out, base + d, get(in, base + d) * inv * get(w, d) * silu);
-                        }
+                        gatedScale(in, zr, w, out, base, headDim, inv);
                     }
                 });
+    }
+
+    /** {@code out = in * inv * w * silu(z)} over one head. */
+    private static void gatedScale(Raw in, Raw zr, Raw w, Raw out, int base, int size, float inv) {
+        int d = 0;
+        if (USE_VECTOR_API) {
+            FloatVector scale = FloatVector.broadcast(F_SPECIES, inv);
+            for (int end = F_SPECIES.loopBound(size); d < end; d += F_SPECIES.length()) {
+                long at = (long) (base + d) * Float.BYTES;
+                FloatVector x =
+                        FloatVector.fromMemorySegment(F_SPECIES, in.vseg(), in.vbase() + at, LE);
+                FloatVector zv =
+                        FloatVector.fromMemorySegment(F_SPECIES, zr.vseg(), zr.vbase() + at, LE);
+                FloatVector wv =
+                        FloatVector.fromMemorySegment(
+                                F_SPECIES, w.vseg(), w.vbase() + (long) d * Float.BYTES, LE);
+                x.mul(scale)
+                        .mul(wv)
+                        .mul(Ops.siluVec(zv))
+                        .intoMemorySegment(out.vseg(), out.vbase() + at, LE);
+            }
+        }
+        for (; d < size; d++)
+            set(
+                    out,
+                    base + d,
+                    get(in, base + d) * inv * get(w, d) * Activations.silu(get(zr, base + d)));
     }
 
     private static float get(Raw r, long index) {

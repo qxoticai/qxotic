@@ -3,13 +3,16 @@ package com.qxotic.jinfer.kernels;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Arrays;
 import java.util.Random;
+import jdk.incubator.vector.FloatVector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -166,6 +169,55 @@ class ConvolutionsTest {
                             Views.getFloat(output, row * channels + channel, "output"));
                 }
         }
+    }
+
+    /**
+     * Many channels split into bands, chunks shorter and longer than the history, bit for bit: the
+     * vector SiLU below the row's last whole vector, the scalar one past it, whatever the bands.
+     */
+    @ParameterizedTest
+    @CsvSource({"1, 37, 4", "2, 37, 4", "9, 37, 4", "5, 1, 3"})
+    void causalDepthwiseSiluBandsMatchThePerChannelOracle(int rows, int channels, int kernel) {
+        int hist = kernel - 1;
+        Random random = new Random(rows * 31L + channels);
+        float[] input = new float[rows * channels], taps = new float[channels * kernel];
+        float[] initial = new float[hist * channels];
+        for (float[] a : new float[][] {input, taps, initial})
+            for (int i = 0; i < a.length; i++) a[i] = random.nextFloat() * 2 - 1;
+        float[] expected = new float[rows * channels], all = new float[(hist + rows) * channels];
+        System.arraycopy(initial, 0, all, 0, initial.length);
+        System.arraycopy(input, 0, all, initial.length, input.length);
+        int vectorEnd = Segments.USE_VECTOR_API ? Segments.F_SPECIES.loopBound(channels) : 0;
+        for (int row = 0; row < rows; row++)
+            for (int c = 0; c < channels; c++) {
+                float sum = 0;
+                for (int k = 0; k < kernel; k++)
+                    sum += taps[c * kernel + k] * all[(row + k) * channels + c];
+                expected[row * channels + c] =
+                        c < vectorEnd
+                                ? Ops.siluVec(FloatVector.broadcast(Segments.F_SPECIES, sum))
+                                        .lane(0)
+                                : Activations.silu(sum);
+            }
+        MemorySegment in = arena.allocate(4L * input.length, 64);
+        MemorySegment w = arena.allocate(4L * taps.length, 64);
+        MemorySegment state = arena.allocate(4L * initial.length, 64);
+        MemorySegment out = arena.allocate(4L * input.length, 64);
+        in.copyFrom(MemorySegment.ofArray(input));
+        w.copyFrom(MemorySegment.ofArray(taps));
+        state.copyFrom(MemorySegment.ofArray(initial));
+        Convolutions.causalDepthwiseSilu(
+                Oracles.f32View(in, input.length),
+                Oracles.f32View(w, taps.length),
+                Oracles.f32View(state, initial.length),
+                Oracles.f32View(out, input.length),
+                rows,
+                channels,
+                kernel);
+        assertArrayEquals(expected, out.toArray(ValueLayout.JAVA_FLOAT));
+        assertArrayEquals(
+                Arrays.copyOfRange(all, rows * channels, all.length),
+                state.toArray(ValueLayout.JAVA_FLOAT));
     }
 
     /**

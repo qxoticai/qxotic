@@ -361,7 +361,12 @@ public final class Convert {
             gatherToF32(p.canonical(), rows, rowsOff, n, dst, dstElemOff, rowLen);
             return;
         }
-        if (table.dataType() == DataType.Q8_0 && rowLen % 32 == 0 && USE_VECTOR_API) {
+        // the Q8_0 arm loads 256-bit byte vectors: narrower hardware (NEON) would run them in the
+        // Vector API's Java fallback, ~100 ms for a 512-token Qwen3.5 prompt on an M3
+        if (table.dataType() == DataType.Q8_0
+                && rowLen % 32 == 0
+                && USE_VECTOR_API
+                && F_SPECIES.vectorBitSize() >= 256) {
             dequantQ8_0Rows(table, rows, rowsOff, n, dst, dstElemOff, rowLen);
             return;
         }

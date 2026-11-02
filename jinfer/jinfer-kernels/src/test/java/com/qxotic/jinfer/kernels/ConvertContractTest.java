@@ -83,6 +83,38 @@ class ConvertContractTest {
         }
     }
 
+    /** The Q8_0 gather (vector arm on 256-bit hardware, per-row spans elsewhere) is exact. */
+    @Test
+    void q8GatherMatchesPerRowDecode() {
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            int tableRows = 7, rowLen = 96, blocks = tableRows * rowLen / 32;
+            var encoded = arena.allocate(34L * blocks, 64);
+            for (int b = 0; b < blocks; b++) {
+                encoded.set(
+                        ValueLayout.JAVA_SHORT_UNALIGNED,
+                        34L * b,
+                        Float.floatToFloat16(0.01f * (b + 1)));
+                for (int i = 0; i < 32; i++)
+                    encoded.set(ValueLayout.JAVA_BYTE, 34L * b + 2 + i, (byte) (b * 37 + i * 11));
+            }
+            var table = Views.wrap(encoded, DataType.Q8_0, Shape.flat(blocks));
+            int[] rows = {5, 0, 6, 5};
+            var gathered = Views.allocateF32(memory, rows.length * rowLen);
+            var expected = Views.allocateF32(memory, rows.length * rowLen);
+
+            Convert.gatherToF32(table, rows, 0, rows.length, gathered, 0, rowLen);
+            for (int r = 0; r < rows.length; r++)
+                Convert.copyToF32(
+                        table, (long) rows[r] * rowLen, expected, (long) r * rowLen, rowLen);
+
+            assertArrayEquals(
+                    Views.toFloatArray(expected, "expected"),
+                    Views.toFloatArray(gathered, "gathered"),
+                    0f);
+        }
+    }
+
     @Test
     void everyHalfDecodesExactly() {
         // all 65536 halves through the vector body and the scalar tail: subnormals, +-Inf and
