@@ -218,6 +218,29 @@ class ForkTest(unittest.TestCase):
             stop.set()
         """)
 
+    def test_a_child_encodes_batches(self):
+        """A batch runs on the runtime's pool, whose threads stay in the parent: a child forked while
+        the parent's batches kept them busy must still finish its own."""
+        self.child_process("""
+            import signal, threading
+            t = toknroll.load(GGUF)
+            texts = [f"text {i} {i * 7919} " * 40 for i in range(2000)]  # big enough to split over every core
+            want = [list(ids) for ids in t.encode_batch(texts)]
+            stop = threading.Event()
+            def busy():
+                while not stop.is_set():
+                    t.encode_batch(texts)
+            for _ in range(2): threading.Thread(target=busy, daemon=True).start()
+            for _ in range(20):
+                pid = os.fork()
+                if pid == 0:
+                    signal.alarm(20)  # a hung child dies rather than outlive the test
+                    os._exit(0 if [list(ids) for ids in t.encode_batch(texts)] == want else 3)
+                rc = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+                assert rc == 0, "the child hung on a batch" if rc == -signal.SIGALRM else f"the child failed: {rc}"
+            stop.set()
+        """)
+
     def test_a_fork_pool_uses_the_tokenizer_made_before_it(self):
         self.child_process("""
             import multiprocessing

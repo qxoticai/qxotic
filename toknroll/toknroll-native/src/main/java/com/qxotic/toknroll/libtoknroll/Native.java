@@ -8,8 +8,6 @@ import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ForkJoinPool;
-import java.util.stream.IntStream;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.ObjectHandle;
 import org.graalvm.nativeimage.ObjectHandles;
@@ -262,33 +260,31 @@ public final class Native {
             long in = texts.rawValue() + base;
             // runs of texts of about equal bytes, several per core so a long text holds no core
             // back; a run copies its texts in through one buffer and keeps its ids in one array
-            int[] runs = Runs.of(starts, count, 4 * (ForkJoinPool.getCommonPoolParallelism() + 1));
+            int[] runs = Runs.of(starts, count, 4 * Workers.THREADS);
             int[] counts = new int[count];
             IntSequence[] ids = new IntSequence[runs.length - 1];
-            IntStream.range(0, ids.length)
-                    .parallel()
-                    .forEach(
-                            r -> {
-                                int first = runs[r];
-                                int last = runs[r + 1];
-                                int longest = 0;
-                                for (int i = first; i < last; i++)
-                                    longest = Math.max(longest, starts[i + 1] - starts[i]);
-                                // one buffer per run, small enough to stay in cache, each text
-                                // copied in as it comes (one copy per run measured 6% slower)
-                                byte[] text = new byte[longest];
-                                IntSequence.Builder b =
-                                        IntSequence.newBuilder(
-                                                estimate(starts[last] - starts[first]));
-                                for (int i = first; i < last; i++) {
-                                    int length = starts[i + 1] - starts[i];
-                                    copy(in + starts[i], text, length);
-                                    int before = b.size();
-                                    encodeUtf8(tokenizer, matcher, text, 0, length, b);
-                                    counts[i] = b.size() - before;
-                                }
-                                ids[r] = b.build();
-                            });
+            Workers.run(
+                    ids.length,
+                    r -> {
+                        int first = runs[r];
+                        int last = runs[r + 1];
+                        int longest = 0;
+                        for (int i = first; i < last; i++)
+                            longest = Math.max(longest, starts[i + 1] - starts[i]);
+                        // one buffer per run, small enough to stay in cache, each text
+                        // copied in as it comes (one copy per run measured 6% slower)
+                        byte[] text = new byte[longest];
+                        IntSequence.Builder b =
+                                IntSequence.newBuilder(estimate(starts[last] - starts[first]));
+                        for (int i = first; i < last; i++) {
+                            int length = starts[i + 1] - starts[i];
+                            copy(in + starts[i], text, length);
+                            int before = b.size();
+                            encodeUtf8(tokenizer, matcher, text, 0, length, b);
+                            counts[i] = b.size() - before;
+                        }
+                        ids[r] = b.build();
+                    });
             int[] at = new int[count + 1]; // where text i's ids start
             offsets.write(0, 0);
             for (int i = 0; i < count; i++) {
@@ -299,14 +295,13 @@ public final class Native {
             }
             // each run's ids written where they belong, on its own core
             long outAddress = out.rawValue();
-            IntStream.range(0, ids.length)
-                    .parallel()
-                    .forEach(
-                            r -> {
-                                int from = at[runs[r]];
-                                int n = Math.min(ids[r].length(), capacity - from);
-                                if (n > 0) write(ids[r], outAddress + 4L * from, n);
-                            });
+            Workers.run(
+                    ids.length,
+                    r -> {
+                        int from = at[runs[r]];
+                        int n = Math.min(ids[r].length(), capacity - from);
+                        if (n > 0) write(ids[r], outAddress + 4L * from, n);
+                    });
             return at[count];
         } catch (Throwable t) {
             return Errors.set(t);

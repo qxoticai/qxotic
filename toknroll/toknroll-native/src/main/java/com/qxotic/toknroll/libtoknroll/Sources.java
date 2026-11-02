@@ -19,9 +19,9 @@ import java.util.Optional;
 /**
  * toknroll_tokenizer_load's sources, as toknroll.h specifies them, in three steps: resolve the
  * source to a file or folder (jinfer-hub's grammar and store), sniff a file's content for its
- * format, load with that format's loader. A hub GGUF is read for its header only, by toknroll-gguf's own bounded
- * reader; a repository shipping tiktoken.model goes through toknroll-hf's own hub path, which also
- * fetches the pattern module such repositories carry.
+ * format, load with that format's loader. A hub GGUF is read for its header only, by
+ * toknroll-gguf's own bounded reader; a repository shipping tiktoken.model goes through
+ * toknroll-hf's own hub path, which also fetches the pattern module such repositories carry.
  */
 final class Sources {
     private static final GGUFTokenizerLoader GGUF_LOADER =

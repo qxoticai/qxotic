@@ -104,8 +104,9 @@ TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t*
                                      char* out, int64_t capacity);
 /* count texts, text i the bytes [text_offsets[i], text_offsets[i + 1]) of texts; their ids go to
  * out, text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold
- * count + 1 entries. Encoded on all cores. Returns the total, offsets[count]; over capacity, out
- * gets a prefix and offsets is still complete, so capacity 0 counts. No buffer is kept. */
+ * count + 1 entries. Encoded on all cores, a forked child's on the calling thread. Returns the
+ * total, offsets[count]; over capacity, out gets a prefix and offsets is still complete, so
+ * capacity 0 counts. No buffer is kept. */
 TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const char* texts,
                                            const int32_t* text_offsets, int32_t count, uint32_t flags,
                                            int32_t* out, int32_t capacity, int32_t* offsets);
