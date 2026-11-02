@@ -38,6 +38,8 @@
 #include "toknroll_isolate.h"
 #include "toknroll_port.h"
 
+_Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 64-bit platform");
+
 /* Bare names, stringified here: a quoted -D value would not survive every platform's command line. */
 #ifndef TOKNROLL_PROGRAM
 #define TOKNROLL_PROGRAM toknroll                /* argv[0] */

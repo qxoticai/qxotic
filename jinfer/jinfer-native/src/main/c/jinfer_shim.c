@@ -8,6 +8,8 @@
 #include "toknroll_isolate.h"   /* toknroll-native/src/main/c */
 #include "toknroll_port.h"
 
+_Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 64-bit platform");
+
 void jinfer__error_set(graal_thread*, int32_t, const char*);
 void jinfer__log_set(graal_thread*, jinfer_log_fn, void*);
 

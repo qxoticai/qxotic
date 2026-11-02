@@ -5,6 +5,8 @@
 #include "toknroll.h"
 #include "toknroll_isolate.h"
 
+_Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 64-bit platform");
+
 typedef graal_thread* T;
 void toknroll__error_set(T, int32_t, const char*);
 /* the body of a forwarding function: the call inside the gate, or fail when there is no runtime */
