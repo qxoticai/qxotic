@@ -57,6 +57,15 @@ final class ArrayIntSequence extends AbstractIntSequence {
         return length;
     }
 
+    /** One array copy. */
+    @Override
+    public void copyTo(int srcOffset, int[] dest, int destOffset, int count) {
+        Objects.requireNonNull(dest, "dest");
+        Objects.checkFromIndexSize(srcOffset, count, length);
+        Objects.checkFromIndexSize(destOffset, count, dest.length);
+        System.arraycopy(array, offset + srcOffset, dest, destOffset, count);
+    }
+
     @Override
     public IntSequence subSequence(int startInclusive, int endExclusive) {
         if (startInclusive < 0) {

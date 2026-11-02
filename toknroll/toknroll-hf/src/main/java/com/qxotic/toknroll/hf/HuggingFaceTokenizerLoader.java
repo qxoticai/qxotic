@@ -226,7 +226,11 @@ public final class HuggingFaceTokenizerLoader {
 
         Map<String, Object> root = parseObject(tokenizerJson);
         Map<String, Object> model = asObject(root.get("model"), "tokenizer.json:model");
-        String modelType = asString(model.get("type"), "tokenizer.json:model.type");
+        // Files written before tokenizers tagged its models (gpt2) carry no type: merges mean BPE.
+        String modelType =
+                model.get("type") == null && model.containsKey("merges")
+                        ? "BPE"
+                        : asString(model.get("type"), "tokenizer.json:model.type");
         if (!"BPE".equals(modelType)) {
             throw unsupported("tokenizer.json:model.type", modelType, "BPE");
         }
@@ -935,6 +939,15 @@ public final class HuggingFaceTokenizerLoader {
         if (regex instanceof String) {
             String regexPattern = (String) regex;
             Pattern pattern = Pattern.compile(regexPattern, UNICODE_REGEX_FLAGS);
+            // The two spellings of "each match is a piece": Isolated also keeps the text between
+            // matches, Removed with invert drops it. Both take the core splitter, and a known
+            // pattern its scanner.
+            if ("Isolated".equals(behavior) && !invert) {
+                return ImplAccessor.createRegexSplitter(pattern, true);
+            }
+            if ("Removed".equals(behavior) && invert) {
+                return ImplAccessor.createRegexSplitter(pattern, false);
+            }
             return (text, startInclusive, endExclusive, consumer) -> {
                 CharSequence source = text.subSequence(startInclusive, endExclusive);
                 for (Span span : splitByPatternWithBehavior(source, pattern, behavior, invert)) {

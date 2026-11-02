@@ -164,6 +164,42 @@ public interface Tokenizer {
     }
 
     /**
+     * Encodes UTF-8 text and appends the token IDs to {@code out}: the same IDs {@link #encodeInto}
+     * gives the decoded text, without the decoding. Bytes that are not well-formed UTF-8 are taken
+     * as they are.
+     *
+     * @param utf8 the text, as UTF-8
+     * @param startInclusive start of the range to encode (inclusive)
+     * @param endExclusive end of the range to encode (exclusive)
+     * @param out builder to append token IDs to
+     */
+    default void encodeUtf8Into(
+            byte[] utf8, int startInclusive, int endExclusive, IntSequence.Builder out) {
+        Objects.requireNonNull(utf8, "utf8");
+        String text =
+                new String(
+                        utf8,
+                        startInclusive,
+                        endExclusive - startInclusive,
+                        java.nio.charset.StandardCharsets.UTF_8);
+        encodeInto(text, 0, text.length(), out);
+    }
+
+    /**
+     * Encodes UTF-8 text into an immutable token sequence; see {@link #encodeUtf8Into}.
+     *
+     * @param utf8 the text, as UTF-8
+     * @return immutable token sequence
+     */
+    default IntSequence encodeUtf8(byte[] utf8) {
+        Objects.requireNonNull(utf8, "utf8");
+        IntSequence.Builder out =
+                IntSequence.newBuilder(estimateTokenCapacity(utf8.length, expectedTokensPerChar()));
+        encodeUtf8Into(utf8, 0, utf8.length, out);
+        return out.build();
+    }
+
+    /**
      * Pre-allocates a reasonable initial capacity for {@link IntSequence.Builder} given character
      * count and the model's expected tokens-to-char ratio.
      *

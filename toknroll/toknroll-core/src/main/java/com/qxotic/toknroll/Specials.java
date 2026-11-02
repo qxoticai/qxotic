@@ -85,6 +85,42 @@ public interface Specials {
     void encodeInto(Tokenizer tokenizer, CharSequence text, IntSequence.Builder out);
 
     /**
+     * Encodes UTF-8 text with special-token injection and appends token IDs into {@code out}: for
+     * well-formed UTF-8, the same IDs as {@link #encodeInto(Tokenizer, CharSequence,
+     * IntSequence.Builder)} gives the decoded text. The specials {@link #compile} returns are
+     * matched on the bytes, and the text between them is encoded through {@code
+     * tokenizer.encodeUtf8Into(...)}, so it is never decoded; this default implementation decodes
+     * the range and calls {@code encodeInto}.
+     *
+     * @param tokenizer tokenizer for non-special spans
+     * @param utf8 the text, as UTF-8
+     * @param startInclusive start of the range to encode (inclusive)
+     * @param endExclusive end of the range to encode (exclusive)
+     * @param out builder to append token IDs to
+     * @throws NullPointerException if {@code tokenizer}, {@code utf8}, or {@code out} is null
+     * @throws IndexOutOfBoundsException if the range is outside {@code utf8}
+     */
+    default void encodeUtf8Into(
+            Tokenizer tokenizer,
+            byte[] utf8,
+            int startInclusive,
+            int endExclusive,
+            IntSequence.Builder out) {
+        Objects.requireNonNull(tokenizer, "tokenizer");
+        Objects.requireNonNull(utf8, "utf8");
+        Objects.requireNonNull(out, "out");
+        Objects.checkFromToIndex(startInclusive, endExclusive, utf8.length);
+        encodeInto(
+                tokenizer,
+                new String(
+                        utf8,
+                        startInclusive,
+                        endExclusive - startInclusive,
+                        java.nio.charset.StandardCharsets.UTF_8),
+                out);
+    }
+
+    /**
      * Encodes text with special-token injection.
      *
      * <p>This method is implemented in terms of {@link #encodeInto(Tokenizer, CharSequence,

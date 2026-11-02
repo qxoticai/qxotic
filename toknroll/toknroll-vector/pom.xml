@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>toknroll-aggregator</artifactId>
+    <version>0.3.1</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>toknroll-vector</artifactId>
+  <name>Tok'n'Roll Vector</name>
+  <description>Tok'n'Roll's fast encoder for the tiktoken family, written with the Java Vector API.
+    A runtime dependency: core finds it and uses it when the JVM runs with
+    --add-modules jdk.incubator.vector.</description>
+
+  <properties>
+    <maven.deploy.skip>false</maven.deploy.skip>
+    <!-- The Vector API is an incubator module of Java 16 and later; this module needs 25. -->
+    <maven.compiler.release>25</maven.compiler.release>
+    <maven.compiler.testRelease>25</maven.compiler.testRelease>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs>
+            <arg>--add-modules</arg>
+            <arg>jdk.incubator.vector</arg>
+          </compilerArgs>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <release>${maven.compiler.testRelease}</release>
+              <useModulePath>false</useModulePath>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <useModulePath>false</useModulePath>
+          <argLine>@{argLine} --add-modules jdk.incubator.vector</argLine>
+        </configuration>
+        <!-- every test at each vector width the kernels support, whatever this machine prefers -->
+        <executions>
+          <execution>
+            <id>default-test</id>
+            <configuration>
+              <systemPropertyVariables>
+                <toknroll.vector.width>128</toknroll.vector.width>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <id>width-256</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <systemPropertyVariables>
+                <toknroll.vector.width>256</toknroll.vector.width>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+          <execution>
+            <id>width-512</id>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <systemPropertyVariables>
+                <toknroll.vector.width>512</toknroll.vector.width>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

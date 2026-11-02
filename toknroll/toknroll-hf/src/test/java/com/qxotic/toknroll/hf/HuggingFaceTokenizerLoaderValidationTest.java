@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -7,6 +9,7 @@ import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -59,6 +62,27 @@ class HuggingFaceTokenizerLoaderValidationTest {
     @Test
     void nonBpeModelTypeIsRejected() throws Exception {
         String json = "{\"model\":{\"type\":\"Unigram\",\"vocab\":{\"h\":0},\"merges\":[]}}";
+        Path file = tempDir.resolve("tokenizer.json");
+        Files.writeString(file, json);
+        assertThrows(RuntimeException.class, () -> HuggingFaceTokenizerLoader.fromLocal(file));
+    }
+
+    @Test
+    void untaggedModelWithMergesIsBpe() throws Exception {
+        // gpt2's tokenizer.json: a BPE model with no "type" field.
+        String json =
+                "{\"model\":{\"vocab\":"
+                        + buildByteLevelVocab(Map.of("hi", 256))
+                        + ",\"merges\":[\"h i\"]}}";
+        Path file = tempDir.resolve("tokenizer.json");
+        Files.writeString(file, json);
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(file);
+        assertArrayEquals(new int[] {256}, tokenizer.encode("hi").toArray());
+    }
+
+    @Test
+    void untaggedModelWithoutMergesIsRejected() throws Exception {
+        String json = "{\"model\":{\"vocab\":{\"h\":0}}}";
         Path file = tempDir.resolve("tokenizer.json");
         Files.writeString(file, json);
         assertThrows(RuntimeException.class, () -> HuggingFaceTokenizerLoader.fromLocal(file));

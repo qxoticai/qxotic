@@ -7,9 +7,33 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 final class GGUFTokenizerModelFactory {
     private static final char METASPACE = '\u2581';
+
+    /**
+     * The {@code tokenizer.ggml.pre} names whose word, when it is a token of its own, encodes as
+     * that token without merging: llama.cpp's {@code ignore_merges} (llama-vocab.cpp), Hugging
+     * Face's {@code ignore_merges} in the same models' tokenizer.json.
+     */
+    static final Set<String> IGNORE_MERGES =
+            Set.of(
+                    "minicpm5",
+                    "llama3",
+                    "llama-v3",
+                    "llama-bpe",
+                    "falcon3",
+                    "falcon-h1",
+                    "midm-2.0",
+                    "jina-v5-nano",
+                    "lfm2",
+                    "youtu",
+                    "glm4",
+                    "glm5",
+                    "tekken",
+                    "pixtral",
+                    "granite-embed-multi-97m");
 
     private GGUFTokenizerModelFactory() {}
 
@@ -18,7 +42,9 @@ final class GGUFTokenizerModelFactory {
                 "gemma4".equals(GGUFMetadataKeys.key(gguf, GGUFMetadataKeys.MODEL));
         Vocabulary vocabulary = buildVocabulary(gguf, replaceWhitespaceMarker, true);
         List<MergeRule> merges = buildMerges(gguf, vocabulary, replaceWhitespaceMarker, true);
-        return Toknroll.tiktokenModel(vocabulary, merges);
+        String pre = GGUFMetadataKeys.key(gguf, GGUFMetadataKeys.PRE);
+        boolean ignoreMerges = pre != null && IGNORE_MERGES.contains(pre);
+        return ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
     }
 
     static TokenizationModel buildSentencePieceModel(GGUF gguf) {

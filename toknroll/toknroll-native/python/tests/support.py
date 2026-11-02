@@ -15,6 +15,10 @@ HUB_JSON = "Qwen/Qwen3-0.6B"               # a tokenizer.json repository
 HUB_GGUF = "LiquidAI/LFM2.5-350M-GGUF:Q8_0"  # a GGUF whose header is fetched
 
 needs_gguf = unittest.skipIf(GGUF is None, "no local GGUF: set TOKNROLL_TEST_GGUF")
+
+# A tokenizer of the tiktoken family, the kind toknroll-vector's engine encodes: Qwen3's (the qwen2 pattern).
+_json = sorted(Path.home().glob(".cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/*/tokenizer.json"))
+TIKTOKEN_JSON = os.environ.get("TOKNROLL_TEST_TIKTOKEN_JSON") or (str(_json[0]) if _json else None)
 needs_hub = unittest.skipIf(OFFLINE, "TOKNROLL_OFFLINE=1")
 
 try:

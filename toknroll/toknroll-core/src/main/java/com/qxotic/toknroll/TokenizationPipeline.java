@@ -1,5 +1,6 @@
 package com.qxotic.toknroll;
 
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,7 +25,8 @@ public final class TokenizationPipeline implements Tokenizer {
         this.model = Objects.requireNonNull(model, "model is required");
         this.normalizer = normalizer;
         this.splitter = splitter;
-        this.hasNormalizer = normalizer != null;
+        // the identity changes nothing, and skipping it keeps UTF-8 on the bytes path
+        this.hasNormalizer = normalizer != null && normalizer != Normalizer.identity();
         this.hasSplitter = splitter != null;
     }
 
@@ -73,9 +75,37 @@ public final class TokenizationPipeline implements Tokenizer {
         encodeNormalizedInto(normalizeSlice(text, startInclusive, endExclusive), out);
     }
 
+    @Override
+    public void encodeUtf8Into(
+            byte[] utf8, int startInclusive, int endExclusive, IntSequence.Builder out) {
+        Objects.requireNonNull(utf8, "utf8");
+        Objects.requireNonNull(out, "out");
+        if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > utf8.length) {
+            throw new IndexOutOfBoundsException(
+                    "Invalid range ["
+                            + startInclusive
+                            + ", "
+                            + endExclusive
+                            + ") for length "
+                            + utf8.length);
+        }
+        // Bytes go straight to the model when nothing normalizes; a normalizer works on chars.
+        if (!hasNormalizer
+                && hasSplitter
+                && ImplAccessor.encodeUtf8Bytes(
+                        model, splitter, utf8, startInclusive, endExclusive, out)) {
+            return;
+        }
+        Tokenizer.super.encodeUtf8Into(utf8, startInclusive, endExclusive, out);
+    }
+
     private void encodeNormalizedInto(CharSequence normalizedText, IntSequence.Builder out) {
         if (!hasSplitter) {
             model.encodeInto(normalizedText, out);
+            return;
+        }
+        if (ImplAccessor.encodeUtf8(
+                model, splitter, normalizedText, 0, normalizedText.length(), out)) {
             return;
         }
         splitter.splitAll(
@@ -97,6 +127,12 @@ public final class TokenizationPipeline implements Tokenizer {
         CharSequence current = normalizeSlice(text, startInclusive, endExclusive);
         if (!hasSplitter) {
             return model.countTokens(current, 0, current.length());
+        }
+        IntSequence.Builder counted =
+                IntSequence.newBuilder(
+                        Tokenizer.estimateTokenCapacity(current.length(), expectedTokensPerChar()));
+        if (ImplAccessor.encodeUtf8(model, splitter, current, 0, current.length(), counted)) {
+            return counted.size();
         }
         int[] total = {0};
         splitter.splitAll(
