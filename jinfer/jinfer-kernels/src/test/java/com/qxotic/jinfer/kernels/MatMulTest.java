@@ -134,8 +134,10 @@ class MatMulTest {
                 // the JIT is still tiering the Vector API's reduceLanes order may differ between
                 // the calls (fallback vs intrinsic - ulps apart, legally). Retry until the pair
                 // agrees: settled tiers agree exactly, a real aliasing bug disagrees every time.
+                // 50, not 5: on a loaded machine (seen with Spotlight indexing on a Mac) tiering
+                // outlasted 5 attempts on a fresh build.
                 MemorySegment out = null, alias = null;
-                for (int attempt = 0; attempt < 5; attempt++) {
+                for (int attempt = 0; attempt < 50; attempt++) {
                     out = Oracles.f32(arena, n * m, 13);
                     MatMul.mm(
                             Oracles.q8View(weights, (long) m * k),
