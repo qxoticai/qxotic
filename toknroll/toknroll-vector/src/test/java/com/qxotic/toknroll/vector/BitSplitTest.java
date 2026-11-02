@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.spi.TiktokenEngine;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -182,6 +183,8 @@ class BitSplitTest {
             check(rules, pattern, "!".repeat(n) + "\n\n" + "!".repeat(n) + "abc", 1024);
             check(rules, pattern, "中".repeat(n) + "😀".repeat(n) + "é".repeat(n), 1024);
             check(rules, pattern, "a" + " ".repeat(n) + "b", 2);
+            check(rules, pattern, "A".repeat(n) + "a" + "A".repeat(n) + " " + "A".repeat(n), 1024);
+            check(rules, pattern, "A".repeat(n) + "ʰ" + "A".repeat(n) + "bA" + "A".repeat(n), 1024);
         }
     }
 
@@ -199,6 +202,28 @@ class BitSplitTest {
                 String run = " ".repeat(at - 2) + blank + " ".repeat(200);
                 check(rules, pattern, "a\n" + run + "\nb", 1024);
                 check(rules, pattern, "a\n" + run + "b", 1024);
+            }
+        }
+    }
+
+    /**
+     * A long cased run is looked at by hand once, not once per block: at a million capitals the
+     * per-block look took seconds.
+     */
+    @Test
+    void longCasedRunsSplitInLinearTime() {
+        String capitals = "A".repeat(1 << 20);
+        String[] texts = {capitals, capitals + "a", capitals + "ʰ", "ʰ" + capitals + "a"};
+        for (int rules : new int[] {TiktokenEngine.O200K, TiktokenEngine.TEKKEN}) {
+            BitSplit split = BitSplit.forRules(rules);
+            int[] ends = new int[1024];
+            for (String text : texts) {
+                byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);
+                long t0 = System.nanoTime();
+                int n = split.split(utf8, 0, utf8.length, ends);
+                long millis = (System.nanoTime() - t0) / 1_000_000;
+                assertTrue(n > 0 && ends[n - 1] == utf8.length);
+                assertTrue(millis < 2_000, () -> millis + " ms for " + text.length() + " chars");
             }
         }
     }

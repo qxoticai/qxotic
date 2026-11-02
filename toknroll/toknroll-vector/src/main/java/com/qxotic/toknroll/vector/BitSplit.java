@@ -736,6 +736,13 @@ final class BitSplit {
 
         // second suffix, since (?i:...)? applies once
 
+        // Where the last hand look of each kind stopped, absolute, and what it found there. A
+        // later look starts further on: at or before that stop it would end there too.
+        int lowerLookEnd = -1;
+        boolean lowerFound;
+        int caselessLookEnd = -1;
+        boolean caselessFound;
+
         O200k(byte[] text, int start, int end, Registers r, boolean suffix, int digitCap) {
             super(text, start, end, r);
             this.suffix = suffix;
@@ -910,19 +917,28 @@ final class BitSplit {
             if (leadRun(nx.word, nxValid) != nxValid) {
                 return false;
             }
-            // the run leaves the next block too: look by hand, past the character it ends in
-            for (int i = base + 64 + nxLen + (seed >>> 16); i < end; ) {
+            // the run leaves the next block too: look by hand, past the character it ends in,
+            // unless the last look went past there
+            int i = base + 64 + nxLen + (seed >>> 16);
+            if (i <= lowerLookEnd) {
+                return lowerFound;
+            }
+            boolean found = false;
+            while (i < end) {
                 int at = at(text, i, end);
                 int cls = CharClasses.of(at & 0x1FFFFF);
                 if ((cls & (CharClasses.LETTER | CharClasses.MARK)) == 0) {
-                    return false;
+                    break;
                 }
                 if ((cls & (CharClasses.LOWER | CharClasses.UPPER)) == CharClasses.LOWER) {
-                    return true;
+                    found = true;
+                    break;
                 }
                 i += at >>> 24;
             }
-            return false;
+            lowerLookEnd = i;
+            lowerFound = found;
+            return found;
         }
 
         /** Whether the uc-run going on at the next block's first byte has a caseless char in it. */
@@ -939,22 +955,30 @@ final class BitSplit {
             if (leadRun(uc, nxValid) != nxValid) {
                 return false;
             }
-            for (int i = base + 64 + nxLen + (seed >>> 16); i < end; ) {
+            int i = base + 64 + nxLen + (seed >>> 16);
+            if (i <= caselessLookEnd) {
+                return caselessFound;
+            }
+            boolean found = false;
+            while (i < end) {
                 int at = at(text, i, end);
                 int cls = CharClasses.of(at & 0x1FFFFF);
                 if ((cls & (CharClasses.LETTER | CharClasses.MARK)) == 0) {
-                    return false;
+                    break;
                 }
                 int cased = cls & (CharClasses.LOWER | CharClasses.UPPER);
                 if (cased == CharClasses.LOWER) {
-                    return false; // a lowercase ends the uc-run
+                    break; // a lowercase ends the uc-run
                 }
                 if (cased == (CharClasses.LOWER | CharClasses.UPPER)) {
-                    return true;
+                    found = true;
+                    break;
                 }
                 i += at >>> 24;
             }
-            return false;
+            caselessLookEnd = i;
+            caselessFound = found;
+            return found;
         }
     }
 
