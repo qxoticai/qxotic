@@ -497,6 +497,23 @@ ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} af
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
 ok(jinfer.__version__ == "0.4.0" == N.lib.jinfer_version().decode(), f"version {jinfer.__version__}")
 
+# a stream takes one call at a time: a second thread's call while a step blocks is JINFER_EBUSY
+r = m.chat("Write a very long story about the sea.", max_tokens=200)
+steps, stepping = [], threading.Event()
+def step_all():
+    stepping.set()
+    while (rc := N.lib.jinfer_stream_step(r._ptr)) == N.OK: steps.append(rc)
+    steps.append(rc)
+t = threading.Thread(target=step_all); t.start(); stepping.wait()
+busy = [N.lib.jinfer_stream_step(r._ptr) for _ in range(2000)]
+texts = [(N.lib.jinfer_stream_text(r._ptr), last_code()) for _ in range(2000)]
+N.lib.jinfer_stream_cancel(r._ptr)  # exempt: any thread, any time
+t.join(timeout=60)
+ok(N.EBUSY in busy and set(busy) <= {N.EBUSY, N.OK, 1, N.ECANCELLED}, f"a concurrent step: {sorted(set(busy))}")
+ok((b"", N.EBUSY) in texts and all(code in (N.OK, N.EBUSY) for _, code in texts), "a concurrent stream_text: \"\" and JINFER_EBUSY")
+ok(not t.is_alive(), "the stepping thread ended")
+r.close()
+
 # a child forked once the library started is refused at once, where it would hang; the parent carries on
 if hasattr(os, "fork"):
     pid = os.fork()

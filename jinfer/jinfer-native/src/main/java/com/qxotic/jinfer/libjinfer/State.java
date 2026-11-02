@@ -19,6 +19,7 @@ final class State {
     private final Model model;
     private final ContextModel cm; // erased: the state's type is the model's business
     private final ContextState state;
+    final Exclusive exclusive = new Exclusive("state");
 
     State(Model model, int contextCapacity) {
         this.model = model;

@@ -13,9 +13,9 @@
  *             handle. Nothing is freed but handles, each by its own _free, which accepts NULL.
  *             A model stays alive while any state or stream made from it lives; _free drops
  *             your reference.
- *   Threads   Any thread may call. A model may be shared. A state or a stream is used by
- *             one thread at a time; jinfer_stream_cancel is the exception, any thread may
- *             call it. The log callback runs on any thread, inside your own call included,
+ *   Threads   Any thread may call. A model may be shared. A state or a stream takes one
+ *             call at a time, and a call while another thread's is running returns
+ *             JINFER_EBUSY; jinfer_stream_cancel is the exception, any thread may call it. The log callback runs on any thread, inside your own call included,
  *             and may call only jinfer_last_error, toknroll_last_error and the _free functions,
  *             on a handle no call is using (a stream still generating is in use). Once
  *             jinfer_log_set returns, the callback it replaced is not running and is never
@@ -71,6 +71,7 @@ extern "C" {
 #define JINFER_ENOTFOUND    (-3) /* model, file or companion */
 #define JINFER_EUNSUPPORTED (-4) /* the model lacks this capability */
 #define JINFER_ECANCELLED   (-5)
+#define JINFER_EBUSY        (-6) /* a state or a stream in a call on another thread */
 
 enum { JINFER_LOG_DEBUG = 0, JINFER_LOG_INFO = 1, JINFER_LOG_WARN = 2, JINFER_LOG_ERROR = 3 };   /* log levels */
 typedef void (*jinfer_log_fn)(int32_t level, const char* message, void* user);

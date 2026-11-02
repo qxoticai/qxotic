@@ -4,7 +4,7 @@ from __future__ import annotations
 import ctypes as C
 from toknroll._native import locate
 
-OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED, ECANCELLED = 0, -1, -2, -3, -4, -5
+OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED, ECANCELLED, EBUSY = 0, -1, -2, -3, -4, -5, -6
 
 LogFn = C.CFUNCTYPE(None, C.c_int32, C.c_char_p, C.c_void_p)
 

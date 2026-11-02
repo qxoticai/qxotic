@@ -16,7 +16,8 @@ final class Errors {
             EINVAL = -2,
             ENOTFOUND = -3,
             EUNSUPPORTED = -4,
-            ECANCELLED = -5;
+            ECANCELLED = -5,
+            EBUSY = -6;
 
     /** A failure that names its own JINFER_E* code. */
     static final class Failure extends RuntimeException {

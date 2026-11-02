@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.libjinfer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -18,6 +19,17 @@ class ErrorsTest {
         assertEquals(Errors.EUNSUPPORTED, Errors.code(new UnsupportedOperationException()));
         assertEquals(Errors.ECANCELLED, Errors.code(new CancellationException()));
         assertEquals(Errors.ERROR, Errors.code(new IllegalStateException("x")));
+    }
+
+    @Test
+    void aSecondCallAtOnceIsBusy() {
+        Exclusive exclusive = new Exclusive("stream");
+        exclusive.enter();
+        Errors.Failure busy = assertThrows(Errors.Failure.class, exclusive::enter);
+        assertEquals(Errors.EBUSY, busy.code);
+        exclusive.leave();
+        exclusive.enter(); // free again once the first call left
+        exclusive.leave();
     }
 
     @Test
