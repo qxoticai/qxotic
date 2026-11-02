@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Hugging Face tokenizers' answers on edge-case texts and the test suite's texts, the goldens of
-HuggingFaceEdgeParityTest.
+HuggingFaceEdgeParityTest, in toknroll's two modes. No special tokens are added either way.
 
-Encodes as toknroll does by default: no special tokens added, special tokens spelled in the text
-are text (encode_special_tokens). Hugging Face still matches non-special added tokens, where
-toknroll encodes them as text; such a case keeps Hugging Face's ids, so the test fails on it.
+- "ids" and "decoded", for plain encode, raw text: the tokenizer.json without its added tokens, so
+  Hugging Face runs only its normalizer, pre-tokenizer and model, and matches no added token.
+- "specials", for Specials.encode, every added token matched: the tokenizer.json as it is.
 
 Each supported model's tokenizer.json is fetched at its pinned revision (HF_TOKEN, or the token in
 the Hugging Face home, for gated repositories). The goldens were made with tokenizers 0.23.2; the
@@ -66,7 +66,7 @@ EDGE_TEXTS = [
     "� replacement", "x" + "́" * 20,
 ]
 
-# then every text of the test suite's own lists, from harvest_suite_texts.py
+# then every text of the test suite's own lists (suite_texts.json says how they were harvested)
 with open(Path(__file__).resolve().parent / "suite_texts.json", encoding="utf-8") as _f:
     TEXTS = EDGE_TEXTS + json.load(_f)["texts"]
 
@@ -95,12 +95,15 @@ def main() -> None:
     out_path = sys.argv[1] if len(sys.argv) > 1 else default
     models = []
     for ref, revision in MODELS:
-        tok = Tokenizer.from_str(fetch(ref, revision, "tokenizer.json"))
-        tok.encode_special_tokens = True
+        source = fetch(ref, revision, "tokenizer.json")
+        raw = json.loads(source)
+        raw["added_tokens"] = []
+        plain, full = Tokenizer.from_str(json.dumps(raw)), Tokenizer.from_str(source)
         cases = []
         for text in TEXTS:
-            ids = tok.encode(text, add_special_tokens=False).ids
-            cases.append({"ids": ids, "decoded": tok.decode(ids, skip_special_tokens=False)})
+            ids = plain.encode(text, add_special_tokens=False).ids
+            cases.append({"ids": ids, "decoded": plain.decode(ids, skip_special_tokens=False),
+                          "specials": full.encode(text, add_special_tokens=False).ids})
         models.append({"ref": ref, "revision": revision, "cases": cases})
         print(f"{ref:40} {len(cases)} cases")
     with open(out_path, "w", encoding="utf-8") as f:

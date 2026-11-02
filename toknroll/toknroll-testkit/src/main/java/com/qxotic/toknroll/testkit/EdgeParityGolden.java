@@ -11,7 +11,8 @@ import java.util.function.ToIntFunction;
 
 /**
  * An edge parity golden ({@code hf_edge_parity.json}, {@code gguf_edge_parity.json}): the texts,
- * then each model's answer on every text, its ids and, for Hugging Face, the decoded text.
+ * then each model's answers on every text in toknroll's two modes: raw text, plain encode's, and
+ * every added token matched, Specials.encode's; for Hugging Face also the raw text's decoding.
  */
 public final class EdgeParityGolden {
 
@@ -68,16 +69,11 @@ public final class EdgeParityGolden {
 
     @SuppressWarnings("unchecked")
     private static Expected expected(Object c, String where) {
-        if (c instanceof List<?>) {
-            return new Expected(toIntArray((List<Object>) c), null);
-        }
-        if (c instanceof Map<?, ?>) {
-            Map<String, Object> map = (Map<String, Object>) c;
-            return new Expected(
-                    toIntArray((List<Object>) require(map, "ids", where)),
-                    (String) require(map, "decoded", where));
-        }
-        throw new IllegalStateException(where + ": a case is " + c);
+        Map<String, Object> map = (Map<String, Object>) c;
+        return new Expected(
+                toIntArray((List<Object>) require(map, "ids", where)),
+                toIntArray((List<Object>) require(map, "specials", where)),
+                (String) map.get("decoded"));
     }
 
     private static Object require(Map<String, Object> map, String key, String where) {
@@ -129,18 +125,29 @@ public final class EdgeParityGolden {
         }
     }
 
-    /** The reference's answer on one text: its ids, and its decoded text or null. */
+    /**
+     * The reference's answers on one text: its ids as raw text, its ids with every added token
+     * matched, and the raw text's decoding or null.
+     */
     public static final class Expected {
         private final int[] ids;
+        private final int[] specials;
         private final String decoded;
 
-        Expected(int[] ids, String decoded) {
+        Expected(int[] ids, int[] specials, String decoded) {
             this.ids = ids;
+            this.specials = specials;
             this.decoded = decoded;
         }
 
+        /** The ids plain encode must give: the text is raw text. */
         public int[] ids() {
             return ids.clone();
+        }
+
+        /** The ids Specials.encode must give: every added token matched. */
+        public int[] specials() {
+            return specials.clone();
         }
 
         public String decoded() {

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.DynamicContainer.dynamicContainer;
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.testkit.EdgeParityGolden;
 import com.qxotic.toknroll.testkit.EdgeParityGolden.Expected;
@@ -13,7 +14,6 @@ import com.qxotic.toknroll.testkit.EdgeParityGolden.Model;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicContainer;
@@ -24,9 +24,10 @@ import org.junit.jupiter.api.TestFactory;
 /**
  * Hugging Face's own answers on edge-case texts (leading and trailing spaces, empty text, CRLF,
  * byte fallback, emoji, special-token spellings, literal U+2581, long runs), across tokenizer.json
- * families: ids, text, bytes and counts. The goldens come from {@code scripts/hf_edge_parity.py},
- * each model at its pinned revision. Every divergence fails. A known one, Hugging Face matching a
- * non-special added token that toknroll encodes as text, fails with its cause in the message.
+ * families, in both modes: plain encode against the tokenizer.json without its added tokens (raw
+ * text: ids, text, bytes and counts), Specials.encode against it as it is (every added token
+ * matched). The goldens come from {@code scripts/hf_edge_parity.py}, each model at its pinned
+ * revision. Every divergence fails.
  *
  * <p>Tokenizers load from the hub at the golden's revision, or with {@code
  * -Dtoknroll.test.tokenizers=DIR} from {@code DIR/owner__repo/tokenizer.json}, which must be that
@@ -52,8 +53,10 @@ class HuggingFaceEdgeParityTest {
     private static DynamicContainer container(Model model, List<String> texts) {
         String name = model.name() + "@" + model.revision();
         Tokenizer tokenizer;
+        Specials specials;
         try {
             tokenizer = load(model);
+            specials = Specials.of(tokenizer);
         } catch (RuntimeException e) {
             return dynamicContainer(
                     name,
@@ -68,22 +71,23 @@ class HuggingFaceEdgeParityTest {
         for (int i = 0; i < texts.size(); i++) {
             String text = texts.get(i);
             Expected expected = model.cases().get(i);
+            String shown = EdgeParityGolden.printable(text);
+            tests.add(dynamicTest(shown, () -> check(tokenizer, text, expected)));
             tests.add(
                     dynamicTest(
-                            EdgeParityGolden.printable(text),
-                            () -> check(tokenizer, text, expected)));
+                            shown + " with specials",
+                            () ->
+                                    assertArrayEquals(
+                                            expected.specials(),
+                                            specials.encode(tokenizer, text).toArray(),
+                                            "Specials.encode")));
         }
         return dynamicContainer(name, tests);
     }
 
     private static void check(Tokenizer tokenizer, String text, Expected expected) {
         int[] ids = expected.ids();
-        int[] actual = tokenizer.encode(text).toArray();
-        if (!Arrays.equals(ids, actual)) {
-            String known = HuggingFaceTokenizerTestFixtures.knownDivergence(tokenizer, ids);
-            assertArrayEquals(
-                    ids, actual, known == null ? "encode" : "encode, known divergence: " + known);
-        }
+        assertArrayEquals(ids, tokenizer.encode(text).toArray(), "encode");
         assertEquals(expected.decoded(), tokenizer.decode(IntSequence.wrap(ids)), "decode");
         EdgeParityGolden.checkCountsAndBytes(
                 text,
