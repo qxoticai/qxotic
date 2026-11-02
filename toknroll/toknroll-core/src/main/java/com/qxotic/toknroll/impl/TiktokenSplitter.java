@@ -322,8 +322,8 @@ final class TiktokenSplitter implements Splitter {
     }
 
     /**
-     * The scanner for two known stages, each a regex with Unicode character classes (or the scanner
-     * one compiles to), the first keeping the text between its matches; else null.
+     * The scanner for two known stages, each a regex with Unicode character classes only (or the
+     * scanner one compiles to), the first keeping the text between its matches; else null.
      */
     static Splitter forStages(Splitter... stages) {
         boolean keepsGaps =
@@ -340,10 +340,19 @@ final class TiktokenSplitter implements Splitter {
         }
         if (stage instanceof RegexSplitter) {
             Pattern pattern = ((RegexSplitter) stage).pattern();
-            int required = Pattern.UNICODE_CHARACTER_CLASS;
-            return (pattern.flags() & required) == required ? pattern.pattern() : null;
+            return unicodeOnly(pattern) ? pattern.pattern() : null;
         }
         return null;
+    }
+
+    /**
+     * Whether {@code pattern} is compiled with Unicode character classes and no flag that changes
+     * what it matches, as the scanner's regexes are.
+     */
+    private static boolean unicodeOnly(Pattern pattern) {
+        int flags = pattern.flags();
+        return (flags & Pattern.UNICODE_CHARACTER_CLASS) != 0
+                && (flags & ~(Pattern.UNICODE_CHARACTER_CLASS | Pattern.UNICODE_CASE)) == 0;
     }
 
     /** First stage, newline, second stage: each pair {@link #forStages} knows. */
@@ -351,13 +360,9 @@ final class TiktokenSplitter implements Splitter {
         return KNOWN_STAGES.keySet();
     }
 
-    /** The scanner for a known regex, compiled with Unicode character classes; else null. */
+    /** The scanner for a known regex, compiled with Unicode character classes only; else null. */
     static Splitter forPattern(Pattern pattern) {
-        int required = Pattern.UNICODE_CHARACTER_CLASS;
-        if ((pattern.flags() & required) != required) {
-            return null;
-        }
-        return KNOWN.get(pattern.pattern());
+        return unicodeOnly(pattern) ? KNOWN.get(pattern.pattern()) : null;
     }
 
     static Iterable<String> knownPatterns() {

@@ -104,6 +104,29 @@ class TiktokenSplitterTest {
         Pattern pattern = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS);
         assertTrue(Splitter.regex(pattern) instanceof TiktokenSplitter, regex);
         assertFalse(Splitter.regex(Pattern.compile(regex)) instanceof TiktokenSplitter, regex);
+        int unicode = Pattern.UNICODE_CHARACTER_CLASS;
+        assertTrue(
+                Splitter.regex(Pattern.compile(regex, unicode | Pattern.UNICODE_CASE))
+                        instanceof TiktokenSplitter,
+                regex);
+        // with another flag the regex is not the one the scanner stands for
+        for (int flag : new int[] {Pattern.CASE_INSENSITIVE, Pattern.MULTILINE, Pattern.DOTALL}) {
+            assertFalse(
+                    Splitter.regex(Pattern.compile(regex, unicode | flag))
+                            instanceof TiktokenSplitter,
+                    regex);
+        }
+    }
+
+    /** gpt2's contraction is lowercase: under CASE_INSENSITIVE "'S" is one too. */
+    @Test
+    void aCaseInsensitiveKnownRegexSplitsAsTheRegex() {
+        String gpt2 =
+                "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+|"
+                        + " ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
+        Pattern pattern =
+                Pattern.compile(gpt2, Pattern.UNICODE_CHARACTER_CLASS | Pattern.CASE_INSENSITIVE);
+        assertEquals(List.of("IT", "'S"), spans(Splitter.regex(pattern), "IT'S"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -132,6 +155,10 @@ class TiktokenSplitterTest {
                         instanceof TiktokenSplitter);
         assertFalse(
                 Splitter.sequence(one, Splitter.regex(Pattern.compile(second.pattern())))
+                        instanceof TiktokenSplitter);
+        int caseless = Pattern.UNICODE_CHARACTER_CLASS | Pattern.CASE_INSENSITIVE;
+        assertFalse(
+                Splitter.sequence(one, Splitter.regex(Pattern.compile(second.pattern(), caseless)))
                         instanceof TiktokenSplitter);
     }
 
