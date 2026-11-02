@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,8 +43,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
     private final boolean ignoreMerges;
-    private final Map<String, Integer>
-            wholeTokens; // with ignoreMerges: a word's bytes -> its token
+    // with ignoreMerges: a word's bytes, as ISO-8859-1, to its token
+    private final Map<String, Integer> wholeTokens;
     private final Map<String, int[]> memo = new ConcurrentHashMap<>();
 
     /** An entry of {@link #encoders}: no engine encodes the rule set. */
@@ -609,17 +610,14 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Every id's bytes, from the id side: two ids can share a spelling (a special token whose bytes
-     * are also an ordinary token, as Laguna's {@code |◊|}), and the spelling side keeps only one.
+     * Every id's bytes, by {@link VocabularyImpl#ids}: two ids can share a spelling (a special
+     * token whose bytes are also an ordinary token, as Laguna's {@code |◊|}).
      */
     private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
-        int maxId = vocabulary.size() - 1;
-        for (Map.Entry<String, Integer> e : vocabulary) {
-            maxId = Math.max(maxId, e.getValue());
-        }
-        byte[][] table = new byte[maxId + 1][];
-        for (int id = 0; id <= maxId; id++) {
-            if (vocabulary.contains(id)) table[id] = ByteLevel.decode(vocabulary.token(id));
+        BitSet ids = VocabularyImpl.ids(vocabulary);
+        byte[][] table = new byte[Math.max(vocabulary.size(), ids.length())][];
+        for (int id = ids.nextSetBit(0); id >= 0; id = ids.nextSetBit(id + 1)) {
+            table[id] = ByteLevel.decode(vocabulary.token(id));
         }
         return table;
     }

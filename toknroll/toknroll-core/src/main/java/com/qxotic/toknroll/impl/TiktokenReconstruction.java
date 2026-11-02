@@ -62,7 +62,9 @@ final class TiktokenReconstruction {
         Arrays.fill(types, StandardTokenType.NORMAL.getId());
         for (String token : specialTokens.keySet()) {
             Integer id = tokenToId.get(token); // null for an entry skipped above
-            if (id == null) continue;
+            if (id == null) {
+                continue;
+            }
             StandardTokenType type =
                     userDefined.contains(token)
                             ? StandardTokenType.USER_DEFINED

@@ -75,8 +75,8 @@ final class SentencePieceSplitter implements Splitter {
         for (int i = start + 1; i < end; i++) {
             char c = text.charAt(i);
             char before = text.charAt(i - 1);
-            if (isolateNewlines && (c == '\n') != (before == '\n')
-                    || isSpace(c) && !glue.get(spelled(before))) {
+            if ((isolateNewlines && (c == '\n') != (before == '\n'))
+                    || (isSpace(c) && !glue.get(spelled(before)))) {
                 consumer.accept(text, from, i);
                 from = i;
             }
