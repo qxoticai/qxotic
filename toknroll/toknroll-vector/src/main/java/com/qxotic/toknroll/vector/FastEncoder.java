@@ -7,6 +7,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * A tiktoken model behind one regex, encoded fast: the text as UTF-8, cut by {@link BitSplit} a
@@ -111,8 +112,25 @@ final class FastEncoder implements TiktokenEngine.Encoder {
 
     @Override
     public void encodeUtf8(byte[] utf8, int start, int end, IdBuffer out) {
-        encode(utf8, start, end, out, new Scratch(cache));
+        // a call's scratch kept for its thread's next call, so many short texts allocate none;
+        // the thread's id picks the slot, and a thread that finds it taken makes its own
+        int slot =
+                (int) (Thread.currentThread().threadId() * 0x9E3779B97F4A7C15L >>> 32)
+                        & (spares.length() - 1);
+        Scratch s = spares.getAndSet(slot, null);
+        if (s == null) {
+            s = new Scratch(cache);
+        } else if (s.probe != null) {
+            cache.refresh(s.probe);
+        }
+        encode(utf8, start, end, out, s);
+        spares.set(slot, s);
     }
+
+    /** Spare scratches, two slots per processor: a power of two, sized when the encoder is made. */
+    private final AtomicReferenceArray<Scratch> spares =
+            new AtomicReferenceArray<>(
+                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1));
 
     private static int cacheSlots(int megabytes) {
         long bytes = Math.max(0, megabytes) * (1L << 20);
@@ -129,7 +147,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         WordCache cache = s.probe != null ? this.cache : null;
         int cursor = start;
         while (cursor < end) {
-            int n = split.split(text, cursor, end, ends);
+            int n = split.split(text, cursor, end, ends, s.registers);
             int inPlace = inPlace(text, ends, n);
             cursor = encodeBatch(text, cursor, ends, inPlace, n, cache, out, s);
             if (inPlace < n) {
@@ -502,6 +520,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     /** What one call works with: the piece ends, its view of the cache, the merge arrays. */
     private static final class Scratch {
         final int[] pieceEnds = new int[BATCH];
+        final BitSplit.Registers registers = new BitSplit.Registers();
         final WordCache.Probe probe;
         private byte[] tail = new byte[0];
         int[] tokens = new int[0];
