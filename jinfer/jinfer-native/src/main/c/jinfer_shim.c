@@ -69,7 +69,7 @@ void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o
 jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o) { THREAD; return t ? jinfer__model_load(t, ref, o) : NULL; }
 void jinfer_model_free(jinfer_model* m) { if (!m) return; THREAD; if (t) jinfer__model_free(t, m); }   /* NULL never starts the runtime, here and below */
 int32_t jinfer_model_property(const jinfer_model* m, jinfer_property key) { THREAD; return t ? jinfer__model_property(t, m, (int32_t) key) : JINFER_ERROR; }
-const char* jinfer_model_info(const jinfer_model* m) { THREAD; return t ? jinfer__model_info(t, m) : NULL; }
+const char* jinfer_model_info(const jinfer_model* m) { THREAD; return t ? jinfer__model_info(t, m) : ""; }
 toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m) { THREAD; return t ? jinfer__model_tokenizer(t, m) : NULL; }
 
 jinfer_state* jinfer_state_new(jinfer_model* m, int32_t capacity) { THREAD; return t ? jinfer__state_new(t, m, capacity) : NULL; }
@@ -83,7 +83,7 @@ int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t cap) {
 int32_t jinfer_stream_step(jinfer_stream* s) { THREAD; return t ? jinfer__stream_step(t, s) : JINFER_ERROR; }
 const char* jinfer_stream_text(const jinfer_stream* s) { THREAD; return t ? jinfer__stream_text(t, s) : ""; }
 const float* jinfer_stream_samples(const jinfer_stream* s, int32_t* count) { THREAD; if (!t) { if (count) *count = 0; return NULL; } return jinfer__stream_samples(t, s, count); }
-const char* jinfer_stream_result(const jinfer_stream* s) { THREAD; return t ? jinfer__stream_result(t, s) : NULL; }
+const char* jinfer_stream_result(const jinfer_stream* s) { THREAD; return t ? jinfer__stream_result(t, s) : ""; }
 void jinfer_stream_cancel(jinfer_stream* s) { if (!s) return; THREAD; if (t) jinfer__stream_cancel(t, s); }
 void jinfer_stream_free(jinfer_stream* s) { if (!s) return; THREAD; if (t) jinfer__stream_free(t, s); }
 

@@ -121,7 +121,7 @@ typedef enum {   /* every value spelled out: they are the ABI */
 } jinfer_property;
 
 JINFER_API int32_t     jinfer_model_property(const jinfer_model* m, jinfer_property key);  /* 0 = not applicable; JINFER_EINVAL = unknown key */
-JINFER_API const char* jinfer_model_info(const jinfer_model* m);                           /* JSON: architecture, quantization, defaults */
+JINFER_API const char* jinfer_model_info(const jinfer_model* m);                           /* JSON: architecture, quantization, defaults; "" on error */
 
 JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(jinfer_model* m);   /* the model's tokenizer, see toknroll.h; yours to toknroll_tokenizer_free, it outlives the model; a reranker, speaker or transcriber has none */
 
@@ -141,9 +141,9 @@ JINFER_API int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int
 typedef struct jinfer_stream jinfer_stream;
 
 JINFER_API int32_t      jinfer_stream_step(jinfer_stream* s);                           /* blocks; JINFER_OK = chunk ready, JINFER_DONE, JINFER_ECANCELLED, or an error */
-JINFER_API const char*  jinfer_stream_text(const jinfer_stream* s);                     /* the chunk's text, "" if none */
+JINFER_API const char*  jinfer_stream_text(const jinfer_stream* s);                     /* the chunk's text, "" if none or on error */
 JINFER_API const float* jinfer_stream_samples(const jinfer_stream* s, int32_t* count);  /* the chunk's mono PCM at JINFER_SAMPLE_RATE, NULL if none */
-JINFER_API const char*  jinfer_stream_result(const jinfer_stream* s);                   /* after JINFER_DONE or a cancellation: the result as JSON; cancelled, the text produced so far and finish_reason "cancelled" */
+JINFER_API const char*  jinfer_stream_result(const jinfer_stream* s);                   /* after JINFER_DONE or a cancellation: the result as JSON; cancelled, the text produced so far and finish_reason "cancelled"; "" before or on error */
 JINFER_API void         jinfer_stream_cancel(jinfer_stream* s);                         /* from any thread; the step in progress, or the next, returns JINFER_ECANCELLED */
 JINFER_API void         jinfer_stream_free(jinfer_stream* s);                           /* cancels if still running */
 

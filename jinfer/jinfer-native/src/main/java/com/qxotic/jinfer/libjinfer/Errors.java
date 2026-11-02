@@ -43,7 +43,7 @@ final class Errors {
     }
 
     private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
-    private static CCharPointerHolder none;
+    private static volatile CCharPointerHolder none;
 
     /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
     static void clear() {
@@ -93,9 +93,15 @@ final class Errors {
 
     static CCharPointer last() {
         Last last = LAST.get();
-        if (last.code != OK) return last.message.get();
-        if (none == null) none = CTypeConversion.toCString("");
-        return none.get();
+        return last.code != OK ? last.message.get() : empty();
+    }
+
+    /** "", what a function that returns a string returns when it has none: never NULL. */
+    static CCharPointer empty() {
+        CCharPointerHolder value = none;
+        if (value == null)
+            none = value = CTypeConversion.toCString(""); // a race makes two, harmless
+        return value.get();
     }
 
     private Errors() {}

@@ -46,9 +46,10 @@ public final class Native {
     }
 
     /** snprintf for floats: writes min(n, capacity), returns n. */
-    private static int floats(float[] values, CFloatPointer out, long capacity) {
+    private static int floats(float[] values, CFloatPointer out, int capacity) {
+        if (capacity < 0) throw Errors.invalid("capacity must not be negative");
         if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-        int n = Math.min(values.length, (int) Math.min(capacity, Integer.MAX_VALUE));
+        int n = Math.min(values.length, capacity);
         for (int i = 0; i < n; i++) out.write(i, values[i]);
         return values.length;
     }
@@ -130,7 +131,7 @@ public final class Native {
             return get(handle, Model.class, "model").info().get();
         } catch (Throwable t) {
             Errors.set(t);
-            return WordFactory.nullPointer();
+            return Errors.empty();
         }
     }
 
@@ -251,7 +252,7 @@ public final class Native {
             return get(handle, Stream.class, "stream").cText();
         } catch (Throwable t) {
             Errors.set(t);
-            return Errors.last(); // never NULL for text, as the header says
+            return Errors.empty();
         }
     }
 
@@ -278,7 +279,7 @@ public final class Native {
             return get(handle, Stream.class, "stream").cResult();
         } catch (Throwable t) {
             Errors.set(t);
-            return WordFactory.nullPointer();
+            return Errors.empty();
         }
     }
 
@@ -368,8 +369,13 @@ public final class Native {
             Errors.clear();
             Model model = get(handle, Model.class, "model");
             if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-            float[] all = model.embed(strings(texts, count, "texts"), dimension);
-            return floats(all, out, capacity);
+            if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
+            List<String> list = strings(texts, count, "texts");
+            // known before the model runs: a call that only sizes, or has too little room, costs
+            // nothing
+            int size = model.embedSize(count, dimension);
+            if (size > capacity) return size;
+            return floats(model.embed(list, dimension), out, capacity);
         } catch (Throwable t) {
             return Errors.set(t);
         }

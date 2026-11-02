@@ -129,6 +129,13 @@ def _check_ptr(ptr):
     return ptr
 
 
+def _check_text(text: bytes) -> bytes:
+    """A string the library returns: never NULL, "" when the call failed."""
+    if not text:
+        raise _error()
+    return text
+
+
 def _utf8(value: str, what: str) -> bytes:
     """A C string: one with a NUL inside is refused, where C would silently end it there."""
     if "\0" in value:
@@ -956,7 +963,7 @@ def load(ref: str | os.PathLike, *, companions: dict[str, str] | None = None,
     finally:
         if previous is not None:
             signal.signal(signal.SIGINT, previous)
-    info = json.loads(_check_ptr(N.lib.jinfer_model_info(ptr)).decode())
+    info = json.loads(_check_text(N.lib.jinfer_model_info(ptr)).decode())
     return _KINDS.get(info["kind"], Model)(ptr, ref, info)
 
 

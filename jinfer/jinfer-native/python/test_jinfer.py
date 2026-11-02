@@ -71,6 +71,18 @@ ok(4 <= len(ids) <= 12 and all(isinstance(i, int) for i in ids), f"tokenizer.enc
 ok(tk.decode(ids) == "Hello world, how are you?" and tk.vocabulary_size > 1000 and tk.id(tk.token(ids[0])) == ids[0], "the model's tokenizer is a toknroll.Tokenizer")
 ok(type(tk).__module__ == "toknroll" and repr(tk).startswith("Tokenizer("), f"{type(tk).__module__}.{type(tk).__name__}")
 
+# the C functions themselves: a size is answered, a bad one refused, a string is never NULL
+def last_code():
+    code = ctypes.c_int32(); N.lib.jinfer_last_error(ctypes.byref(code)); return code.value
+state = N.lib.jinfer_state_new(m._h, 64)
+ok(state and N.lib.jinfer_state_ingest(state, (ctypes.c_int32 * 2)(*ids[:2]), 2) == 2, "a state ingests")
+ok(N.lib.jinfer_state_logits(state, None, 0) == tk.vocabulary_size, "capacity 0 sizes the logits")
+ok(N.lib.jinfer_state_logits(state, None, -1) == N.EINVAL and N.lib.jinfer_state_embedding(state, None, -1) in (N.EINVAL, N.EUNSUPPORTED), "a negative capacity is refused")
+N.lib.jinfer_state_free(state)
+ok(N.lib.jinfer_stream_text(m._h) == b"" and last_code() == N.EINVAL, "stream_text on a handle that is not a stream: \"\", the error in last_error")
+ok(N.lib.jinfer_stream_result(None) == b"" and last_code() == N.EINVAL, "stream_result on NULL: \"\"")
+ok(N.lib.jinfer_model_info(None) == b"" and last_code() == N.EINVAL, "model_info on NULL: \"\"")
+
 r = m.chat("What is the capital of France? Answer in one word.", max_tokens=8, temperature=0)
 ok("Paris" in r.text and not hasattr(r, "response") and not hasattr(r, "message"), f"answer: {r.text!r}")
 ok(r.finish_reason in ("stop", "length") and r.tool_calls == [] and r.reasoning is None, "reply fields")
@@ -368,6 +380,19 @@ one = e.embed("AI on the JVM")
 # from the same row inside a batch by ~1e-4 in cosine)
 ok(len(one) == 1 and len(one[0]) == e.dimension and abs(cos(list(map(float, one[0])), rows[0]) - 1) < 1e-3, "one string is a batch of one")
 ok(len(e.embed(["word " * 4000] * 3)) == 3, "texts of thousands of tokens embed whole")
+# the size is count x dimension, answered before the model runs: a text the model would refuse
+# does not fail the sizing call, and a size past int32 is refused rather than wrapped
+with jinfer.load(EMB, context_capacity=600) as short:
+    too_long = jinfer._strings(["word " * 2000, "a"], "texts")
+    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, None, 0) == 2 * short.dimension and last_code() == N.OK, "sizing runs no model")
+    rc = N.lib.jinfer_embed(short._h, too_long, 2, 0, None, 2 * short.dimension - 1)
+    ok(rc == 2 * short.dimension, "too little room: the size, no model run")
+    out = (ctypes.c_float * (2 * short.dimension))()
+    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, out, len(out)) == N.EINVAL and b"600" in N.lib.jinfer_last_error(None), "the run refuses the text")
+n = 2**31 // e.dimension + 1
+many = (ctypes.c_char_p * n)(*([b"a"] * n))
+ok(N.lib.jinfer_embed(e._h, many, n, 0, None, 0) == N.EINVAL and b"2^31" in N.lib.jinfer_last_error(None), "a size past int32 is refused")
+del many
 try:
     e.embed("a", dimension=-1); ok(False, "a negative dimension must be refused")
 except jinfer.InvalidArgument as err:
