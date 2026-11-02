@@ -392,7 +392,7 @@ final class TiktokenSplitter implements Splitter {
         // and the four-byte ones twice.
         byte[] utf8 = utf8(text, startInclusive, endExclusive);
         int length = utf8.length;
-        int[] ends = new int[BATCH];
+        int[] ends = new int[Math.min(BATCH, Math.max(1, length))];
         int cursor = 0;
         int charCursor = startInclusive;
         while (cursor < length) {

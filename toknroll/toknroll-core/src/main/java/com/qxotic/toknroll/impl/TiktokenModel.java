@@ -121,8 +121,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
-        byte[] utf8 = TiktokenSplitter.utf8(text, 0, text.length());
-        encodeWord(utf8, 0, utf8.length, out);
+        encodeInto(text, 0, text.length(), out);
     }
 
     // ---- behind a scanner ----
@@ -186,7 +185,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /** The reference: the scanner's pieces, word by word. */
     private void encode(
             byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
-        int[] ends = new int[TiktokenSplitter.BATCH];
+        int[] ends = new int[Math.min(TiktokenSplitter.BATCH, Math.max(1, end - start))];
         int cursor = start;
         while (cursor < end) {
             int n = splitter.split(text, cursor, end, ends);
@@ -487,14 +486,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, startInclusive, endExclusive);
         encodeWord(utf8, 0, utf8.length, out);
-    }
-
-    @Override
-    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-        IntSequence.Builder out =
-                IntSequence.newBuilder(estimateInitialTokenCapacity(endExclusive - startInclusive));
-        encodeInto(text, startInclusive, endExclusive, out);
-        return out.size();
     }
 
     @Override
