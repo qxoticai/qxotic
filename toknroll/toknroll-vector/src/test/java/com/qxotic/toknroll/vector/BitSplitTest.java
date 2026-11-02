@@ -116,10 +116,18 @@ class BitSplitTest {
     private static final String R50K =
             CONTRACTION + "| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 
+    /**
+     * R50K_NUMBERS's stages, {@code \p{N}} then r50k, as one regex: a number alone, and a blank run
+     * before one whole, the number ending the text before it.
+     */
+    private static final String R50K_NUMBERS =
+            CONTRACTION + "| ?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+|\\s+(?=\\p{N})|\\s+(?!\\S)|\\s+";
+
     static Stream<Object[]> rules() {
         String suffix = "(?i:" + CONTRACTION + ")?";
         return Stream.of(
                 new Object[] {TiktokenEngine.R50K, R50K},
+                new Object[] {TiktokenEngine.R50K_NUMBERS, R50K_NUMBERS},
                 new Object[] {
                     TiktokenEngine.O200K,
                     String.format(CASED, suffix, suffix) + "|\\p{N}{1,3}" + O200K_REST
@@ -198,6 +206,39 @@ class BitSplitTest {
             }
             check(TiktokenEngine.CL100K, pattern, bytes, bytes.length - 16, 1024);
         }
+    }
+
+    /** The one regex above splits as its two stages chained, the reference it stands in for. */
+    @Test
+    void r50kNumbersIsItsStages() {
+        Pattern one = Pattern.compile(R50K_NUMBERS, Pattern.UNICODE_CHARACTER_CLASS);
+        Pattern digits = Pattern.compile("\\p{N}", Pattern.UNICODE_CHARACTER_CLASS);
+        Pattern r50k = Pattern.compile(R50K, Pattern.UNICODE_CHARACTER_CLASS);
+        Random random = new Random(0x50);
+        for (int i = 0; i < 50_000; i++) {
+            StringBuilder text = new StringBuilder();
+            for (int k = random.nextInt(16); k > 0; k--) {
+                text.append(PIECES[random.nextInt(PIECES.length)]);
+            }
+            String t = text.toString();
+            List<String> staged = new ArrayList<>();
+            for (String piece : pieces(digits, t, true)) staged.addAll(pieces(r50k, piece, false));
+            assertEquals(staged, pieces(one, t, false), t);
+        }
+    }
+
+    /** A regex's matches, or with {@code gaps} the text between them too, in order. */
+    private static List<String> pieces(Pattern pattern, String text, boolean gaps) {
+        List<String> out = new ArrayList<>();
+        Matcher m = pattern.matcher(text);
+        int last = 0;
+        while (m.find()) {
+            if (gaps && m.start() > last) out.add(text.substring(last, m.start()));
+            out.add(m.group());
+            last = m.end();
+        }
+        if (gaps && last < text.length()) out.add(text.substring(last));
+        return out;
     }
 
     private static void check(int rules, Pattern pattern, String text, int batch) {

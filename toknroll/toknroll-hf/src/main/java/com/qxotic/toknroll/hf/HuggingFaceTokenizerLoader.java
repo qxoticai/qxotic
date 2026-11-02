@@ -948,6 +948,15 @@ public final class HuggingFaceTokenizerLoader {
             if ("Removed".equals(behavior) && invert) {
                 return ImplAccessor.createRegexSplitter(pattern, false);
             }
+            // Laguna's newline stage, each run merged with the text after it: as java.util.regex
+            // matches it, it recurses per newline and overflows the stack on a long run. The same
+            // pieces as one possessive match each, followed by Qwen2's regex, take the scanner.
+            if ("MergedWithNext".equals(behavior)
+                    && !invert
+                    && "(?:\\r?\\n)+(?!\\r?\\n)".equals(regexPattern)) {
+                return ImplAccessor.createRegexSplitter(
+                        Pattern.compile(ImplAccessor.LAGUNA_NEWLINES, UNICODE_REGEX_FLAGS), true);
+            }
             return (text, startInclusive, endExclusive, consumer) -> {
                 CharSequence source = text.subSequence(startInclusive, endExclusive);
                 for (Span span : splitByPatternWithBehavior(source, pattern, behavior, invert)) {

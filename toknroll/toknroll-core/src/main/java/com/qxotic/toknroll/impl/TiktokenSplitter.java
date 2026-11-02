@@ -59,7 +59,17 @@ final class TiktokenSplitter implements Splitter {
     private final int otherTail;
     private final boolean newlineRun; // '\s*[\r\n]+' before the whitespace rules
 
+    // Cuts a first stage makes before this scanner runs, each piece as if the text ended there:
+    // '\p{N}{1,3}' and '\p{N}' cut around numbers, Laguna's newline stage before a newline run.
+    static final int NO_CUTS = 0;
+    static final int NUMBER_RUNS = 1; // around each run of numbers
+    static final int EACH_NUMBER = 2; // around each number
+    static final int NEWLINE_RUNS = 3; // before each '(?:\r?\n)+'
+
     private final int rules; // the TiktokenEngine rule set this scanner is, or -1
+    private final int cuts;
+    private final TiktokenSplitter base; // the same scanner without cuts: what an engine runs
+    private final String pattern; // the regex this scanner stands for, or null
 
     private TiktokenSplitter(
             int contraction,
@@ -77,6 +87,38 @@ final class TiktokenSplitter implements Splitter {
         this.otherTail = otherTail;
         this.newlineRun = newlineRun;
         this.rules = engineRules();
+        this.cuts = NO_CUTS;
+        this.base = this;
+        this.pattern = null;
+    }
+
+    private TiktokenSplitter(TiktokenSplitter base, int cuts, String pattern) {
+        this.contraction = base.contraction;
+        this.word = base.word;
+        this.wordSuffix = base.wordSuffix;
+        this.numbers = base.numbers;
+        this.otherExcludesMarks = base.otherExcludesMarks;
+        this.otherTail = base.otherTail;
+        this.newlineRun = base.newlineRun;
+        // the engine has one rule set with cuts, r50k's around numbers; for the rest it runs the
+        // scanner without them on each piece of the first stage
+        this.rules =
+                cuts == EACH_NUMBER && base.rules == TiktokenEngine.R50K
+                        ? TiktokenEngine.R50K_NUMBERS
+                        : base.rules;
+        this.cuts = cuts;
+        this.base = cuts == NO_CUTS ? this : base;
+        this.pattern = pattern;
+    }
+
+    /** Whether core cuts the text before an engine runs: a first stage the engine's rules lack. */
+    boolean coreCuts() {
+        return cuts != NO_CUTS && rules != TiktokenEngine.R50K_NUMBERS;
+    }
+
+    /** This scanner without its cuts. */
+    TiktokenSplitter base() {
+        return base;
     }
 
     /** Which of the {@link TiktokenEngine} rule sets this scanner is, or -1. */
@@ -148,8 +190,24 @@ final class TiktokenSplitter implements Splitter {
         return sample.toString();
     }
 
+    /**
+     * Laguna's first stage: a newline run, CRLF included, starts a piece that runs to the next, and
+     * the text before the first run is a piece. Possessive, so java.util.regex does not recurse per
+     * character.
+     */
+    static final String LAGUNA_NEWLINES =
+            "(?:\\r?\\n)++[^\\r\\n]*+(?:\\r(?!\\n)[^\\r\\n]*+)*+"
+                    + "|(?=[^\\n])(?!\\r\\n)[^\\r\\n]*+(?:\\r(?!\\n)[^\\r\\n]*+)*+";
+
     /** The regex strings the loaders compile, each with the scanner that splits like it. */
     private static final Map<String, TiktokenSplitter> KNOWN = new HashMap<>();
+
+    /**
+     * Two-stage splits, first stage and second joined by a newline (which no regex here holds
+     * literally), each with the scanner that splits like both: the second stage's scanner, cut
+     * where the first stage cuts.
+     */
+    private static final Map<String, TiktokenSplitter> KNOWN_STAGES = new HashMap<>();
 
     static {
         String contraction = "'s|'t|'re|'ve|'m|'ll|'d";
@@ -160,11 +218,16 @@ final class TiktokenSplitter implements Splitter {
         String lower = "[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]";
         String cased = prefix + upper + "*" + lower + "+%s|" + prefix + upper + "+" + lower + "*%s";
         String tail = "|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+        // the cl100k family with '[sS]' contractions, its number rule left open
+        String asciiBody = asciiBoth + "|" + prefix + "\\p{L}+|%s|" + other + "[\\r\\n]*" + tail;
 
         // r50k: tiktoken and the ByteLevel pre-tokenizer, then the tiktoken fixture's spelling
+        TiktokenSplitter r50k =
+                new TiktokenSplitter(LOWER, SPACE_LETTERS, false, SPACE_RUN, false, NO_TAIL, false);
+        String gpt2 = contraction + "| ?\\p{L}+| ?\\p{N}+|" + other + "|\\s+(?!\\S)|\\s+";
         known(
-                new TiktokenSplitter(LOWER, SPACE_LETTERS, false, SPACE_RUN, false, NO_TAIL, false),
-                contraction + "| ?\\p{L}+| ?\\p{N}+|" + other + "|\\s+(?!\\S)|\\s+",
+                r50k,
+                gpt2,
                 "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                         + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s");
         // cl100k: tokenizer.json (Llama 3, SmolLM3, Granite, phi-4), then llama.cpp's spelling
@@ -179,10 +242,10 @@ final class TiktokenSplitter implements Splitter {
                         + other
                         + "[\\r\\n]*"
                         + tail);
-        known(
+        TiktokenSplitter cl100kAscii =
                 new TiktokenSplitter(
-                        ASCII_BOTH, PREFIX_LETTERS, false, UP_TO_THREE, false, NEWLINES, true),
-                asciiBoth + "|" + prefix + "\\p{L}+|\\p{N}{1,3}|" + other + "[\\r\\n]*" + tail);
+                        ASCII_BOTH, PREFIX_LETTERS, false, UP_TO_THREE, false, NEWLINES, true);
+        known(cl100kAscii, String.format(asciiBody, "\\p{N}{1,3}"));
         // o200k: tokenizer.json (gpt-4o, gpt-oss), llama.cpp and the fixture spell it the same
         known(
                 new TiktokenSplitter(
@@ -198,8 +261,9 @@ final class TiktokenSplitter implements Splitter {
                         NO_CONTRACTION, CASED, false, ONE, false, NEWLINES_SLASHES, true),
                 String.format(cased, "", "") + "|\\p{N}|" + other + "[\\r\\n/]*" + tail);
         // Qwen2 and friends: cl100k with one digit at a time, tokenizer.json and llama.cpp
-        known(
-                new TiktokenSplitter(FOLD, PREFIX_LETTERS, false, ONE, false, NEWLINES, true),
+        TiktokenSplitter qwen2Fold =
+                new TiktokenSplitter(FOLD, PREFIX_LETTERS, false, ONE, false, NEWLINES, true);
+        String qwen2Folded =
                 "(?i:"
                         + contraction
                         + ")|"
@@ -207,10 +271,21 @@ final class TiktokenSplitter implements Splitter {
                         + "\\p{L}+|\\p{N}|"
                         + other
                         + "[\\r\\n]*"
-                        + tail);
+                        + tail;
+        known(qwen2Fold, qwen2Folded);
+        TiktokenSplitter qwen2Ascii =
+                new TiktokenSplitter(ASCII_BOTH, PREFIX_LETTERS, false, ONE, false, NEWLINES, true);
+        String qwen2 = String.format(asciiBody, "\\p{N}");
         known(
-                new TiktokenSplitter(ASCII_BOTH, PREFIX_LETTERS, false, ONE, false, NEWLINES, true),
-                asciiBoth + "|" + prefix + "\\p{L}+|\\p{N}|" + other + "[\\r\\n]*" + tail);
+                qwen2Ascii,
+                qwen2,
+                // Bailing (Ling, Ring): the same pieces, spelled apart. '\s*[\r\n]' ends where
+                // '\s*[\r\n]+' does, at the last newline of the blank run.
+                "'(?:[sSdDmMtT]|[lL][lL]|[vV][eE]|[rR][eE])|"
+                        + prefix
+                        + "\\p{L}+|\\p{N}|"
+                        + other
+                        + "[\\r\\n]*|\\s*[\\r\\n]|\\s+(?!\\S)|\\s+");
         // Qwen3.5: marks belong to words
         known(
                 new TiktokenSplitter(FOLD, PREFIX_LETTERS_MARKS, false, ONE, true, NEWLINES, true),
@@ -221,12 +296,59 @@ final class TiktokenSplitter implements Splitter {
                         + "[\\p{L}\\p{M}]+|\\p{N}|"
                         + " ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*"
                         + tail);
+
+        // Two stages one scanner splits in a pass: the second stage's, cut where the first cuts,
+        // each piece as if the text ended there.
+        // SmolLM, Command R, EXAONE, Mellum 2: every number apart, then GPT-2
+        staged(r50k, EACH_NUMBER, "\\p{N}", gpt2);
+        // MiniCPM5: runs of up to three numbers, then cl100k with whole runs; a piece of the first
+        // stage holds three at most, so cl100k's own '\p{N}{1,3}' cuts it alike
+        staged(cl100kAscii, NUMBER_RUNS, "\\p{N}{1,3}", String.format(asciiBody, "\\p{N}+"));
+        // Laguna: a newline run, CRLF included, starts a piece that runs to the next; then Qwen2
+        staged(qwen2Ascii, NEWLINE_RUNS, LAGUNA_NEWLINES, qwen2);
+        // Laguna's tokenizer.json: the same, its contractions case-folded as Hugging Face folds
+        // them
+        staged(qwen2Fold, NEWLINE_RUNS, LAGUNA_NEWLINES, qwen2Folded);
     }
 
     private static void known(TiktokenSplitter splitter, String... regexes) {
         for (String regex : regexes) {
-            KNOWN.put(regex, splitter);
+            KNOWN.put(regex, new TiktokenSplitter(splitter, NO_CUTS, regex));
         }
+    }
+
+    private static void staged(TiktokenSplitter scanner, int cuts, String first, String second) {
+        KNOWN_STAGES.put(first + "\n" + second, new TiktokenSplitter(scanner, cuts, null));
+    }
+
+    /**
+     * The scanner for two known stages, each a regex with Unicode character classes (or the scanner
+     * one compiles to), the first keeping the text between its matches; else null.
+     */
+    static Splitter forStages(Splitter... stages) {
+        boolean keepsGaps =
+                stages.length == 2
+                        && stages[0] instanceof RegexSplitter
+                        && ((RegexSplitter) stages[0]).emitsGaps();
+        // a stage with no regex is "null" in the key, which no entry has
+        return keepsGaps ? KNOWN_STAGES.get(regex(stages[0]) + "\n" + regex(stages[1])) : null;
+    }
+
+    private static String regex(Splitter stage) {
+        if (stage instanceof TiktokenSplitter) {
+            return ((TiktokenSplitter) stage).pattern;
+        }
+        if (stage instanceof RegexSplitter) {
+            Pattern pattern = ((RegexSplitter) stage).pattern();
+            int required = Pattern.UNICODE_CHARACTER_CLASS;
+            return (pattern.flags() & required) == required ? pattern.pattern() : null;
+        }
+        return null;
+    }
+
+    /** First stage, newline, second stage: each pair {@link #forStages} knows. */
+    static Iterable<String> knownStages() {
+        return KNOWN_STAGES.keySet();
     }
 
     /** The scanner for a known regex, compiled with Unicode character classes; else null. */
@@ -300,10 +422,82 @@ final class TiktokenSplitter implements Splitter {
         int n = 0;
         int i = start;
         while (i < end && n < ends.length) {
-            i = match(text, i, end);
-            ends[n++] = i;
+            int stop = cuts == NO_CUTS ? end : cut(text, i, end);
+            while (i < stop && n < ends.length) {
+                i = match(text, i, stop);
+                ends[n++] = i;
+            }
         }
         return n;
+    }
+
+    /**
+     * The end of the piece of the first stage that holds {@code i}: the scanner sees it as the
+     * whole text. Reads no further than {@code end}, so the text needs no padding.
+     */
+    int cut(byte[] text, int i, int end) {
+        if (cuts == NEWLINE_RUNS) {
+            int j = i;
+            while (j < end) { // the newline run this piece may start with
+                if (text[j] == '\n') {
+                    j++;
+                } else if (text[j] == '\r' && j + 1 < end && text[j + 1] == '\n') {
+                    j += 2;
+                } else {
+                    break;
+                }
+            }
+            while (true) { // then up to the next run
+                j = nextNewline(text, j, end);
+                if (j == end || text[j] == '\n' || (j + 1 < end && text[j + 1] == '\n')) {
+                    return j;
+                }
+                j++; // a lone '\r' is text
+            }
+        }
+        int at = at(text, i, end);
+        if ((CharClasses.of(cp(at)) & CharClasses.NUMBER) != 0) {
+            return cuts == EACH_NUMBER ? i + len(at) : run(text, i, end, CharClasses.NUMBER);
+        }
+        return nextNumber(text, i + len(at), end);
+    }
+
+    private static int nextNumber(byte[] text, int j, int end) {
+        while (true) {
+            if (end - j >= 8) {
+                // Eight ASCII bytes at a time; a digit or a non-ASCII byte stops the scan.
+                long v = (long) LONGS.get(text, j);
+                long stop = (v | ascii(v, CharClasses.NUMBER)) & HIGH_BITS;
+                if (stop == 0) {
+                    j += 8;
+                    continue;
+                }
+                j += Long.numberOfTrailingZeros(stop) >>> 3;
+            } else if (j >= end) {
+                return end;
+            }
+            int c = at(text, j, end);
+            if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) != 0) {
+                return j;
+            }
+            j += len(c);
+        }
+    }
+
+    /** The first '\r' or '\n' at or after {@code j}, or {@code end}. */
+    private static int nextNewline(byte[] text, int j, int end) {
+        while (end - j >= 8) {
+            long v = (long) LONGS.get(text, j);
+            long stop = ascii(v, CharClasses.NEWLINE) & ~v & HIGH_BITS;
+            if (stop != 0) {
+                return j + (Long.numberOfTrailingZeros(stop) >>> 3);
+            }
+            j += 8;
+        }
+        while (j < end && text[j] != '\n' && text[j] != '\r') {
+            j++;
+        }
+        return j;
     }
 
     /**

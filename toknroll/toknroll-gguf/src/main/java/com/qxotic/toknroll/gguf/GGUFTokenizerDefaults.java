@@ -3,6 +3,7 @@ package com.qxotic.toknroll.gguf;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -65,10 +66,9 @@ final class GGUFTokenizerDefaults {
 
     // Laguna's first stage (tokenizer.json: Split "(?:\r?\n)+(?!\r?\n)" MergedWithNext): a
     // newline run, CRLF included, travels with the text that follows it, so "\r\n" reaches the
-    // second stage whole and becomes one token. A lone "\r" is ordinary text.
-    private static final String LAGUNA_NEWLINES_PATTERN =
-            "(?:\\r?\\n)+(?:[^\\r\\n]|\\r(?!\\n))*|(?:[^\\r\\n]|\\r(?!\\n))+";
-
+    // second stage whole and becomes one token. A lone "\r" is ordinary text. Written as
+    // "(?:\r?\n)+(?:[^\r\n]|\r(?!\n))*|(?:[^\r\n]|\r(?!\n))+" it recursed once per char in
+    // java.util.regex, a stack overflow on a long line; unrolled and possessive, it does not.
     // llama.cpp's kimi-k2 custom splitter excludes combining marks from letter runs, despite the
     // historical regex comment.
     static final String KIMI_K2_PATTERN =
@@ -181,7 +181,7 @@ final class GGUFTokenizerDefaults {
         registerSequencePreTokenizers(
                 builder, new String[] {"\\p{N}{1,3}", MINICPM5_MAIN}, "minicpm5");
         registerSequencePreTokenizers(
-                builder, new String[] {LAGUNA_NEWLINES_PATTERN, QWEN2_PATTERN}, "laguna");
+                builder, new String[] {ImplAccessor.LAGUNA_NEWLINES, QWEN2_PATTERN}, "laguna");
 
         // SPM models with "default" pre-tokenizer need identity splitter + metaspace normalizer.
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());

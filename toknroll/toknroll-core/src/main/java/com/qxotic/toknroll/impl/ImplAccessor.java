@@ -17,6 +17,12 @@ public final class ImplAccessor {
 
     private static final IntSequence EMPTY_SEQUENCE = wrap(new int[0]);
 
+    /**
+     * Laguna's newline stage as a regex of pieces: a newline run, CRLF included, starts a piece
+     * that runs to the next. Followed by Qwen2's regex it takes the staged scanner.
+     */
+    public static final String LAGUNA_NEWLINES = TiktokenSplitter.LAGUNA_NEWLINES;
+
     private ImplAccessor() {}
 
     public static IntSequence empty() {
@@ -147,6 +153,11 @@ public final class ImplAccessor {
     public static Splitter createRegexSplitter(Pattern pattern, boolean emitGaps) {
         Splitter scanner = TiktokenSplitter.forPattern(pattern);
         return scanner != null ? scanner : RegexSplitter.create(pattern, emitGaps);
+    }
+
+    /** The scanner for stages it splits alike, or null: see {@link Splitter#sequence}. */
+    public static Splitter createStagedSplitter(Splitter[] stages) {
+        return TiktokenSplitter.forStages(stages);
     }
 
     public static Specials specialsNone() {

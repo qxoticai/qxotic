@@ -17,10 +17,11 @@ import jdk.incubator.vector.VectorSpecies;
  * letter run's case, a whitespace run's last newline) are answered by looking ahead by hand, which
  * is rare. The result is a bitmap of piece starts, popped one trailing-zero count at a time.
  *
- * <p>Three grammars: r50k (GPT-2's byte level regex), the cl100k family (Llama 3, Qwen2) and the
- * o200k family (gpt-4o, gpt-oss, Tekken). After Hugging Face's {@code bitcannon}, rule for rule;
- * the doc comments there say why each rule is stated the way it is. Exactness is proven as the
- * scalar scanner's is: against the regex, over a fuzz corpus and all of enwik8.
+ * <p>Three grammars: r50k (GPT-2's byte level regex, alone or after a stage that cuts every number
+ * apart), the cl100k family (Llama 3, Qwen2) and the o200k family (gpt-4o, gpt-oss, Tekken). After
+ * Hugging Face's {@code bitcannon}, rule for rule; the doc comments there say why each rule is
+ * stated the way it is. Exactness is proven as the scalar scanner's is: against the regex, over a
+ * fuzz corpus and all of enwik8.
  */
 final class BitSplit {
     /** A block is 64 bytes, read as one, two or four of these vectors. */
@@ -46,7 +47,7 @@ final class BitSplit {
 
     /** The engine for one of the rule sets of {@link TiktokenEngine}, or null. */
     static BitSplit forRules(int rules) {
-        return rules >= TiktokenEngine.CL100K && rules <= TiktokenEngine.TEKKEN
+        return rules >= TiktokenEngine.CL100K && rules <= TiktokenEngine.R50K_NUMBERS
                 ? new BitSplit(rules)
                 : null;
     }
@@ -616,18 +617,23 @@ final class BitSplit {
      * character.
      */
     private static final class R50k extends Run {
-        R50k(byte[] text, int start, int end, Registers r) {
+        private final boolean numbers; // R50K_NUMBERS: a stage before cut around every number
+
+        R50k(byte[] text, int start, int end, Registers r, boolean numbers) {
             super(text, start, end, r);
+            this.numbers = numbers;
         }
 
         @Override
         long rule() {
             // `\s+(?!\S)` hands the run's last blank to what follows, as a ` ?` prefix if it is a
-            // space, else as a piece of its own: either way it opens one, unless it ends the text
-            long steal = toLead(cur.ws & lb & ~eof & ~fw.ws, cur.cont, pv.cont);
+            // space, else as a piece of its own: either way it opens one, unless it ends the text.
+            // With the numbers cut apart, a number ends the text before it, and takes no blank.
+            long ends = eof | (numbers ? (cur.n >>> 1) | (nx.n << 63) : 0);
+            long steal = toLead(cur.ws & lb & ~ends & ~fw.ws, cur.cont, pv.cont);
             long st =
                     (cur.letters & ~bk.letters & ~bk.sp)
-                            | (cur.n & ~bk.n & ~bk.sp)
+                            | (numbers ? cur.n : cur.n & ~bk.n & ~bk.sp)
                             | (cur.other & ~bk.other & ~bk.sp)
                             | (cur.ws & ~bk.ws)
                             | steal;
@@ -963,7 +969,9 @@ final class BitSplit {
             case TiktokenEngine.QWEN2_ASCII:
                 return new Cl100k(text, start, end, r, 1, ASCII_BOTH);
             case TiktokenEngine.R50K:
-                return new R50k(text, start, end, r);
+                return new R50k(text, start, end, r, false);
+            case TiktokenEngine.R50K_NUMBERS:
+                return new R50k(text, start, end, r, true);
             case TiktokenEngine.O200K:
                 return new O200k(text, start, end, r, true, 3);
             case TiktokenEngine.TEKKEN:

@@ -15,6 +15,14 @@ final class RegexSplitter implements Splitter {
         this.emitGaps = emitGaps;
     }
 
+    Pattern pattern() {
+        return pattern;
+    }
+
+    boolean emitsGaps() {
+        return emitGaps;
+    }
+
     public static RegexSplitter create(Pattern pattern) {
         return create(pattern, true);
     }
