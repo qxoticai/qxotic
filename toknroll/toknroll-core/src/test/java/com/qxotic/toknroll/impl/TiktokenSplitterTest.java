@@ -104,6 +104,29 @@ class TiktokenSplitterTest {
         Pattern pattern = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS);
         assertTrue(Splitter.regex(pattern) instanceof TiktokenSplitter, regex);
         assertFalse(Splitter.regex(Pattern.compile(regex)) instanceof TiktokenSplitter, regex);
+        int unicode = Pattern.UNICODE_CHARACTER_CLASS;
+        assertTrue(
+                Splitter.regex(Pattern.compile(regex, unicode | Pattern.UNICODE_CASE))
+                        instanceof TiktokenSplitter,
+                regex);
+        // with another flag the regex is not the one the scanner stands for
+        for (int flag : new int[] {Pattern.CASE_INSENSITIVE, Pattern.MULTILINE, Pattern.DOTALL}) {
+            assertFalse(
+                    Splitter.regex(Pattern.compile(regex, unicode | flag))
+                            instanceof TiktokenSplitter,
+                    regex);
+        }
+    }
+
+    /** gpt2's contraction is lowercase: under CASE_INSENSITIVE "'S" is one too. */
+    @Test
+    void aCaseInsensitiveKnownRegexSplitsAsTheRegex() {
+        String gpt2 =
+                "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+|"
+                        + " ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
+        Pattern pattern =
+                Pattern.compile(gpt2, Pattern.UNICODE_CHARACTER_CLASS | Pattern.CASE_INSENSITIVE);
+        assertEquals(List.of("IT", "'S"), spans(Splitter.regex(pattern), "IT'S"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -133,6 +156,10 @@ class TiktokenSplitterTest {
         assertFalse(
                 Splitter.sequence(one, Splitter.regex(Pattern.compile(second.pattern())))
                         instanceof TiktokenSplitter);
+        int caseless = Pattern.UNICODE_CHARACTER_CLASS | Pattern.CASE_INSENSITIVE;
+        assertFalse(
+                Splitter.sequence(one, Splitter.regex(Pattern.compile(second.pattern(), caseless)))
+                        instanceof TiktokenSplitter);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -158,12 +185,8 @@ class TiktokenSplitterTest {
     @Test
     void lagunasFirstStageSplitsAsItsRecursiveOriginal() {
         String original = "(?:\\r?\\n)+(?:[^\\r\\n]|\\r(?!\\n))*|(?:[^\\r\\n]|\\r(?!\\n))+";
-        String unrolled = null;
-        for (String stages : TiktokenSplitter.knownStages()) {
-            if (stages.startsWith("(?:\\r?\\n)++")) unrolled = stages.split("\n")[0];
-        }
         RegexSplitter truth = RegexSplitter.create(unicode(original));
-        RegexSplitter fixed = RegexSplitter.create(unicode(unrolled));
+        RegexSplitter fixed = RegexSplitter.create(unicode(TiktokenSplitter.LAGUNA_NEWLINES));
         String[] parts = {
             "a", " ", "\n", "\r", "\r\n", "\n\n", "\r\r", "x\r", "\u00e9", "\uD83D\uDE00"
         };

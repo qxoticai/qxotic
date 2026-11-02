@@ -35,7 +35,7 @@ final class Utf8 {
      * without its partner becomes U+FFFD.
      */
     static byte[] encode(CharSequence text, int start, int end, int padding) {
-        char[] chunk = new char[CHUNK];
+        char[] chunk = new char[Math.min(CHUNK, end - start)];
         int length = 0;
         for (int p = start; p < end; ) {
             int n = take(text, p, end, chunk);

@@ -100,7 +100,7 @@ final class WordCache {
      * {@link #insert} may follow for it with the same probe. The text must have {@link
      * FastEncoder#PADDING} readable bytes past {@code end}.
      */
-    static int lookup(
+    private static int lookup(
             byte[] text,
             int start,
             int end,
@@ -153,12 +153,6 @@ final class WordCache {
         p.tag = (byte) tag;
         p.slot = empty != 0 ? home + (Long.numberOfTrailingZeros(empty) >>> 3) : -1;
         return 0;
-    }
-
-    /** {@link #lookup} in the probe's table. */
-    static int lookup(byte[] text, int start, int end, int[] ids, int at, Probe p) {
-        Table t = p.table;
-        return lookup(text, start, end, ids, at, t.mask, t.tags, t.slots, p);
     }
 
     /**

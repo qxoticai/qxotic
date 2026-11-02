@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
  *
  * <p>One {@link WordCache} serves every thread that encodes with this encoder, of at most {@code
  * -Dtoknroll.wordCache} megabytes ({@link #DEFAULT_CACHE_MB} by default, 0 for none), and goes when
- * the tokenizer does. Everything else a call needs it makes for itself.
+ * the tokenizer does. A call's working memory, its {@link Scratch}, is kept for a later call unless
+ * a giant word grew it.
  */
 final class FastEncoder implements TiktokenEngine.Encoder {
 
@@ -51,6 +52,14 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     private final int[] singleByte;
     private final ExactLookup exact;
     private final WordCache cache = CACHE_SLOTS > 0 ? new WordCache(CACHE_SLOTS) : null;
+
+    /**
+     * Scratches kept between calls, at least two slots per processor: a power of two, sized when
+     * the encoder is made.
+     */
+    private final AtomicReferenceArray<Scratch> spares =
+            new AtomicReferenceArray<>(
+                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1));
 
     FastEncoder(TiktokenTables model, BitSplit split) {
         this.split = split;
@@ -120,17 +129,12 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         Scratch s = spares.getAndSet(slot, null);
         if (s == null) {
             s = new Scratch(cache);
-        } else if (s.probe != null) {
-            cache.refresh(s.probe);
         }
         encode(utf8, start, end, out, s);
-        spares.set(slot, s);
+        if (s.kept()) {
+            spares.set(slot, s);
+        }
     }
-
-    /** Spare scratches, two slots per processor: a power of two, sized when the encoder is made. */
-    private final AtomicReferenceArray<Scratch> spares =
-            new AtomicReferenceArray<>(
-                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1));
 
     private static int cacheSlots(int megabytes) {
         long bytes = Math.max(0, megabytes) * (1L << 20);
@@ -144,7 +148,6 @@ final class FastEncoder implements TiktokenEngine.Encoder {
      */
     private void encode(byte[] text, int start, int end, IdBuffer out, Scratch s) {
         int[] ends = s.pieceEnds;
-        WordCache cache = s.probe != null ? this.cache : null;
         int cursor = start;
         while (cursor < end) {
             int n = split.split(text, cursor, end, ends, s.registers);
@@ -250,7 +253,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     }
 
     /** The merge loop for a word of {@code text[start, end)}, by its length. */
-    private void merge(byte[] text, int start, int end, IdBuffer out, Scratch s) {
+    void merge(byte[] text, int start, int end, IdBuffer out, Scratch s) {
         int length = end - start;
         if (length <= 3) {
             mergeTiny(text, start, length, out);
@@ -376,6 +379,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         }
         next[n - 1] = NO_INDEX;
 
+        s.stamp = 0; // every edge's stamp is 0 now, none live
         s.heapSize = 0;
         for (int left = 0; left + 1 < n; left++) {
             refreshEdge(left, s);
@@ -518,7 +522,10 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     }
 
     /** What one call works with: the piece ends, its view of the cache, the merge arrays. */
-    private static final class Scratch {
+    static final class Scratch {
+        /** The most elements an array of a scratch kept in {@link FastEncoder#spares} may have. */
+        private static final int KEPT = 1 << 16;
+
         final int[] pieceEnds = new int[BATCH];
         final BitSplit.Registers registers = new BitSplit.Registers();
         final WordCache.Probe probe;
@@ -532,7 +539,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         int[] edgeRight = new int[0];
         int[] edgeRank = new int[0];
         int[] edgeMergeId = new int[0];
-        private int stamp = 1;
+        int stamp; // the last edge stamp handed out
         int[] heapRank = new int[0];
         long[] heapNode = new long[0];
         int heapSize;
@@ -568,7 +575,6 @@ final class FastEncoder implements TiktokenEngine.Encoder {
                 edgeRank = new int[capacity];
                 edgeMergeId = new int[capacity];
             }
-            ensureHeap(Math.max(8, n * 4));
         }
 
         void ensureHeap(int needed) {
@@ -579,13 +585,14 @@ final class FastEncoder implements TiktokenEngine.Encoder {
             }
         }
 
-        /** A stamp no live edge has; on wrapping, every edge is cleared first. */
+        /** A stamp no live edge has: from 1 per merge, at most three a byte, so it never wraps. */
         int nextStamp() {
-            if (++stamp == 0) {
-                Arrays.fill(edgeStamp, 0);
-                stamp = 1;
-            }
-            return stamp;
+            return ++stamp;
+        }
+
+        /** Whether it is small enough to keep for another call: a giant word's arrays are not. */
+        boolean kept() {
+            return tail.length <= KEPT && token.length <= KEPT && heapRank.length <= KEPT;
         }
 
         private static int grow(int current, int needed) {

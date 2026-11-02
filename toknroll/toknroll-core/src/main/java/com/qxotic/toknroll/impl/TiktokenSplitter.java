@@ -121,6 +121,9 @@ final class TiktokenSplitter implements Splitter {
         return base;
     }
 
+    /** How many rule sets {@link #rules} names: {@link TiktokenEngine}'s run from 0 to the last. */
+    static final int RULE_SETS = TiktokenEngine.R50K_NUMBERS + 1;
+
     /** Which of the {@link TiktokenEngine} rule sets this scanner is, or -1. */
     int rules() {
         return rules;
@@ -299,7 +302,7 @@ final class TiktokenSplitter implements Splitter {
 
         // Two stages one scanner splits in a pass: the second stage's, cut where the first cuts,
         // each piece as if the text ended there.
-        // SmolLM, Command R, EXAONE, Mellum 2: every number apart, then GPT-2
+        // SmolLM, Command R, EXAONE, Mellum 2: every digit apart, then GPT-2
         staged(r50k, EACH_NUMBER, "\\p{N}", gpt2);
         // MiniCPM5: runs of up to three numbers, then cl100k with whole runs; a piece of the first
         // stage holds three at most, so cl100k's own '\p{N}{1,3}' cuts it alike
@@ -322,8 +325,8 @@ final class TiktokenSplitter implements Splitter {
     }
 
     /**
-     * The scanner for two known stages, each a regex with Unicode character classes (or the scanner
-     * one compiles to), the first keeping the text between its matches; else null.
+     * The scanner for two known stages, each a regex with Unicode character classes only (or the
+     * scanner one compiles to), the first keeping the text between its matches; else null.
      */
     static Splitter forStages(Splitter... stages) {
         boolean keepsGaps =
@@ -340,10 +343,19 @@ final class TiktokenSplitter implements Splitter {
         }
         if (stage instanceof RegexSplitter) {
             Pattern pattern = ((RegexSplitter) stage).pattern();
-            int required = Pattern.UNICODE_CHARACTER_CLASS;
-            return (pattern.flags() & required) == required ? pattern.pattern() : null;
+            return unicodeOnly(pattern) ? pattern.pattern() : null;
         }
         return null;
+    }
+
+    /**
+     * Whether {@code pattern} is compiled with Unicode character classes and no flag that changes
+     * what it matches, as the scanner's regexes are.
+     */
+    private static boolean unicodeOnly(Pattern pattern) {
+        int flags = pattern.flags();
+        return (flags & Pattern.UNICODE_CHARACTER_CLASS) != 0
+                && (flags & ~(Pattern.UNICODE_CHARACTER_CLASS | Pattern.UNICODE_CASE)) == 0;
     }
 
     /** First stage, newline, second stage: each pair {@link #forStages} knows. */
@@ -351,13 +363,9 @@ final class TiktokenSplitter implements Splitter {
         return KNOWN_STAGES.keySet();
     }
 
-    /** The scanner for a known regex, compiled with Unicode character classes; else null. */
+    /** The scanner for a known regex, compiled with Unicode character classes only; else null. */
     static Splitter forPattern(Pattern pattern) {
-        int required = Pattern.UNICODE_CHARACTER_CLASS;
-        if ((pattern.flags() & required) != required) {
-            return null;
-        }
-        return KNOWN.get(pattern.pattern());
+        return unicodeOnly(pattern) ? KNOWN.get(pattern.pattern()) : null;
     }
 
     static Iterable<String> knownPatterns() {
@@ -368,11 +376,6 @@ final class TiktokenSplitter implements Splitter {
      * Piece ends per batch: the model consumes them from an array, not from a callback per word.
      */
     static final int BATCH = 1024;
-
-    /**
-     * Readable bytes {@link #utf8} leaves past the text, so a word can be loaded eight at a time.
-     */
-    static final int PADDING = 16;
 
     @Override
     public void splitAll(
@@ -391,8 +394,8 @@ final class TiktokenSplitter implements Splitter {
         // The scanner reads UTF-8; a piece's end comes back to chars by counting its code points,
         // and the four-byte ones twice.
         byte[] utf8 = utf8(text, startInclusive, endExclusive);
-        int length = utf8.length - PADDING;
-        int[] ends = new int[BATCH];
+        int length = utf8.length;
+        int[] ends = new int[Math.min(BATCH, Math.max(1, length))];
         int cursor = 0;
         int charCursor = startInclusive;
         while (cursor < length) {
@@ -415,8 +418,8 @@ final class TiktokenSplitter implements Splitter {
 
     /**
      * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
-     * until the array is full or the text ends. Returns how many. The text must have {@link
-     * #PADDING} readable bytes past {@code end}.
+     * until the array is full or the text ends. Returns how many. Reads no further than {@code
+     * end}.
      */
     int split(byte[] text, int start, int end, int[] ends) {
         int n = 0;
@@ -500,10 +503,7 @@ final class TiktokenSplitter implements Splitter {
         return j;
     }
 
-    /**
-     * The UTF-8 of {@code text[start, end)}, with {@link #PADDING} zero bytes after it; a surrogate
-     * without its partner becomes U+FFFD.
-     */
+    /** The UTF-8 of {@code text[start, end)}; a surrogate without its partner becomes U+FFFD. */
     static byte[] utf8(CharSequence text, int start, int end) {
         int length = 0;
         for (int i = start; i < end; i++) {
@@ -521,7 +521,7 @@ final class TiktokenSplitter implements Splitter {
                 length += 3;
             }
         }
-        byte[] out = new byte[length + PADDING];
+        byte[] out = new byte[length];
         int o = 0;
         for (int i = start; i < end; i++) {
             char c = text.charAt(i);

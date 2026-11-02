@@ -109,37 +109,33 @@ public final class ImplAccessor {
     }
 
     /**
-     * Encodes {@code text[start, end)} with a tiktoken model behind its hand-written scanner, which
-     * an engine may take over. False when the pair is anything else, and the caller takes the
-     * general path.
+     * Whether {@code model} behind {@code splitter} is a tiktoken model behind its hand-written
+     * scanner, which {@link #encodeScanned} encodes in one pass and an engine may take over.
      */
-    public static boolean encodeUtf8(
+    public static boolean isScanned(TokenizationModel model, Splitter splitter) {
+        return model instanceof TiktokenModel && splitter instanceof TiktokenSplitter;
+    }
+
+    /** Encodes {@code text[start, end)} as {@code splitter} cuts it; see {@link #isScanned}. */
+    public static void encodeScanned(
             TokenizationModel model,
             Splitter splitter,
             CharSequence text,
             int start,
             int end,
             IntSequence.Builder out) {
-        if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
-            return false;
-        }
         ((TiktokenModel) model).encode(text, start, end, (TiktokenSplitter) splitter, out);
-        return true;
     }
 
-    /** {@link #encodeUtf8} for text that is UTF-8 already. */
-    public static boolean encodeUtf8Bytes(
+    /** {@link #encodeScanned} for text that is UTF-8 already. */
+    public static void encodeScannedUtf8(
             TokenizationModel model,
             Splitter splitter,
             byte[] utf8,
             int start,
             int end,
             IntSequence.Builder out) {
-        if (!(model instanceof TiktokenModel) || !(splitter instanceof TiktokenSplitter)) {
-            return false;
-        }
         ((TiktokenModel) model).encodeUtf8(utf8, start, end, (TiktokenSplitter) splitter, out);
-        return true;
     }
 
     public static Splitter createRegexSplitter(Pattern pattern) {

@@ -164,9 +164,15 @@ public interface Tokenizer {
     }
 
     /**
-     * Encodes UTF-8 text and appends the token IDs to {@code out}: the same IDs {@link #encodeInto}
-     * gives the decoded text, without the decoding. Bytes that are not well-formed UTF-8 are taken
-     * as they are.
+     * Encodes UTF-8 text and appends the token IDs to {@code out}: for well-formed UTF-8, the same
+     * IDs {@link #encodeInto} gives the decoded text.
+     *
+     * <p>Bytes that are not well-formed UTF-8 depend on the implementation. This default decodes
+     * the range as {@link String#String(byte[], int, int, java.nio.charset.Charset)} does, each
+     * ill-formed sequence becoming U+FFFD, and encodes that text. A pipeline of a tiktoken model
+     * behind the splitter of a known tiktoken regex, with no normalizer, encodes the bytes without
+     * decoding them: every byte reaches the model as it is, and where the bytes are ill-formed the
+     * pieces may differ from those of the decoded text.
      *
      * @param utf8 the text, as UTF-8
      * @param startInclusive start of the range to encode (inclusive)
@@ -181,7 +187,7 @@ public interface Tokenizer {
                         utf8,
                         startInclusive,
                         endExclusive - startInclusive,
-                        java.nio.charset.StandardCharsets.UTF_8);
+                        StandardCharsets.UTF_8);
         encodeInto(text, 0, text.length(), out);
     }
 

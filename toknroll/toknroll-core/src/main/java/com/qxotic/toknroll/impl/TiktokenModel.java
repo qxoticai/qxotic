@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * Byte-level BPE as tiktoken defines it, the reference encoder of the family.
@@ -41,15 +43,16 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
     private final boolean ignoreMerges;
-    private final Map<String, Integer>
-            wholeTokens; // with ignoreMerges: a word's bytes -> its token
+    // with ignoreMerges: a word's bytes, as ISO-8859-1, to its token
+    private final Map<String, Integer> wholeTokens;
     private final Map<String, int[]> memo = new ConcurrentHashMap<>();
 
-    // The engine's encoder per rule set, resolved on first use. A benign race: every resolution
-    // has the same outcome, and one that sees the flag before the encoder encodes here meanwhile.
-    private final TiktokenEngine.Encoder[] encoders =
-            new TiktokenEngine.Encoder[TiktokenEngine.R50K_NUMBERS + 1];
-    private final boolean[] resolved = new boolean[TiktokenEngine.R50K_NUMBERS + 1];
+    /** An entry of {@link #encoders}: no engine encodes the rule set. */
+    private static final Object NO_ENCODER = new Object();
+
+    /** The engine's encoder per rule set, or {@link #NO_ENCODER}; null until first used. */
+    private final AtomicReferenceArray<Object> encoders =
+            new AtomicReferenceArray<>(TiktokenSplitter.RULE_SETS);
 
     private TiktokenModel(
             Vocabulary vocabulary,
@@ -121,8 +124,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
-        byte[] utf8 = TiktokenSplitter.utf8(text, 0, text.length());
-        encodeWord(utf8, 0, utf8.length - TiktokenSplitter.PADDING, out);
+        encodeInto(text, 0, text.length(), out);
     }
 
     // ---- behind a scanner ----
@@ -142,12 +144,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return;
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
-        int length = utf8.length - TiktokenSplitter.PADDING;
         if (fast != null) {
-            encodeCut(fast, utf8, 0, length, splitter, out);
+            encodeCut(fast, utf8, 0, utf8.length, splitter, out);
             return;
         }
-        encode(utf8, 0, length, splitter, out);
+        encode(utf8, 0, utf8.length, splitter, out);
     }
 
     /** {@link #encode(CharSequence, int, int, TiktokenSplitter, IntSequence.Builder)} for UTF-8. */
@@ -164,9 +165,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             encodeCut(fast, utf8, start, end, splitter, out);
             return;
         }
-        // the scanner reads past a piece, so it gets a padded copy
-        byte[] padded = Arrays.copyOfRange(utf8, start, end + TiktokenSplitter.PADDING);
-        encode(padded, 0, end - start, splitter, out);
+        encode(utf8, start, end, splitter, out);
     }
 
     /** The engine on each piece the splitter's first stage cuts, as if each were the text. */
@@ -189,7 +188,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /** The reference: the scanner's pieces, word by word. */
     private void encode(
             byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
-        int[] ends = new int[TiktokenSplitter.BATCH];
+        int[] ends = new int[Math.min(TiktokenSplitter.BATCH, Math.max(1, end - start))];
         int cursor = start;
         while (cursor < end) {
             int n = splitter.split(text, cursor, end, ends);
@@ -352,17 +351,20 @@ final class TiktokenModel extends AbstractTokenizationModel {
         if (rules < 0) {
             return null;
         }
-        if (!resolved[rules]) {
+        Object encoder = encoders.get(rules);
+        if (encoder == null) {
             // checked against the scanner the engine's rules stand for, without the cuts core makes
-            encoders[rules] = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
-            resolved[rules] = true;
+            encoder = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
+            Object first = encoders.compareAndExchange(rules, null, encoder);
+            encoder = first != null ? first : encoder;
         }
-        return encoders[rules];
+        return encoder != NO_ENCODER ? (TiktokenEngine.Encoder) encoder : null;
     }
 
-    private TiktokenEngine.Encoder findEncoder(int rules, TiktokenSplitter splitter) {
+    /** The first engine's encoder that agrees with this model, or {@link #NO_ENCODER}. */
+    private Object findEncoder(int rules, TiktokenSplitter splitter) {
         if ("none".equals(System.getProperty("toknroll.engine"))) {
-            return null;
+            return NO_ENCODER;
         }
         for (TiktokenEngine engine : ENGINES) {
             try {
@@ -374,20 +376,19 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 // passed over like one that disagrees: say, the Vector API module is not enabled
             }
         }
-        return null;
+        return NO_ENCODER;
     }
 
     /** Whether {@code candidate} encodes the sample as this model does, from chars and bytes. */
     private boolean agrees(TiktokenEngine.Encoder candidate, TiktokenSplitter splitter) {
         String sample = TiktokenSplitter.sample();
         byte[] utf8 = TiktokenSplitter.utf8(sample, 0, sample.length());
-        int length = utf8.length - TiktokenSplitter.PADDING;
         IntSequenceBuilder expected = new IntSequenceBuilder();
-        encode(utf8, 0, length, splitter, expected);
+        encode(utf8, 0, utf8.length, splitter, expected);
         IdBuffer fromChars = new IdBuffer(expected.size());
         candidate.encode(sample, 0, sample.length(), fromChars);
         IdBuffer fromBytes = new IdBuffer(expected.size());
-        candidate.encodeUtf8(Arrays.copyOf(utf8, length), 0, length, fromBytes);
+        candidate.encodeUtf8(utf8, 0, utf8.length, fromBytes);
         int[] want = Arrays.copyOf(expected.data(), expected.size());
         return Arrays.equals(want, Arrays.copyOf(fromChars.array(), fromChars.size()))
                 && Arrays.equals(want, Arrays.copyOf(fromBytes.array(), fromBytes.size()));
@@ -490,15 +491,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             throw invalidRange(startInclusive, endExclusive, text.length());
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, startInclusive, endExclusive);
-        encodeWord(utf8, 0, utf8.length - TiktokenSplitter.PADDING, out);
-    }
-
-    @Override
-    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-        IntSequence.Builder out =
-                IntSequence.newBuilder(estimateInitialTokenCapacity(endExclusive - startInclusive));
-        encodeInto(text, startInclusive, endExclusive, out);
-        return out.size();
+        encodeWord(utf8, 0, utf8.length, out);
     }
 
     @Override
@@ -563,8 +556,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /** Names the engine encoder once one encodes for this model. */
     @Override
     public String toString() {
-        for (TiktokenEngine.Encoder encoder : encoders) {
-            if (encoder != null) {
+        for (int rules = 0; rules < encoders.length(); rules++) {
+            Object encoder = encoders.get(rules);
+            if (encoder != null && encoder != NO_ENCODER) {
                 return "Tiktoken BPE, encoded by " + encoder.getClass().getName();
             }
         }
@@ -616,17 +610,14 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Every id's bytes, from the id side: two ids can share a spelling (a special token whose bytes
-     * are also an ordinary token, as Laguna's {@code |◊|}), and the spelling side keeps only one.
+     * Every id's bytes, by {@link VocabularyImpl#ids}: two ids can share a spelling (a special
+     * token whose bytes are also an ordinary token, as Laguna's {@code |◊|}).
      */
     private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
-        int maxId = vocabulary.size() - 1;
-        for (Map.Entry<String, Integer> e : vocabulary) {
-            maxId = Math.max(maxId, e.getValue());
-        }
-        byte[][] table = new byte[maxId + 1][];
-        for (int id = 0; id <= maxId; id++) {
-            if (vocabulary.contains(id)) table[id] = ByteLevel.decode(vocabulary.token(id));
+        BitSet ids = VocabularyImpl.ids(vocabulary);
+        byte[][] table = new byte[Math.max(vocabulary.size(), ids.length())][];
+        for (int id = ids.nextSetBit(0); id >= 0; id = ids.nextSetBit(id + 1)) {
+            table[id] = ByteLevel.decode(vocabulary.token(id));
         }
         return table;
     }

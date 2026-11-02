@@ -7,6 +7,7 @@ import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -58,6 +59,66 @@ class FastEncoderTest {
                 }
             };
 
+    /** The bytes and one merge, "aa" as 256. */
+    private static final TiktokenTables AA =
+            new TiktokenTables() {
+                @Override
+                public int tokenCount() {
+                    return 257;
+                }
+
+                @Override
+                public byte[] tokenBytes(int id) {
+                    return id == 256 ? new byte[] {'a', 'a'} : new byte[] {(byte) id};
+                }
+
+                @Override
+                public int mergeCount() {
+                    return 1;
+                }
+
+                @Override
+                public int mergeLeft(int merge) {
+                    return 'a';
+                }
+
+                @Override
+                public int mergeRight(int merge) {
+                    return 'a';
+                }
+
+                @Override
+                public int mergeResult(int merge) {
+                    return 256;
+                }
+
+                @Override
+                public int mergeRank(int merge) {
+                    return 0;
+                }
+
+                @Override
+                public boolean ignoreMerges() {
+                    return false;
+                }
+            };
+
+    /** A scratch lives on across calls, so its edge stamps may have counted up to anything. */
+    @Test
+    void aLargeMergeIsTheSameWhateverStampTheScratchReached() {
+        FastEncoder encoder = new FastEncoder(AA, BitSplit.forRules(TiktokenEngine.CL100K));
+        byte[] word = "a".repeat(200).getBytes(StandardCharsets.UTF_8);
+        int[] expected = new int[100];
+        Arrays.fill(expected, 256);
+        for (int stamp : new int[] {1, -50, -1, Integer.MAX_VALUE - 50}) {
+            FastEncoder.Scratch s = new FastEncoder.Scratch(null);
+            s.stamp = stamp;
+            IdBuffer out = new IdBuffer(16);
+            encoder.merge(word, 0, word.length, out, s);
+            assertArrayEquals(expected, Arrays.copyOf(out.array(), out.size()), "from " + stamp);
+        }
+    }
+
     @Test
     void manyThreadsAtOnceGetTheSameIds() throws Exception {
         FastEncoder encoder = new FastEncoder(BYTES, BitSplit.forRules(TiktokenEngine.CL100K));
@@ -71,7 +132,7 @@ class FastEncoderTest {
                                 () -> {
                                     IdBuffer out = new IdBuffer(16);
                                     encoder.encode(text, 0, text.length(), out);
-                                    return java.util.Arrays.copyOf(out.array(), out.size());
+                                    return Arrays.copyOf(out.array(), out.size());
                                 }));
             }
             for (Future<int[]> call : calls) {
@@ -87,7 +148,7 @@ class FastEncoderTest {
         for (String text : new String[] {"a few words", giant, "a few words"}) {
             IdBuffer out = new IdBuffer(16);
             encoder.encode(text, 0, text.length(), out);
-            assertArrayEquals(ids(text), java.util.Arrays.copyOf(out.array(), out.size()));
+            assertArrayEquals(ids(text), Arrays.copyOf(out.array(), out.size()));
         }
     }
 

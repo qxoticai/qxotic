@@ -17,7 +17,7 @@ import jdk.incubator.vector.VectorSpecies;
  * letter run's case, a whitespace run's last newline) are answered by looking ahead by hand, which
  * is rare. The result is a bitmap of piece starts, popped one trailing-zero count at a time.
  *
- * <p>Three grammars: r50k (GPT-2's byte level regex, alone or after a stage that cuts every number
+ * <p>Three grammars: r50k (GPT-2's byte level regex, alone or after a stage that cuts every digit
  * apart), the cl100k family (Llama 3, Qwen2) and the o200k family (gpt-4o, gpt-oss, Tekken). After
  * Hugging Face's {@code bitcannon}, rule for rule; the doc comments there say why each rule is
  * stated the way it is. Exactness is proven as the scalar scanner's is: against the regex, over a
@@ -371,7 +371,6 @@ final class BitSplit {
         int seed;
 
         // the block in hand
-        int bi;
         int base;
         int len;
         long valid;
@@ -406,7 +405,9 @@ final class BitSplit {
             pv.clear();
         }
 
-        /** The starts of the block in hand; the driver keeps the leads and opens position 0. */
+        /**
+         * The starts of the block in hand, the driver keeping the leads; the text's start is open.
+         */
         abstract long rule();
 
         // ---- shared rules
@@ -617,7 +618,7 @@ final class BitSplit {
      * character.
      */
     private static final class R50k extends Run {
-        private final boolean numbers; // R50K_NUMBERS: a stage before cut around every number
+        private final boolean numbers; // R50K_NUMBERS: a stage before it cut around every digit
 
         R50k(byte[] text, int start, int end, Registers r, boolean numbers) {
             super(text, start, end, r);
@@ -637,10 +638,6 @@ final class BitSplit {
                             | (cur.other & ~bk.other & ~bk.sp)
                             | (cur.ws & ~bk.ws)
                             | steal;
-            st &= lead;
-            if (bi == 0) {
-                st |= 1;
-            }
             return contractions(st, LOWER);
         }
     }
@@ -704,10 +701,6 @@ final class BitSplit {
             commitRetractable(afterNl, nlE);
             prevOsf = ((osf >>> (len - 1)) & 1) != 0;
 
-            st &= lead;
-            if (bi == 0) {
-                st |= 1;
-            }
             return contractions(st, contraction);
         }
     }
@@ -732,9 +725,16 @@ final class BitSplit {
         boolean lcOpen; // a lowercase run was still open at the edge
         long sfxCarry; // bytes of a contraction suffix that spilled past the edge
         long force; // and the start it opens just past itself, if that landed past the edge
-        int sfxEnd = -1; // just past the last suffix: the apostrophe there is a prefix, not a
+        // just past the last suffix: the apostrophe there is a prefix, not a second suffix, since
+        // (?i:...)? applies once
+        int sfxEnd = -1;
 
-        // second suffix, since (?i:...)? applies once
+        // Where the last hand look of each kind stopped, absolute, and what it found there. A
+        // later look starts further on: at or before that stop it would end there too.
+        int lowerLookEnd = -1;
+        boolean lowerFound;
+        int caselessLookEnd = -1;
+        boolean caselessFound;
 
         O200k(byte[] text, int start, int end, Registers r, boolean suffix, int digitCap) {
             super(text, start, end, r);
@@ -910,19 +910,28 @@ final class BitSplit {
             if (leadRun(nx.word, nxValid) != nxValid) {
                 return false;
             }
-            // the run leaves the next block too: look by hand
-            for (int i = base + 64 + nxLen; i < end; ) {
+            // the run leaves the next block too: look by hand, past the character it ends in,
+            // unless the last look went past there
+            int i = base + 64 + nxLen + (seed >>> 16);
+            if (i <= lowerLookEnd) {
+                return lowerFound;
+            }
+            boolean found = false;
+            while (i < end) {
                 int at = at(text, i, end);
                 int cls = CharClasses.of(at & 0x1FFFFF);
                 if ((cls & (CharClasses.LETTER | CharClasses.MARK)) == 0) {
-                    return false;
+                    break;
                 }
                 if ((cls & (CharClasses.LOWER | CharClasses.UPPER)) == CharClasses.LOWER) {
-                    return true;
+                    found = true;
+                    break;
                 }
                 i += at >>> 24;
             }
-            return false;
+            lowerLookEnd = i;
+            lowerFound = found;
+            return found;
         }
 
         /** Whether the uc-run going on at the next block's first byte has a caseless char in it. */
@@ -939,22 +948,30 @@ final class BitSplit {
             if (leadRun(uc, nxValid) != nxValid) {
                 return false;
             }
-            for (int i = base + 64 + nxLen; i < end; ) {
+            int i = base + 64 + nxLen + (seed >>> 16);
+            if (i <= caselessLookEnd) {
+                return caselessFound;
+            }
+            boolean found = false;
+            while (i < end) {
                 int at = at(text, i, end);
                 int cls = CharClasses.of(at & 0x1FFFFF);
                 if ((cls & (CharClasses.LETTER | CharClasses.MARK)) == 0) {
-                    return false;
+                    break;
                 }
                 int cased = cls & (CharClasses.LOWER | CharClasses.UPPER);
                 if (cased == CharClasses.LOWER) {
-                    return false; // a lowercase ends the uc-run
+                    break; // a lowercase ends the uc-run
                 }
                 if (cased == (CharClasses.LOWER | CharClasses.UPPER)) {
-                    return true;
+                    found = true;
+                    break;
                 }
                 i += at >>> 24;
             }
-            return false;
+            caselessLookEnd = i;
+            caselessFound = found;
+            return found;
         }
     }
 
@@ -1002,13 +1019,9 @@ final class BitSplit {
     /**
      * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
      * until the array is full or the text ends; returns how many. {@code start} must be a piece
-     * boundary; nothing past {@code end} is read.
+     * boundary. The blocks are loaded whole, so bytes past {@code end} may be read, but they do not
+     * affect the result. Works in the caller's {@code registers}, one split at a time.
      */
-    int split(byte[] text, int start, int end, int[] ends) {
-        return split(text, start, end, ends, new Registers());
-    }
-
-    /** {@link #split(byte[], int, int, int[])} in the caller's registers. */
     int split(byte[] text, int start, int end, int[] ends, Registers registers) {
         if (end <= start) {
             return 0;
@@ -1030,7 +1043,6 @@ final class BitSplit {
             }
             run.bk.back(run.cur, run.pv);
             run.fw.forward(run.cur, run.nx);
-            run.bi = bi;
             run.base = base;
             run.len = len;
             run.valid = len == 64 ? -1L : (1L << len) - 1;
@@ -1039,9 +1051,6 @@ final class BitSplit {
             run.lb = (run.fw.lead & run.valid) | run.eof;
             run.prevWs = run.pv.ws < 0;
             long st = run.rule() & run.lead;
-            if (bi == 0) {
-                st |= 1;
-            }
             run.starts[bi & (RING - 1)] = st;
             if (bi > 0) {
                 run.starts[(bi - 1) & (RING - 1)] |= run.stealPatch;
@@ -1049,8 +1058,10 @@ final class BitSplit {
             // A block's starts are final once the next block has run, except one a newline
             // further on may still retract: nothing from it on is popped until it is decided.
             if (run.retractable >= 0 && bi + 2 - popped > RING) {
-                // the whitespace run outgrew the ring: decide it by looking ahead by hand
-                if (newlineInRun(text, base + len, end)) {
+                // the whitespace run outgrew the ring: decide it by looking ahead by hand, from
+                // the first character that starts in the next block
+                int next = base + len + Long.numberOfTrailingZeros(~run.nx.cont);
+                if (newlineInRun(text, next, end)) {
                     int p = run.retractable - start;
                     run.starts[(p >>> 6) & (RING - 1)] &= ~(1L << (p & 63));
                 }

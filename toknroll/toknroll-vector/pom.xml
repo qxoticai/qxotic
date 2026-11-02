@@ -20,6 +20,8 @@
     <!-- The Vector API is an incubator module of Java 16 and later; this module needs 25. -->
     <maven.compiler.release>25</maven.compiler.release>
     <maven.compiler.testRelease>25</maven.compiler.testRelease>
+    <!-- tests with no vector code, run at the default width only -->
+    <widthIndependentTests>**/WordCacheTest.java</widthIndependentTests>
   </properties>
 
   <dependencies>
@@ -62,7 +64,8 @@
           <useModulePath>false</useModulePath>
           <argLine>@{argLine} --add-modules jdk.incubator.vector</argLine>
         </configuration>
-        <!-- every test at each vector width the kernels support, whatever this machine prefers -->
+        <!-- every test at each vector width the kernels support, whatever this machine prefers;
+             the width-independent ones once -->
         <executions>
           <execution>
             <id>default-test</id>
@@ -81,6 +84,9 @@
               <systemPropertyVariables>
                 <toknroll.vector.width>256</toknroll.vector.width>
               </systemPropertyVariables>
+              <excludes>
+                <exclude>${widthIndependentTests}</exclude>
+              </excludes>
             </configuration>
           </execution>
           <execution>
@@ -92,6 +98,9 @@
               <systemPropertyVariables>
                 <toknroll.vector.width>512</toknroll.vector.width>
               </systemPropertyVariables>
+              <excludes>
+                <exclude>${widthIndependentTests}</exclude>
+              </excludes>
             </configuration>
           </execution>
         </executions>

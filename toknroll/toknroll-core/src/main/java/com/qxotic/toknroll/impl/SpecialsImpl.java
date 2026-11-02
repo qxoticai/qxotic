@@ -39,7 +39,9 @@ final class SpecialsImpl implements Specials {
                     charRoot.add(text.chars().toArray(), id);
                     byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);
                     int[] units = new int[utf8.length];
-                    for (int i = 0; i < utf8.length; i++) units[i] = utf8[i] & 0xFF;
+                    for (int i = 0; i < utf8.length; i++) {
+                        units[i] = utf8[i] & 0xFF;
+                    }
                     byteRoot.add(units, id);
                 });
         this.chars = new Trie(charRoot, Character.MAX_VALUE + 1);
@@ -52,18 +54,27 @@ final class SpecialsImpl implements Specials {
 
     static Specials of(Tokenizer tokenizer) {
         Vocabulary vocabulary = tokenizer.vocabulary();
-        // every id, from both sides: two ids can share a spelling, and the spelling side keeps one
-        BitSet ids = new BitSet();
-        for (Map.Entry<String, Integer> entry : vocabulary) ids.set(entry.getValue());
-        for (int id = 0; id < vocabulary.size(); id++) if (vocabulary.contains(id)) ids.set(id);
+        BitSet ids = VocabularyImpl.ids(vocabulary);
         Map<String, Integer> tokens = new HashMap<>();
         for (int id = ids.nextSetBit(0); id >= 0; id = ids.nextSetBit(id + 1)) {
             if (isSpecial(vocabulary, id)) {
-                String text = tokenizer.decode(IntSequence.of(id));
-                if (!text.isEmpty()) tokens.merge(text, id, Math::min);
+                String text = textAfterAnother(tokenizer, id);
+                if (!text.isEmpty()) {
+                    tokens.merge(text, id, Math::min);
+                }
             }
         }
         return tokens.isEmpty() ? NONE : new SpecialsImpl(tokens);
+    }
+
+    /**
+     * The text of {@code id} as a token after another decodes: a decoder may trim the start of the
+     * text, as Metaspace's leading space, and the token keeps it anywhere else.
+     */
+    private static String textAfterAnother(Tokenizer tokenizer, int id) {
+        int first = tokenizer.countBytes(IntSequence.of(id));
+        byte[] twice = tokenizer.decodeBytes(IntSequence.of(id, id));
+        return new String(twice, first, twice.length - first, StandardCharsets.UTF_8);
     }
 
     private static boolean isSpecial(Vocabulary vocabulary, int id) {
@@ -85,9 +96,12 @@ final class SpecialsImpl implements Specials {
         int n = text.length();
         int gap = 0; // where the text not yet encoded starts
         for (int at = 0; at < n; at++) {
-            if (!chars.starts(text.charAt(at))) continue; // most positions: one bit test
+            if (!chars.starts(text.charAt(at))) {
+                continue; // most positions: one bit test
+            }
             // the longest special token starting at `at`: the deepest node on the walk ending one
-            int id = -1, end = at;
+            int id = -1;
+            int end = at;
             Node node = chars.root;
             for (int i = at; i < n && (node = node.child(text.charAt(i))) != null; i++) {
                 if (node.id >= 0) {
@@ -95,13 +109,19 @@ final class SpecialsImpl implements Specials {
                     end = i + 1;
                 }
             }
-            if (id < 0) continue;
-            if (at > gap) tokenizer.encodeInto(text, gap, at, out);
+            if (id < 0) {
+                continue;
+            }
+            if (at > gap) {
+                tokenizer.encodeInto(text, gap, at, out);
+            }
             out.add(id);
             gap = end;
             at = end - 1;
         }
-        if (gap < n) tokenizer.encodeInto(text, gap, n, out);
+        if (gap < n) {
+            tokenizer.encodeInto(text, gap, n, out);
+        }
     }
 
     @Override
@@ -113,8 +133,11 @@ final class SpecialsImpl implements Specials {
         Objects.checkFromToIndex(from, to, utf8.length);
         int gap = from;
         for (int at = from; at < to; at++) {
-            if (!bytes.starts(utf8[at] & 0xFF)) continue;
-            int id = -1, end = at;
+            if (!bytes.starts(utf8[at] & 0xFF)) {
+                continue;
+            }
+            int id = -1;
+            int end = at;
             Node node = bytes.root;
             for (int i = at; i < to && (node = node.child(utf8[i] & 0xFF)) != null; i++) {
                 if (node.id >= 0) {
@@ -122,13 +145,19 @@ final class SpecialsImpl implements Specials {
                     end = i + 1;
                 }
             }
-            if (id < 0) continue;
-            if (at > gap) tokenizer.encodeUtf8Into(utf8, gap, at, out);
+            if (id < 0) {
+                continue;
+            }
+            if (at > gap) {
+                tokenizer.encodeUtf8Into(utf8, gap, at, out);
+            }
             out.add(id);
             gap = end;
             at = end - 1;
         }
-        if (gap < to) tokenizer.encodeUtf8Into(utf8, gap, to, out);
+        if (gap < to) {
+            tokenizer.encodeUtf8Into(utf8, gap, to, out);
+        }
     }
 
     /** A trie and a bit per unit that begins some special token. */
@@ -139,7 +168,9 @@ final class SpecialsImpl implements Specials {
         Trie(Node root, int units) {
             this.root = root.freeze();
             this.first = new long[units >>> 6];
-            for (int unit : this.root.keys) first[unit >>> 6] |= 1L << unit;
+            for (int unit : this.root.keys) {
+                first[unit >>> 6] |= 1L << unit;
+            }
         }
 
         boolean starts(int unit) {
@@ -159,7 +190,9 @@ final class SpecialsImpl implements Specials {
 
         void add(int[] units, int tokenId) {
             Node node = this;
-            for (int unit : units) node = node.building.computeIfAbsent(unit, u -> new Node());
+            for (int unit : units) {
+                node = node.building.computeIfAbsent(unit, u -> new Node());
+            }
             node.id = tokenId;
         }
 
@@ -172,8 +205,12 @@ final class SpecialsImpl implements Specials {
 
         Node child(int unit) {
             int[] k = keys;
-            if (k.length <= 8) { // ponytail: most nodes have one child; a search for the rest
-                for (int i = 0; i < k.length; i++) if (k[i] == unit) return children[i];
+            if (k.length <= 8) { // most nodes have one child: a scan for few, a search for many
+                for (int i = 0; i < k.length; i++) {
+                    if (k[i] == unit) {
+                        return children[i];
+                    }
+                }
                 return null;
             }
             int i = Arrays.binarySearch(k, unit);

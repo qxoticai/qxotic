@@ -3,6 +3,7 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Vocabulary;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -94,10 +95,13 @@ class VocabularyImpl implements Vocabulary {
         Map<String, Integer> tokenToId = new HashMap<>(vocabulary.length * 2);
         for (int i = 0; i < vocabulary.length; i++) {
             String token = vocabulary[i];
-            if (token == null) continue;
-            Integer previous = tokenToId.get(token);
-            if (previous != null && isNormal(tokenTypes, previous) && !isNormal(tokenTypes, i))
+            if (token == null) {
                 continue;
+            }
+            Integer previous = tokenToId.get(token);
+            if (previous != null && isNormal(tokenTypes, previous) && !isNormal(tokenTypes, i)) {
+                continue;
+            }
             tokenToId.put(token, i);
         }
         return tokenToId;
@@ -162,5 +166,23 @@ class VocabularyImpl implements Vocabulary {
     @Override
     public Iterator<Map.Entry<String, Integer>> iterator() {
         return tokenToId.entrySet().iterator();
+    }
+
+    /**
+     * Every id of {@code vocabulary}, from both sides: two ids can share a spelling, and the
+     * spelling side names one of them; an id can lie past {@code size()}, which only the spelling
+     * side names.
+     */
+    static BitSet ids(Vocabulary vocabulary) {
+        BitSet ids = new BitSet();
+        for (Map.Entry<String, Integer> entry : vocabulary) {
+            ids.set(entry.getValue());
+        }
+        for (int id = 0; id < vocabulary.size(); id++) {
+            if (vocabulary.contains(id)) {
+                ids.set(id);
+            }
+        }
+        return ids;
     }
 }

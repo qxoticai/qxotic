@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
@@ -13,6 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -96,6 +98,30 @@ class MetaspaceTokenizerTest {
         assertArrayEquals(model("▁world"), always.build().toArray());
     }
 
+    /** A UTF-8 range is a range of the one text: "first" prepends at the text's start only. */
+    @ParameterizedTest
+    @ValueSource(strings = {"always", "first", "never"})
+    void aUtf8RangeEncodesAsTheSameCharRange(String scheme) {
+        Tokenizer tokenizer = metaspace(scheme, true);
+        for (String text : new String[] {"hello world", "hello  world", "he▁world", "é world"}) {
+            byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);
+            for (int from = 0; from <= text.length(); from++) {
+                for (int to = from; to <= text.length(); to++) {
+                    IntSequence.Builder chars = IntSequence.newBuilder();
+                    tokenizer.encodeInto(text, from, to, chars);
+                    IntSequence.Builder bytes = IntSequence.newBuilder();
+                    int start = text.substring(0, from).getBytes(StandardCharsets.UTF_8).length;
+                    int end = text.substring(0, to).getBytes(StandardCharsets.UTF_8).length;
+                    tokenizer.encodeUtf8Into(utf8, start, end, bytes);
+                    assertArrayEquals(
+                            chars.build().toArray(),
+                            bytes.build().toArray(),
+                            text + " [" + start + ", " + end + ")");
+                }
+            }
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"always", "first", "never"})
     void countTokensIsTheEncodedLength(String scheme) {
@@ -173,6 +199,34 @@ class MetaspaceTokenizerTest {
                 assertEquals(new String(bytes, StandardCharsets.UTF_8), tokenizer.decode(ids));
                 assertEquals(bytes.length, tokenizer.countBytes(ids));
             }
+        }
+    }
+
+    /** The start-of-text trim is a decoder's: a special spelled with a leading U+2581 keeps it. */
+    @Test
+    void aSpecialSpelledWithALeadingSpaceKeepsItUnderTheTrim() {
+        String[] tokens = new String[258];
+        int[] types = new int[258];
+        for (int b = 0; b < 256; b++) {
+            tokens[b] = String.format("<0x%02X>", b);
+            types[b] = StandardTokenType.BYTE.getId();
+        }
+        tokens[256] = "▁▁";
+        types[256] = StandardTokenType.USER_DEFINED.getId();
+        tokens[257] = "<s>";
+        types[257] = StandardTokenType.CONTROL.getId();
+        SentencePieceBpeModel model =
+                SentencePieceBpeModel.fromVocabulary(
+                        new VocabularyImpl(tokens, types), new float[258]);
+        Tokenizer base = Toknroll.pipeline((Normalizer) t -> t.toString().replace(' ', '▁'), model);
+        for (boolean trim : new boolean[] {true, false}) {
+            Tokenizer tokenizer = new MetaspaceTokenizer(base, "never", trim);
+            Specials specials = Specials.of(tokenizer);
+            assertEquals(Map.of("  ", 256, "<s>", 257), specials.tokens(), "trim " + trim);
+            assertArrayEquals(
+                    tokenizer.encode("a b").toArray(),
+                    specials.encode(tokenizer, "a b").toArray(),
+                    "trim " + trim);
         }
     }
 
