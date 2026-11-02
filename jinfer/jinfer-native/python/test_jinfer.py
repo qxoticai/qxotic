@@ -418,8 +418,8 @@ ok(len(e.embed(["word " * 4000] * 3)) == 3, "texts of thousands of tokens embed 
 with jinfer.load(EMB, context_capacity=600) as short:
     too_long = jinfer._strings(["word " * 2000, "a"], "texts")
     ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, None, 0) == 2 * short.dimension and last_code() == N.OK, "sizing runs no model")
-    rc = N.lib.jinfer_embed(short._h, too_long, 2, 0, None, 2 * short.dimension - 1)
-    ok(rc == 2 * short.dimension, "too little room: the size, no model run")
+    room = (ctypes.c_float * (2 * short.dimension - 1))()
+    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, room, len(room)) == 2 * short.dimension, "too little room: the size, no model run")
     out = (ctypes.c_float * (2 * short.dimension))()
     ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, out, len(out)) == N.EINVAL and b"600" in N.lib.jinfer_last_error(None), "the run refuses the text")
 n = 2**31 // e.dimension + 1
@@ -499,13 +499,13 @@ ok(jinfer.__version__ == "0.4.0" == N.lib.jinfer_version().decode(), f"version {
 
 # a stream takes one call at a time: a second thread's call while a step blocks is JINFER_EBUSY
 r = m.chat("Write a very long story about the sea.", max_tokens=200)
-steps, stepping = [], threading.Event()
-def step_all():
-    stepping.set()
-    while (rc := N.lib.jinfer_stream_step(r._ptr)) == N.OK: steps.append(rc)
+steps = []
+def step_all():  # steps to the end, waiting out the main thread's steps
+    while (rc := N.lib.jinfer_stream_step(r._ptr)) in (N.OK, N.EBUSY): steps.append(rc)
     steps.append(rc)
-t = threading.Thread(target=step_all); t.start(); stepping.wait()
-busy = [N.lib.jinfer_stream_step(r._ptr) for _ in range(2000)]
+t = threading.Thread(target=step_all); t.start()
+while not steps: time.sleep(0.001)
+busy = [N.lib.jinfer_stream_step(r._ptr) for _ in range(50)]  # the other thread is inside a step nearly always
 texts = [(N.lib.jinfer_stream_text(r._ptr), last_code()) for _ in range(2000)]
 N.lib.jinfer_stream_cancel(r._ptr)  # exempt: any thread, any time
 t.join(timeout=60)
