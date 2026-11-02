@@ -599,6 +599,8 @@ static void suite_api(void) {
     OK("context_isa(NULL) < 0",  jam_context_isa(NULL) == JAM_EINVAL);
     OK("pack_size(NULL) < 0",    jam_pack_size(NULL, JAM_Q4_0, 8, 64) == JAM_EINVAL);
     OK("share(NULL) EINVAL",     jam_share(NULL, W, sizeof W, 0) == JAM_EINVAL);
+    OK("share past the end EINVAL", jam_share(d, (const void*) (UINTPTR_MAX - 15), 32, 0) == JAM_EINVAL);
+    OK("share past the end reason", strstr(jam_last_error(&code), "end of the address space") && code == JAM_EINVAL);
     jam_unshare(NULL, W);        /* a no-op */
 
     /* explicit contexts agree */
@@ -664,8 +666,8 @@ static void suite_api(void) {
 #ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
-/* After fork, a context made in the parent refuses in the child (its pool's threads stayed behind)
- * and freeing it there returns; a new context in the child works, on the CPU even where the parent's
+/* After fork, a context made in the parent refuses jam_mm and jam_share in the child (its pool's
+ * threads and its device stayed behind) and freeing it there returns; a new context in the child works, on the CPU even where the parent's
  * ran on the GPU. */
 static void suite_fork(void) {
     jam_context* c = jam_context_new(NULL);
@@ -675,10 +677,13 @@ static void suite_fork(void) {
     pid_t pid = fork();
     if (pid == 0) {
         int32_t st = jam_mm(c, W, JAM_F32, 32, A, JAM_F32, 32, C, JAM_F32, 2, 2, 2, 32);
+        int32_t shared = jam_share(c, W, sizeof W, 0);   /* a GPU context would reach the device */
+        jam_unshare(c, W);
         jam_context_free(c);
         jam_context* fresh = jam_context_new(NULL);
         int32_t ok = jam_mm(fresh, W, JAM_F32, 32, A, JAM_F32, 32, C, JAM_F32, 2, 2, 2, 32);
-        _exit(st == JAM_ERROR && ok == JAM_OK && jam_context_isa(fresh) != JAM_ISA_METAL ? 0 : 1);
+        _exit(st == JAM_ERROR && shared == JAM_ERROR && ok == JAM_OK && jam_context_isa(fresh) != JAM_ISA_METAL
+              ? 0 : 1);
     }
     int status = 0;
     waitpid(pid, &status, 0);
