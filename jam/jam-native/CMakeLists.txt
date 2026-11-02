@@ -287,6 +287,7 @@ if (JAM_TESTS)
         add_executable(jam_unload tests/jam_unload.c)
         target_link_libraries(jam_unload PRIVATE ${CMAKE_DL_LIBS})
         add_test(NAME unload COMMAND jam_unload $<TARGET_FILE:jam>)
+        add_dependencies(jam_test jam_unload)   # the targets Maven builds by name bring it along
     endif()
     # The library exports exactly jam.h's functions and the JNI entry points (ELF and Mach-O; a DLL
     # exports only what is marked, so Windows needs no check).
