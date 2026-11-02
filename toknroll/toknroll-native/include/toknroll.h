@@ -43,7 +43,6 @@
 #define TOKNROLL_H
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -92,19 +91,24 @@ TOKNROLL_API int32_t toknroll_configure(const char* const* options, int32_t coun
 TOKNROLL_API toknroll_tokenizer* toknroll_load(const char* source);
 TOKNROLL_API void                toknroll_free(toknroll_tokenizer* t);
 
-/* The ids of length bytes of text. specials: tokens of a type other than normal spelled in the text
- * stay whole; by default they are text. */
+/* Options for toknroll_encode and toknroll_encode_batch, or'ed together; 0 is the default. An
+ * unknown bit is TOKNROLL_EINVAL. */
+#define TOKNROLL_SPECIALS 1u /* tokens of a type other than normal, spelled in the text, stay whole */
+
+/* The ids of length bytes of text; by default every token is text. */
 TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, size_t length,
-                                     bool specials, int32_t* out, int32_t capacity);
+                                     uint32_t flags, int32_t* out, int32_t capacity);
 /* The tokens' bytes: UTF-8, except where a token holds part of a character. An id outside the
  * vocabulary is TOKNROLL_EINVAL. */
 TOKNROLL_API int32_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
                                      char* out, int32_t capacity);
-/* count texts in one buffer back to back, text i ending at byte text_ends[i]; their ids back to back
- * in out, text i's ending at ends[i]; encoded on all cores. Returns the total, capacity 0 counts. */
+/* count texts, text i the bytes [text_offsets[i], text_offsets[i + 1]) of texts; their ids go to
+ * out, text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold
+ * count + 1 entries. Encoded on all cores. Returns the total, offsets[count]; over capacity, out
+ * gets a prefix and offsets is still complete, so capacity 0 counts. No buffer is kept. */
 TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const char* texts,
-                                           const int32_t* text_ends, int32_t count, bool specials,
-                                           int32_t* out, int32_t capacity, int32_t* ends);
+                                           const int32_t* text_offsets, int32_t count, uint32_t flags,
+                                           int32_t* out, int32_t capacity, int32_t* offsets);
 
 TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
 /* An id's TOKNROLL_TOKEN_* flags; negative, TOKNROLL_ENOTFOUND, when there is no such id. */

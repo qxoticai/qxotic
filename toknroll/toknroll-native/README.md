@@ -7,9 +7,9 @@ Remote sources fetch tokenizer metadata only, never weights.
 ```c
 toknroll_tokenizer* t = toknroll_load("Qwen/Qwen3-0.6B");
 const char* text = "Hello, world!";
-int32_t n = toknroll_encode(t, text, strlen(text), false, NULL, 0);   /* capacity 0 counts */
+int32_t n = toknroll_encode(t, text, strlen(text), 0, NULL, 0);   /* capacity 0 counts */
 int32_t* ids = malloc(n * sizeof *ids);
-toknroll_encode(t, text, strlen(text), false, ids, n);
+toknroll_encode(t, text, strlen(text), 0, ids, n);
 char back[256];
 toknroll_decode(t, ids, n, back, sizeof back);
 toknroll_free(t);

@@ -226,8 +226,8 @@ class LengthTest(unittest.TestCase):
         lib = N.library()
         with toknroll.load(GGUF) as t:
             data = b"Hello, world! and the rest of the buffer"
-            self.assertEqual(lib.toknroll_encode(t._handle, data, 13, False, None, 0), len(t.encode("Hello, world!")))
-            self.assertEqual(lib.toknroll_encode(t._handle, None, 0, False, None, 0), 0)   # no text, no pointer
+            self.assertEqual(lib.toknroll_encode(t._handle, data, 13, 0, None, 0), len(t.encode("Hello, world!")))
+            self.assertEqual(lib.toknroll_encode(t._handle, None, 0, 0, None, 0), 0)   # no text, no pointer
 
     def test_a_nul_is_a_character(self):
         with toknroll.load(GGUF) as t:
