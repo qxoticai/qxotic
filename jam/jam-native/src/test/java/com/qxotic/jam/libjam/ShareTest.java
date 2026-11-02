@@ -7,6 +7,7 @@ import com.qxotic.jam.JAM;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -53,6 +54,35 @@ class ShareTest {
             MemorySegment.copy(a, 0, fresh, 0, a.byteSize());
             assertEquals(JAM.OK, jam.mm(w, fresh, plain, JAM.F32, m, n, k));
             assertEquals(-1, plain.mismatch(shared));
+        }
+    }
+
+    /**
+     * A share ends with its arena: memory allocated later at the same address is a new operand, and
+     * a call on it sees its own bytes, never what the ended share mapped.
+     */
+    @Test
+    void aReusedAddressIsSeenAfresh() {
+        int m = 64, n = 32, k = 64;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment a = filled(arena, n * k, 2);
+            MemorySegment plain = arena.allocate((long) n * m * Float.BYTES);
+            MemorySegment shared = arena.allocate((long) n * m * Float.BYTES);
+            long address;
+            try (Arena first = Arena.ofConfined()) {
+                MemorySegment w = filled(first, m * k, 1);
+                address = w.address();
+                assertEquals(DEVICE, jam.share(w, true));
+                assertEquals(JAM.OK, jam.mm(w, a, shared, JAM.F32, m, n, k));
+            }
+            try (Arena second = Arena.ofConfined()) {
+                MemorySegment w = filled(second, m * k, 5);
+                Assumptions.assumeTrue(w.address() == address, "the allocator chose a new address");
+                assertEquals(JAM.OK, jam.mm(w, a, shared, JAM.F32, m, n, k));
+                MemorySegment elsewhere = filled(arena, m * k, 5); // the same bytes, never shared
+                assertEquals(JAM.OK, jam.mm(elsewhere, a, plain, JAM.F32, m, n, k));
+                assertEquals(-1, plain.mismatch(shared));
+            }
         }
     }
 

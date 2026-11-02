@@ -744,10 +744,7 @@ class JamTest {
                     for (int j = 0; j < n; j++) {
                         float dot = 0;
                         for (int x = 0; x < k; x++)
-                            dot +=
-                                    (i * k + x) % 7 - 3 == 0
-                                            ? 0
-                                            : ((i * k + x) % 7 - 3) * ((j * k + x) % 5 - 2);
+                            dot += ((i * k + x) % 7 - 3) * ((j * k + x) % 5 - 2);
                         assertEquals(dot, r.getAtIndex(JAVA_FLOAT, (long) j * m + i), 1e-3f);
                     }
             }
