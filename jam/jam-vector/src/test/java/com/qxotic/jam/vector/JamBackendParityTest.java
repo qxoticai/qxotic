@@ -1,14 +1,23 @@
 package com.qxotic.jam.vector;
 
+import static java.lang.foreign.ValueLayout.ADDRESS;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jam.JAM;
 import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
+import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Random;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -199,6 +208,40 @@ class JamBackendParityTest {
                 "libjam did not load; on a box without the native toolchain pass"
                         + " -Djam.native.optional=true");
         Assumptions.abort("libjam absent, allowed by -Djam.native.optional=true");
+    }
+
+    /**
+     * A run capped through {@code JAM_NATIVE_ISA} (the pom's x86 cap executions) computes at that
+     * level or below, never at the machine's best behind the cap's back.
+     */
+    @Test
+    void nativeRunsAtItsCap() throws Throwable {
+        String cap = System.getenv().getOrDefault("JAM_NATIVE_ISA", "").toLowerCase(Locale.ROOT);
+        Assumptions.assumeTrue(NATIVE != null && !cap.isEmpty() && !cap.equals("auto"), "no cap");
+        Linker linker = Linker.nativeLinker();
+        SymbolLookup lib = SymbolLookup.loaderLookup();
+        // int32_t jam_context_isa(const jam_context*)
+        MethodHandle contextIsa =
+                linker.downcallHandle(
+                        lib.find("jam_context_isa").orElseThrow(),
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG));
+        // const char* jam_isa_name(int32_t)
+        MethodHandle isaName =
+                linker.downcallHandle(
+                        lib.find("jam_isa_name").orElseThrow(),
+                        FunctionDescriptor.of(ADDRESS, JAVA_INT));
+        int capLevel = -1;
+        for (int level = 0; level < 32 && capLevel < 0; level++)
+            if (cap.equals(
+                    ((MemorySegment) isaName.invokeExact(level)).reinterpret(64).getString(0)))
+                capLevel = level;
+        assertTrue(capLevel > 0, "JAM_NATIVE_ISA=" + cap + " names no level");
+        Method ctx =
+                NATIVE.getClass().getDeclaredMethod("ctx"); // the jam_context*, package-private
+        ctx.setAccessible(true);
+        int active = (int) contextIsa.invokeExact((long) ctx.invoke(NATIVE));
+        assertTrue(
+                active > 0 && active <= capLevel, "active level " + active + " above cap " + cap);
     }
 
     @Test

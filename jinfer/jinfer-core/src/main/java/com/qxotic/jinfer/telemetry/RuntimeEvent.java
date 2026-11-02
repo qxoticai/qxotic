@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  *
  * <p>The native gemm's resolved ISA and core plan belong here too - jam knows both and prints them
  * at startup - but it exposes neither to Java today. Those fields arrive with the accessor; adding
- * a field is a compatible change, and reporting the {@code JAM_ISA} override instead would be
+ * a field is a compatible change, and reporting the {@code JAM_NATIVE_ISA} cap instead would be
  * reporting a request rather than the truth.
  */
 @Name("jinfer.Runtime")

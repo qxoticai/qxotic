@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Model-level prefill TTFT: a ~2k-token prompt, 1 output token, median of 3. The kernel-tier knob
- * is jam's own {@code JAM_ISA} env (e.g. {@code JAM_ISA=avx2} prices the pre-VNNI path); the GGUF
- * is LFM2.5-8B, overridable via {@code -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=<path>} (pass a
- * K-quant model to exercise the K-quant bands).
+ * is jam's {@code JAM_NATIVE_ISA} env (e.g. {@code JAM_NATIVE_ISA=avx2} prices the pre-VNNI path);
+ * the GGUF is LFM2.5-8B, overridable via {@code -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=<path>}
+ * (pass a K-quant model to exercise the K-quant bands).
  */
 @Tag("bench")
 class PrefillBench {
@@ -27,8 +27,8 @@ class PrefillBench {
                         + " stone across ten thousand seasons of patient disagreement. ";
         String prompt = para.repeat(60) + "\nSummarize in one word.";
         System.out.println(
-                "JAM_ISA="
-                        + String.valueOf(System.getenv("JAM_ISA"))
+                "JAM_NATIVE_ISA="
+                        + String.valueOf(System.getenv("JAM_NATIVE_ISA"))
                         + "  model="
                         + model.getFileName());
         try (JinferChatModel m =
