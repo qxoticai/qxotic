@@ -120,8 +120,6 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         Scratch s = spares.getAndSet(slot, null);
         if (s == null) {
             s = new Scratch(cache);
-        } else if (s.probe != null) {
-            cache.refresh(s.probe);
         }
         encode(utf8, start, end, out, s);
         if (s.kept()) {
@@ -146,7 +144,6 @@ final class FastEncoder implements TiktokenEngine.Encoder {
      */
     private void encode(byte[] text, int start, int end, IdBuffer out, Scratch s) {
         int[] ends = s.pieceEnds;
-        WordCache cache = s.probe != null ? this.cache : null;
         int cursor = start;
         while (cursor < end) {
             int n = split.split(text, cursor, end, ends, s.registers);
