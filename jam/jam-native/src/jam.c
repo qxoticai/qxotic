@@ -213,6 +213,10 @@ static const char* type_name(jam_dtype t) {
     }
 }
 
+/* The bits of wt that hold a ggml_type value; JAM_PACKED and any later flag sit above them. A type
+ * value jam has no kernel for is a valid request (EUNSUPPORTED), a bit above them a bad call (EINVAL). */
+#define JAM_TYPE_MASK 0xFF
+
 /* Elements per block of a weight type: k and ldw are whole blocks. 0 for a type jam does not know. */
 static int block_of(jam_dtype t) {
     switch (t) {
@@ -757,6 +761,15 @@ static int try_vnni_band_256(jam_context* ctx, const void* w, int ldw, const voi
 }
 #endif
 
+/* EUNSUPPORTED with the reason: a valid request no kernel on this context serves. */
+static jam_status no_kernel(const jam_context* ctx, jam_dtype wt, jam_dtype at, jam_dtype ct) {
+    jam_fail(JAM_EUNSUPPORTED, "no %s kernel for %s%s weights with %s activations and %s results",
+             jam_isa_name(ctx->active), type_name(wt & ~JAM_PACKED), (wt & JAM_PACKED) ? " packed" : "",
+             type_name(at), type_name(ct));
+    if (g_debug) fprintf(stderr, "[jam] %s\n", g_last_message);
+    return JAM_EUNSUPPORTED;
+}
+
 /* C = W @ Aᵀ : W weights (may be quantized; selects the kernel), A activations (float), C output. */
 /* The dispatch body - runs UNDER the per-context busy lock (see jam_mm); ctx is resolved + validated. */
 static jam_status jam_mm_run(jam_context* ctx,
@@ -786,7 +799,7 @@ static jam_status jam_mm_run(jam_context* ctx,
      * prefill. A ctx that never advertised the layout (jam_pack_size == 0) has no kernel that
      * can read these bytes: EUNSUPPORTED, never a wrong result. */
     if (wt & JAM_PACKED) {
-        if (at != JAM_F32 || ct != JAM_F32) return JAM_EUNSUPPORTED;
+        if (at != JAM_F32 || ct != JAM_F32) return no_kernel(ctx, wt, at, ct);
 #ifdef JAM_HAVE_DOTPROD
         const jam_dtype base = (jam_dtype) (wt & ~JAM_PACKED);
         jam_job_fn gemv, mmk;
@@ -799,9 +812,9 @@ static jam_status jam_mm_run(jam_context* ctx,
             case JAM_Q4_K: gemv = jam_gemv_q4k_packed_4x1;  mmk = jam_mm_q4k_packed_dotprod;  break;
             case JAM_Q5_K: gemv = jam_gemv_q5k_packed_4x1;  mmk = jam_mm_q5k_packed_dotprod;  break;
             case JAM_Q6_K: gemv = jam_gemv_q6k_packed_4x1;  mmk = jam_mm_q6k_packed_dotprod;  break;
-            default: return JAM_EUNSUPPORTED;
+            default: return no_kernel(ctx, wt, at, ct);
         }
-        if (pack_bytes(ctx, base, m, k) == 0) return JAM_EUNSUPPORTED;
+        if (pack_bytes(ctx, base, m, k) == 0) return no_kernel(ctx, wt, at, ct);
         jam_q8_job q = { w, k, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
         if (n == 1) return run_quant(ctx, &q, m, gemv, NULL);
         /* prefill: the shared requant fan, then the 4-row x 4-col kernel over whole row GROUPS
@@ -813,7 +826,7 @@ static jam_status jam_mm_run(jam_context* ctx,
         jam_run(ctx, m / 4, mmk, &q);
         return JAM_OK;
 #else
-        return JAM_EUNSUPPORTED;
+        return no_kernel(ctx, wt, at, ct);
 #endif
     }
 
@@ -1004,11 +1017,7 @@ static jam_status jam_mm_run(jam_context* ctx,
                                        kquant_info[i].floor);
             }
 
-    jam_fail(JAM_EUNSUPPORTED, "no %s kernel for %s%s weights with %s activations and %s results",
-             jam_isa_name(ctx->active), type_name(wt & ~JAM_PACKED), (wt & JAM_PACKED) ? " packed" : "",
-             type_name(at), type_name(ct));
-    if (g_debug) fprintf(stderr, "[jam] %s\n", g_last_message);
-    return JAM_EUNSUPPORTED;
+    return no_kernel(ctx, wt, at, ct);
 }
 
 
@@ -1018,10 +1027,13 @@ jam_status jam_mm(jam_context* ctx,
                   void*       r, int32_t rt, int32_t ldr,    /* result      [n x m], R[j*ldr + i] = W[i,:] . A[j,:] */
                   int32_t m, int32_t n, int32_t k)
 {
+    jam_succeed();   /* a path that fails without a message of its own gets the generic one below */
     if (!ctx) return jam_fail(JAM_EINVAL, "context is NULL");
     if (ctx->fork_gen != atomic_load_explicit(&g_fork_gen, memory_order_relaxed))
         return jam_fail(JAM_ERROR, "the context was made before fork: make a new one in this process");
     if (!w || !a || !r) return jam_fail(JAM_EINVAL, "%s is NULL", !w ? "w" : !a ? "a" : "r");
+    if (wt & ~(JAM_PACKED | JAM_TYPE_MASK))
+        return jam_fail(JAM_EINVAL, "wt 0x%x sets bits that are neither a type nor JAM_PACKED", (unsigned) wt);
     if (m <= 0 || n <= 0 || k <= 0)
         return jam_fail(JAM_EINVAL, "m, n and k must be positive (m=%d n=%d k=%d)", m, n, k);
     if (ldw < k || lda < k || ldr < m)

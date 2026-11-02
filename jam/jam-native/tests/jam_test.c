@@ -619,6 +619,14 @@ static void suite_api(void) {
     OK("Q8_0 k%32!=0",  jam_mm(d, W, JAM_Q8_0, 48, A, JAM_F32, 48, C, JAM_F32, m, m, n, 48) == JAM_EINVAL);
     OK("Q4_K ldw%256!=0", jam_mm(d, W, JAM_Q4_K, 300, A, JAM_F32, 256, C, JAM_F32, m, m, 1, 256) == JAM_EINVAL);
     OK("shape reason",  *jam_last_error(&code) && code == JAM_EINVAL);
+    /* wt is a type and flags: a bit that is neither is the caller's bug */
+    OK("wt unknown flag", jam_mm(d, W, JAM_F32 | 0x200, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
+    OK("wt negative",     jam_mm(d, W, -1, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
+    /* each failure says its own reason, never the previous call's */
+    OK("unsupported result", jam_mm(d, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F16, m, m, n, k) == JAM_EUNSUPPORTED);
+    OK("packed after it",    jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F16, 256, C, JAM_F32, 4, 4, 1, 256)
+                             == JAM_EUNSUPPORTED);
+    OK("packed reason", strstr(jam_last_error(&code), "q6_k packed") && code == JAM_EUNSUPPORTED);
     OK("success after failure clears", jam_mm(d, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK
                                        && !strcmp(jam_last_error(&code), "") && code == JAM_OK);
 
