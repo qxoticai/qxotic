@@ -17,6 +17,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * Byte-level BPE as tiktoken defines it, the reference encoder of the family.
@@ -45,11 +46,12 @@ final class TiktokenModel extends AbstractTokenizationModel {
             wholeTokens; // with ignoreMerges: a word's bytes -> its token
     private final Map<String, int[]> memo = new ConcurrentHashMap<>();
 
-    // The engine's encoder per rule set, resolved on first use. A benign race: every resolution
-    // has the same outcome, and one that sees the flag before the encoder encodes here meanwhile.
-    private final TiktokenEngine.Encoder[] encoders =
-            new TiktokenEngine.Encoder[TiktokenEngine.R50K_NUMBERS + 1];
-    private final boolean[] resolved = new boolean[TiktokenEngine.R50K_NUMBERS + 1];
+    /** An entry of {@link #encoders}: no engine encodes the rule set. */
+    private static final Object NO_ENCODER = new Object();
+
+    /** The engine's encoder per rule set, or {@link #NO_ENCODER}; null until first used. */
+    private final AtomicReferenceArray<Object> encoders =
+            new AtomicReferenceArray<>(TiktokenSplitter.RULE_SETS);
 
     private TiktokenModel(
             Vocabulary vocabulary,
@@ -348,17 +350,20 @@ final class TiktokenModel extends AbstractTokenizationModel {
         if (rules < 0) {
             return null;
         }
-        if (!resolved[rules]) {
+        Object encoder = encoders.get(rules);
+        if (encoder == null) {
             // checked against the scanner the engine's rules stand for, without the cuts core makes
-            encoders[rules] = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
-            resolved[rules] = true;
+            encoder = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
+            Object first = encoders.compareAndExchange(rules, null, encoder);
+            encoder = first != null ? first : encoder;
         }
-        return encoders[rules];
+        return encoder != NO_ENCODER ? (TiktokenEngine.Encoder) encoder : null;
     }
 
-    private TiktokenEngine.Encoder findEncoder(int rules, TiktokenSplitter splitter) {
+    /** The first engine's encoder that agrees with this model, or {@link #NO_ENCODER}. */
+    private Object findEncoder(int rules, TiktokenSplitter splitter) {
         if ("none".equals(System.getProperty("toknroll.engine"))) {
-            return null;
+            return NO_ENCODER;
         }
         for (TiktokenEngine engine : ENGINES) {
             try {
@@ -370,7 +375,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 // passed over like one that disagrees: say, the Vector API module is not enabled
             }
         }
-        return null;
+        return NO_ENCODER;
     }
 
     /** Whether {@code candidate} encodes the sample as this model does, from chars and bytes. */
@@ -550,8 +555,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /** Names the engine encoder once one encodes for this model. */
     @Override
     public String toString() {
-        for (TiktokenEngine.Encoder encoder : encoders) {
-            if (encoder != null) {
+        for (int rules = 0; rules < encoders.length(); rules++) {
+            Object encoder = encoders.get(rules);
+            if (encoder != null && encoder != NO_ENCODER) {
                 return "Tiktoken BPE, encoded by " + encoder.getClass().getName();
             }
         }

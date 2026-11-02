@@ -121,6 +121,9 @@ final class TiktokenSplitter implements Splitter {
         return base;
     }
 
+    /** How many rule sets {@link #rules} names: {@link TiktokenEngine}'s run from 0 to the last. */
+    static final int RULE_SETS = TiktokenEngine.R50K_NUMBERS + 1;
+
     /** Which of the {@link TiktokenEngine} rule sets this scanner is, or -1. */
     int rules() {
         return rules;
