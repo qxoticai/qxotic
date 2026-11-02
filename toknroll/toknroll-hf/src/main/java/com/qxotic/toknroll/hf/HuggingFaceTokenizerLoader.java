@@ -265,12 +265,24 @@ public final class HuggingFaceTokenizerLoader {
         Vocabulary vocabulary = ImplAccessor.createVocabulary(entries.tokens, entries.tokenTypes);
         TokenizationModel tokenizationModel;
         if (sentencePieceStyle) {
+            // ponytail: no SentencePiece tokenizer.json sets it; HF's whole-word lookup would need
+            // the text uncut, refused rather than encoded wrong
+            if (ignoreMerges) {
+                throw unsupported(
+                        "tokenizer.json:model.ignore_merges", "true", "false for SentencePiece");
+            }
             long[][] packed = buildPackedMergesFromJson(vocabulary, model.get("merges"));
             tokenizationModel =
                     ImplAccessor.createSentencePieceBpeModel(vocabulary, packed[0], packed[1]);
             Normalizer base = normalizer == null ? Normalizer.identity() : normalizer;
             normalizer = Normalizer.sequence(base, text -> text.toString().replace(' ', METASPACE));
-            splitter = Splitter.identity();
+            // HF merges the text whole, or with Metaspace's split at every space; whole, words
+            // merge alike where no token joins them, far cheaper
+            Map<String, Object> metaspace = metaspacePreTokenizer(preTokenizerObj);
+            boolean splits = metaspace != null && !Boolean.FALSE.equals(metaspace.get("split"));
+            splitter =
+                    ImplAccessor.createSentencePieceSplitter(
+                            splits ? new String[0] : entries.tokens, false);
         } else {
             String[] mergeSpecs = extractMerges(model.get("merges"));
             List<MergeRule> merges = buildMerges(vocabulary, mergeSpecs);

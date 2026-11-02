@@ -3,6 +3,7 @@ package com.qxotic.toknroll.gguf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.TokenizationPipeline;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -10,7 +11,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  * The pre names whose regex is one of the tiktoken family's, alone or after a first stage that cuts
  * around numbers or before newlines, get core's hand-written scanner, which the vector engine takes
  * over: a pre registered under a regex spelled otherwise falls back to {@code java.util.regex},
- * several times slower, with no other sign.
+ * several times slower, with no other sign. Gemma 4 gets its word split.
  */
 class GGUFFastSplitterTest {
 
@@ -49,5 +50,10 @@ class GGUFFastSplitterTest {
             })
     void theFamilyGetsTheScanner(String pre) {
         assertEquals("TiktokenSplitter", splitter(pre), pre);
+    }
+
+    @Test
+    void gemma4SplitsInWords() {
+        assertEquals("SentencePieceSplitter", splitter("gemma4"));
     }
 }

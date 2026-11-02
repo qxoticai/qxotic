@@ -155,6 +155,16 @@ public final class ImplAccessor {
         return scanner != null ? scanner : RegexSplitter.create(pattern, emitGaps);
     }
 
+    /**
+     * A SentencePiece text in words, cut before a space where no token of {@code tokens} spans the
+     * cut, so a merge model gives the whole text's ids. With {@code isolateNewlines}, every newline
+     * run is a piece of its own: {@code "ab\n\ncd ef"} is {@code "ab" | "\n\n" | "cd" | " ef"}, and
+     * without it {@code "ab\n\ncd" | " ef"}. See {@link SentencePieceSplitter} for the rule.
+     */
+    public static Splitter createSentencePieceSplitter(String[] tokens, boolean isolateNewlines) {
+        return new SentencePieceSplitter(tokens, isolateNewlines);
+    }
+
     /** The scanner for stages it splits alike, or null: see {@link Splitter#sequence}. */
     public static Splitter createStagedSplitter(Splitter[] stages) {
         return TiktokenSplitter.forStages(stages);

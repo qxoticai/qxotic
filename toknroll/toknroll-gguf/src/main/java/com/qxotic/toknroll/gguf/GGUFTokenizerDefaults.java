@@ -180,7 +180,13 @@ final class GGUFTokenizerDefaults {
         registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken", "pixtral");
         registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "llama4", "kanana2", "minimax-m2");
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
-        registerPreTokenizers(builder, GEMMA4_PATTERN, "gemma4", "granite-embed-multi-311m");
+        registerPreTokenizers(builder, GEMMA4_PATTERN, "granite-embed-multi-311m");
+        // Gemma 4: its regex's lines, cut again into words the vocabulary never joins
+        builder.registerPreTokenizer(
+                "gemma4",
+                gguf ->
+                        ImplAccessor.createSentencePieceSplitter(
+                                gguf.getValue(String[].class, GGUFMetadataKeys.TOKENS), true));
 
         registerSequencePreTokenizers(
                 builder, new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN}, "deepseek-v3");
