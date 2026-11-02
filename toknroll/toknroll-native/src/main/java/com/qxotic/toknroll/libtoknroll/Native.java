@@ -37,6 +37,16 @@ public final class Native {
         }
     }
 
+    /** TOKNROLL_SPECIALS, the one option of toknroll_encode and toknroll_encode_batch. */
+    private static final int SPECIALS = 1;
+
+    /** Whether {@code flags} asks for specials; an unknown bit is an error. */
+    private static boolean specials(int flags) {
+        if ((flags & ~SPECIALS) != 0)
+            throw Errors.invalid("unknown flags 0x" + Integer.toHexString(flags & ~SPECIALS));
+        return flags == SPECIALS;
+    }
+
     /** A C handle over a tokenizer another library already holds (libjinfer's models). */
     public static ObjectHandle handle(Tokenizer tokenizer) {
         return HANDLES.create(Loaded.of(tokenizer));
@@ -172,7 +182,7 @@ public final class Native {
             ObjectHandle handle,
             CCharPointer text,
             UnsignedWord length,
-            boolean specials,
+            int flags,
             CIntPointer out,
             int capacity) {
         try {
@@ -185,7 +195,8 @@ public final class Native {
             int n = (int) length.rawValue();
             byte[] utf8 = copy(text, n);
             IntSequence.Builder ids = IntSequence.newBuilder(estimate(n));
-            encodeUtf8(loaded.tokenizer(), specials ? loaded.specials() : null, utf8, 0, n, ids);
+            Specials matcher = specials(flags) ? loaded.specials() : null;
+            encodeUtf8(loaded.tokenizer(), matcher, utf8, 0, n, ids);
             IntSequence encoded = ids.build();
             write(encoded, out.rawValue(), Math.min(encoded.length(), capacity));
             return encoded.length();
@@ -199,29 +210,33 @@ public final class Native {
             IsolateThread thread,
             ObjectHandle handle,
             CCharPointer texts,
-            CIntPointer textEnds,
+            CIntPointer textOffsets,
             int count,
-            boolean specials,
+            int flags,
             CIntPointer out,
             int capacity,
-            CIntPointer ends) {
+            CIntPointer offsets) {
         try {
             Errors.clear();
             Loaded loaded = get(handle);
             if (count < 0 || capacity < 0)
                 throw Errors.invalid("count and capacity must not be negative");
-            if ((texts.isNull() || textEnds.isNull() || ends.isNull()) && count > 0)
-                throw Errors.invalid("texts, text_ends and ends must not be NULL");
+            if (textOffsets.isNull() || offsets.isNull())
+                throw Errors.invalid("text_offsets and offsets must not be NULL");
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-            int[] starts = new int[count + 1];
-            for (int i = 0; i < count; i++) {
-                int end = textEnds.read(i);
-                if (end < starts[i]) throw Errors.invalid("text_ends must not decrease, at " + i);
-                starts[i + 1] = end;
+            int base = textOffsets.read(0);
+            if (base < 0) throw Errors.invalid("text_offsets must not be negative");
+            int[] starts = new int[count + 1]; // the texts' offsets from the first
+            for (int i = 1; i <= count; i++) {
+                starts[i] = textOffsets.read(i) - base;
+                if (starts[i] < starts[i - 1])
+                    throw Errors.invalid("text_offsets must not decrease, at " + i);
             }
+            if (texts.isNull() && starts[count] > 0) throw Errors.invalid("texts is NULL");
             Tokenizer tokenizer = loaded.tokenizer();
-            Specials matcher = specials ? loaded.specials() : null;
-            long in = texts.rawValue(); // raw addresses: a lambda in an image cannot capture a word
+            Specials matcher = specials(flags) ? loaded.specials() : null;
+            // raw addresses: a lambda in an image cannot capture a word
+            long in = texts.rawValue() + base;
             // runs of texts of about equal bytes, several per core so a long text holds no core
             // back; a run copies its texts in through one buffer and keeps its ids in one array
             int[] runs = Runs.of(starts, count, 4 * (ForkJoinPool.getCommonPoolParallelism() + 1));
@@ -236,6 +251,8 @@ public final class Native {
                                 int longest = 0;
                                 for (int i = first; i < last; i++)
                                     longest = Math.max(longest, starts[i + 1] - starts[i]);
+                                // one buffer per run, small enough to stay in cache, each text
+                                // copied in as it comes (one copy per run measured 6% slower)
                                 byte[] text = new byte[longest];
                                 IntSequence.Builder b =
                                         IntSequence.newBuilder(
@@ -250,9 +267,10 @@ public final class Native {
                                 ids[r] = b.build();
                             });
             int[] at = new int[count + 1]; // where text i's ids start
+            offsets.write(0, 0);
             for (int i = 0; i < count; i++) {
                 at[i + 1] = at[i] + counts[i];
-                ends.write(i, at[i + 1]);
+                offsets.write(i + 1, at[i + 1]);
             }
             // each run's ids written where they belong, on its own core
             long outAddress = out.rawValue();

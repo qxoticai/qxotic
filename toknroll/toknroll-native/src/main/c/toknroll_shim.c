@@ -16,9 +16,9 @@ void toknroll__error_set(T, int32_t, const char*);
 const char* toknroll__last_error(T, int32_t*);
 toknroll_tokenizer* toknroll__load(T, const char*);
 void toknroll__free(T, toknroll_tokenizer*);
-int32_t toknroll__encode(T, const toknroll_tokenizer*, const char*, size_t, bool, int32_t*, int32_t);
+int32_t toknroll__encode(T, const toknroll_tokenizer*, const char*, size_t, uint32_t, int32_t*, int32_t);
 int32_t toknroll__decode(T, const toknroll_tokenizer*, const int32_t*, int32_t, char*, int32_t);
-int32_t toknroll__encode_batch(T, const toknroll_tokenizer*, const char*, const int32_t*, int32_t, bool, int32_t*, int32_t, int32_t*);
+int32_t toknroll__encode_batch(T, const toknroll_tokenizer*, const char*, const int32_t*, int32_t, uint32_t, int32_t*, int32_t, int32_t*);
 int32_t toknroll__vocabulary_size(T, const toknroll_tokenizer*);
 int64_t toknroll__token_flags(T, const toknroll_tokenizer*, int32_t);
 int32_t toknroll__token(T, const toknroll_tokenizer*, int32_t, char*, int32_t);
@@ -34,10 +34,10 @@ int32_t toknroll_configure(const char* const* options, int32_t count) { return t
 toknroll_tokenizer* toknroll_load(const char* source) CALL(toknroll_tokenizer*, NULL, toknroll__load(t, source))
 void toknroll_free(toknroll_tokenizer* tk) { if (tk) CALL_VOID(toknroll__free(t, tk)) }   /* NULL never starts the runtime */
 
-int32_t toknroll_encode(const toknroll_tokenizer* tk, const char* text, size_t length, bool specials, int32_t* out, int32_t cap) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode(t, tk, text, length, specials, out, cap))
+int32_t toknroll_encode(const toknroll_tokenizer* tk, const char* text, size_t length, uint32_t flags, int32_t* out, int32_t cap) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode(t, tk, text, length, flags, out, cap))
 int32_t toknroll_decode(const toknroll_tokenizer* tk, const int32_t* ids, int32_t count, char* out, int32_t cap) CALL(int32_t, TOKNROLL_ERROR, toknroll__decode(t, tk, ids, count, out, cap))
 
-int32_t toknroll_encode_batch(const toknroll_tokenizer* tk, const char* texts, const int32_t* text_ends, int32_t count, bool specials, int32_t* out, int32_t cap, int32_t* ends) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode_batch(t, tk, texts, text_ends, count, specials, out, cap, ends))
+int32_t toknroll_encode_batch(const toknroll_tokenizer* tk, const char* texts, const int32_t* text_offsets, int32_t count, uint32_t flags, int32_t* out, int32_t cap, int32_t* offsets) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode_batch(t, tk, texts, text_offsets, count, flags, out, cap, offsets))
 
 int32_t toknroll_vocabulary_size(const toknroll_tokenizer* tk) CALL(int32_t, TOKNROLL_ERROR, toknroll__vocabulary_size(t, tk))
 int64_t toknroll_token_flags(const toknroll_tokenizer* tk, int32_t id) CALL(int64_t, TOKNROLL_ERROR, toknroll__token_flags(t, tk, id))

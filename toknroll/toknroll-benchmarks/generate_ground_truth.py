@@ -44,15 +44,6 @@ except ImportError:
     RawTokenizer = None
 
 
-def get_encoding(name):
-    """Get a tiktoken encoding by name."""
-    try:
-        return tiktoken.get_encoding(name)
-    except Exception as e:
-        print(f"Error loading encoding {name}: {e}")
-        return None
-
-
 def package_version(name):
     try:
         return importlib_metadata.version(name)
@@ -94,6 +85,11 @@ class HFAdapter:
                     revision=self.revision,
                 )
                 self.tokenizer = RawTokenizer.from_file(tokenizer_path)
+                self.non_special_added = {
+                    i: t.content
+                    for i, t in self.tokenizer.get_added_tokens_decoder().items()
+                    if not t.special
+                }
                 self.model_id = model_id
                 self.resolved_revision = resolve_hf_revision(model_id, self.revision)
                 return True
@@ -283,6 +279,10 @@ class Gemma3Adapter:
             self.resolved_revision = self._hf.resolved_revision
             return True
         return False
+
+    @property
+    def non_special_added(self):
+        return self._hf.non_special_added if self._hf is not None else {}
 
     def encode(self, text):
         if self._gemma_tokenizer is not None:
@@ -509,43 +509,19 @@ GOLDEN_TEST_STRINGS = [
 
 def generate_test_cases(encoding_name, max_cases=100):
     """Generate test cases for an encoding."""
-    enc = get_encoding(encoding_name)
-    if not enc:
-        return {}
+    enc = tiktoken.get_encoding(encoding_name)
     test_strings = GOLDEN_TEST_STRINGS
 
     cases = {}
 
-    for i, text in enumerate(test_strings):
-        if len(cases) >= max_cases:
-            break
-        try:
-            # Handle null bytes for JSON
-            safe_text = text.replace("\x00", "\ufffd")
-
-            # Tokenize as raw text (no special-token auto handling)
-            tokens = enc.encode(safe_text, disallowed_special=())
-
-            # Decode
-            decoded = enc.decode(tokens)
-
-            # Decode to bytes - flatten to single list of byte values
-            decoded_bytes = enc.decode_tokens_bytes(tokens)
-            byte_list = []
-            for b in decoded_bytes:
-                if len(b) == 1:
-                    byte_list.append(b[0])
-                else:
-                    byte_list.extend(b)
-
-            # Create case
-            case_id = f"case_{len(cases):03d}"
-            # text and tokens are the whole truth: the decoded text is the text (the tokenizer
-            # round-trips), its bytes are its UTF-8, the count is len(tokens)
-            cases[case_id] = {"text": decoded, "tokens": tokens}
-        except Exception as e:
-            print(f"  Warning: Failed to process case {i}: {e}")
-
+    for text in test_strings[:max_cases]:
+        safe_text = text.replace("\x00", "\ufffd")  # JSON-safe
+        # Raw text: special-token spellings are text
+        tokens = enc.encode(safe_text, disallowed_special=())
+        # text and tokens are the whole truth: tiktoken round-trips, so the decoded text is the
+        # text, its bytes are its UTF-8, the count is len(tokens)
+        assert enc.decode(tokens) == safe_text, (encoding_name, safe_text)
+        cases[f"case_{len(cases):03d}"] = {"text": safe_text, "tokens": tokens}
     return cases
 
 
@@ -553,18 +529,20 @@ def generate_cases_with_adapter(adapter, max_cases=100):
     test_strings = GOLDEN_TEST_STRINGS
 
     cases = {}
-    for i, text in enumerate(test_strings):
-        if len(cases) >= max_cases:
-            break
-        try:
-            safe_text = text.replace("\x00", "\ufffd")
-            tokens = adapter.encode(safe_text)
-            decoded = adapter.decode(tokens)
-            decoded_bytes = adapter.decode_bytes(tokens)
-            case_id = f"case_{len(cases):03d}"
-            cases[case_id] = {"text": decoded, "tokens": tokens}
-        except Exception as e:
-            print(f"  Warning: Failed to process case {i}: {e}")
+    for text in test_strings[:max_cases]:
+        safe_text = text.replace("\x00", "\ufffd")  # JSON-safe
+        tokens = adapter.encode(safe_text)
+        case = {"text": safe_text, "tokens": tokens}
+        decoded = adapter.decode(tokens)
+        if decoded != safe_text:  # e.g. a SentencePiece decoder drops the leading space
+            case["decoded"] = decoded
+        added = getattr(adapter, "non_special_added", {})
+        matched = sorted({added[i].replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+                          for i in tokens if i in added})
+        if matched:  # toknroll: everything is text; the test fails on it, with this cause
+            case["known"] = ("Hugging Face matches non-special added tokens "
+                             + ", ".join(matched) + "; toknroll encodes them as text")
+        cases[f"case_{len(cases):03d}"] = case
     return cases
 
 
@@ -729,6 +707,87 @@ def generate_model_family_ground_truth():
             "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "XiaomiMiMo/MiMo-V2-Flash",
+            ],
+        },
+        {
+            "family_id": "moonshot.kimi3",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "moonshotai/Kimi-K3",
+            ],
+        },
+        {
+            "family_id": "deepseek.v4_1",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "deepseek-ai/DeepSeek-V4.1-Flash",
+            ],
+        },
+        {
+            "family_id": "alibaba.qwen3_6",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "Qwen/Qwen3.6-27B",
+            ],
+        },
+        {
+            "family_id": "poolside.laguna_xs2_1",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "poolside/Laguna-XS-2.1",
+            ],
+        },
+        {
+            "family_id": "poolside.laguna_s2_1",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "poolside/Laguna-S-2.1",
+            ],
+        },
+        {
+            "family_id": "inclusion.ling3_0",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "inclusionAI/Ling-3.0-tiny",
+            ],
+        },
+        {
+            "family_id": "inclusion.ling3_1",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "inclusionAI/Ling-3.1-flash",
+            ],
+        },
+        {
+            "family_id": "liquid.lfm3",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "LiquidAI/LFM3-1.7B",
+            ],
+        },
+        {
+            "family_id": "openai.gpt-oss",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "openai/gpt-oss-20b",
             ],
         },
     ]

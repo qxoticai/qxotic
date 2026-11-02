@@ -17,6 +17,12 @@ public final class ImplAccessor {
 
     private static final IntSequence EMPTY_SEQUENCE = wrap(new int[0]);
 
+    /**
+     * Laguna's newline stage as a regex of pieces: a newline run, CRLF included, starts a piece
+     * that runs to the next. Followed by Qwen2's regex it takes the staged scanner.
+     */
+    public static final String LAGUNA_NEWLINES = TiktokenSplitter.LAGUNA_NEWLINES;
+
     private ImplAccessor() {}
 
     public static IntSequence empty() {
@@ -149,6 +155,21 @@ public final class ImplAccessor {
         return scanner != null ? scanner : RegexSplitter.create(pattern, emitGaps);
     }
 
+    /**
+     * A SentencePiece text in words, cut before a space where no token of {@code tokens} spans the
+     * cut, so a merge model gives the whole text's ids. With {@code isolateNewlines}, every newline
+     * run is a piece of its own: {@code "ab\n\ncd ef"} is {@code "ab" | "\n\n" | "cd" | " ef"}, and
+     * without it {@code "ab\n\ncd" | " ef"}. See {@link SentencePieceSplitter} for the rule.
+     */
+    public static Splitter createSentencePieceSplitter(String[] tokens, boolean isolateNewlines) {
+        return new SentencePieceSplitter(tokens, isolateNewlines);
+    }
+
+    /** The scanner for stages it splits alike, or null: see {@link Splitter#sequence}. */
+    public static Splitter createStagedSplitter(Splitter[] stages) {
+        return TiktokenSplitter.forStages(stages);
+    }
+
     public static Specials specialsNone() {
         return SpecialsImpl.none();
     }
@@ -183,65 +204,14 @@ public final class ImplAccessor {
         return TiktokenReconstruction.mergeRules(mergeableRanks);
     }
 
-    public static Tokenizer sentencePieceDecodeWrapper(Tokenizer base, boolean trimLeadingSpace) {
-        return sentencePieceDecodeWrapper(base, trimLeadingSpace, true);
-    }
-
-    public static Tokenizer sentencePieceDecodeWrapper(
-            Tokenizer base, boolean trimLeadingSpace, boolean forwardAtStartOfText) {
-        return new TransformedTokenizer(base) {
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(
-                        decoded, forwardAtStartOfText && atStartOfText);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return trimLeadingSpace;
-            }
-        };
-    }
-
-    public static Tokenizer metaspaceWrapper(Tokenizer base) {
-        return new TransformedTokenizer(base) {
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                String prefixed = metaspaced(text, startInclusive, endExclusive);
-                base.encodeInto(prefixed, 0, prefixed.length(), out);
-            }
-
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return true;
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                String prefixed = metaspaced(text, startInclusive, endExclusive);
-                return base.countTokens(prefixed, 0, prefixed.length());
-            }
-        };
-    }
-
     /**
-     * Hugging Face's Metaspace, prepend scheme "first": spaces become {@code ▁}, and the input's
-     * first segment gets a leading {@code ▁} unless it is empty or already begins with one.
+     * A SentencePiece tokenizer as the text sees it, a space ' ' where the vocabulary spells
+     * U+2581: encoding prepends U+2581 as {@code prependScheme} ({@code always}, {@code first} or
+     * {@code never}) says, decoding writes each token's bytes, trimming the first token's leading
+     * space with {@code trimLeadingSpace}. See {@link MetaspaceTokenizer}.
      */
-    static String metaspaced(CharSequence text, int startInclusive, int endExclusive) {
-        String replaced =
-                text.subSequence(startInclusive, endExclusive).toString().replace(' ', '\u2581');
-        boolean prefix =
-                startInclusive == 0 && !replaced.isEmpty() && replaced.charAt(0) != '\u2581';
-        return prefix ? '\u2581' + replaced : replaced;
+    public static Tokenizer metaspaceTokenizer(
+            Tokenizer base, String prependScheme, boolean trimLeadingSpace) {
+        return new MetaspaceTokenizer(base, prependScheme, trimLeadingSpace);
     }
 }

@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.MISTRAL_DECODER;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildBpeModel;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildTokenizerJson;
@@ -389,7 +390,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                         buildTokenizerJson(
                                 buildBpeModel("{\"▁hi\":0}", "[]", ""),
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                                MISTRAL_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertEquals("hi", tokenizer.decode(IntSequence.of(0)));

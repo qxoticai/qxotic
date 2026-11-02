@@ -17,10 +17,11 @@ import jdk.incubator.vector.VectorSpecies;
  * letter run's case, a whitespace run's last newline) are answered by looking ahead by hand, which
  * is rare. The result is a bitmap of piece starts, popped one trailing-zero count at a time.
  *
- * <p>Three grammars: r50k (GPT-2's byte level regex), the cl100k family (Llama 3, Qwen2) and the
- * o200k family (gpt-4o, gpt-oss, Tekken). After Hugging Face's {@code bitcannon}, rule for rule;
- * the doc comments there say why each rule is stated the way it is. Exactness is proven as the
- * scalar scanner's is: against the regex, over a fuzz corpus and all of enwik8.
+ * <p>Three grammars: r50k (GPT-2's byte level regex, alone or after a stage that cuts every number
+ * apart), the cl100k family (Llama 3, Qwen2) and the o200k family (gpt-4o, gpt-oss, Tekken). After
+ * Hugging Face's {@code bitcannon}, rule for rule; the doc comments there say why each rule is
+ * stated the way it is. Exactness is proven as the scalar scanner's is: against the regex, over a
+ * fuzz corpus and all of enwik8.
  */
 final class BitSplit {
     /** A block is 64 bytes, read as one, two or four of these vectors. */
@@ -46,7 +47,7 @@ final class BitSplit {
 
     /** The engine for one of the rule sets of {@link TiktokenEngine}, or null. */
     static BitSplit forRules(int rules) {
-        return rules >= TiktokenEngine.CL100K && rules <= TiktokenEngine.TEKKEN
+        return rules >= TiktokenEngine.CL100K && rules <= TiktokenEngine.R50K_NUMBERS
                 ? new BitSplit(rules)
                 : null;
     }
@@ -342,6 +343,15 @@ final class BitSplit {
         return b ? 1 : 0;
     }
 
+    /**
+     * A split's blocks and its ring of starts, about 1.3 KB, kept by a caller for its next split
+     * instead of allocated per call: a thread's at a time.
+     */
+    static final class Registers {
+        final Block[] blocks = {new Block(), new Block(), new Block(), new Block(), new Block()};
+        final long[] starts = new long[RING];
+    }
+
     // ---- the programs ----
 
     /**
@@ -352,12 +362,12 @@ final class BitSplit {
         final byte[] text;
         final int start;
         final int end;
-        Block pv = new Block();
-        Block cur = new Block();
-        Block nx = new Block();
-        final Block bk = new Block();
-        final Block fw = new Block();
-        final long[] starts = new long[RING];
+        Block pv;
+        Block cur;
+        Block nx;
+        final Block bk;
+        final Block fw;
+        final long[] starts;
         int seed;
 
         // the block in hand
@@ -378,10 +388,22 @@ final class BitSplit {
         long contractionOpens; // bits of the next block a contraction ending in it opens
         long contractionInner; // bits of the next block inside a contraction
 
-        Run(byte[] text, int start, int end) {
+        /**
+         * The registers are reused: {@code cur} and {@code nx} are classified before they are read,
+         * {@code bk} and {@code fw} rewritten in the fields the rules read, a start before it is
+         * popped; only {@code pv}, read as the block before the text, is cleared.
+         */
+        Run(byte[] text, int start, int end, Registers r) {
             this.text = text;
             this.start = start;
             this.end = end;
+            this.pv = r.blocks[0];
+            this.cur = r.blocks[1];
+            this.nx = r.blocks[2];
+            this.bk = r.blocks[3];
+            this.fw = r.blocks[4];
+            this.starts = r.starts;
+            pv.clear();
         }
 
         /** The starts of the block in hand; the driver keeps the leads and opens position 0. */
@@ -595,18 +617,23 @@ final class BitSplit {
      * character.
      */
     private static final class R50k extends Run {
-        R50k(byte[] text, int start, int end) {
-            super(text, start, end);
+        private final boolean numbers; // R50K_NUMBERS: a stage before cut around every number
+
+        R50k(byte[] text, int start, int end, Registers r, boolean numbers) {
+            super(text, start, end, r);
+            this.numbers = numbers;
         }
 
         @Override
         long rule() {
             // `\s+(?!\S)` hands the run's last blank to what follows, as a ` ?` prefix if it is a
-            // space, else as a piece of its own: either way it opens one, unless it ends the text
-            long steal = toLead(cur.ws & lb & ~eof & ~fw.ws, cur.cont, pv.cont);
+            // space, else as a piece of its own: either way it opens one, unless it ends the text.
+            // With the numbers cut apart, a number ends the text before it, and takes no blank.
+            long ends = eof | (numbers ? (cur.n >>> 1) | (nx.n << 63) : 0);
+            long steal = toLead(cur.ws & lb & ~ends & ~fw.ws, cur.cont, pv.cont);
             long st =
                     (cur.letters & ~bk.letters & ~bk.sp)
-                            | (cur.n & ~bk.n & ~bk.sp)
+                            | (numbers ? cur.n : cur.n & ~bk.n & ~bk.sp)
                             | (cur.other & ~bk.other & ~bk.sp)
                             | (cur.ws & ~bk.ws)
                             | steal;
@@ -630,8 +657,8 @@ final class BitSplit {
         boolean nlRun; // an other-run's [\r\n]* tail is still open
         boolean prevOsf; // the last byte belonged to a piece-opening other char
 
-        Cl100k(byte[] text, int start, int end, int digitCap, int contraction) {
-            super(text, start, end);
+        Cl100k(byte[] text, int start, int end, Registers r, int digitCap, int contraction) {
+            super(text, start, end, r);
             this.digitCap = digitCap;
             this.contraction = contraction;
         }
@@ -709,8 +736,8 @@ final class BitSplit {
 
         // second suffix, since (?i:...)? applies once
 
-        O200k(byte[] text, int start, int end, boolean suffix, int digitCap) {
-            super(text, start, end);
+        O200k(byte[] text, int start, int end, Registers r, boolean suffix, int digitCap) {
+            super(text, start, end, r);
             this.suffix = suffix;
             this.digitCap = digitCap;
         }
@@ -931,22 +958,24 @@ final class BitSplit {
         }
     }
 
-    private Run run(byte[] text, int start, int end) {
+    private Run run(byte[] text, int start, int end, Registers r) {
         switch (rules) {
             case TiktokenEngine.CL100K:
-                return new Cl100k(text, start, end, 3, FOLD);
+                return new Cl100k(text, start, end, r, 3, FOLD);
             case TiktokenEngine.CL100K_ASCII:
-                return new Cl100k(text, start, end, 3, ASCII_BOTH);
+                return new Cl100k(text, start, end, r, 3, ASCII_BOTH);
             case TiktokenEngine.QWEN2:
-                return new Cl100k(text, start, end, 1, FOLD);
+                return new Cl100k(text, start, end, r, 1, FOLD);
             case TiktokenEngine.QWEN2_ASCII:
-                return new Cl100k(text, start, end, 1, ASCII_BOTH);
+                return new Cl100k(text, start, end, r, 1, ASCII_BOTH);
             case TiktokenEngine.R50K:
-                return new R50k(text, start, end);
+                return new R50k(text, start, end, r, false);
+            case TiktokenEngine.R50K_NUMBERS:
+                return new R50k(text, start, end, r, true);
             case TiktokenEngine.O200K:
-                return new O200k(text, start, end, true, 3);
+                return new O200k(text, start, end, r, true, 3);
             case TiktokenEngine.TEKKEN:
-                return new O200k(text, start, end, false, 1);
+                return new O200k(text, start, end, r, false, 1);
             default:
                 throw new IllegalStateException("rules " + rules);
         }
@@ -976,10 +1005,15 @@ final class BitSplit {
      * boundary; nothing past {@code end} is read.
      */
     int split(byte[] text, int start, int end, int[] ends) {
+        return split(text, start, end, ends, new Registers());
+    }
+
+    /** {@link #split(byte[], int, int, int[])} in the caller's registers. */
+    int split(byte[] text, int start, int end, int[] ends, Registers registers) {
         if (end <= start) {
             return 0;
         }
-        Run run = run(text, start, end);
+        Run run = run(text, start, end, registers);
         int nblk = (end - start + 63) >>> 6;
         run.seed = classify(text, start, Math.min(64, end - start), end, 0, run.cur);
         int n = 0;

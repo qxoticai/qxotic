@@ -1,11 +1,15 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.GEMMA_DECODER;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.MISTRAL_DECODER;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.SENTENCEPIECE_MODEL;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildBpeModel;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
-import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildSentencePieceVocab;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildTokenizerJson;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
@@ -50,34 +54,28 @@ class HuggingFaceTokenizerInvariantTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel(
-                                        buildSentencePieceVocab(Map.of("▁hi", 256, "▁hello", 257)),
-                                        "[]",
-                                        ",\"ignore_merges\":true"),
+                                SENTENCEPIECE_MODEL,
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                                MISTRAL_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertInvariants("metaspace", tokenizer, List.of("", "hi", "hello world"));
     }
 
+    /** Gemma's shape: a normalizer spells the spaces, no Metaspace and no stripping decoder. */
     @Test
     void sentencePieceStyleTokenizerInvariants() throws IOException {
-        // SentencePiece models require byte fallback tokens marked as BYTE type.
-        // This test is disabled until we can create proper SPM test vocabularies.
-        // Path tokenizerJson =
-        //         writeTokenizerJson(
-        //                 buildTokenizerJson(
-        //                         buildBpeModel(
-        //                                 buildSentencePieceVocab(Map.of("▁hi", 256, "▁hello",
-        // 257)),
-        //                                 "[]",
-        //                                 ",\"ignore_merges\":true"),
-        //                         "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\"
-        // \"},\"content\":\"▁\"}"));
-        //
-        // Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
-        // assertInvariants("sentencepiece", tokenizer, List.of("", "hi", "hello world"));
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                SENTENCEPIECE_MODEL,
+                                "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
+                                        + " \"},\"content\":\"▁\"}",
+                                GEMMA_DECODER));
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+        assertInvariants("sentencepiece", tokenizer, List.of("", "hi", "hello world", " x"));
+        assertEquals(" ello", tokenizer.decode(IntSequence.wrap(new int[] {266})));
     }
 
     @Test
@@ -85,12 +83,10 @@ class HuggingFaceTokenizerInvariantTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel(
-                                        buildSentencePieceVocab(Map.of("▁hi", 256)),
-                                        "[]",
-                                        ",\"ignore_merges\":true"),
+                                SENTENCEPIECE_MODEL,
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                                MISTRAL_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         IntSequence tokens = tokenizer.encode("");
@@ -103,12 +99,10 @@ class HuggingFaceTokenizerInvariantTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel(
-                                        buildSentencePieceVocab(Map.of("▁hi", 256, "▁hello", 257)),
-                                        "[]",
-                                        ",\"ignore_merges\":true"),
+                                SENTENCEPIECE_MODEL,
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                                MISTRAL_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         IntSequence tokens = tokenizer.encode("hello");
@@ -122,13 +116,10 @@ class HuggingFaceTokenizerInvariantTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel(
-                                        buildSentencePieceVocab(
-                                                Map.of("▁ello", 256, "ello", 257, "x", 258)),
-                                        "[]",
-                                        ",\"ignore_merges\":true"),
+                                SENTENCEPIECE_MODEL,
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\",\"prepend_scheme\":\"first\"}",
+                                MISTRAL_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
 
@@ -146,17 +137,65 @@ class HuggingFaceTokenizerInvariantTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel(
-                                        buildSentencePieceVocab(Map.of("▁ello", 256, "x", 257)),
-                                        "[]",
-                                        ",\"ignore_merges\":true"),
+                                SENTENCEPIECE_MODEL,
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
-                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                                MISTRAL_DECODER));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
 
-        assertEquals("ello", tokenizer.decode(IntSequence.wrap(new int[] {256})));
-        assertEquals("x ello", tokenizer.decode(IntSequence.wrap(new int[] {257, 256})));
+        assertEquals("ello", tokenizer.decode(IntSequence.wrap(new int[] {266})));
+        assertEquals("x ello", tokenizer.decode(IntSequence.wrap(new int[] {262, 266})));
+    }
+
+    @Test
+    void sentencePieceWithIgnoreMergesIsRefused() throws IOException {
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                SENTENCEPIECE_MODEL.replace(
+                                        ",\"byte_fallback\"",
+                                        ",\"ignore_merges\":true,\"byte_fallback\""),
+                                "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}"));
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
+        assertTrue(refused.getMessage().contains("ignore_merges"), refused.getMessage());
+    }
+
+    /**
+     * Ranked merging, as Hugging Face: merges b+c, a+b, ab+c, abc+d make "abcd" a, bc, d, though
+     * "abcd" is a token; only ignore_merges takes a word that is a token whole. The external review
+     * of 2026-11-02 found the whole-token shortcut taken regardless on main.
+     */
+    @Test
+    void mergesKeepTheirRankEvenWhenTheWordIsAToken() throws IOException {
+        for (boolean ignoreMerges : new boolean[] {false, true}) {
+            Path tokenizerJson =
+                    writeTokenizerJson(
+                            buildTokenizerJson(
+                                    buildBpeModel(
+                                            buildByteLevelVocab(
+                                                    Map.of(
+                                                            "bc", 256, "ab", 257, "abc", 258,
+                                                            "abcd", 259)),
+                                            "[\"b c\",\"a b\",\"ab c\",\"abc d\"]",
+                                            ",\"ignore_merges\":" + ignoreMerges),
+                                    "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":false,"
+                                        + "\"use_regex\":true}"));
+            Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+            // Hugging Face tokenizers 0.23.2 on the same file
+            List<String> abc = ignoreMerges ? List.of("abc") : List.of("a", "bc");
+            List<String> abcd = ignoreMerges ? List.of("abcd") : List.of("a", "bc", "d");
+            assertEquals(abc, spellings(tokenizer, "abc"), "ignore_merges " + ignoreMerges);
+            assertEquals(abcd, spellings(tokenizer, "abcd"), "ignore_merges " + ignoreMerges);
+            assertEquals(List.of("a", "bc", "d", "x"), spellings(tokenizer, "abcdx"));
+        }
+    }
+
+    private static List<String> spellings(Tokenizer tokenizer, String text) {
+        return tokenizer.encode(text).stream().mapToObj(tokenizer.vocabulary()::token).toList();
     }
 
     private void assertInvariants(String label, Tokenizer tokenizer, List<String> inputs) {

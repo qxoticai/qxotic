@@ -15,6 +15,43 @@ final class HuggingFaceTokenizerTestFixtures {
     /**
      * Builds a tokenizer.json root object wrapping the given model JSON and optional root fields.
      */
+    /**
+     * A small SentencePiece BPE model, as real ones are: byte fallback, and merges that build every
+     * token ("▁ello" from "▁" and "ello", "▁hi" from "▁h" and "i").
+     */
+    static final String SENTENCEPIECE_MODEL =
+            buildBpeModel(
+                    buildSentencePieceVocab(
+                            Map.ofEntries(
+                                    Map.entry("▁", 256),
+                                    Map.entry("e", 257),
+                                    Map.entry("l", 258),
+                                    Map.entry("o", 259),
+                                    Map.entry("h", 260),
+                                    Map.entry("i", 261),
+                                    Map.entry("x", 262),
+                                    Map.entry("ll", 263),
+                                    Map.entry("llo", 264),
+                                    Map.entry("ello", 265),
+                                    Map.entry("▁ello", 266),
+                                    Map.entry("▁h", 267),
+                                    Map.entry("▁hi", 268))),
+                    "[\"l l\",\"ll o\",\"e llo\",\"▁ ello\",\"▁ h\",\"▁h i\"]",
+                    ",\"byte_fallback\":true");
+
+    /** Gemma's decoder: U+2581 a space, byte tokens their bytes. */
+    static final String GEMMA_DECODER =
+            "\"decoder\":{\"type\":\"Sequence\",\"decoders\":["
+                    + "{\"type\":\"Replace\",\"pattern\":{\"String\":\"▁\"},\"content\":\" \"},"
+                    + "{\"type\":\"ByteFallback\"},{\"type\":\"Fuse\"}]}";
+
+    /** Mistral's decoder: Gemma's, then the prepended space dropped. */
+    static final String MISTRAL_DECODER =
+            "\"decoder\":{\"type\":\"Sequence\",\"decoders\":["
+                    + "{\"type\":\"Replace\",\"pattern\":{\"String\":\"▁\"},\"content\":\" \"},"
+                    + "{\"type\":\"ByteFallback\"},{\"type\":\"Fuse\"},"
+                    + "{\"type\":\"Strip\",\"content\":\" \",\"start\":1,\"stop\":0}]}";
+
     static String buildTokenizerJson(String modelJson, String... rootFields) {
         StringBuilder sb = new StringBuilder();
         sb.append('{').append("\"model\":").append(modelJson);

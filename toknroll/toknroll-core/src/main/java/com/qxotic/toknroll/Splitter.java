@@ -126,6 +126,10 @@ public interface Splitter {
         if (splitters.length == 1) {
             return splitters[0];
         }
+        Splitter scanner = ImplAccessor.createStagedSplitter(splitters);
+        if (scanner != null) {
+            return scanner; // stages a hand-written scanner splits alike, in one pass
+        }
         return (text, startInclusive, endExclusive, consumer) -> {
             Objects.requireNonNull(text, "text");
             Objects.requireNonNull(consumer, "consumer");

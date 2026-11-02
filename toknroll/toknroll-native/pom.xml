@@ -126,6 +126,8 @@
               <!-- a fallback image would need a JDK at run time: a library that is not standalone is a failure -->
               <fallback>false</fallback>
               <buildArgs>
+                <!-- first, so the -H: options below that are experimental are unlocked -->
+                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <buildArg>${toknroll.image.opt}</buildArg>
                 <buildArg>-march=${toknroll.image.march}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
@@ -142,7 +144,6 @@
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- hub fetches go through curl on the PATH (com.qxotic.fetch): the JDK client, and the
                      TLS stack it would bring, 18 MB, stay out of the image -->
-                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
                 <!-- the image object stays here, for the static archive (static.sh) -->
                 <buildArg>-H:TempDirectory=${project.build.directory}/svm</buildArg>

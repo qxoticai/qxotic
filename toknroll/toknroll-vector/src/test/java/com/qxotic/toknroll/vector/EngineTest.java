@@ -52,6 +52,23 @@ class EngineTest {
                     "\\s+(?!\\S)",
                     "\\s+");
 
+    // the GGUF loader's patterns for the families core scans in stages, and Bailing's
+    private static final String GPT2 =
+            "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
+    private static final String ASCII_BOTH =
+            "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])";
+    private static final String BODY =
+            "|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|%s| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*"
+                    + "|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+    private static final String QWEN2 = ASCII_BOTH + String.format(BODY, "\\p{N}");
+    private static final String MINICPM5_MAIN = ASCII_BOTH + String.format(BODY, "\\p{N}+");
+    private static final String LAGUNA_NEWLINES =
+            "(?:\\r?\\n)++[^\\r\\n]*+(?:\\r(?!\\n)[^\\r\\n]*+)*+"
+                    + "|(?=[^\\n])(?!\\r\\n)[^\\r\\n]*+(?:\\r(?!\\n)[^\\r\\n]*+)*+";
+    private static final String BAILING =
+            "'(?:[sSdDmMtT]|[lL][lL]|[vV][eE]|[rR][eE])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}"
+                    + "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]|\\s+(?!\\S)|\\s+";
+
     /** One encoding as core encodes it and as the engine does. */
     record Pair(String name, Tokenizer reference, Tokenizer engine) {
         @Override
@@ -61,15 +78,41 @@ class EngineTest {
     }
 
     private static final Pair[] PAIRS = {
-        pair("r50k_base", R50K), pair("cl100k_base", CL100K), pair("o200k_base", O200K)
+        pair("r50k_base", R50K),
+        pair("cl100k_base", CL100K),
+        pair("o200k_base", O200K),
+        pair("bailingmoe", "cl100k_base", BAILING),
+        staged("mellum2", "r50k_base", "\\p{N}", GPT2),
+        staged("minicpm5", "cl100k_base", "\\p{N}{1,3}", MINICPM5_MAIN),
+        staged("laguna", "cl100k_base", LAGUNA_NEWLINES, QWEN2)
     };
+
+    /**
+     * Two stages: the engine behind the scanner {@link Splitter#sequence} makes of them, against
+     * the stages chained by hand, which nothing recognizes, so core splits with the regexes.
+     */
+    private static Pair staged(String name, String vocabulary, String first, String second) {
+        Splitter one = Splitter.regex(Pattern.compile(first, Pattern.UNICODE_CHARACTER_CLASS));
+        Splitter two = Splitter.regex(Pattern.compile(second, Pattern.UNICODE_CHARACTER_CLASS));
+        Splitter chained =
+                (text, start, end, consumer) ->
+                        one.splitAll(
+                                text, start, end, (t, s, e) -> two.splitAll(t, s, e, consumer));
+        Tokenizer engine = tokenizer(vocabulary, Splitter.sequence(one, two));
+        engine.encode("x");
+        return new Pair(name, tokenizer(vocabulary, chained), engine);
+    }
 
     static Stream<Pair> pairs() {
         return Stream.of(PAIRS);
     }
 
     private static Pair pair(String name, String regex) {
-        Tokenizer reference = tokenizer(name, regex);
+        return pair(name, name, regex);
+    }
+
+    private static Pair pair(String name, String vocabulary, String regex) {
+        Tokenizer reference = tokenizer(vocabulary, regex);
         // the engine is resolved on a model's first encode, so this one never has one
         System.setProperty("toknroll.engine", "none");
         try {
@@ -77,18 +120,23 @@ class EngineTest {
         } finally {
             System.clearProperty("toknroll.engine");
         }
-        Tokenizer engine = tokenizer(name, regex);
+        Tokenizer engine = tokenizer(vocabulary, regex);
         engine.encode("x");
         return new Pair(name, reference, engine);
     }
 
     private static Tokenizer tokenizer(String name, String regex) {
+        return tokenizer(
+                name, Splitter.regex(Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS)));
+    }
+
+    private static Tokenizer tokenizer(String name, Splitter splitter) {
         Path file =
                 GitRepoPaths.findGitRoot().resolve("test-fixtures/tiktoken/" + name + ".tiktoken");
         try (var reader = Files.newBufferedReader(file)) {
             Map<String, Integer> ranks = TiktokenFiles.loadMergeableRanks(reader);
             return Toknroll.pipeline(
-                    Splitter.regex(Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS)),
+                    splitter,
                     Toknroll.tiktokenModel(
                             ImplAccessor.reconstructTiktokenVocabulary(ranks, Map.of(), Set.of()),
                             ImplAccessor.reconstructTiktokenMergeRules(ranks)));

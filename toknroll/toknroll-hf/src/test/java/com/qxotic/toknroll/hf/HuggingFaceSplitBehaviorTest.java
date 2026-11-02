@@ -414,6 +414,50 @@ class HuggingFaceSplitBehaviorTest {
         }
     }
 
+    /**
+     * Laguna's two stages are one scanner, and a long newline run no longer overflows the stack.
+     */
+    @Test
+    void lagunaSplitsALongNewlineRun() {
+        Splitter laguna =
+                HuggingFaceTokenizerLoader.parsePreTokenizer(
+                        Map.of(
+                                "type",
+                                "Sequence",
+                                "pretokenizers",
+                                List.of(
+                                        Map.of(
+                                                "type",
+                                                "Split",
+                                                "pattern",
+                                                Map.of("Regex", LAGUNA_NEWLINES),
+                                                "behavior",
+                                                "MergedWithNext",
+                                                "invert",
+                                                false),
+                                        Map.of(
+                                                "type",
+                                                "Split",
+                                                "pattern",
+                                                Map.of(
+                                                        "Regex",
+                                                        "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                                                                + "\\n"
+                                                                + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}|"
+                                                                + " ?[^\\s\\p{L}\\p{N}]+[\\r"
+                                                                + "\\n"
+                                                                + "]*|\\s*[\\r"
+                                                                + "\\n"
+                                                                + "]+|\\s+(?!\\S)|\\s+"),
+                                                "behavior",
+                                                "Isolated",
+                                                "invert",
+                                                false))));
+        assertEquals("TiktokenSplitter", laguna.getClass().getSimpleName());
+        String text = "x" + "\n".repeat(200_000) + "y";
+        assertEquals(text, String.join("", pieces(laguna, text)));
+    }
+
     /** Hugging Face's MergedWithNext: each match joins the text after it, up to the next match. */
     private static List<String> mergedWithNext(String text) {
         List<String> pieces = new ArrayList<>();

@@ -73,6 +73,10 @@ def _error(lib: C.CDLL, code: int | None = None) -> ToknrollError:
     return {N.EINVAL: InvalidArgument, N.ENOTFOUND: NotFound}.get(code, ToknrollError)(message, code)
 
 
+def _flags(specials: bool) -> int:
+    return 1 if specials else 0  # TOKNROLL_SPECIALS
+
+
 def _check(lib: C.CDLL, rc: int) -> int:
     if rc < 0:
         raise _error(lib, rc)
@@ -151,35 +155,35 @@ class Tokenizer:
         # prose runs about four bytes a token: one pass almost always, a second when it does not
         capacity = len(data) // 2 + 16
         out = array("i", bytes(4 * capacity))
-        n = _check(lib, lib.toknroll_encode(self._handle, data, len(data), specials, out.buffer_info()[0], capacity))
+        n = _check(lib, lib.toknroll_encode(self._handle, data, len(data), _flags(specials), out.buffer_info()[0], capacity))
         if n > capacity:
             out = array("i", bytes(4 * n))
-            _check(lib, lib.toknroll_encode(self._handle, data, len(data), specials, out.buffer_info()[0], n))
+            _check(lib, lib.toknroll_encode(self._handle, data, len(data), _flags(specials), out.buffer_info()[0], n))
         del out[n:]
         return out
 
     def count_tokens(self, text: str, *, specials: bool = False) -> int:
         """`len(encode(text))` without building the list."""
         data = _text(text, "count_tokens")
-        return _check(self._lib, self._lib.toknroll_encode(self._handle, data, len(data), specials, None, 0))
+        return _check(self._lib, self._lib.toknroll_encode(self._handle, data, len(data), _flags(specials), None, 0))
 
     def encode_batch(self, texts: Sequence[str], *, specials: bool = False) -> list[array[int]]:
         """`encode` over many texts in one call; the library spreads them over the cores."""
         lib, handle = self._lib, self._handle
         data = [_text(text, "encode_batch") for text in texts]
         count = len(data)
-        joined = b"".join(data)  # the texts travel as one buffer, text i ending at text_ends[i]
-        text_ends = array("i", accumulate(map(len, data)))
-        ends = array("i", bytes(4 * count))
+        joined = b"".join(data)  # the texts travel as one buffer, text i at text_offsets[i:i + 2]
+        text_offsets = array("i", accumulate(map(len, data), initial=0))
+        offsets = array("i", bytes(4 * (count + 1)))
         capacity = len(joined) // 2 + 16 * count
         out = array("i", bytes(4 * capacity))
-        n = _check(lib, lib.toknroll_encode_batch(handle, joined, text_ends.buffer_info()[0], count, specials,
-                                                  out.buffer_info()[0], capacity, ends.buffer_info()[0]))
+        n = _check(lib, lib.toknroll_encode_batch(handle, joined, text_offsets.buffer_info()[0], count, _flags(specials),
+                                                  out.buffer_info()[0], capacity, offsets.buffer_info()[0]))
         if n > capacity:
             out = array("i", bytes(4 * n))
-            _check(lib, lib.toknroll_encode_batch(handle, joined, text_ends.buffer_info()[0], count, specials,
-                                                  out.buffer_info()[0], n, ends.buffer_info()[0]))
-        return [out[start:end] for start, end in zip([0, *ends[:-1]], ends)]
+            _check(lib, lib.toknroll_encode_batch(handle, joined, text_offsets.buffer_info()[0], count, _flags(specials),
+                                                  out.buffer_info()[0], n, offsets.buffer_info()[0]))
+        return [out[start:end] for start, end in zip(offsets, offsets[1:])]
 
     def decode_bytes(self, ids: Iterable[int]) -> bytes:
         """The tokens' bytes: UTF-8, except where a token holds part of a character. Any int32

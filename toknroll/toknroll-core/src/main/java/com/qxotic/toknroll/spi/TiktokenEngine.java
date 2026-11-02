@@ -45,6 +45,13 @@ public interface TiktokenEngine {
     int TEKKEN = 6;
 
     /**
+     * {@link #R50K} after a first stage {@code \p{N}} that cuts around every number: each number a
+     * piece of its own, and the text before one split as if it ended there. SmolLM, Command R,
+     * EXAONE and Mellum 2.
+     */
+    int R50K_NUMBERS = 7;
+
+    /**
      * An encoder for {@code model} under the regex {@code rules}, or null if this engine has none.
      */
     Encoder encoder(TiktokenTables model, int rules);

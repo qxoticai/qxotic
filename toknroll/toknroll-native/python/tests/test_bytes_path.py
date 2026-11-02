@@ -35,19 +35,24 @@ def corpus(seed, count):
 
 def raw_encode(t, data, capacity, specials=False):
     out = array("i", bytes(4 * max(capacity, 1)))
-    n = t._lib.toknroll_encode(t._handle, data, len(data), specials, out.buffer_info()[0], capacity)
+    n = t._lib.toknroll_encode(t._handle, data, len(data), int(specials), out.buffer_info()[0], capacity)
     return n, out[: min(n, capacity)]
 
 
-def raw_batch(t, texts, capacity, specials=False):
-    """toknroll_encode_batch over byte strings, as given: (total, written prefix, ends)."""
-    joined = b"".join(texts)
-    text_ends = array("i", accumulate(map(len, texts))) or array("i", [0])
-    ends = array("i", bytes(4 * max(len(texts), 1)))
+def raw_batch(t, texts, capacity, specials=False, before=b""):
+    """toknroll_encode_batch over byte strings, as given, after `before` in their buffer:
+    (total, written prefix, offsets)."""
+    joined = before + b"".join(texts)
+    text_offsets = array("i", [len(before), *(len(before) + n for n in accumulate(map(len, texts)))])
+    offsets = array("i", bytes(4 * (len(texts) + 1)))
     out = array("i", bytes(4 * max(capacity, 1)))
-    n = t._lib.toknroll_encode_batch(t._handle, joined, text_ends.buffer_info()[0], len(texts), specials,
-                                     out.buffer_info()[0], capacity, ends.buffer_info()[0])
-    return n, out[: min(n, capacity)], ends[: len(texts)]
+    n = t._lib.toknroll_encode_batch(t._handle, joined, text_offsets.buffer_info()[0], len(texts), int(specials),
+                                     out.buffer_info()[0], capacity, offsets.buffer_info()[0])
+    return n, out[: min(n, capacity)], offsets
+
+
+def split(ids, offsets):
+    return [ids[s:e] for s, e in zip(offsets, offsets[1:])]
 
 
 @unittest.skipIf(not SOURCES, "no local tokenizer: set TOKNROLL_TEST_GGUF or TOKNROLL_TEST_TIKTOKEN_JSON")
@@ -79,13 +84,13 @@ class BytesPathTest(unittest.TestCase):
     def test_a_short_buffer_gets_a_prefix_and_the_whole_count(self):
         texts = [x.encode() for x in corpus(3, 60)]
         for t in self.tokenizers:
-            full, ids, ends = raw_batch(t, texts, 10_000_000)
+            full, ids, offsets = raw_batch(t, texts, 10_000_000)
             self.assertEqual(len(ids), full)
             for capacity in (0, 1, full // 3, full - 1):
-                n, prefix, short_ends = raw_batch(t, texts, capacity)
+                n, prefix, short_offsets = raw_batch(t, texts, capacity)
                 self.assertEqual(n, full)
                 self.assertEqual(prefix, ids[:capacity])
-                self.assertEqual(short_ends, ends)
+                self.assertEqual(short_offsets, offsets)
             for x in texts[:5]:
                 n, whole = raw_encode(t, x, 1_000_000)
                 self.assertEqual(raw_encode(t, x, 0), (n, array("i")))
@@ -105,9 +110,9 @@ class BytesPathTest(unittest.TestCase):
     def test_a_short_buffer_gets_a_prefix_and_the_whole_count_with_specials(self):
         texts = [x.encode() for x in corpus(6, 60)]
         for t in self.tokenizers:
-            full, ids, ends = raw_batch(t, texts, 10_000_000, True)
+            full, ids, offsets = raw_batch(t, texts, 10_000_000, True)
             for capacity in (0, 1, full // 3, full - 1):
-                self.assertEqual(raw_batch(t, texts, capacity, True), (full, ids[:capacity], ends))
+                self.assertEqual(raw_batch(t, texts, capacity, True), (full, ids[:capacity], offsets))
             for x in texts[:5]:
                 n, whole = raw_encode(t, x, 1_000_000, True)
                 self.assertEqual(raw_encode(t, x, 0, True), (n, array("i")))
@@ -121,8 +126,31 @@ class BytesPathTest(unittest.TestCase):
                 self.assertEqual(raw_encode(t, data, 1000, True), (len(expected), expected), (t.source, data))
             texts = [bad + b"<|im_end|>" for bad, _ in ILL_FORMED]
             expected = [t.encode(text + "<|im_end|>", specials=True) for _, text in ILL_FORMED]
-            n, ids, ends = raw_batch(t, texts, 10_000_000, True)
-            self.assertEqual([ids[s:e] for s, e in zip([0, *ends[:-1]], ends)], expected, t.source)
+            n, ids, offsets = raw_batch(t, texts, 10_000_000, True)
+            self.assertEqual(split(ids, offsets), expected, t.source)
+
+    def test_texts_may_start_anywhere_in_their_buffer(self):
+        texts = [x.encode() for x in corpus(7, 40)]
+        for t in self.tokenizers:
+            expected = raw_batch(t, texts, 10_000_000)
+            for before in (b"x", "日本".encode() * 33, b"<|im_end|>"):
+                self.assertEqual(raw_batch(t, texts, 10_000_000, before=before), expected)
+            n, ids, offsets = expected
+            self.assertEqual(offsets[0], 0)
+            self.assertEqual(offsets[-1], n)
+            self.assertEqual(split(ids, offsets), [t.encode(x.decode()) for x in texts])
+            self.assertEqual(raw_batch(t, [], 0), (0, array("i"), array("i", [0])))
+
+    def test_an_unknown_flag_is_refused(self):
+        text_offsets, offsets = array("i", [0, 1]), array("i", [0, 0])
+        for t in self.tokenizers:
+            for flags in (2, 3, 1 << 31):
+                self.assertLess(t._lib.toknroll_encode(t._handle, b"x", 1, flags, None, 0), 0)
+                self.assertIn("unknown flags", str(toknroll._error(t._lib)))
+                n = t._lib.toknroll_encode_batch(t._handle, b"x", text_offsets.buffer_info()[0], 1, flags,
+                                                 None, 0, offsets.buffer_info()[0])
+                self.assertLess(n, 0)
+                self.assertIn("unknown flags", str(toknroll._error(t._lib)))
 
     def test_ill_formed_bytes_encode_as_their_replacement(self):
         for t in self.tokenizers:
@@ -137,8 +165,8 @@ class BytesPathTest(unittest.TestCase):
             decoded += [good, text]
         for t in self.tokenizers:
             expected = [t.encode(x) for x in decoded]
-            n, ids, ends = raw_batch(t, texts, 10_000_000)
-            got = [ids[s:e] for s, e in zip([0, *ends[:-1]], ends)]
+            n, ids, offsets = raw_batch(t, texts, 10_000_000)
+            got = split(ids, offsets)
             self.assertEqual(got, expected, t.source)
 
 

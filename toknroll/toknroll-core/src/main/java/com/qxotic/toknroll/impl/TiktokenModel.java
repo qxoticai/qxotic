@@ -47,8 +47,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     // The engine's encoder per rule set, resolved on first use. A benign race: every resolution
     // has the same outcome, and one that sees the flag before the encoder encodes here meanwhile.
-    private final TiktokenEngine.Encoder[] encoders = new TiktokenEngine.Encoder[7];
-    private final boolean[] resolved = new boolean[7];
+    private final TiktokenEngine.Encoder[] encoders =
+            new TiktokenEngine.Encoder[TiktokenEngine.R50K_NUMBERS + 1];
+    private final boolean[] resolved = new boolean[TiktokenEngine.R50K_NUMBERS + 1];
 
     private TiktokenModel(
             Vocabulary vocabulary,
@@ -134,29 +135,55 @@ final class TiktokenModel extends AbstractTokenizationModel {
             TiktokenSplitter splitter,
             IntSequence.Builder out) {
         TiktokenEngine.Encoder fast = encoder(splitter);
-        if (fast != null) {
+        if (fast != null && !splitter.coreCuts()) {
             IdBuffer ids = borrow(out);
             fast.encode(text, start, end, ids);
             giveBack(ids, out);
             return;
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
-        encode(utf8, 0, utf8.length - TiktokenSplitter.PADDING, splitter, out);
+        int length = utf8.length - TiktokenSplitter.PADDING;
+        if (fast != null) {
+            encodeCut(fast, utf8, 0, length, splitter, out);
+            return;
+        }
+        encode(utf8, 0, length, splitter, out);
     }
 
     /** {@link #encode(CharSequence, int, int, TiktokenSplitter, IntSequence.Builder)} for UTF-8. */
     void encodeUtf8(
             byte[] utf8, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
         TiktokenEngine.Encoder fast = encoder(splitter);
-        if (fast != null) {
+        if (fast != null && !splitter.coreCuts()) {
             IdBuffer ids = borrow(out);
             fast.encodeUtf8(utf8, start, end, ids);
             giveBack(ids, out);
             return;
         }
+        if (fast != null) {
+            encodeCut(fast, utf8, start, end, splitter, out);
+            return;
+        }
         // the scanner reads past a piece, so it gets a padded copy
         byte[] padded = Arrays.copyOfRange(utf8, start, end + TiktokenSplitter.PADDING);
         encode(padded, 0, end - start, splitter, out);
+    }
+
+    /** The engine on each piece the splitter's first stage cuts, as if each were the text. */
+    private static void encodeCut(
+            TiktokenEngine.Encoder fast,
+            byte[] utf8,
+            int start,
+            int end,
+            TiktokenSplitter splitter,
+            IntSequence.Builder out) {
+        IdBuffer ids = borrow(out);
+        for (int i = start; i < end; ) {
+            int stop = splitter.cut(utf8, i, end);
+            fast.encodeUtf8(utf8, i, stop, ids);
+            i = stop;
+        }
+        giveBack(ids, out);
     }
 
     /** The reference: the scanner's pieces, word by word. */
@@ -326,7 +353,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return null;
         }
         if (!resolved[rules]) {
-            encoders[rules] = findEncoder(rules, splitter);
+            // checked against the scanner the engine's rules stand for, without the cuts core makes
+            encoders[rules] = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
             resolved[rules] = true;
         }
         return encoders[rules];

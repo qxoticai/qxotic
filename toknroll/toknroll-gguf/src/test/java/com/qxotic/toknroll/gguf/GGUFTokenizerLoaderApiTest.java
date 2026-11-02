@@ -56,6 +56,7 @@ class GGUFTokenizerLoaderApiTest {
             "gemma4",
             "granite-embed-multi-311m",
             "deepseek-v3",
+            "joyai-llm",
             "smollm",
             "command-r",
             "exaone",

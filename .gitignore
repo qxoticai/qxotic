@@ -136,6 +136,7 @@ bench-results/
 
 # Generated tokenizer reference fixtures
 /toknroll/toknroll-gguf/src/test/resources/*.json
+!/toknroll/toknroll-gguf/src/test/resources/gguf_edge_parity.json
 .ci-empty-hf-home/
 .ci-no-models/
 .ci-toknroll-cache/

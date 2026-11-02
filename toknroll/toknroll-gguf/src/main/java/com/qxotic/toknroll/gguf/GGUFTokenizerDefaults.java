@@ -3,6 +3,7 @@ package com.qxotic.toknroll.gguf;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -65,10 +66,9 @@ final class GGUFTokenizerDefaults {
 
     // Laguna's first stage (tokenizer.json: Split "(?:\r?\n)+(?!\r?\n)" MergedWithNext): a
     // newline run, CRLF included, travels with the text that follows it, so "\r\n" reaches the
-    // second stage whole and becomes one token. A lone "\r" is ordinary text.
-    private static final String LAGUNA_NEWLINES_PATTERN =
-            "(?:\\r?\\n)+(?:[^\\r\\n]|\\r(?!\\n))*|(?:[^\\r\\n]|\\r(?!\\n))+";
-
+    // second stage whole and becomes one token. A lone "\r" is ordinary text. Written as
+    // "(?:\r?\n)+(?:[^\r\n]|\r(?!\n))*|(?:[^\r\n]|\r(?!\n))+" it recursed once per char in
+    // java.util.regex, a stack overflow on a long line; unrolled and possessive, it does not.
     // llama.cpp's kimi-k2 custom splitter excludes combining marks from letter runs, despite the
     // historical regex comment.
     static final String KIMI_K2_PATTERN =
@@ -124,6 +124,19 @@ final class GGUFTokenizerDefaults {
     private static final Function<GGUF, Normalizer> METASPACE_NORMALIZER_FACTORY =
             gguf -> METASPACE_NORMALIZER;
 
+    // gemma4's vocab spells its U+2581 as a space (see GGUFTokenizerModelFactory), so a literal
+    // U+2581 in the text is a space too, as in llama.cpp and Hugging Face; text without one is
+    // passed on as is, not copied
+    private static final Normalizer GEMMA4_NORMALIZER =
+            text -> {
+                for (int i = 0; i < text.length(); i++) {
+                    if (text.charAt(i) == '\u2581') {
+                        return text.toString().replace('\u2581', ' ');
+                    }
+                }
+                return text;
+            };
+
     private GGUFTokenizerDefaults() {}
 
     static void applyTo(GGUFTokenizerLoader.Builder builder) {
@@ -168,10 +181,20 @@ final class GGUFTokenizerDefaults {
         registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken", "pixtral");
         registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "llama4", "kanana2", "minimax-m2");
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
-        registerPreTokenizers(builder, GEMMA4_PATTERN, "gemma4", "granite-embed-multi-311m");
+        registerPreTokenizers(builder, GEMMA4_PATTERN, "granite-embed-multi-311m");
+        // Gemma 4: its regex's lines, cut again into words the vocabulary never joins
+        builder.registerPreTokenizer(
+                "gemma4",
+                gguf ->
+                        ImplAccessor.createSentencePieceSplitter(
+                                gguf.getValue(String[].class, GGUFMetadataKeys.TOKENS), true));
 
+        // joyai-llm: llama.cpp's converter names DeepSeek V4's tokenizer so; it shares the regex
         registerSequencePreTokenizers(
-                builder, new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN}, "deepseek-v3");
+                builder,
+                new String[] {"\\p{N}{1,3}", CJK_RANGE, DEEPSEEK_V3_MAIN},
+                "deepseek-v3",
+                "joyai-llm");
         // Digit-first stacks: every digit split apart, then the GPT-2 word-level pass.
         registerSequencePreTokenizers(
                 builder,
@@ -183,12 +206,13 @@ final class GGUFTokenizerDefaults {
         registerSequencePreTokenizers(
                 builder, new String[] {"\\p{N}{1,3}", MINICPM5_MAIN}, "minicpm5");
         registerSequencePreTokenizers(
-                builder, new String[] {LAGUNA_NEWLINES_PATTERN, QWEN2_PATTERN}, "laguna");
+                builder, new String[] {ImplAccessor.LAGUNA_NEWLINES, QWEN2_PATTERN}, "laguna");
 
         // SPM models with "default" pre-tokenizer need identity splitter + metaspace normalizer.
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());
         builder.registerNormalizer("default", METASPACE_NORMALIZER_FACTORY);
 
+        builder.registerNormalizer("gemma4", gguf -> GEMMA4_NORMALIZER);
         builder.registerPreFallback("gemma4", "gemma4");
         builder.registerNormalizerFallback("gemma4", "gemma4");
     }

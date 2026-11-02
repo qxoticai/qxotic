@@ -253,8 +253,6 @@ class GGUFTokenizerLoaderParityTest {
             Tokenizer localTokenizer = loader.fromLocal(localGguf);
             Tokenizer hfTokenizer = loader.fromHuggingFace(c.user, c.repo, c.file);
             assertTokenizerParity(localTokenizer, hfTokenizer);
-        } catch (RuntimeException e) {
-            Assumptions.abort("Skipping " + c.id + " loader parity: " + e);
         } finally {
             try {
                 Files.deleteIfExists(localGguf);

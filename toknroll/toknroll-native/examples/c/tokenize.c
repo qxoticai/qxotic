@@ -17,11 +17,11 @@ int main(int argc, char** argv) {
     if (!t) return fail("load");
 
     size_t length = strlen(argv[2]);
-    int32_t n = toknroll_encode(t, argv[2], length, false, NULL, 0);  /* capacity 0 counts */
+    int32_t n = toknroll_encode(t, argv[2], length, 0, NULL, 0);  /* capacity 0 counts */
     if (n < 0) return fail("encode");
     int32_t* ids = malloc((size_t) n * sizeof *ids);
     if (n && !ids) { fprintf(stderr, "out of memory\n"); return 1; }
-    toknroll_encode(t, argv[2], length, false, ids, n);
+    toknroll_encode(t, argv[2], length, 0, ids, n);
     for (int32_t i = 0; i < n; i++) printf("%" PRId32 "%s", ids[i], i + 1 < n ? " " : "\n");
 
     char text[1024];
