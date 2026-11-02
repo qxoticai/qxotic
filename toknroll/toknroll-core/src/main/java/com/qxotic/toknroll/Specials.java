@@ -1,6 +1,7 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.ImplAccessor;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 
@@ -110,7 +111,7 @@ public interface Specials {
                         utf8,
                         startInclusive,
                         endExclusive - startInclusive,
-                        java.nio.charset.StandardCharsets.UTF_8),
+                        StandardCharsets.UTF_8),
                 out);
     }
 
