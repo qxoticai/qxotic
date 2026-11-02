@@ -92,7 +92,7 @@ public final class TokenizationPipeline implements Tokenizer {
         // Bytes go straight to the model when nothing normalizes; a normalizer works on chars.
         if (!hasNormalizer
                 && hasSplitter
-                && ImplAccessor.encodeUtf8Bytes(
+                && ImplAccessor.encodeScannedUtf8(
                         model, splitter, utf8, startInclusive, endExclusive, out)) {
             return;
         }
@@ -104,7 +104,7 @@ public final class TokenizationPipeline implements Tokenizer {
             model.encodeInto(normalizedText, out);
             return;
         }
-        if (ImplAccessor.encodeUtf8(
+        if (ImplAccessor.encodeScanned(
                 model, splitter, normalizedText, 0, normalizedText.length(), out)) {
             return;
         }
@@ -131,7 +131,7 @@ public final class TokenizationPipeline implements Tokenizer {
         IntSequence.Builder counted =
                 IntSequence.newBuilder(
                         Tokenizer.estimateTokenCapacity(current.length(), expectedTokensPerChar()));
-        if (ImplAccessor.encodeUtf8(model, splitter, current, 0, current.length(), counted)) {
+        if (ImplAccessor.encodeScanned(model, splitter, current, 0, current.length(), counted)) {
             return counted.size();
         }
         int[] total = {0};

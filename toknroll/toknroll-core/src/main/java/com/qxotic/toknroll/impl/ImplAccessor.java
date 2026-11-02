@@ -113,7 +113,7 @@ public final class ImplAccessor {
      * an engine may take over. False when the pair is anything else, and the caller takes the
      * general path.
      */
-    public static boolean encodeUtf8(
+    public static boolean encodeScanned(
             TokenizationModel model,
             Splitter splitter,
             CharSequence text,
@@ -127,8 +127,8 @@ public final class ImplAccessor {
         return true;
     }
 
-    /** {@link #encodeUtf8} for text that is UTF-8 already. */
-    public static boolean encodeUtf8Bytes(
+    /** {@link #encodeScanned} for text that is UTF-8 already. */
+    public static boolean encodeScannedUtf8(
             TokenizationModel model,
             Splitter splitter,
             byte[] utf8,
