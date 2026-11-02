@@ -897,7 +897,7 @@ public final class HuggingFaceTokenizerLoader {
         return false;
     }
 
-    private static Splitter parsePreTokenizer(Object preTokenizerObj) {
+    static Splitter parsePreTokenizer(Object preTokenizerObj) {
         if (preTokenizerObj == null || preTokenizerObj == Json.NULL) {
             return null;
         }
@@ -1086,46 +1086,42 @@ public final class HuggingFaceTokenizerLoader {
                         "Removed/Isolated/MergedWithPrevious/MergedWithNext");
         }
 
-        if (out.isEmpty()) {
-            out.add(new Span(0, text.length(), false));
-        }
-        return out;
+        return out; // empty when Removed takes it all, as in Hugging Face
     }
 
+    /**
+     * Hugging Face's MergedWithPrevious: a delimiter joins the piece before it, unless that piece
+     * is a delimiter too or there is none; then it is a piece of its own. Nothing is dropped.
+     */
     private static void mergeWithPrevious(List<Span> all, boolean invert, List<Span> out) {
-        int currentStart = -1;
-        int currentEnd = -1;
+        boolean previousIsDelimiter = false;
         for (Span s : all) {
-            if (isSeparator(s, invert)) {
-                if (currentStart >= 0) {
-                    currentEnd = s.end();
-                }
+            boolean delimiter = isSeparator(s, invert);
+            if (delimiter && !previousIsDelimiter && !out.isEmpty()) {
+                Span previous = out.remove(out.size() - 1);
+                out.add(new Span(previous.start(), s.end(), false));
             } else {
-                if (currentStart >= 0) {
-                    out.add(new Span(currentStart, currentEnd, false));
-                }
-                currentStart = s.start();
-                currentEnd = s.end();
+                out.add(new Span(s.start(), s.end(), false));
             }
-        }
-        if (currentStart >= 0) {
-            out.add(new Span(currentStart, currentEnd, false));
+            previousIsDelimiter = delimiter;
         }
     }
 
+    /** MergedWithNext, the mirror image: a delimiter joins the piece after it. */
     private static void mergeWithNext(List<Span> all, boolean invert, List<Span> out) {
-        int pendingStart = -1;
-        for (Span s : all) {
-            if (isSeparator(s, invert)) {
-                if (pendingStart < 0) {
-                    pendingStart = s.start();
-                }
+        boolean nextIsDelimiter = false;
+        for (int i = all.size() - 1; i >= 0; i--) {
+            Span s = all.get(i);
+            boolean delimiter = isSeparator(s, invert);
+            if (delimiter && !nextIsDelimiter && !out.isEmpty()) {
+                Span next = out.remove(out.size() - 1);
+                out.add(new Span(s.start(), next.end(), false));
             } else {
-                int start = pendingStart >= 0 ? pendingStart : s.start();
-                out.add(new Span(start, s.end(), false));
-                pendingStart = -1;
+                out.add(new Span(s.start(), s.end(), false));
             }
+            nextIsDelimiter = delimiter;
         }
+        Collections.reverse(out);
     }
 
     private static boolean isSeparator(Span span, boolean invert) {
