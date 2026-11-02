@@ -138,7 +138,11 @@ public final class ModelLoader {
         // Load-time weight packing (jam's in-memory layouts; -Djinfer.pack=false to disable):
         // packed tensors move into a page-aligned slab in the SAME arena and their canonical mmap
         // pages are dropped - one copy total, shared as-is with Metal via unified memory.
-        return JamPack.apply(tensorViews, arena);
+        Map<String, MemoryView<MemorySegment>> views = JamPack.apply(tensorViews, arena);
+        // one jam share per tensor: a GPU maps each once, and a discrete one can fill its memory
+        // tensor by tensor
+        for (MemoryView<MemorySegment> view : views.values()) MatMul.shareWeight(view);
+        return views;
     }
 
     /** Rejects a parsed GGUF whose declared tensors do not fit within {@code byteSize}. */

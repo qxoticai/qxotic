@@ -16,6 +16,7 @@ import static com.qxotic.jinfer.Segments.writeFloat;
 
 import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jam.JAM;
+import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Views;
@@ -23,10 +24,15 @@ import com.qxotic.jinfer.telemetry.PerformanceCliff;
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.ref.WeakReference;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
@@ -284,6 +290,10 @@ public final class MatMul {
         Views.requireContiguous(w, "w");
         MemorySegment ws = w.memory().base();
         long wBase = w.byteOffset();
+        if (SHARING) {
+            shareOnce(a.memory().base());
+            shareOnce(c.memory().base());
+        }
         // Packed weights (JamPack) exist only because the native backend asked for them: no other
         // rung can read the bytes, so this either runs on jam or is a hard error - never a silent
         // fall-through to a kernel that would misread the layout.
@@ -1917,6 +1927,45 @@ public final class MatMul {
         // caller's choice and needs no reminder.)
         if (NATIVE == null && VECTOR == null && SCALAR == null)
             PerformanceCliff.JAM_ABSENT.report();
+    }
+
+    // ── jam's share hint (JAM.share): a GPU backend maps a shared buffer once, not per call.
+    // Weights share at load, immutable; state buffers on their first matmul, mutable. A backend
+    // without a device declines the probe, and the hint stays off: no lookups on the CPU. ──
+
+    private static final boolean SHARING = NATIVE != null && probeSharing();
+
+    private static boolean probeSharing() {
+        Arena probe = Arenas.newCrossThread();
+        try {
+            return NATIVE.jam.share(probe.allocate(4096, 4096), false);
+        } finally {
+            Arenas.close(probe); // ends the probe's share (at GC where close is a no-op)
+        }
+    }
+
+    /** A loaded weight tensor, never written again: the GGUF mapping is read-only, packs final. */
+    static void shareWeight(MemoryView<MemorySegment> weight) {
+        if (!SHARING) return;
+        long bytes = weight.dataType().byteSizeFor(weight.shape());
+        if (bytes > 0)
+            NATIVE.jam.share(weight.memory().base().asSlice(weight.byteOffset(), bytes), true);
+    }
+
+    /**
+     * Buffers already offered to {@link #shareOnce}, with the scope they were offered in: a segment
+     * equal to one seen before (same address and size) but from a new arena is offered again. Weak
+     * both ways, so a state's buffers and arena are never kept alive from here.
+     */
+    private static final Map<MemorySegment, WeakReference<MemorySegment.Scope>> OFFERED =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    /** An activation or result buffer on its first matmul; a decline is remembered too. */
+    private static void shareOnce(MemorySegment buffer) {
+        WeakReference<MemorySegment.Scope> seen = OFFERED.get(buffer);
+        if (seen != null && seen.get() == buffer.scope()) return;
+        NATIVE.jam.share(buffer, false);
+        OFFERED.put(buffer, new WeakReference<>(buffer.scope()));
     }
 
     /** {@link JamPack}'s policy+size query: 0 without a native backend (nothing packs). */
