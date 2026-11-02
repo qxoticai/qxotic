@@ -16,6 +16,7 @@ public final class TokenizationPipeline implements Tokenizer {
     private final Splitter splitter;
     private final boolean hasNormalizer;
     private final boolean hasSplitter;
+    private final boolean scanned; // the tiktoken scanner and its model, which encode in one pass
 
     /**
      * Creates a pipeline. Pass {@code null} for {@code normalizer} or {@code splitter} to skip that
@@ -28,6 +29,7 @@ public final class TokenizationPipeline implements Tokenizer {
         // the identity changes nothing, and skipping it keeps UTF-8 on the bytes path
         this.hasNormalizer = normalizer != null && normalizer != Normalizer.identity();
         this.hasSplitter = splitter != null;
+        this.scanned = hasSplitter && ImplAccessor.isScanned(model, splitter);
     }
 
     // ---- introspection ----
@@ -67,12 +69,12 @@ public final class TokenizationPipeline implements Tokenizer {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(out, "out");
         validateRange(text, startInclusive, endExclusive);
-
-        if (!hasNormalizer && !hasSplitter) {
-            model.encodeInto(text, startInclusive, endExclusive, out);
-            return;
+        if (hasNormalizer) {
+            CharSequence normalized = normalize(text, startInclusive, endExclusive);
+            encodeNormalizedInto(normalized, 0, normalized.length(), out);
+        } else {
+            encodeNormalizedInto(text, startInclusive, endExclusive, out);
         }
-        encodeNormalizedInto(normalizeSlice(text, startInclusive, endExclusive), out);
     }
 
     @Override
@@ -90,57 +92,60 @@ public final class TokenizationPipeline implements Tokenizer {
                             + utf8.length);
         }
         // Bytes go straight to the model when nothing normalizes; a normalizer works on chars.
-        if (!hasNormalizer
-                && hasSplitter
-                && ImplAccessor.encodeScannedUtf8(
-                        model, splitter, utf8, startInclusive, endExclusive, out)) {
+        if (scanned && !hasNormalizer) {
+            ImplAccessor.encodeScannedUtf8(
+                    model, splitter, utf8, startInclusive, endExclusive, out);
             return;
         }
         Tokenizer.super.encodeUtf8Into(utf8, startInclusive, endExclusive, out);
     }
 
-    private void encodeNormalizedInto(CharSequence normalizedText, IntSequence.Builder out) {
+    /** Encodes {@code text[start, end)}, normalized already or with nothing to normalize. */
+    private void encodeNormalizedInto(
+            CharSequence text, int start, int end, IntSequence.Builder out) {
         if (!hasSplitter) {
-            model.encodeInto(normalizedText, out);
-            return;
+            model.encodeInto(text, start, end, out);
+        } else if (scanned) {
+            ImplAccessor.encodeScanned(model, splitter, text, start, end, out);
+        } else {
+            splitter.splitAll(
+                    text,
+                    start,
+                    end,
+                    (source, chunkStart, chunkEnd) ->
+                            model.encodeInto(source, chunkStart, chunkEnd, out));
         }
-        if (ImplAccessor.encodeScanned(
-                model, splitter, normalizedText, 0, normalizedText.length(), out)) {
-            return;
-        }
-        splitter.splitAll(
-                normalizedText,
-                0,
-                normalizedText.length(),
-                (source, chunkStart, chunkEnd) ->
-                        model.encodeInto(source, chunkStart, chunkEnd, out));
     }
 
     @Override
     public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
         validateRange(text, startInclusive, endExclusive);
-        if (!hasNormalizer && !hasSplitter) {
-            return model.countTokens(text, startInclusive, endExclusive);
+        CharSequence source = text;
+        int start = startInclusive;
+        int end = endExclusive;
+        if (hasNormalizer) {
+            source = normalize(text, startInclusive, endExclusive);
+            start = 0;
+            end = source.length();
         }
-
-        CharSequence current = normalizeSlice(text, startInclusive, endExclusive);
         if (!hasSplitter) {
-            return model.countTokens(current, 0, current.length());
+            return model.countTokens(source, start, end);
         }
-        IntSequence.Builder counted =
-                IntSequence.newBuilder(
-                        Tokenizer.estimateTokenCapacity(current.length(), expectedTokensPerChar()));
-        if (ImplAccessor.encodeScanned(model, splitter, current, 0, current.length(), counted)) {
+        if (scanned) {
+            IntSequence.Builder counted =
+                    IntSequence.newBuilder(
+                            Tokenizer.estimateTokenCapacity(end - start, expectedTokensPerChar()));
+            ImplAccessor.encodeScanned(model, splitter, source, start, end, counted);
             return counted.size();
         }
         int[] total = {0};
         splitter.splitAll(
-                current,
-                0,
-                current.length(),
-                (source, chunkStart, chunkEnd) ->
-                        total[0] += model.countTokens(source, chunkStart, chunkEnd));
+                source,
+                start,
+                end,
+                (chunk, chunkStart, chunkEnd) ->
+                        total[0] += model.countTokens(chunk, chunkStart, chunkEnd));
         return total[0];
     }
 
@@ -178,12 +183,12 @@ public final class TokenizationPipeline implements Tokenizer {
 
     // ---- helpers ----
 
-    private CharSequence normalizeSlice(CharSequence text, int startInclusive, int endExclusive) {
-        CharSequence current =
+    private CharSequence normalize(CharSequence text, int startInclusive, int endExclusive) {
+        CharSequence slice =
                 (startInclusive == 0 && endExclusive == text.length())
                         ? text
                         : text.subSequence(startInclusive, endExclusive);
-        return hasNormalizer ? normalizer.apply(current) : current;
+        return normalizer.apply(slice);
     }
 
     private static void validateRange(CharSequence text, int startInclusive, int endExclusive) {
