@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** Public helpers for working with Tiktoken mergeable-ranks assets. */
 public final class TiktokenLoaders {
@@ -32,7 +33,8 @@ public final class TiktokenLoaders {
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         return ImplAccessor.reconstructTiktokenVocabulary(
                 Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                Objects.requireNonNull(specialTokens, "specialTokens"));
+                Objects.requireNonNull(specialTokens, "specialTokens"),
+                Set.of());
     }
 
     /** Reconstructs merge rules from Tiktoken mergeable ranks. */

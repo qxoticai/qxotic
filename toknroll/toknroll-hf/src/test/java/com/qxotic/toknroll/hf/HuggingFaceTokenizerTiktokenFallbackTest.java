@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.fetch.Transport;
+import com.qxotic.toknroll.Specials;
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.testkit.TestSystemProperties;
@@ -46,6 +48,71 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
 
         assertArrayEquals(new int[] {256, 32, 257}, tokenizer.encode("ab cd").toArray());
         assertTrue(tokenizer.vocabulary().id("<|end|>") >= 258);
+    }
+
+    /** Kimi's tool-call markers are {@code special: false}, and matched whole all the same. */
+    @Test
+    void tiktokenFallbackTypesAddedTokensAndSpecialsMatchThem() throws Exception {
+        writeHfCacheFile(
+                "carol",
+                "demo",
+                "main",
+                "tiktoken.model",
+                tiktokenWithBaseBytes(tokenLine("ab", 256)));
+        writeHfCacheFile(
+                "carol",
+                "demo",
+                "main",
+                "tokenizer_config.json",
+                "{\"pat_str\":\"[a-z]+|\\\\s+\",\"added_tokens_decoder\":{"
+                        + "\"257\":{\"content\":\"<|im_end|>\",\"special\":true},"
+                        + "\"258\":{\"content\":\"<|tool_call_begin|>\",\"special\":false}}}");
+
+        Tokenizer tokenizer =
+                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                        RepositoryArtifactCache.create(tempDir, Transport.offline()),
+                        "carol",
+                        "demo",
+                        "main",
+                        false);
+
+        assertTrue(tokenizer.vocabulary().isTokenOfType(257, StandardTokenType.CONTROL));
+        assertTrue(tokenizer.vocabulary().isTokenOfType(258, StandardTokenType.USER_DEFINED));
+        assertArrayEquals(
+                new int[] {258, 256, 257},
+                Specials.of(tokenizer)
+                        .encode(tokenizer, "<|tool_call_begin|>ab<|im_end|>")
+                        .toArray());
+    }
+
+    @Test
+    void tiktokenFallbackRefusesAnAddedTokenThatStripsWhitespace() throws Exception {
+        writeHfCacheFile(
+                "dave",
+                "demo",
+                "main",
+                "tiktoken.model",
+                tiktokenWithBaseBytes(tokenLine("ab", 256)));
+        writeHfCacheFile(
+                "dave",
+                "demo",
+                "main",
+                "tokenizer_config.json",
+                "{\"pat_str\":\"[a-z]+\",\"added_tokens_decoder\":{"
+                        + "\"257\":{\"content\":\"<|end|>\",\"rstrip\":true}}}");
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                                        RepositoryArtifactCache.create(
+                                                tempDir, Transport.offline()),
+                                        "dave",
+                                        "demo",
+                                        "main",
+                                        false));
+        assertTrue(error.getMessage().contains("<|end|> sets rstrip"), error.getMessage());
     }
 
     @Test

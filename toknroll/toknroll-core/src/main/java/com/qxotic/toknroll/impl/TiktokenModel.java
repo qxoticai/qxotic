@@ -587,16 +587,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return new IllegalArgumentException("Missing singleton byte token for value " + value);
     }
 
+    /**
+     * Every id's bytes, from the id side: two ids can share a spelling (a special token whose bytes
+     * are also an ordinary token, as Laguna's {@code |◊|}), and the spelling side keeps only one.
+     */
     private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
-        int maxId = -1;
+        int maxId = vocabulary.size() - 1;
         for (Map.Entry<String, Integer> e : vocabulary) {
-            if (e.getValue() > maxId) {
-                maxId = e.getValue();
-            }
+            maxId = Math.max(maxId, e.getValue());
         }
         byte[][] table = new byte[maxId + 1][];
-        for (Map.Entry<String, Integer> e : vocabulary) {
-            table[e.getValue()] = ByteLevel.decode(e.getKey());
+        for (int id = 0; id <= maxId; id++) {
+            if (vocabulary.contains(id)) table[id] = ByteLevel.decode(vocabulary.token(id));
         }
         return table;
     }

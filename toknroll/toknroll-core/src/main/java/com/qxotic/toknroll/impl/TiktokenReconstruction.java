@@ -2,6 +2,7 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.MergeRule;
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -20,10 +21,17 @@ final class TiktokenReconstruction {
 
     private TiktokenReconstruction() {}
 
+    /**
+     * The mergeable ranks plus the special tokens, typed CONTROL, or USER_DEFINED for those named
+     * in {@code userDefined}: the types are what {@link com.qxotic.toknroll.Specials#of} reads.
+     */
     public static Vocabulary vocabulary(
-            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens,
+            Set<String> userDefined) {
         Objects.requireNonNull(mergeableRanks, "mergeableRanks");
         Objects.requireNonNull(specialTokens, "specialTokens");
+        Objects.requireNonNull(userDefined, "userDefined");
 
         Map<String, Integer> tokenToId = new LinkedHashMap<>(mergeableRanks);
         Set<Integer> usedIds = new HashSet<>(mergeableRanks.values());
@@ -48,7 +56,20 @@ final class TiktokenReconstruction {
             usedIds.add(id);
         }
 
-        return new VocabularyImpl(tokenToId);
+        String[] tokens = new String[maxId(usedIds) + 1];
+        tokenToId.forEach((token, id) -> tokens[id] = token);
+        int[] types = new int[tokens.length];
+        Arrays.fill(types, StandardTokenType.NORMAL.getId());
+        for (String token : specialTokens.keySet()) {
+            Integer id = tokenToId.get(token); // null for an entry skipped above
+            if (id == null) continue;
+            StandardTokenType type =
+                    userDefined.contains(token)
+                            ? StandardTokenType.USER_DEFINED
+                            : StandardTokenType.CONTROL;
+            types[id] = type.getId();
+        }
+        return new VocabularyImpl(tokens, types);
     }
 
     public static List<MergeRule> mergeRules(Map<String, Integer> mergeableRanks) {

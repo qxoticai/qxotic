@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Tag;
@@ -89,7 +90,7 @@ class EngineTest {
             return Toknroll.pipeline(
                     Splitter.regex(Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS)),
                     Toknroll.tiktokenModel(
-                            ImplAccessor.reconstructTiktokenVocabulary(ranks, Map.of()),
+                            ImplAccessor.reconstructTiktokenVocabulary(ranks, Map.of(), Set.of()),
                             ImplAccessor.reconstructTiktokenMergeRules(ranks)));
         } catch (IOException e) {
             throw new UncheckedIOException(e);

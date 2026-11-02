@@ -71,7 +71,7 @@ class VocabularyImpl implements Vocabulary {
     }
 
     public VocabularyImpl(String[] vocabulary, int[] tokenTypes) {
-        this(vocabulary, computeTokenMap(vocabulary), tokenTypes);
+        this(vocabulary, computeTokenMap(vocabulary, tokenTypes), tokenTypes);
         if (tokenTypes != null && tokenTypes.length != vocabulary.length) {
             throw new IllegalArgumentException(
                     "tokenTypes length "
@@ -82,14 +82,29 @@ class VocabularyImpl implements Vocabulary {
     }
 
     private static Map<String, Integer> computeTokenMap(String[] vocabulary) {
+        return computeTokenMap(vocabulary, null);
+    }
+
+    /**
+     * Spelling to id. Where two ids share a spelling, the NORMAL one wins over a special one: it is
+     * the id the tokenization model produces, the special one being reachable only as a special
+     * token. Otherwise the later id wins.
+     */
+    private static Map<String, Integer> computeTokenMap(String[] vocabulary, int[] tokenTypes) {
         Map<String, Integer> tokenToId = new HashMap<>(vocabulary.length * 2);
         for (int i = 0; i < vocabulary.length; i++) {
             String token = vocabulary[i];
-            if (token != null) {
-                tokenToId.put(token, i);
-            }
+            if (token == null) continue;
+            Integer previous = tokenToId.get(token);
+            if (previous != null && isNormal(tokenTypes, previous) && !isNormal(tokenTypes, i))
+                continue;
+            tokenToId.put(token, i);
         }
         return tokenToId;
+    }
+
+    private static boolean isNormal(int[] tokenTypes, int id) {
+        return tokenTypes == null || tokenTypes[id] == StandardTokenType.NORMAL.getId();
     }
 
     @Override

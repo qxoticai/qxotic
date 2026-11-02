@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class TiktokenReconstructionTest {
@@ -27,7 +28,7 @@ class TiktokenReconstructionTest {
         mergeableRanks.put("b", 1);
         mergeableRanks.put("ab", 2);
 
-        Vocabulary vocab = TiktokenReconstruction.vocabulary(mergeableRanks, Map.of());
+        Vocabulary vocab = TiktokenReconstruction.vocabulary(mergeableRanks, Map.of(), Set.of());
 
         assertEquals(3, vocab.size());
         assertEquals(0, vocab.id("a"));
@@ -44,10 +45,30 @@ class TiktokenReconstructionTest {
         Map<String, Integer> specialTokens = new LinkedHashMap<>();
         specialTokens.put("<|endoftext|>", 2);
 
-        Vocabulary vocab = TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
+        Vocabulary vocab =
+                TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens, Set.of());
 
         assertEquals(3, vocab.size());
         assertEquals(2, vocab.id("<|endoftext|>"));
+    }
+
+    /** The types are what Specials.of reads: CONTROL, or USER_DEFINED for a non-special one. */
+    @Test
+    void vocabularyTypesSpecialTokens() {
+        Map<String, Integer> mergeableRanks = new LinkedHashMap<>();
+        mergeableRanks.put("a", 0);
+
+        Map<String, Integer> specialTokens = new LinkedHashMap<>();
+        specialTokens.put("<|im_end|>", 1);
+        specialTokens.put("<|tool_call_begin|>", 2);
+
+        Vocabulary vocab =
+                TiktokenReconstruction.vocabulary(
+                        mergeableRanks, specialTokens, Set.of("<|tool_call_begin|>"));
+
+        assertTrue(vocab.isTokenOfType(0, StandardTokenType.NORMAL));
+        assertTrue(vocab.isTokenOfType(1, StandardTokenType.CONTROL));
+        assertTrue(vocab.isTokenOfType(2, StandardTokenType.USER_DEFINED));
     }
 
     @Test
@@ -58,7 +79,8 @@ class TiktokenReconstructionTest {
         Map<String, Integer> specialTokens = new LinkedHashMap<>();
         specialTokens.put("<|special|>", 0); // conflicts with "a"
 
-        Vocabulary vocab = TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
+        Vocabulary vocab =
+                TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens, Set.of());
 
         assertEquals(2, vocab.size());
         assertTrue(vocab.contains(vocab.id("<|special|>")));
@@ -72,7 +94,8 @@ class TiktokenReconstructionTest {
         Map<String, Integer> specialTokens = new LinkedHashMap<>();
         specialTokens.put("<|special|>", -1);
 
-        Vocabulary vocab = TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
+        Vocabulary vocab =
+                TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens, Set.of());
 
         assertEquals(2, vocab.size());
         assertTrue(vocab.contains(vocab.id("<|special|>")));
@@ -88,7 +111,8 @@ class TiktokenReconstructionTest {
         specialTokens.put("b", null);
 
         // Should not throw
-        Vocabulary vocab = TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
+        Vocabulary vocab =
+                TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens, Set.of());
 
         assertEquals(1, vocab.size());
         assertEquals(0, vocab.id("a"));
@@ -98,14 +122,21 @@ class TiktokenReconstructionTest {
     void vocabularyNullMergeableRanksThrows() {
         assertThrows(
                 NullPointerException.class,
-                () -> TiktokenReconstruction.vocabulary(null, Map.of()));
+                () -> TiktokenReconstruction.vocabulary(null, Map.of(), Set.of()));
     }
 
     @Test
     void vocabularyNullSpecialTokensThrows() {
         assertThrows(
                 NullPointerException.class,
-                () -> TiktokenReconstruction.vocabulary(Map.of(), null));
+                () -> TiktokenReconstruction.vocabulary(Map.of(), null, Set.of()));
+    }
+
+    @Test
+    void vocabularyNullUserDefinedThrows() {
+        assertThrows(
+                NullPointerException.class,
+                () -> TiktokenReconstruction.vocabulary(Map.of(), Map.of(), null));
     }
 
     // ------------------------------------------------------------------

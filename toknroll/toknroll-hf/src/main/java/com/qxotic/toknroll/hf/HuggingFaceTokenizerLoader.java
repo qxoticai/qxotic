@@ -14,10 +14,13 @@ import java.nio.file.Path;
 import java.text.Normalizer.Form;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -362,9 +365,12 @@ public final class HuggingFaceTokenizerLoader {
             mergeableRanks = ImplAccessor.loadTiktokenMergeableRanks(reader);
         }
 
+        Map<String, Integer> addedTokens = new LinkedHashMap<>();
+        Set<String> userDefined = new HashSet<>();
+        readAddedTokensDecoder(tokenizerConfig, addedTokens, userDefined);
         Vocabulary vocabulary =
                 ImplAccessor.reconstructTiktokenVocabulary(
-                        mergeableRanks, extractSpecialTokens(tokenizerConfig));
+                        mergeableRanks, addedTokens, userDefined);
         List<MergeRule> merges = ImplAccessor.reconstructTiktokenMergeRules(mergeableRanks);
 
         TokenizationModel model = Toknroll.tiktokenModel(vocabulary, merges);
@@ -419,17 +425,19 @@ public final class HuggingFaceTokenizerLoader {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private static Map<String, Integer> extractSpecialTokens(Map<String, Object> tokenizerConfig) {
-        Map<String, Integer> specialTokens = new LinkedHashMap<>();
-        if (tokenizerConfig == null) {
-            return specialTokens;
-        }
-        Object addedDecoderObj = tokenizerConfig.get("added_tokens_decoder");
-        if (!(addedDecoderObj instanceof Map<?, ?>)) {
-            return specialTokens;
-        }
-        for (Map.Entry<?, ?> entry : ((Map<?, ?>) addedDecoderObj).entrySet()) {
+    /**
+     * tokenizer_config.json's {@code added_tokens_decoder}, the added tokens of a tiktoken-format
+     * model: each one's text to its id, and the texts of those not marked special, which are
+     * matched whole all the same (Kimi's tool-call markers).
+     */
+    private static void readAddedTokensDecoder(
+            Map<String, Object> tokenizerConfig,
+            Map<String, Integer> addedTokens,
+            Set<String> userDefined) {
+        Object decoder =
+                tokenizerConfig == null ? null : tokenizerConfig.get("added_tokens_decoder");
+        if (!(decoder instanceof Map<?, ?>)) return;
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) decoder).entrySet()) {
             if (!(entry.getKey() instanceof String) || !(entry.getValue() instanceof Map<?, ?>)) {
                 continue;
             }
@@ -439,14 +447,36 @@ public final class HuggingFaceTokenizerLoader {
             } catch (NumberFormatException ignored) {
                 continue;
             }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> tokenMap = (Map<String, Object>) entry.getValue();
-            Object content = tokenMap.get("content");
-            if (content instanceof String) {
-                specialTokens.put(canonicalizeByteLevelSurface((String) content), id);
+            Map<?, ?> token = (Map<?, ?>) entry.getValue();
+            if (!(token.get("content") instanceof String)) continue;
+            String content = (String) token.get("content");
+            refuseUnsupportedMatching(
+                    token, content, TOKENIZER_CONFIG_JSON + ":added_tokens_decoder");
+            String text = canonicalizeByteLevelSurface(content);
+            addedTokens.put(text, id);
+            if (!Boolean.TRUE.equals(token.get("special"))) userDefined.add(text);
+        }
+    }
+
+    /**
+     * Refuses an added token Hugging Face would match other than as its exact text: {@code lstrip}
+     * and {@code rstrip} also take the whitespace beside it, {@code single_word} matches it only
+     * between word boundaries. {@link com.qxotic.toknroll.Specials} matches exact text only, and a
+     * tokenizer that silently disagreed with its reference is worse than one that does not load.
+     */
+    private static void refuseUnsupportedMatching(Map<?, ?> token, String content, String where) {
+        for (String flag : new String[] {"lstrip", "rstrip", "single_word"}) {
+            if (Boolean.TRUE.equals(token.get(flag))) {
+                throw new IllegalArgumentException(
+                        where
+                                + ": added token "
+                                + content
+                                + " sets "
+                                + flag
+                                + ", which toknroll does not support: special tokens match their"
+                                + " exact text only");
             }
         }
-        return specialTokens;
     }
 
     /**
@@ -637,6 +667,8 @@ public final class HuggingFaceTokenizerLoader {
                     continue;
                 }
 
+                refuseUnsupportedMatching(
+                        added, (String) contentObj, "tokenizer.json:added_tokens");
                 int id = ((Number) idObj).intValue();
                 if (id >= tokens.length) {
                     int oldLength = tokens.length;
@@ -654,9 +686,12 @@ public final class HuggingFaceTokenizerLoader {
                     // but do not clobber normal vocab entries.
                     tokens[id] = (String) contentObj;
                 }
-                if (special) {
-                    tokenTypes[id] = StandardTokenType.CONTROL.getId();
-                }
+                // Every added token is matched whole, as Hugging Face matches it: the flag says
+                // only whether decoding may hide it. Specials.of takes both kinds.
+                tokenTypes[id] =
+                        special
+                                ? StandardTokenType.CONTROL.getId()
+                                : StandardTokenType.USER_DEFINED.getId();
             }
         }
 

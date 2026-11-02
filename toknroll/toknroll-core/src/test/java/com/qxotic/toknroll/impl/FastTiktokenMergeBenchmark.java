@@ -4,6 +4,7 @@ import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -48,7 +49,7 @@ public class FastTiktokenMergeBenchmark {
         tokenizer =
                 (TiktokenModel)
                         Toknroll.tiktokenModel(
-                                TiktokenReconstruction.vocabulary(ranks, specials),
+                                TiktokenReconstruction.vocabulary(ranks, specials, Set.of()),
                                 TiktokenReconstruction.mergeRules(ranks));
         bytes = resize(seedBytes(corpus), bytesLength);
         text = new String(bytes, StandardCharsets.UTF_8);

@@ -172,8 +172,10 @@ public final class ImplAccessor {
     }
 
     public static Vocabulary reconstructTiktokenVocabulary(
-            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        return TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens,
+            Set<String> userDefined) {
+        return TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens, userDefined);
     }
 
     public static List<MergeRule> reconstructTiktokenMergeRules(

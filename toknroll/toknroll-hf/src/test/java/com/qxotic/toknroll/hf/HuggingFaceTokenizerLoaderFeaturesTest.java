@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -78,6 +80,72 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertEquals("<|end|>", tokenizer.vocabulary().token(256));
         assertTrue(tokenizer.vocabulary().isTokenOfType(256, StandardTokenType.CONTROL));
+    }
+
+    /**
+     * Hugging Face matches every added token whole, special or not: DeepSeek's {@code <｜User｜>} and
+     * Qwen's {@code <think>} are {@code special: false}. Both kinds are special tokens here.
+     */
+    @Test
+    void typesNonSpecialAddedTokensUserDefinedAndMatchesThemByText() throws IOException {
+        Path tokenizerJson =
+                writeTokenizerJson(
+                        buildTokenizerJson(
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("<think>", 256, "<|end|>", 257)),
+                                        "[]",
+                                        ""),
+                                "\"added_tokens\":["
+                                    + "{\"id\":256,\"content\":\"<think>\",\"special\":false},"
+                                    + "{\"id\":257,\"content\":\"<|end|>\",\"special\":true},"
+                                    + "{\"id\":258,\"content\":\"<｜User｜>\",\"special\":false}]"));
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
+        Vocabulary vocabulary = tokenizer.vocabulary();
+        assertTrue(vocabulary.isTokenOfType(256, StandardTokenType.USER_DEFINED));
+        assertTrue(vocabulary.isTokenOfType(257, StandardTokenType.CONTROL));
+        assertTrue(vocabulary.isTokenOfType(258, StandardTokenType.USER_DEFINED));
+
+        Specials specials = Specials.of(tokenizer);
+        assertEquals(Map.of("<think>", 256, "<|end|>", 257, "<｜User｜>", 258), specials.tokens());
+        int[] ids = specials.encode(tokenizer, "<｜User｜>x<think>y<|end|>").toArray();
+        assertArrayEquals(
+                new int[] {
+                    258,
+                    tokenizer.encode("x").toArray()[0],
+                    256,
+                    tokenizer.encode("y").toArray()[0],
+                    257
+                },
+                ids);
+    }
+
+    /**
+     * {@code lstrip}, {@code rstrip} and {@code single_word} change what Hugging Face matches;
+     * Specials matches exact text only, so such a file is refused rather than tokenized
+     * differently.
+     */
+    @Test
+    void refusesAddedTokensWhoseMatchingToknrollCannotReproduce() throws IOException {
+        for (String flag : new String[] {"lstrip", "rstrip", "single_word"}) {
+            Path tokenizerJson =
+                    writeTokenizerJson(
+                            buildTokenizerJson(
+                                    buildBpeModel(
+                                            buildByteLevelVocab(Map.of("<|end|>", 256)), "[]", ""),
+                                    "\"added_tokens\":[{\"id\":256,\"content\":\"<|end|>\","
+                                            + "\"special\":true,\""
+                                            + flag
+                                            + "\":true}]"));
+
+            IllegalArgumentException error =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
+            assertTrue(
+                    error.getMessage().contains("added token <|end|> sets " + flag),
+                    error.getMessage());
+        }
     }
 
     @Test
