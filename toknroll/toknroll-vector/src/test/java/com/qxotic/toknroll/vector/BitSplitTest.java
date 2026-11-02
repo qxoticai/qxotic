@@ -185,6 +185,24 @@ class BitSplitTest {
         }
     }
 
+    /** The hand look-aheads past the next block start on a character, not inside one. */
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("rules")
+    void handLookAheadsStartOnACharacter(int rules, String regex) {
+        Pattern pattern = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS);
+        // a two-byte letter across the edge of the block after next
+        check(rules, pattern, "ʰ" + "A".repeat(125) + "Ä" + "A".repeat(10) + "a", 1024);
+        check(rules, pattern, "ʰ" + "A".repeat(125) + "Ä" + "A".repeat(10) + "ʰ", 1024);
+        // a multi-byte blank across the edge of the block where the ring overflows
+        for (String blank : new String[] {"\u00a0", "\u2028"}) {
+            for (int at = 4090; at < 4098; at++) {
+                String run = " ".repeat(at - 2) + blank + " ".repeat(200);
+                check(rules, pattern, "a\n" + run + "\nb", 1024);
+                check(rules, pattern, "a\n" + run + "b", 1024);
+            }
+        }
+    }
+
     @Test
     void illFormedBytesSplitAsTheScannerDecodesThem() {
         Pattern pattern =

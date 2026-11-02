@@ -910,8 +910,8 @@ final class BitSplit {
             if (leadRun(nx.word, nxValid) != nxValid) {
                 return false;
             }
-            // the run leaves the next block too: look by hand
-            for (int i = base + 64 + nxLen; i < end; ) {
+            // the run leaves the next block too: look by hand, past the character it ends in
+            for (int i = base + 64 + nxLen + (seed >>> 16); i < end; ) {
                 int at = at(text, i, end);
                 int cls = CharClasses.of(at & 0x1FFFFF);
                 if ((cls & (CharClasses.LETTER | CharClasses.MARK)) == 0) {
@@ -939,7 +939,7 @@ final class BitSplit {
             if (leadRun(uc, nxValid) != nxValid) {
                 return false;
             }
-            for (int i = base + 64 + nxLen; i < end; ) {
+            for (int i = base + 64 + nxLen + (seed >>> 16); i < end; ) {
                 int at = at(text, i, end);
                 int cls = CharClasses.of(at & 0x1FFFFF);
                 if ((cls & (CharClasses.LETTER | CharClasses.MARK)) == 0) {
@@ -1049,8 +1049,10 @@ final class BitSplit {
             // A block's starts are final once the next block has run, except one a newline
             // further on may still retract: nothing from it on is popped until it is decided.
             if (run.retractable >= 0 && bi + 2 - popped > RING) {
-                // the whitespace run outgrew the ring: decide it by looking ahead by hand
-                if (newlineInRun(text, base + len, end)) {
+                // the whitespace run outgrew the ring: decide it by looking ahead by hand, from
+                // the first character that starts in the next block
+                int next = base + len + Long.numberOfTrailingZeros(~run.nx.cont);
+                if (newlineInRun(text, next, end)) {
                     int p = run.retractable - start;
                     run.starts[(p >>> 6) & (RING - 1)] &= ~(1L << (p & 63));
                 }
