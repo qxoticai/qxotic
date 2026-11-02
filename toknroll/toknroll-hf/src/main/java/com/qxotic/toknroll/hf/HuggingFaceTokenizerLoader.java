@@ -508,21 +508,9 @@ public final class HuggingFaceTokenizerLoader {
             "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 
     /**
-     * Builds the splitter for a {@code ByteLevel} pre-tokenizer.
-     *
-     * <p>This previously returned {@link Splitter#identity()}, which is not what a ByteLevel
-     * pre-tokenizer means. In the HuggingFace {@code tokenizers} library ByteLevel carries a {@code
-     * use_regex} flag that DEFAULTS TO TRUE and applies the GPT-2 pattern; only {@code use_regex:
-     * false} suppresses it. Returning identity therefore fed the entire input to the BPE merge loop
-     * as a single chunk, with two consequences measured on a 728k-char corpus with GPT-2:
-     *
-     * <ul>
-     *   <li>TOKENIZATION DIVERGED from the same encoding loaded via tiktoken. Minimal case: {@code
-     *       "word" + "\n".repeat(12) + "word"} produced 8 tokens instead of 9, because nothing
-     *       broke the newline run that {@code \s+(?!\S)|\s+} exists to break.
-     *   <li>IT WAS ~12.6x SLOWER (186.53 ms vs 14.78 ms per pass), since merge cost is superlinear
-     *       in chunk length and the chunk was the whole document.
-     * </ul>
+     * Builds the splitter for a {@code ByteLevel} pre-tokenizer: the GPT-2 pattern, as Hugging
+     * Face's {@code use_regex} defaults to true; only {@code use_regex: false} leaves the text
+     * whole.
      */
     private static Splitter byteLevelSplitter(Map<String, Object> preTokenizer) {
         Object useRegex = preTokenizer.get("use_regex");
