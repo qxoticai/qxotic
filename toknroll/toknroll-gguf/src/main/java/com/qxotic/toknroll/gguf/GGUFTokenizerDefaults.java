@@ -117,8 +117,10 @@ final class GGUFTokenizerDefaults {
     private static final Function<GGUF, Normalizer> IDENTITY_NORMALIZER_FACTORY =
             gguf -> IDENTITY_NORMALIZER;
 
-    private static final Normalizer METASPACE_NORMALIZER =
-            text -> '\u2581' + text.toString().replace(' ', '\u2581');
+    /** llama.cpp's SentencePiece space prefix: before every text, the empty one excepted. */
+    static final Normalizer METASPACE_NORMALIZER =
+            text -> text.length() == 0 ? "" : '\u2581' + text.toString().replace(' ', '\u2581');
+
     private static final Function<GGUF, Normalizer> METASPACE_NORMALIZER_FACTORY =
             gguf -> METASPACE_NORMALIZER;
 

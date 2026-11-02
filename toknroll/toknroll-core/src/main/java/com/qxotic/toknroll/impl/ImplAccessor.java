@@ -211,9 +211,7 @@ public final class ImplAccessor {
                     int startInclusive,
                     int endExclusive,
                     IntSequence.Builder out) {
-                String segment = text.subSequence(startInclusive, endExclusive).toString();
-                String replaced = segment.replace(' ', '\u2581');
-                String prefixed = startInclusive == 0 ? '\u2581' + replaced : replaced;
+                String prefixed = metaspaced(text, startInclusive, endExclusive);
                 base.encodeInto(prefixed, 0, prefixed.length(), out);
             }
 
@@ -229,11 +227,21 @@ public final class ImplAccessor {
 
             @Override
             public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                String segment = text.subSequence(startInclusive, endExclusive).toString();
-                String replaced = segment.replace(' ', '\u2581');
-                String prefixed = startInclusive == 0 ? '\u2581' + replaced : replaced;
+                String prefixed = metaspaced(text, startInclusive, endExclusive);
                 return base.countTokens(prefixed, 0, prefixed.length());
             }
         };
+    }
+
+    /**
+     * Hugging Face's Metaspace, prepend scheme "first": spaces become {@code ▁}, and the input's
+     * first segment gets a leading {@code ▁} unless it is empty or already begins with one.
+     */
+    static String metaspaced(CharSequence text, int startInclusive, int endExclusive) {
+        String replaced =
+                text.subSequence(startInclusive, endExclusive).toString().replace(' ', '\u2581');
+        boolean prefix =
+                startInclusive == 0 && !replaced.isEmpty() && replaced.charAt(0) != '\u2581';
+        return prefix ? '\u2581' + replaced : replaced;
     }
 }
