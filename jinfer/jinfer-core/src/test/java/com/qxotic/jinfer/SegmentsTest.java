@@ -18,7 +18,7 @@ class SegmentsTest {
 
     @Test
     void aBadVectorBitSizeFailsNamingTheProperty() {
-        for (String bad : new String[] {"abc", "", "100", "-128", "256bits"}) {
+        for (String bad : new String[] {"abc", "100", "-128", "256bits"}) {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,
@@ -27,5 +27,13 @@ class SegmentsTest {
             assertTrue(e.getMessage().startsWith("jinfer.vectorBitSize: "), e.getMessage());
             assertTrue(e.getMessage().endsWith("not '" + bad + "'"), e.getMessage());
         }
+    }
+
+    /** A build passes the property through unset as "": blank means not set, the preferred size. */
+    @Test
+    void aBlankVectorBitSizeIsUnset() {
+        assertEquals(256, Segments.vectorBitSize(null, 256));
+        assertEquals(256, Segments.vectorBitSize("", 256));
+        assertEquals(256, Segments.vectorBitSize("  ", 256));
     }
 }
