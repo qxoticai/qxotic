@@ -7,6 +7,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Internal names for the int32_t values jam.h passes, saying what each one holds. */
+typedef int32_t jam_status;   /* JAM_OK or a JAM_E* code */
+typedef int32_t jam_dtype;    /* a JAM_F32 ... type, possibly | JAM_PACKED */
+typedef int32_t jam_isa;      /* a JAM_ISA_* level */
+
+/* A row-range kernel: rows [begin, end) of the job on participant tid. jam's own pool runs it
+ * directly; a host's jam_parallel_fn runs it through an adapter in jam.c. */
+typedef void (*jam_job_fn)(void* job, int begin, int end, int tid);
+
+/* Sets this thread's jam_last_error and returns code (jam.c). */
+jam_status jam_fail(jam_status code, const char* fmt, ...)
+#if defined(__GNUC__)
+    __attribute__((format(printf, 2, 3)))
+#endif
+    ;
+
 /* A 32-bit read at any alignment: GGUF blocks put their payload at odd offsets. One mov either way. */
 static inline int32_t jam_load32(const void* p) { int32_t v; memcpy(&v, p, 4); return v; }
 
@@ -24,11 +40,11 @@ static inline void* jam_aligned_alloc(size_t align, size_t size) {
 static inline void  jam_aligned_free(void* p) { free(p); }
 #endif
 
-/* ---- internal thread pool (used when no host parallel_for is supplied, e.g. the global ctx) ---- */
+/* ---- internal thread pool (used when the host supplies no parallel callback) ---- */
 typedef struct jam_pool jam_pool;
 jam_pool* jam_pool_create(int nthreads);   /* nthreads participants including the submitter */
 void      jam_pool_destroy(jam_pool* pool);
-void      jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg);  /* blocks till done */
+void      jam_pool_parallel_for(jam_pool* pool, int n, jam_job_fn fn, void* arg);  /* blocks till done */
 
 /* Per-worker weight-repack scratch of the prefill bands. One per pool worker, indexed by jam tid.
  * qs holds the repacked codes (the AVX-512 band keeps its scales there too: JAM_BAND32_BLOB bytes per
@@ -49,41 +65,41 @@ size_t jam_pack_group_bytes(jam_dtype dt, int k);
  * compile-time ones (band kernel, block bytes, float floor) are jam.c's kquant_info[]. */
 enum jam_kq { JAM_KQ_Q4K, JAM_KQ_Q5K, JAM_KQ_Q6K, JAM_KQ_N };
 
-struct jam_ctx {
-    jam_parallel_for parallel_for;   /* host executor; if set, takes precedence over ipool */
-    void*            pool;           /* opaque handle for parallel_for */
+struct jam_context {
+    jam_parallel_fn  parallel;       /* host executor; if set, takes precedence over ipool */
+    void*            parallel_user;  /* passed back to parallel */
+    unsigned         fork_gen;       /* the fork generation it was made in: a forked child refuses it */
     jam_pool*        ipool;          /* jam-owned pool (NULL if a host executor was supplied) */
-    int              nthreads;       /* participants; with a host executor, the number of tid values it may pass */
-    _Atomic int      bad_tid;        /* a host task arrived with tid >= nthreads: the call fails with EINVAL */
-    jam_isa          active;         /* the bound ISA level (reported by jam_active_isa) */
-    char             name[48];       /* optional label for JAM_DEBUG ("" if unnamed) */
+    int              threads;        /* participants; with a host executor, the number of slot values it may pass */
+    _Atomic int      bad_slot;       /* a host task arrived with a slot >= threads: the call fails with EINVAL */
+    jam_isa          active;         /* the bound ISA level (reported by jam_context_isa) */
     _Atomic int      busy;           /* serial-stream guard: jam_mm try-acquires (1 exchange); else EBUSY */
-    jam_task_fn      f32_kernel;     /* best F32 row-range kernel for `active`, resolved at create */
-    jam_task_fn      q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
+    jam_job_fn      f32_kernel;     /* best F32 row-range kernel for `active`, resolved at create */
+    jam_job_fn      q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
                                       * by explicit feature check - AVX-VNNI is orthogonal to the ladder. */
-    jam_task_fn      q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
+    jam_job_fn      q8_decode_kernel; /* Q8_0 n==1 override. On i8mm ARM this stays single-stream SDOT:
                                         * SMMLA's two-dimensional tile cannot help a one-column GEMV. */
-    jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
-    jam_task_fn      mxfp4_decode_kernel; /* MXFP4 n==1 override; direct-layout 4x1 SDOT on ARM. */
-    jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
-    jam_task_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> q1_0_floor (float). Int8 pipeline. */
-    jam_task_fn      q1_0_floor;     /* Q1_0 float floor (generic, or the SSE3 tile with the same results) */
-    jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
-    jam_task_fn      q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
-    jam_task_fn      q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
-    jam_task_fn      q4_0_decode_kernel; /* Q4_0 n==1 override; direct-layout 4x1 SDOT on ARM. */
-    jam_task_fn      kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
-    jam_task_fn      kq_decode[JAM_KQ_N]; /* n==1 overrides: 4-row shared-activation GEMVs on ARM */
-    jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
-    jam_task_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
-    jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
-    jam_task_fn      bf16z_kernel;       /* AVX512-BF16 vdpbf16ps tile (k%32==0); NULL -> dense_bf16 */
-    jam_task_fn      bf16z_cvt;          /* its phase 1: F32 activations -> bf16 scratch */
-    jam_task_fn      bf16zp_kernel;      /* packed-panel vdpbf16ps microkernel (k%2==0, n>=8) */
-    jam_task_fn      bf16zp_pack;        /* its phase 1: convert+transpose into token panels */
+    jam_job_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
+    jam_job_fn      mxfp4_decode_kernel; /* MXFP4 n==1 override; direct-layout 4x1 SDOT on ARM. */
+    jam_job_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
+    jam_job_fn      q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> q1_0_floor (float). Int8 pipeline. */
+    jam_job_fn      q1_0_floor;     /* Q1_0 float floor (generic, or the SSE3 tile with the same results) */
+    jam_job_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
+    jam_job_fn      q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
+    jam_job_fn      q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
+    jam_job_fn      q4_0_decode_kernel; /* Q4_0 n==1 override; direct-layout 4x1 SDOT on ARM. */
+    jam_job_fn      kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
+    jam_job_fn      kq_decode[JAM_KQ_N]; /* n==1 overrides: 4-row shared-activation GEMVs on ARM */
+    jam_job_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
+    jam_job_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
+    jam_job_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
+    jam_job_fn      bf16z_kernel;       /* AVX512-BF16 vdpbf16ps tile (k%32==0); NULL -> dense_bf16 */
+    jam_job_fn      bf16z_cvt;          /* its phase 1: F32 activations -> bf16 scratch */
+    jam_job_fn      bf16zp_kernel;      /* packed-panel vdpbf16ps microkernel (k%2==0, n>=8) */
+    jam_job_fn      bf16zp_pack;        /* its phase 1: convert+transpose into token panels */
 
     /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). Assumes a context is used
-     * serially (the global ctx by jinfer's forward thread); concurrent jam_mm on ONE ctx would race
+     * serially; concurrent jam_mm on ONE ctx would race
      * this - TODO for a concurrent-safe variant. The generic path needs none of it. */
     void*  q_aq;   size_t q_aq_cap;   /* int8 [n*k] requantized activations */
     void*  q_ad;   size_t q_d_cap;   /* float [n*nb] per-block scales (q_asum shares this cap) */
@@ -92,9 +108,9 @@ struct jam_ctx {
     /* BF16 activation-conversion scratch (vdpbf16ps path) - same serial-stream contract as q_aq. */
     void*  bf_x;   size_t bf_x_cap;   /* bf16 [n*k] converted activations */
     void*  f32_xp; size_t f32_xp_cap; /* f32 [npanels*32*k] transposed activation panels */
-    jam_task_fn f32p_kernel, f32p_pack;  /* packed-panel F32 path (avx512); NULL -> mnpack */
+    jam_job_fn f32p_kernel, f32p_pack;  /* packed-panel F32 path (avx512); NULL -> mnpack */
 
-    void*  metal;                    /* jam_metal* GPU backend, or NULL (Apple, opt-in). Routes before CPU. */
+    void*  metal;                    /* jam_metal* GPU backend, or NULL. Routes before the CPU. */
 
     /* K-quant scratch (Q4_K...): s8 activations (xq/dx/xsum) + per-worker weight repack. Context-owned,
      * grown lazily; serial-stream only (same contract as the Q8 requant scratch). */
@@ -106,7 +122,7 @@ struct jam_ctx {
 };
 
 /* A matmul job handed to the row-range kernels. The kernel computes output rows [begin, end).
- * Matches jam_task_fn so it can be dispatched directly through a parallel_for. */
+ * Matches jam_job_fn, so the pool runs it directly. */
 typedef struct {
     const void* a; int at; int lda;
     const void* b; int bt; int ldb;
@@ -189,7 +205,7 @@ typedef struct {
     int8_t* xq; float* dx; float* xsum;   /* phase-1 output: codes, scales, sums (layout per band family) */
     float* out; int out_stride;           /* token-major C[seq][dim0], ldc = out_stride */
     int dim0, dim1, seq, kblocks;         /* m, k, n, k / 32 */
-    jam_repack* repack;                   /* [ctx->nthreads] */
+    jam_repack* repack;                   /* [ctx->threads] */
     _Atomic int next_tile;                /* the AVX-512 band claims its tiles here, not from its range */
 } jam_band_job;
 #ifdef JAM_HAVE_AVX512
@@ -326,10 +342,8 @@ void jam_mm_q4_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* ni
 void jam_mm_q5_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* nibble|qh decode + 4x4 */
 #endif
 
-/* ---- Metal GPU backend (Apple; opt-in via JAM_ISA=metal). A different executor, not a CPU row-range
- * kernel: jam_mm routes supported dtypes to it before the pool path. Implemented in jam_metal.mm. ---- */
-/* Shared ISA-name parser (jam.c); used by the JNI shim to seed the Java context from JAM_ISA. */
-jam_isa jam_parse_isa(const char* s);
+/* ---- Metal GPU backend (Apple aarch64, chosen by JAM_ISA_AUTO). A different executor, not a CPU
+ * row-range kernel: jam_mm routes supported types to it before the pool path. In jam_metal.mm. ---- */
 #ifdef JAM_HAVE_METAL
 typedef struct jam_metal jam_metal;
 #ifdef __cplusplus
@@ -340,6 +354,8 @@ void       jam_metal_destroy(jam_metal* m);
 jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, int lda,
                         const void* b, jam_dtype bt, int ldb, void* c, jam_dtype ct, int ldc,
                         int M, int N, int K);
+jam_status jam_metal_share(jam_metal* m, const void* p, size_t bytes);
+void       jam_metal_unshare(jam_metal* m, const void* p);
 #ifdef __cplusplus
 }
 #endif

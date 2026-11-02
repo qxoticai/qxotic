@@ -17,6 +17,39 @@ endif()
 # distros). Harmless on Mach-O (always PIC) and PE (no PIC concept).
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Only jam.h's functions (JAM_API) and the JNI entry points leave the library; every kernel and helper
+# stays inside. The per-ISA OBJECT libraries need it too, so it is set before any target. A DLL exports
+# only what is marked dllexport, so Windows needs nothing.
+if (NOT WIN32)
+    set(CMAKE_C_VISIBILITY_PRESET hidden)
+    set(CMAKE_OBJCXX_VISIBILITY_PRESET hidden)
+    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+endif()
+
+# The version is jam.h's JAM_VERSION_*, and it must be the jam Maven project's: one release number for the
+# jar and the library. The soname follows it, never set by hand: libjam.so.0.<minor> while the version
+# starts with 0 (any minor may break), libjam.so.<major> from 1.0.
+file(STRINGS include/jam.h JAM_VERSION_DEFINES REGEX "^#define JAM_VERSION_(MAJOR|MINOR|PATCH) +[0-9]+")
+foreach(line IN LISTS JAM_VERSION_DEFINES)
+    string(REGEX MATCH "JAM_VERSION_([A-Z]+) +([0-9]+)" _ "${line}")
+    set(JAM_VERSION_${CMAKE_MATCH_1} ${CMAKE_MATCH_2})
+endforeach()
+set(JAM_VERSION "${JAM_VERSION_MAJOR}.${JAM_VERSION_MINOR}.${JAM_VERSION_PATCH}")
+if (JAM_VERSION_MAJOR EQUAL 0)
+    set(JAM_SOVERSION "0.${JAM_VERSION_MINOR}")
+else()
+    set(JAM_SOVERSION "${JAM_VERSION_MAJOR}")
+endif()
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pom.xml")   # absent in a copy of jam-native alone
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../pom.xml" JAM_POM)
+    string(FIND "${JAM_POM}" "<artifactId>jam</artifactId>" JAM_POM_AT)
+    string(SUBSTRING "${JAM_POM}" ${JAM_POM_AT} -1 JAM_POM)
+    string(REGEX MATCH "<version>([^<]+)</version>" _ "${JAM_POM}")
+    if (NOT CMAKE_MATCH_1 STREQUAL JAM_VERSION)
+        message(FATAL_ERROR "jam.h says ${JAM_VERSION}, jam/pom.xml says ${CMAKE_MATCH_1}: move them together")
+    endif()
+endif()
+
 # The flag spellings below are GCC/Clang (-m..., -march=...); Windows builds use MinGW-w64
 # (cmake/toolchains/windows-*.cmake). Fail fast instead of erroring on the first -m flag.
 if (MSVC)
@@ -51,11 +84,11 @@ add_library(jam SHARED
     src/kernels/jam_kernels_generic.c
 )
 target_include_directories(jam PUBLIC include PRIVATE src)
-set_target_properties(jam PROPERTIES VERSION 1.0.0 SOVERSION 1)   # libjam.so.1 -> ABI guard via soname
+set_target_properties(jam PROPERTIES VERSION ${JAM_VERSION} SOVERSION ${JAM_SOVERSION})
 
 # JAM_BUILD marks this as the library's own compilation so jam.h stamps the public API with
 # __declspec(dllexport) on Windows (PE hides everything else once jam_jni.c's JNIEXPORT appears - that
-# would drop jam_mm/jam_ctx_* from jam.dll and break the Panama binding). No effect on ELF/Mach-O.
+# would drop jam_mm/jam_context_* from jam.dll and break the Panama binding). No effect on ELF/Mach-O.
 target_compile_definitions(jam PRIVATE JAM_BUILD=1)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)   # -pthread over -lpthread where it matters (GCC/ELF)
@@ -163,7 +196,7 @@ endif()
 # jota-metal, which GENERATES/fuses kernels - jam-metal is the single absolute-fastest matmul. Wraps
 # host pointers via newBufferWithBytesNoCopy (needs 16 KB page-aligned buffers), big-GEMM-gated.
 if (APPLE AND JAM_METAL)
-    # Metal GPU backend (default-on for Apple Silicon AUTO; JAM_ISA=<cpu rung> opts out). MSL compiled at runtime; no .metallib step.
+    # Metal GPU backend (on for Apple Silicon AUTO; a cap below JAM_ISA_METAL opts out). MSL compiled at runtime; no .metallib step.
     enable_language(OBJCXX)
     target_sources(jam PRIVATE src/jam_metal.mm)
     set_source_files_properties(src/jam_metal.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
@@ -244,8 +277,13 @@ if (JAM_TESTS)
         target_link_libraries(${t} PRIVATE jam $<$<NOT:$<PLATFORM_ID:Windows>>:m> Threads::Threads)
     endforeach()
     # jam_test internally covers EVERY supported ISA level (capped contexts) at 1 and 3 threads, so one
-    # run exercises all kernels. The env-capped run additionally validates JAM_ISA parsing on the global ctx.
-    add_test(NAME correctness         COMMAND jam_test)
-    add_test(NAME correctness_env_cap COMMAND jam_test)
-    set_tests_properties(correctness_env_cap PROPERTIES ENVIRONMENT "JAM_ISA=avx2")
+    # run exercises all kernels.
+    add_test(NAME correctness COMMAND jam_test)
+    # The library exports exactly jam.h's functions and the JNI entry points (ELF and Mach-O; a DLL
+    # exports only what is marked, so Windows needs no check).
+    if (NOT WIN32)
+        add_test(NAME exports COMMAND ${CMAKE_COMMAND} -DLIB=$<TARGET_FILE:jam>
+                 -DHEADER=${CMAKE_CURRENT_SOURCE_DIR}/include/jam.h -DJNI=${JAM_JNI}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_exports.cmake)
+    endif()
 endif()

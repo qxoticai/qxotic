@@ -543,9 +543,9 @@ class JamTest {
                     jam.mm(w, 0, JAM.F32, k, a, 0, JAM.F32, k, c, 0, JAM.F16, m, m, n, k),
                     "non-F32 result");
             assertEquals(
-                    JAM.EUNSUPPORTED,
+                    JAM.EINVAL,
                     jam.mm(w, 0, JAM.Q8_0, 48, a, 0, JAM.F32, 48, c, 0, JAM.F32, m, m, n, 48),
-                    "k not a Q8_0-block multiple");
+                    "k not a Q8_0-block multiple: a shape the type cannot have");
             assertEquals(
                     JAM.EINVAL,
                     jam.mm(w, 0, JAM.F32, k, a, 0, JAM.F32, k, c, 0, JAM.F32, m, m, 0, k),
@@ -708,5 +708,58 @@ class JamTest {
             int n,
             int k) {
         return jam.mm(w, wOff, wt, ldw, a, 0, JAM.F32, k, r, 0, JAM.F32, m, m, n, k);
+    }
+
+    @Test
+    void isaCapsByName() { // the names jam_isa_name gives, to jam.h's values
+        assertEquals(0, NativeJAM.isa(""));
+        assertEquals(0, NativeJAM.isa("auto"));
+        assertEquals(1, NativeJAM.isa("generic"));
+        assertEquals(4, NativeJAM.isa("AVX2"));
+        assertEquals(7, NativeJAM.isa("avx512_vnni"));
+        assertEquals(18, NativeJAM.isa("i8mm"));
+        assertEquals(19, NativeJAM.isa("metal"));
+        assertThrows(IllegalArgumentException.class, () -> NativeJAM.isa("avx512vnni"));
+    }
+
+    /**
+     * -Djam.native.isa reaches the native context: a cap it can apply computes, a foreign one
+     * fails.
+     */
+    @Test
+    void jamNativeIsaCapsTheContext() {
+        String foreign = System.getProperty("os.arch").equals("aarch64") ? "avx2" : "neon";
+        String before = System.getProperty("jam.native.isa");
+        try (Arena ar = Arena.ofConfined()) {
+            System.setProperty("jam.native.isa", "generic");
+            try (NativeJAM generic = NativeJAM.create(JAM.Parallel.INLINE)) {
+                int m = 4, n = 2, k = 32;
+                MemorySegment w = ar.allocate(4L * m * k),
+                        a = ar.allocate(4L * n * k),
+                        r = ar.allocate(4L * m * n);
+                for (int i = 0; i < m * k; i++) w.setAtIndex(JAVA_FLOAT, i, i % 7 - 3);
+                for (int i = 0; i < n * k; i++) a.setAtIndex(JAVA_FLOAT, i, i % 5 - 2);
+                assertEquals(JAM.OK, generic.mm(w, a, r, JAM.F32, m, n, k));
+                for (int i = 0; i < m; i++)
+                    for (int j = 0; j < n; j++) {
+                        float dot = 0;
+                        for (int x = 0; x < k; x++)
+                            dot +=
+                                    (i * k + x) % 7 - 3 == 0
+                                            ? 0
+                                            : ((i * k + x) % 7 - 3) * ((j * k + x) % 5 - 2);
+                        assertEquals(dot, r.getAtIndex(JAVA_FLOAT, (long) j * m + i), 1e-3f);
+                    }
+            }
+            System.setProperty("jam.native.isa", foreign);
+            IllegalStateException e =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> NativeJAM.create(JAM.Parallel.INLINE));
+            assertTrue(e.getMessage().contains("not a level of this architecture"), e.getMessage());
+        } finally {
+            if (before == null) System.clearProperty("jam.native.isa");
+            else System.setProperty("jam.native.isa", before);
+        }
     }
 }

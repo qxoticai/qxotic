@@ -23,11 +23,14 @@ Linux, Windows, and macOS. x86: SSE3 through AVX-512-VNNI. ARM: NEON / DotProd /
 ```c
 #include <jam.h>
 
-jam_status st = jam_mm(NULL,             // NULL = the global context
-                       W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
-                       X, JAM_F32,  k,   // activations [n x k]
-                       Y, JAM_F32,  m,   // result      [m x n]  (token-major, stride m)
-                       m, n, k);         // R = W @ Aᵀ
+jam_context* context = jam_context_new(NULL);   // the best kernels on every CPU; NULL on failure
+int32_t status = jam_mm(context,
+                        W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
+                        X, JAM_F32,  k,   // activations [n x k]
+                        Y, JAM_F32,  m,   // result      [n x m]  (token-major, row stride m)
+                        m, n, k);         // R = W @ A^T
+if (status < 0) fprintf(stderr, "jam: %s\n", jam_last_error(NULL));
+jam_context_free(context);
 ```
 
 ### Java
@@ -80,7 +83,8 @@ Quantizations: `Q1_0`, `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, 
 
 ## Backends
 
-jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or `cfg.max_isa`.
+jam detects the CPU and uses the best available kernel.
+Cap it with `-Djam.native.isa` (or `JAM_NATIVE_ISA`) in Java, `max_isa` in C.
 
 | arch | instruction sets | Q8_0 dot |
 |---|---|---|
@@ -88,7 +92,10 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (default) picks the best. On Apple Silicon that includes the Metal backend (prefill on the GPU, one-column decode stays on the CPU SDOT kernels). Name a CPU rung (`JAM_ISA=i8mm`) to stay CPU-only. SVE, AMX, and SME are not implemented.
+Unset (or `auto`), it picks the best.
+On Apple Silicon that includes the Metal backend (prefill on the GPU, one-column decode stays on the CPU SDOT kernels).
+Cap it at a CPU level (`i8mm`) to stay CPU-only.
+SVE, AMX, and SME are not implemented.
 
 ## Performance
 
@@ -99,26 +106,27 @@ Run `jam_bench` and llama.cpp's `pp512` to measure your hardware.
 ## Configuration
 
 ```sh
-JAM_ISA=avx2                         ./app   # cap every provider at AVX2
-JAM_ISA=i8mm                         ./app   # CPU-only on Apple Silicon (Metal is on by default)
+JAM_NATIVE_ISA=avx2                  ./app   # cap native jam at AVX2 (or -Djam.native.isa=avx2)
+JAM_NATIVE_ISA=i8mm                  ./app   # CPU-only on Apple Silicon (Metal is on by default)
 JAM_DEBUG=1                          ./app   # print detected features + bound kernels
 ```
 
 Threads are not a jam setting.
 A provider is created with the host's `JAM.Parallel` (`Provider.create(parallel)`) and runs every task on it, its width being the thread budget; in jinfer that is `-Djinfer.threads`.
 A backend may run its own threads instead, under one rule: while `mm` runs it uses at most `width()` cores and the host's workers are idle, and when `mm` returns its own workers are idle.
-The native library creates no thread inside a JVM; a C host without an executor of its own gets a small pool sized by `jam_config.nthreads` (0 = every online CPU).
+The native library creates no thread inside a JVM; a C host without an executor of its own gets a small pool sized by `jam_context_options.threads` (0 = every online CPU).
 
 For per-pool control, create a context explicitly:
 
 ```c
-jam_config cfg = {.nthreads = 8, .max_isa = JAM_ISA_AVX2};
-jam_ctx* ctx = jam_ctx_create(&cfg);
-jam_mm(ctx, /* ... */);
-jam_ctx_destroy(ctx);
+jam_context_options options = {.threads = 8, .max_isa = JAM_ISA_AVX2};
+jam_context* context = jam_context_new(&options);   /* NULL on failure: jam_last_error says why */
+jam_mm(context, /* ... */);
+jam_context_free(context);
 ```
 
-A `jam_ctx` is a serial stream: one `mm` at a time. For concurrent matmuls, use one context per thread.
+A `jam_context` is a serial stream: one `mm` at a time.
+For concurrent matmuls, use one context per thread.
 
 ## Build
 
@@ -150,4 +158,4 @@ cd build && ctest --output-on-failure   # every kernel, 1 & 3 threads, vs a doub
 ./jam_bench [M N K] [iters]             # GMAC/s (compute) and GB/s (bandwidth)
 ```
 
-On Apple Silicon, the AUTO Java passes exercise Metal. Maven runs `HostPoolTest` separately with `JAM_ISA=generic` because a GPU matmul has no CPU work and therefore never calls the host pool.
+On Apple Silicon, the AUTO Java passes exercise Metal. Maven runs `HostPoolTest` separately with `JAM_NATIVE_ISA=generic` because a GPU matmul has no CPU work and therefore never calls the host pool.

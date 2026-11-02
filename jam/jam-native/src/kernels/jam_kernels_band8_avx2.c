@@ -25,7 +25,7 @@
 #include <string.h>
 
 /* Activation columns per register tile, per quant - measured optima (m=4096 n=512 k=2048,
- * JAM_ISA=avx2): Q4_K peaks at 4 (dual lo/hi accumulators fill the file), the single-accumulator
+ * capped at avx2): Q4_K peaks at 4 (dual lo/hi accumulators fill the file), the single-accumulator
  * chained kernels at 6, and Q8_0's sign-trick pipeline at 8 (the extra independent columns hide
  * the abs/sign latency). */
 #define B8_NR_Q4K 4

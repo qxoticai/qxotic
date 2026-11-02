@@ -67,7 +67,7 @@ static double wbytes_per_val(int at) {
     }
 }
 
-static perf bench(jam_ctx* ctx, const void* A, int at, const float* B, float* C, int m, int n, int k, int iters) {
+static perf bench(jam_context* ctx, const void* A, int at, const float* B, float* C, int m, int n, int k, int iters) {
     jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);                 /* warm (scratch alloc) */
     double dt = 0;
     for (int i=0;i<iters;i++) {
@@ -140,13 +140,12 @@ int main(int argc, char** argv) {
     if (K % 256) printf("  (K-quants skipped: k=%d is not a multiple of 256)\n", K);
     printf("  %-10s %-6s %12s %9s\n", "isa", "quant", "GMAC/s", "GB/s");
     for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) {
-        jam_isa lvl = jam_isa_levels[L];
+        int32_t lvl = jam_isa_levels[L];
         if (want && *want && strcmp(want, jam_isa_name(lvl))) continue;           /* isolate one isa */
-        jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa=lvl; cfg.nthreads=nt;
-        cfg.name = jam_isa_name(lvl);   /* labels the JAM_DEBUG output */
-        jam_ctx* c = jam_ctx_create(&cfg);
+        jam_context_options cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa=lvl; cfg.threads=nt;   /* labels the JAM_DEBUG output */
+        jam_context* c = jam_context_new(&cfg);
         if (!c) continue;
-        if (jam_active_isa(c) != lvl) { jam_ctx_destroy(c); continue; }           /* hw lacks this level */
+        if (jam_context_isa(c) != lvl) { jam_context_free(c); continue; }           /* hw lacks this level */
         for (unsigned Q=0; Q<sizeof QS/sizeof*QS; ++Q) {
             if (wantdt && strcmp(wantdt, QS[Q].nm) != 0) continue;                 /* JAM_DTYPE filter */
             if (!QS[Q].W) continue;                                                 /* weight not built (dtype filter / k alignment) */
@@ -154,7 +153,7 @@ int main(int argc, char** argv) {
             perf p = bench(c, QS[Q].W, QS[Q].at, B, C, M, N, K, iters);
             printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(lvl), QS[Q].nm, p.gmac, p.gbs);
         }
-        jam_ctx_destroy(c);
+        jam_context_free(c);
     }
     free(Wf); free(B); free(C); free(Wf16); free(Wbf16); free(Wq); free(Wq40); free(Wq50);
     free(Wq4k); free(Wq5k); free(Wq6k); free(Wmx); free(Wnv); free(Wq1); free(g_scrub);

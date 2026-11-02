@@ -212,7 +212,7 @@ static void mnpack(const float* A, long lda, const float* B, long ldb, float* C,
     mnpack(A,lda,B,ldb,C,ldc, i0, iend, np, jend, k);  /* remainder cols × all rows */
 }
 
-/* Row-range kernel (jam_task_fn): the engine pool hands each thread output rows [row_begin,row_end).
+/* Row-range kernel (jam_job_fn): the engine pool hands each thread output rows [row_begin,row_end).
  * We block the N (activation-column) loop into panels whose k-vectors fit most of L3: B (activations)
  * stays L3-resident and is re-read per M-tile from there, while A (the WEIGHTS - the far larger
  * operand in LLM shapes) streams from DRAM exactly once per panel. The old ~half-L2 panel had that

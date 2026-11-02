@@ -33,12 +33,14 @@ From C:
 ```c
 #include <jam.h>
 
-jam_status st = jam_mm(
-     NULL,             // NULL = global context
-     W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
-     X, JAM_F32,  k,   // activations [n x k]
-     Y, JAM_F32,  m,   // result      [m x n]  (token-major, stride m)
-     m, n, k);         // R = W @ A^T
+jam_context* context = jam_context_new(NULL);   // the best kernels on every CPU; NULL on failure
+int32_t status = jam_mm(context,
+                        W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
+                        X, JAM_F32,  k,   // activations [n x k]
+                        Y, JAM_F32,  m,   // result      [n x m]  (token-major, row stride m)
+                        m, n, k);         // R = W @ A^T
+if (status < 0) fprintf(stderr, "jam: %s\n", jam_last_error(NULL));
+jam_context_free(context);
 ```
 
 Supported quantizations: `Q1_0`, `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4` and `NVFP4`, dense `F32`, `F16` and `BF16`.  
@@ -96,7 +98,7 @@ The scalar jam provider requires no additional flags or permission.
 ## Backends
 
 jam automatically detects the current CPU features and/or JVM configuration, the number of cores, discards low-power cores and selects the best available kernels.  
-Set the target instruction set manually with `JAM_ISA` or `cfg.max_isa`.
+Cap the instruction set with `-Djam.native.isa` (or `JAM_NATIVE_ISA`) in Java, `max_isa` in C.
 
 | Arch | Instruction Sets | Q8_0 dot |
 |---|---|---|
@@ -104,27 +106,28 @@ Set the target instruction set manually with `JAM_ISA` or `cfg.max_isa`.
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple Silicon, on by default) | MSL compute |
 
-`JAM_ISA=auto` (the default) auto-selects the fastest kernels; on Apple Silicon that includes Metal kernels.  
-Set a CPU instruction-set (`JAM_ISA=i8mm`) to stay CPU-only. Backend dispatch, re-packing and the multi-threading contract are described in [docs/design.md](docs/design.md).
+Unset (or `auto`), jam picks the fastest kernels; on Apple Silicon that includes the Metal kernels.
+Cap it at a CPU level (`i8mm`) to stay CPU-only.
+Backend dispatch, re-packing and the multi-threading contract are described in [docs/design.md](docs/design.md).
 
 ## Configuration
 
 ```sh
-JAM_ISA=avx2  ./app   # pin native jam at AVX2
-JAM_ISA=i8mm  ./app   # CPU-only on Apple Silicon (Metal is on by default)
-JAM_DEBUG=1   ./app   # print detected features + selected kernels
+JAM_NATIVE_ISA=avx2  ./app   # cap native jam at AVX2 (or -Djam.native.isa=avx2)
+JAM_NATIVE_ISA=i8mm  ./app   # CPU-only on Apple Silicon (Metal is on by default)
+JAM_DEBUG=1          ./app   # print detected features + selected kernels
 ```
 
 Thread pools are configurable: a JAM backend can use the host's provided `JAM.Parallel` pool (in jinfer,
-`-Djinfer.threads`); a C host without an executor gets a native thread pool sized by `jam_config.nthreads`.
+`-Djinfer.threads`); a C host without an executor gets a native thread pool sized by `jam_context_options.threads`.
 
 For fine-grained thread-pool control, create a JAM native context explicitly:
 
 ```c
-jam_config cfg = {.nthreads = 8, .max_isa = JAM_ISA_AVX2};
-jam_ctx* ctx = jam_ctx_create(&cfg);
-jam_mm(ctx, /* ... */);
-jam_ctx_destroy(ctx);
+jam_context_options options = {.threads = 8, .max_isa = JAM_ISA_AVX2};
+jam_context* context = jam_context_new(&options);   /* NULL on failure: jam_last_error says why */
+jam_mm(context, /* ... */);
+jam_context_free(context);
 ```
 
 ## Build

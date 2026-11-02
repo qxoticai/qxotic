@@ -1,7 +1,7 @@
-/* A small persistent worker pool for contexts without a host executor: the C global context, the
- * tests and the benches. Workers spin on the job counter for a bounded number of pauses, then park
+/* A small persistent worker pool for contexts without a host executor: C callers, the tests and
+ * the benches. Workers spin on the job counter for a bounded number of pauses, then park
  * on a condvar until the next job; the submitting thread is participant 0. A JVM host never uses
- * it - the Java context supplies parallel_for and this file's threads are never created there. */
+ * it - the Java context supplies its parallel callback and this file's threads are never created there. */
 #include "jam_internal.h"
 
 #include <stdlib.h>
@@ -26,7 +26,7 @@ struct jam_pool {
     jam_worker*     wargs;
     jam_mutex_t     mtx;
     jam_cond_t      cv;           /* parked workers wait here for a job */
-    jam_task_fn     fn;
+    jam_job_fn     fn;
     void*           arg;
     int             n;
     _Atomic uint32_t seq;         /* (generation << 16) | participants: one read = one consistent job */
@@ -36,7 +36,7 @@ struct jam_pool {
 };
 
 /* Participant `idx` of `total` takes a balanced slice of [0, n). */
-static void run_range(jam_task_fn fn, void* arg, int n, int idx, int total) {
+static void run_range(jam_job_fn fn, void* arg, int n, int idx, int total) {
     int chunk = n / total, rem = n % total;
     int begin = idx * chunk + (idx < rem ? idx : rem);
     int end   = begin + chunk + (idx < rem ? 1 : 0);
@@ -106,7 +106,7 @@ jam_pool* jam_pool_create(int nthreads) {
     return pool;
 }
 
-void jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg) {
+void jam_pool_parallel_for(jam_pool* pool, int n, jam_job_fn fn, void* arg) {
     if (!pool || pool->nworkers == 0 || n <= 1) { fn(arg, 0, n, 0); return; }
     pool->fn = fn; pool->arg = arg; pool->n = n;
     int part = pool->nworkers + 1;

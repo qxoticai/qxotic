@@ -93,9 +93,9 @@ public final class VectorJAM implements JAM {
             return EUNSUPPORTED;
         GGMLType t = GGMLType.byCode(wt);
         if (t == null) return EUNSUPPORTED; // unknown tag; untiled dtypes hit the switch default
-        if (ldw != k || k % t.elementsPerBlock() != 0)
-            return EUNSUPPORTED; // contiguous weight rows, whole blocks
-        if (m <= 0 || k <= 0 || lda < k || ldr < m) return EINVAL;
+        if (m <= 0 || k <= 0 || k % t.elementsPerBlock() != 0 || ldw < k || lda < k || ldr < m)
+            return EINVAL; // a shape the type cannot have
+        if (ldw != k) return EUNSUPPORTED; // only contiguous weight rows
 
         MemoryChecks.checkSegment("weight W", w, wOff, wt, ldw, m, k);
         MemoryChecks.checkSegment("activation A", a, aOff, at, lda, n, k);

@@ -143,8 +143,8 @@ int main(int argc, char** argv) {
     uint8_t* Wq4 = jam_ref_make_q4_0(M, K, 1, d1, d2); free(d1); free(d2);
     void* Bq8 = malloc((size_t)N*(K/32)*sizeof(jam_ref_blk));   /* tinyBLAS activation scratch (Q8_0) */
 
-    jam_config cfg; memset(&cfg, 0, sizeof cfg); cfg.nthreads = nth; cfg.name = "bench";   /* match tinyBLAS count */
-    jam_ctx* ctx = jam_ctx_create(&cfg);
+    jam_context_options cfg; memset(&cfg, 0, sizeof cfg); cfg.threads = nth;   /* match tinyBLAS count */
+    jam_context* ctx = jam_context_new(&cfg);
     ggml_cpu_init();                                     /* one-time: ggml CPU backend (fp16 tables, features) */
     tb_pool_start(nth);
 
@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
     };
 
     printf("jam vs tinyBLAS   m=%d n=%d k=%d   threads=%d   jam isa=%s   (scrub %dMB, %d iters)\n",
-           M, N, K, nth, jam_isa_name(jam_active_isa(ctx)), scrub_mb, iters);
+           M, N, K, nth, jam_isa_name(jam_context_isa(ctx)), scrub_mb, iters);
     printf("  activation F32->Q8_0 requant timed on BOTH sides (jam: internal / tinyBLAS: quantize_row_q8_0)\n");
     printf("  %-5s | %11s %8s | %11s %8s |  %7s  %8s\n",
            "quant", "jam GMAC/s", "GB/s", "tb GMAC/s", "GB/s", "jam/tb", "max|Δ|");
@@ -191,7 +191,7 @@ int main(int argc, char** argv) {
                g_tb_ok ? "" : "  [tinyBLAS returned false!]");
     }
 
-    tb_pool_stop(); jam_ctx_destroy(ctx);
+    tb_pool_stop(); jam_context_free(ctx);
     free(Wf); free(B); free(Cj); free(Ct); free(Wq8); free(Wq4); free(Bq8); free(g_scrub);
     return 0;
 }

@@ -35,8 +35,10 @@ SHIPPED="linux-x86-64 windows-x86-64 darwin-aarch64"
 STAMP=jam-native.stamp
 GLIBC_FLOOR=2.17
 ZIG_EXPECTED=0.16
-# Every exported symbol the Java side binds. Mach-O prefixes an underscore, so match bare names.
-SYMBOLS="jam_mm jam_pack_abi jam_pack_size Java_com_qxotic_jam_libjam_NativeJAM_mmJni Java_com_qxotic_jam_libjam_NativeJAM_createPfJni Java_com_qxotic_jam_libjam_NativeJAM_destroyJni"
+# Every exported symbol: jam.h's functions and the JNI entry points the Java side binds. Mach-O
+# prefixes an underscore, so match bare names.
+SYMBOLS="$(sed -n 's/^JAM_API .*[ *]\(jam_[a-z_]*\)(.*/\1/p' include/jam.h | tr '\n' ' ')\
+Java_com_qxotic_jam_libjam_NativeJAM_mmJni Java_com_qxotic_jam_libjam_NativeJAM_newJni Java_com_qxotic_jam_libjam_NativeJAM_freeJni"
 
 die() { echo "natives: $*" >&2; exit 1; }
 

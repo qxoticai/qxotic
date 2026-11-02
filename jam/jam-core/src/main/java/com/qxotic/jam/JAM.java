@@ -183,8 +183,13 @@ public interface JAM {
      */
     int PACKED = 0x100;
 
-    // ── jam_status ──
-    int OK = 0, EINVAL = 1, EUNSUPPORTED = 2, EBUSY = 3;
+    /**
+     * Statuses {@link #mm} returns, jam.h's values: {@code OK}, or a negative code. {@code EINVAL}:
+     * a shape, stride or argument the call cannot have (a caller's bug). {@code EUNSUPPORTED}: a
+     * valid request this backend has no kernel for (fall back to another). {@code EBUSY}: another
+     * call is running on this context. {@code ENOMEM}: out of memory. {@code ERROR}: anything else.
+     */
+    int OK = 0, ERROR = -1, EINVAL = -2, EUNSUPPORTED = -4, EBUSY = -6, ENOMEM = -7;
 
     /**
      * Byte size of the packed in-memory weight layout this backend wants for a {@code [m x k]}
@@ -199,13 +204,33 @@ public interface JAM {
     }
 
     /**
+     * Hint that {@code segment} will be passed to many {@link #mm} calls, so a backend that maps
+     * host memory into a device (a GPU) maps it once instead of per call. Results never depend on
+     * it. {@code immutable} promises the bytes stay unchanged while shared - never written by
+     * anyone, not even as an {@code mm} result - so a backend with its own device memory may keep a
+     * copy; without it the bytes may change between calls, and every call sees the current bytes.
+     *
+     * <p>An operand uses a share only when it lies wholly inside one; other operands work as
+     * before. The share ends when the segment's scope closes, so a segment of the global arena
+     * stays shared for the backend's lifetime.
+     *
+     * <p>Returns whether the backend took the hint: {@code false} on a CPU backend, for a heap
+     * segment, for one overlapping a segment already shared, or for memory the device cannot map.
+     * Like an access to the segment, it may throw {@link IllegalStateException} once the scope is
+     * closed and {@link WrongThreadException} from a thread that cannot access it.
+     */
+    default boolean share(MemorySegment segment, boolean immutable) {
+        return false;
+    }
+
+    /**
      * {@code R = W @ Aᵀ}, laid out token-major (the ggml/llama.cpp convention): {@code R[j*ldr + i]
      * = dot(W[i,:], A[j,:])} - row {@code j} of R holds token j's {@code m} contiguous features, so
      * R is an {@code [n][m]} matrix row-major (equivalently, {@code W @ Aᵀ} column-major). Each
      * operand is a native {@link MemorySegment} + BYTE offset; {@code ldw/lda/ldr} are ELEMENT row
      * strides; {@code wt/at/rt} the operand dtypes ({@code at}, {@code rt} are {@code F32} today).
-     * Returns a jam_status ({@link #OK} / {@link #EINVAL} / {@link #EUNSUPPORTED} / {@link
-     * #EBUSY}).
+     * Returns {@link #OK} or a negative status ({@link #EINVAL}, {@link #EUNSUPPORTED}, {@link
+     * #EBUSY}, ...).
      */
     int mm(
             MemorySegment w,

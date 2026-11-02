@@ -1,8 +1,8 @@
 /* Comprehensive correctness: exercises EVERY kernel the current CPU supports by creating one context
- * per ISA level (capped via max_isa), at 1 and 3 threads, plus the global (NULL) context. Each output
+ * per ISA level (capped via max_isa), at 1 and 3 threads. Each output
  * is checked against double-precision references computed ONCE per size (each suite documents its own
  * reference set). Levels the hardware can't provide are simply absent from the context list
- * (jam_active_isa != requested cap -> skipped). */
+ * (jam_context_isa != requested cap -> skipped). */
 #include "jam.h"
 #include "jam_ref.h"
 #include <stdio.h>
@@ -33,18 +33,17 @@ static void track_prec(const char* nm, double abserr, double ref) {
  * provide one set it around their check_all_ctxs call; NULL means no half tier exists. */
 static const double* g_metal_half_ref = NULL;
 
-typedef struct { jam_ctx* c; char lbl[40]; } jctx;   /* c == NULL means the global context */
+typedef struct { jam_context* c; char lbl[40]; } jctx;
 static jctx CTX[48];
 static int  NCTX = 0;
 
-static void add_ctx(jam_isa cap, int nth) {
-    jam_config cfg; memset(&cfg, 0, sizeof cfg);
-    cfg.max_isa = cap; cfg.nthreads = nth;
-    char nm[40]; snprintf(nm, sizeof nm, "%s/%dt", jam_isa_name(cap), nth); cfg.name = nm;   /* copied by create */
-    jam_ctx* c = jam_ctx_create(&cfg);
+static void add_ctx(int32_t cap, int nth) {
+    jam_context_options cfg; memset(&cfg, 0, sizeof cfg);
+    cfg.max_isa = cap; cfg.threads = nth;
+    jam_context* c = jam_context_new(&cfg);
     if (!c) return;
-    if (cap != JAM_ISA_AUTO && jam_active_isa(c) != cap) { jam_ctx_destroy(c); return; }  /* hw lacks it */
-    snprintf(CTX[NCTX].lbl, sizeof CTX[NCTX].lbl, "%s/%dt", jam_isa_name(jam_active_isa(c)), nth);
+    if (cap != JAM_ISA_AUTO && jam_context_isa(c) != cap) { jam_context_free(c); return; }  /* hw lacks it */
+    snprintf(CTX[NCTX].lbl, sizeof CTX[NCTX].lbl, "%s/%dt", jam_isa_name(jam_context_isa(c)), nth);
     CTX[NCTX++].c = c;
 }
 
@@ -58,7 +57,7 @@ static void check_all_ctxs(const void* W, int dtype, const char* name,
     for (int c = 0; c < NCTX; c++) {
         /* Packed weights exist only where the ctx advertised the layout; elsewhere the call would
          * be EUNSUPPORTED by design, so it is not a check. */
-        if ((dtype & JAM_PACKED) && jam_pack_size(CTX[c].c, (jam_dtype) bdt, m, k) == 0) continue;
+        if ((dtype & JAM_PACKED) && jam_pack_size(CTX[c].c, (int32_t) bdt, m, k) == 0) continue;
         ++g_checks; memset(C, 0, 4*(size_t)m*n);
         int st = jam_mm(CTX[c].c, W, dtype, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
         int bad = 0;
@@ -72,7 +71,7 @@ static void check_all_ctxs(const void* W, int dtype, const char* name,
             /* Fast Metal prefill deliberately stages half MMA operands (with float accumulation), while
              * CPU kernels and Metal decode retain their exact/requant reference tiers. Keep the MMA
              * sentinels separate so accepting format noise cannot hide a CPU or scalar-GPU regression. */
-            const int metal_mma = n >= 16 && jam_active_isa(CTX[c].c) == JAM_ISA_METAL;
+            const int metal_mma = n >= 16 && jam_context_isa(CTX[c].c) == JAM_ISA_METAL;
             if (metal_mma && g_metal_half_ref) {
                 double d = fabs(kr - g_metal_half_ref[(size_t)i*n+j]);
                 if (d < best) { best = d; ref = g_metal_half_ref[(size_t)i*n+j]; }
@@ -415,7 +414,7 @@ static void suite_layout_packed(int dtype, const char* name, int m, int n, int k
     float* Cs = malloc(4llu*(size_t)m*n);
     float* Cp = malloc(4llu*(size_t)ldc2*n);
     for (int c=0;c<NCTX;c++) {
-        if (jam_pack_size(CTX[c].c, (jam_dtype)dtype, m, k) == 0) continue;
+        if (jam_pack_size(CTX[c].c, (int32_t)dtype, m, k) == 0) continue;
         ++g_checks; memset(Cc,0,4llu*(size_t)m*n);
         int st0 = jam_mm(CTX[c].c, WP, dtype|JAM_PACKED, k, B, JAM_F32, k, Cc, JAM_F32, m, m, n, k);
         if (st0){ printf("  [FAIL] %-5s tight  %-15s %dx%dx%d st=%d\n",name,CTX[c].lbl,m,n,k,st0); ++g_fail; continue; }
@@ -514,7 +513,7 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
         uint8_t* WP = malloc((size_t)(m/4)*pgb);
         jam_ref_pack(dtype, WP, WQ, m, k);
         for (int c=0;c<NCTX;c++) {
-            if (jam_pack_size(CTX[c].c, (jam_dtype)dtype, m, k) == 0) continue;
+            if (jam_pack_size(CTX[c].c, (int32_t)dtype, m, k) == 0) continue;
             ++g_checks; memset(C,0,4llu*(size_t)m*n);
             jam_mm(CTX[c].c, WP, dtype|JAM_PACKED, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);
             int nan=0, zc=0;
@@ -530,110 +529,220 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
     free(WQ); free(B); free(C);
 }
 
-/* ---- API surface: context lifecycle (global + explicit), config, dispatch errors, concurrency guard ----
- * A host parallel_for that, the first time jam calls it (so we're INSIDE a jam_mm, busy=1), re-enters jam_mm
- * on the SAME context - which must return JAM_EBUSY (the serial-stream guard) - then runs the real work. */
-static jam_ctx* g_reentry_ctx; static int g_reentry_status;
-/* A host executor that lies: every slice carries tid 5 on a 2-thread context. */
-static void badtid_pfor(void* pool, int n, jam_task_fn fn, void* arg) {
-    (void) pool;
-    for (int i = 0; i < n; i++) fn(arg, i, i+1, 5);
+/* ---- API surface: contexts, options, errors, dispatch codes, the concurrency guard ----
+ * A host parallel callback that, the first time jam calls it (so we're INSIDE a jam_mm, busy=1),
+ * re-enters jam_mm on the SAME context - which must return JAM_EBUSY (the serial-stream guard) - then
+ * runs the real work. */
+static jam_context* g_reentry_ctx; static int g_reentry_status;
+/* A host executor that lies: every slice carries slot 5 on a 2-thread context. */
+static void badtid_pfor(int32_t n, jam_task_fn task, void* task_user, void* user) {
+    (void) user;
+    for (int i = 0; i < n; i++) task(i, i+1, 5, task_user);
 }
 
-static void reentry_pfor(void* pool, int n, jam_task_fn fn, void* arg) {
-    (void) pool;
+static void reentry_pfor(int32_t n, jam_task_fn task, void* task_user, void* user) {
+    (void) user;
     if (g_reentry_status == 99) {
         float w[32], a[32], c[1];
         g_reentry_status = jam_mm(g_reentry_ctx, w, JAM_F32, 32, a, JAM_F32, 32, c, JAM_F32, 1, 1, 1, 32);
     }
-    for (int i = 0; i < n; i++) fn(arg, i, i+1, 0);
+    for (int i = 0; i < n; i++) task(i, i+1, 0, task_user);
 }
+
+/* A level of the OTHER architecture: a cap jam must refuse here. */
+#if defined(__x86_64__) || defined(_M_X64)
+#define FOREIGN_ISA JAM_ISA_NEON
+#else
+#define FOREIGN_ISA JAM_ISA_AVX2
+#endif
 
 static void suite_api(void) {
     #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] api  %s\n", label); ++g_fail; } } while(0)
     float W[256], A[256], C[64], Cd[64], Cg[64]; for (int i=0;i<256;i++){ W[i]=0.1f*i; A[i]=0.2f*i; }
     int m=4, n=2, k=64;
+    int32_t code = 1;
 
-    /* jam_isa_name: known + out-of-range -> "unknown" */
+    /* version: the macros, spelled out */
+    char want[32]; snprintf(want, sizeof want, "%d.%d.%d", JAM_VERSION_MAJOR, JAM_VERSION_MINOR, JAM_VERSION_PATCH);
+    OK("version", !strcmp(jam_version(), want));
+
+    /* jam_isa_name: known levels, "" for an unknown one */
     OK("isa_name generic", !strcmp(jam_isa_name(JAM_ISA_GENERIC), "generic"));
     OK("isa_name avx2",    !strcmp(jam_isa_name(JAM_ISA_AVX2), "avx2"));
-    OK("isa_name unknown", !strcmp(jam_isa_name((jam_isa)9999), "unknown"));
+    OK("isa_name unknown", !strcmp(jam_isa_name(9999), ""));
 
-    /* context creation: NULL cfg -> defaults (best ISA, unnamed); explicit cap + name; destroy(NULL) safe */
-    jam_ctx* d = jam_ctx_create(NULL);
-    OK("create(NULL) non-null",   d != NULL);
-    OK("create(NULL) best ISA",   jam_active_isa(d) >= JAM_ISA_GENERIC);
-    OK("create(NULL) unnamed",    !strcmp(jam_ctx_name(d), ""));
-    jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC; cfg.name = "apitest";
-    jam_ctx* g = jam_ctx_create(&cfg);
-    OK("create explicit non-null", g != NULL);
-    OK("max_isa caps active",      jam_active_isa(g) == JAM_ISA_GENERIC);
-    OK("name stored",              !strcmp(jam_ctx_name(g), "apitest"));
-    jam_ctx_destroy(NULL);   /* must not crash */
-    OK("destroy(NULL) survived", 1);
+    /* contexts: NULL options = defaults; an explicit cap; zeroed options = defaults; free(NULL) safe */
+    jam_context* d = jam_context_new(NULL);
+    OK("new(NULL) non-null",   d != NULL);
+    OK("new(NULL) best ISA",   jam_context_isa(d) >= JAM_ISA_GENERIC);
+    OK("success clears the error", !strcmp(jam_last_error(&code), "") && code == JAM_OK);
+    jam_context_options cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC;
+    jam_context* g = jam_context_new(&cfg);
+    OK("new explicit non-null", g != NULL);
+    OK("max_isa caps active",   jam_context_isa(g) == JAM_ISA_GENERIC);
+    jam_context_free(NULL);   /* must not crash */
+    OK("free(NULL) survived", 1);
 
-    /* global (NULL) context: lazily built, named "global", singleton, usable, independent of explicit ctxs */
-    OK("global name",        !strcmp(jam_ctx_name(NULL), "global"));
-    jam_isa gi = jam_active_isa(NULL);
-    OK("global active valid", gi >= JAM_ISA_GENERIC);
-    OK("global singleton",    jam_active_isa(NULL) == gi);
-    OK("global mm ok",        jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C,  JAM_F32, m, m, n, k) == JAM_OK);
-    OK("explicit-d mm ok",    jam_mm(d,    W, JAM_F32, k, A, JAM_F32, k, Cd, JAM_F32, m, m, n, k) == JAM_OK);
-    OK("explicit-g mm ok",    jam_mm(g,    W, JAM_F32, k, A, JAM_F32, k, Cg, JAM_F32, m, m, n, k) == JAM_OK);
-    int agree=1; for (int i=0;i<m*n;i++) {   /* same result, every ctx (g is the scalar floor -> ULP slack) */
-        double tol = 1e-2 + 1e-4*fabs((double)C[i]);
-        if (fabs((double)(C[i]-Cd[i])) > tol || fabs((double)(C[i]-Cg[i])) > tol) agree=0;
+    /* refused options: NULL and the reason, never a context that ignores what was asked */
+    memset(&cfg,0,sizeof cfg); cfg.max_isa = FOREIGN_ISA;
+    OK("foreign cap refused",   jam_context_new(&cfg) == NULL);
+    OK("foreign cap reason",    *jam_last_error(&code) && code == JAM_EINVAL);
+    memset(&cfg,0,sizeof cfg); cfg.max_isa = 9999;
+    OK("unknown cap refused",   jam_context_new(&cfg) == NULL);
+    memset(&cfg,0,sizeof cfg); cfg.threads = JAM_MAX_THREADS + 1;
+    OK("threads above limit refused", jam_context_new(&cfg) == NULL);
+    memset(&cfg,0,sizeof cfg); cfg.threads = -1;
+    OK("negative threads refused", jam_context_new(&cfg) == NULL);
+
+    /* NULL never means a default context */
+    OK("mm(NULL) EINVAL",        jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
+    OK("context_isa(NULL) < 0",  jam_context_isa(NULL) == JAM_EINVAL);
+    OK("pack_size(NULL) < 0",    jam_pack_size(NULL, JAM_Q4_0, 8, 64) == JAM_EINVAL);
+    OK("share(NULL) EINVAL",     jam_share(NULL, W, sizeof W, 0) == JAM_EINVAL);
+    jam_unshare(NULL, W);        /* a no-op */
+
+    /* explicit contexts agree */
+    OK("explicit-d mm ok",    jam_mm(d, W, JAM_F32, k, A, JAM_F32, k, Cd, JAM_F32, m, m, n, k) == JAM_OK);
+    OK("explicit-g mm ok",    jam_mm(g, W, JAM_F32, k, A, JAM_F32, k, Cg, JAM_F32, m, m, n, k) == JAM_OK);
+    int agree=1; for (int i=0;i<m*n;i++) {   /* g is the scalar floor -> ULP slack */
+        double tol = 1e-2 + 1e-4*fabs((double)Cd[i]);
+        if (fabs((double)(Cd[i]-Cg[i])) > tol) agree=0;
     }
     OK("contexts agree", agree);
 
-    /* dispatch errors -> JAM_EUNSUPPORTED (distinct from the EINVAL input-validation in suite_contract) */
-    OK("unknown wt",  jam_mm(d, W, JAM_Q2_K, k,  A, JAM_F32, k,  C, JAM_F32, m, m, n, k)  == JAM_EUNSUPPORTED);
+    /* EUNSUPPORTED: a valid request no kernel serves (callers fall back on it) */
+    OK("unknown wt",  jam_mm(d, W, 10, k,  A, JAM_F32, k,  C, JAM_F32, m, m, n, k)  == JAM_EUNSUPPORTED);
+    OK("unknown wt reason", *jam_last_error(&code) && code == JAM_EUNSUPPORTED);
     OK("at != F32",   jam_mm(d, W, JAM_F32,  k,  A, JAM_F16, k,  C, JAM_F32, m, m, n, k)  == JAM_EUNSUPPORTED);
     OK("ct != F32",   jam_mm(d, W, JAM_F32,  k,  A, JAM_F32, k,  C, JAM_F16, m, m, n, k)  == JAM_EUNSUPPORTED);
-    OK("Q8_0 k%32!=0", jam_mm(d, W, JAM_Q8_0, 48, A, JAM_F32, 48, C, JAM_F32, m, m, n, 48) == JAM_EUNSUPPORTED);
+    /* EINVAL: a shape the type cannot have (a caller's bug, never a fallback) */
+    OK("Q8_0 k%32!=0",  jam_mm(d, W, JAM_Q8_0, 48, A, JAM_F32, 48, C, JAM_F32, m, m, n, 48) == JAM_EINVAL);
+    OK("Q4_K ldw%256!=0", jam_mm(d, W, JAM_Q4_K, 300, A, JAM_F32, 256, C, JAM_F32, m, m, 1, 256) == JAM_EINVAL);
+    OK("shape reason",  *jam_last_error(&code) && code == JAM_EINVAL);
+    OK("success after failure clears", jam_mm(d, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK
+                                       && !strcmp(jam_last_error(&code), "") && code == JAM_OK);
 
-    /* packed-tag dispatch: never a wrong result - EUNSUPPORTED wherever the layout is unreadable
-     * (non-advertising ctx, unknown base, non-F32 activations, shape outside the pack contract).
-     * All four return before W is dereferenced, so the dummy buffer is safe. */
+    /* packed weights: EUNSUPPORTED where the layout is unreadable here, EINVAL outside its contract.
+     * All return before W is dereferenced, so the dummy buffer is safe. */
     OK("packed on generic ctx", jam_mm(g, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
     OK("packed unknown base",   jam_mm(d, W, JAM_Q8_0|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
     OK("packed at != F32",      jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F16, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EUNSUPPORTED);
-    OK("packed m % 4 != 0",     jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 6, 6, 1, 256) == JAM_EUNSUPPORTED);
+    OK("packed m % 4 != 0",     jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 256, A, JAM_F32, 256, C, JAM_F32, 6, 6, 1, 256) == JAM_EINVAL);
+    OK("packed ldw != k",       jam_mm(d, W, JAM_Q6_K|JAM_PACKED, 512, A, JAM_F32, 256, C, JAM_F32, 4, 4, 1, 256) == JAM_EINVAL);
 
     /* concurrency: a re-entrant jam_mm on a context already in flight must get JAM_EBUSY (serial stream).
      * Cap below METAL: the re-entry happens inside the host executor, and on Apple Silicon an AUTO ctx
      * would send this F32 matmul to the GPU and never fan out. */
-    memset(&cfg,0,sizeof cfg); cfg.parallel_for = reentry_pfor; cfg.name = "reentry";
-    cfg.max_isa = JAM_ISA_GENERIC;
-    jam_ctx* r = jam_ctx_create(&cfg);
+    memset(&cfg,0,sizeof cfg); cfg.parallel = reentry_pfor; cfg.max_isa = JAM_ISA_GENERIC;
+    jam_context* r = jam_context_new(&cfg);
     OK("host-pool ctx non-null", r != NULL);
     g_reentry_ctx = r; g_reentry_status = 99;
     int outer = jam_mm(r, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
     OK("outer mm ok",        outer == JAM_OK);
     OK("re-entrant -> EBUSY", g_reentry_status == JAM_EBUSY);
 
-
-    /* the tid guard: a host slice whose tid is at or above nthreads has no per-tid scratch, so the
+    /* the slot guard: a host slice whose slot is at or above threads has no per-slot scratch, so the
      * call is refused with EINVAL instead of indexing past the repack table. */
-    memset(&cfg,0,sizeof cfg); cfg.parallel_for = badtid_pfor; cfg.nthreads = 2; cfg.name = "badtid";
-    cfg.max_isa = JAM_ISA_GENERIC;
-    jam_ctx* bt = jam_ctx_create(&cfg);
-    OK("bad-tid ctx non-null", bt != NULL);
-    OK("tid >= nthreads -> EINVAL", jam_mm(bt, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
-    jam_ctx_destroy(bt);
+    memset(&cfg,0,sizeof cfg); cfg.parallel = badtid_pfor; cfg.threads = 2; cfg.max_isa = JAM_ISA_GENERIC;
+    jam_context* bt = jam_context_new(&cfg);
+    OK("bad-slot ctx non-null", bt != NULL);
+    OK("slot >= threads -> EINVAL", jam_mm(bt, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
+    jam_context_free(bt);
 
-    memset(&cfg,0,sizeof cfg); cfg.nthreads = JAM_MAX_THREADS + 1;
-    OK("nthreads above limit rejected", jam_ctx_create(&cfg) == NULL);
+    jam_context_free(d); jam_context_free(g); jam_context_free(r);
+    #undef OK
+}
 
-    /* jam_global_destroy: frees the global; a later jam_mm(NULL) lazily re-creates it; idempotent */
-    OK("global mm pre-destroy",   jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
-    jam_global_destroy();
-    OK("global re-create",        jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
-    OK("global usable post-recreate", jam_active_isa(NULL) >= JAM_ISA_GENERIC && !strcmp(jam_ctx_name(NULL), "global"));
-    jam_global_destroy(); jam_global_destroy();   /* double-destroy + destroy-when-absent -> no-op, no crash */
-    OK("global_destroy idempotent", 1);
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+/* After fork, a context made in the parent refuses in the child (its pool's threads stayed behind)
+ * and freeing it there returns; a new context in the child works, on the CPU even where the parent's
+ * ran on the GPU. */
+static void suite_fork(void) {
+    jam_context* c = jam_context_new(NULL);
+    float W[64], A[64], C[4]; jam_ref_fill(W, 64, 1); jam_ref_fill(A, 64, 2);
+    jam_mm(c, W, JAM_F32, 32, A, JAM_F32, 32, C, JAM_F32, 2, 2, 2, 32);   /* the pool is running */
+    fflush(stdout);
+    pid_t pid = fork();
+    if (pid == 0) {
+        int32_t st = jam_mm(c, W, JAM_F32, 32, A, JAM_F32, 32, C, JAM_F32, 2, 2, 2, 32);
+        jam_context_free(c);
+        jam_context* fresh = jam_context_new(NULL);
+        int32_t ok = jam_mm(fresh, W, JAM_F32, 32, A, JAM_F32, 32, C, JAM_F32, 2, 2, 2, 32);
+        _exit(st == JAM_ERROR && ok == JAM_OK && jam_context_isa(fresh) != JAM_ISA_METAL ? 0 : 1);
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    ++g_checks;
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) { printf("  [FAIL] fork: child status %d\n", status); ++g_fail; }
+    jam_context_free(c);
+}
+#endif
 
-    jam_ctx_destroy(d); jam_ctx_destroy(g); jam_ctx_destroy(r);
+/* jam_share: a hint, so every result must be bit-identical with and without it - weight shared
+ * immutable, activation and result shared mutable (later calls see rewritten bytes), operands at
+ * an offset inside a share, operands straddling one (per-call path). Overlap rules on a scratch
+ * buffer; a CPU-only context declines everything with EUNSUPPORTED. */
+static void suite_share(void) {
+    #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] share %-12s %s\n", CTX[c].lbl, label); ++g_fail; } } while(0)
+    const int m=64, n=32, k=256; int be, bb;
+    void* W = build_weight(JAM_Q8_0, m, k, &be, &bb);
+    const size_t wbytes = (size_t)m*(k/be)*bb, abytes = 4llu*n*k, cbytes = 4llu*n*m;
+    float* A = malloc(abytes); float* C = malloc(cbytes); float* R = malloc(cbytes);
+    char* buf = malloc(1 << 16);
+    for (int c = 0; c < NCTX; c++) {
+        jam_context* x = CTX[c].c;
+        const int dev = jam_context_isa(x) == JAM_ISA_METAL;
+        const int32_t took = dev ? JAM_OK : JAM_EUNSUPPORTED;
+        jam_ref_fill(A, (size_t)n*k, 11);
+        OK("plain mm", jam_mm(x, W, JAM_Q8_0, k, A, JAM_F32, k, R, JAM_F32, m, m, n, k) == JAM_OK);
+        OK("share W immutable", jam_share(x, W, wbytes, JAM_SHARE_IMMUTABLE) == took);
+        OK("share A",       jam_share(x, A, abytes, 0) == took);
+        OK("share C",       jam_share(x, C, cbytes, 0) == took);
+        OK("shared mm", jam_mm(x, W, JAM_Q8_0, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
+        OK("shared == plain", !memcmp(C, R, cbytes));
+        jam_ref_fill(A, (size_t)n*k, 12);   /* mutable share: the next call must see the new bytes */
+        OK("rewritten mm", jam_mm(x, W, JAM_Q8_0, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
+        jam_unshare(x, A);
+        OK("unshared mm", jam_mm(x, W, JAM_Q8_0, k, A, JAM_F32, k, R, JAM_F32, m, m, n, k) == JAM_OK);
+        OK("sees rewrite", !memcmp(C, R, cbytes));
+        /* rows 8..23 of A against rows 8..23 of C: operands at an offset inside a share */
+        OK("share A again", jam_share(x, A, abytes, 0) == took);
+        OK("inner mm", jam_mm(x, W, JAM_Q8_0, k, A + 8*k, JAM_F32, k, C + 8*m, JAM_F32, m, m, 16, k) == JAM_OK);
+        OK("inner == plain", !memcmp(C + 8*m, R + 8*m, 4llu*16*m));
+        /* A shared only up to its middle: the full operand straddles the share's end */
+        jam_unshare(x, A);
+        OK("share A half", jam_share(x, A, abytes/2, 0) == took);
+        OK("straddle mm", jam_mm(x, W, JAM_Q8_0, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
+        OK("straddle == plain", !memcmp(C, R, cbytes));
+        jam_unshare(x, A); jam_unshare(x, W); jam_unshare(x, C);
+        jam_unshare(x, A);   /* not shared any more: a no-op */
+        /* overlap rules are exact bytes, not pages */
+        const int32_t bad = dev ? JAM_EINVAL : JAM_EUNSUPPORTED;
+        OK("share [4096,12288)", jam_share(x, buf + 4096, 8192, 0) == took);
+        OK("nested refused",     jam_share(x, buf + 5000, 100, 0) == bad);
+        OK("straddle refused",   jam_share(x, buf + 8000, 8192, 0) == bad);
+        OK("adjacent accepted",  jam_share(x, buf + 12288, 4096, 0) == took);
+        OK("same page accepted", jam_share(x, buf + 100, 200, JAM_SHARE_IMMUTABLE) == took);
+        jam_unshare(x, buf + 4096);
+        OK("nested after unshare", jam_share(x, buf + 5000, 100, 0) == took);
+        jam_unshare(x, buf + 5000); jam_unshare(x, buf + 12288); jam_unshare(x, buf + 100);
+        OK("null refused",  jam_share(x, NULL, 16, 0) == JAM_EINVAL);
+        OK("empty refused", jam_share(x, buf, 0, 0) == JAM_EINVAL);
+        OK("reserved flag refused", jam_share(x, buf, 16, 0x2u) == JAM_EINVAL);
+        OK("all flags refused",     jam_share(x, buf, 16, ~0u) == JAM_EINVAL);
+    }
+    /* a context destroyed with shares still live releases them */
+    for (int c = 0; c < NCTX; c++) {
+        if (jam_context_isa(CTX[c].c) != JAM_ISA_METAL) continue;
+        jam_context_options cfg; memset(&cfg, 0, sizeof cfg); cfg.max_isa = JAM_ISA_METAL;
+        jam_context* t = jam_context_new(&cfg);
+        OK("destroy-with-shares ctx", t && jam_share(t, buf, 1 << 16, 0) == JAM_OK);
+        jam_context_free(t);
+        break;
+    }
+    free(W); free(A); free(C); free(R); free(buf);
     #undef OK
 }
 
@@ -647,45 +756,48 @@ static void suite_api(void) {
 static void suite_pack_api(void) {
     #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] pack_api  %s\n", label); ++g_fail; } } while(0)
     OK("pack_abi == JAM_PACK_ABI", jam_pack_abi() == JAM_PACK_ABI);
-    jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC;
-    jam_ctx* g = jam_ctx_create(&cfg);
-    static const jam_dtype PD[] = { JAM_Q4_0, JAM_MXFP4, JAM_Q4_K, JAM_Q5_K, JAM_Q6_K };
+    jam_context_options cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC;
+    jam_context* g = jam_context_new(&cfg);
+    jam_context* d = jam_context_new(NULL);
+    static const int32_t PD[] = { JAM_Q4_0, JAM_MXFP4, JAM_Q4_K, JAM_Q5_K, JAM_Q6_K };
     for (unsigned i = 0; i < sizeof PD / sizeof *PD; i++) {
-        jam_dtype dt = PD[i];
+        int32_t dt = PD[i];
         int k = dt == JAM_Q4_0 || dt == JAM_MXFP4 ? 64 : 512;
-        OK("m%4 != 0 -> 0",     jam_pack_size(NULL, dt, 6, k) == 0);
-        OK("m <= 0 -> 0",       jam_pack_size(NULL, dt, 0, k) == 0);
-        OK("k%block != 0 -> 0", jam_pack_size(NULL, dt, 8, dt == JAM_Q4_0 || dt == JAM_MXFP4 ? 48 : 128) == 0);
+        OK("m%4 != 0 -> 0",     jam_pack_size(d, dt, 6, k) == 0);
+        OK("m <= 0 -> 0",       jam_pack_size(d, dt, 0, k) == 0);
+        OK("k%block != 0 -> 0", jam_pack_size(d, dt, 8, dt == JAM_Q4_0 || dt == JAM_MXFP4 ? 48 : 128) == 0);
         OK("generic never offers", jam_pack_size(g, dt, 8, k) == 0);
-        size_t sz = jam_pack_size(NULL, dt, 8, k);   /* 0 on ISAs without the packed kernels */
-        OK("offer == m/4 * spec GB", sz == 0 || sz == 2 * jam_ref_pack_group_bytes(dt, k));
+        int64_t sz = jam_pack_size(d, dt, 8, k);   /* 0 on ISAs without the packed kernels */
+        OK("offer == m/4 * spec GB", sz == 0 || sz == (int64_t)(2 * jam_ref_pack_group_bytes(dt, k)));
     }
-    OK("unpackable dtype -> 0", jam_pack_size(NULL, JAM_Q8_0, 8, 512) == 0);
-    OK("dense dtype -> 0",      jam_pack_size(NULL, JAM_F32, 8, 512) == 0);
-    jam_ctx_destroy(g);
+    OK("unpackable dtype -> 0", jam_pack_size(d, JAM_Q8_0, 8, 512) == 0);
+    OK("dense dtype -> 0",      jam_pack_size(d, JAM_F32, 8, 512) == 0);
+    jam_context_free(g); jam_context_free(d);
     #undef OK
 }
 
 /* API contract: invalid inputs must be rejected with JAM_EINVAL - not silently mis-computed or crashed.
- * Zero coverage before; the validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldc<m) is exactly
- * the kind of guard that rots silently. Runs on the global context; the checks fire before any dispatch. */
+ * The validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldr<m) is exactly the kind of guard
+ * that rots silently; the checks fire before any dispatch. */
 static void suite_contract(void) {
+    jam_context* x = jam_context_new(NULL);
     int m=2, n=2, k=32;                          /* k%32==0 so a valid call actually runs */
     float W[64], A[64], C[8];
     jam_ref_fill(W,(size_t)m*k,1); jam_ref_fill(A,(size_t)n*k,2);
     #define WANT(label, call, exp) do { ++g_checks; int st_=(call); \
         if (st_!=(exp)) { printf("  [FAIL] contract %-22s got=%d want=%d\n", label, st_, exp); ++g_fail; } } while(0)
-    WANT("valid baseline",  jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_OK);
-    WANT("null weight",     jam_mm(NULL, NULL, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
-    WANT("null activation", jam_mm(NULL, W, JAM_F32, k, NULL, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
-    WANT("null output",     jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, NULL, JAM_F32, m, m, n, k), JAM_EINVAL);
-    WANT("k<=0",            jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, 0), JAM_EINVAL);
-    WANT("m<=0",            jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, 0, n, k), JAM_EINVAL);
-    WANT("n<=0",            jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, 0, k), JAM_EINVAL);
-    WANT("ldw<k",           jam_mm(NULL, W, JAM_F32, k-1, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
-    WANT("lda<k",           jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k-1, C, JAM_F32, m, m, n, k), JAM_EINVAL);
-    WANT("ldc<m",           jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m-1, m, n, k), JAM_EINVAL);
+    WANT("valid baseline",  jam_mm(x, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_OK);
+    WANT("null weight",     jam_mm(x, NULL, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("null activation", jam_mm(x, W, JAM_F32, k, NULL, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("null output",     jam_mm(x, W, JAM_F32, k, A, JAM_F32, k, NULL, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("k<=0",            jam_mm(x, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, 0), JAM_EINVAL);
+    WANT("m<=0",            jam_mm(x, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, 0, n, k), JAM_EINVAL);
+    WANT("n<=0",            jam_mm(x, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, 0, k), JAM_EINVAL);
+    WANT("ldw<k",           jam_mm(x, W, JAM_F32, k-1, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("lda<k",           jam_mm(x, W, JAM_F32, k, A, JAM_F32, k-1, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("ldr<m",           jam_mm(x, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m-1, m, n, k), JAM_EINVAL);
     #undef WANT
+    jam_context_free(x);
 }
 
 /* Leak gate: create -> USE (so every lazy per-context buffer allocates: pool, requant scratch, K-quant
@@ -718,15 +830,20 @@ static void suite_leak(void) {
         jam_mm((ctx), w4k, JAM_Q4_K, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
         jam_mm((ctx), w6k, JAM_Q6_K, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
     } while (0)
-    jam_config av2; memset(&av2,0,sizeof av2); av2.max_isa = JAM_ISA_AVX2;
+    jam_context_options av2; memset(&av2,0,sizeof av2);   /* a second, lower cap of this architecture */
+#if defined(__x86_64__) || defined(_M_X64)
+    av2.max_isa = JAM_ISA_AVX2;
+#else
+    av2.max_isa = JAM_ISA_NEON;
+#endif
     for (int warm=0; warm<2; warm++) {   /* settle one-time allocations before measuring */
-        jam_ctx* c=jam_ctx_create(NULL); USE(c); jam_ctx_destroy(c);
-        jam_ctx* a=jam_ctx_create(&av2); USE(a); jam_ctx_destroy(a);
+        jam_context* c=jam_context_new(NULL); USE(c); jam_context_free(c);
+        jam_context* a=jam_context_new(&av2); USE(a); jam_context_free(a);
     }
     size_t before = heap_inuse();
     for (int it=0; it<64; it++) {
-        jam_ctx* c=jam_ctx_create(NULL);  USE(c); jam_ctx_destroy(c);   /* avx512: band scratch + kq_repack */
-        jam_ctx* a=jam_ctx_create(&av2);  USE(a); jam_ctx_destroy(a);   /* avx2: int8 kernels + qscratch    */
+        jam_context* c=jam_context_new(NULL);  USE(c); jam_context_free(c);   /* avx512: band scratch + kq_repack */
+        jam_context* a=jam_context_new(&av2);  USE(a); jam_context_free(a);   /* avx2: int8 kernels + qscratch    */
     }
     long growth = (long)heap_inuse() - (long)before;
     #undef USE
@@ -743,7 +860,9 @@ static void suite_leak(void) {
 int main(void) {
     /* one context per ISA level (capped), at 1 and 3 threads - covers every kernel the CPU supports. */
     for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) { add_ctx(jam_isa_levels[L],1); add_ctx(jam_isa_levels[L],3); }
-    CTX[NCTX].c=NULL; snprintf(CTX[NCTX].lbl,sizeof CTX[NCTX].lbl,"global"); ++NCTX;   /* the NULL/default path */
+    /* and the all-defaults context (NULL options: the best level, every online CPU), the one a C caller
+     * gets without choosing */
+    CTX[NCTX].c = jam_context_new(NULL); snprintf(CTX[NCTX].lbl, sizeof CTX[NCTX].lbl, "default"); ++NCTX;
 
     printf("jam comprehensive correctness - %d kernel contexts:\n   ", NCTX);
     for (int c=0;c<NCTX;c++) printf("%s%s", CTX[c].lbl, c==NCTX-1?"\n":" · ");
@@ -828,11 +947,15 @@ int main(void) {
     suite_adversarial(JAM_Q5_K,"Q5_K",36,1,256);  suite_adversarial(JAM_Q6_K,"Q6_K",36,1,256);
 
     suite_leak();       /* create/use/destroy cycles must not leak (mallinfo2 gate + LeakSanitizer) */
-    suite_api();        /* context lifecycle (global + explicit), config, EUNSUPPORTED/EBUSY */
-    suite_contract();   /* invalid-input error returns (context-independent) */
+    suite_api();        /* contexts, options, errors, EINVAL vs EUNSUPPORTED, EBUSY */
+#ifndef _WIN32
+    suite_fork();       /* a parent's context refuses in a forked child */
+#endif
+    suite_contract();   /* invalid-input error returns */
     suite_pack_api();   /* jam_pack_size/jam_pack_abi: the policy oracle the Java packer trusts */
+    suite_share();      /* jam_share: a hint - shared and plain calls must match bit for bit */
 
-    for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
+    for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_context_free(CTX[c].c);
 
     /* Precision REGRESSION gate: the per-element pass/fail above is a loose floor (gross-error catch); these
      * bounds are ~10x the actually-observed error, so a kernel that quietly loses precision (worse scale

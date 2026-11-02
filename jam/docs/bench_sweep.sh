@@ -18,7 +18,7 @@ for tier in sse3 avx2 avx_vnni avx512_vnni; do
   for q in Q4_0 Q8_0 Q4_K Q5_K Q6_K; do
     f=$MODELS/gemma-4-E2B-it-${q}_pure.gguf
     echo "== $tier $q"
-    JAM_DEBUG=1 JAM_ISA=$tier "$JAVA" $BENCH_FLAGS -cp "$CP" com.qxotic.jinfer.bench.JinferBench \
+    JAM_DEBUG=1 JAM_NATIVE_ISA=$tier "$JAVA" $BENCH_FLAGS -cp "$CP" com.qxotic.jinfer.bench.JinferBench \
       -m "$f" -p 512 -n 0 -r 5 -w 2 -t "$THREADS" > "$OUT/jinfer-$tier-$q.log" 2> "$OUT/jinfer-$tier-$q.err"
     grep -E '^\|.*pp512' "$OUT/jinfer-$tier-$q.log"
     "$LLAMA/${LB[$tier]}/bin/llama-bench" -m "$f" -p 512 -n 0 -r 5 -t "$THREADS" \

@@ -128,7 +128,7 @@ Logs: `bench-results/2026-09-27-vnni-band-polished`, the prompt-length runs unde
 - Weights are pure quants of Gemma 4 E2B, each made from the BF16 checkpoint with
   `llama-quantize --pure <bf16.gguf> <out.gguf> <TYPE>`; Q8_0 is the published file.
 - jinfer runs `JinferBench -p 512 -n 0 -r 5 -w 2 -t 16` (see
-  [jinfer-bench](../../jinfer/jinfer-bench/README.md)) with jam capped per tier through `JAM_ISA`;
+  [jinfer-bench](../../jinfer/jinfer-bench/README.md)) with jam capped per tier through `JAM_NATIVE_ISA`;
   `JAM_DEBUG=1` records the bound tier in the log.
 - llama.cpp runs `llama-bench -p 512 -n 0 -r 5 -t 16` from one build per tier, configured with
   `GGML_NATIVE=OFF` and only that tier's `GGML_*` flags.

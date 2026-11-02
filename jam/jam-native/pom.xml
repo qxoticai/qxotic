@@ -169,7 +169,7 @@
                 <include>**/HostPoolTest.java</include>
               </includes>
               <environmentVariables>
-                <JAM_ISA>generic</JAM_ISA>
+                <JAM_NATIVE_ISA>generic</JAM_NATIVE_ISA>
               </environmentVariables>
             </configuration>
           </execution>
@@ -199,7 +199,7 @@
                 <include>**/HostPoolTest.java</include>
               </includes>
               <environmentVariables>
-                <JAM_ISA>generic</JAM_ISA>
+                <JAM_NATIVE_ISA>generic</JAM_NATIVE_ISA>
               </environmentVariables>
               <reportsDirectory>${project.build.directory}/surefire-reports-ffm</reportsDirectory>
             </configuration>

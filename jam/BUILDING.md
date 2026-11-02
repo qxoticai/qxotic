@@ -84,4 +84,4 @@ cd build && ctest --output-on-failure   # every kernel, 1 & 3 threads, vs a doub
 ```
 
 On Apple Silicon, the AUTO Java passes exercise Metal. Maven runs `HostPoolTest` separately with
-`JAM_ISA=generic` because a GPU matmul has no CPU work and therefore never calls the host pool.
+`JAM_NATIVE_ISA=generic` because a GPU matmul has no CPU work and therefore never calls the host pool.
