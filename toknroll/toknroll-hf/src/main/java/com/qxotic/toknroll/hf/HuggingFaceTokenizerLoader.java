@@ -243,17 +243,16 @@ public final class HuggingFaceTokenizerLoader {
             throw new IllegalArgumentException("tokenizer.json:model.vocab is empty");
         }
 
-        TokenEntries entries = buildTokenEntries(vocabMap, root.get("added_tokens"));
-        // Keep raw byte-token surface exactly as exported by tokenizer.json.
-        // Collapsing <0x..> aliases can drop merge connectivity for some UTF-8 byte paths.
-
         Object normalizerObj = root.get("normalizer");
         Normalizer normalizer = parseNormalizer(normalizerObj);
+        // Keep raw byte-token surface exactly as exported by tokenizer.json.
+        // Collapsing <0x..> aliases can drop merge connectivity for some UTF-8 byte paths.
+        TokenEntries entries = buildTokenEntries(vocabMap, root.get("added_tokens"), normalizer);
+
         Object preTokenizerObj = root.get("pre_tokenizer");
-        boolean sentencePieceStyle =
-                isSentencePieceSpaceNormalizer(normalizerObj)
-                        || metaspacePreTokenizer(preTokenizerObj) != null;
-        Splitter splitter = parsePreTokenizer(preTokenizerObj);
+        Map<String, Object> metaspace = metaspacePreTokenizer(preTokenizerObj);
+        boolean spacesSpelled = isSentencePieceSpaceNormalizer(normalizerObj);
+        boolean sentencePieceStyle = spacesSpelled || metaspace != null;
 
         if (!sentencePieceStyle) {
             for (int i = 0; i < entries.tokens.length; i++) {
@@ -267,6 +266,7 @@ public final class HuggingFaceTokenizerLoader {
         boolean ignoreMerges = Boolean.TRUE.equals(model.get("ignore_merges"));
         Vocabulary vocabulary = ImplAccessor.createVocabulary(entries.tokens, entries.tokenTypes);
         TokenizationModel tokenizationModel;
+        Splitter splitter;
         if (sentencePieceStyle) {
             // ponytail: no SentencePiece tokenizer.json sets it; HF's whole-word lookup would need
             // the text uncut, refused rather than encoded wrong
@@ -274,6 +274,7 @@ public final class HuggingFaceTokenizerLoader {
                 throw unsupported(
                         "tokenizer.json:model.ignore_merges", "true", "false for SentencePiece");
             }
+            refuseOtherSentencePieceStages(preTokenizerObj, spacesSpelled);
             long[][] packed = buildPackedMergesFromJson(vocabulary, model.get("merges"));
             tokenizationModel =
                     ImplAccessor.createSentencePieceBpeModel(vocabulary, packed[0], packed[1]);
@@ -281,12 +282,12 @@ public final class HuggingFaceTokenizerLoader {
             normalizer = Normalizer.sequence(base, text -> text.toString().replace(' ', METASPACE));
             // HF merges the text whole, or with Metaspace's split at every space; whole, words
             // merge alike where no token joins them, far cheaper
-            Map<String, Object> metaspace = metaspacePreTokenizer(preTokenizerObj);
             boolean splits = metaspace != null && !Boolean.FALSE.equals(metaspace.get("split"));
             splitter =
                     ImplAccessor.createSentencePieceSplitter(
                             splits ? new String[0] : entries.tokens, false);
         } else {
+            splitter = parsePreTokenizer(preTokenizerObj);
             String[] mergeSpecs = extractMerges(model.get("merges"));
             List<MergeRule> merges = buildMerges(vocabulary, mergeSpecs);
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
@@ -297,7 +298,7 @@ public final class HuggingFaceTokenizerLoader {
             tokenizer =
                     ImplAccessor.metaspaceTokenizer(
                             tokenizer,
-                            prependScheme(metaspacePreTokenizer(preTokenizerObj)),
+                            prependScheme(metaspace),
                             stripsLeadingSpace(root.get("decoder")));
         }
         return tokenizer;
@@ -464,7 +465,7 @@ public final class HuggingFaceTokenizerLoader {
             if (!(token.get("content") instanceof String)) continue;
             String content = (String) token.get("content");
             refuseUnsupportedMatching(
-                    token, content, TOKENIZER_CONFIG_JSON + ":added_tokens_decoder");
+                    token, content, TOKENIZER_CONFIG_JSON + ":added_tokens_decoder", null);
             String text = canonicalizeByteLevelSurface(content);
             addedTokens.put(text, id);
             if (!Boolean.TRUE.equals(token.get("special"))) userDefined.add(text);
@@ -474,21 +475,25 @@ public final class HuggingFaceTokenizerLoader {
     /**
      * Refuses an added token Hugging Face would match other than as its exact text: {@code lstrip}
      * and {@code rstrip} also take the whitespace beside it, {@code single_word} matches it only
-     * between word boundaries. {@link com.qxotic.toknroll.Specials} matches exact text only, and a
-     * tokenizer that silently disagreed with its reference is worse than one that does not load.
+     * between word boundaries, and {@code normalized} matches it in the normalized text, which
+     * differs where the normalizer changes the token. {@link com.qxotic.toknroll.Specials} matches
+     * the raw text, and a tokenizer that silently disagreed with its reference is worse than one
+     * that does not load.
      */
-    private static void refuseUnsupportedMatching(Map<?, ?> token, String content, String where) {
+    private static void refuseUnsupportedMatching(
+            Map<?, ?> token, String content, String where, Normalizer normalizer) {
         for (String flag : new String[] {"lstrip", "rstrip", "single_word"}) {
             if (Boolean.TRUE.equals(token.get(flag))) {
-                throw new IllegalArgumentException(
-                        where
-                                + ": added token "
-                                + content
-                                + " sets "
-                                + flag
-                                + ", which toknroll does not support: special tokens match their"
-                                + " exact text only");
+                throw unsupported(where + "." + flag, content, "false");
             }
+        }
+        if (Boolean.TRUE.equals(token.get("normalized"))
+                && normalizer != null
+                && !content.equals(normalizer.apply(content).toString())) {
+            throw unsupported(
+                    where + ".normalized",
+                    content,
+                    "false, or a token the normalizer leaves unchanged");
         }
     }
 
@@ -649,7 +654,7 @@ public final class HuggingFaceTokenizerLoader {
 
     @SuppressWarnings("unchecked")
     private static TokenEntries buildTokenEntries(
-            Map<String, Object> vocabMap, Object addedTokensObj) {
+            Map<String, Object> vocabMap, Object addedTokensObj, Normalizer normalizer) {
         int maxId = -1;
         for (Map.Entry<String, Object> e : vocabMap.entrySet()) {
             Object value = e.getValue();
@@ -681,7 +686,7 @@ public final class HuggingFaceTokenizerLoader {
                 }
 
                 refuseUnsupportedMatching(
-                        added, (String) contentObj, "tokenizer.json:added_tokens");
+                        added, (String) contentObj, "tokenizer.json:added_tokens", normalizer);
                 int id = ((Number) idObj).intValue();
                 if (id >= tokens.length) {
                     int oldLength = tokens.length;
@@ -906,6 +911,51 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     /**
+     * Refuses a SentencePiece pre-tokenizer stage the SentencePiece splitter would drop: only
+     * Metaspace is taken, and a Split at {@code " "}, which never matches once the normalizer
+     * spelled the spaces (Gemma's).
+     */
+    @SuppressWarnings("unchecked")
+    private static void refuseOtherSentencePieceStages(
+            Object preTokenizerObj, boolean spacesSpelled) {
+        if (preTokenizerObj == null || preTokenizerObj == Json.NULL) {
+            return;
+        }
+        Map<String, Object> preTokenizer =
+                asObject(preTokenizerObj, "tokenizer.json:pre_tokenizer");
+        String type = String.valueOf(preTokenizer.get("type"));
+        if ("Metaspace".equals(type)) {
+            Object replacement = preTokenizer.get("replacement");
+            if (replacement != null && !String.valueOf(METASPACE).equals(replacement)) {
+                throw unsupported(
+                        "tokenizer.json:pre_tokenizer.replacement",
+                        String.valueOf(replacement),
+                        String.valueOf(METASPACE));
+            }
+            return;
+        }
+        if ("Sequence".equals(type) && preTokenizer.get("pretokenizers") instanceof List<?>) {
+            for (Object child : (List<?>) preTokenizer.get("pretokenizers")) {
+                refuseOtherSentencePieceStages(child, spacesSpelled);
+            }
+            return;
+        }
+        Object pattern = preTokenizer.get("pattern");
+        if ("Split".equals(type)
+                && spacesSpelled
+                && pattern instanceof Map<?, ?>
+                && " ".equals(((Map<?, ?>) pattern).get("String"))
+                && !Boolean.TRUE.equals(preTokenizer.get("invert"))) {
+            return;
+        }
+        throw unsupported(
+                "tokenizer.json:pre_tokenizer",
+                preTokenizer.toString(),
+                "Metaspace, or a Split of \" \" after a normalizer that spells spaces, for a"
+                        + " SentencePiece model");
+    }
+
+    /**
      * Where Metaspace prepends its U+2581: {@code prepend_scheme}, else the older {@code
      * add_prefix_space} ({@code always} when true, Hugging Face's default); {@code never} without a
      * Metaspace, where a normalizer spells the spaces.
@@ -922,38 +972,93 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     /**
-     * Whether the decoder drops the text's leading space: a {@code Strip} of one leading ' ', or a
-     * Metaspace decoder that prepends, alone or in a Sequence.
+     * Whether a SentencePiece model's decoder drops the text's leading space. It must turn U+2581
+     * into spaces: a {@code Replace} of it with {@code ' '} or a {@code Metaspace}, which drops the
+     * prepended space, with {@code ByteFallback} and {@code Fuse} beside them, alone or in a
+     * Sequence. A {@code Strip} of one leading {@code ' '} counts after a {@code Fuse}: before it,
+     * Hugging Face strips every token. Any other decoder is refused.
      */
-    @SuppressWarnings("unchecked")
     private static boolean stripsLeadingSpace(Object decoderObj) {
+        List<Map<String, Object>> steps = new ArrayList<>();
+        flattenDecoder(decoderObj, steps);
+        boolean spaced = false;
+        boolean fused = false;
+        boolean strips = false;
+        for (Map<String, Object> step : steps) {
+            String type = String.valueOf(step.get("type"));
+            switch (type) {
+                case "Replace":
+                    Object pattern = step.get("pattern");
+                    if (!(pattern instanceof Map<?, ?>)
+                            || !String.valueOf(METASPACE)
+                                    .equals(((Map<?, ?>) pattern).get("String"))
+                            || !" ".equals(step.get("content"))) {
+                        throw unsupported(
+                                "tokenizer.json:decoder", step.toString(), "Replace of ▁ with ' '");
+                    }
+                    spaced = true;
+                    break;
+                case "Metaspace":
+                    spaced = true;
+                    strips |= !"never".equals(prependScheme(step));
+                    break;
+                case "ByteFallback":
+                    break;
+                case "Fuse":
+                    fused = true;
+                    break;
+                case "Strip":
+                    Object start = step.get("start");
+                    Object stop = step.get("stop");
+                    if (!" ".equals(step.get("content"))
+                            || !(start instanceof Number)
+                            || ((Number) start).intValue() > 1
+                            || !(stop instanceof Number)
+                            || ((Number) stop).intValue() != 0
+                            || !spaced
+                            || !fused) {
+                        throw unsupported(
+                                "tokenizer.json:decoder",
+                                step.toString(),
+                                "Strip of one leading ' ' after Fuse");
+                    }
+                    strips |= ((Number) start).intValue() == 1;
+                    break;
+                default:
+                    throw unsupported(
+                            "tokenizer.json:decoder.type",
+                            type,
+                            "Replace/Metaspace/ByteFallback/Fuse/Strip/Sequence for a SentencePiece"
+                                    + " model");
+            }
+        }
+        if (!spaced) {
+            throw unsupported(
+                    "tokenizer.json:decoder",
+                    String.valueOf(decoderObj),
+                    "one that turns ▁ into spaces: Replace or Metaspace");
+        }
+        return strips;
+    }
+
+    /** The decoder's steps in order, Sequences flattened. */
+    @SuppressWarnings("unchecked")
+    private static void flattenDecoder(Object decoderObj, List<Map<String, Object>> steps) {
         if (!(decoderObj instanceof Map<?, ?>)) {
-            return false;
+            return;
         }
         Map<String, Object> decoder = (Map<String, Object>) decoderObj;
-        switch (String.valueOf(decoder.get("type"))) {
-            case "Strip":
-                Object start = decoder.get("start");
-                if (!" ".equals(decoder.get("content"))
-                        || !(start instanceof Number)
-                        || ((Number) start).intValue() > 1) {
-                    throw unsupported(
-                            "tokenizer.json:decoder", decoder.toString(), "Strip of one ' '");
-                }
-                return ((Number) start).intValue() == 1;
-            case "Metaspace":
-                return !"never".equals(prependScheme(decoder));
-            case "Sequence":
-                if (decoder.get("decoders") instanceof List<?>) {
-                    for (Object child : (List<?>) decoder.get("decoders")) {
-                        if (stripsLeadingSpace(child)) {
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            default:
-                return false;
+        if ("Sequence".equals(decoder.get("type"))) {
+            Object children = decoder.get("decoders");
+            if (!(children instanceof List<?>)) {
+                throw new IllegalArgumentException(
+                        "tokenizer.json:decoder.decoders must be a list");
+            }
+            for (Object child : (List<?>) children) {
+                flattenDecoder(child, steps);
+            }
+        } else {
+            steps.add(decoder);
         }
     }
 

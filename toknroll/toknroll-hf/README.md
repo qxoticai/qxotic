@@ -2,8 +2,8 @@
 
 Loads a Tok'n'Roll `Tokenizer` from a HuggingFace `tokenizer.json`.
 
-Unsupported features (e.g. `post_processor`, custom `decoders`) fail fast
-instead of introducing silent incompatibilities.
+Unsupported features fail fast instead of introducing silent incompatibilities: an unknown model, normalizer or pre-tokenizer, an added token Hugging Face would match other than by its exact text (`lstrip`, `rstrip`, `single_word`, or `normalized` under a normalizer that changes it), a SentencePiece pre-tokenizer stage or decoder step toknroll cannot reproduce.
+The `post_processor` is not read: encoding is pure tokenization, with no BOS or EOS added.
 
 ## Maven
 
