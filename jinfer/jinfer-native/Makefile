@@ -7,7 +7,11 @@ OPT   := $(if $(QUICK),-Ob,-O3)
 MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,armv8.1-a))
 TOKNROLL := ../../toknroll/toknroll-native
 HEADERS := include/jinfer.h $(TOKNROLL)/include/toknroll.h   # the library carries toknroll's C face too
-SYMS := jinfer|toknroll
+# and libjam's, linked in whole: jam's Java side finds jam.h's functions and its JNI entry points by name
+# in the image. Exported, not offered: the release carries no jam.h.
+EXPORT_HEADERS := $(HEADERS) ../../jam/jam-native/include/jam.h
+SYMS := jinfer|toknroll|jam
+EXTRA_EXPORTS := JNI_OnLoad_jam Java_com_qxotic_jam_libjam_NativeJAM_newJni Java_com_qxotic_jam_libjam_NativeJAM_mmJni Java_com_qxotic_jam_libjam_NativeJAM_freeJni
 WHEEL_DEPS = $(TOKNROLL)/target/wheel/*.whl
 WHEEL_TEST = JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
 

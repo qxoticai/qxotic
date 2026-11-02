@@ -38,7 +38,7 @@ Hub references are fetched through `curl` on the PATH (the `fetch` module's proc
 The shared library is 17 MB and the archive 18 MB at `-O2`, the builder's default; with the JDK's HTTPS stack inside it was 32 MB.
 The size follows the code: `-O3` is 12 MB larger for 18% more encode throughput, `-Os` 6 MB smaller for 19% less, and the floor, one entry point and the runtime, is 8 MB.
 
-The shared library exports the header's twelve functions and GraalVM's `graal_*` runtime API, nothing of its own entry points.
+The shared library exports the header's twelve functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.
 `libtoknroll.a` is the same image as one relocatable object with every symbol but the header's twelve made local: nothing of the runtime behind it is visible to the program that links it, and it needs only the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS.
 It is for programs that want no shared library; a GraalVM host image cannot link it (two runtimes in one image), so libjinfer compiles the entry points into its own image instead.
 

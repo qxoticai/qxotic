@@ -12,11 +12,14 @@ LIB   := target/lib$(NAME).$(if $(filter darwin,$(OS)),dylib,so)
 VERSION := $(shell grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -)
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
-# SYMS, the exported symbol prefixes the headers declare; HEADERS, the headers whose functions the library
-# exports; DIST_LIBS, what the release bundle carries beside the headers; WHEEL_DEPS, other wheels the
+# SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
+# EXPORT_HEADERS, those whose functions the library exports; EXTRA_EXPORTS, the exported names no header
+# declares; DIST_LIBS, what the release bundle carries beside the headers; WHEEL_DEPS, other wheels the
 # installed one needs; WHEEL_TEST, the tests run from target/ with wheelenv's python.
 SYMS ?= $(NAME)
 HEADERS ?= include/$(NAME).h
+EXPORT_HEADERS ?= $(HEADERS)
+EXTRA_EXPORTS ?=
 DIST_LIBS ?= $(LIB)
 WHEEL_DEPS ?=
 # the exported (defined, global) symbol names of a shared library or archive; Mach-O names lose their underscore
@@ -48,11 +51,13 @@ check-version:   # the header, the wheel, the pom and (where it is a literal) th
 	 p=$$(grep -oE '^__version__ = "[^"]+"' python/$(NAME)/__init__.py | cut -d'"' -f2); \
 	 [ "$$h" = "$$w" ] && [ "$$h" = "$$m" ] && [ "$$h" = "$${p:-$$h}" ] && echo "version $$h everywhere" || { echo "version drift: header $$h, wheel $$w, pom $$m, package $$p"; exit 1; }
 
-# Every function the headers declare is exported, and nothing with the headers' prefixes beyond them is.
+# The library exports every function the headers declare, the EXTRA_EXPORTS, and nothing else: none of the
+# runtime behind it (graal_*, the entry points), whose names would collide with another library's.
 check-exports:
-	@grep -hE '^[A-Z]+_API' $(HEADERS) | grep -oE '($(SYMS))_[a-z_]+\(' | tr -d '(' | sort > target/header.syms
-	@$(call EXPORTS,$(LIB)) | grep -E '^($(SYMS))_' | sort > target/exported.syms
-	@diff target/header.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions"
+	@grep -hE '^[A-Z]+_API' $(EXPORT_HEADERS) | grep -oE '($(SYMS))_[a-z0-9_]+\(' | tr -d '(' | sort > target/header.syms
+	@{ cat target/header.syms; printf '%s\n' $(EXTRA_EXPORTS); } | grep . | sort > target/expected.syms
+	@$(call EXPORTS,$(LIB)) | sort > target/exported.syms
+	@diff target/expected.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions$(if $(EXTRA_EXPORTS), and $(words $(EXTRA_EXPORTS)) more)"
 
 python: $(LIB)
 	mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/

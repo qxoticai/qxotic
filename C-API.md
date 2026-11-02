@@ -154,9 +154,11 @@ The header is the reference; the README and the examples only show it in use, an
 
 ## Exports
 
-A library exports exactly the functions its header declares, and no other library's.
+A library exports exactly the functions its header declares, and nothing of the runtime behind it (GraalVM's `graal_*`, the entry points the shims forward to).
+libjinfer carries two other libraries' faces on purpose: libtoknroll's API, so `jinfer_model_tokenizer` hands out a `toknroll_tokenizer`, and libjam's functions and JNI entry points, linked in whole, which jam's Java side finds by name in the image.
+So a program links one of libjinfer and libtoknroll, never both, and no libjam beside libjinfer: a name defined twice binds the program to whichever library loads first.
 `PREFIX_API` is `__declspec(dllexport)` while building on Windows (`PREFIX_BUILD`), `__declspec(dllimport)` for a Windows caller, nothing with `PREFIX_STATIC`, and `__attribute__((visibility("default")))` elsewhere, where everything else is built hidden.
-`make check-exports` fails when the exported functions differ from the header's.
+`make check-exports` fails when the exported names differ from the header's functions, plus, for libjinfer, the ones it carries.
 One exception: on Windows, GraalVM marks its own runtime functions `dllexport`, and nothing can take them back out of libtoknroll's and libjinfer's DLLs, so there the check covers the prefix's names only.
 
 ## Versions
