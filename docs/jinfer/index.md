@@ -105,7 +105,7 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-lfm3`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4`, `jinfer-lfm3` | E2B conformer; LFM3-Omni, 16 kHz |
 | speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
-| speech output | `jinfer-lfm3` | LFM3-Omni, 24 kHz; `Speech` on a chat request, `ChatEngine.speak`, server audio |
+| speech output | `jinfer-lfm3` | LFM3-Omni, 24 kHz; `Modality.AUDIO` on a chat request, server audio and `/v1/audio/speech` |
 | speech recognition | `jinfer-parakeet` | mono 16 kHz; CLI `transcribe`, server `/v1/audio/transcriptions` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
