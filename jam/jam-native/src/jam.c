@@ -1,5 +1,8 @@
 /* jam engine: contexts, ISA detection, errors, and jam_mm dispatch.
  * The actual multiply lives in the per-ISA kernel TUs (scalar floor in jam_kernels_generic.c). */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#  define _GNU_SOURCE   /* dladdr */
+#endif
 #include "jam_internal.h"
 #include "kernels/jam_mxfp4.h"
 #include "kernels/jam_nvfp4.h"
@@ -24,6 +27,7 @@ static int g_debug;                    /* JAM_DEBUG: the dispatch on stderr */
 static _Atomic unsigned g_fork_gen;    /* bumped in every forked child: a context remembers its own */
 
 #ifndef _WIN32
+#include <dlfcn.h>
 static void jam_after_fork(void) { atomic_fetch_add(&g_fork_gen, 1); }
 #endif
 
@@ -32,6 +36,12 @@ __attribute__((constructor)) static void jam_load(void) {
     const char* d = getenv("JAM_DEBUG");
     g_debug = d && *d && strcmp(d, "0") && strcmp(d, "false") && strcmp(d, "no");
 #ifndef _WIN32
+    /* The fork handler stays registered for the life of the process, so the library stays loaded:
+     * after an unload (dlclose, a JNI library going with its class loader) the next fork would call
+     * into unmapped code. Pinned, an unload succeeds and changes nothing. */
+    Dl_info self;
+    if (dladdr((const void*) &jam_after_fork, &self) && self.dli_fname)
+        (void) dlopen(self.dli_fname, RTLD_LAZY | RTLD_NOLOAD | RTLD_NODELETE);
     pthread_atfork(NULL, NULL, jam_after_fork);
 #endif
 }

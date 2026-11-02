@@ -8,8 +8,9 @@
  *   Threads    Any function may be called from any thread, unless its comment says otherwise. A
  *              context is a serial stream: one jam_mm at a time, a concurrent one is JAM_EBUSY. For
  *              parallel matmuls, make several contexts.
- *   Fork       A context made before fork refuses in the child with JAM_ERROR; make a new one there,
- *              which stays on the CPU (Apple's GPU is unusable after fork without exec).
+ *   Fork       A context made before fork refuses jam_mm and jam_share in the child with JAM_ERROR;
+ *              make a new one there, which stays on the CPU (Apple's GPU is unusable after fork without
+ *              exec). The fork handler lives as long as the process, so once loaded libjam stays loaded.
  *   Settings   Through jam_context_options. JAM_DEBUG=1 in the environment prints the dispatch on
  *              stderr; jam is otherwise silent.
  *   Work       One call, jam_mm: R = W @ A^T, k the contiguous axis of both W and A. W may be any

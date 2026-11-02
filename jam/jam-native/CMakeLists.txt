@@ -95,6 +95,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)   # -pthread over -lpthread where it matters
 find_package(Threads REQUIRED)
 target_link_libraries(jam PRIVATE Threads::Threads $<$<NOT:$<PLATFORM_ID:Windows>>:m>)   # libm: lrintf/fabsf in the requant floor; in the MSVC runtime on Windows
                                                         # (a no-op alias on MinGW, part of libSystem on macOS)
+target_link_libraries(jam PRIVATE ${CMAKE_DL_LIBS})    # dladdr/dlopen: the library pins itself (jam.c)
 
 # One per-ISA kernel TU: compiled with its OWN flags and bound at create; the dispatcher (src/jam.c)
 # stays at BASELINE flags. `def`=1 is defined for the TU and, when dispatch=ON, for the dispatcher too
@@ -279,6 +280,11 @@ if (JAM_TESTS)
     # jam_test internally covers EVERY supported ISA level (capped contexts) at 1 and 3 threads, so one
     # run exercises all kernels.
     add_test(NAME correctness COMMAND jam_test)
+    if (NOT WIN32)   # dlclose + fork: the library pins itself (jam.c)
+        add_executable(jam_unload tests/jam_unload.c)
+        target_link_libraries(jam_unload PRIVATE ${CMAKE_DL_LIBS})
+        add_test(NAME unload COMMAND jam_unload $<TARGET_FILE:jam>)
+    endif()
     # The library exports exactly jam.h's functions and the JNI entry points (ELF and Mach-O; a DLL
     # exports only what is marked, so Windows needs no check).
     if (NOT WIN32)
