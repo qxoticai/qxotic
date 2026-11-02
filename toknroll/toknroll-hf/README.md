@@ -71,7 +71,6 @@ Token-perfect tested against 15 model families:
 - **Mistral AI** - Tekken
 - **IBM** - Granite 4+
 - **Meta** - Llama 3+
-- **Microsoft** - Phi 4+
 - **HuggingFace** - SmolLM3
 - **NVIDIA** - Nemotron 3
 - **Z.ai** - GLM 5.1

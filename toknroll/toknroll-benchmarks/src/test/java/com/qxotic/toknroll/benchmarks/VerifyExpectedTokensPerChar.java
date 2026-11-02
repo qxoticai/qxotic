@@ -29,7 +29,6 @@ public class VerifyExpectedTokensPerChar {
             "huggingface.smollm3",
             "mistral.gpt2_pretekken",
             "deepseek.v3_2",
-            "microsoft.phi4",
             "mistral.tekken",
             "openai.gpt-oss"
         };

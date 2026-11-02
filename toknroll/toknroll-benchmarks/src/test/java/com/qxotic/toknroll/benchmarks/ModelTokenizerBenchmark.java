@@ -91,7 +91,6 @@ public class ModelTokenizerBenchmark {
         "google.gemma4",
         "nvidia.nemotron3_nano4b",
         "ibm.granite4_0",
-        "microsoft.phi4",
         "deepseek.v3_2",
         "deepseek.v4_pro",
         "mistral.v0_3_spbpe",
@@ -170,7 +169,6 @@ public class ModelTokenizerBenchmark {
             case "huggingface.smollm3":
             case "nvidia.nemotron3_nano4b":
             case "ibm.granite4_0":
-            case "microsoft.phi4":
             case "deepseek.v3_2":
             case "deepseek.v4_pro":
                 return TestTokenizers.modelFamily(model)
@@ -290,7 +288,6 @@ public class ModelTokenizerBenchmark {
                 || "huggingface.smollm3".equals(model)
                 || "nvidia.nemotron3_nano4b".equals(model)
                 || "ibm.granite4_0".equals(model)
-                || "microsoft.phi4".equals(model)
                 || "deepseek.v3_2".equals(model)
                 || "deepseek.v4_pro".equals(model)) {
             return passthroughFamilyTokenizer(model, implementation);

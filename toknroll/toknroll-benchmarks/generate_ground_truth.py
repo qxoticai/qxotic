@@ -695,13 +695,6 @@ def generate_model_family_ground_truth():
             ],
         },
         {
-            "family_id": "microsoft.phi4",
-            "backend": "hf",
-            "revision": "main",
-            "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": ["microsoft/phi-4", "microsoft/Phi-4-mini-instruct"],
-        },
-        {
             "family_id": "mistral.tekken",
             "backend": "mistral-common",
             "revision": "main",

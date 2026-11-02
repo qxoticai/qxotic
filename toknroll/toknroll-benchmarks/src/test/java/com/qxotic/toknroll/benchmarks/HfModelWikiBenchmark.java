@@ -46,7 +46,6 @@ public class HfModelWikiBenchmark {
                     Map.entry(
                             "ibm.granite4_0",
                             new ModelSpec("ibm-granite", "granite-4.0-h-1b", "main")),
-                    Map.entry("microsoft.phi4", new ModelSpec("microsoft", "phi-4", "main")),
                     Map.entry(
                             "deepseek.v3_2", new ModelSpec("deepseek-ai", "DeepSeek-V3.2", "main")),
                     Map.entry(
@@ -62,7 +61,6 @@ public class HfModelWikiBenchmark {
                     "alibaba.qwen3_5",
                     "google.gemma4",
                     "ibm.granite4_0",
-                    "microsoft.phi4",
                     "deepseek.v3_2",
                     "mistral.v0_3_spbpe");
 
@@ -93,7 +91,6 @@ public class HfModelWikiBenchmark {
         "alibaba.qwen3_5",
         "google.gemma4",
         "ibm.granite4_0",
-        "microsoft.phi4",
         "deepseek.v3_2",
         "mistral.v0_3_spbpe"
     })

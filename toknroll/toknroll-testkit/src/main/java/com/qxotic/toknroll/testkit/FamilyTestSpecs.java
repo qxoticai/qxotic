@@ -23,7 +23,6 @@ public final class FamilyTestSpecs {
                     new FamilySpec("huggingface.smollm3", 1, 0),
                     new FamilySpec("alibaba.qwen3_5", 1, 0),
                     new FamilySpec("ibm.granite4_0", 1, 0),
-                    new FamilySpec("microsoft.phi4", 1, 0),
                     new FamilySpec("mistral.gpt2_pretekken", 1, 0),
                     new FamilySpec("openai.gpt-oss", 1, 0),
                     new FamilySpec("deepseek.v3_2", 1, 0),

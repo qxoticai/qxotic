@@ -99,7 +99,6 @@ Token-perfect, backed by parity tests against the Hugging Face and llama.cpp ref
 - **Mistral AI**: Tekken
 - **IBM**: Granite 4+
 - **Meta**: Llama 3+
-- **Microsoft**: Phi 4+
 - **HuggingFace**: SmolLM3
 - **NVIDIA**: Nemotron 3
 - **Z.ai**: GLM 5.1

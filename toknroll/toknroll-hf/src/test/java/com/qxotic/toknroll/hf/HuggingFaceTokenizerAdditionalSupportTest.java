@@ -42,7 +42,6 @@ class HuggingFaceTokenizerAdditionalSupportTest {
 
     private static Stream<Arguments> additionalSupportModels() {
         return Stream.of(
-                Arguments.of("microsoft", "phi-4", "Hello Phi-4\nLine 2"),
                 Arguments.of("ibm-granite", "granite-4.0-h-small", "Hello Granite 4\tTab"),
                 Arguments.of("mistralai", "Mistral-7B-Instruct-v0.3", "Hello Mistral: 123 !"));
     }

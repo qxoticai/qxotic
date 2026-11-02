@@ -58,7 +58,6 @@ class HuggingFaceTokenizerParityTest {
                     new ModelSpec(
                             "XiaomiMiMo/MiMo-V2-Flash",
                             "hf_xiaomi_mimo_v2_flash_ground_truth.json"),
-                    new ModelSpec("microsoft/phi-4", "hf_microsoft_phi4_ground_truth.json"),
                     new ModelSpec("openai/gpt-oss-20b", "hf_openai_gpt_oss_ground_truth.json"),
                     new ModelSpec("google/gemma-4-e2b-it", "hf_google_gemma4_ground_truth.json"));
 
