@@ -371,7 +371,6 @@ final class BitSplit {
         int seed;
 
         // the block in hand
-        int bi;
         int base;
         int len;
         long valid;
@@ -406,7 +405,9 @@ final class BitSplit {
             pv.clear();
         }
 
-        /** The starts of the block in hand; the driver keeps the leads and opens position 0. */
+        /**
+         * The starts of the block in hand, the driver keeping the leads; the text's start is open.
+         */
         abstract long rule();
 
         // ---- shared rules
@@ -637,10 +638,6 @@ final class BitSplit {
                             | (cur.other & ~bk.other & ~bk.sp)
                             | (cur.ws & ~bk.ws)
                             | steal;
-            st &= lead;
-            if (bi == 0) {
-                st |= 1;
-            }
             return contractions(st, LOWER);
         }
     }
@@ -704,10 +701,6 @@ final class BitSplit {
             commitRetractable(afterNl, nlE);
             prevOsf = ((osf >>> (len - 1)) & 1) != 0;
 
-            st &= lead;
-            if (bi == 0) {
-                st |= 1;
-            }
             return contractions(st, contraction);
         }
     }
@@ -1054,7 +1047,6 @@ final class BitSplit {
             }
             run.bk.back(run.cur, run.pv);
             run.fw.forward(run.cur, run.nx);
-            run.bi = bi;
             run.base = base;
             run.len = len;
             run.valid = len == 64 ? -1L : (1L << len) - 1;
@@ -1063,9 +1055,6 @@ final class BitSplit {
             run.lb = (run.fw.lead & run.valid) | run.eof;
             run.prevWs = run.pv.ws < 0;
             long st = run.rule() & run.lead;
-            if (bi == 0) {
-                st |= 1;
-            }
             run.starts[bi & (RING - 1)] = st;
             if (bi > 0) {
                 run.starts[(bi - 1) & (RING - 1)] |= run.stealPatch;
