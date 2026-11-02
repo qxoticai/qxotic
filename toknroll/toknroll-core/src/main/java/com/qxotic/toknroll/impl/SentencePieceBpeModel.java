@@ -45,6 +45,32 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     private final boolean[] isByteToken;
     private final byte[][] tokenBytesById;
 
+    /** Words of up to this many chars are cached; a longer one is merged every time. */
+    private static final int CACHED_CHARS = 32;
+
+    // ponytail: a fixed 1M slots, ~4 MB, and up to ~100 MB of entries once a text has a million
+    // distinct short words; size it from a setting if that ever matters
+    private static final int CACHE_BITS = 20;
+    private static final int CACHE_SLOTS = 1 << CACHE_BITS;
+
+    /**
+     * Words to ids, one slot per hash, shared by every thread without a lock: an entry is
+     * immutable, so a thread that sees one sees it whole, and one lost to a race or overwritten by
+     * another word is only a miss. Unlike a map cleared when full, it degrades gradually as words
+     * outnumber slots.
+     */
+    private final Entry[] cache = new Entry[CACHE_SLOTS];
+
+    private static final class Entry {
+        final String word;
+        final int[] ids;
+
+        Entry(String word, int[] ids) {
+            this.word = word;
+            this.ids = ids;
+        }
+    }
+
     private SentencePieceBpeModel(
             Vocabulary vocabulary,
             int[] byteTokenIds,
@@ -316,6 +342,27 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
+        for (int id : ids(text)) {
+            out.add(id);
+        }
+    }
+
+    /** The ids of {@code text}, from the cache when it is a short word. */
+    private int[] ids(CharSequence text) {
+        if (text.length() > CACHED_CHARS) {
+            return merged(text);
+        }
+        String word = text.toString();
+        int slot = (word.hashCode() * 0x9E3779B9) >>> (32 - CACHE_BITS); // Fibonacci hashing
+        Entry entry = cache[slot];
+        if (entry == null || !entry.word.equals(word)) {
+            cache[slot] = entry = new Entry(word, merged(text));
+        }
+        return entry.ids;
+    }
+
+    /** The ids of {@code text}: each code point's token, else its bytes', merged. */
+    private int[] merged(CharSequence text) {
         int textLen = text.length();
         int[] ids = new int[Math.max(16, textLen)];
         int size = 0;
@@ -341,8 +388,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             pos += charCount;
         }
 
-        int[] merged = mergeGreedy(ids, size);
-        out.addAll(IntSequence.wrap(merged));
+        return mergeGreedy(ids, size);
     }
 
     private int[] mergeGreedy(int[] ids, int length) {
@@ -355,41 +401,41 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Simple O(n²) merge path.
-     *
-     * <p>Scans all adjacent pairs each iteration, picks the lowest-rank merge, shifts array left.
+     * Simple merge path: an O(n) scan per merge over the pairs' remembered merges, picking the
+     * lowest rank and shifting left; only the two pairs beside a merge are looked up again.
      */
     private int[] mergeGreedySimple(int[] ids, int length) {
         int[] work = ids;
         int len = length;
+        long[] pairs = new long[len]; // pairs[i]: the merge of work[i] and work[i + 1], or NONE
+        for (int i = 0; i + 1 < len; i++) {
+            pairs[i] = packedMerges.getPair(work[i], work[i + 1]);
+        }
 
         while (true) {
             int bestPos = -1;
-            int bestMerged = -1;
             int bestRank = Integer.MAX_VALUE;
-
-            for (int i = 0; i + 1 < len; i++) {
-                long packed = packedMerges.getPair(work[i], work[i + 1]);
-                if (packed == IntPair.NONE) {
-                    continue;
-                }
-                int rank = unpackRank(packed);
-                if (rank < bestRank || (rank == bestRank && i < bestPos)) {
-                    bestRank = rank;
-                    bestMerged = unpackMergedId(packed);
+            for (int i = 0; i + 1 < len; i++) { // the lowest rank, leftmost among equals
+                if (pairs[i] != IntPair.NONE && unpackRank(pairs[i]) < bestRank) {
+                    bestRank = unpackRank(pairs[i]);
                     bestPos = i;
                 }
             }
-
             if (bestPos < 0) {
                 break;
             }
 
-            work[bestPos] = bestMerged;
-            if (bestPos + 1 < len - 1) {
-                System.arraycopy(work, bestPos + 2, work, bestPos + 1, len - bestPos - 2);
-            }
+            work[bestPos] = unpackMergedId(pairs[bestPos]);
+            System.arraycopy(work, bestPos + 2, work, bestPos + 1, len - bestPos - 2);
+            System.arraycopy(pairs, bestPos + 1, pairs, bestPos, len - bestPos - 2);
             len--;
+            // only the pairs beside the merge changed
+            if (bestPos > 0) {
+                pairs[bestPos - 1] = packedMerges.getPair(work[bestPos - 1], work[bestPos]);
+            }
+            if (bestPos + 1 < len) {
+                pairs[bestPos] = packedMerges.getPair(work[bestPos], work[bestPos + 1]);
+            }
         }
 
         return Arrays.copyOf(work, len);
