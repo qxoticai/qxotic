@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
  *
  * <p>One {@link WordCache} serves every thread that encodes with this encoder, of at most {@code
  * -Dtoknroll.wordCache} megabytes ({@link #DEFAULT_CACHE_MB} by default, 0 for none), and goes when
- * the tokenizer does. Everything else a call needs it makes for itself.
+ * the tokenizer does. A call's working memory, its {@link Scratch}, is kept for a later call unless
+ * a giant word grew it.
  */
 final class FastEncoder implements TiktokenEngine.Encoder {
 
@@ -51,6 +52,14 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     private final int[] singleByte;
     private final ExactLookup exact;
     private final WordCache cache = CACHE_SLOTS > 0 ? new WordCache(CACHE_SLOTS) : null;
+
+    /**
+     * Scratches kept between calls, at least two slots per processor: a power of two, sized when
+     * the encoder is made.
+     */
+    private final AtomicReferenceArray<Scratch> spares =
+            new AtomicReferenceArray<>(
+                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1));
 
     FastEncoder(TiktokenTables model, BitSplit split) {
         this.split = split;
@@ -126,11 +135,6 @@ final class FastEncoder implements TiktokenEngine.Encoder {
             spares.set(slot, s);
         }
     }
-
-    /** Spare scratches, two slots per processor: a power of two, sized when the encoder is made. */
-    private final AtomicReferenceArray<Scratch> spares =
-            new AtomicReferenceArray<>(
-                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1));
 
     private static int cacheSlots(int megabytes) {
         long bytes = Math.max(0, megabytes) * (1L << 20);
