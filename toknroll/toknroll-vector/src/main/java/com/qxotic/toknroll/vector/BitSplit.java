@@ -725,9 +725,9 @@ final class BitSplit {
         boolean lcOpen; // a lowercase run was still open at the edge
         long sfxCarry; // bytes of a contraction suffix that spilled past the edge
         long force; // and the start it opens just past itself, if that landed past the edge
-        int sfxEnd = -1; // just past the last suffix: the apostrophe there is a prefix, not a
-
-        // second suffix, since (?i:...)? applies once
+        // just past the last suffix: the apostrophe there is a prefix, not a second suffix, since
+        // (?i:...)? applies once
+        int sfxEnd = -1;
 
         // Where the last hand look of each kind stopped, absolute, and what it found there. A
         // later look starts further on: at or before that stop it would end there too.
