@@ -54,8 +54,7 @@ class EncodeUtf8Test {
             IntSequence expected = tokenizer.encode(s);
             // the pieces include lone surrogates, which String.getBytes turns into '?' and the
             // tokenizer into U+FFFD: encode as the tokenizer does
-            byte[] padded = TiktokenSplitter.utf8(s, 0, s.length());
-            byte[] utf8 = Arrays.copyOf(padded, padded.length - TiktokenSplitter.PADDING);
+            byte[] utf8 = TiktokenSplitter.utf8(s, 0, s.length());
             assertEquals(expected, tokenizer.encodeUtf8(utf8), name + " on " + s);
             // a range inside a larger array, with and without slack after it
             byte[] slack = Arrays.copyOf(utf8, utf8.length + 40);

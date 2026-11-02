@@ -374,11 +374,6 @@ final class TiktokenSplitter implements Splitter {
      */
     static final int BATCH = 1024;
 
-    /**
-     * Readable bytes {@link #utf8} leaves past the text, so a word can be loaded eight at a time.
-     */
-    static final int PADDING = 16;
-
     @Override
     public void splitAll(
             CharSequence text, int startInclusive, int endExclusive, SplitConsumer consumer) {
@@ -396,7 +391,7 @@ final class TiktokenSplitter implements Splitter {
         // The scanner reads UTF-8; a piece's end comes back to chars by counting its code points,
         // and the four-byte ones twice.
         byte[] utf8 = utf8(text, startInclusive, endExclusive);
-        int length = utf8.length - PADDING;
+        int length = utf8.length;
         int[] ends = new int[BATCH];
         int cursor = 0;
         int charCursor = startInclusive;
@@ -420,8 +415,8 @@ final class TiktokenSplitter implements Splitter {
 
     /**
      * Cuts pieces from {@code text[start, end)} into {@code ends}, each entry the end of one piece,
-     * until the array is full or the text ends. Returns how many. The text must have {@link
-     * #PADDING} readable bytes past {@code end}.
+     * until the array is full or the text ends. Returns how many. Reads no further than {@code
+     * end}.
      */
     int split(byte[] text, int start, int end, int[] ends) {
         int n = 0;
@@ -505,10 +500,7 @@ final class TiktokenSplitter implements Splitter {
         return j;
     }
 
-    /**
-     * The UTF-8 of {@code text[start, end)}, with {@link #PADDING} zero bytes after it; a surrogate
-     * without its partner becomes U+FFFD.
-     */
+    /** The UTF-8 of {@code text[start, end)}; a surrogate without its partner becomes U+FFFD. */
     static byte[] utf8(CharSequence text, int start, int end) {
         int length = 0;
         for (int i = start; i < end; i++) {
@@ -526,7 +518,7 @@ final class TiktokenSplitter implements Splitter {
                 length += 3;
             }
         }
-        byte[] out = new byte[length + PADDING];
+        byte[] out = new byte[length];
         int o = 0;
         for (int i = start; i < end; i++) {
             char c = text.charAt(i);

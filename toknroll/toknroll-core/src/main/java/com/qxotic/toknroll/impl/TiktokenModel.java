@@ -122,7 +122,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
         byte[] utf8 = TiktokenSplitter.utf8(text, 0, text.length());
-        encodeWord(utf8, 0, utf8.length - TiktokenSplitter.PADDING, out);
+        encodeWord(utf8, 0, utf8.length, out);
     }
 
     // ---- behind a scanner ----
@@ -142,12 +142,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return;
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
-        int length = utf8.length - TiktokenSplitter.PADDING;
         if (fast != null) {
-            encodeCut(fast, utf8, 0, length, splitter, out);
+            encodeCut(fast, utf8, 0, utf8.length, splitter, out);
             return;
         }
-        encode(utf8, 0, length, splitter, out);
+        encode(utf8, 0, utf8.length, splitter, out);
     }
 
     /** {@link #encode(CharSequence, int, int, TiktokenSplitter, IntSequence.Builder)} for UTF-8. */
@@ -164,9 +163,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             encodeCut(fast, utf8, start, end, splitter, out);
             return;
         }
-        // the scanner reads past a piece, so it gets a padded copy
-        byte[] padded = Arrays.copyOfRange(utf8, start, end + TiktokenSplitter.PADDING);
-        encode(padded, 0, end - start, splitter, out);
+        encode(utf8, start, end, splitter, out);
     }
 
     /** The engine on each piece the splitter's first stage cuts, as if each were the text. */
@@ -381,13 +378,12 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private boolean agrees(TiktokenEngine.Encoder candidate, TiktokenSplitter splitter) {
         String sample = TiktokenSplitter.sample();
         byte[] utf8 = TiktokenSplitter.utf8(sample, 0, sample.length());
-        int length = utf8.length - TiktokenSplitter.PADDING;
         IntSequenceBuilder expected = new IntSequenceBuilder();
-        encode(utf8, 0, length, splitter, expected);
+        encode(utf8, 0, utf8.length, splitter, expected);
         IdBuffer fromChars = new IdBuffer(expected.size());
         candidate.encode(sample, 0, sample.length(), fromChars);
         IdBuffer fromBytes = new IdBuffer(expected.size());
-        candidate.encodeUtf8(Arrays.copyOf(utf8, length), 0, length, fromBytes);
+        candidate.encodeUtf8(utf8, 0, utf8.length, fromBytes);
         int[] want = Arrays.copyOf(expected.data(), expected.size());
         return Arrays.equals(want, Arrays.copyOf(fromChars.array(), fromChars.size()))
                 && Arrays.equals(want, Arrays.copyOf(fromBytes.array(), fromBytes.size()));
@@ -490,7 +486,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             throw invalidRange(startInclusive, endExclusive, text.length());
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, startInclusive, endExclusive);
-        encodeWord(utf8, 0, utf8.length - TiktokenSplitter.PADDING, out);
+        encodeWord(utf8, 0, utf8.length, out);
     }
 
     @Override
