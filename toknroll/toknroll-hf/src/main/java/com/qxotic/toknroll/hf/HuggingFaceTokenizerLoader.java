@@ -247,8 +247,9 @@ public final class HuggingFaceTokenizerLoader {
         Object normalizerObj = root.get("normalizer");
         Normalizer normalizer = parseNormalizer(normalizerObj);
         Object preTokenizerObj = root.get("pre_tokenizer");
-        boolean hasMetaspace = hasMetaspacePreTokenizer(preTokenizerObj);
-        boolean sentencePieceStyle = isSentencePieceSpaceNormalizer(normalizerObj) || hasMetaspace;
+        boolean sentencePieceStyle =
+                isSentencePieceSpaceNormalizer(normalizerObj)
+                        || metaspacePreTokenizer(preTokenizerObj) != null;
         Splitter splitter = parsePreTokenizer(preTokenizerObj);
 
         if (!sentencePieceStyle) {
@@ -277,12 +278,12 @@ public final class HuggingFaceTokenizerLoader {
         }
 
         Tokenizer tokenizer = Toknroll.pipeline(normalizer, splitter, tokenizationModel);
-
-        if (hasMetaspace) {
-            tokenizer = wrapMetaspace(tokenizer);
-        }
         if (sentencePieceStyle) {
-            tokenizer = wrapSentencePieceDecode(tokenizer);
+            tokenizer =
+                    ImplAccessor.metaspaceTokenizer(
+                            tokenizer,
+                            prependScheme(metaspacePreTokenizer(preTokenizerObj)),
+                            stripsLeadingSpace(root.get("decoder")));
         }
         return tokenizer;
     }
@@ -835,34 +836,81 @@ public final class HuggingFaceTokenizerLoader {
         return text -> text.toString().replace(needle, content);
     }
 
-    private static boolean hasMetaspacePreTokenizer(Object preTokenizerObj) {
+    /** The Metaspace pre-tokenizer, alone or in a Sequence; else null. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> metaspacePreTokenizer(Object preTokenizerObj) {
         if (!(preTokenizerObj instanceof Map<?, ?>)) {
+            return null;
+        }
+        Map<String, Object> preTokenizer = (Map<String, Object>) preTokenizerObj;
+        if ("Metaspace".equals(preTokenizer.get("type"))) {
+            return preTokenizer;
+        }
+        if ("Sequence".equals(preTokenizer.get("type"))
+                && preTokenizer.get("pretokenizers") instanceof List<?>) {
+            for (Object child : (List<?>) preTokenizer.get("pretokenizers")) {
+                Map<String, Object> metaspace = metaspacePreTokenizer(child);
+                if (metaspace != null) {
+                    return metaspace;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Where Metaspace prepends its U+2581: {@code prepend_scheme}, else the older {@code
+     * add_prefix_space} ({@code always} when true, Hugging Face's default); {@code never} without a
+     * Metaspace, where a normalizer spells the spaces.
+     */
+    private static String prependScheme(Map<String, Object> metaspace) {
+        if (metaspace == null) {
+            return "never";
+        }
+        Object scheme = metaspace.get("prepend_scheme");
+        if (scheme instanceof String) {
+            return (String) scheme;
+        }
+        return Boolean.FALSE.equals(metaspace.get("add_prefix_space")) ? "never" : "always";
+    }
+
+    /**
+     * Whether the decoder drops the text's leading space: a {@code Strip} of one leading ' ', or a
+     * Metaspace decoder that prepends, alone or in a Sequence.
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean stripsLeadingSpace(Object decoderObj) {
+        if (!(decoderObj instanceof Map<?, ?>)) {
             return false;
         }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> preTokenizer = (Map<String, Object>) preTokenizerObj;
-        String type = (String) preTokenizer.get("type");
-        if ("Metaspace".equals(type)) {
-            return true;
-        }
-        if ("Sequence".equals(type)) {
-            Object childrenObj = preTokenizer.get("pretokenizers");
-            if (childrenObj instanceof List<?>) {
-                for (Object childObj : (List<?>) childrenObj) {
-                    if (childObj instanceof Map<?, ?>) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> child = (Map<String, Object>) childObj;
-                        if ("Metaspace".equals(child.get("type"))) {
+        Map<String, Object> decoder = (Map<String, Object>) decoderObj;
+        switch (String.valueOf(decoder.get("type"))) {
+            case "Strip":
+                Object start = decoder.get("start");
+                if (!" ".equals(decoder.get("content"))
+                        || !(start instanceof Number)
+                        || ((Number) start).intValue() > 1) {
+                    throw unsupported(
+                            "tokenizer.json:decoder", decoder.toString(), "Strip of one ' '");
+                }
+                return ((Number) start).intValue() == 1;
+            case "Metaspace":
+                return !"never".equals(prependScheme(decoder));
+            case "Sequence":
+                if (decoder.get("decoders") instanceof List<?>) {
+                    for (Object child : (List<?>) decoder.get("decoders")) {
+                        if (stripsLeadingSpace(child)) {
                             return true;
                         }
                     }
                 }
-            }
+                return false;
+            default:
+                return false;
         }
-        return false;
     }
 
-    private static Splitter parsePreTokenizer(Object preTokenizerObj) {
+    static Splitter parsePreTokenizer(Object preTokenizerObj) {
         if (preTokenizerObj == null || preTokenizerObj == Json.NULL) {
             return null;
         }
@@ -1200,14 +1248,6 @@ public final class HuggingFaceTokenizerLoader {
             values = Arrays.copyOf(values, size);
         }
         return new long[][] {keys, values};
-    }
-
-    private static Tokenizer wrapMetaspace(Tokenizer base) {
-        return ImplAccessor.metaspaceWrapper(base);
-    }
-
-    private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return ImplAccessor.sentencePieceDecodeWrapper(base, false, false);
     }
 
     private static final class Span {

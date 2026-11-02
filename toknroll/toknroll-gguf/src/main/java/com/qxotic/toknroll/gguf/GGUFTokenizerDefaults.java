@@ -117,8 +117,9 @@ final class GGUFTokenizerDefaults {
     private static final Function<GGUF, Normalizer> IDENTITY_NORMALIZER_FACTORY =
             gguf -> IDENTITY_NORMALIZER;
 
+    // llama.cpp's SPM prefix: a U+2581 before the text, none before no text
     private static final Normalizer METASPACE_NORMALIZER =
-            text -> '\u2581' + text.toString().replace(' ', '\u2581');
+            text -> text.length() == 0 ? text : '\u2581' + text.toString().replace(' ', '\u2581');
     private static final Function<GGUF, Normalizer> METASPACE_NORMALIZER_FACTORY =
             gguf -> METASPACE_NORMALIZER;
 

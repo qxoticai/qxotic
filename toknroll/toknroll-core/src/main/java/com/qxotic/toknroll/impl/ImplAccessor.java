@@ -192,57 +192,14 @@ public final class ImplAccessor {
         return TiktokenReconstruction.mergeRules(mergeableRanks);
     }
 
-    public static Tokenizer sentencePieceDecodeWrapper(Tokenizer base, boolean trimLeadingSpace) {
-        return sentencePieceDecodeWrapper(base, trimLeadingSpace, true);
-    }
-
-    public static Tokenizer sentencePieceDecodeWrapper(
-            Tokenizer base, boolean trimLeadingSpace, boolean forwardAtStartOfText) {
-        return new TransformedTokenizer(base) {
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(
-                        decoded, forwardAtStartOfText && atStartOfText);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return trimLeadingSpace;
-            }
-        };
-    }
-
-    public static Tokenizer metaspaceWrapper(Tokenizer base) {
-        return new TransformedTokenizer(base) {
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                String segment = text.subSequence(startInclusive, endExclusive).toString();
-                String replaced = segment.replace(' ', '\u2581');
-                String prefixed = startInclusive == 0 ? '\u2581' + replaced : replaced;
-                base.encodeInto(prefixed, 0, prefixed.length(), out);
-            }
-
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return true;
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                String segment = text.subSequence(startInclusive, endExclusive).toString();
-                String replaced = segment.replace(' ', '\u2581');
-                String prefixed = startInclusive == 0 ? '\u2581' + replaced : replaced;
-                return base.countTokens(prefixed, 0, prefixed.length());
-            }
-        };
+    /**
+     * A SentencePiece tokenizer as the text sees it, a space ' ' where the vocabulary spells
+     * U+2581: encoding prepends U+2581 as {@code prependScheme} ({@code always}, {@code first} or
+     * {@code never}) says, decoding writes each token's bytes, trimming the first token's leading
+     * space with {@code trimLeadingSpace}. See {@link MetaspaceTokenizer}.
+     */
+    public static Tokenizer metaspaceTokenizer(
+            Tokenizer base, String prependScheme, boolean trimLeadingSpace) {
+        return new MetaspaceTokenizer(base, prependScheme, trimLeadingSpace);
     }
 }
