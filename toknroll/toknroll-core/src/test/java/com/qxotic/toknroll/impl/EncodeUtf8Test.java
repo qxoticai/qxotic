@@ -9,6 +9,7 @@ import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ class EncodeUtf8Test {
         }
     }
 
+    /** NFC text and ASCII take the byte path, other text and ill-formed bytes the fallback. */
     @Test
     void aNormalizerTakesTheFallback() {
         TokenizationPipeline base =
@@ -39,6 +41,11 @@ class EncodeUtf8Test {
                         base.splitter().get(),
                         base.model());
         check(normalized, "o200k with NFC");
+        byte[] illFormed = {'a', (byte) 0xC3, 'b', (byte) 0xE9};
+        assertEquals(normalized.encode("a\uFFFDb\uFFFD"), normalized.encodeUtf8(illFormed));
+        assertEquals(
+                normalized.encode("caf\u00E9"),
+                normalized.encodeUtf8("cafe\u0301".getBytes(StandardCharsets.UTF_8)));
     }
 
     private static void check(Tokenizer tokenizer, String name) {

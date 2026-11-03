@@ -71,6 +71,6 @@ public interface Normalizer {
      */
     static Normalizer unicode(Form form) {
         Objects.requireNonNull(form, "form");
-        return text -> java.text.Normalizer.normalize(text, form);
+        return new UnicodeNormalizer(form);
     }
 }
