@@ -104,7 +104,16 @@ class BitSplitTest {
         "    ",
         "\n   \n",
         "   \n   ",
-        "12345678"
+        "12345678",
+        // what DeepSeek's stages tell apart: ASCII punctuation before letters, symbols, kana
+        "'abc",
+        "$x",
+        "€",
+        "・",
+        "゛",
+        "あ",
+        "\u0001",
+        "\u00ad"
     };
 
     private static final String UPPER = "[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]";

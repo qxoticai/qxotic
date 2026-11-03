@@ -82,6 +82,23 @@ public interface TiktokenEngine {
      */
     Encoder encoder(TiktokenTables model, int rules);
 
+    /**
+     * An encoder of the words core cuts for {@code model}, for the regexes without a rule set here,
+     * or null if this engine has none. Checked like an encoder before core uses it.
+     */
+    default WordEncoder words(TiktokenTables model) {
+        return null;
+    }
+
+    /** Encodes words cut already, from any number of threads at once. */
+    interface WordEncoder {
+        /**
+         * Appends the ids of the words of {@code utf8} that end at {@code ends[0, count)}, the
+         * first starting at {@code start}: each merged as one word.
+         */
+        void encodeWords(byte[] utf8, int start, int[] ends, int count, IntSequence.Builder out);
+    }
+
     /** Encodes whole texts, from any number of threads at once. */
     interface Encoder {
         /**

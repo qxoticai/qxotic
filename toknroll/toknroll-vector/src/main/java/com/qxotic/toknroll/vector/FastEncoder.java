@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
  * the tokenizer does. A call's working memory, its {@link Scratch}, is kept for a later call unless
  * a giant word grew it.
  */
-final class FastEncoder implements TiktokenEngine.Encoder {
+final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEncoder {
 
     /** Readable bytes past a word, so it can be loaded eight at a time. */
     static final int PADDING = 16;
@@ -47,7 +47,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     private static final int NO_TOKEN = -1;
     private static final int NO_INDEX = -1;
 
-    private final BitSplit split;
+    private final BitSplit split; // null when it encodes words only
     private final PairMap merges;
     private final int[] singleByte;
     private final ExactLookup exact;
@@ -124,6 +124,15 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         int slot = slot();
         Scratch s = take(slot);
         encode(utf8, start, end, out, s);
+        give(slot, s);
+    }
+
+    @Override
+    public void encodeWords(
+            byte[] utf8, int start, int[] ends, int count, IntSequence.Builder out) {
+        int slot = slot();
+        Scratch s = take(slot);
+        encodeWords(utf8, start, ends, count, out, s);
         give(slot, s);
     }
 

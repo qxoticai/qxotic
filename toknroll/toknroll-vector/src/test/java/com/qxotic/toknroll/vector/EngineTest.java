@@ -67,6 +67,10 @@ class EngineTest {
                     + "|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     private static final String QWEN2 = ASCII_BOTH + String.format(BODY, "\\p{N}");
     private static final String MINICPM5_MAIN = ASCII_BOTH + String.format(BODY, "\\p{N}+");
+    private static final String DEEPSEEK_V3_MAIN =
+            "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+"
+                    + "|[^\\r\\n\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+[\\r\\n]*"
+                    + "|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
     private static final String BAILING =
             "'(?:[sSdDmMtT]|[lL][lL]|[vV][eE]|[rR][eE])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}"
                     + "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]|\\s+(?!\\S)|\\s+";
@@ -86,23 +90,26 @@ class EngineTest {
         pair("bailingmoe", "cl100k_base", BAILING),
         staged("mellum2", "r50k_base", "\\p{N}", GPT2),
         staged("minicpm5", "cl100k_base", "\\p{N}{1,3}", MINICPM5_MAIN),
-        staged("laguna", "cl100k_base", ImplAccessor.LAGUNA_NEWLINES, QWEN2)
+        staged("laguna", "cl100k_base", ImplAccessor.LAGUNA_NEWLINES, QWEN2),
+        // core splits DeepSeek's stages, the engine encodes the words
+        staged("deepseek-v3", "cl100k_base", "\\p{N}{1,3}", "[一-龥぀-ゟ゠-ヿ]+", DEEPSEEK_V3_MAIN)
     };
 
     /**
-     * Two stages: the engine behind the scanner {@link Splitter#sequence} makes of them, against
-     * the stages chained by hand, which nothing recognizes, so core splits with the regexes.
+     * Stages: the engine behind the scanner {@link Splitter#sequence} makes of them, against the
+     * stages chained by hand, which nothing recognizes, so core splits with the regexes.
      */
-    private static Pair staged(String name, String vocabulary, String first, String second) {
-        Splitter one = Splitter.regex(Pattern.compile(first, Pattern.UNICODE_CHARACTER_CLASS));
-        Splitter two = Splitter.regex(Pattern.compile(second, Pattern.UNICODE_CHARACTER_CLASS));
-        Splitter chained =
-                (text, start, end, consumer) ->
-                        one.splitAll(
-                                text, start, end, (t, s, e) -> two.splitAll(t, s, e, consumer));
-        Tokenizer engine = tokenizer(vocabulary, Splitter.sequence(one, two));
+    private static Pair staged(String name, String vocabulary, String... regexes) {
+        Splitter[] stages = new Splitter[regexes.length];
+        Splitter[] hidden = new Splitter[regexes.length];
+        for (int k = 0; k < regexes.length; k++) {
+            stages[k] =
+                    Splitter.regex(Pattern.compile(regexes[k], Pattern.UNICODE_CHARACTER_CLASS));
+            hidden[k] = stages[k]::splitAll;
+        }
+        Tokenizer engine = tokenizer(vocabulary, Splitter.sequence(stages));
         engine.encode("x");
-        return new Pair(name, tokenizer(vocabulary, chained), engine);
+        return new Pair(name, tokenizer(vocabulary, Splitter.sequence(hidden)), engine);
     }
 
     static Stream<Pair> pairs() {
@@ -232,11 +239,18 @@ class EngineTest {
     }
 
     private static void same(Pair pair, String text) {
-        int[] expected = pair.reference().encode(text).toArray();
+        // a surrogate without its partner encodes as U+FFFD, which the regexes must read too:
+        // DeepSeek's rule tells the two apart
+        int[] expected = pair.reference().encode(replaced(text)).toArray();
         assertArrayEquals(expected, pair.engine().encode(text).toArray(), () -> shown(text));
         byte[] utf8 = Utf8Reference.encode(text, 0, text.length(), 0);
         IntSequence fromBytes = pair.engine().encodeUtf8(utf8);
         assertArrayEquals(expected, fromBytes.toArray(), () -> "UTF-8: " + shown(text));
+    }
+
+    /** {@code text} with each lone surrogate read as U+FFFD, as the tokenizer reads it. */
+    private static String replaced(String text) {
+        return new String(Utf8Reference.encode(text, 0, text.length(), 0), StandardCharsets.UTF_8);
     }
 
     private static String shown(String text) {

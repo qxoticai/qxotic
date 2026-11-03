@@ -17,6 +17,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
@@ -145,7 +146,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             encodeCut(fast, utf8, 0, utf8.length, splitter, out);
             return;
         }
-        encode(utf8, 0, utf8.length, splitter, out);
+        encodeWords(utf8, 0, utf8.length, splitter, out);
     }
 
     /** {@link #encode(CharSequence, int, int, TiktokenSplitter, IntSequence.Builder)} for UTF-8. */
@@ -160,7 +161,33 @@ final class TiktokenModel extends AbstractTokenizationModel {
             encodeCut(fast, utf8, start, end, splitter, out);
             return;
         }
-        encode(utf8, start, end, splitter, out);
+        encodeWords(utf8, start, end, splitter, out);
+    }
+
+    /** The scanner's pieces, merged by an engine's word encoder when there is one. */
+    private void encodeWords(
+            byte[] text, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
+        TiktokenEngine.WordEncoder words = words(splitter);
+        if (words == null) {
+            encode(text, start, end, splitter, out);
+            return;
+        }
+        encodeWords(words, text, start, end, splitter, out);
+    }
+
+    private static void encodeWords(
+            TiktokenEngine.WordEncoder words,
+            byte[] text,
+            int start,
+            int end,
+            TiktokenSplitter splitter,
+            IntSequence.Builder out) {
+        int[] ends = new int[Math.min(TiktokenSplitter.BATCH, Math.max(1, end - start))];
+        for (int cursor = start; cursor < end; ) {
+            int n = splitter.split(text, cursor, end, ends);
+            words.encodeWords(text, cursor, ends, n, out);
+            cursor = ends[n - 1];
+        }
     }
 
     /** The engine on each piece the splitter's first stage cuts, as if each were the text. */
@@ -354,6 +381,47 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return encoder != NO_ENCODER ? (TiktokenEngine.Encoder) encoder : null;
     }
 
+    /** The engine's word encoder, or {@link #NO_ENCODER}; null until first used. */
+    private final AtomicReference<Object> words = new AtomicReference<>();
+
+    private TiktokenEngine.WordEncoder words(TiktokenSplitter splitter) {
+        Object words = this.words.get();
+        if (words == null) {
+            words = findWords(splitter);
+            Object first = this.words.compareAndExchange(null, words);
+            words = first != null ? first : words;
+        }
+        return words != NO_ENCODER ? (TiktokenEngine.WordEncoder) words : null;
+    }
+
+    /** The first engine's word encoder that merges the sample's words as this model does. */
+    private Object findWords(TiktokenSplitter splitter) {
+        if ("none".equals(System.getProperty("toknroll.engine"))) {
+            return NO_ENCODER;
+        }
+        String sample = TiktokenSplitter.sample();
+        byte[] utf8 = TiktokenSplitter.utf8(sample, 0, sample.length());
+        IntSequenceBuilder expected = new IntSequenceBuilder();
+        encode(utf8, 0, utf8.length, splitter, expected);
+        int[] want = expected.build().toArray();
+        for (TiktokenEngine engine : ENGINES) {
+            try {
+                TiktokenEngine.WordEncoder candidate = engine.words(new Tables());
+                if (candidate == null) {
+                    continue;
+                }
+                IntSequence.Builder got = IntSequence.newBuilder(want.length);
+                encodeWords(candidate, utf8, 0, utf8.length, splitter, got);
+                if (Arrays.equals(want, got.build().toArray())) {
+                    return candidate;
+                }
+            } catch (Throwable e) {
+                // passed over like an encoder that disagrees
+            }
+        }
+        return NO_ENCODER;
+    }
+
     /** The first engine's encoder that agrees with this model, or {@link #NO_ENCODER}. */
     private Object findEncoder(int rules, TiktokenSplitter splitter) {
         if ("none".equals(System.getProperty("toknroll.engine"))) {
@@ -533,6 +601,10 @@ final class TiktokenModel extends AbstractTokenizationModel {
             if (encoder != null && encoder != NO_ENCODER) {
                 return "Tiktoken BPE, encoded by " + encoder.getClass().getName();
             }
+        }
+        Object words = this.words.get();
+        if (words != null && words != NO_ENCODER) {
+            return "Tiktoken BPE, words encoded by " + words.getClass().getName();
         }
         return "Tiktoken BPE";
     }

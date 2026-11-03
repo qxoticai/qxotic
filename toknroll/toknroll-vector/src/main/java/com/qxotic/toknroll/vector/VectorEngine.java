@@ -14,4 +14,9 @@ public final class VectorEngine implements TiktokenEngine {
         BitSplit split = BitSplit.forRules(rules);
         return split == null ? null : new FastEncoder(model, split);
     }
+
+    @Override
+    public WordEncoder words(TiktokenTables model) {
+        return new FastEncoder(model, null);
+    }
 }
