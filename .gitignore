@@ -135,8 +135,9 @@ node_modules/
 bench-results/
 
 # Generated tokenizer reference fixtures
-/toknroll/toknroll-gguf/src/test/resources/*.json
-!/toknroll/toknroll-gguf/src/test/resources/gguf_edge_parity.json
+/toknroll/toknroll-*/src/test/resources/*.json
+/toknroll/toknroll-*/src/test/resources/golden/
+/toknroll/toknroll-hf/src/test/resources/specials/
 .ci-empty-hf-home/
 .ci-no-models/
 .ci-toknroll-cache/

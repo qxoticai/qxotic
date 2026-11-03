@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate the special-token goldens (toknroll-hf/src/test/resources/specials/<org>__<repo>.json):
+Generate the special-token goldens (toknroll-hf/src/test/resources/specials/<org>__<repo>.json, gitignored):
 Hugging Face `tokenizers` ids for text full of each model's added tokens, which
 HuggingFaceSpecialsGoldenTest checks against Specials.of(tokenizer).encode, toknroll's
 special-aware path.
