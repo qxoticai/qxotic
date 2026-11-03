@@ -98,9 +98,15 @@ public final class Native {
         return new String(utf8, from, to - from, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Bytes past a text copied in, so the engine reads its last 64-byte block whole: a masked
+     * vector load, which the JIT compiles to one instruction, runs a lane at a time here.
+     */
+    private static final int SLACK = 64;
+
     /** {@code length} bytes of the caller's memory as a Java array: one copy, read once. */
     private static byte[] copy(CCharPointer value, int length) {
-        byte[] bytes = new byte[length];
+        byte[] bytes = new byte[length + SLACK];
         copy(value.rawValue(), bytes, length);
         return bytes;
     }
@@ -275,7 +281,7 @@ public final class Native {
                             longest = Math.max(longest, (int) (starts[i + 1] - starts[i]));
                         // one buffer per run, small enough to stay in cache, each text
                         // copied in as it comes (one copy per run measured 6% slower)
-                        byte[] text = new byte[longest];
+                        byte[] text = new byte[longest + SLACK];
                         IntSequence.Builder b =
                                 IntSequence.newBuilder(estimate(starts[last] - starts[first]));
                         for (int i = first; i < last; i++) {
