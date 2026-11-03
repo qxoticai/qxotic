@@ -5,6 +5,9 @@ import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -132,10 +135,7 @@ final class SpecialsImpl implements Specials {
         Objects.requireNonNull(out, "out");
         Objects.checkFromToIndex(from, to, utf8.length);
         int gap = from;
-        for (int at = from; at < to; at++) {
-            if (!bytes.starts(utf8[at] & 0xFF)) {
-                continue;
-            }
+        for (int at = bytes.next(utf8, from, to); at < to; at = bytes.next(utf8, at + 1, to)) {
             int id = -1;
             int end = at;
             Node node = bytes.root;
@@ -162,8 +162,16 @@ final class SpecialsImpl implements Specials {
 
     /** A trie and a bit per unit that begins some special token. */
     private static final class Trie {
+        private static final VarHandle LONGS =
+                MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
+        private static final long ONES = 0x0101010101010101L;
+
         final Node root;
         final long[] first;
+        // up to four first bytes, each repeated in every byte of a word, for next to test eight
+        // bytes at once; more, and swar is off
+        private final boolean swar;
+        private final long lead0, lead1, lead2, lead3;
 
         Trie(Node root, int units) {
             this.root = root.freeze();
@@ -171,10 +179,42 @@ final class SpecialsImpl implements Specials {
             for (int unit : this.root.keys) {
                 first[unit >>> 6] |= 1L << unit;
             }
+            int[] k = this.root.keys;
+            this.swar = units == 256 && k.length >= 1 && k.length <= 4;
+            this.lead0 = swar ? k[0] * ONES : 0;
+            this.lead1 = swar ? k[Math.min(1, k.length - 1)] * ONES : 0;
+            this.lead2 = swar ? k[Math.min(2, k.length - 1)] * ONES : 0;
+            this.lead3 = swar ? k[Math.min(3, k.length - 1)] * ONES : 0;
         }
 
         boolean starts(int unit) {
             return (first[unit >>> 6] & (1L << unit)) != 0;
+        }
+
+        /** The first position of {@code utf8[i, to)} whose byte begins some special, or to. */
+        int next(byte[] utf8, int i, int to) {
+            if (swar) {
+                for (; i + 8 <= to; i += 8) {
+                    long w = (long) LONGS.get(utf8, i);
+                    long hits =
+                            zeros(w ^ lead0)
+                                    | zeros(w ^ lead1)
+                                    | zeros(w ^ lead2)
+                                    | zeros(w ^ lead3);
+                    if (hits != 0) {
+                        return i + (Long.numberOfTrailingZeros(hits) >>> 3);
+                    }
+                }
+            }
+            while (i < to && !starts(utf8[i] & 0xFF)) {
+                i++;
+            }
+            return i;
+        }
+
+        /** The high bit of each zero byte of {@code x}; exact at the lowest one, all next reads. */
+        private static long zeros(long x) {
+            return (x - ONES) & ~x & 0x8080808080808080L;
         }
     }
 
