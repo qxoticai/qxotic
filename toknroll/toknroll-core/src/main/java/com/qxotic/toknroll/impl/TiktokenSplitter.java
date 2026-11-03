@@ -40,6 +40,7 @@ final class TiktokenSplitter implements Splitter {
     private static final int PREFIX_LETTERS_MARKS =
             2; // '[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+' (qwen3.5)
     private static final int CASED = 3; // o200k's upper*lower+ | upper+lower* pair
+    private static final int DEEPSEEK = 4; // DeepSeek V3's whole rule, its own match
 
     // Number rules.
     private static final int SPACE_RUN = 0; // ' ?\p{N}+'
@@ -65,6 +66,7 @@ final class TiktokenSplitter implements Splitter {
     static final int NUMBER_RUNS = 1; // around each run of numbers
     static final int EACH_NUMBER = 2; // around each number
     static final int NEWLINE_RUNS = 3; // before each '(?:\r?\n)+'
+    static final int NUMBERS_CJK = 4; // '\p{N}{1,3}' apart, then each run of DeepSeek's CJK range
 
     private final int rules; // the TiktokenEngine rule set this scanner is, or -1
     private final int cuts;
@@ -206,9 +208,8 @@ final class TiktokenSplitter implements Splitter {
     private static final Map<String, TiktokenSplitter> KNOWN = new HashMap<>();
 
     /**
-     * Two-stage splits, first stage and second joined by a newline (which no regex here holds
-     * literally), each with the scanner that splits like both: the second stage's scanner, cut
-     * where the first stage cuts.
+     * Staged splits, the stages joined by NULs (which no regex here holds), each with the scanner
+     * that splits like all of them: the last stage's scanner, cut where the stages before cut.
      */
     private static final Map<String, TiktokenSplitter> KNOWN_STAGES = new HashMap<>();
 
@@ -312,6 +313,24 @@ final class TiktokenSplitter implements Splitter {
         // Laguna's tokenizer.json: the same, its contractions case-folded as Hugging Face folds
         // them
         staged(qwen2Fold, NEWLINE_RUNS, LAGUNA_NEWLINES, qwen2Folded);
+        // DeepSeek V3 and V4: number groups and CJK runs apart, then its own rule; tokenizer.json
+        // writes the newlines as characters, llama.cpp as escapes
+        TiktokenSplitter deepSeek =
+                new TiktokenSplitter(NO_CONTRACTION, DEEPSEEK, false, ONE, false, NEWLINES, true);
+        for (String nl : new String[] {"\r\n", "\\r\\n"}) {
+            staged(
+                    deepSeek,
+                    NUMBERS_CJK,
+                    "\\p{N}{1,3}",
+                    "[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+",
+                    "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+|[^"
+                            + nl
+                            + "\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+["
+                            + nl
+                            + "]*|\\s*["
+                            + nl
+                            + "]+|\\s+(?!\\S)|\\s+");
+        }
     }
 
     private static void known(TiktokenSplitter splitter, String... regexes) {
@@ -320,8 +339,8 @@ final class TiktokenSplitter implements Splitter {
         }
     }
 
-    private static void staged(TiktokenSplitter scanner, int cuts, String first, String second) {
-        KNOWN_STAGES.put(first + "\n" + second, new TiktokenSplitter(scanner, cuts, null));
+    private static void staged(TiktokenSplitter scanner, int cuts, String... stages) {
+        KNOWN_STAGES.put(String.join("\0", stages), new TiktokenSplitter(scanner, cuts, null));
     }
 
     /**
@@ -329,12 +348,20 @@ final class TiktokenSplitter implements Splitter {
      * scanner one compiles to), the first keeping the text between its matches; else null.
      */
     static Splitter forStages(Splitter... stages) {
-        boolean keepsGaps =
-                stages.length == 2
-                        && stages[0] instanceof RegexSplitter
-                        && ((RegexSplitter) stages[0]).emitsGaps();
-        // a stage with no regex is "null" in the key, which no entry has
-        return keepsGaps ? KNOWN_STAGES.get(regex(stages[0]) + "\n" + regex(stages[1])) : null;
+        if (stages.length < 2) {
+            return null;
+        }
+        StringBuilder key = new StringBuilder();
+        for (int k = 0; k < stages.length; k++) {
+            boolean keepsGaps =
+                    stages[k] instanceof RegexSplitter && ((RegexSplitter) stages[k]).emitsGaps();
+            if (k < stages.length - 1 && !keepsGaps) {
+                return null;
+            }
+            // a stage with no regex is "null" in the key, which no entry has
+            key.append(k > 0 ? "\0" : "").append(regex(stages[k]));
+        }
+        return KNOWN_STAGES.get(key.toString());
     }
 
     private static String regex(Splitter stage) {
@@ -358,7 +385,7 @@ final class TiktokenSplitter implements Splitter {
                 && (flags & ~(Pattern.UNICODE_CHARACTER_CLASS | Pattern.UNICODE_CASE)) == 0;
     }
 
-    /** First stage, newline, second stage: each pair {@link #forStages} knows. */
+    /** The stages {@link #forStages} knows, joined by NULs, which no regex here holds. */
     static Iterable<String> knownStages() {
         return KNOWN_STAGES.keySet();
     }
@@ -459,13 +486,43 @@ final class TiktokenSplitter implements Splitter {
             }
         }
         int at = at(text, i, end);
+        int after = i + len(at);
+        boolean deepSeek = cuts == NUMBERS_CJK;
         if ((CharClasses.of(cp(at)) & CharClasses.NUMBER) != 0) {
-            return cuts == EACH_NUMBER ? i + len(at) : run(text, i, end, CharClasses.NUMBER);
+            if (deepSeek) {
+                return twoMoreNumbers(text, after, end);
+            }
+            return cuts == EACH_NUMBER ? after : run(text, i, end, CharClasses.NUMBER);
         }
-        return nextNumber(text, i + len(at), end);
+        if (deepSeek && cjk(cp(at))) {
+            int e = after;
+            for (int c; e < end && cjk(cp(c = at(text, e, end))); ) {
+                e += len(c);
+            }
+            return e;
+        }
+        return nextNumber(text, after, end, deepSeek);
     }
 
-    private static int nextNumber(byte[] text, int j, int end) {
+    /** The end of '\p{N}{1,3}' whose first number ends at {@code e}. */
+    private static int twoMoreNumbers(byte[] text, int e, int end) {
+        for (int n = 1; n < 3 && e < end; n++) {
+            int c = at(text, e, end);
+            if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) == 0) {
+                break;
+            }
+            e += len(c);
+        }
+        return e;
+    }
+
+    /** DeepSeek's '[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]': Han, then the kana. */
+    private static boolean cjk(int cp) {
+        return (cp >= 0x4E00 && cp <= 0x9FA5) || (cp >= 0x3040 && cp <= 0x30FF);
+    }
+
+    /** The first number at or after {@code j}, or CJK char too if asked, or {@code end}. */
+    private static int nextNumber(byte[] text, int j, int end, boolean orCjk) {
         while (true) {
             if (end - j >= 8) {
                 // Eight ASCII bytes at a time; a digit or a non-ASCII byte stops the scan.
@@ -480,7 +537,7 @@ final class TiktokenSplitter implements Splitter {
                 return end;
             }
             int c = at(text, j, end);
-            if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) != 0) {
+            if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) != 0 || orCjk && cjk(cp(c))) {
                 return j;
             }
             j += len(c);
@@ -550,6 +607,9 @@ final class TiktokenSplitter implements Splitter {
 
     /** The end of the piece that starts at {@code i}: the alternatives in the regex's order. */
     private int match(byte[] text, int i, int end) {
+        if (word == DEEPSEEK) {
+            return deepSeek(text, i, end);
+        }
         int at = at(text, i, end);
         int cp = cp(at);
         int cls = CharClasses.of(cp);
@@ -572,7 +632,11 @@ final class TiktokenSplitter implements Splitter {
         if (e > 0) {
             return e;
         }
-        // Only whitespace is left: '\s*[\r\n]+', then '\s+(?!\S)', then '\s+'.
+        return blanks(text, i, end, at, cls, newlineRun);
+    }
+
+    /** Whitespace at {@code i}: '\s*[\r\n]+' if asked for, then '\s+(?!\S)', then '\s+'. */
+    private static int blanks(byte[] text, int i, int end, int at, int cls, boolean newlineRun) {
         int run = i + len(at);
         int last = len(at);
         int lastNewline = (cls & CharClasses.NEWLINE) != 0 ? run : -1;
@@ -595,6 +659,84 @@ final class TiktokenSplitter implements Splitter {
             return run;
         }
         return run - last; // the last blank goes with what follows it
+    }
+
+    /**
+     * DeepSeek V3's last stage, its alternatives in order: {@code [!-/:-@\[-`{-~][A-Za-z]+}, {@code
+     * [^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+}, {@code ?[\p{P}\p{S}]+[\r\n]*}, then the blanks. Text
+     * where none of them starts is a piece of its own, as Hugging Face's Split keeps it.
+     */
+    private static int deepSeek(byte[] text, int i, int end) {
+        int e = deepSeekMatch(text, i, end);
+        if (e > 0) {
+            return e;
+        }
+        int j = i + len(at(text, i, end));
+        while (j < end && deepSeekMatch(text, j, end) < 0) { // ponytail: gaps are rare and short
+            j += len(at(text, j, end));
+        }
+        return j;
+    }
+
+    private static int deepSeekMatch(byte[] text, int i, int end) {
+        int at = at(text, i, end);
+        int cp = cp(at);
+        int cls = CharClasses.of(cp);
+        int after = i + len(at);
+        boolean ps = punctOrSymbol(cp);
+        if (ps && cp < 0x80 && after < end && asciiLetter(text[after])) {
+            int e = after + 1;
+            while (e < end && asciiLetter(text[e])) {
+                e++;
+            }
+            return e;
+        }
+        int words = CharClasses.LETTER | CharClasses.MARK;
+        if ((cls & words) != 0) {
+            return run(text, after, end, words);
+        }
+        if (!ps && (cls & CharClasses.NEWLINE) == 0 && after < end) {
+            int c = at(text, after, end);
+            if ((CharClasses.of(cp(c)) & words) != 0) {
+                return run(text, after + len(c), end, words);
+            }
+        }
+        boolean spaced = cp == ' ' && after < end && punctOrSymbol(cp(at(text, after, end)));
+        if (ps || spaced) {
+            int e = spaced ? after : i;
+            for (int c; e < end && punctOrSymbol(cp(c = at(text, e, end))); ) {
+                e += len(c);
+            }
+            while (e < end && (text[e] == '\r' || text[e] == '\n')) {
+                e++;
+            }
+            return e;
+        }
+        return (cls & CharClasses.SPACE) != 0 ? blanks(text, i, end, at, cls, true) : -1;
+    }
+
+    private static boolean asciiLetter(byte b) {
+        return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z');
+    }
+
+    /** '[\p{P}\p{S}]'. */
+    static boolean punctOrSymbol(int cp) {
+        switch (Character.getType(cp)) {
+            case Character.CONNECTOR_PUNCTUATION:
+            case Character.DASH_PUNCTUATION:
+            case Character.START_PUNCTUATION:
+            case Character.END_PUNCTUATION:
+            case Character.INITIAL_QUOTE_PUNCTUATION:
+            case Character.FINAL_QUOTE_PUNCTUATION:
+            case Character.OTHER_PUNCTUATION:
+            case Character.MATH_SYMBOL:
+            case Character.CURRENCY_SYMBOL:
+            case Character.MODIFIER_SYMBOL:
+            case Character.OTHER_SYMBOL:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static int contraction(byte[] text, int i, int end, int mode) {
@@ -758,15 +900,7 @@ final class TiktokenSplitter implements Splitter {
             case ONE:
                 return after;
             case UP_TO_THREE:
-                int e = after;
-                for (int n = 1; n < 3 && e < end; n++) {
-                    int c = at(text, e, end);
-                    if ((CharClasses.of(cp(c)) & CharClasses.NUMBER) == 0) {
-                        break;
-                    }
-                    e += len(c);
-                }
-                return e;
+                return twoMoreNumbers(text, after, end);
             default:
                 return run(text, after, end, CharClasses.NUMBER);
         }
