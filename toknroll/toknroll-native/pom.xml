@@ -143,6 +143,8 @@
                 <buildArg>-H:-JNIExportSymbols</buildArg>
                 <!-- the vector width the target executes, pinned before the engine's classes initialize -->
                 <buildArg>--features=com.qxotic.toknroll.libtoknroll.VectorWidth</buildArg>
+                <!-- libstdc++ linked in when the image needs it (Oracle's G1 is C++): no GLIBCXX floor, no dependency -->
+                <buildArg>-H:+StaticLibStdCpp</buildArg>
                 <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- hub fetches go through curl on the PATH (com.qxotic.fetch): the JDK client, and the

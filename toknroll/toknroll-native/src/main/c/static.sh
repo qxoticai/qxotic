@@ -11,16 +11,24 @@ darwin=; case $(uname -s) in Darwin) darwin=yes ;; esac
 grep -E '^TOKNROLL_API' "$header" | grep -oE 'toknroll_[a-z_]+\(' | tr -d '(' | sed "s/^/${darwin:+_}/" > "$work.keep"   # Mach-O names carry an underscore
 line=$(grep -- ' -shared ' "$log" | tail -n 1)
 [ -n "$line" ] || { echo "static.sh: no link line in $log" >&2; exit 1; }
-tmp=""; inputs=""
+tmp=""; dirs=""; inputs=""; static=""
 for arg in $line; do
   case "$arg" in
     -L*SVM-*) tmp=${arg#-L} ;;                    # native-image's temp dir, where the image object is
+    -L*) dirs="$dirs ${arg#-L}" ;;               # GraalVM's own library directories
   esac
 done
 for arg in $line; do
   case "$arg" in
     /*.o|/*.a) inputs="$inputs $arg" ;;
     *.o) inputs="$inputs $tmp/$arg" ;;           # the image object, named relative to the temp dir
+    -Wl,-Bstatic) static=yes ;;
+    -Wl,-Bdynamic) static="" ;;
+    -l*)   # a static library the link named (-H:+StaticLibStdCpp's libstdc++), or a runtime archive of
+           # GraalVM's own (G1's); the system libraries are neither, and the consumer links them
+      name=lib${arg#-l}.a
+      if [ -n "$static" ]; then inputs="$inputs $(${CC:-cc} -print-file-name="$name")"; continue; fi
+      for d in $dirs; do [ -f "$d/$name" ] && { inputs="$inputs $d/$name"; break; }; done ;;
   esac
 done
 if [ -n "$darwin" ]; then

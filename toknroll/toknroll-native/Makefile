@@ -32,7 +32,9 @@ target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
 	cc -std=c99 -Wall -Wextra -Wpedantic -DTOKNROLL_STATIC -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
 
 check-static: target/tokenize-static
-	@nm --defined-only -g $(STATIC) | awk 'NF == 3 {print $$3}' | sed 's/^_//' | sort > target/static.syms   # NF: the member header and blank lines nm prints for an archive
+	@# NF: the member header and blank lines nm prints for an archive. u: GNU unique, the C++ statics of
+	@# Oracle's G1 (svm_gc::), which objcopy cannot make local; they clash only with a second G1 image linked in
+	@nm --defined-only -g $(STATIC) | awk 'NF == 3 && $$2 != "u" {print $$3}' | sed 's/^_//' | sort > target/static.syms
 	@diff target/header.syms target/static.syms && echo "the static archive exports the header's $$(wc -l < target/header.syms | tr -d " ") functions and nothing else"
 	@! $(if $(filter darwin,$(OS)),otool -L,ldd) target/tokenize-static | grep -q toknroll && echo "the static example needs no libtoknroll"
 	./target/tokenize-static $(SOURCE) "Hello, Tok'n'Roll!"
