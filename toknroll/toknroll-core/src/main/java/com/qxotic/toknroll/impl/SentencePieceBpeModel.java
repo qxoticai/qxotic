@@ -4,6 +4,8 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Vocabulary;
 import java.io.ByteArrayOutputStream;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -46,30 +48,29 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     private final boolean[] isByteToken;
     private final byte[][] tokenBytesById;
 
-    /** Words of up to this many chars are cached; a longer one is merged every time. */
-    private static final int CACHED_CHARS = 32;
+    /**
+     * Words to ids in flat arrays, one slot per hash, shared by every thread without a lock and
+     * with no object per word, so a text of a million new words leaves the collector nothing to
+     * trace. A word of up to {@link #WORD_CHARS} chars and {@link #WORD_IDS} ids is cached; the
+     * rest merge every time. Made on first use, so a model that encodes no word keeps none.
+     */
+    private final AtomicReference<WordCache> cache = new AtomicReference<>();
 
-    // ponytail: a fixed 1M slots, ~4 MB, and up to ~100 MB of entries once a text has a million
-    // distinct short words; size it from a setting if that ever matters
-    private static final int CACHE_BITS = 20;
-    private static final int CACHE_SLOTS = 1 << CACHE_BITS;
+    private static final int WORD_CHARS = 12; // three longs of four chars
+    private static final int WORD_IDS = 4;
+    private static final int CACHE_BITS = 19; // 512 Ki slots, 48 bytes each: 24 MB
+    private static final VarHandle HEADS = MethodHandles.arrayElementVarHandle(long[].class);
 
     /**
-     * Words to ids, one slot per hash, shared by every thread without a lock: an entry is
-     * immutable, so a thread that sees one sees it whole, and one lost to a race or overwritten by
-     * another word is only a miss. Unlike a map cleared when full, it degrades gradually as words
-     * outnumber slots. Made on first use, so a model that encodes no word keeps none.
+     * Slot i: {@code heads[i]} the version (odd while a thread writes) above the word's length and
+     * id count, {@code keys[3i..3i+2]} its chars four to a long, {@code ids[4i..4i+3]} its ids. A
+     * reader takes a slot's words only if its head reads the same before and after, so a slot being
+     * rewritten is a miss, never a mix of two words.
      */
-    private final AtomicReference<Entry[]> cache = new AtomicReference<>();
-
-    private static final class Entry {
-        final String word;
-        final int[] ids;
-
-        Entry(String word, int[] ids) {
-            this.word = word;
-            this.ids = ids;
-        }
+    private static final class WordCache {
+        final long[] heads = new long[1 << CACHE_BITS];
+        final long[] keys = new long[3 << CACHE_BITS];
+        final int[] ids = new int[4 << CACHE_BITS];
     }
 
     private SentencePieceBpeModel(
@@ -343,38 +344,103 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
-        for (int id : ids(text)) {
+        encodeImplInto(text, 0, text.length(), out);
+    }
+
+    /** The word {@code text[start, end)}: from the cache when it holds it, else merged. */
+    @Override
+    protected void encodeImplInto(CharSequence text, int start, int end, IntSequence.Builder out) {
+        int length = end - start;
+        if (length > WORD_CHARS) {
+            addAll(merged(text, start, end), out);
+            return;
+        }
+        WordCache c = cache.get();
+        if (c == null) {
+            cache.compareAndSet(null, new WordCache());
+            c = cache.get();
+        }
+        long k0 = 0;
+        long k1 = 0;
+        long k2 = 0;
+        int hash = 0;
+        for (int i = 0; i < length; i++) {
+            char ch = text.charAt(start + i);
+            hash = 31 * hash + ch;
+            long bits = (long) ch << ((i & 3) << 4);
+            if (i < 4) {
+                k0 |= bits;
+            } else if (i < 8) {
+                k1 |= bits;
+            } else {
+                k2 |= bits;
+            }
+        }
+        int slot = (hash * 0x9E3779B9) >>> (32 - CACHE_BITS); // Fibonacci hashing
+        long head = (long) HEADS.getAcquire(c.heads, slot);
+        int k = 3 * slot;
+        if (((head >>> 16) & 1) == 0
+                && ((head >>> 8) & 0xFF) == length
+                && c.keys[k] == k0
+                && c.keys[k + 1] == k1
+                && c.keys[k + 2] == k2) {
+            int i = 4 * slot;
+            int count = (int) (head & 0xFF);
+            int a = c.ids[i];
+            int b = c.ids[i + 1];
+            int d = c.ids[i + 2];
+            int e = c.ids[i + 3];
+            VarHandle.acquireFence();
+            if ((long) HEADS.getOpaque(c.heads, slot) == head) {
+                if (count > 0) {
+                    out.add(a);
+                }
+                if (count > 1) {
+                    out.add(b);
+                }
+                if (count > 2) {
+                    out.add(d);
+                }
+                if (count > 3) {
+                    out.add(e);
+                }
+                return;
+            }
+        }
+        int[] ids = merged(text, start, end);
+        addAll(ids, out);
+        long version = head >>> 16;
+        if (ids.length <= WORD_IDS
+                && (version & 1) == 0
+                && HEADS.compareAndSet(c.heads, slot, head, (version + 1) << 16)) {
+            c.keys[k] = k0;
+            c.keys[k + 1] = k1;
+            c.keys[k + 2] = k2;
+            System.arraycopy(ids, 0, c.ids, 4 * slot, ids.length);
+            HEADS.setRelease(
+                    c.heads, slot, ((version + 2) << 16) | ((long) length << 8) | ids.length);
+        }
+    }
+
+    private static void addAll(int[] ids, IntSequence.Builder out) {
+        for (int id : ids) {
             out.add(id);
         }
     }
 
-    /** The ids of {@code text}, from the cache when it is a short word. */
-    private int[] ids(CharSequence text) {
-        if (text.length() > CACHED_CHARS) {
-            return merged(text);
-        }
-        String word = text.toString();
-        int slot = (word.hashCode() * 0x9E3779B9) >>> (32 - CACHE_BITS); // Fibonacci hashing
-        Entry[] slots = cache.get();
-        if (slots == null) {
-            cache.compareAndSet(null, new Entry[CACHE_SLOTS]);
-            slots = cache.get();
-        }
-        Entry entry = slots[slot];
-        if (entry == null || !entry.word.equals(word)) {
-            slots[slot] = entry = new Entry(word, merged(text));
-        }
-        return entry.ids;
-    }
-
-    /** The ids of {@code text}: each code point's token, else its bytes', merged. */
-    private int[] merged(CharSequence text) {
-        int textLen = text.length();
-        int[] ids = new int[Math.max(16, textLen)];
+    /** The ids of {@code text[start, end)}: each code point's token, else its bytes', merged. */
+    private int[] merged(CharSequence text, int start, int end) {
+        int[] ids = new int[Math.max(16, end - start)];
         int size = 0;
 
-        for (int pos = 0; pos < textLen; ) {
-            int cp = Character.codePointAt(text, pos);
+        for (int pos = start; pos < end; ) {
+            char ch = text.charAt(pos);
+            int cp = ch;
+            if (Character.isHighSurrogate(ch)
+                    && pos + 1 < end
+                    && Character.isLowSurrogate(text.charAt(pos + 1))) {
+                cp = Character.toCodePoint(ch, text.charAt(pos + 1));
+            }
             int charCount = Character.charCount(cp);
             Integer id = resolveCodePointTokenId(text, pos, cp, charCount);
 

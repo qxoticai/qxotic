@@ -55,7 +55,12 @@ abstract class AbstractTokenizationModel implements TokenizationModel {
                             + ") for text length "
                             + text.length());
         }
-        encodeImplInto(text.subSequence(startInclusive, endExclusive), out);
+        encodeImplInto(text, startInclusive, endExclusive, out);
+    }
+
+    /** {@link #encodeImplInto(CharSequence, IntSequence.Builder)} on {@code text[start, end)}. */
+    protected void encodeImplInto(CharSequence text, int start, int end, IntSequence.Builder out) {
+        encodeImplInto(text.subSequence(start, end), out);
     }
 
     protected abstract IntSequence encodeImpl(CharSequence text);

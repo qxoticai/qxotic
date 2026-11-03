@@ -12,6 +12,78 @@ import org.junit.jupiter.api.Test;
 
 class SentencePieceBpeModelTest {
 
+    /** Bytes, letters, and pairs and runs of them that merge: words of one id and of many. */
+    private static SentencePieceBpeModel lettersModel() {
+        java.util.List<String> tokens = new java.util.ArrayList<>();
+        for (int b = 0; b < 256; b++) {
+            tokens.add(String.format("<0x%02X>", b));
+        }
+        String[] merges = {
+            "a", "b", "c", "d", "\u2581", "ab", "cd", "abcd", "\u2581a", "ba", "abab"
+        };
+        java.util.Collections.addAll(tokens, merges);
+        float[] scores = new float[tokens.size()];
+        int[] types = new int[tokens.size()];
+        for (int i = 0; i < tokens.size(); i++) {
+            types[i] = (i < 256 ? StandardTokenType.BYTE : StandardTokenType.NORMAL).getId();
+            scores[i] = i < 256 ? 0f : i - 256;
+        }
+        return SentencePieceBpeModel.fromVocabulary(
+                new VocabularyImpl(tokens.toArray(new String[0]), types), scores);
+    }
+
+    /**
+     * The word cache is shared by every thread without a lock: words of every size (past the cached
+     * chars and ids too), on many threads at once, in slots they share, encode as a model of their
+     * own encodes them, and a word given as a range of a longer text as the word alone.
+     */
+    @Test
+    void wordsEncodeAlikeOnManyThreadsSharingTheCache() throws Exception {
+        String[] parts = {"a", "b", "c", "d", "\u2581", "x", "\u00e9", "\uD83D\uDE00"};
+        java.util.Random random = new java.util.Random(7);
+        String[] words = new String[5000];
+        for (int i = 0; i < words.length; i++) {
+            StringBuilder w = new StringBuilder();
+            for (int n = 1 + random.nextInt(random.nextInt(8) == 0 ? 30 : 8); n > 0; n--) {
+                w.append(parts[random.nextInt(parts.length)]);
+            }
+            words[i] = w.toString();
+        }
+        SentencePieceBpeModel reference = lettersModel();
+        int[][] want = new int[words.length][];
+        for (int i = 0; i < words.length; i++) {
+            want[i] = lettersModel().encode(words[i]).toArray(); // a fresh cache each time
+            assertArrayEquals(want[i], reference.encode(words[i]).toArray(), words[i]);
+        }
+        SentencePieceBpeModel shared = lettersModel();
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(16);
+        try {
+            java.util.List<java.util.concurrent.Future<?>> runs = new java.util.ArrayList<>();
+            for (int t = 0; t < 16; t++) {
+                int seed = t;
+                runs.add(
+                        pool.submit(
+                                () -> {
+                                    java.util.Random r = new java.util.Random(seed);
+                                    for (int k = 0; k < 40_000; k++) {
+                                        int i = r.nextInt(words.length);
+                                        String text = "zz" + words[i] + "z";
+                                        IntSequence.Builder out = IntSequence.newBuilder();
+                                        shared.encodeInto(text, 2, 2 + words[i].length(), out);
+                                        assertArrayEquals(want[i], out.build().toArray(), words[i]);
+                                    }
+                                    return null;
+                                }));
+            }
+            for (java.util.concurrent.Future<?> run : runs) {
+                run.get();
+            }
+        } finally {
+            pool.shutdown();
+        }
+    }
+
     @Test
     void encodeGreedilyMergesHighestScorePairs() {
         String[] tokens = {"<0x00>", " ", "h", "e", "l", "o", "he", "ll", "llo", "hello", " hello"};
