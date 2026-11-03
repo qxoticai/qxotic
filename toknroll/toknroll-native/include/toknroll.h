@@ -4,6 +4,9 @@
  *              pointer. toknroll_last_error has the message and the code, per thread, until the
  *              thread's next toknroll call (reading it changes nothing); after a success, "" and
  *              TOKNROLL_OK. Every call sets it but toknroll_version and toknroll_last_error.
+ *              A goroutine or a Java virtual thread may change OS thread between two calls, so it
+ *              reads the message pinned to the thread that failed (runtime.LockOSThread) or goes by
+ *              the returned code, which is always the call's own.
  *   Buffers    (out, capacity) follows snprintf: at most capacity elements are written and the number
  *              needed is returned. Text is NUL-terminated whenever capacity is not 0, cut to
  *              capacity - 1 bytes when longer, so it is whole when the return is below capacity.
