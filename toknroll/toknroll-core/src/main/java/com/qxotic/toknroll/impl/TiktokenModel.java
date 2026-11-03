@@ -5,7 +5,10 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,9 +42,16 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     private static final List<TiktokenEngine> ENGINES = engines();
 
+    private static final VarHandle LONGS =
+            MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
+
     private final LongLongMap merges;
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
+    // a token of up to 16 bytes as two words, its bytes zero-padded, for decode to store whole
+    private final long[] spellingWords;
+    // its length, or 0 for a longer token, which decode copies
+    private final byte[] shortLengths;
     private final boolean ignoreMerges;
     // with ignoreMerges: a word's bytes, as ISO-8859-1, to its token
     private final Map<String, Integer> wholeTokens;
@@ -65,6 +75,17 @@ final class TiktokenModel extends AbstractTokenizationModel {
         this.merges = merges;
         this.singleByteTokenId = singleByteTokenId;
         this.tokenBytesById = tokenBytesById;
+        this.spellingWords = new long[2 * tokenBytesById.length];
+        this.shortLengths = new byte[tokenBytesById.length];
+        for (int id = 0; id < tokenBytesById.length; id++) {
+            byte[] spelling = tokenBytesById[id];
+            if (spelling != null && spelling.length <= 16) {
+                byte[] padded = Arrays.copyOf(spelling, 16);
+                spellingWords[2 * id] = (long) LONGS.get(padded, 0);
+                spellingWords[2 * id + 1] = (long) LONGS.get(padded, 8);
+                shortLengths[id] = (byte) spelling.length;
+            }
+        }
         this.ignoreMerges = ignoreMerges;
         this.wholeTokens = ignoreMerges ? wholeTokens(tokenBytesById) : null;
     }
@@ -532,6 +553,30 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, startInclusive, endExclusive);
         encodeWord(utf8, 0, utf8.length, out);
+    }
+
+    /**
+     * Each token in two 8-byte stores when it is short and 16 bytes of the array are left: the
+     * bytes past its end are garbage the next token overwrites.
+     */
+    @Override
+    public byte[] decodeBytes(IntSequence tokens) {
+        byte[] out = new byte[countBytes(tokens)]; // which refuses an unknown id
+        int at = 0;
+        for (int i = 0, n = tokens.length(); i < n; i++) {
+            int id = tokens.intAt(i);
+            int length = shortLengths[id];
+            if (length != 0 && at + 16 <= out.length) {
+                LONGS.set(out, at, spellingWords[2 * id]);
+                LONGS.set(out, at + 8, spellingWords[2 * id + 1]);
+                at += length;
+            } else {
+                byte[] spelling = tokenBytesById[id];
+                System.arraycopy(spelling, 0, out, at, spelling.length);
+                at += spelling.length;
+            }
+        }
+        return out;
     }
 
     @Override

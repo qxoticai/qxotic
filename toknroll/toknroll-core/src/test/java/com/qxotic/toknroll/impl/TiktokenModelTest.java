@@ -7,13 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.StandardTokenType;
+import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 class TiktokenModelTest {
@@ -149,6 +153,33 @@ class TiktokenModelTest {
     void countTokensNullTextThrows() {
         TiktokenModel model = model256();
         assertThrows(NullPointerException.class, () -> model.countTokens(null));
+    }
+
+    /** decodeBytes, which writes short tokens a word at a time, gives what decodeBytesInto does. */
+    @Test
+    void decodeBytesGivesDecodeBytesIntosBytes() {
+        TokenizationPipeline o200k =
+                (TokenizationPipeline)
+                        TiktokenFixtures.createTiktokenTokenizer(
+                                "o200k_base",
+                                Splitter.regex(TiktokenFixtures.splitPattern("o200k_base")));
+        TiktokenModel model = (TiktokenModel) o200k.model();
+        Vocabulary vocabulary = model.vocabulary();
+        Random random = new Random(0xDEC0DEL);
+        for (int round = 0; round < 2000; round++) {
+            int[] ids = new int[random.nextInt(40)];
+            for (int i = 0; i < ids.length; i++) {
+                do {
+                    ids[i] = random.nextInt(vocabulary.size());
+                } while (!vocabulary.contains(ids[i]));
+            }
+            IntSequence tokens = IntSequence.wrap(ids);
+            ByteBuffer expected = ByteBuffer.allocate(model.countBytes(tokens));
+            assertEquals(ids.length, model.decodeBytesInto(tokens, 0, expected));
+            assertArrayEquals(expected.array(), model.decodeBytes(tokens));
+        }
+        IntSequence unknown = IntSequence.of(vocabulary.size() + 5);
+        assertThrows(NoSuchElementException.class, () -> model.decodeBytes(unknown));
     }
 
     // ------------------------------------------------------------------
