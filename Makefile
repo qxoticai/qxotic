@@ -163,9 +163,11 @@ wheels-native: ## Both wheels built and checked on THIS machine (what a leg runs
 	$(MAKE) -C toknroll/toknroll-native libtoknroll check-wheel
 	$(MAKE) -C jinfer/jinfer-native libjinfer check-wheel
 
-wheels-linux: ## wheels-native inside the manylinux container (docker): the glibc floor the wheels promise, whatever this host runs
-	docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m) -t qxotic-manylinux . >/dev/null
-	docker run --rm -u "$$(id -u):$$(id -g)" -v /etc/passwd:/etc/passwd:ro -e HOME -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$$PWD:/src" -w /src qxotic-manylinux make wheels-native
+wheels-linux: ## wheels-native inside the manylinux container (docker): the glibc floor the wheels promise, whatever this host runs (a Mac's, through Colima)
+	docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux . >/dev/null
+	@# the caller's own passwd line: the JVM takes the home directory from it, and a Mac's VM has another
+	mkdir -p target && printf '%s:x:%s:%s::%s:/bin/sh\n' "$$(id -un)" "$$(id -u)" "$$(id -g)" "$$HOME" > target/passwd
+	docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD/target/passwd:/etc/passwd:ro" -e HOME -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$$PWD:/src" -w /src qxotic-manylinux make wheels-native
 
 # The native Makefiles' release-tools venv (build, wheel, twine), shared by path.
 TOOLS := target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')

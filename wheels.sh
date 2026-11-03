@@ -4,7 +4,7 @@
 # on the Mac, the two build.ps1 on Windows), and the wheels come back into target/wheels/.
 #   HOST=<ssh host|localhost> [SETUP='<sh line run first>'] wheels.sh <leg> <ref>
 set -eu
-leg=$1 ref=$2 dir=qxotic-wheels
+leg=$1 ref=$2 dir=qxotic-$leg   # one per leg: a host may build two (the Mac: macOS and, in Colima, Linux aarch64)
 [ -n "$HOST" ] || { echo "wheels: $leg has no host in hosts.mk, skipped"; exit 0; }
 echo "== $leg on $HOST ($ref)"
 mkdir -p target/wheels target/legs
@@ -12,7 +12,7 @@ git archive --format=tar.gz --prefix="$dir/" "$ref" > "target/legs/$leg.tgz"
 
 # what the host runs, in its login shell: sh, or PowerShell on Windows
 case $leg in
-  linux-*)   build="rm -rf $dir && tar -xzf $dir.tgz && cd $dir && make wheels-linux" ;;
+  linux-*)   build="rm -rf $dir && tar -xzf $dir.tgz && cd $dir && ${SETUP:-true} && make wheels-linux" ;;
   macos-*)   build="rm -rf $dir && tar -xzf $dir.tgz && cd $dir && ${SETUP:-true} && make wheels-native" ;;
   windows-*) build="rm -r -fo -ea 0 $dir; tar -xzf $dir.tgz; & ~\\$dir\\toknroll\\toknroll-native\\build.ps1 library check-wheel; & ~\\$dir\\jinfer\\jinfer-native\\build.ps1 library check-wheel" ;;
   *) echo "wheels: no such leg $leg"; exit 2 ;;
