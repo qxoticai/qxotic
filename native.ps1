@@ -1,6 +1,6 @@
 # What the two native libraries' build.ps1 share, the Makefile's targets in PowerShell since make is not
 # native on Windows (the Makefiles' native.mk, here). Dot-sourced after the including script set $Here (its
-# own directory), $Name, $Opt, $March (empty: native-image's default target), $Headers, $Syms and the script blocks $Example (the C example built and
+# own directory), $Name, $Opt, $March (empty: native-image's default target), $Headers, $Syms and the script blocks $PgoProfile (Oracle GraalVM's profile, recorded into target\pgo\default.iprof; optional), $Example (the C example built and
 # run), $PyTest (the tests in the tree), $WheelTest (the tests from outside it, run in target\ with wheelenv's
 # python) and $WheelDeps (other wheels the installed one needs, built first).
 $ErrorActionPreference = 'Stop'
@@ -24,12 +24,18 @@ function Check-NativeImage {   # 25.0.4 is the floor: the isolate parameters the
 }
 function Build-Library {
     Enter-Toolchain; Check-NativeImage
-    $opt = if ($Quick) { '-Ob' } else { $Opt }; $march = if ($Quick) { 'native' } else { $March }
+    $march = if ($Quick) { 'native' } else { $March }
     $options = $env:NATIVE_IMAGE_OPTIONS   # -march only when asked: native-image's own default otherwise
     if ($march) { $env:NATIVE_IMAGE_OPTIONS = "$options -march=$march".Trim() }
-    Push-Location $Root
-    try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests "-D$Name.image.opt=$opt"; if ($LASTEXITCODE) { throw "mvn failed" } }
-    finally { Pop-Location; $env:NATIVE_IMAGE_OPTIONS = $options }
+    try {
+        # Oracle GraalVM builds from the profile $PgoProfile records first, for a library that has one
+        $pgo = -not $Quick -and $PgoProfile -and ((native-image --version | Select-Object -Index 1) -match 'Oracle GraalVM')
+        if ($pgo) { & $PgoProfile | Out-Host }
+        $opt = if ($Quick) { '-Ob' } elseif ($pgo) { "--pgo=$Here\target\pgo\default.iprof" } else { $Opt }
+        Push-Location $Root
+        try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests "-D$Name.image.opt=$opt"; if ($LASTEXITCODE) { throw "mvn failed" } }
+        finally { Pop-Location }
+    } finally { $env:NATIVE_IMAGE_OPTIONS = $options }
 }
 function Check-Version {   # the header, the wheel, the pom and (where it is a literal) the package name the same release
     $h = ((Select-String "include\$Name.h" -Pattern "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) (\d+)").Matches | ForEach-Object { $_.Groups[2].Value }) -join '.'

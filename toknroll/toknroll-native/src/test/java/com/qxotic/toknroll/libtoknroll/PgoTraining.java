@@ -16,18 +16,35 @@ import java.util.Random;
  * all, for tokenizers of every kind the library has a fast path for, on enwik8 prose and on chat
  * text (an added token every 32-96 bytes), in 2 KB documents.
  *
- * <p>Usage: PgoTraining <enwik8> <source>...
+ * <p>Usage: PgoTraining <enwik8> [source...], the {@link #SOURCES} when none is given.
  */
 public final class PgoTraining {
     private PgoTraining() {}
+
+    /**
+     * A tokenizer per fast path: the engine's rules, core's cuts, its word encoder, SentencePiece;
+     * fetched from the hub once.
+     */
+    static final String[] SOURCES = {
+        "unsloth/Llama-3.2-1B-Instruct",
+        "openai/gpt-oss-20b",
+        "Qwen/Qwen3-0.6B",
+        "Qwen/Qwen3.5-0.8B",
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+        "LiquidAI/LFM3-1.7B",
+        "google/gemma-4-e2b-it",
+        "zai-org/GLM-5.1"
+    };
 
     public static void main(String[] args) throws Exception {
         String prose =
                 new String(
                         Files.readAllBytes(Path.of(args[0])), 0, 12 << 20, StandardCharsets.UTF_8);
-        for (int a = 1; a < args.length; a++) {
-            Native.Loaded loaded = Native.Loaded.of(Sources.load(args[a]));
-            byte[] chat = chat(prose.substring(8 << 20), loaded.specials(), a);
+        String[] sources =
+                args.length > 1 ? java.util.Arrays.copyOfRange(args, 1, args.length) : SOURCES;
+        for (int a = 0; a < sources.length; a++) {
+            Native.Loaded loaded = Native.Loaded.of(Sources.load(sources[a]));
+            byte[] chat = chat(prose.substring(8 << 20), loaded.specials(), a + 1);
             byte[] text = prose.substring(0, 8 << 20).getBytes(StandardCharsets.UTF_8);
             long ids = 0;
             for (byte[] t : new byte[][] {text, chat}) {
@@ -36,7 +53,7 @@ public final class PgoTraining {
                     ids += documents(loaded.tokenizer(), specials, t, true);
                 }
             }
-            System.out.println(args[a] + ": " + ids + " ids");
+            System.out.println(sources[a] + ": " + ids + " ids");
         }
     }
 

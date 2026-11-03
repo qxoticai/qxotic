@@ -23,10 +23,7 @@ PGO := $(if $(QUICK),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'O
 GC ?=
 IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(MARCH),-march=$(MARCH)) $(GC))
 PROFILE := target/pgo/default.iprof
-# The profile's workload: a tokenizer per fast path (the engine's rules, core's cuts, its word encoder,
-# SentencePiece), fetched from the hub once, and enwik8, where the tests find it
-PGO_SOURCES ?= unsloth/Llama-3.2-1B-Instruct openai/gpt-oss-20b Qwen/Qwen3-0.6B Qwen/Qwen3.5-0.8B \
-  deepseek-ai/DeepSeek-V4.1-Flash LiquidAI/LFM3-1.7B google/gemma-4-e2b-it zai-org/GLM-5.1
+# The profile's workload: enwik8, where the tests find it, and PgoTraining's tokenizers (PGO_SOURCES, if set)
 CORPUS = $(shell python3 -c "import runpy; print(runpy.run_path('$(ROOT)/toknroll/scripts/download_enwik8.py', run_name='lib')['default_corpus_dir']() / 'enwik8')")
 
 libtoknroll:
