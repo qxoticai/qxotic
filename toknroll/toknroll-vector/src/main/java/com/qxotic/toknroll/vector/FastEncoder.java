@@ -55,11 +55,16 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
 
     /**
      * Scratches kept between calls, at least two slots per processor: a power of two, sized when
-     * the encoder is made.
+     * the encoder is made. A slot is every {@link #SPREAD}th entry, a cache line apart, or the
+     * threads taking and giving back their scratches on every call contend for one line.
      */
     private final AtomicReferenceArray<Scratch> spares =
             new AtomicReferenceArray<>(
-                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1));
+                    Integer.highestOneBit(4 * Runtime.getRuntime().availableProcessors() - 1)
+                            * SPREAD);
+
+    /** References per 64-byte cache line, compressed. */
+    private static final int SPREAD = 16;
 
     FastEncoder(TiktokenTables model, BitSplit split) {
         this.split = split;
@@ -141,8 +146,9 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
      * call, so many short texts allocate none. The thread's id picks the slot.
      */
     private int slot() {
-        return (int) (Thread.currentThread().threadId() * 0x9E3779B97F4A7C15L >>> 32)
-                & (spares.length() - 1);
+        int slots = spares.length() / SPREAD;
+        int slot = (int) (Thread.currentThread().threadId() * 0x9E3779B97F4A7C15L >>> 32);
+        return (slot & (slots - 1)) * SPREAD;
     }
 
     /** The slot's scratch, or a new one when another thread holds it. */
