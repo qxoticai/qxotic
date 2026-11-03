@@ -151,7 +151,9 @@ include hosts.mk
 LEGS ?= linux-x86_64 linux-aarch64 macos-arm64 windows-x86_64
 REF ?= HEAD
 
-wheels: $(addprefix wheel-,$(LEGS)) ## Both wheels on every leg hosts.mk names, over ssh (REF=<tag> picks the commit) -> target/wheels/
+wheels: ## Both wheels on every leg hosts.mk names, over ssh, the legs at once (REF=<tag> picks the commit) -> target/wheels/
+	@# each leg's output whole when it ends (-Otarget); a host building two (the Mac) gives each its directory
+	$(MAKE) -j$(words $(LEGS)) -Otarget $(addprefix wheel-,$(LEGS))
 	@ls -la target/wheels/*.whl | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
 
 wheel-%: ## One leg: wheel-linux-x86_64, wheel-linux-aarch64, wheel-macos-arm64 or wheel-windows-x86_64
