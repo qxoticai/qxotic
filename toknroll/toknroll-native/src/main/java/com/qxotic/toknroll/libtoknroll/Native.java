@@ -5,7 +5,6 @@ import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import org.graalvm.nativeimage.IsolateThread;
@@ -138,7 +137,7 @@ public final class Native {
         if (capacity < 0) throw Errors.invalid("capacity must not be negative");
         if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
         int n = (int) Math.min(value.length, capacity);
-        for (int i = 0; i < n; i++) out.write(i, value[i]);
+        if (n > 0) CTypeConversion.asByteBuffer(out, n).put(value, 0, n);
         if (capacity > value.length) out.write(value.length, (byte) 0);
         else if (capacity > 0) out.write((int) capacity - 1, (byte) 0); // capacity <= n here
         return value.length;
@@ -328,8 +327,12 @@ public final class Native {
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
             Vocabulary vocab = loaded.tokenizer().vocabulary();
             int[] copy = new int[count];
+            if (count > 0)
+                CTypeConversion.asByteBuffer(ids, 4 * count)
+                        .order(ByteOrder.nativeOrder())
+                        .asIntBuffer()
+                        .get(copy);
             for (int i = 0; i < count; i++) {
-                copy[i] = ids.read(i);
                 if (!vocab.contains(copy[i]))
                     throw Errors.invalid(
                             "token id "
@@ -341,31 +344,13 @@ public final class Native {
             }
             IntSequence tokens = IntSequence.wrap(copy);
             Tokenizer tokenizer = loaded.tokenizer();
-            if (capacity == 0) return countBytes(tokenizer, tokens);
+            int size = countBytes(tokenizer, tokens); // refuses past 2 GiB
+            if (capacity == 0) return size;
             // the tokens' own bytes, not a re-encoded string, so a partial UTF-8 sequence comes
-            // back as it is (decode_bytes); they land in the caller's buffer, and only when they
-            // do not fit are they sized and a prefix copied, as snprintf would
-            int room = (int) Math.min(capacity - 1, Integer.MAX_VALUE);
-            ByteBuffer buffer = CTypeConversion.asByteBuffer(out, room);
-            try {
-                decodeInto(tokenizer, tokens, buffer);
-                out.write(buffer.position(), (byte) 0);
-                return buffer.position();
-            } catch (IllegalArgumentException full) {
-                ByteBuffer whole = ByteBuffer.allocate(countBytes(tokenizer, tokens));
-                decodeInto(tokenizer, tokens, whole);
-                return bytes(whole.array(), out, capacity);
-            }
+            // back as it is
+            return bytes(tokenizer.decodeBytes(tokens), out, capacity);
         } catch (Throwable t) {
             return Errors.set(t);
-        }
-    }
-
-    private static void decodeInto(Tokenizer tokenizer, IntSequence tokens, ByteBuffer buffer) {
-        for (int index = 0; index < tokens.length(); ) {
-            int consumed = tokenizer.decodeBytesInto(tokens, index, buffer);
-            if (consumed <= 0) throw new IllegalStateException("decode made no progress");
-            index += consumed;
         }
     }
 

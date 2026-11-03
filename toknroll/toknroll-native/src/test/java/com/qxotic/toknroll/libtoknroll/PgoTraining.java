@@ -13,8 +13,8 @@ import java.util.Random;
 /**
  * The workload the release build's profile is recorded on (`make libtoknroll` with Oracle GraalVM):
  * what toknroll_encode and toknroll_encode_batch run, plain and with specials, on one thread and on
- * all, for tokenizers of every kind the library has a fast path for, on enwik8 prose and on chat
- * text (an added token every 32-96 bytes), in 2 KB documents.
+ * all, and toknroll_decode on their ids, for tokenizers of every kind the library has a fast path
+ * for, on enwik8 prose and on chat text (an added token every 32-96 bytes), in 2 KB documents.
  *
  * <p>Usage: PgoTraining <enwik8> [source...], the {@link #SOURCES} when none is given.
  */
@@ -53,7 +53,7 @@ public final class PgoTraining {
                     ids += documents(loaded.tokenizer(), specials, t, true);
                 }
             }
-            System.out.println(sources[a] + ": " + ids + " ids");
+            System.out.println(sources[a] + ": " + ids + " ids and bytes");
         }
     }
 
@@ -73,7 +73,10 @@ public final class PgoTraining {
         return chat.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    /** {@code text} as 2 KB documents, cut at character boundaries, each encoded on its own. */
+    /**
+     * {@code text} as 2 KB documents, cut at character boundaries, each encoded on its own and its
+     * ids decoded; returns the ids and bytes counted.
+     */
     private static long documents(
             Tokenizer tokenizer, Specials specials, byte[] text, boolean all) {
         int count = (text.length + 2047) / 2048;
@@ -84,7 +87,8 @@ public final class PgoTraining {
                     int to = start(text, Math.min(text.length, (i + 1) * 2048));
                     IntSequence.Builder out = IntSequence.newBuilder(Math.max(16, (to - from) / 3));
                     Native.encodeUtf8(tokenizer, specials, text, from, to, out);
-                    ids[i] = out.size();
+                    IntSequence encoded = out.build();
+                    ids[i] = encoded.length() + (long) tokenizer.decodeBytes(encoded).length;
                 };
         if (all) {
             Workers.run(count, encode);
