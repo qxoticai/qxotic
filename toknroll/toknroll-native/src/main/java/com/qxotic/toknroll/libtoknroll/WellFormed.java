@@ -12,7 +12,12 @@ import java.nio.ByteOrder;
 final class WellFormed {
     private WellFormed() {}
 
-    private static final VarHandle LONGS =
+    /**
+     * Eight bytes at a time, little-endian. The class initializes at build time (its
+     * native-image.properties), so the handle folds to a constant: the package's others initialize
+     * at run time, where every access through a handle would box.
+     */
+    static final VarHandle LONGS =
             MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
 
     /**

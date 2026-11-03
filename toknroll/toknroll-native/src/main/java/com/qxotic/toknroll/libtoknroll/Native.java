@@ -5,6 +5,7 @@ import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import org.graalvm.nativeimage.IsolateThread;
@@ -15,6 +16,7 @@ import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CIntPointer;
 import org.graalvm.nativeimage.c.type.CLongPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
+import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
@@ -104,35 +106,81 @@ public final class Native {
      */
     private static final int SLACK = 64;
 
-    /** {@code length} bytes of the caller's memory as a Java array: one copy, read once. */
-    private static byte[] copy(CCharPointer value, int length) {
-        byte[] bytes = new byte[length + SLACK];
-        copy(value.rawValue(), bytes, length);
-        return bytes;
+    /**
+     * A calling thread's memory, kept for its next call so that a short one allocates nothing: the
+     * text copied in, and the ids builder, read back through a live view. Either is let go once it
+     * outgrows {@link #KEPT}.
+     */
+    private static final class Buffers {
+        private static final int KEPT = 1 << 16;
+        private byte[] text = new byte[0];
+        private IntSequence.Builder ids;
+        private IntSequence view; // live, over ids
+
+        byte[] text(int length) {
+            if (text.length >= length + SLACK) return text;
+            byte[] bigger = new byte[Math.max(length + SLACK, 2 * text.length)];
+            if (bigger.length <= KEPT) text = bigger;
+            return bigger;
+        }
+
+        /** The builder, empty. */
+        IntSequence.Builder ids() {
+            if (ids == null) {
+                ids = IntSequence.newBuilder(256);
+                view = ids.asSequenceView();
+            } else {
+                ImplAccessor.clear(ids);
+            }
+            return ids;
+        }
+
+        /** After a call: a builder past KEPT goes, so a long text leaves no array behind. */
+        void trim() {
+            if (ids.size() > KEPT) ids = null;
+        }
     }
 
-    private static void copy(long address, byte[] into, int length) {
-        if (length > 0)
-            CTypeConversion.asByteBuffer(WordFactory.pointer(address), length).get(into, 0, length);
-    }
+    private static final ThreadLocal<Buffers> BUFFERS = ThreadLocal.withInitial(Buffers::new);
 
     /**
-     * Ids moved to the caller's memory at a time: a few pages, so a long text costs no copy of
-     * itself.
+     * From this many bytes or ids on, a copy across the boundary goes in bulk, through buffers:
+     * their wrappers cost less than a loop does by then, and below it a loop allocates nothing.
      */
+    private static final int BULK = 1 << 12;
+
+    /** Ids written at a time in bulk: a few pages, so a long text costs no copy of itself. */
     private static final int WRITE_CHUNK = 1 << 14;
 
-    /** The first {@code n} of {@code ids} into the caller's memory at {@code address}, in bulk. */
-    private static void write(IntSequence ids, long address, int n) {
-        int[] chunk = new int[Math.min(n, WRITE_CHUNK)];
-        for (int j = 0; j < n; j += chunk.length) {
-            int m = Math.min(chunk.length, n - j);
-            ids.copyTo(j, chunk, 0, m);
-            CTypeConversion.asByteBuffer(WordFactory.pointer(address + 4L * j), 4 * m)
-                    .order(ByteOrder.nativeOrder())
-                    .asIntBuffer()
-                    .put(chunk, 0, m);
+    /** {@code length} bytes of the caller's memory at {@code address} into {@code into}. */
+    private static void copy(long address, byte[] into, int length) {
+        if (length >= BULK) {
+            CTypeConversion.asByteBuffer(WordFactory.pointer(address), length).get(into, 0, length);
+            return;
         }
+        Pointer from = WordFactory.pointer(address);
+        int i = 0;
+        // native order is little-endian on every platform the library is built for, as LONGS is
+        for (; i + 8 <= length; i += 8) WellFormed.LONGS.set(into, i, from.readLong(i));
+        for (; i < length; i++) into[i] = from.readByte(i);
+    }
+
+    /** {@code ids[from, from + n)} into the caller's memory at {@code address}. */
+    private static void write(IntSequence ids, int from, long address, int n) {
+        if (n >= BULK) {
+            int[] chunk = new int[Math.min(n, WRITE_CHUNK)];
+            for (int j = 0; j < n; j += chunk.length) {
+                int m = Math.min(chunk.length, n - j);
+                ids.copyTo(from + j, chunk, 0, m);
+                CTypeConversion.asByteBuffer(WordFactory.pointer(address + 4L * j), 4 * m)
+                        .order(ByteOrder.nativeOrder())
+                        .asIntBuffer()
+                        .put(chunk, 0, m);
+            }
+            return;
+        }
+        CIntPointer to = WordFactory.pointer(address);
+        for (int i = 0; i < n; i++) to.write(i, ids.intAt(from + i));
     }
 
     /**
@@ -220,13 +268,17 @@ public final class Native {
             if (capacity < 0) throw Errors.invalid("capacity must not be negative");
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
             int n = (int) length.rawValue();
-            byte[] utf8 = copy(text, n);
-            IntSequence.Builder ids = IntSequence.newBuilder(estimate(n));
+            Buffers buffers = BUFFERS.get();
+            byte[] utf8 = buffers.text(n);
+            copy(text.rawValue(), utf8, n);
+            IntSequence.Builder ids = buffers.ids();
+            ids.ensureCapacity(estimate(n)); // a long text's ids in one array, not grown into
             Specials matcher = specials(flags) ? loaded.specials() : null;
             encodeUtf8(loaded.tokenizer(), matcher, utf8, 0, n, ids);
-            IntSequence encoded = ids.build();
-            write(encoded, out.rawValue(), Math.min(encoded.length(), capacity));
-            return encoded.length();
+            int count = ids.size();
+            write(buffers.view, 0, out.rawValue(), Math.min(count, capacity));
+            buffers.trim();
+            return count;
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -308,7 +360,7 @@ public final class Native {
                     r -> {
                         int from = at[runs[r]];
                         int n = Math.min(ids[r].length(), capacity - from);
-                        if (n > 0) write(ids[r], outAddress + 4L * from, n);
+                        write(ids[r], 0, outAddress + 4L * from, n);
                     });
             return at[count];
         } catch (Throwable t) {

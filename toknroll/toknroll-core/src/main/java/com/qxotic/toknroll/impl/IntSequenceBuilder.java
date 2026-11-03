@@ -12,6 +12,7 @@ final class IntSequenceBuilder implements IntSequence.Builder {
 
     private int[] data;
     private int size;
+    private boolean shared; // a built sequence holds data
 
     IntSequenceBuilder(int capacity) {
         if (capacity < 0) {
@@ -70,6 +71,7 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         // The sequence keeps the array when most of it is in use: nothing here ever writes below
         // the size again, so the sequence stays what it was. A sparse array is copied down.
         if (size >= (data.length >>> 1)) {
+            shared = true;
             return new ArrayIntSequence(data, 0, size);
         }
         return new ArrayIntSequence(Arrays.copyOf(this.data, size));
@@ -78,6 +80,15 @@ final class IntSequenceBuilder implements IntSequence.Builder {
     @Override
     public int size() {
         return size;
+    }
+
+    /** Empties the builder for reuse; an array a built sequence holds stays the sequence's. */
+    void clear() {
+        if (shared) {
+            data = EMPTY;
+            shared = false;
+        }
+        size = 0;
     }
 
     /** The whole sequence at once: one capacity check, one copy. */
@@ -121,6 +132,15 @@ final class IntSequenceBuilder implements IntSequence.Builder {
                 throw new IndexOutOfBoundsException("Index: " + index + ", Length: " + length);
             }
             return builder.data[offset + index];
+        }
+
+        /** One array copy. */
+        @Override
+        public void copyTo(int srcOffset, int[] dest, int destOffset, int count) {
+            Objects.requireNonNull(dest, "dest");
+            Objects.checkFromIndexSize(srcOffset, count, length());
+            Objects.checkFromIndexSize(destOffset, count, dest.length);
+            System.arraycopy(builder.data, offset + srcOffset, dest, destOffset, count);
         }
 
         @Override

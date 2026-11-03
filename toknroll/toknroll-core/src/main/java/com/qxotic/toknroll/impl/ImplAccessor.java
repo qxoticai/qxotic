@@ -33,6 +33,11 @@ public final class ImplAccessor {
         return new IntSequenceBuilder();
     }
 
+    /** Empties a builder from {@link #newBuilder} so that it can be filled again. */
+    public static void clear(IntSequence.Builder builder) {
+        ((IntSequenceBuilder) builder).clear();
+    }
+
     public static IntSequence.Builder newBuilder(int initialCapacity) {
         return new IntSequenceBuilder(initialCapacity);
     }

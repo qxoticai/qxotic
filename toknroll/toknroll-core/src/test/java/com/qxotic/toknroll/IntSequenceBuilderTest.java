@@ -2,6 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.lang.reflect.Field;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,34 @@ public class IntSequenceBuilderTest {
             assertNotNull(builder);
             assertEquals(0, builder.size());
         }
+    }
+
+    @Test
+    public void viewsCopyTheirRange() {
+        builder.add(1).add(2).add(3).add(4);
+        int[] out = new int[5];
+        builder.asSequenceView().copyTo(1, out, 2, 3);
+        assertArrayEquals(new int[] {0, 0, 2, 3, 4}, out);
+        IntSequence snapshot = builder.snapshot();
+        assertThrows(IndexOutOfBoundsException.class, () -> snapshot.copyTo(2, out, 0, 3));
+    }
+
+    /** Clearing reuses the array, unless a built sequence holds it: that sequence keeps its ids. */
+    @Test
+    public void clearKeepsWhatWasBuilt() throws ReflectiveOperationException {
+        Field data = builder.getClass().getDeclaredField("data");
+        data.setAccessible(true);
+        builder.add(1).add(2).add(3);
+        Object array = data.get(builder);
+        ImplAccessor.clear(builder);
+        assertEquals(0, builder.size());
+        assertSame(array, data.get(builder));
+        builder.add(4).add(5).add(6).add(7).add(8).add(9); // most of the array: build shares it
+        IntSequence built = builder.build();
+        ImplAccessor.clear(builder);
+        builder.add(7).add(8);
+        assertEquals(IntSequence.of(4, 5, 6, 7, 8, 9), built);
+        assertEquals(IntSequence.of(7, 8), builder.build());
     }
 
     @Test
