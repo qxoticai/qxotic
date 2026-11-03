@@ -2,6 +2,7 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
 import java.util.Arrays;
+import java.util.Objects;
 
 /** A builder for creating {@link IntSequence} instances. */
 final class IntSequenceBuilder implements IntSequence.Builder {
@@ -79,15 +80,14 @@ final class IntSequenceBuilder implements IntSequence.Builder {
         return size;
     }
 
-    /** The backing array, for a writer that has ensured the capacity and will set the size. */
-    int[] data() {
-        return data;
-    }
-
-    /** Takes {@code data} over as the backing array, its first {@code size} ids in use. */
-    void adopt(int[] data, int size) {
-        this.data = data;
-        this.size = size;
+    /** The whole sequence at once: one capacity check, one copy. */
+    @Override
+    public IntSequenceBuilder addAll(IntSequence elems) {
+        int n = Objects.requireNonNull(elems, "elems").length();
+        ensureCapacity(size + n);
+        elems.copyTo(0, data, size, n);
+        size += n;
+        return this;
     }
 
     @Override

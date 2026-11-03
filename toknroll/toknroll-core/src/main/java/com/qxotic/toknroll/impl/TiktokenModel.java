@@ -3,7 +3,6 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.spi.IdBuffer;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
 import java.nio.ByteBuffer;
@@ -138,9 +137,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             IntSequence.Builder out) {
         TiktokenEngine.Encoder fast = encoder(splitter);
         if (fast != null && !splitter.coreCuts()) {
-            IdBuffer ids = borrow(out);
-            fast.encode(text, start, end, ids);
-            giveBack(ids, out);
+            fast.encode(text, start, end, out);
             return;
         }
         byte[] utf8 = TiktokenSplitter.utf8(text, start, end);
@@ -156,9 +153,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             byte[] utf8, int start, int end, TiktokenSplitter splitter, IntSequence.Builder out) {
         TiktokenEngine.Encoder fast = encoder(splitter);
         if (fast != null && !splitter.coreCuts()) {
-            IdBuffer ids = borrow(out);
-            fast.encodeUtf8(utf8, start, end, ids);
-            giveBack(ids, out);
+            fast.encodeUtf8(utf8, start, end, out);
             return;
         }
         if (fast != null) {
@@ -176,13 +171,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
             int end,
             TiktokenSplitter splitter,
             IntSequence.Builder out) {
-        IdBuffer ids = borrow(out);
         for (int i = start; i < end; ) {
             int stop = splitter.cut(utf8, i, end);
-            fast.encodeUtf8(utf8, i, stop, ids);
+            fast.encodeUtf8(utf8, i, stop, out);
             i = stop;
         }
-        giveBack(ids, out);
     }
 
     /** The reference: the scanner's pieces, word by word. */
@@ -385,34 +378,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
         byte[] utf8 = TiktokenSplitter.utf8(sample, 0, sample.length());
         IntSequenceBuilder expected = new IntSequenceBuilder();
         encode(utf8, 0, utf8.length, splitter, expected);
-        IdBuffer fromChars = new IdBuffer(expected.size());
+        IntSequence.Builder fromChars = IntSequence.newBuilder(expected.size());
         candidate.encode(sample, 0, sample.length(), fromChars);
-        IdBuffer fromBytes = new IdBuffer(expected.size());
+        IntSequence.Builder fromBytes = IntSequence.newBuilder(expected.size());
         candidate.encodeUtf8(utf8, 0, utf8.length, fromBytes);
-        int[] want = Arrays.copyOf(expected.data(), expected.size());
-        return Arrays.equals(want, Arrays.copyOf(fromChars.array(), fromChars.size()))
-                && Arrays.equals(want, Arrays.copyOf(fromBytes.array(), fromBytes.size()));
-    }
-
-    /** {@code out}'s own array when core made it, so the engine writes the ids there. */
-    private static IdBuffer borrow(IntSequence.Builder out) {
-        if (out instanceof IntSequenceBuilder) {
-            IntSequenceBuilder builder = (IntSequenceBuilder) out;
-            return new IdBuffer(builder.data(), builder.size());
-        }
-        return new IdBuffer(64);
-    }
-
-    private static void giveBack(IdBuffer ids, IntSequence.Builder out) {
-        if (out instanceof IntSequenceBuilder) {
-            ((IntSequenceBuilder) out).adopt(ids.array(), ids.size());
-            return;
-        }
-        int[] array = ids.array();
-        out.ensureCapacity(out.size() + ids.size());
-        for (int i = 0; i < ids.size(); i++) {
-            out.add(array[i]);
-        }
+        int[] want = expected.build().toArray();
+        return Arrays.equals(want, fromChars.build().toArray())
+                && Arrays.equals(want, fromBytes.build().toArray());
     }
 
     /** The model as an engine sees it. */

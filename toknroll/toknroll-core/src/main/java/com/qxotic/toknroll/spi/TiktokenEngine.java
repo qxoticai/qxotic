@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.spi;
 
+import com.qxotic.toknroll.IntSequence;
+
 /**
  * A fast encoder for the tiktoken family: a byte-level BPE model behind one of the pre-tokenization
  * regexes below. Found through {@link java.util.ServiceLoader}; toknroll-vector provides one.
@@ -86,9 +88,9 @@ public interface TiktokenEngine {
          * Appends the ids of {@code text[start, end)} to {@code out}. A surrogate without its
          * partner encodes as U+FFFD.
          */
-        void encode(CharSequence text, int start, int end, IdBuffer out);
+        void encode(CharSequence text, int start, int end, IntSequence.Builder out);
 
         /** Appends the ids of UTF-8 text; ill-formed bytes are taken as they are. */
-        void encodeUtf8(byte[] utf8, int start, int end, IdBuffer out);
+        void encodeUtf8(byte[] utf8, int start, int end, IntSequence.Builder out);
     }
 }

@@ -2,7 +2,7 @@ package com.qxotic.toknroll.vector;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
-import com.qxotic.toknroll.spi.IdBuffer;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
 import java.nio.charset.StandardCharsets;
@@ -130,9 +130,9 @@ class FastEncoderTest {
                 calls.add(
                         threads.submit(
                                 () -> {
-                                    IdBuffer out = new IdBuffer(16);
+                                    IntSequence.Builder out = IntSequence.newBuilder(16);
                                     encoder.encode(text, 0, text.length(), out);
-                                    return Arrays.copyOf(out.array(), out.size());
+                                    return out.build().toArray();
                                 }));
             }
             for (Future<int[]> call : calls) {
@@ -146,9 +146,9 @@ class FastEncoderTest {
         FastEncoder encoder = new FastEncoder(BYTES, BitSplit.forRules(TiktokenEngine.CL100K));
         String giant = "x".repeat(1 << 20);
         for (String text : new String[] {"a few words", giant, "a few words"}) {
-            IdBuffer out = new IdBuffer(16);
+            IntSequence.Builder out = IntSequence.newBuilder(16);
             encoder.encode(text, 0, text.length(), out);
-            assertArrayEquals(ids(text), Arrays.copyOf(out.array(), out.size()));
+            assertArrayEquals(ids(text), out.build().toArray());
         }
     }
 

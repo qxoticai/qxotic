@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.vector;
 
-import com.qxotic.toknroll.spi.IdBuffer;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
 import java.lang.invoke.MethodHandles;
@@ -114,23 +114,36 @@ final class FastEncoder implements TiktokenEngine.Encoder {
     }
 
     @Override
-    public void encode(CharSequence text, int start, int end, IdBuffer out) {
+    public void encode(CharSequence text, int start, int end, IntSequence.Builder out) {
         byte[] utf8 = Utf8.encode(text, start, end, PADDING);
         encodeUtf8(utf8, 0, utf8.length - PADDING, out);
     }
 
     @Override
-    public void encodeUtf8(byte[] utf8, int start, int end, IdBuffer out) {
-        // a call's scratch kept for its thread's next call, so many short texts allocate none;
-        // the thread's id picks the slot, and a thread that finds it taken makes its own
-        int slot =
-                (int) (Thread.currentThread().threadId() * 0x9E3779B97F4A7C15L >>> 32)
-                        & (spares.length() - 1);
-        Scratch s = spares.getAndSet(slot, null);
-        if (s == null) {
-            s = new Scratch(cache);
-        }
+    public void encodeUtf8(byte[] utf8, int start, int end, IntSequence.Builder out) {
+        int slot = slot();
+        Scratch s = take(slot);
         encode(utf8, start, end, out, s);
+        give(slot, s);
+    }
+
+    /**
+     * The calling thread's slot in {@link #spares}: a call's scratch is kept for its thread's next
+     * call, so many short texts allocate none. The thread's id picks the slot.
+     */
+    private int slot() {
+        return (int) (Thread.currentThread().threadId() * 0x9E3779B97F4A7C15L >>> 32)
+                & (spares.length() - 1);
+    }
+
+    /** The slot's scratch, or a new one when another thread holds it. */
+    private Scratch take(int slot) {
+        Scratch s = spares.getAndSet(slot, null);
+        return s != null ? s : new Scratch(cache);
+    }
+
+    /** Keeps {@code s} for the slot's next call, unless a giant word left it large. */
+    private void give(int slot, Scratch s) {
         if (s.kept()) {
             spares.set(slot, s);
         }
@@ -142,22 +155,38 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         return (int) Math.min(slots, 1 << 30);
     }
 
-    /**
-     * The batches of {@code text[start, end)}. Words are read eight bytes at a time, so the pieces
-     * ending within {@link #PADDING} bytes of the array's end are encoded from a padded copy.
-     */
-    private void encode(byte[] text, int start, int end, IdBuffer out, Scratch s) {
-        int[] ends = s.pieceEnds;
-        int cursor = start;
-        while (cursor < end) {
-            int n = split.split(text, cursor, end, ends, s.registers);
-            int inPlace = inPlace(text, ends, n);
-            cursor = encodeBatch(text, cursor, ends, inPlace, n, cache, out, s);
-            if (inPlace < n) {
-                encode(paddedTail(text, cursor, end, s), 0, end - cursor, out, s);
-                return;
-            }
+    /** {@code text[start, end)} a batch of pieces at a time. */
+    private void encode(byte[] text, int start, int end, IntSequence.Builder out, Scratch s) {
+        for (int cursor = start; cursor < end; ) {
+            int n = split.split(text, cursor, end, s.pieceEnds, s.registers);
+            cursor = encodeWords(text, cursor, s.pieceEnds, n, out, s);
         }
+    }
+
+    /**
+     * The words of {@code text} that end at {@code ends[0, n)}, from {@code cursor}, into {@code
+     * out} in one copy; returns the last end. Words are read eight bytes at a time, so those ending
+     * within {@link #PADDING} bytes of the array's end are encoded from a padded copy.
+     */
+    private int encodeWords(
+            byte[] text, int cursor, int[] ends, int n, IntSequence.Builder out, Scratch s) {
+        WordCache cache = s.probe != null ? this.cache : null;
+        IdBuffer ids = s.ids;
+        ids.size(0);
+        int last = ends[n - 1];
+        int inPlace = inPlace(text, ends, n);
+        int at = encodeBatch(text, cursor, ends, inPlace, n, cache, ids, s);
+        if (inPlace < n) {
+            // into the scratch's ends, which may be ends itself: each read is at or past its write
+            int[] tailEnds = s.pieceEnds;
+            for (int k = inPlace; k < n; k++) {
+                tailEnds[k - inPlace] = ends[k] - at;
+            }
+            byte[] tail = paddedTail(text, at, last, s);
+            encodeBatch(tail, 0, tailEnds, n - inPlace, n - inPlace, cache, ids, s);
+        }
+        out.addAll(IntSequence.wrap(ids.array()).subSequence(0, ids.size()));
+        return last;
     }
 
     /**
@@ -527,6 +556,7 @@ final class FastEncoder implements TiktokenEngine.Encoder {
         private static final int KEPT = 1 << 16;
 
         final int[] pieceEnds = new int[BATCH];
+        final IdBuffer ids = new IdBuffer(BATCH * WordCache.MAX_IDS); // a batch's, then flushed
         final BitSplit.Registers registers = new BitSplit.Registers();
         final WordCache.Probe probe;
         private byte[] tail = new byte[0];
@@ -592,7 +622,10 @@ final class FastEncoder implements TiktokenEngine.Encoder {
 
         /** Whether it is small enough to keep for another call: a giant word's arrays are not. */
         boolean kept() {
-            return tail.length <= KEPT && token.length <= KEPT && heapRank.length <= KEPT;
+            return tail.length <= KEPT
+                    && token.length <= KEPT
+                    && heapRank.length <= KEPT
+                    && ids.array().length <= KEPT;
         }
 
         private static int grow(int current, int needed) {
