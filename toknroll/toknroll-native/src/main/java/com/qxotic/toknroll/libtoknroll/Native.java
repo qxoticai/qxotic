@@ -81,7 +81,7 @@ public final class Native {
      * when there are any: straight from the bytes when they are well-formed, else decoded first, as
      * every text was before, a bad sequence a U+FFFD.
      */
-    private static void encodeUtf8(
+    static void encodeUtf8(
             Tokenizer tokenizer,
             Specials specials,
             byte[] utf8,

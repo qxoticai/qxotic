@@ -71,7 +71,7 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 NATIVE_MODULE ?= jinfer-cli
 NATIVE_EXECUTABLE = $(patsubst %-cli,%,$(NATIVE_MODULE))
 
-check-native-image: ## the GraalVM the images build with: native-image >= 25.0.4, GraalVM CE recommended (JAVA_HOME picks it)
+check-native-image: ## the GraalVM the images build with: native-image >= 25.0.4 (JAVA_HOME picks it); Oracle GraalVM adds PGO to libtoknroll
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
@@ -82,8 +82,6 @@ check-native-image: ## the GraalVM the images build with: native-image >= 25.0.4
 		exit 1; \
 	fi; \
 	vendor=$$($(NATIVE_IMAGE) --version 2>/dev/null | sed -n 2p | sed 's/^ *//'); \
-	case "$$vendor" in *"Oracle GraalVM"*) \
-		echo "note: $$vendor builds, but the binaries we ship are built with GraalVM CE (JAVA_HOME=/path/to/graalvm-ce)";; esac; \
 	echo "native-image $$v ($$vendor)"
 
 native: check-native-image ## GraalVM native image of the CLI for THIS machine (-march=native) -> bin/jinfer (a clean build, as jinfer-jar); NATIVE_MODULE=jinfer-tts|jinfer-bench for the others, or make -C jinfer/<module> native; PRELOAD_GGUF=model.gguf embeds metadata (CLI), MODELS=dir finds the Inflect lexicon (tts)
