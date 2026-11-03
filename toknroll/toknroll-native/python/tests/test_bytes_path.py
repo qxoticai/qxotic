@@ -80,7 +80,7 @@ class BytesPathTest(unittest.TestCase):
     def test_ids_decode_back_to_the_text(self):
         texts = corpus(2, 200)
         for t in self.tokenizers:
-            self.assertEqual(t.decode_batch(t.encode_batch(texts)), texts)
+            self.assertEqual([t.decode(ids) for ids in t.encode_batch(texts)], texts)
 
     def test_a_short_buffer_gets_a_prefix_and_the_whole_count(self):
         texts = [x.encode() for x in corpus(3, 60)]

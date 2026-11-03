@@ -6,7 +6,7 @@
     ids = tokenizer.encode("Hello, world!")              # array('i', [9707, 11, 1879, 0])
     tokenizer.decode(ids)                                # 'Hello, world!'
     tokenizer.count_tokens(text)                         # the budget, without the list
-    tokenizer.encode_batch(texts)                        # on threads; the library releases the GIL
+    tokenizer.encode_batch(texts)                        # one call, the texts spread over every core
     tokenizer.encode("<|im_end|>", specials=True)        # spelled special tokens stay whole
     tokenizer.decode_bytes(ids)                          # the tokens' bytes, even half a character
     tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import ctypes as C
 import os
+import threading
 from array import array
 from collections.abc import Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from enum import IntFlag
 from itertools import accumulate
 
@@ -99,6 +99,13 @@ def _ids(value, what: str) -> tuple[object, int, int]:
     """(owner, address, count) of int32 ids: a writable int32 buffer in place, anything else copied once."""
     if isinstance(value, array) and value.itemsize == 4 and value.typecode in "il":
         return value, value.buffer_info()[0], len(value)
+    if isinstance(value, list):  # fromlist: a quarter faster than array("i", value)
+        ids = array("i")
+        try:
+            ids.fromlist(value)
+        except (TypeError, OverflowError):
+            raise TypeError(f"{what}: expected int32 ids") from None
+        return ids, ids.buffer_info()[0], len(ids)
     try:
         view = memoryview(value)
     except TypeError:
@@ -115,6 +122,34 @@ def _ids(value, what: str) -> tuple[object, int, int]:
     except (TypeError, OverflowError):
         raise TypeError(f"{what}: expected int32 ids") from None
     return ids, ids.buffer_info()[0], len(ids)
+
+
+_KEPT = 1 << 16  # output up to this many bytes goes to its thread's own buffer
+_threads = threading.local()
+
+
+def _out(capacity: int) -> tuple[C.Array, memoryview]:
+    """A buffer of at least `capacity` bytes and a byte view of it: the thread's own when that is enough."""
+    if capacity > _KEPT:
+        out = C.create_string_buffer(capacity)
+        return out, memoryview(out).cast("B")
+    try:
+        return _threads.out
+    except AttributeError:
+        out = C.create_string_buffer(_KEPT)
+        _threads.out = out, memoryview(out).cast("B")
+        return _threads.out
+
+
+def _filled(call, guess: int) -> memoryview:
+    """The bytes `call(out, capacity)` writes, which returns their full size: a second pass when they do
+    not fit. A view of a buffer the thread's next call may reuse, so copy it out at once."""
+    out, view = _out(guess)
+    n = call(out, len(view))
+    if n >= len(view):
+        out, view = _out(n + 1)
+        call(out, len(view))
+    return view[:n]
 
 
 class Tokenizer:
@@ -188,36 +223,26 @@ class Tokenizer:
     def decode_bytes(self, ids: Iterable[int]) -> bytes:
         """The tokens' bytes: UTF-8, except where a token holds part of a character. Any int32
         buffer, an `array('i')` or a numpy array, is read in place."""
-        lib = self._lib
-        owner, address, count = _ids(ids, "decode_bytes")  # owner keeps the buffer alive through the calls
-        capacity = 8 * count + 16  # a token is a few bytes; one pass almost always
-        out = C.create_string_buffer(capacity)
-        n = _check(lib, lib.toknroll_decode(self._handle, address, count, out, capacity))
-        if n >= capacity:
-            out = C.create_string_buffer(n + 1)
-            _check(lib, lib.toknroll_decode(self._handle, address, count, out, n + 1))
-        return out.raw[:n]
+        return bytes(self._decoded(ids, "decode_bytes"))
 
     def decode(self, ids: Iterable[int], *, errors: str = "replace") -> str:
         """The text. A token holding part of a character decodes per `errors`, as in tiktoken."""
-        return self.decode_bytes(ids).decode("utf-8", errors)
+        return str(self._decoded(ids, "decode"), "utf-8", errors)
 
-    def decode_batch(self, batch: Sequence[Iterable[int]], *, errors: str = "replace") -> list[str]:
-        """`decode` over many id lists, on threads; the library releases the GIL."""
-        with ThreadPoolExecutor() as pool:
-            return list(pool.map(lambda ids: self.decode(ids, errors=errors), batch))
+    def _decoded(self, ids, what: str) -> memoryview:
+        lib, handle = self._lib, self._handle
+        owner, address, count = _ids(ids, what)  # owner keeps the ids alive through the calls
+        # a token is a few bytes: one pass almost always
+        return _filled(lambda out, capacity: _check(lib, lib.toknroll_decode(handle, address, count, out, capacity)),
+                       8 * count + 16)
 
     def token(self, id: int) -> str | None:
         """The spelling of an id; None when the vocabulary has no such id."""
-        lib, id = self._lib, _int(id, "token")
-        out = C.create_string_buffer(64)  # spellings are short; a longer one gets a second pass
-        n = lib.toknroll_token(self._handle, id, out, 64)
-        if n == N.ENOTFOUND:
+        lib, handle, id = self._lib, self._handle, _int(id, "token")
+        try:  # spellings are short: one pass almost always
+            return str(_filled(lambda out, capacity: _check(lib, lib.toknroll_token(handle, id, out, capacity)), 64), "utf-8")
+        except NotFound:
             return None
-        if _check(lib, n) >= 64:
-            out = C.create_string_buffer(n + 1)
-            _check(lib, lib.toknroll_token(self._handle, id, out, n + 1))
-        return out.raw[:n].decode()
 
     def token_flags(self, id: int) -> TokenFlags | None:
         """An id's `TokenFlags`; None when the vocabulary has no such id."""

@@ -10,7 +10,7 @@ tokenizer = toknroll.load("Qwen/Qwen3-0.6B")             # tokenizer.json from t
 ids = tokenizer.encode("Hello, world!")                  # array('i', [9707, 11, 1879, 0])
 tokenizer.decode(ids)                                    # 'Hello, world!'
 tokenizer.count_tokens(text)                             # the budget, without the list
-tokenizer.encode_batch(texts)                            # on threads: the library releases the GIL
+tokenizer.encode_batch(texts)                            # one call, the texts spread over every core
 tokenizer.encode("<|im_end|>", specials=True)            # special tokens spelled in the text stay whole
 tokenizer.decode_bytes(ids)                              # the tokens' bytes, even half a character
 tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
@@ -19,9 +19,9 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | You want | Call |
 |---|---|
 | ids | `encode(text)`, an `array('i')`: four bytes an id, nothing boxed, `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy; `specials=True` keeps spelled special tokens whole, by default they are text |
-| text | `decode(ids)` from any int32 buffer or iterable of int, read in place; a partial character decodes per `errors=`, `"replace"` by default as in tiktoken; `decode_bytes(ids)` for the raw bytes |
+| text | `decode(ids)`: an int32 buffer (`array('i')`, numpy) read in place, any other iterable of int copied once; a partial character decodes per `errors=`, `"replace"` by default as in tiktoken; `decode_bytes(ids)` for the raw bytes |
 | a token budget | `count_tokens(text)`, no list built |
-| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores; `decode_batch(batches)` |
+| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores |
 | the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)` (a `TokenFlags` mask: `NORMAL`, `CONTROL`, `USER_DEFINED`, `BYTE`, ...), `None` when absent |
 | text without the specials | `decode(i for i in ids if tokenizer.token_flags(i) & TokenFlags.NORMAL)` |
 | another process | a `Tokenizer` pickles as its `source`, so `multiprocessing` and `concurrent.futures` just work |
@@ -34,7 +34,6 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | a hub repository | `toknroll.load("Qwen/Qwen3-0.6B")`: its `tokenizer.json`; `modelscope.cn/Qwen/Qwen3-0.6B` for ModelScope, `@rev` pins a revision |
 | a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")` or `.../LFM2.5-350M-Q8_0.gguf`: the header only, never the weights |
 | a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file a path names |
-| a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")`, the header fetched, never the weights |
 
 A `Tokenizer` never changes, so it may be shared between threads; `encode` releases the GIL.
 Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`); each has `.code`.

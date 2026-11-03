@@ -188,18 +188,13 @@ class BatchTest(unittest.TestCase):
         texts = [f"text {i}: " + "words " * (i % 40) for i in range(10_000)]
         out = self.t.encode_batch(texts)
         self.assertEqual(len(out), 10_000)
-        self.assertEqual(self.t.decode_batch(out), texts)
+        self.assertEqual([self.t.decode(ids) for ids in out], texts)
         self.assertEqual(sum(map(len, out)), sum(self.t.count_tokens(x) for x in texts))
 
     def test_batch_rejects_non_text(self):
         with self.assertRaises(TypeError) as e:
             self.t.encode_batch(["ok", 3])
         self.assertIn("encode_batch", str(e.exception))
-
-    def test_decode_batch(self):
-        batches = [self.t.encode(x) for x in EDGE_TEXTS]
-        self.assertEqual(self.t.decode_batch(batches), EDGE_TEXTS)
-        self.assertEqual(self.t.decode_batch([]), [])
 
 
 @needs_gguf
@@ -257,8 +252,8 @@ class VocabularyTest(unittest.TestCase):
 
     def test_a_long_spelling_round_trips(self):
         longest = max((self.t.token(i) for i in range(0, self.t.vocabulary_size, 97)), key=len)
-        self.assertEqual(self.t.id(longest), self.t.id(longest))
         self.assertGreater(len(longest.encode()), 0)
+        self.assertEqual(self.t.token(self.t.id(longest)), longest)
 
 
 @needs_gguf

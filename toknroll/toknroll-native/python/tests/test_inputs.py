@@ -84,6 +84,20 @@ class IdBufferTest(unittest.TestCase):
         self.assertEqual(self.t.decode(ids), "word " * 250_000)
         self.assertEqual(len(self.t.decode_bytes(ids)), len("word " * 250_000))
 
+    def test_a_result_outlives_the_next_decode(self):
+        """Small decodes share their thread's buffer: what they return is a copy."""
+        first, text = self.t.decode_bytes(self.ids), self.t.decode(self.ids)
+        self.t.decode_bytes(self.t.encode("something else entirely"))
+        self.assertEqual(first, self.text.encode())
+        self.assertEqual(text, self.text)
+
+    def test_long_tokens_overflow_the_shared_buffer(self):
+        """Few ids of long tokens: past the thread's 64 KB buffer, the second pass gets its own."""
+        long = next(i for i in range(self.t.vocabulary_size) if len(self.t.decode_bytes([i])) >= 16)
+        one = self.t.decode_bytes([long])
+        ids = array("i", [long]) * 8000  # a guess of 8 bytes an id stays under 64 KB; the bytes do not
+        self.assertEqual(self.t.decode_bytes(ids), one * 8000)
+
     def test_byte_sizes_are_64_bit(self):
         """decode and token take and return int64_t: a capacity of -2^40 is refused, where a binding
         cut to 32 bits would read it as 0 and ask for the size. Over 4096 ids the size is counted in
