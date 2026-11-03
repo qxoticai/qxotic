@@ -40,17 +40,18 @@ backends when none matches. The shipped set, and where each library is built:
 |---|---|---|
 | `linux-x86-64/libjam.so` | the Linux release host | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-x86-64-glibc2.17.cmake` |
 | `windows-x86-64/jam.dll` | the Linux release host | MinGW-w64 (`x86_64-w64-mingw32-gcc`) + `cmake/toolchains/windows-x86-64.cmake` |
-| `darwin-aarch64/libjam.dylib` | an Apple-silicon Mac, over ssh | Xcode CLT (clang, ObjC++, Metal); Intel Macs unsupported |
+| `darwin-aarch64/libjam.dylib` | an Apple-silicon Mac | Xcode CLT (clang, ObjC++, Metal); Intel Macs unsupported |
 
 Other platforms (linux-aarch64 among them) get the Java backends; `cmake/toolchains/` keeps a
 linux-aarch64 cross file for local builds, but nothing ships it.
 
-One script builds the whole set from one source tree into `dist/release` (apart from `dist/native`,
-where every ordinary build stages this host's library) and stamps each library with the digest of
-the native sources it came from and its own checksum:
+One script builds, on each host, the libraries that host ships into `dist/release` (apart from
+`dist/native`, where every ordinary build stages this host's library), stamps each with the digest of
+the native sources it came from and its own checksum, and imports the other host's:
 
 ```sh
-JAM_MAC=user@mac jam-native/scripts/natives.sh build   # or: make jam-natives (from the repo root)
+jam-native/scripts/natives.sh build    # on each host, at the release commit (or: make jam-natives from the repo root)
+jam-native/scripts/natives.sh import <dir>/darwin-aarch64   # on the Linux host: the Mac's staged directory, carried over
 ```
 
 The Linux host builds its own library and the Windows one. The Linux library is compiled with
@@ -58,9 +59,10 @@ The Linux host builds its own library and the Windows one. The Linux library is 
 glibc stubs for every version, so the artifact runs on RHEL 7 or Ubuntu 14.04 class systems without
 a container or sysroot, and the script fails if the link ever needs a newer glibc symbol. The
 Windows library comes from MinGW-w64 (the checked-in `cmake/cross-jni/win32/` shim supplies the
-target `jni_md.h`; any JDK's `jni.h` works). The Mac leg rsyncs the source tree to `JAM_MAC`,
-builds it there with Metal on, runs the C test suite on the real GPU, and fetches the dylib back.
-`JAM_TARGETS="linux-x86-64"` builds a subset while iterating on one leg.
+target `jni_md.h`; any JDK's `jni.h` works). The Mac builds its library with Metal on and runs the
+C test suite on the real GPU. `import` checks a library as `verify` does, its stamp naming these
+native sources included, before staging it. `JAM_TARGETS="linux-x86-64"` builds a subset of this
+host's targets while iterating on one leg.
 
 The release build (`-Prelease`) never runs cmake: it packages the staged set after
 `scripts/natives.sh verify` has checked that every shipped library is present, unchanged since its
@@ -70,10 +72,9 @@ load; the stamps make that impossible. `NativeJAMProvider` also binds every symb
 reports the backend available, so an unusable bundle degrades to the Java backends with a warning
 instead of failing on the first matmul.
 
-Host requirements: cmake, a JDK, zig 0.16, MinGW-w64 and rsync on the Linux host; Xcode Command
-Line Tools, a Homebrew cmake and any JDK on the Mac, reachable by key-based ssh. The script checks
-all of that first and only then wipes and rebuilds the release set, so a misconfigured host fails
-in seconds with the previous set intact.
+Host requirements: cmake, a JDK, zig 0.16 and MinGW-w64 on the Linux host; Xcode Command Line
+Tools, cmake and any JDK on the Mac. The script checks all of that first and only then replaces a
+staged library, so a misconfigured host fails in seconds with the previous set intact.
 
 ## Tests
 

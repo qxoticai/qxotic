@@ -45,7 +45,8 @@
     <!-- CMake stages this host's lib into dist/native (com/qxotic/jam/native/<os>-<arch>/...); as a
          resource it lands on the classpath, so NativeLoader finds + loads it exactly as from the fat jar.
          The release profile points jam.native.dir at dist/release, the tree scripts/natives.sh fills
-         with every shipped platform - a tree no dev build writes to. -->
+         with every shipped platform (built here, or imported from the host that builds it) - a tree
+         no dev build writes to. -->
     <resources>
       <resource>
         <directory>src/main/resources</directory>
@@ -222,7 +223,7 @@
         <jam.cmake.cc>clang</jam.cmake.cc>
       </properties>
     </profile>
-    <!-- Release: package the shipped set that scripts/natives.sh built into dist/release (linux-x86-64,
+    <!-- Release: package the shipped set scripts/natives.sh staged in dist/release (linux-x86-64,
          windows-x86-64, darwin-aarch64) - never this host's cmake output. `natives.sh verify` refuses a
          missing, stale, replaced, or foreign library. -->
     <profile>
