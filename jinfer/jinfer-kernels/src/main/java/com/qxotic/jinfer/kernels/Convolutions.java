@@ -198,26 +198,27 @@ public final class Convolutions {
             int kernel,
             int c0,
             int c1) {
-        int hist = kernel - 1, width = c1 - c0;
-        float[] taps = new float[kernel * width]; // [k][channel]: one vector load per tap
-        for (int c = c0; c < c1; c++)
+        int hist = kernel - 1, width = c1 - c0, biasRow = kernel * width;
+        // The taps transposed to [k][channel], the bias as one more row (zeros without one): one
+        // vector load each and no branch in the loops. Everything the loops could decide is decided
+        // here, once: Oracle GraalVM unswitches a loop-invariant `b == null` out of a Vector API
+        // loop nest and the duplicated loops lose their intrinsics (the Java fallback, 7x slower,
+        // half of a Qwen3.5 prefill).
+        float[] taps = new float[biasRow + width];
+        for (int c = c0; c < c1; c++) {
             for (int k = 0; k < kernel; k++)
                 taps[k * width + c - c0] =
                         readFloat(w.vseg(), w.vbase() + ((long) c * kernel + k) * Float.BYTES);
+            if (b != null)
+                taps[biasRow + c - c0] = readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES);
+        }
         int vectorEnd = USE_VECTOR_API ? c0 + F_SPECIES.loopBound(width) : c0;
         for (int row = 0; row < rows; row++) {
             long outRow = out.vbase() + (long) row * channels * Float.BYTES;
             int c = c0;
             // the scalar tail's order of operations, a lane at a time
             for (; c < vectorEnd; c += F_SPECIES.length()) {
-                FloatVector sum =
-                        b == null
-                                ? FloatVector.zero(F_SPECIES)
-                                : FloatVector.fromMemorySegment(
-                                        F_SPECIES,
-                                        b.vseg(),
-                                        b.vbase() + (long) c * Float.BYTES,
-                                        LE);
+                FloatVector sum = FloatVector.fromArray(F_SPECIES, taps, biasRow + c - c0);
                 for (int k = 0; k < kernel; k++) {
                     int pos = row - hist + k;
                     Raw source = pos < 0 ? state : x;
@@ -235,8 +236,7 @@ public final class Convolutions {
                 Ops.siluVec(sum).intoMemorySegment(out.vseg(), outRow + (long) c * Float.BYTES, LE);
             }
             for (; c < c1; c++) {
-                float sum =
-                        b == null ? 0f : readFloat(b.vseg(), b.vbase() + (long) c * Float.BYTES);
+                float sum = taps[biasRow + c - c0];
                 for (int k = 0; k < kernel; k++)
                     sum +=
                             taps[k * width + c - c0]

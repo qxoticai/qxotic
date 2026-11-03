@@ -61,6 +61,56 @@ class ConvolutionsTest {
         assertArrayEquals(new float[] {3, 4, 5, 6}, state.toArray(ValueLayout.JAVA_FLOAT));
     }
 
+    /** The biased form, wide enough for the vector lanes and a scalar tail (37 channels). */
+    @ParameterizedTest(name = "bias={0}")
+    @CsvSource({"true", "false"})
+    void wideCausalDepthwiseSiluMatchesScalarOracle(boolean biased) {
+        int rows = 5, channels = 37, kernel = 4, hist = kernel - 1;
+        Random rnd = new Random(7);
+        float[] input = new float[rows * channels], taps = new float[channels * kernel];
+        float[] initial = new float[hist * channels], bias = new float[channels];
+        for (int i = 0; i < input.length; i++) input[i] = rnd.nextFloat() * 2 - 1;
+        for (int i = 0; i < taps.length; i++) taps[i] = rnd.nextFloat() * 2 - 1;
+        for (int i = 0; i < initial.length; i++) initial[i] = rnd.nextFloat() * 2 - 1;
+        for (int i = 0; i < bias.length; i++) bias[i] = biased ? rnd.nextFloat() * 2 - 1 : 0;
+        float[] expected = new float[input.length];
+        for (int row = 0; row < rows; row++)
+            for (int c = 0; c < channels; c++) {
+                float sum = bias[c];
+                for (int k = 0; k < kernel; k++) {
+                    int pos = row - hist + k;
+                    sum +=
+                            taps[c * kernel + k]
+                                    * (pos < 0
+                                            ? initial[(pos + hist) * channels + c]
+                                            : input[pos * channels + c]);
+                }
+                expected[row * channels + c] = (float) (sum / (1 + Math.exp(-sum)));
+            }
+        MemorySegment in = arena.allocate(4L * input.length, 64);
+        MemorySegment w = arena.allocate(4L * taps.length, 64);
+        MemorySegment b = arena.allocate(4L * bias.length, 64);
+        MemorySegment state = arena.allocate(4L * initial.length, 64);
+        MemorySegment out = arena.allocate(4L * input.length, 64);
+        in.copyFrom(MemorySegment.ofArray(input));
+        w.copyFrom(MemorySegment.ofArray(taps));
+        b.copyFrom(MemorySegment.ofArray(bias));
+        state.copyFrom(MemorySegment.ofArray(initial));
+        Convolutions.causalDepthwiseSilu(
+                Oracles.f32View(in, input.length),
+                Oracles.f32View(w, taps.length),
+                biased ? Oracles.f32View(b, bias.length) : null,
+                Oracles.f32View(state, initial.length),
+                Oracles.f32View(out, input.length),
+                rows,
+                channels,
+                kernel);
+        // the vector lanes use the shared tanh-based sigmoid, within ~1e-5 of 1/(1+e^-x)
+        assertArrayEquals(expected, out.toArray(ValueLayout.JAVA_FLOAT), 1e-4f);
+        float[] rolled = Arrays.copyOfRange(input, (rows - hist) * channels, rows * channels);
+        assertArrayEquals(rolled, state.toArray(ValueLayout.JAVA_FLOAT));
+    }
+
     /**
      * {@link Convolutions#conv1dRows} against a scalar reference, over shapes that reach every
      * path: full 4-channel groups and a partial group, the branch-free interior at each register
