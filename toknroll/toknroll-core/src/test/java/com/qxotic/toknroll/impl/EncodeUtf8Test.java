@@ -27,9 +27,9 @@ class EncodeUtf8Test {
         }
     }
 
-    /** NFC text and ASCII take the byte path, other text and ill-formed bytes the fallback. */
+    /** A Unicode form rewrites what it changes: ill-formed bytes, text not in the form. */
     @Test
-    void aNormalizerTakesTheFallback() {
+    void aUnicodeFormGivesTheStringsIds() {
         TokenizationPipeline base =
                 (TokenizationPipeline)
                         TiktokenFixtures.createTiktokenTokenizer(
@@ -46,6 +46,10 @@ class EncodeUtf8Test {
         assertEquals(
                 normalized.encode("caf\u00E9"),
                 normalized.encodeUtf8("cafe\u0301".getBytes(StandardCharsets.UTF_8)));
+        String spelled = "x\uFFFDy cafe\u0301";
+        assertEquals(
+                normalized.encode(spelled),
+                normalized.encodeUtf8(spelled.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static void check(Tokenizer tokenizer, String name) {

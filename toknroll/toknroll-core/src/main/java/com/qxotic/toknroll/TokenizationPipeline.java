@@ -91,16 +91,21 @@ public final class TokenizationPipeline implements Tokenizer {
                             + ") for length "
                             + utf8.length);
         }
-        // Bytes go straight to the model when nothing normalizes them, a Unicode form included
-        // when they are in it already; else a normalizer works on chars.
-        boolean asIs =
-                !hasNormalizer
-                        || normalizer instanceof UnicodeNormalizer
-                                && ((UnicodeNormalizer) normalizer)
-                                        .leaves(utf8, startInclusive, endExclusive);
-        if (scanned && asIs) {
-            ImplAccessor.encodeScannedUtf8(
-                    model, splitter, utf8, startInclusive, endExclusive, out);
+        // The scanner reads bytes: as they are, or as a Unicode form rewrites them. Any other
+        // normalizer works on chars.
+        if (scanned && (!hasNormalizer || normalizer instanceof UnicodeNormalizer)) {
+            byte[] normalized =
+                    hasNormalizer
+                            ? ((UnicodeNormalizer) normalizer)
+                                    .normalizeUtf8(utf8, startInclusive, endExclusive)
+                            : null;
+            if (normalized == null) {
+                ImplAccessor.encodeScannedUtf8(
+                        model, splitter, utf8, startInclusive, endExclusive, out);
+            } else {
+                ImplAccessor.encodeScannedUtf8(
+                        model, splitter, normalized, 0, normalized.length, out);
+            }
             return;
         }
         Tokenizer.super.encodeUtf8Into(utf8, startInclusive, endExclusive, out);
