@@ -71,7 +71,9 @@ files and `toknroll-gguf` loads tokenizers straight out of llama.cpp model files
 details and advanced usage: [toknroll-hf](toknroll-hf/), [toknroll-gguf](toknroll-gguf/).
 
 `toknroll-vector` is optional and needs Java 25, and it is where the speed is.
-Add it as a runtime dependency and run with `--add-modules jdk.incubator.vector`, and the tiktoken family (GPT-2, GPT-4, Llama 3, Qwen2, GPT-4o, Tekken) encodes through it: a pre-tokenization split written as bitstream programs over the Java Vector API, a per-thread word cache, and merge loops over flat arrays.
+Add it as a runtime dependency and run with `--add-modules jdk.incubator.vector`, and the byte-level BPE tokenizers whose pre-tokenization core recognizes encode through it.
+The tiktoken family (GPT-2, GPT-4, Llama 3, Qwen2, GPT-4o, Tekken) runs in it entirely: a pre-tokenization split written as bitstream programs over the Java Vector API, a word cache shared by all threads, and merge loops over flat arrays.
+For the other patterns core knows, such as Qwen 3.5 and DeepSeek, core splits the text and the engine merges the words.
 Core's own encoder is the reference it is checked against when it loads: same API, same token ids, several times slower.
 Details in [toknroll-vector](toknroll-vector/).
 
