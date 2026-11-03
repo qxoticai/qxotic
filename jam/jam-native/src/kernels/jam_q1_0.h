@@ -25,4 +25,25 @@ static inline float jam_q1_0_dot_f32(const uint8_t* w, int nb128, const float* x
     return acc;
 }
 
+/* table[b] = the 8 bits of b expanded LSB-first to one byte each, value (bit << 4) - llama.cpp's
+ * table_b2b_0 construction (arch/arm/quants.c), verbatim. */
+#define JAM_B1(c,s,n)  0x ## n ## c ,  0x ## n ## s
+#define JAM_B2(c,s,n) JAM_B1(c,s,n ## c), JAM_B1(c,s,n ## s)
+#define JAM_B3(c,s,n) JAM_B2(c,s,n ## c), JAM_B2(c,s,n ## s)
+#define JAM_B4(c,s,n) JAM_B3(c,s,n ## c), JAM_B3(c,s,n ## s)
+#define JAM_B5(c,s,n) JAM_B4(c,s,n ## c), JAM_B4(c,s,n ## s)
+#define JAM_B6(c,s,n) JAM_B5(c,s,n ## c), JAM_B5(c,s,n ## s)
+#define JAM_B7(c,s,n) JAM_B6(c,s,n ## c), JAM_B6(c,s,n ## s)
+#define JAM_B8(c,s  ) JAM_B7(c,s,     c), JAM_B7(c,s,     s)
+
+static const uint64_t JAM_Q1_0_TBL[256] = { JAM_B8(00, 10) };
+#undef JAM_B1
+#undef JAM_B2
+#undef JAM_B3
+#undef JAM_B4
+#undef JAM_B5
+#undef JAM_B6
+#undef JAM_B7
+#undef JAM_B8
+
 #endif /* JAM_Q1_0_H */

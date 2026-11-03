@@ -10,6 +10,9 @@
 #include "jam_q1_0.h"
 #include "jam_kquant.h"
 #include "jam_fp16.h"   /* jam_half2float (shared software fp16->fp32) */
+#if defined(__aarch64__)
+#include <arm_neon.h>   /* baseline there: jam_q8_0_requant in intrinsics */
+#endif
 
 /* C[i, :] = A[i, :] @ Bᵀ  for i in [row_begin, row_end).  C[i,j] = dot(A row i, B row j). */
 void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
@@ -67,7 +70,9 @@ void jam_mm_q8_0_f32_generic(void* arg, int row_begin, int row_end, int tid) {
 }
 
 /* Shared phase-1 requant for the SIMD Q8_0 paths (AVX-512-VNNI and AVX2): F32 activation rows
- * [rb,re) -> int8 (per-32-block scale dB in ad). Scalar/portable; the compiler vectorizes it. */
+ * [rb,re) -> int8 (per-32-block scale dB in ad). Scalar/portable; the compiler vectorizes it. On
+ * aarch64, where NEON is baseline, the same arithmetic in intrinsics (lrintf's round-to-nearest-even
+ * is vcvtnq; the saturating narrows are the clamp): the scalar loop measured 3x slower there. */
 void jam_q8_0_requant(void* arg, int rb, int re, int tid) {
     (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
@@ -78,6 +83,19 @@ void jam_q8_0_requant(void* arg, int rb, int re, int tid) {
         int8_t* q = J->aq + (size_t) j * k;
         for (int blk = 0; blk < nb; ++blk) {
             const float* b = brow + (size_t) blk * 32;
+#if defined(__aarch64__)
+            float32x4_t v[8], mx = vdupq_n_f32(0);
+            for (int h = 0; h < 8; ++h) { v[h] = vld1q_f32(b + 4 * h); mx = vmaxq_f32(mx, vabsq_f32(v[h])); }
+            float amax = vmaxvq_f32(mx);
+            float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+            int32x4_t r[8], s = vdupq_n_s32(0);
+            for (int h = 0; h < 8; ++h) { r[h] = vcvtnq_s32_f32(vmulq_n_f32(v[h], id)); s = vaddq_s32(s, r[h]); }
+            vst1q_s8(q + (size_t) blk * 32,      vcombine_s8(vqmovn_s16(vcombine_s16(vqmovn_s32(r[0]), vqmovn_s32(r[1]))),
+                                                             vqmovn_s16(vcombine_s16(vqmovn_s32(r[2]), vqmovn_s32(r[3])))));
+            vst1q_s8(q + (size_t) blk * 32 + 16, vcombine_s8(vqmovn_s16(vcombine_s16(vqmovn_s32(r[4]), vqmovn_s32(r[5]))),
+                                                             vqmovn_s16(vcombine_s16(vqmovn_s32(r[6]), vqmovn_s32(r[7])))));
+            int sum = vaddvq_s32(s);
+#else
             float amax = 0.0f;
             for (int e = 0; e < 32; ++e) { float a = fabsf(b[e]); if (a > amax) amax = a; }
             float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
@@ -87,6 +105,7 @@ void jam_q8_0_requant(void* arg, int rb, int re, int tid) {
                 if (v > 127) v = 127; else if (v < -128) v = -128;
                 q[(size_t) blk * 32 + e] = (int8_t) v; sum += v;
             }
+#endif
             J->ad[(size_t) j * nb + blk] = d;
             if (J->asum) J->asum[(size_t) j * nb + blk] = (float) sum;   /* Σaq, reused for the K-quant min term */
         }

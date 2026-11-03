@@ -16,6 +16,7 @@
 
 #define JAM_NVFP4_QK     64
 #define JAM_NVFP4_SUB    16
+#define JAM_NVFP4_BYTES  36     /* d[4] + qs[32] */
 typedef struct __attribute__((packed)) { uint8_t d[4]; uint8_t qs[32]; } jam_nvfp4_blk;   /* 36 bytes */
 
 /* UE4M3 (unsigned OCP FP8 E4M3) -> float, matching ggml_ue4m3_to_fp32: bit 7 ignored; 0 and 0x7F -> 0;

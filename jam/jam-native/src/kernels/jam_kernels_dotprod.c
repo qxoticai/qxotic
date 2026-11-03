@@ -231,6 +231,18 @@ void jam_gemv_mxfp4_packed_4x1(void* arg, int rb, int re, int tid) {
 #undef JAM_DECODE
 #undef JAM_MM_NAME
 
+/* The prefill bands (n >= JAM_VNNI_MIN_SEQ), every format: rows repacked per call, vdotq_laneq tiles. */
+#include "jam_band4_neon.inc"
+JAM_B4_EXPORT(jam_q8_0_band4_dotprod,  jam_b4_q8_0,  JAM_QK,       JAM_Q8_0_BYTES,  0, 0)
+JAM_B4_EXPORT(jam_q4_0_band4_dotprod,  jam_b4_q4_0,  JAM_QK,       JAM_Q4_0_BYTES,  0, 0)
+JAM_B4_EXPORT(jam_q5_0_band4_dotprod,  jam_b4_q5_0,  JAM_QK,       JAM_Q5_0_BYTES,  0, 0)
+JAM_B4_EXPORT(jam_mxfp4_band4_dotprod, jam_b4_mxfp4, JAM_QK,       JAM_MXFP4_BYTES, 0, 0)
+JAM_B4_EXPORT(jam_nvfp4_band4_dotprod, jam_b4_nvfp4, JAM_NVFP4_QK, JAM_NVFP4_BYTES, 1, 0)
+JAM_B4_EXPORT(jam_q1_0_band4_dotprod,  jam_b4_q1_0,  JAM_Q1_0_QK,  JAM_Q1_0_BYTES,  0, 0)
+JAM_B4_EXPORT(jam_q4k_band4_dotprod,   jam_b4_q4k,   JAM_QKK,      JAM_Q4K_BYTES,   0, 1)
+JAM_B4_EXPORT(jam_q5k_band4_dotprod,   jam_b4_q5k,   JAM_QKK,      JAM_Q5K_BYTES,   0, 1)
+JAM_B4_EXPORT(jam_q6k_band4_dotprod,   jam_b4_q6k,   JAM_QKK,      JAM_Q6K_BYTES,   1, 0)
+
 /* ---- F16 / BF16 dense @ F32 (ARM) ----
  * Widen the weight row to f32 in registers and FMA against the f32 activations; k % 16 == 0
  * (gate in jam.c). n==1 is a 4-row shared-activation GEMV (four independent widen+fma chains);

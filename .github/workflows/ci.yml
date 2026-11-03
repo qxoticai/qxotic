@@ -94,6 +94,48 @@ jobs:
           if-no-files-found: ignore
       - run: make ci-release
 
+  natives:
+    # jam's native kernels on every platform at every ISA level the runner's CPU has: cmake + ctest
+    # (jam_test caps a context at each level and checks every kernel against the float reference),
+    # then the Java backend parity test capped at each level in turn (a cap above the CPU clamps to
+    # its best level, so the list may name more than the runner has). No fixtures, no models.
+    name: jam natives (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            levels: sse3 ssse3 avx2 avx_vnni avx512 avx512_vnni
+          - os: ubuntu-24.04-arm
+            levels: neon dotprod i8mm
+          - os: macos-15
+            levels: neon dotprod i8mm metal
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: graalvm
+          java-version: '25'
+          cache: maven
+      - name: runner facts
+        run: |
+          uname -m
+          (lscpu | grep -E 'Model name|^CPU\(s\)|Flags' | cut -c1-400) 2>/dev/null || sysctl -n machdep.cpu.brand_string hw.ncpu
+          cmake --version | head -1
+      - name: jam_test, every level the CPU has
+        run: |
+          cmake -S jam/jam-native -B jam/jam-native/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build jam/jam-native/build -j
+          ctest --test-dir jam/jam-native/build --output-on-failure
+      - name: Java backend parity, capped at each level
+        run: |
+          for isa in ${{ matrix.levels }}; do
+            echo "== JAM_NATIVE_ISA=$isa"
+            JAM_NATIVE_ISA=$isa mvn -B -q -pl jam/jam-vector -am test -Dtest=JamBackendParityTest -Dsurefire.failIfNoSpecifiedTests=false
+          done
+
   model:
     name: model contracts
     runs-on: ubuntu-24.04
@@ -128,8 +170,8 @@ jobs:
 
   ci:
     # The single required status check: green only when every matrix entry is.
-    needs: [build, model]
+    needs: [build, model, natives]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - run: test "${{ needs.build.result }}" = "success" && test "${{ needs.model.result }}" = "success"
+      - run: test "${{ needs.build.result }}" = "success" && test "${{ needs.model.result }}" = "success" && test "${{ needs.natives.result }}" = "success"

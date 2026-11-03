@@ -448,12 +448,17 @@ jam_context* jam_context_new(const jam_context_options* options) {
         c->dense_f16_kernel = jam_mm_f16_neon;   /* widen + FMA; the TU needs dotprod anyway */
         c->dense_bf16_kernel = jam_mm_bf16_neon;
         c->nvfp4_kernel = jam_mm_nvfp4_dotprod;
-        c->q1_0_kernel = jam_mm_q1_0_dotprod; }
+        c->q1_0_kernel = jam_mm_q1_0_dotprod;
+        c->band4[JAM_Q8_0] = jam_q8_0_band4_dotprod;   c->band4[JAM_Q4_0] = jam_q4_0_band4_dotprod;
+        c->band4[JAM_Q5_0] = jam_q5_0_band4_dotprod;   c->band4[JAM_MXFP4] = jam_mxfp4_band4_dotprod;
+        c->band4[JAM_NVFP4] = jam_nvfp4_band4_dotprod; c->band4[JAM_Q1_0] = jam_q1_0_band4_dotprod;
+        c->band4[JAM_Q4_K] = jam_q4k_band4_dotprod;    c->band4[JAM_Q5_K] = jam_q5k_band4_dotprod;
+        c->band4[JAM_Q6_K] = jam_q6k_band4_dotprod; }
 #endif
 #ifdef JAM_HAVE_I8MM
     if (cpu >= JAM_ISA_I8MM) { c->q8_kernel = jam_mm_q8_0_i8mm_4x4;
                                c->q4_0_kernel = jam_mm_q4_0_i8mm_4x4;
-                               c->q5_0_kernel = jam_mm_q5_0_i8mm_4x4; }
+                               c->q5_0_kernel = jam_mm_q5_0_i8mm_4x4; }   /* the bands stay SDOT's (see the .inc) */
 #endif
 
     /* Non-ARM ladders use their normal Q8_0/Q4_0 kernels for both shapes. ARM overrides these so an
@@ -514,24 +519,15 @@ static int ensure_qscratch(jam_context* c, int n, int k) {
     return c->q_aq && c->q_ad && c->q_asum;
 }
 
-/* Grow the band scratch: activation codes (seq×kblocks×32) + per-32 scales + per-16 sums, and one
- * repack buffer per pool worker (sized for a JAM_VNNI_BAND row band of kblocks blocks). */
-static int ensure_kquant(jam_context* c, int seq, int kblocks) {
-    size_t need_xq = (size_t) seq * kblocks * JAM_QK;
-    size_t need_dx = (size_t) seq * kblocks;
-    if (need_xq > c->kq_xq_cap) { free(c->kq_xq); c->kq_xq = malloc(need_xq); c->kq_xq_cap = c->kq_xq ? need_xq : 0; }
-    if (need_dx > c->kq_dx_cap) {
-        free(c->kq_dx); free(c->kq_xsum);
-        c->kq_dx   = malloc(need_dx * sizeof(float));
-        c->kq_xsum = malloc(need_dx * 2 * sizeof(float));
-        c->kq_dx_cap = (c->kq_dx && c->kq_xsum) ? need_dx : 0;
-    }
+/* The per-worker repack scratch for k: the x86 bands' blobs (a JAM_VNNI_BAND row band of kblocks
+ * blocks), which also hold the ARM band's tiles (JAM_B4_ROWS rows at 128 B + 12 floats per 32-block). */
+static int ensure_repack(jam_context* c, int kblocks) {
     if (c->kq_repack_n < c->threads) {
         free(c->kq_repack);
         c->kq_repack = (jam_repack*) calloc((size_t) c->threads, sizeof(jam_repack));
         c->kq_repack_n = c->kq_repack ? c->threads : 0;
     }
-    int ok = c->kq_xq && c->kq_dx && c->kq_xsum && c->kq_repack;
+    int ok = c->kq_repack != NULL;
     for (int i = 0; i < c->kq_repack_n; i++) {
         jam_repack* rp = &c->kq_repack[i];
         if (rp->cap_blocks < kblocks) {
@@ -547,6 +543,21 @@ static int ensure_kquant(jam_context* c, int seq, int kblocks) {
         ok = ok && rp->cap_blocks >= kblocks;
     }
     return ok;
+}
+
+/* The x86 bands' activation scratch: codes (seq×kblocks×32) + per-32 scales + per-16 sums, and the
+ * repack scratch. */
+static int ensure_kquant(jam_context* c, int seq, int kblocks) {
+    size_t need_xq = (size_t) seq * kblocks * JAM_QK;
+    size_t need_dx = (size_t) seq * kblocks;
+    if (need_xq > c->kq_xq_cap) { free(c->kq_xq); c->kq_xq = malloc(need_xq); c->kq_xq_cap = c->kq_xq ? need_xq : 0; }
+    if (need_dx > c->kq_dx_cap) {
+        free(c->kq_dx); free(c->kq_xsum);
+        c->kq_dx   = malloc(need_dx * sizeof(float));
+        c->kq_xsum = malloc(need_dx * 2 * sizeof(float));
+        c->kq_dx_cap = (c->kq_dx && c->kq_xsum) ? need_dx : 0;
+    }
+    return c->kq_xq && c->kq_dx && c->kq_xsum && ensure_repack(c, kblocks);
 }
 
 jam_status jam_share(jam_context* ctx, const void* p, size_t bytes, uint32_t flags) {
@@ -678,6 +689,19 @@ static jam_status run_quant(jam_context* ctx, jam_q8_job* q, int m, jam_job_fn s
     return JAM_OK;
 }
 
+/* The ARM prefill band (jam_band4_neon.inc) for weight type wt, where one is bound: the plain requant,
+ * then the band over the per-worker repack scratch. Below JAM_VNNI_MIN_SEQ columns the per-call repack
+ * does not amortize: 0, and the caller's row kernels run. */
+static int try_band4_neon(jam_context* ctx, jam_q8_job* q, int m, jam_dtype wt) {
+    jam_job_fn band = ctx->band4[wt];
+    if (!(band && q->n >= JAM_VNNI_MIN_SEQ && ensure_qscratch(ctx, q->n, q->k) && ensure_repack(ctx, q->nb)))
+        return 0;
+    q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
+    q->repack = ctx->kq_repack;
+    jam_run(ctx, q->n, jam_q8_0_requant, q);
+    jam_run(ctx, ctx->threads, band, q);   /* the tiles are claimed inside; the range is only the fan width */
+    return 1;
+}
 
 #ifdef JAM_HAVE_AVX512
 /* The AVX-512-VNNI prefill band: phase 1 quantizes the activations (per family), phase 2 runs the
@@ -739,7 +763,7 @@ static int try_band8_avx2(jam_context* ctx, const void* w, int64_t w_stride, con
 }
 #endif
 
-static jam_status dispatch_kquant(jam_context* ctx, const void* w, int ldw, const void* a, int lda,
+static jam_status dispatch_kquant(jam_context* ctx, const void* w, jam_dtype wt, int ldw, const void* a, int lda,
                                   void* c, int ldc, int m, int n, int k, size_t kbytes,
                                   jam_job_fn band, jam_job_fn band8, jam_job_fn simd,
                                   jam_job_fn floor_) {
@@ -754,6 +778,7 @@ static jam_status dispatch_kquant(jam_context* ctx, const void* w, int ldw, cons
                        a, lda, c, ldc, m, n, k, band8)) return JAM_OK;
 #endif
     jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL }; q.m = m;
+    if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
     return run_quant(ctx, &q, m, simd, floor_);   /* int8 (SSE3 / ARM) or float floor */
 }
 
@@ -915,6 +940,7 @@ static jam_status jam_mm_run(jam_context* ctx,
      * global scale). Self-contained per-block like MXFP4; activations requant per-32. k on a 64 boundary. */
     if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 64 == 0)) {
         jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
+        if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
         return run_quant(ctx, &q, m, ctx->nvfp4_kernel, jam_mm_nvfp4_f32_generic);
     }
 
@@ -927,6 +953,7 @@ static jam_status jam_mm_run(jam_context* ctx,
                        jam_band32_quant32_avx512, jam_q1_0_band32_avx512)) return JAM_OK;
 #endif
         jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
+        if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
         return run_quant(ctx, &q, m, ctx->q1_0_kernel, ctx->q1_0_floor);
     }
 
@@ -958,6 +985,7 @@ static jam_status jam_mm_run(jam_context* ctx,
 #endif
             /* No Q8_0 packed layout: measured +1.8% only - the plain SDOT stream already sits at the
              * DRAM ceiling, so the realign does not pay for its bytes. */
+            if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
             jam_job_fn q8_kernel = n == 1 ? ctx->q8_decode_kernel : ctx->q8_kernel;
             return run_quant(ctx, &q, m, q8_kernel, jam_mm_q8_0_f32_generic);   /* decode / non-VNNI */
         }
@@ -971,6 +999,7 @@ static jam_status jam_mm_run(jam_context* ctx,
             if (try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 17,   /* MXFP4 block = 17 B */
                                a, lda, c, ldc, m, n, k, jam_mxfp4_band8_avx2)) return JAM_OK;
 #endif
+            if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
             jam_job_fn mxfp4_kernel = n == 1 ? ctx->mxfp4_decode_kernel : ctx->mxfp4_kernel;
             return run_quant(ctx, &q, m, mxfp4_kernel, jam_mm_mxfp4_f32_generic);
         }
@@ -988,6 +1017,7 @@ static jam_status jam_mm_run(jam_context* ctx,
                 try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 22,
                                a, lda, c, ldc, m, n, k, jam_q5_0_band8_avx2)) return JAM_OK;
 #endif
+            if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
             jam_job_fn q5_kernel = n == 1 ? ctx->q5_0_decode_kernel : ctx->q5_0_kernel;
             return run_quant(ctx, &q, m, q5_kernel, jam_mm_q5_0_f32_generic);
         }
@@ -1005,6 +1035,7 @@ static jam_status jam_mm_run(jam_context* ctx,
                 try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * 18,
                                a, lda, c, ldc, m, n, k, jam_q4_0_band8_avx2)) return JAM_OK;
 #endif
+            if (try_band4_neon(ctx, &q, m, wt)) return JAM_OK;
             jam_job_fn q4_kernel = n == 1 ? ctx->q4_0_decode_kernel : ctx->q4_0_kernel;
             return run_quant(ctx, &q, m, q4_kernel, jam_mm_q4_0_f32_generic);
         }
@@ -1025,7 +1056,7 @@ static jam_status jam_mm_run(jam_context* ctx,
     if (at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
         for (int i = 0; i < JAM_KQ_N; i++)
             if (wt == kquant_info[i].dt) {
-                return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, kquant_info[i].block_bytes,
+                return dispatch_kquant(ctx, w, wt, ldw, a, lda, c, ldc, m, n, k, kquant_info[i].block_bytes,
                                        kquant_info[i].band, kquant_info[i].band8,
                                        n == 1 ? ctx->kq_decode[i] : ctx->kq[i],
                                        kquant_info[i].floor);

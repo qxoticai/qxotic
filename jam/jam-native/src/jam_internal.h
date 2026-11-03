@@ -88,6 +88,8 @@ struct jam_context {
     jam_job_fn       q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_job_fn       q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
     jam_job_fn       q4_0_decode_kernel; /* Q4_0 n==1 override; direct-layout 4x1 SDOT on ARM. */
+    jam_job_fn       band4[JAM_Q1_0 + 1]; /* ARM prefill bands by weight dtype (n >= JAM_VNNI_MIN_SEQ),
+                                           * jam_band4_neon.inc; NULL -> the row kernels above */
     jam_job_fn       kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound int8 kernel; consts in kquant_info[] */
     jam_job_fn       kq_decode[JAM_KQ_N]; /* n==1 overrides: 4-row shared-activation GEMVs on ARM */
     jam_job_fn       dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
@@ -188,6 +190,8 @@ typedef struct {
     float*   asum;              /* [n*nb] per-block Σ(int8 activations) - K-quant dmin·min term (or NULL) */
     int      m;                 /* #output rows (features); the group-indexed rp kernels read this, NOT ldc
                                  * (the API permits ldc > m, so ldc must not be reused as the row count) */
+    jam_repack* repack;         /* [ctx->threads] per-worker scratch, the ARM bands' repacked rows (else NULL) */
+    _Atomic int next_tile;      /* the ARM bands claim their row tiles here, not from their range */
 } jam_q8_job;
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */
@@ -334,6 +338,15 @@ void jam_mm_mxfp4_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q4k_dotprod(void* job, int rb, int re, int tid);              /* K-quant sdot */
 void jam_mm_q5k_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q6k_dotprod(void* job, int rb, int re, int tid);
+void jam_q8_0_band4_dotprod(void* job, int rb, int re, int tid);          /* prefill bands (jam_band4_neon.inc): */
+void jam_q4_0_band4_dotprod(void* job, int rb, int re, int tid);          /*   rows repacked per call, vdotq_laneq */
+void jam_q5_0_band4_dotprod(void* job, int rb, int re, int tid);
+void jam_mxfp4_band4_dotprod(void* job, int rb, int re, int tid);
+void jam_nvfp4_band4_dotprod(void* job, int rb, int re, int tid);
+void jam_q1_0_band4_dotprod(void* job, int rb, int re, int tid);
+void jam_q4k_band4_dotprod(void* job, int rb, int re, int tid);
+void jam_q5k_band4_dotprod(void* job, int rb, int re, int tid);
+void jam_q6k_band4_dotprod(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_I8MM
 void jam_mm_q8_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* direct-layout 4x4 (smmla) */

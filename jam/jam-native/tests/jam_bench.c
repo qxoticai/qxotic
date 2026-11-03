@@ -42,6 +42,7 @@ static void* scrub_worker(void* a) {
     (void) s; return NULL;
 }
 static void scrub_caches(void) {
+    if (g_scrub_sz == 0) return;   /* JAM_BENCH_SCRUB_MB=0: warm caches, no scrub threads */
     if (g_scrub_threads <= 1) { scrub_worker(NULL); return; }
     pthread_t th[512]; int n = g_scrub_threads > 512 ? 512 : g_scrub_threads;
     for (int i=0;i<n;i++) if (pthread_create(&th[i],NULL,scrub_worker,NULL)) { th[i]=0; }

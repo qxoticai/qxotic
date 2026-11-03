@@ -556,6 +556,55 @@ static void reentry_pfor(int32_t n, jam_task_fn task, void* task_user, void* use
 #define FOREIGN_ISA JAM_ISA_AVX2
 #endif
 
+#if defined(__aarch64__)
+/* The ARM prefill band (jam_band4_neon.inc) runs for every quantized format where it is bound, and
+ * only from 8 columns up. The correctness suites cannot tell: a band that silently fell back to the
+ * row kernels would pass them. The fan-out widths can, through the host executor: a band call fans
+ * the requant over the n columns and then one unit per worker (the tiles are claimed inside), where
+ * the row kernels fan the m rows. */
+static int g_fan[4], g_nfan;
+static void record_pfor(int32_t n, jam_task_fn task, void* task_user, void* user) {
+    (void) user;
+    if (g_nfan < 4) g_fan[g_nfan] = n;
+    ++g_nfan;
+    task(0, n, 0, task_user);
+}
+static void suite_band_path(void) {
+    #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] band  %s\n", label); ++g_fail; } } while(0)
+    enum { m = 64, n = 16, k = 256, threads = 3 };
+    jam_context_options cfg; memset(&cfg, 0, sizeof cfg);
+    cfg.parallel = record_pfor; cfg.threads = threads; cfg.max_isa = JAM_ISA_DOTPROD;
+    jam_context* c = jam_context_new(&cfg);
+    if (!c || jam_context_isa(c) != JAM_ISA_DOTPROD) { if (c) jam_context_free(c); return; }   /* no dotprod here */
+    float* Wf = malloc(4ul * m * k); float* A = malloc(4ul * n * k); float* C = malloc(4ul * m * n);
+    float* s1 = malloc(4ul * m * k); float* s2 = malloc(4ul * m * k);   /* the makers' dequant scratch */
+    jam_ref_fill(Wf, (size_t) m * k, 1); jam_ref_fill(A, (size_t) n * k, 2);
+    struct { int dt; const char* nm; void* w; } F[] = {
+        { JAM_Q8_0, "Q8_0", jam_ref_quant_q8_0(Wf, m, k) },       { JAM_Q4_0, "Q4_0", jam_ref_make_q4_0(m, k, 1, s1, s2) },
+        { JAM_Q5_0, "Q5_0", jam_ref_make_q5_0(m, k, 1, s1, s2) }, { JAM_MXFP4, "MXFP4", jam_ref_quant_mxfp4(Wf, m, k) },
+        { JAM_NVFP4, "NVFP4", jam_ref_quant_nvfp4(Wf, m, k) },    { JAM_Q1_0, "Q1_0", jam_ref_quant_q1_0(Wf, m, k) },
+        { JAM_Q4_K, "Q4_K", jam_ref_make_q4k(m, k, 1, s1, s2) },  { JAM_Q5_K, "Q5_K", jam_ref_make_q5k(m, k, 1, s1, s2) },
+        { JAM_Q6_K, "Q6_K", jam_ref_make_q6k(m, k, 1, s1, s2) } };
+    for (unsigned i = 0; i < sizeof F / sizeof *F; i++) {
+        char lbl[64];
+        g_nfan = 0;
+        int st = jam_mm(c, F[i].w, F[i].dt, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
+        snprintf(lbl, sizeof lbl, "%s at %d columns: the band (requant over n, then a unit per worker)", F[i].nm, n);
+        OK(lbl, st == JAM_OK && g_nfan == 2 && g_fan[0] == n && g_fan[1] == threads);
+        g_nfan = 0;
+        st = jam_mm(c, F[i].w, F[i].dt, k, A, JAM_F32, k, C, JAM_F32, m, m, 4, k);
+        snprintf(lbl, sizeof lbl, "%s at 4 columns: the row kernels (requant over n, then the m rows)", F[i].nm);
+        OK(lbl, st == JAM_OK && g_nfan == 2 && g_fan[0] == 4 && g_fan[1] == m);
+        free(F[i].w);
+    }
+    free(Wf); free(A); free(C); free(s1); free(s2);
+    jam_context_free(c);
+    #undef OK
+}
+#else
+static void suite_band_path(void) {}
+#endif
+
 static void suite_api(void) {
     #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] api  %s\n", label); ++g_fail; } } while(0)
     float W[256], A[256], C[64], Cd[64], Cg[64]; for (int i=0;i<256;i++){ W[i]=0.1f*i; A[i]=0.2f*i; }
@@ -961,6 +1010,7 @@ int main(void) {
 
     suite_leak();       /* create/use/destroy cycles must not leak (mallinfo2 gate + LeakSanitizer) */
     suite_api();        /* contexts, options, errors, EINVAL vs EUNSUPPORTED, EBUSY */
+    suite_band_path();  /* ARM: the prefill band runs for every format from 8 columns, seen in the fan-outs */
 #ifndef _WIN32
     suite_fork();       /* a parent's context refuses in a forked child */
 #endif
