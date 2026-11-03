@@ -160,7 +160,8 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
     /** Keeps {@code s} for the slot's next call, unless a giant word left it large. */
     private void give(int slot, Scratch s) {
         if (s.kept()) {
-            spares.set(slot, s);
+            // the next take's getAndSet acquires it, so a release store does, without set's fence
+            spares.setRelease(slot, s);
         }
     }
 
