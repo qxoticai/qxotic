@@ -73,7 +73,8 @@ function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders
     Push-Location target
     try { Set-Item "Env:$($Name.ToUpper())_INSTALLED" '1'; & $WheelTest } finally { Remove-Item "Env:$($Name.ToUpper())_INSTALLED"; Pop-Location }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    if (-not ([IO.Compression.ZipFile]::OpenRead($whl).Entries.FullName -match 'LICENSE$')) { throw "no LICENSE in the wheel" }
+    $zip = [IO.Compression.ZipFile]::OpenRead($whl); try { $names = $zip.Entries.FullName } finally { $zip.Dispose() }   # an open zip locks the wheel
+    if (-not ($names -match 'LICENSE$')) { throw "no LICENSE in the wheel" }
     "the wheel carries the license"
 }
 
