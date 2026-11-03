@@ -17,6 +17,10 @@ DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
 MAJOR := $(word 1,$(subst ., ,$(VERSION)))
 SOVERSION := $(if $(filter 0,$(MAJOR)),0.$(word 2,$(subst ., ,$(VERSION))),$(MAJOR))
 SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).so.$(SOVERSION))
+NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
+# native-image's options: the caller's (NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 asks for another target than
+# native-image's own default), then QUICK=1's: this machine
+IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(QUICK),-march=native))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
 # SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
 # EXPORT_HEADERS, those whose functions the library exports; EXTRA_EXPORTS, the exported names no header
@@ -30,9 +34,9 @@ DIST_LIBS ?= $(LIB)
 WHEEL_DEPS ?=
 # the exported (defined, global) symbol names of a shared library or archive; Mach-O names lose their underscore
 EXPORTS = $(if $(filter darwin,$(OS)),nm -gU $(1) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(1) | awk '{print $$3}')
-# The wheel is pure Python over the library it carries: py3-none, tagged with the platform. The tag's
-# floor is read off the library itself, the glibc version on Linux and the minimum macOS on a Mac, so it
-# cannot drift from what was linked; the rest is Python's own platform name.
+# The wheel is Python (ctypes) over the library it carries: py3-none, tagged with the platform (setup.py
+# reads WHEEL_PLAT). The tag's floor is read off the library itself, the glibc version on Linux and the minimum
+# macOS on a Mac, so it cannot drift from what was linked; the rest is Python's own platform name.
 GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
 MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
 WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
@@ -48,10 +52,10 @@ help::
 	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
 	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the tests from outside the tree'
 	@echo 'make dist                  release bundle: headers, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
-	@echo 'All platforms at once, and PyPI: make wheels, make publish-wheels at the root.'
+	@echo 'This machine'"'"'s two wheels from a clean export, and PyPI: make wheels, make publish-wheels at the root.'
 
 check-version:   # the header, the wheel, the pom and (where it is a literal) the package name the same release
-	@h=$$(grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{printf "%s%s", (NR>1?".":""), $$2}'); \
+	@h=$(VERSION); \
 	 w=$$(grep -oE '^version = "[^"]+"' python/pyproject.toml | cut -d'"' -f2); \
 	 m=$$(grep -oE '<version>[^<]+</version>' pom.xml | head -1 | sed 's/<[^>]*>//g'); \
 	 p=$$(grep -oE '^__version__ = "[^"]+"' python/$(NAME)/__init__.py | cut -d'"' -f2); \
@@ -68,26 +72,26 @@ check-exports:
 python: $(LIB)
 	mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
 
-# The release tools, one venv for both packages: build makes the wheel, wheel tags it with the platform,
-# twine checks and uploads it, auditwheel audits the manylinux claim. One venv per Python, since a venv is
-# bound to the interpreter that made it and a build container's differs from the host's.
+# The release tools, one venv for both packages (the root's publish-wheels makes the same one, by the same
+# path, to upload with): pip builds the wheel, twine
+# checks and uploads it, auditwheel audits the manylinux claim. One venv per Python, since a venv is bound to
+# the interpreter that made it and a build container's differs from the host's.
 TOOLS := $(ROOT)/target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')
 $(TOOLS)/bin/twine:
-	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
+	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q twine auditwheel
 
 wheel: python $(TOOLS)/bin/twine
 	cp $(ROOT)/LICENSE python/LICENSE
-	rm -rf target/wheel python/build && $(TOOLS)/bin/python -m build --wheel --outdir target/wheel python
-	$(TOOLS)/bin/wheel tags --remove --python-tag py3 --abi-tag none --platform-tag $(WHEEL_PLAT) target/wheel/*.whl   # ctypes over a C library: any Python 3
+	rm -rf target/wheel python/build && WHEEL_PLAT=$(WHEEL_PLAT) $(TOOLS)/bin/pip wheel -q --no-deps -w target/wheel ./python
 
 # The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the wheels it
 # depends on, tested from outside the checkout ($(WHEEL_TEST), run in target/ with wheelenv's python).
 check-wheel: wheel
 	$(TOOLS)/bin/twine check --strict target/wheel/*.whl
-	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)   # "unsupported ISA extensions" is jinfer's x86-64-v3 floor, known and documented
+	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)   # "unsupported ISA extensions": native-image's default target, x86-64-v3, the libraries' floor
 	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(WHEEL_DEPS)
 	cd target && $(WHEEL_TEST)
-	@unzip -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
+	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
 
 # What a release carries per platform: headers, libraries, the wheel, so pip users need no second download.
 dist: wheel

@@ -2,7 +2,8 @@
 # pins the glibc floor the wheels promise, the same on x86_64 and aarch64, whatever the host runs. Oracle GraalVM,
 # 25.0.4 or later being the floor the C shims need (make check-native-image), records the profile libtoknroll ships
 # built with (PGO); Maven is the floor the poms enforce.
-#   make wheels-linux    # builds this image for the host's architecture, then both wheels and their checks inside it
+#   make wheels          # on Linux: builds this image for the host's architecture, then both wheels and their checks inside it
+#   make wheels-linux    # the same on any host with docker: a Mac's builds Linux aarch64
 # (the container runs as the caller with /etc/passwd read-only: the JVM takes the home directory from the uid,
 # and the model and Maven caches live under it)
 ARG ARCH=x86_64

@@ -1,14 +1,20 @@
-# What the two native libraries' build.ps1 share, the Makefile's targets in PowerShell since make is not
-# native on Windows (the Makefiles' native.mk, here). Dot-sourced after the including script set $Here (its
-# own directory), $Name, $Opt, $March (empty: native-image's default target), $Headers, $Syms and the script blocks $PgoProfile (Oracle GraalVM's profile, recorded into target\pgo\default.iprof; optional), $Example (the C example built and
-# run), $PyTest (the tests in the tree), $WheelTest (the tests from outside it, run in target\ with wheelenv's
-# python) and $WheelDeps (other wheels the installed one needs, built first).
+# What the two native libraries' build.ps1 share: native.mk's targets in PowerShell, since make is not native
+# on Windows. Dot-sourced by a build.ps1 that has set, first:
+#   $Here        its own directory (a dot-sourced script's $PSScriptRoot is this file's)
+#   $Name        the library: target\$Name.dll, include\$Name.h, the Python package python\$Name
+#   $Headers     the headers whose functions the DLL exports, and $Syms, their prefixes
+#   $Example     a script block: the C example, built and run
+#   $PyTest      a script block: the Python tests, in the tree
+#   $WheelTest   a script block: the tests from outside the tree, run in target\ with wheelenv's python
+#   $WheelDeps   a script block: other wheels the installed one needs, built first
+#   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\default.iprof
 $ErrorActionPreference = 'Stop'
-Set-Location $Here
+Push-Location $Here   # the caller's location back at the end, as make -C leaves it
 $Root = (Resolve-Path '..\..').Path
 $Lib = "target\$Name.dll"
 $Platform = 'windows-x86-64'
-$Tools = "$Root\target\pytools\" + (python -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep=chr(45))')   # chr(45) = "-": quotes do not survive PowerShell 5.1's argument passing
+# chr(45) is "-": PowerShell 5.1 strips the quotes inside a native command's argument
+$Tools = "$Root\target\pytools\" + (python -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep=chr(45))')
 
 function Enter-Toolchain {   # cl, link, dumpbin for the shims, the image and the checks: Visual Studio's own environment
     if (Get-Command cl -ErrorAction SilentlyContinue) { return }
@@ -20,20 +26,20 @@ function Enter-Toolchain {   # cl, link, dumpbin for the shims, the image and th
 }
 function Check-NativeImage {   # 25.0.4 is the floor: the isolate parameters the C shims use
     $v = (native-image --version | Select-Object -First 1) -replace '^native-image (\S+).*', '$1'
-    if ([version](($v -split '\.')[0..2] -join '.') -lt [version]'25.0.4') { throw "native-image $v is too old: 25.0.4 or later" }   # 25.0.4.1.1: three parts compare
+    if ([version](($v -split '\.')[0..2] -join '.') -lt [version]'25.0.4') { throw "native-image $v is too old: 25.0.4 or later" }   # 25.0.4.1.1: [version] takes four parts at most
 }
-function Build-Library {
+function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=native) or a PGO profile asks for another
     Enter-Toolchain; Check-NativeImage
-    $march = if ($Quick) { 'native' } else { $March }
-    $options = $env:NATIVE_IMAGE_OPTIONS   # -march only when asked: native-image's own default otherwise
-    if ($march) { $env:NATIVE_IMAGE_OPTIONS = "$options -march=$march".Trim() }
+    $options = $env:NATIVE_IMAGE_OPTIONS
+    if ($Quick) { $env:NATIVE_IMAGE_OPTIONS = "$options -march=native".Trim() }
     try {
         # Oracle GraalVM builds from the profile $PgoProfile records first, for a library that has one
         $pgo = -not $Quick -and $PgoProfile -and ((native-image --version | Select-Object -Index 1) -match 'Oracle GraalVM')
         if ($pgo) { & $PgoProfile | Out-Host }
-        $opt = if ($Quick) { '-Ob' } elseif ($pgo) { "--pgo=$Here\target\pgo\default.iprof" } else { $Opt }
+        # $null passes no argument, so the pom's stays; a splatted array would not do: 5.1 splits its -name:value elements
+        $opt = if ($Quick) { "-D$Name.image.opt=-Ob" } elseif ($pgo) { "-D$Name.image.opt=--pgo=$Here\target\pgo\default.iprof" }
         Push-Location $Root
-        try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests "-D$Name.image.opt=$opt"; if ($LASTEXITCODE) { throw "mvn failed" } }
+        try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests $opt; if ($LASTEXITCODE) { throw "mvn failed" } }
         finally { Pop-Location }
     } finally { $env:NATIVE_IMAGE_OPTIONS = $options }
 }
@@ -47,7 +53,7 @@ function Check-Version {   # the header, the wheel, the pom and (where it is a l
 }
 function Check-Exports {   # every function the headers declare is exported; the runtime's own names (graal_*, JNU_*) ride along on Windows
     Enter-Toolchain
-    $header = (Select-String -Path $Headers -Pattern "^[A-Z]+_API.*?(($Syms)_[a-z_]+)\(").Matches | ForEach-Object { $_.Groups[1].Value } | Sort-Object
+    $header = (Select-String -Path $Headers -Pattern "^[A-Z]+_API.*?(($Syms)_[a-z0-9_]+)\(").Matches | ForEach-Object { $_.Groups[1].Value } | Sort-Object
     $exported = dumpbin /nologo /EXPORTS $Lib | ForEach-Object { if ($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+(\S+)') { $Matches[1] } } | Where-Object { $_ -match "^($Syms)_[^_]" } | Sort-Object
     $diff = Compare-Object $header $exported
     if ($diff) { $diff | Format-Table | Out-String | Write-Host; throw "exports differ from the headers" }
@@ -55,37 +61,41 @@ function Check-Exports {   # every function the headers declare is exported; the
 }
 function Run-Check { Check-Version; Check-Exports; & $Example; & $PyTest }
 function Stage-Python { New-Item -ItemType Directory -Force "python\$Name\lib\$Platform" | Out-Null; Copy-Item $Lib "python\$Name\lib\$Platform\" }
-function Ensure-Tools {   # one venv per Python, as the Makefile: build, wheel, twine
-    if (-not (Test-Path "$Tools\Scripts\twine.exe")) { Remove-Item -Recurse -Force $Tools -ErrorAction SilentlyContinue; python -m venv $Tools; & "$Tools\Scripts\pip" install -q build wheel twine }
+function Ensure-Tools {   # one venv per Python, as native.mk's: pip builds the wheel, twine checks it
+    if (Test-Path "$Tools\Scripts\twine.exe") { return }
+    if (Test-Path $Tools) { Remove-Item -Recurse -Force $Tools }
+    python -m venv $Tools; if ($LASTEXITCODE) { throw "venv failed" }
+    & "$Tools\Scripts\pip" install -q twine; if ($LASTEXITCODE) { throw "pip install twine failed" }
 }
-function Build-Wheel {
+function Build-Wheel {   # tagged py3-none-win_amd64 by setup.py: ctypes over a C library, any Python 3
     Stage-Python; Ensure-Tools
     Copy-Item "$Root\LICENSE" python\LICENSE
-    Remove-Item -Recurse -Force target\wheel, python\build -ErrorAction SilentlyContinue
-    & "$Tools\Scripts\python" -m build --wheel --outdir target\wheel python; if ($LASTEXITCODE) { throw "build failed" }
-    & "$Tools\Scripts\wheel" tags --remove --python-tag py3 --abi-tag none --platform-tag win_amd64 (Get-Item target\wheel\*.whl).FullName; if ($LASTEXITCODE) { throw "wheel tags failed" }   # ctypes over a C library: any Python 3
+    Remove-Item -Recurse -Force target\wheel, python\build -ErrorAction Ignore
+    & "$Tools\Scripts\pip" wheel -q --no-deps -w target\wheel .\python; if ($LASTEXITCODE) { throw "pip wheel failed" }
 }
 function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the wheels it depends on, tested from outside the checkout
     Build-Wheel
-    $whl = (Get-Item target\wheel\*.whl).FullName; $deps = & $WheelDeps; Set-Location $Here
+    $whl = (Get-Item target\wheel\*.whl).FullName; $deps = & $WheelDeps
     & "$Tools\Scripts\twine" check --strict $whl; if ($LASTEXITCODE) { throw "twine check failed" }
-    Remove-Item -Recurse -Force target\wheelenv -ErrorAction SilentlyContinue; python -m venv target\wheelenv; & target\wheelenv\Scripts\pip install -q $whl $deps
+    if (Test-Path target\wheelenv) { Remove-Item -Recurse -Force target\wheelenv }
+    python -m venv target\wheelenv; if ($LASTEXITCODE) { throw "venv failed" }
+    & target\wheelenv\Scripts\pip install -q $whl $deps; if ($LASTEXITCODE) { throw "pip install failed" }
     Push-Location target
     try { Set-Item "Env:$($Name.ToUpper())_INSTALLED" '1'; & $WheelTest } finally { Remove-Item "Env:$($Name.ToUpper())_INSTALLED"; Pop-Location }
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [IO.Compression.ZipFile]::OpenRead($whl); try { $names = $zip.Entries.FullName } finally { $zip.Dispose() }   # an open zip locks the wheel
-    if (-not ($names -match 'LICENSE$')) { throw "no LICENSE in the wheel" }
+    if (-not (python -m zipfile -l $whl | Select-String 'LICENSE')) { throw "no LICENSE in the wheel" }
     "the wheel carries the license"
 }
 
-foreach ($t in $Targets) {
-    switch ($t) {
-        'help'        { Get-Content "$Here\build.ps1" | Select-Object -Skip 1 | Select-Object -First 7 | ForEach-Object { $_ -replace '^#\s?', '' }; 'All platforms at once, and PyPI: make wheels, make publish-wheels at the root.' }
-        'library'     { Build-Library }
-        'check'       { Run-Check }
-        'python'      { Stage-Python }
-        'wheel'       { Build-Wheel }
-        'check-wheel' { Check-Wheel }
-        default       { throw "no target '$t'" }
+try {
+    foreach ($t in $Targets) {
+        switch ($t) {
+            'help'        { Get-Content "$Here\build.ps1" | Select-Object -Skip 1 | Select-Object -First 6 | ForEach-Object { $_ -replace '^#\s?', '' }; "This machine's two wheels from a clean export: ..\..\wheels.ps1." }
+            'library'     { Build-Library }
+            'check'       { Run-Check }
+            'python'      { Stage-Python }
+            'wheel'       { Build-Wheel }
+            'check-wheel' { Check-Wheel }
+            default       { throw "no target '$t'" }
+        }
     }
-}
+} finally { Pop-Location }

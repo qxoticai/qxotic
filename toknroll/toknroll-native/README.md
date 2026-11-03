@@ -34,7 +34,7 @@ make dist                   # release bundle: header, both libraries, README, LI
 ```
 
 On Windows, `.\build.ps1` in this directory has the same targets.
-Every platform at once, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (RELEASING.md).
+This machine's two wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (`wheels.ps1` on Windows; RELEASING.md).
 
 Hub references are fetched through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local files need nothing.
 The shared library is 17 MB and the archive 18 MB at `-O2`, the builder's default; with the JDK's HTTPS stack inside it was 32 MB.

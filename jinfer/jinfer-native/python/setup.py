@@ -1,6 +1,11 @@
-"""The package carries a C library, so its wheel is a platform wheel (Root-Is-Purelib: false), which setuptools
-only concludes from a distribution that says it has binaries. Everything else is in pyproject.toml."""
+"""The wheel carries a C library and no extension module: any Python 3, any ABI, one platform. setuptools makes
+a platform wheel only of a distribution with binaries, and tags it after the interpreter that builds it, so
+both are said here: WHEEL_PLAT, from the Makefile, is the platform tag read off the library (its glibc floor,
+its minimum macOS); without it, this machine's. Everything else is in pyproject.toml."""
+import os
+
 from setuptools import Distribution, setup
+from setuptools.command.bdist_wheel import bdist_wheel
 
 
 class Binary(Distribution):
@@ -8,4 +13,9 @@ class Binary(Distribution):
         return True
 
 
-setup(distclass=Binary)
+class Wheel(bdist_wheel):
+    def get_tag(self):
+        return "py3", "none", os.environ.get("WHEEL_PLAT") or super().get_tag()[2]
+
+
+setup(distclass=Binary, cmdclass={"bdist_wheel": Wheel})

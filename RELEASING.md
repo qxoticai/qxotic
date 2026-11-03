@@ -41,15 +41,19 @@ npm run build
 
 ## Python wheels
 
-The two wheels, `toknroll` and `jinfer`, are built per platform on the machines `hosts.mk` names, over ssh, from a tarball of the release commit.
+The two wheels, `toknroll` and `jinfer`, are built on each platform's own machine, from a clean export of the release tag.
+Linux builds in the manylinux container, so a Linux machine of either architecture builds the Linux wheels of its own; a Mac with docker (Colima) builds Linux aarch64 too.
 
 ```sh
-make wheels REF=<tag>        # every leg with a host; make wheel-<leg> for one
-make publish-wheels          # twine check, then upload target/wheels/*.whl
+make wheels REF=<tag>          # Linux (in the container) or macOS -> target/wheels/
+make wheels-linux REF=<tag>    # on a Mac: the Linux aarch64 wheels, in the container
+make publish-wheels            # twine check, then upload target/wheels/, skipping wheels PyPI holds
 ```
 
-Each leg runs its library's `check-wheel`: the wheel installed into a fresh venv and its suite run from outside the tree.
-Record the legs built, their test totals and skips, and the wheel file names with the release evidence.
+On Windows, `.\wheels.ps1 -Ref <tag>` builds them and `.\wheels.ps1 -Publish` uploads them.
+Each machine uploads its own wheels; copying every machine's `target/wheels/` to one machine and publishing from there works as well.
+Every build runs the libraries' `check-wheel`: the wheel installed into a fresh venv and its suite run from outside the tree.
+Record the platforms built, their test totals and skips, and the wheel file names with the release evidence.
 
 ## Consumer artifacts and native libraries
 
@@ -60,9 +64,10 @@ make release-canary
 The canary installs release artifacts into a temporary Maven repository and compiles isolated LangChain4j, Spring AI and Spring Boot consumers with and without BOMs.
 It requires network access for dependencies and checks dependency resolution and compilation, not inference, signatures or native-library correctness.
 
-Build and test the shipped native libraries using [Building jam](jam/BUILDING.md), then verify the staged set:
+Build and test the shipped native libraries using [Building jam](jam/BUILDING.md): `natives.sh build` on the Linux host and on the Mac, at the release commit, then the Mac's library imported on the Linux host and the staged set verified:
 
 ```sh
+jam/jam-native/scripts/natives.sh import <the Mac's darwin-aarch64 directory>
 jam/jam-native/scripts/natives.sh verify
 mvn -B -Prelease verify -DskipTests -Dgpg.skip=true
 ```

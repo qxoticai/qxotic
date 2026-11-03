@@ -1,13 +1,14 @@
 # libtoknroll: toknroll as a shared library with the C API in include/toknroll.h. `make help` lists the targets.
 NAME  := toknroll
-OPT    = $(if $(QUICK),-Ob,$(if $(PGO),--pgo=$(abspath $(PROFILE)),-O2))
-# The target is native-image's own default; MARCH=<target> asks for another, QUICK=1 for this machine
-MARCH ?= $(if $(QUICK),native)
+# The optimization: the pom's (-O2) unless QUICK=1 or a PGO profile asks for another
+OPT    = $(if $(QUICK),-Ob,$(if $(PGO),--pgo=$(abspath $(PROFILE))))
 STATIC := target/libtoknroll.a
 DIST_LIBS = $(LIB) $(STATIC)
-SYSLIBS := -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt)   # what the image needs from the system; the shared library carries these as NEEDED
+# What the image needs from the system: the shared library carries these as NEEDED, a static consumer links them
+SYSLIBS = -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt)
 WHEEL_TEST = TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
-SOURCE ?= Qwen/Qwen3-0.6B   # what `make check` tokenizes: a hub repository, metadata only
+# What `make check` tokenizes: a hub repository, metadata only
+SOURCE ?= Qwen/Qwen3-0.6B
 
 help::
 	@echo 'make libtoknroll           -O2, native-image'"'"'s default target, what ships -> $(LIB) and $(STATIC)'
@@ -16,12 +17,9 @@ help::
 	@echo 'make check                 header vs exports, C examples (shared and static), Python tests'
 include ../../native.mk
 # Oracle GraalVM builds what ships optimized for a profile it records first (PGO); GraalVM CE builds without
-# one, and QUICK=1 skips it. The collector is the serial one: GC=--gc=G1 (Oracle, Linux) runs up to 70%
-# faster on many cores, but a forked child that allocates hangs, its parent's GC threads gone.
-NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
-PGO := $(if $(QUICK),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
-GC ?=
-IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(MARCH),-march=$(MARCH)) $(GC))
+# one, and QUICK=1 skips it. The collector is the serial one: NATIVE_IMAGE_OPTIONS=--gc=G1 (Oracle, Linux) runs
+# up to 70% faster on many cores, but a forked child that allocates hangs, its parent's GC threads gone.
+PGO = $(if $(QUICK),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
 PROFILE := target/pgo/default.iprof
 # The profile's workload: enwik8, where the tests find it, and PgoTraining's tokenizers (PGO_SOURCES, if set)
 CORPUS = $(shell python3 -c "import runpy; print(runpy.run_path('$(ROOT)/toknroll/scripts/download_enwik8.py', run_name='lib')['default_corpus_dir']() / 'enwik8')")
@@ -32,7 +30,7 @@ libtoknroll:
 	rm -f target/cc.log
 	cd $(ROOT) && NATIVE_IMAGE_OPTIONS="$(IMAGE_OPTIONS)" \
 	  NATIVE_CC_LOG=$(abspath target/cc.log) NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
-	  -Dtoknroll.image.opt=$(OPT)
+	  $(if $(OPT),-Dtoknroll.image.opt=$(OPT))
 	ln -sf $(notdir $(LIB)) target/$(SONAME)
 	src/main/c/static.sh include/toknroll.h target/cc.log $(STATIC)
 

@@ -22,7 +22,7 @@ a model is reference-counted by its states and streams; any thread may call, one
 GraalVM 25.0.4 or later (`native-image`; `JAVA_HOME` picks it, GraalVM CE for the binaries we ship), a C compiler and Maven. From this directory:
 
 ```sh
-make libjinfer            # -O3 -march=x86-64-v3 (GraalVM's default on x86-64, AVX2), what ships -> target/libjinfer.so; MARCH=x86-64-v4 for AVX-512
+make libjinfer            # -O3 -march=x86-64-v3 (GraalVM's default on x86-64, AVX2), what ships -> target/libjinfer.so; NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 for AVX-512
 make libjinfer QUICK=1    # -Ob -march=native: links and runs in seconds, kernels unoptimized, never measure it
 make check                # versions agree, header vs exports, the C example, the Python test (cached models)
 make qa                   # threads, lifetime at interpreter exit, soak, offline, tools, unicode
@@ -34,7 +34,7 @@ make dist                 # release bundle: headers, library, README, LICENSE, w
 
 `make libjinfer` from the repository root does the same.
 On Windows, `.\build.ps1` in this directory has the same targets.
-Every platform at once, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (RELEASING.md).
+This machine's two wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (`wheels.ps1` on Windows; RELEASING.md).
 
 ## How it is built
 

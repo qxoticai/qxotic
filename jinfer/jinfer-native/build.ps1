@@ -6,7 +6,7 @@
 #   .\build.ps1 wheel              the wheel, tagged win_amd64 -> target\wheel\
 #   .\build.ps1 check-wheel        twine check, a fresh venv with the toknroll wheel, pip install, the checks from outside the tree
 param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Targets = @('help'), [switch] $Quick)
-$Here = $PSScriptRoot; $Name = 'jinfer'; $Opt = '-O3'; $March = ''
+$Here = $PSScriptRoot; $Name = 'jinfer'
 $Toknroll = "$PSScriptRoot\..\..\toknroll\toknroll-native"
 $Headers = 'include\jinfer.h', "$Toknroll\include\toknroll.h"; $Syms = 'jinfer|toknroll'   # the library carries toknroll's C face too
 $Example = {

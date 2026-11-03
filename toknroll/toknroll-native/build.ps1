@@ -6,7 +6,7 @@
 #   .\build.ps1 wheel              the wheel, tagged win_amd64 -> target\wheel\
 #   .\build.ps1 check-wheel        twine check, a fresh venv, pip install, the tests from outside the tree
 param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Targets = @('help'), [switch] $Quick, [string] $Source = 'Qwen/Qwen3-0.6B')
-$Here = $PSScriptRoot; $Name = 'toknroll'; $Opt = '-O2'; $March = ''
+$Here = $PSScriptRoot; $Name = 'toknroll'
 $Headers = 'include\toknroll.h'; $Syms = 'toknroll'
 # Oracle GraalVM's profile, as the Makefile's pgo-profile: PgoTraining built instrumented with the library's own
 # feature and options, and run on enwik8 -> target\pgo\default.iprof

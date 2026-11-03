@@ -142,41 +142,54 @@ release-plan: ## What a release would publish, and whether the versions agree
 release-deploy: ## Stage for Central what it does not hold yet: PROJECT=. for everything in one bundle, PROJECT=jinfer for one project (CHECK=--check to only look)
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-deploy.sh $(PROJECT) $(CHECK)
 
-jam-natives: ## Build, stage and stamp every shipped libjam (linux/windows x86-64 here, darwin-aarch64 on JAM_MAC=user@mac over ssh)
+jam-natives: ## Build, stage and stamp this host's shipped libjam (Linux: linux and windows x86-64; a Mac: darwin-aarch64); natives.sh import adds the other host's
 	jam/jam-native/scripts/natives.sh build
 
 ##@ Wheels
 
-include hosts.mk
-LEGS ?= linux-x86_64 linux-aarch64 macos-arm64 windows-x86_64
+# Each machine builds its own wheels, from a clean export of REF (a tag, a commit, any tree-ish): nothing of
+# the working tree reaches them, and the Linux container never meets the host's build directories. Windows,
+# where make is not native, has wheels.ps1.
 REF ?= HEAD
+EXPORT := target/wheels-src
 
-wheels: ## Both wheels on every leg hosts.mk names, over ssh, the legs at once (REF=<tag> picks the commit) -> target/wheels/
-	@# each leg's output whole when it ends (-Otarget); a host building two (the Mac) gives each its directory
-	$(MAKE) -j$(words $(LEGS)) -Otarget $(addprefix wheel-,$(LEGS))
-	@ls -la target/wheels/*.whl | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
+# The export of REF builds $(1); then each new wheel replaces the package's wheel for its platform in target/wheels/.
+define from-export
+rm -rf $(EXPORT) $(EXPORT).tar && mkdir -p $(EXPORT) target/wheels
+git archive -o $(EXPORT).tar $(REF) && tar -xf $(EXPORT).tar -C $(EXPORT)
+$(MAKE) -C $(EXPORT) $(1)
+for w in $(EXPORT)/toknroll/toknroll-native/target/wheel/*.whl $(EXPORT)/jinfer/jinfer-native/target/wheel/*.whl; do \
+  f=$${w##*/}; rm -f target/wheels/$${f%%-*}-*-$${f##*-} && cp $$w target/wheels/; done
+@ls -l target/wheels/*.whl | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
+endef
 
-wheel-%: ## One leg: wheel-linux-x86_64, wheel-linux-aarch64, wheel-macos-arm64 or wheel-windows-x86_64
-	HOST='$(HOST.$*)' SETUP='$(SETUP.$*)' ./wheels.sh $* $(REF)
+wheels: ## This machine's two wheels, built and checked from a clean export of REF (HEAD): Linux in the manylinux container, macOS natively -> target/wheels/
+	$(call from-export,$(if $(filter Linux,$(shell uname -s)),wheels-in-container,wheels-here))
 
-wheels-native: ## Both wheels built and checked on THIS machine (what a leg runs; on Linux, inside the container)
+wheels-linux: ## The Linux wheels for this machine's architecture, in the manylinux container: on a Mac, Linux aarch64 (docker through Colima)
+	$(call from-export,wheels-in-container)
+
+wheels-here: # the two libraries and their checked wheels, in this tree, on this machine
 	$(MAKE) -C toknroll/toknroll-native libtoknroll check-wheel
 	$(MAKE) -C jinfer/jinfer-native libjinfer check-wheel
 
-wheels-linux: ## wheels-native inside the manylinux container (docker): the glibc floor the wheels promise, whatever this host runs (a Mac's, through Colima)
+# wheels-here in the manylinux container, which pins the glibc floor the wheels promise. It runs as the caller,
+# with the caller's own passwd line (the JVM takes the home directory from it; a Mac's VM has another), and the
+# Maven and model caches at their real paths.
+wheels-in-container:
 	docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux . >/dev/null
-	@# the caller's own passwd line: the JVM takes the home directory from it, and a Mac's VM has another
 	mkdir -p target && printf '%s:x:%s:%s::%s:/bin/sh\n' "$$(id -un)" "$$(id -u)" "$$(id -g)" "$$HOME" > target/passwd
-	docker run --rm -u "$$(id -u):$$(id -g)" -v "$$PWD/target/passwd:/etc/passwd:ro" -e HOME -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$$PWD:/src" -w /src qxotic-manylinux make wheels-native
+	docker run --rm -u "$$(id -u):$$(id -g)" -v "$(CURDIR)/target/passwd:/etc/passwd:ro" -e HOME \
+	  -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$(CURDIR):/src" -w /src qxotic-manylinux make wheels-here
 
-# The native Makefiles' release-tools venv (build, wheel, twine), shared by path.
+# The release tools' venv: native.mk's, by the same path, so an in-tree build and publishing share it.
 TOOLS := target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')
 $(TOOLS)/bin/twine:
-	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q build wheel twine auditwheel
+	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q twine auditwheel
 
-publish-wheels: $(TOOLS)/bin/twine ## twine check, then upload target/wheels/*.whl (TWINE_REPOSITORY=testpypi rehearses; credentials from ~/.pypirc)
+publish-wheels: $(TOOLS)/bin/twine ## Upload target/wheels/ to PyPI after twine check, skipping wheels it holds: each machine uploads its own (TWINE_REPOSITORY=testpypi rehearses; credentials from ~/.pypirc)
 	$(TOOLS)/bin/twine check --strict target/wheels/*.whl
-	$(TOOLS)/bin/twine upload target/wheels/*.whl
+	$(TOOLS)/bin/twine upload --skip-existing target/wheels/*.whl
 
 ##@ Miscellaneous
 
@@ -192,4 +205,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-native wheels-linux publish-wheels
+	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-linux wheels-here wheels-in-container publish-wheels
