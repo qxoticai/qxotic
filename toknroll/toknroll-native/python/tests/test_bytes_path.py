@@ -1,4 +1,5 @@
 """Text that reaches the tokenizer as its own bytes: batches cut into runs, short buffers, ill-formed UTF-8."""
+import ctypes as C
 import random
 import unittest
 from array import array
@@ -43,7 +44,7 @@ def raw_batch(t, texts, capacity, specials=False, before=b""):
     """toknroll_encode_batch over byte strings, as given, after `before` in their buffer:
     (total, written prefix, offsets)."""
     joined = before + b"".join(texts)
-    text_offsets = array("i", [len(before), *(len(before) + n for n in accumulate(map(len, texts)))])
+    text_offsets = array("q", [len(before), *(len(before) + n for n in accumulate(map(len, texts)))])
     offsets = array("i", bytes(4 * (len(texts) + 1)))
     out = array("i", bytes(4 * max(capacity, 1)))
     n = t._lib.toknroll_encode_batch(t._handle, joined, text_offsets.buffer_info()[0], len(texts), int(specials),
@@ -142,7 +143,7 @@ class BytesPathTest(unittest.TestCase):
             self.assertEqual(raw_batch(t, [], 0), (0, array("i"), array("i", [0])))
 
     def test_an_unknown_flag_is_refused(self):
-        text_offsets, offsets = array("i", [0, 1]), array("i", [0, 0])
+        text_offsets, offsets = array("q", [0, 1]), array("i", [0, 0])
         for t in self.tokenizers:
             for flags in (2, 3, 1 << 31):
                 self.assertLess(t._lib.toknroll_encode(t._handle, b"x", 1, flags, None, 0), 0)
@@ -151,6 +152,21 @@ class BytesPathTest(unittest.TestCase):
                                                  None, 0, offsets.buffer_info()[0])
                 self.assertLess(n, 0)
                 self.assertIn("unknown flags", str(toknroll._error(t._lib)))
+
+    def test_text_offsets_past_two_to_the_31(self):
+        # texts points 2^32 bytes before the buffer and the offsets start at 2^32: only 64-bit
+        # offsets reach the bytes, and none outside them is read
+        data, shift = "hello world, 日本".encode(), 1 << 32
+        buffer = C.create_string_buffer(data, len(data))
+        if C.addressof(buffer) < shift:
+            self.skipTest("the buffer sits below 2^32")
+        text_offsets = array("q", [shift, shift + 5, shift + len(data)])
+        for t in self.tokenizers:
+            offsets, out = array("i", bytes(4 * 3)), array("i", bytes(4 * 100))
+            n = t._lib.toknroll_encode_batch(t._handle, C.c_char_p(C.addressof(buffer) - shift),
+                                             text_offsets.buffer_info()[0], 2, 0, out.buffer_info()[0], 100,
+                                             offsets.buffer_info()[0])
+            self.assertEqual(split(out[:n], offsets), [t.encode("hello"), t.encode(" world, 日本")])
 
     def test_ill_formed_bytes_encode_as_their_replacement(self):
         for t in self.tokenizers:

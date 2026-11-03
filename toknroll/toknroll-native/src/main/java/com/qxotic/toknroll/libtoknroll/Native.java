@@ -14,6 +14,7 @@ import org.graalvm.nativeimage.ObjectHandles;
 import org.graalvm.nativeimage.c.function.CEntryPoint;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CIntPointer;
+import org.graalvm.nativeimage.c.type.CLongPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -71,8 +72,8 @@ public final class Native {
     }
 
     /** Room for a text's ids: prose runs about four bytes a token, so a third of its bytes. */
-    private static int estimate(int bytes) {
-        return Math.max(16, bytes / 3);
+    private static int estimate(long bytes) {
+        return (int) Math.min(Integer.MAX_VALUE - 8, Math.max(16, bytes / 3));
     }
 
     /**
@@ -231,7 +232,7 @@ public final class Native {
             IsolateThread thread,
             ObjectHandle handle,
             CCharPointer texts,
-            CIntPointer textOffsets,
+            CLongPointer textOffsets,
             int count,
             int flags,
             CIntPointer out,
@@ -245,13 +246,15 @@ public final class Native {
             if (textOffsets.isNull() || offsets.isNull())
                 throw Errors.invalid("text_offsets and offsets must not be NULL");
             if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-            int base = textOffsets.read(0);
+            long base = textOffsets.read(0);
             if (base < 0) throw Errors.invalid("text_offsets must not be negative");
-            int[] starts = new int[count + 1]; // the texts' offsets from the first
+            long[] starts = new long[count + 1]; // the texts' offsets from the first
             for (int i = 1; i <= count; i++) {
                 starts[i] = textOffsets.read(i) - base;
                 if (starts[i] < starts[i - 1])
                     throw Errors.invalid("text_offsets must not decrease, at " + i);
+                if (starts[i] - starts[i - 1] > Integer.MAX_VALUE)
+                    throw Errors.invalid("text " + (i - 1) + " is over 2^31 bytes");
             }
             if (texts.isNull() && starts[count] > 0) throw Errors.invalid("texts is NULL");
             Tokenizer tokenizer = loaded.tokenizer();
@@ -270,14 +273,14 @@ public final class Native {
                         int last = runs[r + 1];
                         int longest = 0;
                         for (int i = first; i < last; i++)
-                            longest = Math.max(longest, starts[i + 1] - starts[i]);
+                            longest = Math.max(longest, (int) (starts[i + 1] - starts[i]));
                         // one buffer per run, small enough to stay in cache, each text
                         // copied in as it comes (one copy per run measured 6% slower)
                         byte[] text = new byte[longest];
                         IntSequence.Builder b =
                                 IntSequence.newBuilder(estimate(starts[last] - starts[first]));
                         for (int i = first; i < last; i++) {
-                            int length = starts[i + 1] - starts[i];
+                            int length = (int) (starts[i + 1] - starts[i]);
                             copy(in + starts[i], text, length);
                             int before = b.size();
                             encodeUtf8(tokenizer, matcher, text, 0, length, b);

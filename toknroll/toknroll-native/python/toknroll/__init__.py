@@ -173,7 +173,7 @@ class Tokenizer:
         data = [_text(text, "encode_batch") for text in texts]
         count = len(data)
         joined = b"".join(data)  # the texts travel as one buffer, text i at text_offsets[i:i + 2]
-        text_offsets = array("i", accumulate(map(len, data), initial=0))
+        text_offsets = array("q", accumulate(map(len, data), initial=0))
         offsets = array("i", bytes(4 * (count + 1)))
         capacity = len(joined) // 2 + 16 * count
         out = array("i", bytes(4 * capacity))

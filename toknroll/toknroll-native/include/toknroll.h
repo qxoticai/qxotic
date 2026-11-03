@@ -116,7 +116,7 @@ TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t*
  * total, offsets[count]; over capacity, out gets a prefix and offsets is still complete, so
  * capacity 0 counts. */
 TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const char* texts,
-                                           const int32_t* text_offsets, int32_t count, uint32_t flags,
+                                           const int64_t* text_offsets, int32_t count, uint32_t flags,
                                            int32_t* out, int32_t capacity, int32_t* offsets);
 
 TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
