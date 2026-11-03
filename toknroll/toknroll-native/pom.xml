@@ -24,7 +24,6 @@
     <toknroll.image.name>libtoknroll</toknroll.image.name>
     <!-- -O2, the builder's default: -O3 bought 18% encode throughput for 11 MB of code (see the README) -->
     <toknroll.image.opt>-O2</toknroll.image.opt>
-    <toknroll.image.march>compatibility</toknroll.image.march>
     <toknroll.image.skip>false</toknroll.image.skip>
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
     <shim.cc>cc</shim.cc>
@@ -132,7 +131,6 @@
                 <!-- first, so the -H: options below that are experimental are unlocked -->
                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <buildArg>${toknroll.image.opt}</buildArg>
-                <buildArg>-march=${toknroll.image.march}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate${shim.obj}</buildArg>
                 <!-- the shim's toknroll_* symbols are the API; the wrapper adds them to GraalVM's export list -->

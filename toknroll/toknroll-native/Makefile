@@ -1,7 +1,8 @@
 # libtoknroll: toknroll as a shared library with the C API in include/toknroll.h. `make help` lists the targets.
 NAME  := toknroll
 OPT   := $(if $(QUICK),-Ob,-O2)
-MARCH ?= $(if $(QUICK),native,compatibility)
+# The target is native-image's own default; MARCH=<target> asks for another, QUICK=1 for this machine
+MARCH ?= $(if $(QUICK),native)
 STATIC := target/libtoknroll.a
 DIST_LIBS = $(LIB) $(STATIC)
 SYSLIBS := -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt)   # what the image needs from the system; the shared library carries these as NEEDED
@@ -9,7 +10,7 @@ WHEEL_TEST = TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheel
 SOURCE ?= Qwen/Qwen3-0.6B   # what `make check` tokenizes: a hub repository, metadata only
 
 help::
-	@echo 'make libtoknroll           -O2 -march=$(MARCH), what ships -> $(LIB) and $(STATIC)'
+	@echo 'make libtoknroll           -O2, native-image'"'"'s default target, what ships -> $(LIB) and $(STATIC)'
 	@echo 'make libtoknroll QUICK=1   this machine, quick build (-Ob -march=native)'
 	@echo 'make check                 header vs exports, C examples (shared and static), Python tests'
 include ../../native.mk
@@ -17,8 +18,9 @@ include ../../native.mk
 libtoknroll:
 	@$(MAKE) -s -C $(ROOT) check-native-image
 	rm -f target/cc.log
-	cd $(ROOT) && NATIVE_CC_LOG=$(abspath target/cc.log) NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
-	  -Dtoknroll.image.opt=$(OPT) -Dtoknroll.image.march=$(MARCH)
+	cd $(ROOT) && NATIVE_IMAGE_OPTIONS="$(strip $(NATIVE_IMAGE_OPTIONS) $(if $(MARCH),-march=$(MARCH)))" \
+	  NATIVE_CC_LOG=$(abspath target/cc.log) NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl toknroll/toknroll-native -am package -DskipTests \
+	  -Dtoknroll.image.opt=$(OPT)
 	ln -sf $(notdir $(LIB)) target/$(SONAME)
 	src/main/c/static.sh include/toknroll.h target/cc.log $(STATIC)
 

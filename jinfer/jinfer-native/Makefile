@@ -1,10 +1,9 @@
 # libjinfer: jinfer as a shared library with the C API in include/jinfer.h. `make help` lists the targets.
 NAME  := jinfer
 OPT   := $(if $(QUICK),-Ob,-O3)
-# The ISA level the image is built for; the kernels' vector width follows it (VectorWidth, at
-# build time). x86-64-v3 (AVX2, 2013) and armv8.1-a are GraalVM's own defaults, spelled out because
-# the plugin cannot leave the flag out; x86-64-v3 is the floor there, below it the kernels are not usable.
-MARCH ?= $(if $(QUICK),native,$(if $(filter x86-64,$(ARCH)),x86-64-v3,armv8.1-a))
+# The ISA level is native-image's own default, x86-64-v3 (AVX2, 2013) on x86-64, the kernels' floor; their
+# vector width follows it (VectorWidth, at build time). MARCH=<target> asks for another, QUICK=1 for this machine.
+MARCH ?= $(if $(QUICK),native)
 TOKNROLL := ../../toknroll/toknroll-native
 HEADERS := include/jinfer.h $(TOKNROLL)/include/toknroll.h   # the library carries toknroll's C face too
 # and libjam's, linked in whole: jam's Java side finds jam.h's functions and its JNI entry points by name
@@ -16,7 +15,7 @@ WHEEL_DEPS = $(TOKNROLL)/target/wheel/*.whl
 WHEEL_TEST = JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
 
 help::
-	@echo 'make libjinfer             -O3 -march=$(MARCH) (GraalVM'"'"'s default), what ships -> $(LIB); MARCH=x86-64-v4 for AVX-512'
+	@echo 'make libjinfer             -O3, native-image'"'"'s default target, what ships -> $(LIB); MARCH=x86-64-v4 for AVX-512'
 	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
 	@echo 'make check                 headers vs exports, C example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
@@ -24,8 +23,9 @@ include ../../native.mk
 
 libjinfer:
 	@$(MAKE) -s -C $(ROOT) check-native-image
-	cd $(ROOT) && NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
-	  -Djinfer.image.opt=$(OPT) -Djinfer.image.march=$(MARCH) -Dtoknroll.image.skip=true
+	cd $(ROOT) && NATIVE_IMAGE_OPTIONS="$(strip $(NATIVE_IMAGE_OPTIONS) $(if $(MARCH),-march=$(MARCH)))" \
+	  NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
+	  -Djinfer.image.opt=$(OPT) -Dtoknroll.image.skip=true
 	ln -sf $(notdir $(LIB)) target/$(SONAME)
 
 target/chat: examples/c/chat.c $(HEADERS) $(LIB)

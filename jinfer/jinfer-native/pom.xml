@@ -20,10 +20,6 @@
     <jinfer.image.name>libjinfer</jinfer.image.name>
     <!-- -O3 for a shipped library; the Makefile passes -Ob for the dev loop. -->
     <jinfer.image.opt>-O3</jinfer.image.opt>
-    <!-- The ISA level, x86-64-v3 (AVX2) being the kernels' floor; the Makefile passes compatibility on other
-         architectures and native for the dev loop. -->
-    <!-- GraalVM's own default target on x86-64, spelled out: the plugin cannot leave the flag out -->
-    <jinfer.image.march>x86-64-v3</jinfer.image.march>
     <!-- The Vector API width in bits, empty = what the target ISA (-march) can execute, which the
          VectorWidth feature pins at build time. Set it only to build narrower than the target. -->
     <jinfer.image.vectorBits />
@@ -195,7 +191,6 @@
               <fallback>false</fallback>
               <buildArgs>
                 <buildArg>${jinfer.image.opt}</buildArg>
-                <buildArg>-march=${jinfer.image.march}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/jinfer_shim${shim.obj}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate${shim.obj}</buildArg>
