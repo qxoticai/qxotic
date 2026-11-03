@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -53,8 +52,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
     // its length, or 0 for a longer token, which decode copies
     private final byte[] shortLengths;
     private final boolean ignoreMerges;
-    // with ignoreMerges: a word's bytes, as ISO-8859-1, to its token
-    private final Map<String, Integer> wholeTokens;
     private final Map<String, int[]> memo = new ConcurrentHashMap<>();
 
     /** An entry of {@link #encoders}: no engine encodes the rule set. */
@@ -87,7 +84,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
             }
         }
         this.ignoreMerges = ignoreMerges;
-        this.wholeTokens = ignoreMerges ? wholeTokens(tokenBytesById) : null;
     }
 
     static TiktokenModel fromVocabularyAndMerges(Vocabulary vocabulary, LongLongMap merges) {
@@ -120,17 +116,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         } else {
             return 0.28f;
         }
-    }
-
-    private static Map<String, Integer> wholeTokens(byte[][] tokenBytesById) {
-        Map<String, Integer> tokens = new HashMap<>();
-        for (int id = 0; id < tokenBytesById.length; id++) {
-            byte[] bytes = tokenBytesById[id];
-            if (bytes != null && bytes.length > 0) {
-                tokens.putIfAbsent(new String(bytes, StandardCharsets.ISO_8859_1), id);
-            }
-        }
-        return tokens;
     }
 
     // ---- the model alone: the whole text is one word ----
@@ -270,11 +255,10 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     private int[] wordIds(byte[] text, int start, int end) {
         if (ignoreMerges) {
-            Integer whole =
-                    wholeTokens.get(
-                            new String(text, start, end - start, StandardCharsets.ISO_8859_1));
-            if (whole != null) {
-                return new int[] {whole};
+            // a word that is a token is that token, as the vocabulary spells it
+            String spelling = ByteLevel.encode(Arrays.copyOfRange(text, start, end));
+            if (vocabulary().contains(spelling)) {
+                return new int[] {vocabulary().id(spelling)};
             }
         }
         return merge(text, start, end);
