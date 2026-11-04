@@ -1,5 +1,5 @@
 # libtoknroll on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\native.ps1).
-#   .\build.ps1 library            -O2 (Oracle GraalVM: PGO, a profile recorded first), native-image's default target, what ships -> target\toknroll.dll (+ toknroll.lib)
+#   .\build.ps1 library            what ships (Oracle GraalVM: PGO at -O3, a profile recorded first; CE: -O2), native-image's default target -> target\toknroll.dll (+ toknroll.lib)
 #   .\build.ps1 library -Quick     this machine, quick build (-Ob -march=native)
 #   .\build.ps1 check              header vs exports, C example, Python tests
 #   .\build.ps1 python             stage the DLL into python\toknroll\lib\windows-x86-64\
@@ -23,8 +23,7 @@ $PgoProfile = {
     Push-Location $pgo
     try {
         # quoted: PowerShell 5.1 splits an unquoted -argument at its first dot
-        native-image --pgo-instrument "-H:NativeLinkerOption=$pgo\toknroll_isolate.obj" "--features=com.qxotic.toknroll.libtoknroll.VectorWidth" `
-            "-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED" "-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport" `
+        native-image --pgo-instrument "-H:NativeLinkerOption=$pgo\toknroll_isolate.obj" `
             -cp "$Here\target\classes;$Here\target\test-classes;$(Get-Content classpath)" com.qxotic.toknroll.libtoknroll.PgoTraining -o train
         if ($LASTEXITCODE) { throw "native-image failed" }
         & .\train.exe $corpus; if ($LASTEXITCODE) { throw "training failed" }

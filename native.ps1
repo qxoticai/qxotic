@@ -61,7 +61,10 @@ function Check-Exports {   # every function the headers declare is exported; the
     "exports match the headers: $($header.Count) functions"
 }
 function Run-Check { Check-Version; Check-Exports; & $Example; & $PyTest }
-function Stage-Python { New-Item -ItemType Directory -Force "python\$Name\lib\$Platform" | Out-Null; Copy-Item $Lib "python\$Name\lib\$Platform\" }
+function Stage-Python {   # this platform's library alone, as native.mk's python
+    Remove-Item -Recurse -Force "python\$Name\lib" -ErrorAction Ignore
+    New-Item -ItemType Directory -Force "python\$Name\lib\$Platform" | Out-Null; Copy-Item $Lib "python\$Name\lib\$Platform\"
+}
 function Ensure-Tools {   # one venv per Python, as native.mk's: pip builds the wheel, twine checks it
     if (Test-Path "$Tools\Scripts\twine.exe") { return }
     if (Test-Path $Tools) { Remove-Item -Recurse -Force $Tools }

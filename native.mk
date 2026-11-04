@@ -36,16 +36,24 @@ WHEEL_DEPS ?=
 EXPORTS = $(if $(filter darwin,$(OS)),nm -gU $(1) | awk '{print $$3}' | sed 's/^_//',nm -D --defined-only $(1) | awk '{print $$3}')
 # The wheel is Python (ctypes) over the library it carries: py3-none, tagged with the platform (setup.py
 # reads WHEEL_PLAT). The tag's floor is read off the library itself, the glibc version on Linux and the minimum
-# macOS on a Mac, so it cannot drift from what was linked; the rest is Python's own platform name.
-GLIBC = $(shell objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
+# macOS on a Mac, so it cannot drift from what was linked; the rest is Python's own platform name. On Linux
+# the floor is 2.28 at least, the oldest glibc supported: the container's, which a library built there may
+# need less than (2.17 was measured), never more.
+GLIBC = $(shell { echo GLIBC_2.28; objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+'; } | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
 MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
-WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(GLIBC)_/; s/^macosx-[0-9.]*-/macosx_$(MINOS)_/')
+FLOOR = $(if $(filter darwin,$(OS)),$(MINOS),$(GLIBC))
+WHEEL_PLAT = $(shell python3 -c 'import sysconfig; print(sysconfig.get_platform())' | sed 's/^linux-/manylinux_$(FLOOR)_/; s/^macosx-[0-9.]*-/macosx_$(FLOOR)_/')
 # macOS: what the library and the wheel tag promise, 14.0 being what GraalVM 25's own darwin runtime objects
 # are built for. Reaches the pom's cc through the environment and native-image's linker through -E; empty
 # elsewhere, which compilers ignore. (No trailing comment: Apple's make would hand clang the spaces.)
 MACOSX_DEPLOYMENT_TARGET ?= $(if $(filter darwin,$(OS)),14.0)
 export MACOSX_DEPLOYMENT_TARGET
 .DEFAULT_GOAL := help
+# Each target is a step of one pipeline, Maven parallel inside; under -j two would share the tools venv
+.NOTPARALLEL:
+
+$(LIB):
+	@echo "$(LIB) is not built: make lib$(NAME)" >&2; exit 1
 
 help::
 	@echo 'make python                stage $(LIB) into python/$(NAME)/lib/$(PLATFORM)/'
@@ -69,8 +77,9 @@ check-exports:
 	@$(call EXPORTS,$(LIB)) | sort > target/exported.syms
 	@diff target/expected.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions$(if $(EXTRA_EXPORTS), and $(words $(EXTRA_EXPORTS)) more)"
 
+# The package carries this platform's library alone: a wheel holds what its tag names, whatever else this tree built
 python: $(LIB)
-	mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
+	rm -rf python/$(NAME)/lib && mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
 
 # The release tools, one venv for both packages (the root's publish-wheels makes the same one, by the same
 # path, to upload with): pip builds the wheel, twine

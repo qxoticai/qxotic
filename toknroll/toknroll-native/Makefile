@@ -1,6 +1,6 @@
 # libtoknroll: toknroll as a shared library with the C API in include/toknroll.h. `make help` lists the targets.
 NAME  := toknroll
-# The optimization: the pom's (-O2) unless QUICK=1 or a PGO profile asks for another
+# The optimization: the pom's (-O2) unless QUICK=1 or a PGO profile asks for another (Oracle GraalVM compiles a PGO build at -O3)
 OPT    = $(if $(QUICK),-Ob,$(if $(PGO),--pgo=$(abspath $(PROFILE))))
 STATIC := target/libtoknroll.a
 DIST_LIBS = $(LIB) $(STATIC)
@@ -11,9 +11,9 @@ WHEEL_TEST = TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheel
 SOURCE ?= Qwen/Qwen3-0.6B
 
 help::
-	@echo 'make libtoknroll           -O2, native-image'"'"'s default target, what ships -> $(LIB) and $(STATIC)'
+	@echo 'make libtoknroll           what ships, native-image'"'"'s default target -> $(LIB) and $(STATIC)'
+	@echo '                           Oracle GraalVM: PGO at -O3, from a profile recorded first (pgo-profile); CE: -O2'
 	@echo 'make libtoknroll QUICK=1   this machine, quick build (-Ob -march=native)'
-	@echo '                           with Oracle GraalVM: PGO, from a profile recorded first (pgo-profile)'
 	@echo 'make check                 header vs exports, C examples (shared and static), Python tests'
 include ../../native.mk
 # Oracle GraalVM builds what ships optimized for a profile it records first (PGO); GraalVM CE builds without
@@ -43,8 +43,7 @@ pgo-profile:
 	  dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(abspath target/pgo/classpath)
 	cc -std=c11 -O2 -fPIC -Wall -Iinclude -c src/main/c/toknroll_isolate.c -o target/pgo/toknroll_isolate.o   # Workers' threads
 	cd target/pgo && rm -f default.iprof && NATIVE_IMAGE_OPTIONS="$(IMAGE_OPTIONS)" $(NATIVE_IMAGE) --pgo-instrument \
-	  -H:NativeLinkerOption=$(abspath target/pgo/toknroll_isolate.o) --features=com.qxotic.toknroll.libtoknroll.VectorWidth -J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED \
-	  -H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport \
+	  -H:NativeLinkerOption=$(abspath target/pgo/toknroll_isolate.o) \
 	  -cp $(abspath target/classes):$(abspath target/test-classes):$$(cat classpath) com.qxotic.toknroll.libtoknroll.PgoTraining -o train
 	cd target/pgo && ./train "$(CORPUS)" $(PGO_SOURCES)
 
@@ -55,7 +54,7 @@ target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
 target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
 	cc -std=c99 -Wall -Wextra -Wpedantic -DTOKNROLL_STATIC -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
 
-check-static: target/tokenize-static
+check-static: check-exports target/tokenize-static
 	@# NF: the member header and blank lines nm prints for an archive. u: GNU unique, the C++ statics of
 	@# Oracle's G1 (svm_gc::), which objcopy cannot make local; they clash only with a second G1 image linked in
 	@nm --defined-only -g $(STATIC) | awk 'NF == 3 && $$2 != "u" {print $$3}' | sed 's/^_//' | sort > target/static.syms

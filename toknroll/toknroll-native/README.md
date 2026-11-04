@@ -37,8 +37,9 @@ On Windows, `.\build.ps1` in this directory has the same targets.
 This machine's two wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the root (`wheels.ps1` on Windows; RELEASING.md).
 
 Hub references are fetched through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local files need nothing.
-The shared library is 17 MB and the archive 18 MB at `-O2`, the builder's default; with the JDK's HTTPS stack inside it was 32 MB.
+Without a profile, at `-O2`, the builder's default, the shared library is 17 MB and the archive 18 MB; with the JDK's HTTPS stack inside it was 32 MB.
 The size follows the code: `-O3` is 12 MB larger for 18% more encode throughput, `-Os` 6 MB smaller for 19% less, and the floor, one entry point and the runtime, is 8 MB.
+What ships is the PGO build, which Oracle GraalVM compiles at `-O3` but only on the paths the profile ran, so it stays near the `-O2` size: 16 MB on Windows.
 
 The shared library's soname follows the version, `libtoknroll.so.0.4` (`@rpath/libtoknroll.0.4.dylib` on a Mac); the build links `target/libtoknroll.so.0.4` to the library, and the release bundle carries the file under that name.
 The shared library exports the header's twelve functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.

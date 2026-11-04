@@ -187,9 +187,12 @@
             <configuration combine.self="override">
               <imageName>${jinfer.image.name}</imageName>
               <sharedLibrary>true</sharedLibrary>
-              <!-- a fallback image would need a JDK at run time: a library that is not standalone is a failure -->
-              <fallback>false</fallback>
+              <!-- Counterintuitively, the plugin maps false to the deprecated no-fallback flag and
+                   true to no flag. This does not enable fallback images; GraalVM 25 has none. -->
+              <fallback>true</fallback>
               <buildArgs>
+                <!-- first, so the -H: options below that are experimental are unlocked -->
+                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <buildArg>${jinfer.image.opt}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/jinfer_shim${shim.obj}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
@@ -197,23 +200,21 @@
                 <!-- the shim's jinfer_* symbols are the API; the wrapper adds them to GraalVM's export
                      list, which otherwise names only the image's own entry points -->
                 <buildArg>${shim.wrapper}</buildArg>
-                <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
-                <buildArg>-ENATIVE_CC_LOG</buildArg>
-                <!-- and the soname the Makefile derives from the version -->
+                <!-- native-image runs the compiler in an environment of its own: pass it the soname the
+                     Makefile derives from the version -->
                 <buildArg>-ENATIVE_SONAME</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- jinfer_model_options is read through the header itself (Options.Directives), which includes toknroll.h -->
                 <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
-                <!-- toknroll's too: its tokenizers' vector width, and core's encoder on a target without AVX -->
-                <buildArg>--features=com.qxotic.jinfer.libjinfer.VectorWidth,com.qxotic.toknroll.libtoknroll.VectorWidth</buildArg>
+                <!-- the kernels' vector width; toknroll's own feature comes with toknroll-native (its native-image.properties) -->
+                <buildArg>--features=com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
                 <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
                 <!-- libjam linked into the image, whole: nothing in the image references its symbols statically
                      (jam resolves them by name at run time, from the image's own file: TOKNROLL_SELF_PROPERTY above),
                      so without whole-archive the linker would drop every member; no bundled copy is left to extract -->
                 <buildArg>${jam.link}</buildArg>
-                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
                 <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
                 <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
