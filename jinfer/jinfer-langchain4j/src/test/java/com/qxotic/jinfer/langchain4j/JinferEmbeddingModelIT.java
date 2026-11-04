@@ -49,15 +49,16 @@ import org.junit.jupiter.api.TestInstance;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JinferEmbeddingModelIT {
 
+    private static final String REF =
+            "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
+
     static JinferEmbeddingModel model;
 
     @BeforeAll
     static void load() {
         model =
                 JinferEmbeddingModel.builder()
-                        .modelPath(
-                                TestModels.require(
-                                        "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
+                        .modelPath(TestModels.require(REF))
                         .contextCapacity(1024)
                         .build();
         // vectors are bit-stable only once the JIT settles (cold passes drift ~1 LSB); the
@@ -373,9 +374,7 @@ class JinferEmbeddingModelIT {
         // own instance: the class-level model spent its hint tests ago
         JinferEmbeddingModel fresh =
                 JinferEmbeddingModel.builder()
-                        .modelPath(
-                                TestModels.require(
-                                        "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
+                        .modelPath(TestModels.require(REF))
                         .contextCapacity(512)
                         .build();
         var err = new ByteArrayOutputStream();
@@ -428,11 +427,7 @@ class JinferEmbeddingModelIT {
     @Test
     void sharedWeightsForkIsAParallelPipeline() throws Exception {
         try (Arena arena = Arenas.newCrossThread()) {
-            var loaded =
-                    Models.loadEmbedder(
-                            TestModels.require(
-                                    "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"),
-                            arena);
+            var loaded = Models.loadEmbedder(TestModels.require(REF), arena);
             JinferEmbeddingModel a =
                     JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
             JinferEmbeddingModel b = a.fork();
@@ -473,9 +468,7 @@ class JinferEmbeddingModelIT {
         // must be an ISE (the state's closed flag or the weights canary - never a crash)
         JinferEmbeddingModel closed =
                 JinferEmbeddingModel.builder()
-                        .modelPath(
-                                TestModels.require(
-                                        "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"))
+                        .modelPath(TestModels.require(REF))
                         .contextCapacity(256)
                         .build();
         closed.close();
@@ -489,11 +482,7 @@ class JinferEmbeddingModelIT {
         Arena arena = Arenas.newCrossThread();
         JinferEmbeddingModel borrowed;
         try {
-            var loaded =
-                    Models.loadEmbedder(
-                            TestModels.require(
-                                    "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"),
-                            arena);
+            var loaded = Models.loadEmbedder(TestModels.require(REF), arena);
             borrowed = JinferEmbeddingModel.builder().model(loaded).contextCapacity(512).build();
         } catch (Throwable t) {
             arena.close();
@@ -552,5 +541,33 @@ class JinferEmbeddingModelIT {
         assertTrue(e.getMessage().contains("Models.loadReranker"), e.getMessage());
         assertFalse(e.getMessage().contains("generative"), e.getMessage());
         assertFalse(e.getMessage().contains("chat with it"), e.getMessage());
+    }
+
+    @Test
+    void aCapacityPastTheModelsIsRefusedAtBuild() throws Exception {
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadEmbedder(TestModels.require(REF), arena);
+            int max = loaded.model().configuration().maxContextLength();
+            JinferEmbeddingModel.builder()
+                    .model(loaded)
+                    .contextCapacity(0)
+                    .build()
+                    .close(); // 0, the default, builds
+            IllegalArgumentException refused =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    JinferEmbeddingModel.builder()
+                                            .model(loaded)
+                                            .contextCapacity(max + 1)
+                                            .build());
+            assertTrue(
+                    refused.getMessage()
+                            .contains(
+                                    "exceeds the model's context length "
+                                            + max
+                                            + "; -1 selects the maximum"),
+                    refused.getMessage());
+        }
     }
 }

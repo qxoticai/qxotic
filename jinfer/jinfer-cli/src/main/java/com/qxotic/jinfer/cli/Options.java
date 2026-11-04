@@ -191,7 +191,8 @@ final class Options {
     private boolean readGeneration(Args a) {
         switch (a.name) {
             case "--batch-capacity" -> batchCapacity = a.integer();
-            case "--context-capacity", "-c" -> contextCapacity = a.integer();
+            case "--context-capacity", "-c" ->
+                    contextCapacity = a.integer("max", PromptCache.Options.MAXIMUM_CONTEXT);
             case "--temp" -> temperature = a.decimal();
             case "--top-p" -> topP = a.decimal();
             case "--top-k" -> topK = a.integer();
@@ -312,8 +313,9 @@ final class Options {
                 "--batch-capacity must be at least 1; got %s",
                 batchCapacity);
         require(
-                contextCapacity == null || contextCapacity >= 0,
-                "--context-capacity must be non-negative (0 uses the model maximum); got %s",
+                contextCapacity == null || contextCapacity >= PromptCache.Options.MAXIMUM_CONTEXT,
+                "--context-capacity must be 0 (the default), max or -1 (the model's maximum), or"
+                        + " positive, got %s",
                 contextCapacity);
         require(
                 temperature == null || temperature >= 0,
@@ -469,6 +471,16 @@ final class Options {
         }
     }
 
+    /** A capacity {@link PromptCache.Options#contextCapacity} refused, in the flag's own terms. */
+    static IllegalArgumentException asFlag(IllegalArgumentException refused) {
+        String message = refused.getMessage();
+        if (message == null || !message.startsWith("contextCapacity ")) return refused;
+        return new UsageException(
+                "--context-capacity "
+                        + message.substring("contextCapacity ".length())
+                                .replace("; -1 selects", "; max selects"));
+    }
+
     static void require(boolean condition, String message, Object... args) {
         if (!condition) throw new UsageException(message.formatted(args));
     }
@@ -535,6 +547,18 @@ final class Options {
         boolean flag() {
             require(inline == null, "%s takes no value; got '%s'", name, inline);
             return true;
+        }
+
+        /** An integer, or {@code word} spelled for {@code meaning}. */
+        int integer(String word, int meaning) {
+            String value = value();
+            if (value.equals(word)) return meaning;
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                throw new UsageException(
+                        name + " expects an integer or " + word + ", got " + value);
+            }
         }
 
         int integer() {
@@ -678,7 +702,8 @@ final class Options {
                   --top-k <int>               candidate limit; 0 disables
                   --min-p <number>            relative probability floor in [0, 1]
                   -s, --seed <long>           sampling seed
-                  -c, --context-capacity <int>  default min(4096, model); 0: model maximum
+                  -c, --context-capacity <int|max>
+                                              default 0: min(4096, model); max or -1: maximum
                   --batch-capacity <int>      prefill/scratch width; default 512
                   -n, --max-output-tokens <int>  generated-token budget; -1: remaining context
                   --think <off|on>            off: do not reason; on: allow model reasoning

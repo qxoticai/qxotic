@@ -13,13 +13,15 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     required. A remote ref resolves at context startup
  * @param companions capability to file: media for a multimodal embedder's projector (EmbeddingGemma
  *     2's mmproj); values take the same path-or-ref form as model
- * @param contextCapacity upper bound on the packing window and each embedded sequence (default
- *     8192): larger packs more sequences per forward pass and admits longer sequences, at the cost
- *     of a bigger resident state; 0 uses the model's maxContextLength; negative values are rejected
+ * @param contextCapacity upper bound on the packing window and each embedded sequence: 0, the
+ *     default, is PromptCache.Options.DEFAULT_CONTEXT_CAPACITY (4096) or the model's
+ *     maxContextLength when smaller; -1 is that length; another value is exact, refused at boot
+ *     past that length. Larger packs more sequences per forward pass and admits longer sequences,
+ *     at the cost of a bigger resident state
  */
 @ConfigurationProperties("spring.ai.jinfer.embedding")
 public record JinferEmbeddingProperties(
-        String model, Map<String, String> companions, @DefaultValue("8192") int contextCapacity) {
+        String model, Map<String, String> companions, @DefaultValue("0") int contextCapacity) {
 
     @ConstructorBinding
     public JinferEmbeddingProperties {}

@@ -99,11 +99,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
      * application did not ask it to write.
      */
     private static PromptCache.Options cacheOptions(
-            Path promptCache, int retainedSessions, Integer contextCapacity) {
+            Path promptCache, int retainedSessions, int contextCapacity) {
         var options = PromptCache.Options.DEFAULTS.withRetainedSessions(retainedSessions);
-        // unset stays the engine's bounded default (min(4096, model)); an explicit value above
-        // the model's {@code maxContextLength} is refused at build
-        if (contextCapacity != null) options = options.withContextCapacity(contextCapacity);
+        options =
+                options.withContextCapacity(contextCapacity); // past the model\'s, refused at build
         return options.withCatalog(promptCache, true);
     }
 
@@ -564,7 +563,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private Path promptCache;
         private int retainedSessions = 1;
-        private Integer contextCapacity; // null = unset -> min(4096, model)
+        private int contextCapacity; // 0: the default
         private Double temperature;
         private Double topP;
         private Integer topK;
@@ -689,20 +688,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Upper bound on the context available to each conversation, in tokens. The default is
-         * min(4096, the model's {@code maxContextLength}), deliberately bounded because a
-         * full-context state can consume substantial memory. A value above the model's {@code
-         * maxContextLength} is refused at build; {@code 0} uses the model's {@code
-         * maxContextLength}; otherwise the effective capacity is the smaller of this value and that
-         * length.
+         * Upper bound on the context available to each conversation, in tokens. {@code 0}, the
+         * default, is min(4096, the model's {@code maxContextLength}), deliberately bounded because
+         * a full-context state can consume substantial memory; {@link
+         * PromptCache.Options#MAXIMUM_CONTEXT} (-1) is that length; any other value is exact, and
+         * one past that length is refused at build.
          *
-         * @throws IllegalArgumentException if {@code contextCapacity < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < -1}
          */
         public Builder contextCapacity(int contextCapacity) {
-            if (contextCapacity < 0)
-                throw new IllegalArgumentException(
-                        "contextCapacity must be >= 0 (0 uses the model maximum): "
-                                + contextCapacity);
+            // a negative refused here, the rest at build, against the model's maximum
+            PromptCache.Options.contextCapacity(contextCapacity, Integer.MAX_VALUE, 0);
             this.contextCapacity = contextCapacity;
             return this;
         }

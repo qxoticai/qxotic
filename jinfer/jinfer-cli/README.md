@@ -218,7 +218,7 @@ curl -sS http://127.0.0.1:8080/v1/rerank \
 `/v1/rerank` answers `results` most relevant first, each with its `index`, `relevance_score` and, on request, `document`.
 Qwen3-Reranker scores are probabilities in [0, 1].
 LFM2.5-ColBERT scores are unbounded MaxSim sums that sit close together (about 28 to 30 out of 32), so rank by them and never threshold them.
-`--context-capacity` sizes the server's state (default 4096, `0` for the model's maximum); the language options are refused.
+`--context-capacity` sizes the server's state (default `0`: 4096, or the model's maximum when smaller; `max` or `-1` for the model's maximum); the language options are refused.
 
 The default bind is `127.0.0.1:54154`. To listen on other interfaces, supply `--host` and `--api-key`:
 

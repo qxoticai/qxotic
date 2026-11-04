@@ -112,19 +112,17 @@ final class Server {
     }
 
     /**
-     * The state's capacity on the language server's rule: min(4096, model) unless chosen, 0 for the
-     * model's maximum, and a capacity the model cannot honor refused.
+     * The state's capacity, as every jinfer face resolves it: the default unless chosen (0 the
+     * same), -1 for the model's maximum, and a capacity the model cannot honor refused.
      */
     static int contextCapacity(Options o, int maximum) {
-        if (o.contextCapacity == null)
-            return Math.min(PromptCache.Options.DEFAULT_CONTEXT_CAPACITY, maximum);
-        if (o.contextCapacity == 0) return maximum;
-        Options.require(
-                o.contextCapacity <= maximum,
-                "--context-capacity %s exceeds the model's context length %s; 0 uses the maximum",
-                o.contextCapacity,
-                maximum);
-        return o.contextCapacity;
+        int requested = o.contextCapacity == null ? 0 : o.contextCapacity;
+        try {
+            return PromptCache.Options.contextCapacity(
+                    requested, maximum, PromptCache.Options.DEFAULT_CONTEXT_CAPACITY);
+        } catch (IllegalArgumentException refused) {
+            throw Options.asFlag(refused);
+        }
     }
 
     private static int serveRetrieval(

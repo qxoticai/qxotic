@@ -35,7 +35,7 @@ Run with:
 ```java
 try (var model = JinferChatModel.builder()
         .model("LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0")
-        .contextCapacity(8192) // 0 = the model maximum; negative values are rejected
+        .contextCapacity(8192) // 0 = the default, -1 = the model's maximum, other negatives rejected
         .options(JinferChatOptions.builder()
                 .temperature(0.7)
                 .maxTokens(512)

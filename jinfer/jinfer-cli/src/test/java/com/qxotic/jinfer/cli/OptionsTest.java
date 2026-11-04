@@ -157,7 +157,8 @@ class OptionsTest {
                     {"transcribe", "-m", "m", "file.wav", "--raw-pcm"},
                     {"chat", "-m", "m", "--batch-capacity", "0"},
                     {"chat", "-m", "m", "--threads", "0"},
-                    {"chat", "-m", "m", "--context-capacity", "-1"},
+                    {"chat", "-m", "m", "--context-capacity", "-2"},
+                    {"chat", "-m", "m", "--context-capacity", "maximum"},
                     {"chat", "-m", "m", "--top-p", "1.7"},
                     {"chat", "-m", "m", "--temp", "NaN"},
                     {"chat", "-m", "m", "--max-reasoning-tokens", "-2"},
@@ -336,5 +337,35 @@ class OptionsTest {
             found++;
         }
         assertTrue(found > 0);
+    }
+
+    @Test
+    void theContextCapacityIsZeroForTheDefaultAndMaxForTheMaximum() {
+        assertNull(Options.parse("chat", "-m", "m").contextCapacity);
+        assertEquals(0, Options.parse("chat", "-m", "m", "-c", "0").contextCapacity);
+        assertEquals(-1, Options.parse("chat", "-m", "m", "-c", "max").contextCapacity);
+        assertEquals(-1, Options.parse("chat", "-m", "m", "--context-capacity=-1").contextCapacity);
+        assertEquals(
+                -1, Options.parse("chat", "-m", "m", "--context-capacity=max").contextCapacity);
+        assertEquals(-1, Options.parse("chat", "-m", "m", "-c=max").contextCapacity);
+        assertEquals(8192, Options.parse("chat", "-m", "m", "-c", "8192").contextCapacity);
+        // the server's rule, as every jinfer face has it: unset and 0 the default, -1 the maximum
+        assertEquals(4096, Server.contextCapacity(Options.parse("server", "-m", "m"), 128000));
+        assertEquals(
+                4096,
+                Server.contextCapacity(Options.parse("server", "-m", "m", "-c", "0"), 128000));
+        assertEquals(
+                512, Server.contextCapacity(Options.parse("server", "-m", "m", "-c", "0"), 512));
+        assertEquals(
+                128000,
+                Server.contextCapacity(Options.parse("server", "-m", "m", "-c", "max"), 128000));
+        var refused =
+                assertThrows(
+                        Options.UsageException.class,
+                        () ->
+                                Server.contextCapacity(
+                                        Options.parse("server", "-m", "m", "-c", "128001"),
+                                        128000));
+        assertTrue(refused.getMessage().contains("max selects the maximum"), refused.getMessage());
     }
 }

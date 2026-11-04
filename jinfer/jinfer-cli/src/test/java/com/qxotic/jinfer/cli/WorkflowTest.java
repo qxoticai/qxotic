@@ -96,11 +96,24 @@ class WorkflowTest {
     void modelMaximumAndOverCapacityHaveDifferentOutcomes() throws Exception {
         Path path = model("language", "");
         var capture = new CliFixtures.Capture("/context\n/exit\n");
-        assertEquals(0, run(capture, "chat", "-m", path.toString(), "-c", "0"));
-        assertTrue(capture.err().contains("context: 0/16384 tokens used"));
+        assertEquals(0, run(capture, "chat", "-m", path.toString(), "-c", "max"));
+        assertTrue(capture.err().contains("context: 0/16384 tokens used"), capture.err());
+        var zero = new CliFixtures.Capture("/context\n/exit\n");
+        assertEquals(0, run(zero, "chat", "-m", path.toString(), "-c", "0"));
+        assertTrue(
+                zero.err().contains("context: 0/4096 tokens used"),
+                "0 is the default: " + zero.err());
         var invalid = new CliFixtures.Capture("");
-        assertEquals(1, run(invalid, "instruct", "-m", path.toString(), "hi", "-c", "20000"));
-        assertTrue(invalid.err().contains("exceeds"));
+        assertEquals(
+                2,
+                run(invalid, "instruct", "-m", path.toString(), "hi", "-c", "20000"),
+                "a usage error");
+        assertTrue(
+                invalid.err()
+                        .contains(
+                                "--context-capacity 20000 exceeds the model's context length 16384;"
+                                        + " max selects the maximum"),
+                invalid.err());
         assertFalse(
                 CliModelProvider.weights.scope().isAlive(),
                 "failed engine construction releases weights");

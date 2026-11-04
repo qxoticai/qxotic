@@ -183,12 +183,17 @@ public final class Main {
     static ChatEngine loadText(Options options, Options.Files files, Arena arena)
             throws IOException {
         var model = AOT.load(files.model(), files.companions(), files.tokenizer(), arena);
-        ChatEngine engine =
-                new ChatEngine(
-                                model,
-                                files.model().getFileName().toString(),
-                                options.cacheOptions())
-                        .speculationDepth(options.speculationDepth);
+        ChatEngine engine;
+        try {
+            engine =
+                    new ChatEngine(
+                                    model,
+                                    files.model().getFileName().toString(),
+                                    options.cacheOptions())
+                            .speculationDepth(options.speculationDepth);
+        } catch (IllegalArgumentException refused) {
+            throw Options.asFlag(refused); // the cache's refusal of a capacity, as the flag's
+        }
         // an explicit depth on a model that cannot draft would be accepted and do nothing; 0 is
         // "off", meaningful everywhere, and the default stays a default
         if (options.supplied("--speculation-depth")

@@ -20,9 +20,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     model-seed-checked
  * @param retainedSessions live conversation states kept resident and reused append-only when a
  *     request's conversation strictly extends one; default 1, zero retains no completed state
- * @param contextCapacity upper bound on the conversation context (unset: 4096 or the model's
- *     maxContextLength when smaller; above it is refused at boot); 0 uses the model's
- *     maxContextLength; negative values are rejected
+ * @param contextCapacity upper bound on the conversation context: 0, the default, is 4096 or the
+ *     model's maxContextLength when smaller; -1 is that length; another value is exact, refused at
+ *     boot past that length
  * @param temperature sampling temperature; null uses the model recommendation
  * @param topP nucleus sampling mass; null uses the model recommendation
  * @param topK top-k cutoff; null uses the model recommendation, 0 disables
@@ -46,7 +46,7 @@ public record JinferChatProperties(
         Map<String, String> companions,
         String promptCache,
         @DefaultValue("1") int retainedSessions,
-        Integer contextCapacity,
+        @DefaultValue("0") int contextCapacity,
         Double temperature,
         Double topP,
         Integer topK,

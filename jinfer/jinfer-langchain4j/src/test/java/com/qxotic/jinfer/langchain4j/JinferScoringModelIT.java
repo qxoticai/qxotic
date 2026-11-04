@@ -247,4 +247,32 @@ class JinferScoringModelIT {
         assertTrue(forTower.get(0) > forTower.get(1), "tower query prefers doc 0: " + forTower);
         assertTrue(forPlants.get(1) > forPlants.get(0), "plant query prefers doc 1: " + forPlants);
     }
+
+    @Test
+    void aCapacityPastTheModelsIsRefusedAtBuild() throws Exception {
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadReranker(TestModels.require(REF), arena);
+            int max = loaded.model().configuration().maxContextLength();
+            JinferScoringModel.builder()
+                    .model(loaded)
+                    .contextCapacity(0)
+                    .build()
+                    .close(); // 0, the default, builds
+            IllegalArgumentException refused =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    JinferScoringModel.builder()
+                                            .model(loaded)
+                                            .contextCapacity(max + 1)
+                                            .build());
+            assertTrue(
+                    refused.getMessage()
+                            .contains(
+                                    "exceeds the model's context length "
+                                            + max
+                                            + "; -1 selects the maximum"),
+                    refused.getMessage());
+        }
+    }
 }

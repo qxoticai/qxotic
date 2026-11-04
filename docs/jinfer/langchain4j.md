@@ -59,7 +59,7 @@ Builder values are model defaults. `ChatRequest` values override per request.
 ```java
 JinferChatModel model = JinferChatModel.builder()
         .modelPath(Path.of("models/LFM2.5-8B-A1B-Q8_0.gguf"))
-        .contextCapacity(8192)      // 0 = the model's full context
+        .contextCapacity(8192)      // 0 = the default, -1 = the model's full context
         .temperature(0.7)
         .topP(0.95)
         .maxOutputTokens(1024)
@@ -223,7 +223,7 @@ Segments are packed into context-sized ragged batches: one forward pass embeds m
 ```java
 EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextCapacity(8192)          // packing upper bound; 0 = the model's maximum
+        .contextCapacity(8192)          // packing upper bound; 0 = the default, -1 = the model's maximum
         .build();
 ```
 

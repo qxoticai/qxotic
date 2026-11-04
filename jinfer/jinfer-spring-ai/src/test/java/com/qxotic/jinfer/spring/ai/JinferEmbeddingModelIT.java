@@ -424,4 +424,32 @@ class JinferEmbeddingModelIT {
         observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
         observations.assertThat().hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
     }
+
+    @Test
+    void aCapacityPastTheModelsIsRefusedAtBuild() throws Exception {
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadEmbedder(TestModels.require(EMBED_REF), arena);
+            int max = loaded.model().configuration().maxContextLength();
+            JinferEmbeddingModel.builder()
+                    .model(loaded)
+                    .contextCapacity(0)
+                    .build()
+                    .close(); // 0, the default, builds
+            IllegalArgumentException refused =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    JinferEmbeddingModel.builder()
+                                            .model(loaded)
+                                            .contextCapacity(max + 1)
+                                            .build());
+            assertTrue(
+                    refused.getMessage()
+                            .contains(
+                                    "exceeds the model's context length "
+                                            + max
+                                            + "; -1 selects the maximum"),
+                    refused.getMessage());
+        }
+    }
 }

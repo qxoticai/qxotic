@@ -33,7 +33,9 @@ java --add-modules jdk.incubator.vector \
   chat
 ```
 
-Replace `chat` with `instruct "..."` for one-shot generation. `--context-capacity 0` uses the model's declared maximum. Negative values and capacities above the model maximum are rejected.
+Replace `chat` with `instruct "..."` for one-shot generation.
+`--context-capacity max` (or `-1`) uses the model's declared maximum; `0` is the default, 4096 or the maximum when smaller.
+Other negative values and capacities above the model maximum are rejected.
 
 Use a framework adapter for application code:
 
@@ -223,7 +225,7 @@ This table is the translation.
 | concept | Java API | CLI | server | LangChain4j | Spring AI |
 |---|---|---|---|---|---|
 | context capacity: the usable context of this model or state, what you set | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.chat.context-capacity` |
-| max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()` | the default ceiling | `n_ctx_train` in `/props` | `contextCapacity(0)` selects it | same |
+| max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()`; `PromptCache.Options.MAXIMUM_CONTEXT` (-1) selects it | `-c max` or `-c -1` selects it | `n_ctx_train` in `/props` | `contextCapacity(-1)` selects it | same |
 | max output tokens | `Request.maxOutputTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
 | temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
 | thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |

@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
@@ -57,9 +58,10 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
             }
             int maxContextLength = loaded.model().configuration().maxContextLength();
             this.contextCapacity =
-                    b.contextCapacity == 0
-                            ? maxContextLength
-                            : Math.min(b.contextCapacity, maxContextLength);
+                    PromptCache.Options.contextCapacity(
+                            b.contextCapacity,
+                            maxContextLength,
+                            PromptCache.Options.DEFAULT_CONTEXT_CAPACITY);
             this.state = newState(loaded, contextCapacity, arena);
             // the card's own wording is only knowable once the port is loaded
             if (b.instruction != null && !loaded.reranker().hasInstructionSlot())
@@ -136,7 +138,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         private Object source; // Path | model-ref String | LoadedReranker: the last setter wins
         private Path modelPath; // derived from source at build()
         private LoadedReranker<?> loaded; // derived from source at build()
-        private int contextCapacity = 2048;
+        private int contextCapacity; // 0: the default
         private String instruction;
 
         /** The reranker GGUF to load. Required. */
@@ -174,17 +176,16 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         }
 
         /**
-         * Upper bound on the encoded query-and-document context, in tokens. The default is 2048.
-         * {@code 0} uses the model's {@code maxContextLength}; otherwise the effective capacity is
-         * the smaller of this value and that length.
+         * Upper bound on the encoded query-and-document context, in tokens. {@code 0}, the default,
+         * is {@link PromptCache.Options#DEFAULT_CONTEXT_CAPACITY} (4096) or the model's {@code
+         * maxContextLength} when that is smaller; {@link PromptCache.Options#MAXIMUM_CONTEXT} (-1)
+         * is that length; any other value is exact, and one past that length is refused at build.
          *
-         * @throws IllegalArgumentException if {@code contextCapacity < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < -1}
          */
         public Builder contextCapacity(int contextCapacity) {
-            if (contextCapacity < 0)
-                throw new IllegalArgumentException(
-                        "contextCapacity must be >= 0 (0 uses the model maximum): "
-                                + contextCapacity);
+            // a negative refused here, the rest at build, against the model's maximum
+            PromptCache.Options.contextCapacity(contextCapacity, Integer.MAX_VALUE, 0);
             this.contextCapacity = contextCapacity;
             return this;
         }

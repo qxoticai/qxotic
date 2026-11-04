@@ -51,12 +51,14 @@ class JinferChatAutoConfigurationTest {
     void negativeContextLengthFailsBeforeModelResolution() {
         runner.withPropertyValues(
                         "spring.ai.jinfer.chat.model=/missing.gguf",
-                        "spring.ai.jinfer.chat.context-capacity=-1")
+                        "spring.ai.jinfer.chat.context-capacity=-2")
                 .run(
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("contextCapacity must be >= 0");
+                                    .hasStackTraceContaining(
+                                            "contextCapacity must be 0 (the default), -1 (the"
+                                                    + " model's maximum)");
                         });
     }
 

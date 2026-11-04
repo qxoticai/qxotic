@@ -248,9 +248,9 @@ A model reference is `owner/repo[:quant]`, resolved from Hugging Face by default
 Name a host to use another source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.
 Set `JINFER_OFFLINE=1` to require cached models and prohibit downloads.
 
-Chat context capacity defaults to 4096 tokens, or the model maximum when smaller.
-Set `contextCapacity(0)` to use the full model maximum.
-Negative values and explicit capacities above that maximum are rejected.
+Context capacity defaults to 4096 tokens, or the model's maximum when smaller, for chat, embedding and reranking alike.
+Set `contextCapacity(PromptCache.Options.MAXIMUM_CONTEXT)` (`-1`) to use the model's maximum; `0` is the default.
+Other negative values, and explicit capacities above that maximum, are rejected.
 
 `stream(Prompt)` returns a cancellable stream of text deltas and a final response.
 

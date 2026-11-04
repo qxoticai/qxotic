@@ -441,7 +441,7 @@ public final class PromptCacheTest {
                                 fine(),
                                 SEED,
                                 PromptCache.Options.DEFAULTS
-                                        .withContextCapacity(0)
+                                        .withContextCapacity(PromptCache.Options.MAXIMUM_CONTEXT)
                                         .withBlockBudget(0));
                 var unset =
                         PromptCache.of(
@@ -461,7 +461,7 @@ public final class PromptCacheTest {
             assertEquals(CONTEXT - 1, bounded.contextCapacity());
         }
         // an explicit capacity the model cannot honor is refused at construction, naming both
-        // numbers and the 0 that means "the model's maximum" (the old clamp made a promise the
+        // numbers and the -1 that means "the model's maximum" (the old clamp made a promise the
         // first long prompt broke)
         IllegalArgumentException e =
                 assertThrows(
@@ -476,16 +476,60 @@ public final class PromptCacheTest {
         assertTrue(
                 e.getMessage().contains("exceeds the model's context length " + CONTEXT),
                 e.getMessage());
-        assertTrue(e.getMessage().contains("pass 0"), e.getMessage());
+        assertTrue(e.getMessage().contains("-1 selects the maximum"), e.getMessage());
     }
 
     @Test
-    void cacheRejectsNegativeContextCapacity() {
+    void theOneRuleEveryFaceResolvesItsCapacityBy() {
+        // requested is the caller's, 0 when they gave none; the maximum the model's; the default
+        // the face's
+        assertEquals(4096, PromptCache.Options.contextCapacity(0, 128000, 4096), "0: the default");
+        assertEquals(
+                2048,
+                PromptCache.Options.contextCapacity(0, 2048, 4096),
+                "the default, capped by the model");
+        assertEquals(
+                512, PromptCache.Options.contextCapacity(0, 512, 512), "a default of the maximum");
+        assertEquals(
+                128000, PromptCache.Options.contextCapacity(-1, 128000, 4096), "-1: the maximum");
+        assertEquals(
+                8192, PromptCache.Options.contextCapacity(8192, 128000, 4096), "a value: itself");
+        assertEquals(
+                128000,
+                PromptCache.Options.contextCapacity(128000, 128000, 4096),
+                "up to the maximum");
+        var above =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> PromptCache.Options.contextCapacity(128001, 128000, 4096));
+        assertEquals(
+                "contextCapacity 128001 exceeds the model's context length 128000; -1 selects the"
+                        + " maximum",
+                above.getMessage());
+        for (int bad : new int[] {-2, Integer.MIN_VALUE}) {
+            var below =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> PromptCache.Options.contextCapacity(bad, 128000, 4096));
+            assertEquals(
+                    "contextCapacity must be 0 (the default), -1 (the model's maximum) or positive,"
+                            + " got "
+                            + bad,
+                    below.getMessage());
+        }
+    }
+
+    @Test
+    void theOptionsTakeTheResolversRule() {
+        // the fixture's 64-token model is under every default: the resolver test tells them apart
+        assertEquals(-1, PromptCache.Options.MAXIMUM_CONTEXT, "-1 on every face");
+        PromptCache.Options.DEFAULTS.withContextCapacity(-1);
         IllegalArgumentException failure =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> PromptCache.Options.DEFAULTS.withContextCapacity(-1));
-        assertTrue(failure.getMessage().contains("contextCapacity"), failure.getMessage());
+                        () -> PromptCache.Options.DEFAULTS.withContextCapacity(-2));
+        assertTrue(
+                failure.getMessage().startsWith("contextCapacity must be 0"), failure.getMessage());
     }
 
     // ---- DEFINE-ONLY TAIL SNAPSHOT: saves thinking models from full re-prefill ---------------

@@ -92,7 +92,7 @@ class JinferRerankAutoConfigurationTest {
                         context -> {
                             JinferRerankProperties p =
                                     context.getBean(JinferRerankProperties.class);
-                            assertThat(p.contextCapacity()).isEqualTo(2048);
+                            assertThat(p.contextCapacity()).isZero(); // 0: 4096, or less
                             assertThat(p.instruction()).isNull(); // = the model card's wording
                             assertThat(p.topK()).isZero(); // keep every document
                             assertThat(p.minScore())

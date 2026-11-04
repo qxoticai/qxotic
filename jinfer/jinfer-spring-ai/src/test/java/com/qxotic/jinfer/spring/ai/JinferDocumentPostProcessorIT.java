@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
+import java.lang.foreign.Arena;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -139,5 +142,33 @@ class JinferDocumentPostProcessorIT {
                         IllegalArgumentException.class,
                         () -> processor.process(QUESTION, List.of(media)));
         assertTrue(e.getMessage().contains("media"), e.getMessage());
+    }
+
+    @Test
+    void aCapacityPastTheModelsIsRefusedAtBuild() throws Exception {
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadReranker(TestModels.require(RERANKER_REF), arena);
+            int max = loaded.model().configuration().maxContextLength();
+            JinferDocumentPostProcessor.builder()
+                    .model(loaded)
+                    .contextCapacity(0)
+                    .build()
+                    .close(); // 0, the default, builds
+            IllegalArgumentException refused =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    JinferDocumentPostProcessor.builder()
+                                            .model(loaded)
+                                            .contextCapacity(max + 1)
+                                            .build());
+            assertTrue(
+                    refused.getMessage()
+                            .contains(
+                                    "exceeds the model's context length "
+                                            + max
+                                            + "; -1 selects the maximum"),
+                    refused.getMessage());
+        }
     }
 }

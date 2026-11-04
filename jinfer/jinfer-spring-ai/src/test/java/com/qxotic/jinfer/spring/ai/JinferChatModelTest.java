@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.llm.Generator;
 import java.lang.reflect.Method;
@@ -59,19 +60,27 @@ class JinferChatModelTest {
     }
 
     @Test
-    void contextLengthHasOneSentinelAtEveryBuilder() {
-        JinferChatModel.builder().contextCapacity(0);
-        JinferEmbeddingModel.builder().contextCapacity(0);
-        JinferDocumentPostProcessor.builder().contextCapacity(0);
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> JinferChatModel.builder().contextCapacity(-1));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> JinferEmbeddingModel.builder().contextCapacity(-1));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> JinferDocumentPostProcessor.builder().contextCapacity(-1));
+    void contextCapacityIsZeroForTheDefaultAndMinusOneForTheMaximumAtEveryBuilder() {
+        // 0 the default, -1 the model's maximum: the same two values as C, Python and the CLI
+        for (int value : new int[] {0, PromptCache.Options.MAXIMUM_CONTEXT, 1}) {
+            JinferChatModel.builder().contextCapacity(value);
+            JinferEmbeddingModel.builder().contextCapacity(value);
+            JinferDocumentPostProcessor.builder().contextCapacity(value);
+        }
+        for (int bad : new int[] {-2, Integer.MIN_VALUE}) {
+            for (Runnable set :
+                    new Runnable[] {
+                        () -> JinferChatModel.builder().contextCapacity(bad),
+                        () -> JinferEmbeddingModel.builder().contextCapacity(bad),
+                        () -> JinferDocumentPostProcessor.builder().contextCapacity(bad)
+                    }) {
+                IllegalArgumentException e = assertThrows(IllegalArgumentException.class, set::run);
+                assertTrue(
+                        e.getMessage()
+                                .contains("must be 0 (the default), -1 (the model's maximum)"),
+                        e.getMessage());
+            }
+        }
     }
 
     @Test

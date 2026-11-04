@@ -54,13 +54,48 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         private static final long DEFAULT_MAX_CHECKPOINT_OVERHEAD = 1L << 20;
 
         /**
-         * The context capacity a caller with no opinion gets, bounded so a state allocates blind on
-         * any machine (llama.cpp's default too), and never more than the model's own length.
+         * The context capacity a caller with no opinion gets, a language model's, an embedder's and
+         * a reranker's alike, on every jinfer face: bounded so a state allocates blind on any
+         * machine (llama.cpp's default too), as a quick experiment should, and never more than the
+         * model's own length.
          */
         public static final int DEFAULT_CONTEXT_CAPACITY = 4096;
 
-        /** contextCapacity not chosen by the caller: resolved to min(default, model) at build. */
-        private static final int AUTO = -1;
+        /**
+         * The context capacity that asks for the model's whole declared context length, as -1 does
+         * on every jinfer face (C, Python, the CLI): 0 is the default, {@link
+         * #DEFAULT_CONTEXT_CAPACITY} or the model's length when that is smaller.
+         */
+        public static final int MAXIMUM_CONTEXT = -1;
+
+        /**
+         * The capacity a state gets, the one rule every jinfer face resolves its context capacity
+         * by: {@code requested} is the caller's (0 when they gave none), {@code maximum} the
+         * model's declared context length, {@code defaultCapacity} what 0 means ({@link
+         * #DEFAULT_CONTEXT_CAPACITY}, or a state's model's own capacity). 0 is that default, or the
+         * maximum when smaller; {@link #MAXIMUM_CONTEXT} the maximum; a positive value itself.
+         *
+         * @throws IllegalArgumentException for a value below {@link #MAXIMUM_CONTEXT}, or above
+         *     {@code maximum}: an explicit capacity is a promise about what will fit, refused here
+         *     rather than broken by the first long prompt
+         */
+        public static int contextCapacity(int requested, int maximum, int defaultCapacity) {
+            if (requested == 0) return Math.min(defaultCapacity, maximum);
+            if (requested == MAXIMUM_CONTEXT) return maximum;
+            if (requested < MAXIMUM_CONTEXT)
+                throw new IllegalArgumentException(
+                        "contextCapacity must be 0 (the default), -1 (the model's maximum) or"
+                                + " positive, got "
+                                + requested);
+            if (requested > maximum)
+                throw new IllegalArgumentException(
+                        "contextCapacity "
+                                + requested
+                                + " exceeds the model's context length "
+                                + maximum
+                                + "; -1 selects the maximum");
+            return requested;
+        }
 
         /**
          * What a caller with no opinion gets: the bounded default context ({@link
@@ -69,7 +104,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
          * limit. Turning the block layer off is {@code withBlockBudget(0)}.
          */
         public static final Options DEFAULTS =
-                new Options(4, AUTO, 2048L << 20, null, false, DEFAULT_MAX_CHECKPOINT_OVERHEAD);
+                new Options(4, 0, 2048L << 20, null, false, DEFAULT_MAX_CHECKPOINT_OVERHEAD);
 
         private final int retainedSessions;
         private final int contextCapacity;
@@ -87,10 +122,8 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
                 long maxCheckpointOverheadBytes) {
             if (retainedSessions < 0)
                 throw new IllegalArgumentException("retainedSessions " + retainedSessions);
-            if (contextCapacity < 0 && contextCapacity != AUTO)
-                throw new IllegalArgumentException(
-                        "contextCapacity must be >= 0 (0 uses the model context length): "
-                                + contextCapacity);
+            // a negative but -1 refused here; the rest in PromptCache.of, against the model
+            contextCapacity(contextCapacity, Integer.MAX_VALUE, 0);
             if (blockBudgetBytes < 0)
                 throw new IllegalArgumentException("blockBudgetBytes " + blockBudgetBytes);
             if (maxCheckpointOverheadBytes < 0)
@@ -138,17 +171,15 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         }
 
         /**
-         * Returns these options with a different context-capacity upper bound. {@code 0} uses the
-         * model's declared context length; any other value is the exact capacity, and {@link
-         * PromptCache#of} refuses one that exceeds that length.
+         * Returns these options with a different context-capacity upper bound: {@code 0} the
+         * default ({@link #DEFAULT_CONTEXT_CAPACITY}, or the model's declared context length when
+         * smaller), {@link #MAXIMUM_CONTEXT} that length, any positive value the exact capacity,
+         * which {@link PromptCache#of} refuses past that length.
          *
-         * @throws IllegalArgumentException if {@code contextCapacity < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity} is below {@link
+         *     #MAXIMUM_CONTEXT}
          */
         public Options withContextCapacity(int contextCapacity) {
-            if (contextCapacity < 0)
-                throw new IllegalArgumentException(
-                        "contextCapacity must be >= 0 (0 uses the model context length): "
-                                + contextCapacity);
             return new Options(
                     retainedSessions,
                     contextCapacity,
@@ -224,25 +255,11 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
             LanguageModel<?, ?, S> model, ContentKey seed, Options o) {
         if (seed == null) throw new IllegalArgumentException("null seed");
         if (o == null) throw new IllegalArgumentException("null options");
-        int modelCapacity = model.configuration().maxContextLength();
-        int requested = o.contextCapacity;
-        int capacity;
-        if (requested == Options.AUTO) {
-            capacity = Math.min(Options.DEFAULT_CONTEXT_CAPACITY, modelCapacity);
-        } else if (requested == 0) {
-            capacity = modelCapacity;
-        } else if (requested > modelCapacity) {
-            // an explicit capacity is a promise about what will fit: a state the model cannot
-            // honor is refused here, at construction, not at the first long prompt
-            throw new IllegalArgumentException(
-                    "contextCapacity "
-                            + requested
-                            + " exceeds the model's context length "
-                            + modelCapacity
-                            + "; pass 0 for the model's maximum");
-        } else {
-            capacity = requested;
-        }
+        int capacity =
+                Options.contextCapacity(
+                        o.contextCapacity,
+                        model.configuration().maxContextLength(),
+                        Options.DEFAULT_CONTEXT_CAPACITY);
         o = o.withContextCapacity(capacity);
         CheckpointCodec<S> codec = model.checkpointCodec().orElse(null);
         if (codec == null) PerformanceCliff.CACHE_SESSIONS_ONLY.report();

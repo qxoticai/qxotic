@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.RuntimeState;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.VideoCodec;
@@ -98,9 +99,10 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             }
             int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =
-                    b.contextCapacity == 0
-                            ? maxContextLength
-                            : Math.min(b.contextCapacity, maxContextLength);
+                    PromptCache.Options.contextCapacity(
+                            b.contextCapacity,
+                            maxContextLength,
+                            PromptCache.Options.DEFAULT_CONTEXT_CAPACITY);
             this.state = newState(loaded, contextCapacity, arena);
             this.listeners = b.listeners == null ? List.of() : List.copyOf(b.listeners);
             this.contentTypes = contentTypes(loaded.model());
@@ -341,7 +343,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private Map<String, Path> companionPaths; // resolved at build()
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
-        private int contextCapacity = 8192;
+        private int contextCapacity; // 0: the default
         private List<EmbeddingModelListener> listeners;
 
         /** langchain4j listeners; dispatched around every {@code embed(EmbeddingRequest)}. */
@@ -419,19 +421,18 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
 
         /**
-         * Upper bound on the packing window and on each embedded sequence, in tokens. The default
-         * is 8192. A larger value admits longer sequences and can pack more sequences into one
-         * forward pass, at the cost of a larger resident state. {@code 0} uses the model's {@code
-         * maxContextLength}; otherwise the effective capacity is the smaller of this value and that
-         * maximum.
+         * Upper bound on the packing window and on each embedded sequence, in tokens. {@code 0},
+         * the default, is {@link PromptCache.Options#DEFAULT_CONTEXT_CAPACITY} (4096) or the
+         * model's {@code maxContextLength} when that is smaller; {@link
+         * PromptCache.Options#MAXIMUM_CONTEXT} (-1) is that length; any other value is exact, and
+         * one past that length is refused at build. A larger value admits longer sequences and can
+         * pack more sequences into one forward pass, at the cost of a larger resident state.
          *
-         * @throws IllegalArgumentException if {@code contextCapacity < 0}
+         * @throws IllegalArgumentException if {@code contextCapacity < -1}
          */
         public Builder contextCapacity(int contextCapacity) {
-            if (contextCapacity < 0)
-                throw new IllegalArgumentException(
-                        "contextCapacity must be >= 0 (0 uses the model maximum): "
-                                + contextCapacity);
+            // a negative refused here, the rest at build, against the model's maximum
+            PromptCache.Options.contextCapacity(contextCapacity, Integer.MAX_VALUE, 0);
             this.contextCapacity = contextCapacity;
             return this;
         }
