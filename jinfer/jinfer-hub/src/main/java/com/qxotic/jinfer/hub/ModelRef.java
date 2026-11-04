@@ -133,18 +133,20 @@ public record ModelRef(
     }
 
     public ModelRef {
-        component(host, "host");
-        component(owner, "owner");
-        component(repo, "repository");
+        component(host, "host", NAME);
+        component(owner, "owner", NAME);
+        component(repo, "repository", NAME);
         if (revision != null) {
-            component(revision, "revision");
+            component(revision, "revision", REVISION);
         }
         if (quant != null) {
-            component(quant, "quant");
+            component(quant, "quant", NAME);
         }
         for (String segment : segments(path)) {
-            component(segment, "path segment");
+            component(segment, "path segment", FILE);
         }
+        // what a listing would find out too, said before any fetch
+        require(quant == null || !namesAModelFile(path), namedTwice(path, quant));
     }
 
     /**
@@ -192,6 +194,16 @@ public record ModelRef(
         // string ending in a model extension is a relative path meant for modelPath(...). Three
         // segments or more is the file-in-repository form (owner/repo/mmproj-F32.gguf), untouched.
         return parts.size() >= 2 && !(parts.size() == 2 && namesAModelFile(parts.get(1)));
+    }
+
+    /**
+     * A file named by its path and by a quant both, refused here or once a listing says it is one.
+     */
+    static String namedTwice(String path, String quant) {
+        return path
+                + " already names a file, so ':"
+                + quant
+                + "' has nothing to choose - drop one of them";
     }
 
     /** A file someone means to load, never the name of a repository. */
@@ -303,10 +315,19 @@ public record ModelRef(
     }
 
     /**
+     * What a field may not hold beyond a control character. A hub name (owner, repository, quant,
+     * host) is spliced into a URL as it is: nothing a URL would escape or read as syntax, a space
+     * included. A revision may hold a %, as {@code refs%2Fpr%2F1} spells a pull request's. A path
+     * segment is percent-encoded into the URL, so a space or a # is fine; only what no file system
+     * takes in a file name is refused.
+     */
+    private static final String NAME = " ?#%<>\"{}|^`", REVISION = " ?#<>\"{}|^`", FILE = "<>\"|?*";
+
+    /**
      * Every field becomes a directory or file name under the cache root, so every field must be ONE
      * path component. Without this, a ref could write a downloaded file wherever it liked.
      */
-    private static void component(String value, String what) {
+    private static void component(String value, String what, String refused) {
         require(value != null && !value.isBlank(), "empty " + what);
         require(
                 value.indexOf('/') < 0
@@ -316,6 +337,16 @@ public record ModelRef(
                         && !value.equals(".")
                         && !value.equals(".."),
                 what + " must be a single path component, not '" + value + "'");
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            require(
+                    c >= ' ' && c != 0x7f && refused.indexOf(c) < 0,
+                    what
+                            + " holds a character no hub name has: "
+                            + (c <= ' ' || c == 0x7f
+                                    ? String.format("U+%04X", (int) c)
+                                    : "'" + c + "'"));
+        }
     }
 
     /** This ref's host as a protocol row, or null when the host names nothing jinfer ships. */

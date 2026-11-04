@@ -64,7 +64,32 @@ class RepositorySource implements ModelSource {
     }
 
     String fileUrl(ModelRef ref, String revision, String file) {
-        return base + host.prefix + "/" + ref.repoId() + "/resolve/" + revision + "/" + file;
+        return base
+                + host.prefix
+                + "/"
+                + ref.repoId()
+                + "/resolve/"
+                + revision
+                + "/"
+                + encoded(file);
+    }
+
+    /**
+     * A file path as a URL path: every byte but a letter, a digit, {@code -._~} and the slashes
+     * percent-encoded, so a space or a # in a file name is never read as syntax.
+     */
+    static String encoded(String path) {
+        StringBuilder out = new StringBuilder();
+        for (byte b : path.getBytes(StandardCharsets.UTF_8)) {
+            int c = b & 0xff;
+            if (c < 0x80 && (Character.isLetterOrDigit(c) || "-._~/".indexOf(c) >= 0))
+                out.append((char) c);
+            else
+                out.append('%')
+                        .append(Character.toUpperCase(Character.forDigit(c >> 4, 16)))
+                        .append(Character.toUpperCase(Character.forDigit(c & 15, 16)));
+        }
+        return out.toString();
     }
 
     /**
@@ -105,7 +130,7 @@ class RepositorySource implements ModelSource {
                         + ref.repoId()
                         + "/tree/"
                         + ref.revisionOrDefault()
-                        + (path.isEmpty() ? "" : "/" + path);
+                        + (path.isEmpty() ? "" : "/" + encoded(path));
         List<RemoteFile> files = new ArrayList<>();
         for (Object entry : Json.parseList(get(ref, url))) {
             if (!(entry instanceof Map<?, ?> map)) {
@@ -134,7 +159,7 @@ class RepositorySource implements ModelSource {
                         + "/repo/files?Revision="
                         + ref.revisionOrDefault()
                         + "&Root="
-                        + path;
+                        + encoded(path);
         Map<String, Object> body = Json.parseMap(get(ref, url));
         List<Object> entries =
                 Json.queryList(body, "Data", "Files")

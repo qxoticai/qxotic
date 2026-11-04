@@ -970,12 +970,7 @@ public final class ModelStore {
             List<RemoteFile> siblings = source.list(ref, parent);
             for (RemoteFile file : siblings) {
                 if (nameOf(file.path()).equals(last)) {
-                    require(
-                            ref.quant() == null,
-                            location
-                                    + " already names a file, so ':"
-                                    + ref.quant()
-                                    + "' has nothing to choose - drop one of them");
+                    require(ref.quant() == null, ModelRef.namedTwice(location, ref.quant()));
                     return file;
                 }
             }

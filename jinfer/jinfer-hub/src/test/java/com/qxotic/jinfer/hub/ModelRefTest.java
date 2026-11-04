@@ -117,12 +117,12 @@ class ModelRefTest {
 
     @Test
     void aBareRepositoryKeepsTheRestOfTheGrammar() {
-        ModelRef ref = ModelRef.parse("LiquidAI/LFM2.5-VL-3B-GGUF@main/mmproj-Q8_0.gguf:Q8_0");
+        ModelRef ref = ModelRef.parse("LiquidAI/LFM2.5-VL-3B-GGUF@main/vision/gguf:Q8_0");
         assertEquals("hf.co", ref.host());
         assertEquals("LiquidAI", ref.owner());
         assertEquals("LFM2.5-VL-3B-GGUF", ref.repo());
         assertEquals("main", ref.revision());
-        assertEquals("mmproj-Q8_0.gguf", ref.path());
+        assertEquals("vision/gguf", ref.path());
         assertEquals("Q8_0", ref.quant());
     }
 
@@ -175,6 +175,59 @@ class ModelRefTest {
         var emptyRevision =
                 assertThrows(IllegalArgumentException.class, () -> ModelRef.parse("owner/repo:@"));
         assertEquals("empty revision", emptyRevision.getMessage());
+    }
+
+    @Test
+    void aFileNamedTwiceIsRefusedBeforeAnyFetch() {
+        var twice =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ModelRef.parse("owner/repo/sub/model-Q8_0.gguf:Q4_0"));
+        assertTrue(twice.getMessage().contains("already names a file"), twice.getMessage());
+        assertEquals("Q8_0", ModelRef.parse("owner/repo/sub:Q8_0").quant(), "a folder and a quant");
+    }
+
+    @Test
+    void aNameAUrlWouldMisreadIsRefused() {
+        // a hub name is spliced into a URL as it is: nothing it would read as syntax, a space
+        // included
+        for (String bad :
+                new String[] {
+                    "a b/c",
+                    "owner/re po",
+                    "owner/repo@ma in",
+                    "owner/repo:Q8 0",
+                    "owner/repo#frag",
+                    "owner/repo?x=1",
+                    "owner/re%2Fpo",
+                    "owner/repo\tx",
+                    "owner/<repo>",
+                    "owner/repo@main?x",
+                    "owner/repo/a|b.gguf",
+                    "owner/repo/a\u0001b.gguf",
+                }) {
+            var failure =
+                    assertThrows(IllegalArgumentException.class, () -> ModelRef.parse(bad), bad);
+            assertTrue(
+                    failure.getMessage().contains("no hub name has"),
+                    bad + ": " + failure.getMessage());
+        }
+        assertEquals("Qwen2.5-0.5B_x+y", ModelRef.parse("Qwen/Qwen2.5-0.5B_x+y").repo());
+        // a pull request's revision is spelled with %; a file's path may hold a space, a # or a %
+        assertEquals("refs%2Fpr%2F1", ModelRef.parse("owner/repo@refs%2Fpr%2F1").revision());
+        assertEquals(
+                "dir/my model #2 100%.gguf",
+                ModelRef.parse("owner/repo/dir/my model #2 100%.gguf").path());
+        assertEquals("日本/モデル.gguf", ModelRef.parse("owner/repo/日本/モデル.gguf").path());
+    }
+
+    @Test
+    void aFilePathIsPercentEncodedIntoTheUrl() {
+        assertEquals(
+                "dir/my%20model%20%232%20100%25.gguf",
+                RepositorySource.encoded("dir/my model #2 100%.gguf"));
+        assertEquals("a-b_c.d~e/F9.gguf", RepositorySource.encoded("a-b_c.d~e/F9.gguf"));
+        assertEquals("%E6%97%A5.gguf", RepositorySource.encoded("日.gguf"));
     }
 
     // ---- the cache jail ----
