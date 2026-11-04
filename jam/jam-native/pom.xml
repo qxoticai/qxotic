@@ -224,7 +224,7 @@
       </properties>
     </profile>
     <!-- Release: package the shipped set scripts/natives.sh staged in dist/release (linux-x86-64,
-         windows-x86-64, darwin-aarch64) - never this host's cmake output. `natives.sh verify` refuses a
+         linux-aarch64, windows-x86-64, darwin-aarch64) - never this host's cmake output. `natives.sh verify` refuses a
          missing, stale, replaced, or foreign library. -->
     <profile>
       <id>release</id>

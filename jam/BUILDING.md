@@ -39,25 +39,27 @@ backends when none matches. The shipped set, and where each library is built:
 | artifact | built on | toolchain |
 |---|---|---|
 | `linux-x86-64/libjam.so` | the Linux release host | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-x86-64-glibc2.17.cmake` |
+| `linux-aarch64/libjam.so` | the Mac's manylinux container | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-aarch64-glibc2.17.cmake` |
 | `windows-x86-64/jam.dll` | the Linux release host | MinGW-w64 (`x86_64-w64-mingw32-gcc`) + `cmake/toolchains/windows-x86-64.cmake` |
 | `darwin-aarch64/libjam.dylib` | an Apple-silicon Mac | Xcode CLT (clang, ObjC++, Metal); Intel Macs unsupported |
 
-Other platforms (linux-aarch64 among them) get the Java backends; `cmake/toolchains/` keeps a
-linux-aarch64 cross file for local builds, but nothing ships it.
+Other platforms get the Java backends.
 
 One script builds, on each host, the libraries that host ships into `dist/release` (apart from
 `dist/native`, where every ordinary build stages this host's library), stamps each with the digest of
 the native sources it came from and its own checksum, and imports the other host's:
 
 ```sh
-jam-native/scripts/natives.sh build    # on each host, at the release commit (or: make jam-natives from the repo root)
-jam-native/scripts/natives.sh import <dir>/darwin-aarch64   # on the Linux host: the Mac's staged directory, carried over
+make jam-natives    # on each host, at the release commit: natives.sh build, and on a Mac the container leg too
+jam-native/scripts/natives.sh import <dir>/darwin-aarch64 <dir>/linux-aarch64   # on the Linux host: the Mac's staged directories, carried over
 ```
 
-The Linux host builds its own library and the Windows one. The Linux library is compiled with
-[zig](https://ziglang.org) as the C compiler, targeting `x86_64-linux-gnu.2.17`: zig bundles the
-glibc stubs for every version, so the artifact runs on RHEL 7 or Ubuntu 14.04 class systems without
-a container or sysroot, and the script fails if the link ever needs a newer glibc symbol. The
+The Linux host builds its own library and the Windows one; the Mac builds its own and, in the
+manylinux aarch64 container (docker through Colima), the Linux aarch64 one, on the CPU itself. Both
+Linux libraries are compiled with [zig](https://ziglang.org) as the C compiler, targeting
+`x86_64-linux-gnu.2.17` and `aarch64-linux-gnu.2.17`: zig bundles the glibc stubs for every
+version, so the artifacts run on RHEL 7 or Ubuntu 14.04 class systems whatever the build box runs,
+and the script fails if a link ever needs a newer glibc symbol. The
 Windows library comes from MinGW-w64 (the checked-in `cmake/cross-jni/win32/` shim supplies the
 target `jni_md.h`; any JDK's `jni.h` works). The Mac builds its library with Metal on and runs the
 C test suite on the real GPU. `import` checks a library as `verify` does, its stamp naming these

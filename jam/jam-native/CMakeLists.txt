@@ -172,16 +172,17 @@ endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     # ARM Q8_0/Q4_0/MXFP4 + K-quant + NVFP4 + Q1_0 kernels: NEON baseline (vmull+vpadal), DOTPROD (sdot),
-    # I8MM (smmla). Each its own -march.
-    jam_isa_tu(jam_neon JAM_HAVE_NEON ON "-march=armv8-a"
+    # I8MM (smmla). Each its own features, spelled -mcpu=generic+..., which GCC, clang and zig cc (the
+    # shipped Linux library) all take; zig rejects -march=armv8.x-a.
+    jam_isa_tu(jam_neon JAM_HAVE_NEON ON "-mcpu=generic"
         src/kernels/jam_kernels_neon.c src/kernels/jam_kernels_kquant_neon.c
         src/kernels/jam_kernels_nvfp4_neon.c src/kernels/jam_kernels_q1_0_neon.c)
 
-    jam_isa_tu(jam_dotprod JAM_HAVE_DOTPROD ON "-march=armv8.2-a+dotprod"
+    jam_isa_tu(jam_dotprod JAM_HAVE_DOTPROD ON "-mcpu=generic+dotprod"
         src/kernels/jam_kernels_dotprod.c src/kernels/jam_kernels_kquant_dotprod.c
         src/kernels/jam_kernels_nvfp4_dotprod.c src/kernels/jam_kernels_q1_0_dotprod.c)
 
-    jam_isa_tu(jam_i8mm JAM_HAVE_I8MM ON "-march=armv8.6-a+i8mm"
+    jam_isa_tu(jam_i8mm JAM_HAVE_I8MM ON "-mcpu=generic+dotprod+i8mm"
         src/kernels/jam_kernels_i8mm.c)
 endif()
 
@@ -228,7 +229,8 @@ endif()
 # ---- stage the native lib into the fat-jar layout: dist/native/com/qxotic/jam/native/<os>-<arch>/<lib> ----
 # This is the DEV tree: each platform's build (native or via cmake/toolchains/) stages its own subdir
 # here for the local jar. The shipped set lives apart, in dist/release, built and stamped by
-# scripts/natives.sh on each host (linux + windows x86-64 on Linux, darwin-aarch64 on a Mac) and
+# scripts/natives.sh on each host (linux + windows x86-64 on Linux, darwin-aarch64 on a Mac and
+# linux-aarch64 in its container) and
 # imported from one to the other; the release build only packages what `natives.sh verify` accepts.
 # No CI by design. The os/arch tokens MUST match NativeLoader.java.
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" JAM_OS)               # linux / darwin / windows

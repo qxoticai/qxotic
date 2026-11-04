@@ -142,8 +142,9 @@ release-plan: ## What a release would publish, and whether the versions agree
 release-deploy: ## Stage for Central what it does not hold yet: PROJECT=. for everything in one bundle, PROJECT=jinfer for one project (CHECK=--check to only look)
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-deploy.sh $(PROJECT) $(CHECK)
 
-jam-natives: ## Build, stage and stamp this host's shipped libjam (Linux: linux and windows x86-64; a Mac: darwin-aarch64); natives.sh import adds the other host's
+jam-natives: ## Build, stage and stamp this host's shipped libjam (Linux x86-64: linux and windows x86-64; a Mac: darwin-aarch64, and linux-aarch64 in the container); natives.sh import adds the other host's
 	jam/jam-native/scripts/natives.sh build
+	$(if $(filter Darwin,$(shell uname -s)),$(call in-container,jam-natives))
 
 ##@ Wheels
 
@@ -173,14 +174,18 @@ wheels-here: # the two libraries and their checked wheels, in this tree, on this
 	$(MAKE) -C toknroll/toknroll-native libtoknroll check-wheel
 	$(MAKE) -C jinfer/jinfer-native libjinfer check-wheel
 
-# wheels-here in the manylinux container, which pins the glibc floor the wheels promise. It runs as the caller,
-# with the caller's own passwd line (the JVM takes the home directory from it; a Mac's VM has another), and the
-# Maven and model caches at their real paths.
+# A target of this Makefile in the manylinux container of this machine's architecture, which pins the glibc
+# floor the wheels promise. It runs as the caller, with the caller's own passwd line (the JVM takes the home
+# directory from it; a Mac's VM has another), and the Maven and model caches at their real paths.
+define in-container
+docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux . >/dev/null
+mkdir -p target && printf '%s:x:%s:%s::%s:/bin/sh\n' "$$(id -un)" "$$(id -u)" "$$(id -g)" "$$HOME" > target/passwd
+docker run --rm -u "$$(id -u):$$(id -g)" -v "$(CURDIR)/target/passwd:/etc/passwd:ro" -e HOME \
+  -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$(CURDIR):/src" -w /src qxotic-manylinux make $(1)
+endef
+
 wheels-in-container:
-	docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux . >/dev/null
-	mkdir -p target && printf '%s:x:%s:%s::%s:/bin/sh\n' "$$(id -un)" "$$(id -u)" "$$(id -g)" "$$HOME" > target/passwd
-	docker run --rm -u "$$(id -u):$$(id -g)" -v "$(CURDIR)/target/passwd:/etc/passwd:ro" -e HOME \
-	  -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$(CURDIR):/src" -w /src qxotic-manylinux make wheels-here
+	$(call in-container,wheels-here)
 
 # The release tools' venv: native.mk's, by the same path, so an in-tree build and publishing share it.
 TOOLS := target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')

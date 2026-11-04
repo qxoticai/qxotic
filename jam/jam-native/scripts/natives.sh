@@ -11,16 +11,18 @@
 #
 # Shipped targets and the host that builds each:
 #   linux-x86-64     Linux x86-64: zig cc against glibc 2.17 (cmake/toolchains/linux-x86-64-glibc2.17.cmake)
+#   linux-aarch64    Linux aarch64, the manylinux container on an Apple-silicon Mac (`make jam-natives` there
+#                    runs this script inside it): zig cc against glibc 2.17, the tests on the CPU itself
 #   windows-x86-64   Linux x86-64: MinGW-w64 cross (cmake/toolchains/windows-x86-64.cmake)
 #   darwin-aarch64   an Apple-silicon Mac: Xcode's clang, Metal on, its ctest suite run on the GPU
 #
 # A release takes both hosts, at the same commit: `build` on each, then the Mac's
-# dist/release/com/qxotic/jam/native/darwin-aarch64 directory, carried over by any means, goes to
-# `import` on the Linux host, where `verify` and the release build run.
+# dist/release/com/qxotic/jam/native/darwin-aarch64 and linux-aarch64 directories, carried over by
+# any means, go to `import` on the Linux host, where `verify` and the release build run.
 #
 # Environment:
 #   JDK           a JDK root for jni.h (default: JAVA_HOME, else java_home on a Mac, else derived from javac)
-#   ZIG           the zig binary for the Linux leg (default: `zig` on PATH; 0.16 expected)
+#   ZIG           the zig binary for the Linux legs (default: `zig` on PATH; 0.16 expected)
 #   JAM_TARGETS   space-separated subset of this host's targets, for iterating on one leg
 #
 # Why stamps: builds used to accumulate in dist/native across months, and a library built before a
@@ -34,7 +36,7 @@ SELF=$(readlink -f "$0")
 CALLER=$PWD                                   # where import's relative directories are
 cd "$(dirname "$SELF")/.."                    # -> jam-native
 NATIVE=dist/release/com/qxotic/jam/native
-SHIPPED="linux-x86-64 windows-x86-64 darwin-aarch64"
+SHIPPED="linux-x86-64 linux-aarch64 windows-x86-64 darwin-aarch64"
 STAMP=jam-native.stamp
 GLIBC_FLOOR=2.17
 ZIG_EXPECTED=0.16
@@ -72,8 +74,9 @@ shipped() { case " $SHIPPED " in *" $1 "*) ;; *) return 1 ;; esac; }
 host_targets() {
     case "$(uname -s)-$(uname -m)" in
         Linux-x86_64)  echo "linux-x86-64 windows-x86-64" ;;
+        Linux-aarch64) echo "linux-aarch64" ;;
         Darwin-arm64)  echo "darwin-aarch64" ;;
-        *) die "this host builds no shipped target ($(uname -s) $(uname -m)): linux x86-64 and an Apple-silicon Mac do" ;;
+        *) die "this host builds no shipped target ($(uname -s) $(uname -m)): linux x86-64, linux aarch64 and an Apple-silicon Mac do" ;;
     esac
 }
 
@@ -109,23 +112,27 @@ jdk_root() {
     dirname "$(dirname "$(readlink -f "$javac")")"
 }
 
-build_linux_x86_64() {
-    local b=build-linux-x86-64 zig=${ZIG:-zig} v
+# This host's Linux library: zig cc against glibc $GLIBC_FLOOR, the host JDK's headers for JNI, the
+# tests run here (binaries linked for 2.17 run on any newer glibc).
+build_linux() {  # <target>
+    local t=$1 b=build-$1 zig=${ZIG:-zig} v jdk
     v=$("$zig" version)
     case "$v" in "$ZIG_EXPECTED".*) ;; *) echo "natives: WARNING: zig $v, expected $ZIG_EXPECTED.x" >&2 ;; esac
+    jdk=$(jdk_root)
     # The toolchain's zig-cc wrapper reads $ZIG, so the chosen binary reaches every compile.
     ZIG=$zig cmake -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON \
-        -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86-64-glibc$GLIBC_FLOOR.cmake
+        -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/$t-glibc$GLIBC_FLOOR.cmake \
+        -DJNI_INCLUDE_DIRS="$jdk/include;$jdk/include/linux"
     ZIG=$zig cmake --build "$b" -j
-    ctest --test-dir "$b" --output-on-failure    # the 2.17-targeted binaries run fine on this host
-    echo "natives: linux-x86-64 contexts: $("$b/jam_test" 2>/dev/null | sed -n 2p)"
-    stage linux-x86-64 "$b/libjam.so"
+    ctest --test-dir "$b" --output-on-failure
+    echo "natives: $t contexts: $("$b/jam_test" 2>/dev/null | sed -n 2p)"
+    stage "$t" "$b/libjam.so"
     # The floor is a release promise: fail if the link pulled in a newer glibc symbol.
     local floor
-    floor=$(objdump -T "$NATIVE/linux-x86-64/libjam.so" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
-    echo "natives: linux-x86-64 requires ${floor:-no versioned glibc symbols}"
+    floor=$(objdump -T "$NATIVE/$t/libjam.so" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+    echo "natives: $t requires ${floor:-no versioned glibc symbols}"
     [ "$(printf '%s\n' "${floor#GLIBC_}" "$GLIBC_FLOOR" | sort -V | tail -1)" = "$GLIBC_FLOOR" ] \
-        || die "linux-x86-64 needs $floor, above the $GLIBC_FLOOR floor"
+        || die "$t needs $floor, above the $GLIBC_FLOOR floor"
 }
 
 build_windows_x86_64() {
@@ -144,9 +151,10 @@ preflight() {  # <targets>
     local t
     for t in $1; do
         case "$t" in
-            linux-x86-64)
+            linux-*)
                 command -v "${ZIG:-zig}" >/dev/null || die "zig not found (set ZIG=/path/to/zig, or install zig $ZIG_EXPECTED)"
-                command -v objdump >/dev/null || die "objdump not found (binutils)" ;;
+                command -v objdump >/dev/null || die "objdump not found (binutils)"
+                [ -f "$(jdk_root)/include/jni.h" ] || die "$(jdk_root)/include/jni.h not found (set JDK)" ;;
             windows-x86-64)
                 command -v x86_64-w64-mingw32-gcc >/dev/null || die "MinGW-w64 (x86_64-w64-mingw32-gcc) not installed"
                 [ -f "$(jdk_root)/include/jni.h" ] || die "$(jdk_root)/include/jni.h not found (set JDK)" ;;
@@ -178,7 +186,7 @@ cmd_build() {
     preflight "$targets"
     for t in $targets; do
         case "$t" in
-            linux-x86-64)   build_linux_x86_64 ;;
+            linux-*)        build_linux "$t" ;;
             windows-x86-64) build_windows_x86_64 ;;
             darwin-aarch64) build_darwin_aarch64 ;;
         esac
