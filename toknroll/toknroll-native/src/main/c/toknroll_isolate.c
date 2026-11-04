@@ -86,8 +86,18 @@ static char** argv;                     /* the runtime's command line, kept for 
 static char* env;                       /* the environment's options, which argv points into */
 static const char* configured_by;       /* the public function configure came through, once */
 static long created;                    /* set when creation starts, port_load/port_store: then configure is too late */
+static long started;                    /* the runtime is up and this file's state with it: port_load/port_store */
 static char early_error[256];           /* a failure with no isolate to hold the message: before it, or a forked child's */
 static int32_t early_code;
+static char start_error[256];           /* why there is no runtime, for every later call to say again */
+static int32_t start_code;
+
+/* What toknroll_log_set or jinfer_log_set gave, before the runtime starts; start hands it to Log.java. */
+static toknroll__log_fn log_fn;
+static void* log_user_data;
+static long log_given;                  /* port_load/port_store, after the two above */
+static char program_property[] = "-Dtoknroll.program=" STR(TOKNROLL_PROGRAM);   /* Log.java's name, and <NAME>_LOG */
+void toknroll__log_start(graal_thread* thread, int given, toknroll__log_fn fn, void* user_data);   /* Native.java */
 
 PORT_PRINTF(2, 3) static int32_t early(int32_t code, const char* format, ...) {
     va_list args;
@@ -95,6 +105,12 @@ PORT_PRINTF(2, 3) static int32_t early(int32_t code, const char* format, ...) {
     vsnprintf(early_error, sizeof early_error, format, args);
     va_end(args);
     return early_code = code;
+}
+
+/* the early error a call that finds no runtime leaves: why there is none, whatever came between */
+static void no_runtime(void) {
+    memcpy(early_error, start_error, sizeof early_error);
+    early_code = start_code;
 }
 
 /* A thread that has called in, kept under key and freed when it exits. With the fork gate (libtoknroll on
@@ -154,6 +170,8 @@ _Static_assert(sizeof refused <= sizeof early_error, "the reason fits the early 
 /* async-signal-safe only, as a child of a threaded process must be: no stdio */
 static void fork_child(void) {
     if (!isolate) return;
+    memcpy(start_error, refused, sizeof refused);
+    start_code = TOKNROLL_ERROR;
     memcpy(early_error, refused, sizeof refused);
     early_code = TOKNROLL_ERROR;
     forked = 1;
@@ -222,7 +240,17 @@ static const char* self_path(void) {
 }
 #endif
 
-static void out_of_memory(void) { early(TOKNROLL_ERROR, "the runtime could not be started: out of memory"); }
+/* a start that failed: said now, and kept for every later call */
+PORT_PRINTF(1, 2) static void failed(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    vsnprintf(start_error, sizeof start_error, format, args);
+    va_end(args);
+    start_code = TOKNROLL_ERROR;
+    no_runtime();
+}
+
+static void out_of_memory(void) { failed("the runtime could not be started: out of memory"); }
 
 static void start(void) {
     port_store(&created, 1);
@@ -234,8 +262,8 @@ static void start(void) {
     if (pthread_atfork(NULL, NULL, fork_child) != 0) { out_of_memory(); return; }
 #endif
     /* argv[0], configure's options, then the image's own file for the library linked into it, then the
-     * environment, which wins: later wins as on a command line. Split on whitespace; a value with a space in
-     * it goes through configure. ponytail: no quoting */
+     * environment, which wins: later wins as on a command line; last -Dtoknroll.program, which nothing
+     * overrides. Split on whitespace; a value with a space in it goes through configure. ponytail: no quoting */
     static const char blanks[] = " \t\r\n";
     const char* e = getenv(STR(TOKNROLL_OPTIONS_ENV));
     env = port_strdup(e ? e : "");
@@ -245,7 +273,7 @@ static void start(void) {
         tokens++;
         s += strcspn(s, blanks);
     }
-    argv = malloc((2 + (size_t) option_count + tokens) * sizeof *argv);   /* argv[0], the image's own file */
+    argv = malloc((3 + (size_t) option_count + tokens) * sizeof *argv);   /* argv[0], the image's own file, -Dtoknroll.program */
     if (!argv) { out_of_memory(); return; }
     int argc = 0;
     argv[argc++] = program;
@@ -266,6 +294,7 @@ static void start(void) {
         s += strcspn(s, blanks);
         if (*s) *s++ = '\0';
     }
+    argv[argc++] = program_property;
     isolate_params params;
     memset(&params, 0, sizeof params);
     params.version = 5;
@@ -279,11 +308,16 @@ static void start(void) {
         isolate = NULL;
         const char* source = STR(TOKNROLL_OPTIONS_ENV);
         if (configured_by) source = *env ? "configure or the environment" : configured_by;
-        if (rc == 22) early(TOKNROLL_ERROR, "the runtime could not be started: an option from %s was rejected, see stderr for which", source);
-        else early(TOKNROLL_ERROR, "the runtime could not be started (error %d)", rc);
+        if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which", source);
+        else failed("the runtime could not be started (error %d)", rc);
         return;
     }
     attached(thread);
+    /* running from here: a call the log callback makes now, the start's own warning calling back in, goes
+     * straight to the runtime instead of into the once that is still running this */
+    port_store(&started, 1);
+    int given = (int) port_load(&log_given);   /* before the two it publishes */
+    toknroll__log_start(thread, given, log_fn, log_user_data);   /* before any line */
 }
 
 static void init(void) {
@@ -293,13 +327,16 @@ static void init(void) {
 }
 
 graal_thread* toknroll__thread(void) {
-    port_once(&once, init);
+    if (!port_load(&started)) port_once(&once, init);
 #ifdef REFUSE
-    if (forked) return NULL;
+    if (forked) { no_runtime(); return NULL; }
 #endif
-    if (!isolate) return NULL;
+    if (!isolate) { no_runtime(); return NULL; }
     caller* c = port_tls_get(key);
     if (!c) {
+        /* a thread the runtime runs itself, a log callback's on a worker: its own, no record, no gate */
+        graal_thread* own = graal_get_current_thread(isolate);
+        if (own) return own;
         graal_thread* t;
         gate_lock();
         c = graal_attach_thread(isolate, &t) == 0 ? attached(t) : NULL;   /* ponytail: unreported; fails only out of memory */
@@ -310,11 +347,18 @@ graal_thread* toknroll__thread(void) {
 }
 
 /* Every libtoknroll call is enter, the call, leave. A thread that finds a fork under way steps back and
- * waits on the lock fork holds; fork waits for every busy thread. */
+ * waits on the lock fork holds; fork waits for every busy thread. busy counts the calls a thread is in: a
+ * log callback may call in (a free, last_error) from inside one, and fork waits for the outer call anyway. */
 #ifdef GATE
 graal_thread* toknroll__enter(void) {
-    if (!toknroll__thread()) return NULL;
+    graal_thread* t = toknroll__thread();
+    if (!t) return NULL;
     caller* c = port_tls_get(key);
+    if (!c) return t;   /* the runtime's own thread: fork already waits for it, as a worker or not at all */
+    if (c->busy) {   /* only this thread writes it */
+        __atomic_store_n(&c->busy, c->busy + 1, __ATOMIC_SEQ_CST);
+        return c->thread;
+    }
     for (;;) {
         __atomic_store_n(&c->busy, 1, __ATOMIC_SEQ_CST);
         if (!__atomic_load_n(&forking, __ATOMIC_SEQ_CST)) return c->thread;
@@ -326,7 +370,7 @@ graal_thread* toknroll__enter(void) {
 
 void toknroll__leave(void) {
     caller* c = isolate ? port_tls_get(key) : NULL;
-    if (c) __atomic_store_n(&c->busy, 0, __ATOMIC_RELEASE);
+    if (c) __atomic_store_n(&c->busy, c->busy - 1, __ATOMIC_RELEASE);
 }
 #else
 graal_thread* toknroll__enter(void) { return toknroll__thread(); }
@@ -381,9 +425,29 @@ void toknroll__workers_wake(void) {}
 
 int toknroll__created(void) { return port_load(&created) != 0; }
 
+int toknroll__running(void) {
+#ifdef REFUSE
+    if (forked) return 0;
+#endif
+    return port_load(&started) != 0;
+}
+
 const char* toknroll__early_error(int32_t* code) {
     if (code) *code = early_code;
     return early_error;
+}
+
+#define ONCE "%s must come once, before any other call into the library"
+
+/* configure and log_set once the runtime has started, reported through the API's own last error */
+static int32_t too_late(const char* who, void (*error_set)(graal_thread*, int32_t, const char*)) {
+    graal_thread* t = toknroll__enter();
+    char message[128];
+    snprintf(message, sizeof message, ONCE, who);
+    if (t) error_set(t, TOKNROLL_EINVAL, message);
+    else early(TOKNROLL_EINVAL, "%s", message);   /* no runtime to hold it: it failed to start, or a forked child */
+    toknroll__leave();
+    return TOKNROLL_EINVAL;
 }
 
 /* Once, before anything else: a command line is written in one place, so options from two call sites can
@@ -391,14 +455,7 @@ const char* toknroll__early_error(int32_t* code) {
  * later one. */
 int32_t toknroll__configure(const char* const* given, int32_t count, const char* who,
                             void (*error_set)(graal_thread*, int32_t, const char*)) {
-    if (toknroll__created()) {
-        graal_thread* t = toknroll__enter();
-        char message[128];
-        snprintf(message, sizeof message, "%s must come once, before any other call into the library", who);
-        if (t) error_set(t, TOKNROLL_EINVAL, message);
-        toknroll__leave();
-        return TOKNROLL_EINVAL;
-    }
+    if (toknroll__created()) return too_late(who, error_set);
     if (count < 0 || (count && !given)) return early(TOKNROLL_EINVAL, "%s: options is NULL or count negative", who);
     for (int32_t i = 0; i < count; i++)
         if (!given[i]) return early(TOKNROLL_EINVAL, "%s: options[%d] is NULL", who, (int) i);
@@ -418,4 +475,18 @@ int32_t toknroll__configure(const char* const* given, int32_t count, const char*
     int32_t rc = toknroll__enter() ? TOKNROLL_OK : TOKNROLL_ERROR;
     toknroll__leave();
     return rc;
+}
+
+/* Once, before any other call, configure included: where the lines go is fixed before the first one.
+ * Never starts the runtime, so configure may follow. ponytail: like configure, not safe against a first
+ * call racing it on another thread; that is the caller's ordering to keep */
+int32_t toknroll__log(toknroll__log_fn fn, void* user_data, const char* who,
+                      void (*error_set)(graal_thread*, int32_t, const char*)) {
+    if (toknroll__created()) return too_late(who, error_set);
+    if (port_load(&log_given)) return early(TOKNROLL_EINVAL, ONCE, who);
+    log_fn = fn;
+    log_user_data = user_data;
+    port_store(&log_given, 1);
+    early_error[0] = '\0';
+    return early_code = TOKNROLL_OK;
 }

@@ -41,7 +41,7 @@ This machine's two wheels from a clean export of a ref, and the upload to PyPI, 
 The Java side is `com.qxotic.jinfer.libjinfer`: one `@CEntryPoint` per header function (`jinfer__*`, isolate thread first),
 a `Model` of whatever kind the file is, a `State` for the raw door and a `Stream` for every generation.
 Tokenization is toknroll's API, `toknroll.h` in `toknroll/toknroll-native`: libjinfer carries its `toknroll_*` entry points too, and `jinfer_model_tokenizer` hands out a model's tokenizer as a `toknroll_tokenizer`.
-`src/main/c/jinfer_shim.c` is the C face: it forwards to the entry points through the runtime `toknroll_isolate.c` starts at `jinfer_configure` or at the first call, one for the `jinfer_*` and `toknroll_*` symbols alike, and holds a log callback installed before that.
+`src/main/c/jinfer_shim.c` is the C face: it forwards to the entry points through the runtime `toknroll_isolate.c` starts at `jinfer_configure` or at the first call, one for the `jinfer_*` and `toknroll_*` symbols alike, and hands it the log callback set before that.
 GraalVM links shared libraries with an export list that names its own runtime API and entry points,
 so toknroll-native's `src/main/c/native-cc.sh` wraps the C compiler for both libraries and makes the list the shims' globals, `jinfer_*` and `toknroll_*`, and libjam's names, at the link step.
 The wrapper also gives the library its soname, derived from the version: `libjinfer.so.0.4`, or `@rpath/libjinfer.0.4.dylib` on a Mac; the build links `target/libjinfer.so.0.4` to the library, and the release bundle carries the file under that name.
@@ -51,7 +51,10 @@ libjam is linked into the library whole (jam-native's static archive, pulled in 
 `jinfer_model_options` is read through the header itself (`Options.Directives`), so the layout cannot drift.
 
 The chat dialect is jinfer-server's own: `OpenAiChat` is the public seam the server exposes, so the library and
-`/v1/chat/completions` lower and answer identically. Downloads run through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local models need nothing. Download progress is jinfer-hub's: a board on stderr at a terminal, log lines otherwise. libjam is linked into the image (`StaticJam`, jam-native's `jam_static` archive linked
+`/v1/chat/completions` lower and answer identically.
+Downloads run through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local models need nothing.
+Download progress is jinfer-hub's: from `JINFER_LOG=info` on, a board on stderr at a terminal, log lines otherwise.
+libjam is linked into the image (`StaticJam`, jam-native's `jam_static` archive linked
 whole, its symbols exported by the wrapper), so nothing is extracted at run time.
 `NATIVE_CC_LOG=<file> make libjinfer` records every compiler and linker line the build ran.
 

@@ -10,8 +10,10 @@ decoding a 2 KB document's ids is twice as fast here. A small abi3 C extension o
 the gap, at the price of that portability."""
 from __future__ import annotations
 
+import _thread
 import ctypes as C
 import functools
+import logging
 import os
 import platform
 import sys
@@ -54,6 +56,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
     sig = {
         "toknroll_version": ([], S),
         "toknroll_last_error": ([C.POINTER(I32)], S),
+        "toknroll_log_set": ([LogFn, P], I32),
         "toknroll_configure": ([C.POINTER(C.c_char_p), I32], I32),
         "toknroll_tokenizer_load": ([S], P),
         "toknroll_tokenizer_free": ([P], None),
@@ -72,7 +75,34 @@ def bind(lib: C.CDLL) -> C.CDLL:
     return lib
 
 
+LogFn = C.CFUNCTYPE(None, C.c_int32, C.c_char_p, C.c_void_p)
+_LEVELS = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR}
+_callbacks = globals().get("_callbacks", {})   # a reload keeps them: the library still calls them
+
+
+def log_callback(name: str):
+    """The C log callback that hands each line to logging.getLogger(name): made once per name and kept
+    for the life of the process, as the library keeps it."""
+    if name not in _callbacks:
+        logger = logging.getLogger(name)
+
+        def forward(level, message, _):
+            try:
+                logger.log(_LEVELS.get(level, logging.INFO), "%s", message.decode("utf-8", "replace"))
+            except KeyboardInterrupt:  # Ctrl-C landed in the callback, where ctypes would drop it
+                _thread.interrupt_main()
+
+        _callbacks[name] = LogFn(forward)
+    return _callbacks[name]
+
+
 @functools.cache
 def library() -> C.CDLL:
-    """libtoknroll, loaded on first use so that importing the package loads nothing."""
-    return bind(C.CDLL(str(locate("toknroll"))))
+    """libtoknroll, loaded on first use so that importing the package loads nothing. Its log lines go to
+    logging.getLogger("toknroll"), as many as TOKNROLL_LOG lets through; libjinfer's, toknroll's face
+    included, are jinfer's to route."""
+    lib = bind(C.CDLL(str(locate("toknroll"))))
+    # before any other call, so it holds; EINVAL only for a library some other loader in the process
+    # started first, whose lines then go where that one said
+    lib.toknroll_log_set(log_callback("toknroll"), None)
+    return lib

@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import ctypes as C
-from toknroll._native import locate
+from toknroll._native import LogFn, locate
 
 OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED, ECANCELLED, EBUSY = 0, -1, -2, -3, -4, -5, -6
 
-LogFn = C.CFUNCTYPE(None, C.c_int32, C.c_char_p, C.c_void_p)
 
 
 class ModelOptions(C.Structure):
@@ -27,7 +26,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
     sig = {
         "jinfer_version": ([], S),
         "jinfer_last_error": ([C.POINTER(I32)], S),
-        "jinfer_log_set": ([LogFn, P], None),
+        "jinfer_log_set": ([LogFn, P], I32),
         "jinfer_configure": ([C.POINTER(C.c_char_p), I32], I32),
         "jinfer_model_options_init": ([C.POINTER(ModelOptions)], None),
         "jinfer_model_load": ([S, C.POINTER(ModelOptions)], P),

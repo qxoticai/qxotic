@@ -3,8 +3,8 @@
  *   Errors     A function returns its result; a negative value is a JINFER_E* code, NULL for a
  *              pointer. jinfer_last_error has the message and the code, per thread, until the
  *              thread's next jinfer call (reading it changes nothing); after a success, "" and
- *              JINFER_OK. Every call sets it but jinfer_version, jinfer_model_options_init and
- *              jinfer_last_error.
+ *              JINFER_OK. Every call sets it but jinfer_version, jinfer_model_options_init,
+ *              jinfer_last_error and a _free of NULL.
  *   Buffers    (out, capacity) follows snprintf: at most capacity elements are written and the
  *              number needed is returned. Capacity 0 sizes, and a size known up front (count x
  *              dimension) is answered before any work. Element counts are int32_t; the sizes a
@@ -23,19 +23,20 @@
  *              must not run during another call on the same handle. The log callback runs on any
  *              thread, inside your own call included, and may call only jinfer_last_error,
  *              toknroll_last_error and the _free functions, on a handle no call is using (a stream
- *              still generating is in use). Once jinfer_log_set returns, the callback it replaced is
- *              not running and is never called again, so its user pointer may be freed.
+ *              still generating is in use).
  *   Fork       A child forked once the library has started cannot use it, the toknroll_* functions it
  *              carries included: its threads stayed in the parent, so calls fail there, JINFER_ERROR,
  *              and a _free does nothing. Start children with spawn or exec.
  *   Settings   The library is a Java runtime compiled ahead of time. jinfer_configure passes it
  *              options as a java command line would, before the first call, and the JINFER_OPTIONS
- *              environment variable adds to or overrides them; nothing requires either. Log lines go
- *              to jinfer_log_set's callback, and nowhere without one. The library writes to stderr
- *              only the runtime's name for an option it rejects, and a download's progress when
- *              stderr is a terminal (log lines otherwise). Once started the library stays loaded, as
- *              its threads run its code: an unload (dlclose, FreeLibrary) succeeds and leaves it in
- *              place.
+ *              environment variable adds to or overrides them; nothing requires either. Once started
+ *              the library stays loaded, as its threads run its code: an unload (dlclose,
+ *              FreeLibrary) succeeds and leaves it in place.
+ *   Logging    JINFER_LOG picks the lines, the toknroll_* functions' included: off, error, warn (the
+ *              default), info or debug. They go to stderr, "jinfer: info: jinfer.hub: download ...",
+ *              or to jinfer_log_set's callback. From info on, a download at a terminal draws its
+ *              progress on stderr instead of logging it. Beyond them the library writes to stderr
+ *              only the runtime's name for an option it rejects.
  *   Defaults   A request field left out takes the model file's value, listed by jinfer_model_info,
  *              never the library's.
  *   Downloads  run through curl on the PATH: the library carries no TLS stack of its own.
@@ -82,17 +83,20 @@ extern "C" {
 #define JINFER_ECANCELLED   (-5)
 #define JINFER_EBUSY        (-6) /* a state or a stream in a call on another thread */
 
-enum { JINFER_LOG_DEBUG = 0, JINFER_LOG_INFO = 1, JINFER_LOG_WARN = 2, JINFER_LOG_ERROR = 3 };   /* log levels */
-typedef void (*jinfer_log_fn)(int32_t level, const char* message, void* user);
+enum { JINFER_LOG_DEBUG = 0, JINFER_LOG_INFO = 1, JINFER_LOG_WARN = 2, JINFER_LOG_ERROR = 3 };   /* a line's level */
+typedef void (*jinfer_log_fn)(int32_t level, const char* message, void* user_data);
 
 /* "0.4.0", the jinfer release the library was built from. */
 JINFER_API const char* jinfer_version(void);
 /* The message of the thread's last call; *code = its code unless code is NULL. "" and JINFER_OK after a
  * success. */
 JINFER_API const char* jinfer_last_error(int32_t* code);
-/* The callback the library's log lines go to, with user as its last argument; NULL = silent, the default.
- * May precede jinfer_configure. */
-JINFER_API void        jinfer_log_set(jinfer_log_fn fn, void* user);
+/* The library's log lines go to fn instead of stderr, with user_data as its last argument; with fn NULL
+ * they go nowhere, whatever JINFER_LOG says. A line is UTF-8, without a newline, and names what wrote it:
+ * "jinfer.hub: download hf.co/...". fn and user_data stay for the life of the process. Once, before any
+ * other call, jinfer_configure included; a later call is JINFER_EINVAL. toknroll_log_set is the same
+ * function: one callback serves the library. */
+JINFER_API int32_t     jinfer_log_set(jinfer_log_fn fn, void* user_data);
 /* Runtime options, as on a java command line: "-Djinfer.threads=8" sizes the process's pool,
  * "-Djinfer.cache.sessions=16" keeps that many conversations warm (4), "-Djinfer.cache.budget=8g" bounds
  * the prompt cache's KV blocks (2g, 0 = off), "-Djinfer.offline=true" never downloads,
@@ -110,6 +114,11 @@ JINFER_API int32_t     jinfer_configure(const char* const* options, int32_t coun
  * jinfer_rerank run in, each holding up to context_capacity tokens of context. */
 typedef struct jinfer_model jinfer_model;
 
+/* context_capacity's value for the model's whole trained context, JINFER_MAX_CONTEXT_LENGTH; 0 asks for
+ * the default. The same -1 and 0 on every jinfer face: Java's PromptCache.Options.MAXIMUM_CONTEXT,
+ * Python's jinfer.MAXIMUM_CONTEXT, the CLI's -c max */
+#define JINFER_CONTEXT_MAXIMUM (-1)
+
 /* Initialized by jinfer_model_options_init, which sets struct_size and leaves every other field zero,
  * its default; a struct_size smaller than this struct is JINFER_EINVAL. */
 typedef struct {
@@ -118,9 +127,9 @@ typedef struct {
     int32_t            companion_count;   /* 0 = none */
     /* a prompt catalog file, read at load, extended at free; NULL = RAM only */
     const char*        prompt_cache;
-    /* tokens of context each state holds, at most JINFER_MAX_CONTEXT_LENGTH; 0 = the default (4096 or the
-     * maximum when smaller; an embedder or reranker takes the maximum), -1 = the maximum; above it is
-     * JINFER_EINVAL */
+    /* tokens of context each state holds, at most JINFER_MAX_CONTEXT_LENGTH; 0 = the default, 4096 or the
+     * maximum when smaller, for every kind of model and on every jinfer face; JINFER_CONTEXT_MAXIMUM =
+     * the maximum; above it, or another negative, is JINFER_EINVAL */
     int32_t            context_capacity;
 } jinfer_model_options;
 
@@ -155,7 +164,8 @@ JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(const jinfer_model* m);
 /* --------------------------------------- state: one sequence of your own, the raw door */
 typedef struct jinfer_state jinfer_state;
 
-/* Holds context_capacity tokens of context; 0 = the model's JINFER_CONTEXT_CAPACITY. */
+/* Holds context_capacity tokens of context; 0 = the model's JINFER_CONTEXT_CAPACITY, JINFER_CONTEXT_MAXIMUM
+ * = JINFER_MAX_CONTEXT_LENGTH; above it, or another negative, is JINFER_EINVAL. */
 JINFER_API jinfer_state* jinfer_state_new(jinfer_model* m, int32_t context_capacity);
 JINFER_API void          jinfer_state_free(jinfer_state* s);
 JINFER_API int32_t       jinfer_state_reset(jinfer_state* s);

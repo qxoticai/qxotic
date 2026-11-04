@@ -3,7 +3,7 @@
  *   Errors     A function returns its result; a negative value is a TOKNROLL_E* code, NULL for a
  *              pointer. toknroll_last_error has the message and the code, per thread, until the
  *              thread's next toknroll call (reading it changes nothing); after a success, "" and
- *              TOKNROLL_OK. Every call sets it but toknroll_version and toknroll_last_error.
+ *              TOKNROLL_OK. Every call sets it but toknroll_version, toknroll_last_error and a free of NULL.
  *              A goroutine or a Java virtual thread may change OS thread between two calls, so it
  *              reads the message pinned to the thread that failed (runtime.LockOSThread) or goes by
  *              the returned code, which is always the call's own.
@@ -12,7 +12,8 @@
  *              capacity - 1 bytes when longer, so it is whole when the return is below capacity.
  *              Capacity 0 sizes. Ids are counted in int32_t, bytes in int64_t.
  *   Text       UTF-8. Text and token spellings come with their length in bytes, so any byte may be in
- *              them; with length 0 the pointer may be NULL. Sources and options end at their NUL.
+ *              them, a NUL included; with length 0 the pointer may be NULL. A malformed sequence reads
+ *              as U+FFFD, as a UTF-8 decoder reads it. Sources and options end at their NUL.
  *   Ownership  What you pass is borrowed for the call; no buffer is kept. A tokenizer is yours until
  *              toknroll_tokenizer_free, which accepts NULL. The one string returned to you,
  *              toknroll_last_error's, is the calling thread's until its next toknroll call.
@@ -21,10 +22,14 @@
  *   Fork       A process may fork at any time; the child keeps every tokenizer it inherited.
  *   Settings   The library is a Java runtime compiled ahead of time. toknroll_configure passes it
  *              options as a java command line would, before the first call, and the TOKNROLL_OPTIONS
- *              environment variable adds to or overrides them; nothing requires either. The library
- *              writes nothing to stdout or stderr, but for the runtime naming an option it rejects.
- *              Once started it stays loaded, as its threads run its code: an unload (dlclose,
- *              FreeLibrary) succeeds and leaves it in place.
+ *              environment variable adds to or overrides them; nothing requires either. Once started
+ *              it stays loaded, as its threads run its code: an unload (dlclose, FreeLibrary)
+ *              succeeds and leaves it in place.
+ *   Logging    TOKNROLL_LOG picks the lines: off, error, warn (the default), info or debug. They go
+ *              to stderr, "toknroll: info: jinfer.hub: download ...", or to toknroll_log_set's
+ *              callback. From info on, a download at a terminal draws its progress on stderr instead
+ *              of logging it. Beyond them the library writes nothing to stdout or stderr, but for
+ *              the runtime naming an option it rejects.
  *   Sources    A path, or a reference to a hub. Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x, a
  *              backslash, owner/file.gguf or a name that exists on disk is a path; anything else is a
  *              reference, [host/]owner/repo[@revision][/path][:quant], the host hf.co (the default),
@@ -35,8 +40,8 @@
  *              named by :quant or a /path ending in .gguf, is read for its header only, never its
  *              weights. Files land in the cache jinfer shares; -Dtoknroll.cache.root moves it,
  *              -Dtoknroll.offline=true never fetches. Missing is TOKNROLL_ENOTFOUND; a malformed
- *              reference, an unknown host, a file named twice (by /path and :quant) or a file of no
- *              known kind is TOKNROLL_EINVAL.
+ *              reference, an unknown host, a file named twice (by /path and :quant), a file of no
+ *              known kind or one that does not parse is TOKNROLL_EINVAL.
  *                Qwen/Qwen3-0.6B                         the repository's tokenizer.json
  *                LiquidAI/LFM2.5-350M-GGUF:Q8_0          the header of that GGUF
  *                org/repo/tokenizers/v2                  a folder inside a repository
@@ -84,11 +89,21 @@ extern "C" {
 
 typedef struct toknroll_tokenizer toknroll_tokenizer;
 
+enum { TOKNROLL_LOG_DEBUG = 0, TOKNROLL_LOG_INFO = 1, TOKNROLL_LOG_WARN = 2, TOKNROLL_LOG_ERROR = 3 };   /* a line's level */
+typedef void (*toknroll_log_fn)(int32_t level, const char* message, void* user_data);
+
 /* "0.4.0", the toknroll release the library was built from. */
 TOKNROLL_API const char* toknroll_version(void);
 /* The message of the thread's last call; *code = its code unless code is NULL. "" and TOKNROLL_OK after a
  * success. */
 TOKNROLL_API const char* toknroll_last_error(int32_t* code);
+/* The library's log lines go to fn instead of stderr, with user_data as its last argument; with fn NULL
+ * they go nowhere, whatever TOKNROLL_LOG says. A line is UTF-8, without a newline, and names what wrote
+ * it: "jinfer.hub: download hf.co/...". The callback runs on any thread, inside your own call included,
+ * and may call only toknroll_last_error and toknroll_tokenizer_free, on a tokenizer no call is using; it
+ * and user_data stay for the life of the process. Once, before any other call, toknroll_configure
+ * included; a later call is TOKNROLL_EINVAL. */
+TOKNROLL_API int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data);
 /* Runtime options, as on a java command line: "-Dtoknroll.gguf.pre.my-model=alias:qwen2" registers a
  * pre-tokenizer, "-Dtoknroll.cache.root=/srv/cache" moves the hub cache, "-XX:MaxHeapSize=512m" caps the
  * heap. Once, before any other call into the library; a later call is TOKNROLL_EINVAL. An option the

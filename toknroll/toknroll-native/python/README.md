@@ -37,7 +37,11 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 
 A `Tokenizer` never changes, so it may be shared between threads; `encode` releases the GIL.
 Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`); each has `.code`.
-Remote metadata is fetched with `curl`, which must be on the PATH for hub sources only, and cached under `TOKNROLL_CACHE_ROOT`, the platform cache directory by default.
+Remote metadata is fetched with `curl`, which must be on the PATH for hub sources only.
+It is cached in the platform cache directory, or where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says.
+The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.
+Python's logging then decides what shows; it shows warnings and errors until the application configures it.
+So `TOKNROLL_LOG=info` shows the downloads once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.
 
 ## With jinfer
 

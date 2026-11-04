@@ -353,7 +353,7 @@ class ErrorTypesTest(unittest.TestCase):
         lib = N.library()
         for name in declared:
             self.assertIsNotNone(getattr(lib, name).argtypes, f"{name} is declared but not typed in _native.bind")
-        self.assertEqual(len(declared), 12)
+        self.assertEqual(len(declared), 13)
 
 
 class LibraryLocationTest(unittest.TestCase):

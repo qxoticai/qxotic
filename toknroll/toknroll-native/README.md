@@ -1,8 +1,9 @@
 # libtoknroll
 
 Tok'n'Roll as a shared library with a C API, for Python, C and any language with a foreign function interface.
-One header, [`include/toknroll.h`](include/toknroll.h), twelve functions: load a tokenizer from a `tokenizer.json`, a GGUF file or a hub reference, encode, decode, encode a batch on all cores, and look the vocabulary up, token flags included; `toknroll_configure` passes the runtime options a java command line would, before first use.
+One header, [`include/toknroll.h`](include/toknroll.h), thirteen functions: load a tokenizer from a `tokenizer.json`, a GGUF file or a hub reference, encode, decode, encode a batch on all cores, and look the vocabulary up, token flags included; `toknroll_configure` passes the runtime options a java command line would, before first use, and `toknroll_log_set` sends the library's log lines to a callback instead of stderr.
 Remote sources fetch tokenizer metadata only, never weights.
+`TOKNROLL_LOG` picks the log lines: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`; [C-API.md](../../C-API.md#logging) has the rules.
 
 ```c
 toknroll_tokenizer* t = toknroll_tokenizer_load("Qwen/Qwen3-0.6B");
@@ -42,8 +43,8 @@ The size follows the code: `-O3` is 12 MB larger for 18% more encode throughput,
 What ships is the PGO build, which Oracle GraalVM compiles at `-O3` but only on the paths the profile ran, so it stays near the `-O2` size: 16 MB on Windows.
 
 The shared library's soname follows the version, `libtoknroll.so.0.4` (`@rpath/libtoknroll.0.4.dylib` on a Mac); the build links `target/libtoknroll.so.0.4` to the library, and the release bundle carries the file under that name.
-The shared library exports the header's twelve functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.
-`libtoknroll.a` is the same image as one relocatable object with every symbol but the header's twelve made local: nothing of the runtime behind it is visible to the program that links it, and it needs only the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS.
+The shared library exports the header's thirteen functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.
+`libtoknroll.a` is the same image as one relocatable object with every symbol but the header's thirteen made local: nothing of the runtime behind it is visible to the program that links it, and it needs only the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS.
 A program that links it defines `TOKNROLL_STATIC` before including the header, so `TOKNROLL_API` asks for no import.
 It is for programs that want no shared library; a GraalVM host image cannot link it (two runtimes in one image), so libjinfer compiles the entry points into its own image instead.
 

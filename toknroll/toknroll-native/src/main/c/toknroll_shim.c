@@ -28,9 +28,10 @@ int32_t toknroll__id(T, const toknroll_tokenizer*, const char*, size_t);
 
 const char* toknroll_version(void) { return XSTR(TOKNROLL_VERSION_MAJOR) "." XSTR(TOKNROLL_VERSION_MINOR) "." XSTR(TOKNROLL_VERSION_PATCH); }
 const char* toknroll_last_error(int32_t* code) {
-    if (!toknroll__created()) return toknroll__early_error(code);   /* never create the isolate just to report on it */
+    if (!toknroll__running()) return toknroll__early_error(code);   /* never create the isolate just to report on it */
     CALL(const char*, toknroll__early_error(code), toknroll__last_error(t, code))
 }
+int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "toknroll_log_set", toknroll__error_set); }
 int32_t toknroll_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "toknroll_configure", toknroll__error_set); }
 
 toknroll_tokenizer* toknroll_tokenizer_load(const char* source) CALL(toknroll_tokenizer*, NULL, toknroll__tokenizer_load(t, source))

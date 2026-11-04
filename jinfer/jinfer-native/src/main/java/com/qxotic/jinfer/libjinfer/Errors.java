@@ -10,6 +10,8 @@ import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
  * clears it by succeeding.
  */
 final class Errors {
+    private static final System.Logger LOG = System.getLogger("jinfer.native");
+
     static final int OK = 0,
             DONE = 1,
             ERROR = -1,
@@ -44,7 +46,6 @@ final class Errors {
     }
 
     private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
-    private static volatile CCharPointerHolder none;
 
     /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
     static void clear() {
@@ -57,12 +58,16 @@ final class Errors {
         if (t instanceof Failure f) return f.code;
         if (t instanceof java.io.UncheckedIOException u && u.getCause() != null)
             return code(u.getCause());
-        if (t instanceof IllegalArgumentException || t instanceof NullPointerException)
-            return EINVAL;
-        if (t instanceof java.nio.file.NoSuchFileException
-                || t instanceof java.io.FileNotFoundException) return ENOTFOUND;
+        // before EINVAL: an IllegalArgumentException too
         if (t instanceof ModelProvider.IncompatibleModelException
                 || t instanceof UnsupportedOperationException) return EUNSUPPORTED;
+        // a file that does not parse is bad input, as in libtoknroll: bad JSON, a truncated GGUF
+        if (t instanceof IllegalArgumentException
+                || t instanceof NullPointerException
+                || t instanceof com.qxotic.format.json.Json.ParseException
+                || t instanceof java.io.EOFException) return EINVAL;
+        if (t instanceof java.nio.file.NoSuchFileException
+                || t instanceof java.io.FileNotFoundException) return ENOTFOUND;
         if (t instanceof java.util.concurrent.CancellationException) return ECANCELLED;
         return ERROR;
     }
@@ -79,7 +84,7 @@ final class Errors {
         }
         // the full story reaches the host's log callback at debug level, before the error is kept:
         // the callback may call back in (Python frees a dropped handle there), and a call clears it
-        Log.trace(t);
+        LOG.log(System.Logger.Level.DEBUG, "a call failed", t);
         int code = code(t);
         Last last = LAST.get();
         if (last.message != null) last.message.close();
@@ -99,10 +104,15 @@ final class Errors {
 
     /** "", what a function that returns a string returns when it has none: never NULL. */
     static CCharPointer empty() {
-        CCharPointerHolder value = none;
-        if (value == null)
-            none = value = CTypeConversion.toCString(""); // a race makes two, harmless
-        return value.get();
+        return None.EMPTY.get();
+    }
+
+    /**
+     * Made once, on first use, as a holder class initializes: not in Errors' own initializer, which
+     * also runs on a JVM (the unit tests), where a C string cannot be made.
+     */
+    private static final class None {
+        static final CCharPointerHolder EMPTY = CTypeConversion.toCString("");
     }
 
     private Errors() {}

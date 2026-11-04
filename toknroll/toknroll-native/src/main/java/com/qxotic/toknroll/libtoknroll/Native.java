@@ -16,6 +16,7 @@ import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CIntPointer;
 import org.graalvm.nativeimage.c.type.CLongPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
+import org.graalvm.nativeimage.c.type.VoidPointer;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
@@ -227,6 +228,18 @@ public final class Native {
     static CCharPointer lastError(IsolateThread thread, CIntPointer code) {
         if (code.isNonNull()) code.write(Errors.lastCode());
         return Errors.last();
+    }
+
+    /**
+     * The isolate's first call, in libtoknroll and libjinfer alike: given is whether the host
+     * called toknroll_log_set or jinfer_log_set, fn and userData what it passed.
+     */
+    @CEntryPoint(name = "toknroll__log_start")
+    static void logStart(IsolateThread thread, int given, Log.Fn fn, VoidPointer userData) {
+        try {
+            Log.start(given != 0, fn, userData);
+        } catch (Throwable t) { // ponytail: no caller to tell; the library runs, its lines lost
+        }
     }
 
     @CEntryPoint(name = "toknroll__tokenizer_load")

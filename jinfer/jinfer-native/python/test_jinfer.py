@@ -3,12 +3,27 @@
 cached (or a network); the optional speech, transcription and reranking checks run when their
 model is cached and are skipped otherwise. Checks pin behaviour, not model prose: prompts have
 decisive answers, because a near-tie flips under different kernels."""
-import asyncio, base64, ctypes, enum, json, logging, math, os, signal, sys, tempfile, threading, time
+import asyncio, base64, ctypes, enum, json, logging, math, os, signal, subprocess, sys, tempfile, threading, time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
 if "JINFER_INSTALLED" not in os.environ:  # the checkout's package; check-wheel tests the installed one
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+START = dict(os.environ)  # what a fresh interpreter below starts from, before this one's own JINFER_LOG
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def fresh(code, **env):
+    """code in a new interpreter, jinfer imported: the installed package under check-wheel, this checkout's
+    otherwise; env set (None removes), over the environment the test began with minus jinfer's own"""
+    base = {k: v for k, v in START.items() if k not in ("JINFER_LOG", "JINFER_OPTIONS")}
+    base.update(env)
+    base = {k: v for k, v in base.items() if v is not None}
+    head = "" if "JINFER_INSTALLED" in base else f"import sys; sys.path.insert(0, {HERE!r})\n"
+    return subprocess.run([sys.executable, "-c", head + "import jinfer\n" + code], capture_output=True, text=True, env=base)
+
+
+os.environ["JINFER_LOG"] = "debug"  # the checks below read the debug lines: a failure's trace, a load's
 import jinfer
 import toknroll
 from jinfer import _native as N
@@ -61,24 +76,9 @@ logging.getLogger("jinfer").addHandler(inside)
 ok(N.lib.jinfer_model_property(m._h, 999) == N.EINVAL and freed == [True] and b"999" in N.lib.jinfer_last_error(None), "free and last_error from inside the callback")
 logging.getLogger("jinfer").removeHandler(inside)
 
-# replacing the callback: once jinfer_log_set returns the old one never runs again, and a callback
-# always gets its own user pointer, while another thread logs all along
-retired, wrong, stop = set(), [], threading.Event()
-def make(k):
-    def callback(level, message, user):
-        if k in retired or user != k: wrong.append((k, user))
-    return N.LogFn(callback)
-callbacks = [make(k) for k in range(1, 201)]
-def noisy():
-    while not stop.is_set(): N.lib.jinfer_model_property(m._h, 999)  # each failure logs its trace
-noise = threading.Thread(target=noisy); noise.start()
-for k, callback in enumerate(callbacks, 1):
-    N.lib.jinfer_log_set(callback, k)
-    if k > 1: retired.add(k - 1)
-    time.sleep(0.001)
-N.lib.jinfer_log_set(jinfer._log_callback, None); retired.add(len(callbacks))
-stop.set(); noise.join()
-ok(not wrong, f"a replaced callback ran, or got another's user pointer: {wrong[:5]}")
+# the callback is set once, at import: a later set is refused, toknroll_log_set's too, as it is the same
+ok(N.lib.jinfer_log_set(toknroll._native.log_callback("jinfer"), None) == N.EINVAL and b"jinfer_log_set must come once" in N.lib.jinfer_last_error(None), "jinfer_log_set is once, before any other call")
+ok(N.lib.toknroll_log_set(toknroll._native.log_callback("jinfer"), None) == N.EINVAL and b"toknroll_log_set must come once" in N.lib.toknroll_last_error(None), "toknroll_log_set is the same one")
 ok(isinstance(m, jinfer.LanguageModel) and not hasattr(m, "embed") and not hasattr(m, "kind"), f"{m!r}")
 ok("kernels=native" in repr(m) and "threads=" in repr(m), f"repr says what runs: {m!r}")
 ok(m.context_capacity == min(4096, m.max_context_length) and m.max_context_length >= m.context_capacity and m.name.endswith(".gguf"), f"properties: capacity {m.context_capacity} of {m.max_context_length}")
@@ -88,12 +88,23 @@ with jinfer.load(LM, context_capacity=1024) as small:
         small.chat("word " * 1200, max_tokens=4).text; ok(False, "a prompt over the capacity must be refused")
     except jinfer.InvalidArgument as e:
         ok("1024" in str(e), f"over the capacity: {e}")
-with jinfer.load(LM, context_capacity=-1) as whole:
-    ok(whole.context_capacity == m.max_context_length, "context_capacity=-1 is the maximum")
+ok(jinfer.MAXIMUM_CONTEXT == -1, "the maximum is -1, as in C and Java")
+with jinfer.load(LM, context_capacity=jinfer.MAXIMUM_CONTEXT) as whole:
+    ok(whole.context_capacity == m.max_context_length, "context_capacity=MAXIMUM_CONTEXT is the maximum")
+with jinfer.load(LM, context_capacity=0) as zero:
+    ok(zero.context_capacity == m.context_capacity, "context_capacity=0 is the default, as None is")
+try:
+    jinfer.load(LM, context_capacity=2**32 - 1); ok(False, "a capacity past int32 must be refused, not wrapped to -1")
+except jinfer.InvalidArgument as e:
+    ok("does not fit a 32-bit integer" in str(e), f"past int32: {e}")
+try:
+    jinfer.load(LM, context_capacity=-2); ok(False, "a negative capacity but the maximum must be refused")
+except jinfer.InvalidArgument as e:
+    ok("-1 (the model's maximum)" in str(e), f"below the maximum's -1: {e}")
 try:
     jinfer.load(LM, context_capacity=m.max_context_length + 1); ok(False, "a capacity above the maximum must be refused")
 except jinfer.InvalidArgument as e:
-    ok(str(m.max_context_length) in str(e), f"above the maximum: {e}")
+    ok(str(m.max_context_length) in str(e) and "-1 selects the maximum" in str(e), f"above the maximum: {e}")
 try:
     jinfer.load(LM, context_capacity="8k"); ok(False, "a string capacity must be a TypeError")
 except TypeError as e:
@@ -193,26 +204,42 @@ try:
     jinfer.configure("-Djinfer.threads=4"); ok(False, "the runtime takes options before the first load only")
 except jinfer.InvalidArgument as e:
     ok("once" in str(e), f"configure after a load: {e}")
-import subprocess, sys as _sys
-fresh = subprocess.run([_sys.executable, "-c", "import sys; sys.path.insert(0, 'python'); import jinfer\n"
-                        "jinfer.configure('-Djinfer.threads=3'); m = jinfer.load(%r); print(repr(m))" % LM], capture_output=True, text=True)
-ok("threads=3" in fresh.stdout, f"configure('-Djinfer.threads=3') sizes the pool: {fresh.stdout.strip()[-60:]} {fresh.stderr.strip()[-120:]}")
-twice = subprocess.run([_sys.executable, "-c", "import sys; sys.path.insert(0, 'python'); import jinfer\n"
-                        "jinfer.configure('-Djinfer.threads=3')\n"
-                        "try:\n    jinfer.configure('-Djinfer.trace=false')\nexcept jinfer.InvalidArgument as e:\n    print('refused:', e)"], capture_output=True, text=True)
+sized = fresh("jinfer.configure('-Djinfer.threads=3'); m = jinfer.load(%r); print(repr(m))" % LM)
+ok("threads=3" in sized.stdout, f"configure('-Djinfer.threads=3') sizes the pool: {sized.stdout.strip()[-60:]} {sized.stderr.strip()[-120:]}")
+twice = fresh("jinfer.configure('-Djinfer.threads=3')\n"
+              "try:\n    jinfer.configure('-Djinfer.trace=false')\nexcept jinfer.InvalidArgument as e:\n    print('refused:', e)")
 ok("must come once" in twice.stdout, f"configure is one call: {twice.stdout.strip()[-80:]} {twice.stderr.strip()[-120:]}")
-import os as _os
-env2 = dict(_os.environ, JINFER_OPTIONS="-Djinfer.threads=2")
-over = subprocess.run([_sys.executable, "-c", "import sys; sys.path.insert(0, 'python'); import jinfer\n"
-                       "jinfer.configure('-Djinfer.threads=3'); m = jinfer.load(%r); print(repr(m))" % LM], capture_output=True, text=True, env=env2)
+over = fresh("jinfer.configure('-Djinfer.threads=3'); m = jinfer.load(%r); print(repr(m))" % LM, JINFER_OPTIONS="-Djinfer.threads=2")
 ok("threads=2" in over.stdout, f"JINFER_OPTIONS overrides configure: {over.stdout.strip()[-60:]} {over.stderr.strip()[-120:]}")
-knobs = subprocess.run([_sys.executable, "-c", "import sys; sys.path.insert(0, 'python'); import jinfer\n"
-                        "jinfer.configure('-Djinfer.cache.sessions=1', '-Djinfer.cache.budget=512m', '-Djinfer.offline=true')\n"
-                        "m = jinfer.load(%r); print(m._info['cache_sessions'], m._info['cache_budget'])" % LM], capture_output=True, text=True)
+# JINFER_LOG says how many lines reach logging: a load's debug lines at debug, none at the default (warn)
+# nor at off, one warning for a value it does not know; stderr stays empty, the callback being set
+levels = ("import json, logging\n"
+          "seen = []; h = logging.Handler(); h.emit = lambda r: seen.append(r.levelno)\n"
+          "logging.getLogger('jinfer').addHandler(h); logging.getLogger('jinfer').setLevel(logging.DEBUG)\n"
+          "jinfer.configure('-Djinfer.offline=true')\n"
+          "with jinfer.load(%r): pass\n"
+          "print(sorted(set(seen)))" % LM)
+for value, want in (("debug", logging.DEBUG), (None, None), ("OFF", None), ("bogus", logging.WARNING)):
+    run = fresh(levels, JINFER_LOG=value)
+    seen = json.loads(run.stdout.strip().splitlines()[-1]) if run.returncode == 0 else None
+    ok(seen is not None and run.stderr == "" and (seen[:1] == [want] if want else seen == []),
+       f"JINFER_LOG={value}: levels {seen}, stderr {run.stderr.strip()[-160:]!r}")
+knobs = fresh("jinfer.configure('-Djinfer.cache.sessions=1', '-Djinfer.cache.budget=512m', '-Djinfer.offline=true')\n"
+              "m = jinfer.load(%r); print(m._info['cache_sessions'], m._info['cache_budget'])" % LM)
 ok(knobs.stdout.strip() == f"1 {512 << 20}", f"cache knobs reach the engine: {knobs.stdout.strip()} {knobs.stderr.strip()[-120:]}")
-bad = subprocess.run([_sys.executable, "-c", "import sys; sys.path.insert(0, 'python'); import jinfer\n"
-                      "jinfer.configure('-Djinfer.cache.budget=lots', '-Djinfer.offline=true')\n"
-                      "try:\n    jinfer.load(%r)\nexcept jinfer.InvalidArgument as e:\n    print('refused:', e)" % LM], capture_output=True, text=True)
+bad = fresh("jinfer.configure('-Djinfer.cache.budget=lots', '-Djinfer.offline=true')\n"
+            "try:\n    jinfer.load(%r)\nexcept jinfer.InvalidArgument as e:\n    print('refused:', e)" % LM)
+# the toknroll functions libjinfer carries log through its sink too: to the "jinfer" logger, by JINFER_LOG
+carried = fresh("import json, logging\n"
+                "seen = []; h = logging.Handler(); h.emit = lambda r: seen.append(r.getMessage())\n"
+                "logging.getLogger('jinfer').addHandler(h)\n"
+                "jinfer.configure('-Djinfer.offline=true', '-Dtoknroll.gguf.pre.gpt2=alias:qwen2')\n"
+                "from jinfer import _native as N\n"
+                "N.lib.toknroll_tokenizer_free(N.lib.toknroll_tokenizer_load(%r.encode()))\n"
+                "print(json.dumps(seen))" % LM)
+said = json.loads(carried.stdout.strip().splitlines()[-1]) if carried.returncode == 0 else []
+ok(any("replaces the registered pre-tokenizer 'gpt2'" in m for m in said) and carried.stderr == "",
+   f"toknroll's lines in libjinfer reach the jinfer logger: {said} {carried.stderr.strip()[-160:]!r}")
 ok("refused: jinfer.cache.budget must be" in bad.stdout and "lots" in bad.stdout, f"a bad budget is refused by name: {bad.stdout.strip()[-80:]} {bad.stderr.strip()[-120:]}")
 try:
     m.chat("Hi", max_tokens="8"); ok(False, "a string max_tokens must be a TypeError")
@@ -402,7 +429,7 @@ try:
 except TypeError as e:
     ok("str" in str(e), f"embed non-str: {e}")
 e = jinfer.load(EMB)
-ok(isinstance(e, jinfer.Embedder) and e.dimension > 0 and not hasattr(e, "chat") and e.context_capacity == e.max_context_length > 0, f"{e!r}")
+ok(isinstance(e, jinfer.Embedder) and e.dimension > 0 and not hasattr(e, "chat") and e.context_capacity == min(4096, e.max_context_length) > 0, f"{e!r}")
 v = e.embed(["AI on the JVM", "the JVM thinks now", "the python shed its skin"])
 def cos(a, b): return sum(x * y for x, y in zip(a, b)) / math.sqrt(sum(x * x for x in a) * sum(y * y for y in b))
 rows = [list(map(float, row)) for row in v]
@@ -445,7 +472,7 @@ e.close()
 # the other kinds, when their model is already cached (offline: never download in a test)
 
 if (rr := cached("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")) is not None:
-    ok(isinstance(rr, jinfer.Reranker), f"{rr!r}")
+    ok(isinstance(rr, jinfer.Reranker) and rr.context_capacity == min(4096, rr.max_context_length), f"{rr!r}: the default, a reranker's too")
     scores = rr.rerank("capital of France", ["Paris is the capital of France.", "Bananas are yellow."])
     ok(scores[0] > scores[1], f"rerank order {scores}")
     ok(len(rr.rerank("q", "one document")) == 1, "one document is a list of one")

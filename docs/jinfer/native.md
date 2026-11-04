@@ -56,7 +56,7 @@ There are no prompt templates, chains, memory classes, callbacks, retries or opt
 | embeddings, reranking | `embedder.embed(texts)`, `reranker.rerank(query, documents)` |
 | speech, transcription | `speaker.speak(text).save("out.wav")`, `transcriber.transcribe("speech.wav").words` |
 | a warm prompt cache | `chat.prepare()` once; `prompt_cache="catalog.jkvf"` at load keeps it across processes |
-| the context size | `jinfer.load(ref, context_capacity=8192)`, up to `model.max_context_length`; the default is 4096 or the maximum when smaller |
+| the context size | `jinfer.load(ref, context_capacity=8192)`, up to `model.max_context_length`; the default (`0`) is 4096 or the maximum when smaller, `jinfer.MAXIMUM_CONTEXT` (`-1`) the maximum |
 | log lines | `logging.getLogger("jinfer")` |
 
 `jinfer.OpenAI(model_ref)` replaces `OpenAI(api_key=...)` as a migration aid; code written for the OpenAI SDK then runs in-process, unchanged.
@@ -73,6 +73,6 @@ make python               # stage the library into the Python package; then pip 
 
 The library links jam statically: nothing is extracted at run time.
 An image is built for one ISA level, `-march`, and the kernels' Vector API width is pinned to that level at build time, never inherited from the build machine; x86-64-v3 (AVX2) is the floor.
-Model options are a versioned struct (`jinfer_model_options_init`, then set fields): companions such as `media=<ref>` or `voice=<ref>`, a prompt-cache catalog, and `context_capacity`, the tokens of context the model's states hold (0 = the default, -1 = the model's maximum, above it refused).
+Model options are a versioned struct (`jinfer_model_options_init`, then set fields): companions such as `media=<ref>` or `voice=<ref>`, a prompt-cache catalog, and `context_capacity`, the tokens of context the model's states hold (0 = the default, `JINFER_CONTEXT_MAXIMUM` (-1) = the model's maximum, above it refused).
 A model is the weights and configuration plus the states chat and retrieval run in; `JINFER_CONTEXT_CAPACITY` reports what they hold and `JINFER_MAX_CONTEXT_LENGTH` the model's bound.
 The runtime is configured once, before the first call, with `jinfer_configure`, a second call being refused: the options a java command line takes, `-Djinfer.threads=8` for the process's pool, `-Djinfer.cache.sessions=16` and `-Djinfer.cache.budget=8g` for the prompt cache's warm conversations and KV-block bytes (4 and 2g by default, budget 0 switches the block layer off), `-Djinfer.offline=true`, any `jinfer.*` or `jam.*` property the engine reads, `-XX:MaxHeapSize` for the heap; the `JINFER_OPTIONS` environment variable holds the same options and overrides them, so a deployment retunes a program without a code change; `jinfer_model_info` reports the pool size in effect.

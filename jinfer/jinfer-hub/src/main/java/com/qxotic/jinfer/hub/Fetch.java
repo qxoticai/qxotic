@@ -1337,9 +1337,11 @@ final class Fetch {
         /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
         private static final String EIGHTHS = "\u258f\u258e\u258d\u258c\u258b\u258a\u2589";
 
-        // Detect and prepare the descriptor we paint, including Windows virtual-terminal mode.
+        // Detect and prepare the descriptor we paint, including Windows virtual-terminal mode; only
+        // when INFO lines show, so a library logging at warn keeps the terminal quiet
         private static final boolean BOARD =
-                System.getenv("NO_COLOR") == null
+                LOG.isLoggable(System.Logger.Level.INFO)
+                        && System.getenv("NO_COLOR") == null
                         && !"dumb".equals(System.getenv("TERM"))
                         && TerminalSupport.enableAnsi(2);
         private static final boolean UNICODE =

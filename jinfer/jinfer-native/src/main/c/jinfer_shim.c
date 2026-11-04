@@ -6,27 +6,13 @@
 #include <string.h>
 #include "jinfer.h"
 #include "toknroll_isolate.h"   /* toknroll-native/src/main/c */
-#include "toknroll_port.h"
 
 _Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 64-bit platform");
 
 void jinfer__error_set(graal_thread*, int32_t, const char*);
-void jinfer__log_set(graal_thread*, jinfer_log_fn, void*);
-
-/* a log callback installed before the isolate exists is applied on the first call that has one */
-static jinfer_log_fn pending_log;
-static void* pending_user;
-static port_once_t log_once = PORT_ONCE_INIT;
-static void apply_log(void) { jinfer__log_set(toknroll__thread(), pending_log, pending_user); }
-
-static graal_thread* thread(void) {
-    graal_thread* t = toknroll__thread();
-    if (t && pending_log) port_once(&log_once, apply_log);
-    return t;
-}
 
 typedef graal_thread* T;
-#define THREAD T t = thread()
+#define THREAD T t = toknroll__thread()
 #define STR(x) #x
 #define XSTR(x) STR(x)
 
@@ -57,14 +43,9 @@ int32_t jinfer__rerank(T, jinfer_model*, const char*, const char* const*, int32_
 int32_t jinfer__prepare(T, jinfer_model*, const char*);
 
 const char* jinfer_version(void) { return XSTR(JINFER_VERSION_MAJOR) "." XSTR(JINFER_VERSION_MINOR) "." XSTR(JINFER_VERSION_PATCH); }
-/* never create the isolate just to report on it, nor apply a pending log callback: that is a call, and
- * a call clears the error being read */
-const char* jinfer_last_error(int32_t* code) { T t = toknroll__created() ? toknroll__thread() : NULL; return t ? jinfer__last_error(t, code) : toknroll__early_error(code); }
-void jinfer_log_set(jinfer_log_fn fn, void* user) {
-    if (!toknroll__created()) { pending_log = fn; pending_user = user; return; }
-    THREAD;
-    if (t) jinfer__log_set(t, fn, user);
-}
+/* never create the isolate just to report on it: that is a call, and a call clears the error being read */
+const char* jinfer_last_error(int32_t* code) { T t = toknroll__running() ? toknroll__thread() : NULL; return t ? jinfer__last_error(t, code) : toknroll__early_error(code); }
+int32_t jinfer_log_set(jinfer_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "jinfer_log_set", jinfer__error_set); }   /* toknroll_log_set's too: one per process */
 int32_t jinfer_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "jinfer_configure", jinfer__error_set); }
 
 void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o); o->struct_size = sizeof *o; }

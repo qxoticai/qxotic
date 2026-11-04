@@ -41,6 +41,8 @@ import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
  * last child is gone.
  */
 final class Model {
+    private static final System.Logger LOG = System.getLogger("jinfer.native");
+
     enum Kind {
         LANGUAGE,
         EMBEDDING,
@@ -112,37 +114,29 @@ final class Model {
                             capacity(
                                     contextCapacity,
                                     contextModel().configuration().maxContextLength(),
-                                    0); // a retrieval state grows to the text, so the default is
-                    // the maximum
+                                    PromptCache.Options.DEFAULT_CONTEXT_CAPACITY);
                     default -> 0;
                 };
     }
 
-    /**
-     * The context_capacity option resolved against the model's maximum: 0 is {@code dflt} (0 for
-     * the maximum itself), -1 the maximum, a positive value exact and refused above the maximum.
-     */
-    static int capacity(int requested, int max, int dflt) {
-        if (requested == 0) return dflt == 0 ? max : Math.min(dflt, max);
-        if (requested == -1) return max;
-        if (requested < 0)
-            throw Errors.invalid(
-                    "context_capacity must be -1 (the model's maximum), 0 (the default) or"
-                            + " positive, got "
-                            + requested);
-        if (requested > max)
-            throw Errors.invalid(
-                    "context_capacity "
-                            + requested
-                            + " exceeds the model's maximum context length "
-                            + max
-                            + "; -1 selects the maximum");
-        return requested;
+    /** {@link PromptCache.Options#contextCapacity}, its refusal under the C field's own name. */
+    static int capacity(int requested, int max, int defaultCapacity) {
+        try {
+            return PromptCache.Options.contextCapacity(requested, max, defaultCapacity);
+        } catch (IllegalArgumentException refused) {
+            throw named(refused);
+        }
+    }
+
+    private static RuntimeException named(IllegalArgumentException refused) {
+        String message = refused.getMessage();
+        if (message == null || !message.startsWith("contextCapacity ")) return refused;
+        return Errors.invalid("context_capacity " + message.substring("contextCapacity ".length()));
     }
 
     static Model load(String ref, Options.Values options) throws IOException {
-        Log.init();
-        Log.debug(
+        LOG.log(
+                System.Logger.Level.DEBUG,
                 "jam providers "
                         + JAM.providers().stream().map(JAM.Provider::id).toList()
                         + ", "
@@ -152,6 +146,7 @@ final class Model {
     }
 
     private static Model load0(String ref, Options.Values options) throws IOException {
+        if (ref.isBlank()) throw Errors.invalid("ref is empty");
         List<String> refs = new ArrayList<>();
         refs.add(ref);
         refs.addAll(options.companions().values());
@@ -176,12 +171,11 @@ final class Model {
         if (options.promptCache() != null)
             cache = cache.withCatalog(Path.of(options.promptCache()), false);
         int requested = options.contextCapacity();
-        if (requested < -1) capacity(requested, 0, 0); // refused by name before any weights load
-        if (requested == -1) cache = cache.withContextCapacity(0); // the cache's 0 is the maximum
-        else if (requested > 0)
-            cache = cache.withContextCapacity(requested); // above the maximum, the cache refuses
         Model model;
         try {
+            cache =
+                    cache.withContextCapacity(
+                            requested); // the same 0 and -1; refused before weights
             ChatEngine engine = new ChatEngine(path, companions, cache);
             model = new Model(Kind.LANGUAGE, path, companions, engine, null, header, requested);
         } catch (ModelProvider.IncompatibleModelException notLanguage) {
@@ -192,8 +186,15 @@ final class Model {
                 Arenas.close(arena); // best-effort: in the image the arena is ofAuto, not closeable
                 throw t;
             }
+        } catch (IllegalArgumentException refused) {
+            throw named(refused); // the cache's refusal of a capacity, under the C field's name
         }
-        Log.debug("loaded " + model.kind + " " + model.name);
+        LOG.log(
+                System.Logger.Level.DEBUG,
+                "loaded "
+                        + model.kind.name().toLowerCase(java.util.Locale.ROOT)
+                        + " "
+                        + model.name);
         return model;
     }
 
@@ -242,7 +243,9 @@ final class Model {
                     out.put(key.substring("general.".length()), value);
             }
         } catch (Exception e) {
-            Log.debug("header of " + path + " not read: " + e.getMessage());
+            LOG.log(
+                    System.Logger.Level.DEBUG,
+                    "header of " + path + " not read: " + e.getMessage());
         }
         return out;
     }
@@ -263,12 +266,12 @@ final class Model {
                 engine.savePrompts(); // the catalog file, when one was given: what this process
                 // computed
             } catch (RuntimeException e) {
-                Log.debug("prompt cache not saved: " + e.getMessage());
+                LOG.log(System.Logger.Level.DEBUG, "prompt cache not saved: " + e.getMessage());
             }
             engine.close();
         }
         if (arena != null) Arenas.close(arena); // best-effort, see load0
-        Log.debug("freed " + name);
+        LOG.log(System.Logger.Level.DEBUG, "freed " + name);
     }
 
     synchronized ExecutorService driver() {

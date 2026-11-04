@@ -11,7 +11,6 @@ import org.graalvm.nativeimage.c.type.CCharPointerPointer;
 import org.graalvm.nativeimage.c.type.CFloatPointer;
 import org.graalvm.nativeimage.c.type.CIntPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
-import org.graalvm.nativeimage.c.type.VoidPointer;
 import org.graalvm.word.WordFactory;
 
 /**
@@ -71,16 +70,6 @@ public final class Native {
     static CCharPointer lastError(IsolateThread thread, CIntPointer code) {
         if (code.isNonNull()) code.write(Errors.lastCode());
         return Errors.last();
-    }
-
-    @CEntryPoint(name = "jinfer__log_set")
-    static void logSet(IsolateThread thread, Log.Fn fn, VoidPointer user) {
-        try {
-            Errors.clear();
-            Log.set(fn, user);
-        } catch (Throwable t) {
-            Errors.set(t);
-        }
     }
 
     /** The shim's own failures (a configure call after the isolate exists) use the same channel. */

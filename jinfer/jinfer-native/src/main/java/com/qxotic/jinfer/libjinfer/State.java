@@ -26,7 +26,8 @@ final class State {
         ContextModel<?, ?, ?> typed = model.contextModel();
         this.cm = typed;
         int max = typed.configuration().maxContextLength();
-        int capacity = contextCapacity <= 0 ? model.capacity : Math.min(contextCapacity, max);
+        // the options' rule: 0 the model's, -1 the maximum, past it refused, never clamped unsaid
+        int capacity = Model.capacity(contextCapacity, max, model.capacity);
         this.state = cm.newState(capacity);
         model.retain();
     }

@@ -41,14 +41,14 @@ Every call returns a plain typed object; nothing is a dict you have to know the 
 | tools | `tools=[fn]`: the signature is the schema, the docstring the description; a conversation runs the calls, a plain `chat` returns them as `reply.tool_calls`; `tool_choice` is `"auto"`, `"none"`, `"required"`, a function or its name |
 | a conversation | `conversation = model.conversation(system=...)`; `.chat(text, schema=...)` streams like `model.chat`, `.fork()`, `.rewind()`, `.prepare()`, `.messages` |
 | images, audio in | a `Path` or `bytes` in the content list: `model.chat(["What is this?", Path("photo.jpg")])` |
-| embeddings | `embedder.embed(texts)` gives `(n, dimension)`, a single string counts as one; a text is embedded whole, up to `context_capacity`, the model's maximum by default |
+| embeddings | `embedder.embed(texts)` gives `(n, dimension)`, a single string counts as one; a text is embedded whole, up to `context_capacity`: 4096 tokens by default, or the model's maximum when smaller |
 | reranking | `reranker.rerank(query, documents)` gives one score per document |
 | speech | `speech = speaker.speak(text, speed=1.2)`; iterate PCM chunks, or `speech.audio`, `speech.save("out.wav")` |
 | transcription | `transcriber.transcribe("speech.wav")` or `(pcm, sample_rate=16000)`; `.text` and timed `.words` |
 | tokens | `model.tokenizer` is a [`toknroll.Tokenizer`](https://pypi.org/project/toknroll/): `encode(text)` gives an `array('i')`, `decode(ids)`, `count_tokens`, `encode_batch`, `vocabulary_size`, `token(id)`, `id(token)`; `toknroll.load(ref)` gives one without the weights |
 | token budgets | `len(model.tokenizer.encode(text))` against `model.context_capacity` (the state in use) and `model.max_context_length` (the model's bound) |
-| the context size | `jinfer.load(ref, context_capacity=8192)`: the tokens of context the model's states hold, up to its maximum; the default is 4096 or the maximum when smaller, `-1` is the maximum, above it is refused |
-| log lines | `logging.getLogger("jinfer")`: downloads, loads, kernels; silent until you configure logging |
+| the context size | `jinfer.load(ref, context_capacity=8192)`: the tokens of context the model's states hold, up to its maximum; the default (`None` or `0`) is 4096, or the maximum when smaller, for every kind of model, `jinfer.MAXIMUM_CONTEXT` (`-1`) is the maximum, above it is refused |
+| log lines | `logging.getLogger("jinfer")`, as many as `JINFER_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads), `debug` (loads, kernels) |
 
 Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`), `Cancelled`; each has `.code`.
 `jinfer.OpenAI(ref)` is a migration aid: code written for the OpenAI SDK's `chat.completions.create` and `embeddings.create` runs in-process, unchanged.
@@ -61,7 +61,10 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 - Temperature 0 gives the same tokens every run. Two different kernels can still land on different sides of a near-tie between two tokens, so a test pins behaviour, not prose.
 - A conversation's turns are served from the engine's kept state, so a turn costs only its new tokens; `reply.usage.cached_tokens` shows it. A fork shares the prefix; a rewind recomputes nothing and keeps the system prompt; `prepare()` computes the prefix before the user types. With `prompt_cache=path`, what a model prepared is written when it closes and read by the next one.
 - Structured output is enforced while decoding, so malformed JSON cannot come back. Validate meaning if you need to; there is no format to retry.
-- Silent in programs: nothing is printed once logging is configured, `logging.basicConfig(level=logging.INFO)` shows downloads and loads as log lines. At a terminal, a download shows jinfer's progress board. Ctrl-C during a download ends the process; the download resumes next time. `repr(model)` names the kernels and threads that actually run.
+- Quiet by default: only warnings and errors reach `logging`.
+  `JINFER_LOG=info` adds the downloads, at a terminal as jinfer's progress board, and as INFO records otherwise, which show once the application logs at INFO (`logging.basicConfig(level=logging.INFO)`); `JINFER_LOG=off` silences the library.
+  Ctrl-C during a download ends the process; the download resumes next time.
+  `repr(model)` names the kernels and threads that actually run.
 - Any thread may call. A model may be shared between threads; a reply, speech or conversation belongs to one thread at a time. `async for` on a reply or speech steps in a worker thread; wrap one-shot calls in `asyncio.to_thread`.
 - A model's weights stay alive while any reply or speech made from it lives; `close()` drops your reference. Context managers close; so does garbage collection.
 - Embeddings and audio are float32 `array.array` buffers, scores are floats: the standard library, whoever installs the package. `np.asarray(vector)` and `torch.frombuffer(speech.audio, dtype=torch.float32)` are zero-copy.

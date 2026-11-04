@@ -4,19 +4,20 @@
 #include <stdlib.h>
 #include "jinfer.h"
 
-/* The library is silent until asked: this prints everything it says. A program keeps what it wants
- * by level: downloads and warnings are INFO and above, loads and kernel choices DEBUG. */
-static void log_line(int32_t level, const char* message, void* user) {
-    (void) level; (void) user;
-    fprintf(stderr, "%s\n", message);
+/* Without a callback the library's lines go to stderr, JINFER_LOG=info (downloads) or debug (loads,
+ * kernel choices) for more; a callback takes them instead, here into the program's own format. */
+static void log_line(int32_t level, const char* message, void* user_data) {
+    static const char* names[] = {"debug", "info", "warn", "error"};
+    (void) user_data;
+    fprintf(stderr, "[%s] %s\n", names[level], message);
 }
 
 int main(int argc, char** argv) {
     const char* ref = argc > 1 ? argv[1] : "LiquidAI/LFM2.5-350M-GGUF:Q8_0";
     const char* request = argc > 2 ? argv[2]   /* a chat.completions request; its text is JSON text, escaped */
         : "{\"messages\":[{\"role\":\"user\",\"content\":\"What is the capital of France? One sentence.\"}],\"max_tokens\":64,\"temperature\":0}";
+    if (jinfer_log_set(log_line, NULL) != JINFER_OK) { fprintf(stderr, "log: %s\n", jinfer_last_error(NULL)); return 1; }   /* before any other call */
     printf("libjinfer %s\n", jinfer_version());
-    jinfer_log_set(log_line, NULL);
 
     jinfer_model* model = jinfer_model_load(ref, NULL);
     if (!model) { fprintf(stderr, "load: %s\n", jinfer_last_error(NULL)); return 1; }

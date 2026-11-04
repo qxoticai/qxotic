@@ -136,9 +136,9 @@ The exceptions take one of two forms:
 
 After `fork`, a library either works in the child or refuses with `ERROR`; it never hangs.
 
-A callback takes a `void* user` as its last parameter, and is registered together with it.
+A callback takes a `void* user_data` as its last parameter, and is registered together with it.
 It runs on the threads its registration names, must return normally (no `longjmp`, no C++ exception), and may call only the functions documented as callback-safe.
-Once a call that replaces or clears a callback returns, the old one is not running and is never called again, so its `user` can be freed.
+Its `user_data` must stay valid as long as the callback is registered; a log callback is registered for the life of the process.
 
 ## Configuration
 
@@ -146,8 +146,28 @@ Settings come through the API: an options struct, or `prefix_configure(options, 
 libtoknroll and libjinfer also read one environment variable, `TOKNROLL_OPTIONS` and `JINFER_OPTIONS`: the same options as configure's, separated by whitespace, applied after configure's, so whoever runs the program has the last word.
 libjam reads `JAM_DEBUG`, which prints its dispatch on stderr, and a few `JAM_*` tuning knobs.
 A library reads its environment once, at first use.
-A library writes to stderr only libjam's dispatch under `JAM_DEBUG`, the runtime's name for an option it rejects (libtoknroll, libjinfer), and jinfer's download progress while stderr is a terminal.
-`jinfer_log_set` routes jinfer's log lines, download progress included when no terminal shows it, to the host; without a callback they go nowhere.
+Beyond their log lines, libtoknroll and libjinfer write to stderr only the runtime's name for an option it rejects; libjam writes only its dispatch under `JAM_DEBUG`.
+
+## Logging
+
+libtoknroll and libjinfer log the same way: `TOKNROLL_LOG` and `JINFER_LOG` say how much, `prefix_log_set` says where.
+
+| Variable | `prefix_log_set` | Lines |
+|---|---|---|
+| unset | not called | warnings and errors, to stderr |
+| `error`, `warn`, `info` or `debug` | not called | that level and above, to stderr |
+| any | a callback | the same lines, to the callback instead of stderr |
+| any | `NULL` | none |
+| `off` | anything | none |
+
+The variable's value is case-insensitive, and a blank one is unset; an unknown one means `warn`, and the library logs one warning naming it.
+A stderr line reads `jinfer: info: jinfer.hub: download ...`: the library, the level, what wrote it, the message.
+The callback gets the level as `PREFIX_LOG_DEBUG` (0) to `PREFIX_LOG_ERROR` (3) and the rest of the line, UTF-8, without a newline: a stack trace, at debug, folds onto it, its frames joined by ` | `.
+The callback may call the library's `last_error` and its `_free` functions, on a handle no call is using, even while the library starts.
+`prefix_log_set` comes once, before any other call, configure included; a later call is `EINVAL`.
+From `info` on, a download at a terminal draws its progress on stderr instead of logging it, whether or not a callback is set.
+In libjinfer, `JINFER_LOG` covers the `toknroll_*` functions it carries too, and `toknroll_log_set` is `jinfer_log_set`: one callback serves the library.
+The Python packages set the callback as they load the library, so their lines go to `logging.getLogger("toknroll")` and `logging.getLogger("jinfer")`, as many as the variable lets through; Python's logging then decides what shows.
 
 ## Headers
 

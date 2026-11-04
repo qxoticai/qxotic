@@ -48,3 +48,23 @@ EDGE_TEXTS = [
     "control \x01\x02\x7f chars", "nul in \x00 the middle", "\x00", "end nul\x00",
     "surrogate-free max \U0010ffff", "bom ﻿ text",
 ]
+
+
+def tiny_gguf(path, pre="gpt2"):
+    """A GGUF tokenizer, header only, as the C tests' fixtures.h writes it: byte b is id b, "he" 256."""
+    import struct
+    printable = list(range(33, 127)) + list(range(161, 173)) + list(range(174, 256))
+    spelling, n = {}, 0
+    for b in range(256):
+        spelling[b] = chr(b) if b in printable else chr(256 + n)
+        n += b not in printable
+    tokens = [spelling[b] for b in range(256)] + ["he"]
+    s = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()  # noqa: E731
+    out = b"GGUF" + struct.pack("<IQQ", 3, 0, 5)
+    out += s("tokenizer.ggml.model") + struct.pack("<I", 8) + s("gpt2")
+    out += s("tokenizer.ggml.pre") + struct.pack("<I", 8) + s(pre)
+    out += s("tokenizer.ggml.tokens") + struct.pack("<IIQ", 9, 8, len(tokens)) + b"".join(map(s, tokens))
+    out += s("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *[1] * len(tokens))
+    out += s("tokenizer.ggml.merges") + struct.pack("<IIQ", 9, 8, 1) + s("h e")
+    Path(path).write_bytes(out)
+    return str(path)

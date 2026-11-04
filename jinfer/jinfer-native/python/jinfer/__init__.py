@@ -27,8 +27,9 @@
 `load` returns the class the file calls for: LanguageModel, Embedder, Reranker, Speaker or
 Transcriber, each with only the methods that apply. Options are keyword-only and `None` means
 the model's own default. Embeddings and audio are float32 `array.array` buffers, zero-copy into
-numpy or torch; scores are floats. The library's lines go to `logging.getLogger("jinfer")`; a download at a terminal
-shows jinfer's progress board on stderr.
+numpy or torch; scores are floats. The library's lines go to `logging.getLogger("jinfer")`, as many as
+JINFER_LOG lets through: off, error, warn (the default), info or debug; Python's logging then decides what
+shows. From info on, a download at a terminal shows jinfer's progress board on stderr.
 """
 from __future__ import annotations
 
@@ -68,9 +69,14 @@ toknroll._native.bind(N.lib)  # libjinfer carries the toknroll_* symbols: its to
 
 __all__ = ["load", "configure", "Model", "LanguageModel", "Embedder", "Reranker", "Speaker", "Transcriber",
            "Conversation", "Reply", "Speech", "Transcript", "Word", "ToolCall", "Usage",
-           "JinferError", "InvalidArgument", "NotFound", "Cancelled"]
+           "JinferError", "InvalidArgument", "NotFound", "Cancelled", "MAXIMUM_CONTEXT"]
 
 __version__ = N.lib.jinfer_version().decode()
+
+MAXIMUM_CONTEXT = -1
+"""`load(context_capacity=MAXIMUM_CONTEXT)`: the model's whole trained context, its `max_context_length`;
+0 or None is the default. The same -1 as C's JINFER_CONTEXT_MAXIMUM and Java's
+PromptCache.Options.MAXIMUM_CONTEXT."""
 
 T = TypeVar("T")
 FinishReason = Literal["stop", "length", "tool_calls", "cancelled"]
@@ -151,18 +157,11 @@ def _strings(values, what: str):
     return (C.c_char_p * len(values))(*(_utf8(value, f"{what}[{i}]") for i, value in enumerate(values)))
 
 
-# ---- logging: the library's lines reach Python's logging, silent until the application configures it ----
+# ---- logging: JINFER_LOG says how many lines, Python's logging what becomes of them ----
 
-_logger = logging.getLogger("jinfer")
-_LEVELS = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR}
-
-
-def _log(level, message, _):
-    _logger.log(_LEVELS.get(level, logging.INFO), "%s", message.decode("utf-8", "replace"))
-
-
-_log_callback = N.LogFn(_log)  # kept alive for the life of the library
-N.lib.jinfer_log_set(_log_callback, None)
+# before any other call, so it holds; EINVAL only for a library some other loader in the process started
+# first, whose lines then go where that one said
+N.lib.jinfer_log_set(toknroll._native.log_callback("jinfer"), None)
 
 
 # ---- messages: strings, Paths and bytes become the wire's content parts ----
@@ -935,18 +934,21 @@ def load(ref: str | os.PathLike, *, companions: dict[str, str] | None = None,
          prompt_cache: str | os.PathLike | None = None, context_capacity: int | None = None) -> Model:
     """Loads a hub reference such as "LiquidAI/LFM2.5-350M-GGUF:Q8_0" or a local path, downloading
     once. The file decides what comes back: a LanguageModel, Embedder, Reranker, Speaker or
-    Transcriber. A download shows its progress on stderr at a terminal and logs it otherwise; Ctrl-C
-    during one ends the process, and the download resumes next time.
+    Transcriber. From JINFER_LOG=info on, a download shows its progress on stderr at a terminal and logs
+    it otherwise; Ctrl-C during one ends the process, and the download resumes next time.
 
     Options: companions ({"media": ref} for vision and audio in, {"voice": ref} for speech),
     prompt_cache (a catalog file, read at load and extended at close, so prepared prompts survive
     the process), context_capacity (the tokens of state the model keeps, at most its
-    `max_context_length`; None is 4096 or the maximum when smaller, an embedder or reranker takes
-    the maximum; -1 is the maximum). The thread count is the process's: `configure("-Djinfer.threads=N")`.
+    `max_context_length`; None or 0 is the default, 4096 or the maximum when smaller, for every kind of
+    model; `MAXIMUM_CONTEXT` (-1) is the maximum; above it is refused). The thread
+    count is the process's: `configure("-Djinfer.threads=N")`.
     """
     ref = os.fspath(ref)
     if context_capacity is not None and (isinstance(context_capacity, bool) or not isinstance(context_capacity, int)):
         raise TypeError(f"context_capacity: got {type(context_capacity).__name__}")
+    if context_capacity is not None and not -2**31 <= context_capacity < 2**31:  # the C field would wrap
+        raise InvalidArgument(f"context_capacity {context_capacity} does not fit a 32-bit integer")
     options = N.ModelOptions()
     N.lib.jinfer_model_options_init(C.byref(options))
     options.context_capacity = context_capacity or 0
