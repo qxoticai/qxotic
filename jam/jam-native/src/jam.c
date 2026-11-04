@@ -601,8 +601,8 @@ int32_t jam_context_isa(const jam_context* ctx) {
  * per-slot buffers unchecked, so this guard is the one place the host's contract is enforced. */
 typedef struct { jam_context* c; jam_job_fn fn; void* job; } jam_guarded;
 
-static void guarded_task(int32_t begin, int32_t end, int32_t slot, void* task_user) {
-    jam_guarded* g = (jam_guarded*) task_user;
+static void guarded_task(int32_t begin, int32_t end, int32_t slot, void* task_data) {
+    jam_guarded* g = (jam_guarded*) task_data;
     if ((unsigned) slot >= (unsigned) g->c->threads) { atomic_store(&g->c->bad_slot, 1); return; }
     g->fn(g->job, begin, end, slot);
 }

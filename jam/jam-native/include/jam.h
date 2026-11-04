@@ -79,11 +79,11 @@ JAM_API const char* jam_isa_name(int32_t isa);       /* "avx512_vnni"; "" for an
 /* ---- threads: jam runs its work on the host's loop, or on a small pool of its own ---- */
 
 /* One slice of the work, [begin, end), on participant slot. */
-typedef void (*jam_task_fn)(int32_t begin, int32_t end, int32_t slot, void* task_user);
+typedef void (*jam_task_fn)(int32_t begin, int32_t end, int32_t slot, void* task_data);
 /* Runs task over [0, count) in slices and returns when all are done. Each slice's slot is below
  * the context's threads and unique among the slices running at once. jam calls it only from the
  * thread inside jam_mm; it must return normally and must not call jam. */
-typedef void (*jam_parallel_fn)(int32_t count, jam_task_fn task, void* task_user, void* user);
+typedef void (*jam_parallel_fn)(int32_t count, jam_task_fn task, void* task_data, void* user_data);
 
 #define JAM_MAX_THREADS 1024
 
