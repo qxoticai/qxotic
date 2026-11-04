@@ -48,7 +48,7 @@ const char* jinfer_last_error(int32_t* code) { T t = toknroll__running() ? toknr
 int32_t jinfer_log_set(jinfer_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "jinfer_log_set", jinfer__error_set); }   /* toknroll_log_set's too: one per process */
 int32_t jinfer_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "jinfer_configure", jinfer__error_set); }
 
-void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o); o->struct_size = sizeof *o; }
+void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o); o->struct_size = (int64_t) sizeof *o; }
 jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o) { THREAD; return t ? jinfer__model_load(t, ref, o) : NULL; }
 void jinfer_model_free(jinfer_model* m) { if (!m) return; THREAD; if (t) jinfer__model_free(t, m); }   /* NULL never starts the runtime, here and below */
 int32_t jinfer_model_property(const jinfer_model* m, int32_t key) { THREAD; return t ? jinfer__model_property(t, m, key) : JINFER_ERROR; }

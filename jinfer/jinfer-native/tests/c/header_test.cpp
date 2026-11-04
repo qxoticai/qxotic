@@ -15,5 +15,5 @@ int main() {
                          + std::to_string(JINFER_VERSION_PATCH);
     std::string toknroll = std::to_string(TOKNROLL_VERSION_MAJOR) + "." + std::to_string(TOKNROLL_VERSION_MINOR) + "."
                            + std::to_string(TOKNROLL_VERSION_PATCH);
-    return jinfer == jinfer_version() && toknroll == toknroll_version() && options.struct_size == sizeof options ? 0 : 1;
+    return jinfer == jinfer_version() && toknroll == toknroll_version() && options.struct_size == (int64_t) sizeof options ? 0 : 1;
 }

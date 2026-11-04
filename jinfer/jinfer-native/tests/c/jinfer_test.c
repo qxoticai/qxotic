@@ -490,7 +490,7 @@ static void state(void) {
     CHECK_ERROR(jinfer_state_ingest(s, ids, -1), JINFER_EINVAL, LE, "count must not be negative");
     CHECK_ERROR(jinfer_state_ingest(s, NULL, 1), JINFER_EINVAL, LE, "tokens is NULL");
     CHECK_EQ(jinfer_state_ingest(s, ids, 1), 1);
-    CHECK_ERROR(jinfer_state_logits(s, logits, -1), JINFER_EINVAL, LE, "capacity must not be negative");
+    CHECK_ERROR(jinfer_state_logits(s, logits, -1), JINFER_EINVAL, LE, "float_capacity must not be negative");
     CHECK_ERROR(jinfer_state_logits(s, NULL, 4), JINFER_EINVAL, LE, "out is NULL");
     CHECK_ERROR(jinfer_state_ingest(NULL, ids, 1), JINFER_EINVAL, LE, "state is NULL");
     CHECK_ERROR(jinfer_state_position(NULL), JINFER_EINVAL, LE, "state is NULL");
@@ -829,7 +829,7 @@ static void embedding_model(void) {
     CHECK_ERROR(jinfer_embed(e, texts, -1, 0, out, dim), JINFER_EINVAL, LE, "count must not be negative");
     CHECK_ERROR(jinfer_embed(e, texts, 1, -1, out, dim), JINFER_EINVAL, LE, "dimension must not be negative; 0 = native");
     CHECK_ERROR(jinfer_embed(e, texts, 1, dim + 1, out, dim), JINFER_EINVAL, LE, "requested");
-    CHECK_ERROR(jinfer_embed(e, texts, 1, 0, out, -1), JINFER_EINVAL, LE, "capacity must not be negative");
+    CHECK_ERROR(jinfer_embed(e, texts, 1, 0, out, -1), JINFER_EINVAL, LE, "float_capacity must not be negative");
     CHECK_ERROR(jinfer_embed(e, texts, 1, 0, NULL, dim), JINFER_EINVAL, LE, "out is NULL");
     /* its state: a pooled vector, and logits too; one packed batch at most */
     int32_t ids[8];

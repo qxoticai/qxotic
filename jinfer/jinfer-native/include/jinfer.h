@@ -5,7 +5,7 @@
  *              thread's next jinfer call (reading it changes nothing); after a success, "" and
  *              JINFER_OK. Every call sets it but jinfer_version, jinfer_model_options_init,
  *              jinfer_last_error and a _free of NULL.
- *   Buffers    (out, capacity) follows snprintf: at most capacity elements are written and the
+ *   Buffers    (out, float_capacity) follows snprintf: at most that many floats are written and the
  *              number needed is returned. Capacity 0 sizes, and a size known up front (count x
  *              dimension) is answered before any work. Element counts are int32_t; the sizes a
  *              model fixes come from jinfer_model_property. The toknroll_* functions write text as
@@ -122,7 +122,7 @@ typedef struct jinfer_model jinfer_model;
 /* Initialized by jinfer_model_options_init, which sets struct_size and leaves every other field zero,
  * its default; a struct_size smaller than this struct is JINFER_EINVAL. */
 typedef struct {
-    size_t             struct_size;   /* set by jinfer_model_options_init */
+    int64_t            struct_size;   /* set by jinfer_model_options_init */
     const char* const* companions;    /* "media=<ref>", "voice=<ref>", ... */
     int32_t            companion_count;   /* 0 = none */
     /* a prompt catalog file, read at load, extended at free; NULL = RAM only */
@@ -171,12 +171,12 @@ JINFER_API void          jinfer_state_free(jinfer_state* s);
 JINFER_API int32_t       jinfer_state_reset(jinfer_state* s);
 JINFER_API int32_t       jinfer_state_position(const jinfer_state* s);
 
-/* A forward pass only; returns the new position, JINFER_EINVAL past the capacity. */
+/* A forward pass only; returns the new position, JINFER_EINVAL past the context capacity. */
 JINFER_API int32_t jinfer_state_ingest(jinfer_state* s, const int32_t* tokens, int32_t count);
 /* The last position projected, JINFER_VOCAB_SIZE floats. */
-JINFER_API int32_t jinfer_state_logits(const jinfer_state* s, float* out, int32_t capacity);
+JINFER_API int32_t jinfer_state_logits(const jinfer_state* s, float* out, int32_t float_capacity);
 /* What was ingested pooled, JINFER_EMBEDDING_DIMENSION floats. */
-JINFER_API int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t capacity);
+JINFER_API int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t float_capacity);
 
 /* ------------------------------ stream: every generation, stepped like a statement */
 typedef struct jinfer_stream jinfer_stream;
@@ -203,7 +203,7 @@ JINFER_API jinfer_stream* jinfer_transcribe(jinfer_model* m, const float* pcm, i
 
 /* ---------------------------------------------------------- retrieval, prompt cache */
 JINFER_API int32_t jinfer_embed(jinfer_model* m, const char* const* texts, int32_t count, int32_t dimension,
-                                float* out, int32_t capacity);   /* count x dimension row-major; 0 = native */
+                                float* out, int32_t float_capacity);   /* count x dimension row-major; 0 = native */
 JINFER_API int32_t jinfer_rerank(jinfer_model* m, const char* query, const char* const* documents, int32_t count,
                                  const char* instruction, float* scores);   /* scores[count]; NULL = model default */
 JINFER_API int32_t jinfer_prepare(jinfer_model* m, const char* request_json);  /* computes and caches this prefix now */

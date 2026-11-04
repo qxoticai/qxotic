@@ -12,7 +12,6 @@ import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CCharPointerPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.word.PointerBase;
-import org.graalvm.word.UnsignedWord;
 
 /** jinfer_model_options, read through the header itself so the layout can never drift from it. */
 @CContext(Options.Directives.class)
@@ -48,7 +47,7 @@ final class Options {
     @CStruct("jinfer_model_options")
     interface Struct extends PointerBase {
         @CField("struct_size")
-        UnsignedWord structSize();
+        long structSize();
 
         @CField("companions")
         CCharPointerPointer companions();
@@ -70,7 +69,7 @@ final class Options {
 
     static Values read(Struct s) {
         if (s.isNull()) return Values.DEFAULTS;
-        long size = s.structSize().rawValue();
+        long size = s.structSize();
         if (size < SizeOf.get(Struct.class)) {
             throw Errors.invalid(
                     "options.struct_size "

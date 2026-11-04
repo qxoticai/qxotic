@@ -28,23 +28,23 @@ A function that does not change its handle takes it `const`.
 
 ## Types at the boundary
 
-Only these types cross the boundary:
+Only these types cross the boundary, picked by what a value counts, whichever way it goes:
 
 | Type | Used for |
 |---|---|
-| `int32_t` | element counts, indices, positions, enumerated values, statuses |
-| `int64_t` | byte sizes the library returns, and offsets that may pass 2^31 |
-| `size_t` | byte lengths the caller passes in (`text`, `length`) |
+| `int32_t` | counts and capacities of things (tokens, floats, items), indices, positions, enumerated values, statuses |
+| `int64_t` | counts and capacities of bytes: lengths, sizes and offsets |
 | `uint32_t` | flag words |
 | `float` | samples, logits, embeddings |
 | `const char*` | UTF-8 text, NUL-terminated unless a length comes with it |
 | pointers to the above, opaque handles, function pointers | |
 
-`int`, `long`, `unsigned`, `bool`, enum types, structs passed by value and varargs never appear in a signature.
+`int`, `long`, `unsigned`, `size_t`, `bool`, enum types, structs passed by value and varargs never appear in a signature.
 `int` and `long` change size between compilers, `bool` and enum types are a size other languages guess, and a struct by value has no portable calling convention.
+Every count is signed, so a result can carry an error code, a capacity compares with it without a cast, and a negative argument is refused instead of read as a huge one.
 Named constants are still welcome, as `#define` or as an anonymous `enum { ... }` with every value spelled out; the parameter that takes them is `int32_t`.
 Parameters come in one order: the handle, the inputs, the flags, then the outputs.
-A pointer comes before its count (`text, length`, `ids, count`, `out, capacity`), as in `memcpy` and `snprintf`, `jinfer_configure(options, count)` included.
+A pointer comes before its count (`text, length`, `ids, count`, `out, byte_capacity`), as in `memcpy` and `snprintf`, `jinfer_configure(options, count)` included.
 A pointer with a count may be NULL when the count is 0.
 Products of counts (`m * k`, `count * dimension`) are computed in 64 bits inside the library.
 
@@ -58,6 +58,7 @@ A bit the library does not define is refused with `EINVAL`, so it stays free to 
 
 A function returns its result.
 A count, index or position is a non-negative `int32_t`, a byte size a non-negative `int64_t`, and a negative value is an error.
+A negative count, length or capacity passed in is `EINVAL`, and so is one past what the library can hold (a Java array's 2 GiB): a limit is a check, never a narrower type.
 A constructor returns the handle, or NULL on failure.
 Only a function that cannot fail (`_free`, `_cancel`) returns `void`.
 
@@ -96,18 +97,20 @@ Memory the library hands out belongs to a handle and is released by that handle'
 A borrowed result (`jinfer_model_info`, `jinfer_stream_text`) stays valid until the next call on the same handle, or its `_free`; each such function says so.
 A function that returns a string never returns NULL: `""` stands for none, so a caller can print it as it comes.
 
-A function that fills caller memory takes the buffer and its capacity, and returns the full length the result needs, as `snprintf` does:
+A function that fills caller memory takes the buffer and its capacity, named by its unit (`token_capacity`, `byte_capacity`, `float_capacity`), and returns the full length the result needs, as `snprintf` does:
 
 ```c
-int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, size_t length, uint32_t flags,
-                        int32_t* ids, int32_t capacity);                 /* ids needed */
-int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
-                        char* out, int64_t capacity);                    /* bytes needed, NUL excluded */
+int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, int64_t length, uint32_t flags,
+                        int32_t* out, int32_t token_capacity);           /* ids needed */
+int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count, int32_t start,
+                        char* out, int64_t byte_capacity, int32_t* decoded_tokens); /* bytes needed, NUL excluded */
 ```
 
-It writes at most `capacity` elements, and the result is complete when the return is at most `capacity`.
-Text is NUL-terminated whenever `capacity` is not 0, so a string is complete when the return is below `capacity`.
-`out = NULL, capacity = 0` asks for the size.
+It writes at most that many elements, and the result is complete when the return is at most the capacity.
+Text is NUL-terminated whenever `byte_capacity` is not 0, so a string is complete when the return is below `byte_capacity`.
+`out = NULL` with a capacity of 0 asks for the size.
+A result cut short is cut at a whole element, never inside one: `toknroll_decode` writes only whole tokens, and its `decoded_tokens`, unless NULL, says how many.
+A call that continues a sequence takes the whole of it and an index, never a slice (`toknroll_decode(t, ids, count, start, ...)`, as Java's `tokenStartIndex`): only the library knows what the start of a text changes.
 A size the library knows up front (`count * dimension`) is answered before any work, so asking costs nothing.
 
 ## Options
@@ -115,7 +118,7 @@ A size the library knows up front (`count * dimension`) is answered before any w
 A function with more than a few optional settings takes a pointer to an options struct, and a NULL pointer means all defaults.
 Every field's zero value means its default.
 `jam_context_options` needs nothing more: `jam_context_options options = {0};` in C (`= {};` in C++) is a complete initialization, and its fields are ordered largest first, so it has no padding for a binding to mirror.
-`jinfer_model_options` starts with a `size_t struct_size`, which `jinfer_model_options_init` sets while it zeroes the rest; a `struct_size` smaller than the struct the library was built with is `EINVAL`, so a struct that skipped the `_init` is refused instead of misread.
+`jinfer_model_options` starts with an `int64_t struct_size`, which `jinfer_model_options_init` sets while it zeroes the rest; a `struct_size` smaller than the struct the library was built with is `EINVAL`, so a struct that skipped the `_init` is refused instead of misread.
 Its fields keep the header's order, padding included, which a binding mirrors as the header lays it out.
 Before 1.0 a struct simply changes, since the soname changes with it.
 From 1.0 a struct can only grow, at the end, and one that carries its size is read as far as that size reaches, the rest defaulted.
@@ -212,7 +215,7 @@ From 1.0, enforced:
 ## Bindings
 
 Each binding mirrors the header exactly, and is checked against it rather than trusted.
-- Java FFM (libjam): descriptors are written with layouts named after the C types (`C_INT32`, `C_SIZE_T`, `C_POINTER`), each under its C prototype as a comment.
+- Java FFM (libjam): descriptors are written with layouts named after the C types (`C_INT32`, `C_INT64`, `C_POINTER`), each under its C prototype as a comment.
 - JNI (libjam): the shim includes the header, so the compiler checks every conversion.
 - Python ctypes (libtoknroll, libjinfer): `argtypes` and `restype` for every function.
 - Each binding's tests pass sizes and pointers with high bits set, which a narrowed type would cut.

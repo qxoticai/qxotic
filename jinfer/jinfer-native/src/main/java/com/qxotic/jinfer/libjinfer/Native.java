@@ -44,11 +44,11 @@ public final class Native {
         return out;
     }
 
-    /** snprintf for floats: writes min(n, capacity), returns n. */
-    private static int floats(float[] values, CFloatPointer out, int capacity) {
-        if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-        if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-        int n = Math.min(values.length, capacity);
+    /** snprintf for floats: writes min(n, floatCapacity), returns n. */
+    private static int floats(float[] values, CFloatPointer out, int floatCapacity) {
+        if (floatCapacity < 0) throw Errors.invalid("float_capacity must not be negative");
+        if (out.isNull() && floatCapacity > 0) throw Errors.invalid("out is NULL");
+        int n = Math.min(values.length, floatCapacity);
         for (int i = 0; i < n; i++) out.write(i, values[i]);
         return values.length;
     }
@@ -219,13 +219,14 @@ public final class Native {
     }
 
     @CEntryPoint(name = "jinfer__state_logits")
-    static int logits(IsolateThread thread, ObjectHandle handle, CFloatPointer out, int capacity) {
+    static int logits(
+            IsolateThread thread, ObjectHandle handle, CFloatPointer out, int floatCapacity) {
         try {
             Errors.clear();
             State state = get(handle, State.class, "state");
             state.exclusive.enter();
             try {
-                return floats(state.logits(), out, capacity);
+                return floats(state.logits(), out, floatCapacity);
             } finally {
                 state.exclusive.leave();
             }
@@ -236,13 +237,13 @@ public final class Native {
 
     @CEntryPoint(name = "jinfer__state_embedding")
     static int embedding(
-            IsolateThread thread, ObjectHandle handle, CFloatPointer out, int capacity) {
+            IsolateThread thread, ObjectHandle handle, CFloatPointer out, int floatCapacity) {
         try {
             Errors.clear();
             State state = get(handle, State.class, "state");
             state.exclusive.enter();
             try {
-                return floats(state.embedding(), out, capacity);
+                return floats(state.embedding(), out, floatCapacity);
             } finally {
                 state.exclusive.leave();
             }
@@ -405,18 +406,18 @@ public final class Native {
             int count,
             int dimension,
             CFloatPointer out,
-            int capacity) {
+            int floatCapacity) {
         try {
             Errors.clear();
             Model model = get(handle, Model.class, "model");
-            if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-            if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
+            if (floatCapacity < 0) throw Errors.invalid("float_capacity must not be negative");
+            if (out.isNull() && floatCapacity > 0) throw Errors.invalid("out is NULL");
             List<String> list = strings(texts, count, "texts");
             // known before the model runs: a call that only sizes, or has too little room, costs
             // nothing
             int size = model.embedSize(count, dimension);
-            if (size > capacity) return size;
-            return floats(model.embed(list, dimension), out, capacity);
+            if (size > floatCapacity) return size;
+            return floats(model.embed(list, dimension), out, floatCapacity);
         } catch (Throwable t) {
             return Errors.set(t);
         }

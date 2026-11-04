@@ -14,7 +14,7 @@ jinfer_model_free(model);
 
 The header's opening comment states the whole contract: errors, buffers, text, ownership, threads, fork, settings, stability.
 In short: pointer-returning functions return NULL and int functions a negative code, `jinfer_last_error(&code)` has the message and the code;
-`(out, capacity)` buffers follow `snprintf`; everything returned is borrowed until the next call on that handle;
+`(out, float_capacity)` buffers follow `snprintf`; everything returned is borrowed until the next call on that handle;
 a model is reference-counted by its states and streams; any thread may call, one call at a time per state or stream (a second at once is `JINFER_EBUSY`).
 
 ## Build

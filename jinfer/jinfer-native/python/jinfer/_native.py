@@ -12,7 +12,7 @@ class ModelOptions(C.Structure):
     """jinfer_model_options; struct_size guards the layout, as the header says."""
 
     _fields_ = [
-        ("struct_size", C.c_size_t),
+        ("struct_size", C.c_int64),
         ("companions", C.POINTER(C.c_char_p)),
         ("companion_count", C.c_int32),
         ("prompt_cache", C.c_char_p),
