@@ -1,4 +1,13 @@
-"""ctypes bindings of include/toknroll.h. Nothing public lives here; see __init__.py."""
+"""ctypes bindings of include/toknroll.h. Nothing public lives here; see __init__.py.
+
+ctypes on purpose: portability over per-call speed. The stdlib, no compiler, so one py3-none wheel per
+platform runs on every Python version (free-threaded ones too), on PyPy and on GraalPy. The cost is a fixed
+overhead per call: libffi converts each argument through Python, about 0.15 us for one and 0.45 us for five,
+so a one-id decode takes about 1 us where HF tokenizers takes 0.15. HF is a compiled extension (PyO3, one
+abi3 module per platform): CPython calls it directly and Rust reads the arguments, but its wheels load on
+CPython only, and a free-threaded build needs wheels of its own. On real inputs the overhead is amortized:
+decoding a 2 KB document's ids is twice as fast here. A small abi3 C extension over toknroll.h would close
+the gap, at the price of that portability."""
 from __future__ import annotations
 
 import ctypes as C
