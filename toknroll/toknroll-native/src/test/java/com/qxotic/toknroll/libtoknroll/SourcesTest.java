@@ -167,6 +167,24 @@ class SourcesTest {
     }
 
     @Test
+    void aFolderWithoutATokenizerJsonIsNotFound() {
+        Errors.Failure e = assertThrows(Errors.Failure.class, () -> Sources.load(disk.toString()));
+        assertEquals(Errors.ENOTFOUND, e.code);
+        assertTrue(e.getMessage().contains("holds no tokenizer.json"), e.getMessage());
+    }
+
+    @Test
+    void aRefAUrlWouldMisreadIsInvalidBeforeAnyFetch() {
+        for (String bad : new String[] {"a b/c", "t/thing#x", "t/thing/x-Q8_0.gguf:Q8_0"}) {
+            FakeSource fake = new FakeSource();
+            Errors.Failure e =
+                    assertThrows(Errors.Failure.class, () -> Sources.locate(bad, store(fake)), bad);
+            assertEquals(Errors.EINVAL, e.code, bad + ": " + e.getMessage());
+            assertTrue(fake.listed == 0 && !fake.fetched, bad + ": the hub was asked");
+        }
+    }
+
+    @Test
     void aPathAndAQuantTogetherAreInvalid() {
         FakeSource fake = new FakeSource().serving("", "thing-Q8_0.gguf");
         Errors.Failure e =

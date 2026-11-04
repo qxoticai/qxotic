@@ -38,8 +38,13 @@ final class Errors {
 
     private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
 
-    /** "" after a success; once, in the running process (the class initializes at run time). */
-    private static final CCharPointerHolder NONE = CTypeConversion.toCString("");
+    /**
+     * "" after a success: made once, on first use, as a holder class initializes. Not in Errors'
+     * own initializer, which also runs on a JVM (the unit tests), where a C string cannot be made.
+     */
+    private static final class None {
+        static final CCharPointerHolder EMPTY = CTypeConversion.toCString("");
+    }
 
     /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
     static void clear() {
@@ -54,8 +59,11 @@ final class Errors {
             int cause = code(t.getCause());
             return cause == ERROR ? ERROR : cause;
         }
-        if (t instanceof IllegalArgumentException || t instanceof NullPointerException)
-            return EINVAL;
+        // a file that does not parse is bad input, as one of no known kind is: bad JSON, a GGUF cut
+        if (t instanceof IllegalArgumentException
+                || t instanceof NullPointerException
+                || t instanceof com.qxotic.format.json.Json.ParseException
+                || t instanceof java.io.EOFException) return EINVAL;
         if (t instanceof java.nio.file.NoSuchFileException
                 || t instanceof java.io.FileNotFoundException) return ENOTFOUND;
         return ERROR;
@@ -85,7 +93,7 @@ final class Errors {
 
     static CCharPointer last() {
         Last last = LAST.get();
-        return last.code != OK ? last.message.get() : NONE.get();
+        return last.code != OK ? last.message.get() : None.EMPTY.get();
     }
 
     private Errors() {}

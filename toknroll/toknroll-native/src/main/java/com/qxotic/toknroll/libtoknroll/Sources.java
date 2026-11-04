@@ -24,8 +24,7 @@ import java.util.Optional;
  * toknroll-hf's own hub path, which also fetches the pattern module such repositories carry.
  */
 final class Sources {
-    private static final GGUFTokenizerLoader GGUF_LOADER =
-            GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+    private static volatile GGUFTokenizerLoader ggufLoader;
     private static final byte[] GGUF_MAGIC = {'G', 'G', 'U', 'F'};
 
     static Tokenizer load(String source) {
@@ -38,7 +37,10 @@ final class Sources {
             return at.ggufFile() != null
                     ? ggufFromHub(at.repository(), at.ggufFile())
                     : tiktokenFromHub(at.repository());
-        return at.folder() ? HuggingFaceTokenizerLoader.fromLocal(at.path()) : read(at.path());
+        if (!at.folder()) return read(at.path());
+        if (!Files.isRegularFile(at.path().resolve("tokenizer.json")))
+            throw Errors.notFound(at.path() + " holds no tokenizer.json"); // missing, as a file is
+        return HuggingFaceTokenizerLoader.fromLocal(at.path());
     }
 
     /**
@@ -87,6 +89,11 @@ final class Sources {
                 Optional<Path> whole = store.find(source); // a model jinfer has is read in place
                 if (whole.isPresent()) return Located.file(whole.get());
                 return Located.gguf(ref, ref.quant() != null ? store.select(source) : ref.path());
+            }
+            if (!ref.path().isEmpty()) { // a file the cache holds is read in place, as a GGUF is
+                Optional<Path> held = store.find(source);
+                if (held.isPresent() && Files.isRegularFile(held.get()))
+                    return Located.file(held.get());
             }
             try {
                 return Located.file(store.resolve(source + "/tokenizer.json"));
@@ -165,7 +172,7 @@ final class Sources {
 
     private static Tokenizer read(Path file) {
         return switch (sniff(file)) {
-            case GGUF -> GGUF_LOADER.fromLocal(file);
+            case GGUF -> gguf().fromLocal(file);
             case JSON -> HuggingFaceTokenizerLoader.fromLocal(file);
             case UNKNOWN ->
                     throw Errors.invalid(
@@ -181,10 +188,10 @@ final class Sources {
     private static Tokenizer ggufFromHub(ModelRef ref, String file) {
         boolean offline = Stores.offline();
         return ref.host().equals("modelscope.cn")
-                ? GGUF_LOADER.fromModelScope(
-                        ref.owner(), ref.repo(), ref.revision(), file, offline, false)
-                : GGUF_LOADER.fromHuggingFace(
-                        ref.owner(), ref.repo(), ref.revision(), file, offline, false);
+                ? gguf().fromModelScope(
+                                ref.owner(), ref.repo(), ref.revision(), file, offline, false)
+                : gguf().fromHuggingFace(
+                                ref.owner(), ref.repo(), ref.revision(), file, offline, false);
     }
 
     private static Tokenizer tiktokenFromHub(ModelRef ref) {
@@ -194,6 +201,20 @@ final class Sources {
                         ref.owner(), ref.repo(), ref.revision(), offline, false)
                 : HuggingFaceTokenizerLoader.fromHuggingFace(
                         ref.owner(), ref.repo(), ref.revision(), offline, false);
+    }
+
+    /**
+     * The GGUF loader, built at the first GGUF, the -Dtoknroll.gguf.* options read then: one they
+     * break (an alias to no scheme) fails each GGUF load with its own message, and nothing else.
+     */
+    private static GGUFTokenizerLoader gguf() {
+        GGUFTokenizerLoader loader = ggufLoader;
+        if (loader != null) return loader;
+        synchronized (Sources.class) {
+            if (ggufLoader == null)
+                ggufLoader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+            return ggufLoader;
+        }
     }
 
     private static boolean hasGgufMagic(byte[] bytes) {
