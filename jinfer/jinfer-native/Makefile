@@ -17,7 +17,7 @@ WHEEL_TEST = JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
 help::
 	@echo 'make libjinfer             -O3, native-image'"'"'s default target, what ships -> $(LIB); NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 for AVX-512'
 	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
-	@echo 'make check                 headers vs exports, C example, Python test'
+	@echo 'make check                 headers vs exports, C tests and example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
 include ../../native.mk
 
@@ -31,7 +31,23 @@ libjinfer:
 target/chat: examples/c/chat.c $(HEADERS) $(LIB)
 	cc -std=c99 -Wall -Wextra -Wpedantic -Iinclude -I$(TOKNROLL)/include -o $@ $< -L target -ljinfer -Wl,-rpath,$(abspath target)
 
-check: check-version check-pin check-exports target/chat
+# The C tests (tests/c): jinfer.h's functions on the cached models, and toknroll's tests again, against
+# the toknroll functions libjinfer carries (TEST_LIBJINFER); both headers compiled as C++ too.
+CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude -I$(TOKNROLL)/include -I$(TOKNROLL)/tests/c
+LINK_TEST = -L target -ljinfer -Wl,-rpath,$(abspath target) -lpthread
+target/jinfer_test: tests/c/jinfer_test.c $(TOKNROLL)/tests/c/test.h $(HEADERS) $(LIB)
+	cc $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
+target/toknroll_test: $(TOKNROLL)/tests/c/toknroll_test.c $(TOKNROLL)/tests/c/test.h $(TOKNROLL)/tests/c/fixtures.h $(HEADERS) $(LIB)
+	cc $(CFLAGS_TEST) -DTEST_LIBJINFER -o $@ $< $(LINK_TEST)
+target/header_test: tests/c/header_test.cpp $(HEADERS) $(LIB)
+	c++ -std=c++11 -Wall -Wextra -Wpedantic -Werror -Iinclude -I$(TOKNROLL)/include -o $@ $< $(LINK_TEST)
+
+check-c: target/jinfer_test target/toknroll_test target/header_test
+	./target/jinfer_test
+	./target/toknroll_test
+	./target/header_test
+
+check: check-version check-pin check-exports check-c target/chat
 	./target/chat
 	python3 python/test_jinfer.py
 
@@ -50,4 +66,4 @@ check-wheel: toknroll-wheel
 toknroll-wheel:
 	$(MAKE) -s -C $(TOKNROLL) wheel
 
-.PHONY: libjinfer check check-pin qa toknroll-wheel
+.PHONY: libjinfer check check-c check-pin qa toknroll-wheel

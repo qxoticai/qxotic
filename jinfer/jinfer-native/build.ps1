@@ -1,7 +1,7 @@
 # libjinfer on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\native.ps1).
 #   .\build.ps1 library            -O3, native-image's default target, what ships -> target\jinfer.dll (+ jinfer.lib to link against)
 #   .\build.ps1 library -Quick     this machine, quick build (-Ob -march=native)
-#   .\build.ps1 check              headers vs exports, C example, Python checks
+#   .\build.ps1 check              headers vs exports, C tests and example, Python checks
 #   .\build.ps1 python             stage the DLL into python\jinfer\lib\windows-x86-64\
 #   .\build.ps1 wheel              the wheel, tagged win_amd64 -> target\wheel\
 #   .\build.ps1 check-wheel        twine check, a fresh venv with the toknroll wheel, pip install, the checks from outside the tree
@@ -11,6 +11,13 @@ $Toknroll = "$PSScriptRoot\..\..\toknroll\toknroll-native"
 $Headers = 'include\jinfer.h', "$Toknroll\include\toknroll.h"; $Syms = 'jinfer|toknroll'   # the library carries toknroll's C face too
 $MvnArg = '-Dtoknroll.image.skip=true'   # as the Makefile: this image carries toknroll's entry points, toknroll.dll stays toknroll's own build
 $Example = {
+    # the C tests (tests\c), and toknroll's against the toknroll functions this library carries; the headers as C++ too
+    cl -nologo -std:c11 -W4 -WX -Iinclude "-I$Toknroll\include" "-I$Toknroll\tests\c" tests\c\jinfer_test.c -Fe:target\jinfer_test.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    & target\jinfer_test.exe; if ($LASTEXITCODE) { throw "C tests failed" }
+    cl -nologo -std:c11 -W4 -WX -DTEST_LIBJINFER -Iinclude "-I$Toknroll\include" "-I$Toknroll\tests\c" "$Toknroll\tests\c\toknroll_test.c" -Fe:target\toknroll_test.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    & target\toknroll_test.exe; if ($LASTEXITCODE) { throw "toknroll C tests failed" }
+    cl -nologo -std:c++17 -EHsc -W4 -WX -Iinclude "-I$Toknroll\include" tests\c\header_test.cpp -Fe:target\header_test.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    & target\header_test.exe; if ($LASTEXITCODE) { throw "header test failed" }
     cl -nologo -std:c11 -W4 -Iinclude "-I$Toknroll\include" examples\c\chat.c -Fe:target\chat.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }
     & target\chat.exe; if ($LASTEXITCODE) { throw "chat failed" }
 }

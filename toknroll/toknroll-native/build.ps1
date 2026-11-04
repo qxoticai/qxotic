@@ -1,7 +1,7 @@
 # libtoknroll on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\native.ps1).
 #   .\build.ps1 library            what ships (Oracle GraalVM: PGO at -O3, a profile recorded first; CE: -O2), native-image's default target -> target\toknroll.dll (+ toknroll.lib)
 #   .\build.ps1 library -Quick     this machine, quick build (-Ob -march=native)
-#   .\build.ps1 check              header vs exports, C example, Python tests
+#   .\build.ps1 check              header vs exports, C tests and example, Python tests
 #   .\build.ps1 python             stage the DLL into python\toknroll\lib\windows-x86-64\
 #   .\build.ps1 wheel              the wheel, tagged win_amd64 -> target\wheel\
 #   .\build.ps1 check-wheel        twine check, a fresh venv, pip install, the tests from outside the tree
@@ -30,6 +30,13 @@ $PgoProfile = {
     } finally { Pop-Location }
 }
 $Example = {
+    # the C tests (tests\c), each scenario a process of its own; the header compiled as C++ too
+    cl -nologo -std:c11 -W4 -WX -Iinclude tests\c\toknroll_test.c -Fe:target\toknroll_test.exe -Fo:target\ target\toknroll.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    & target\toknroll_test.exe; if ($LASTEXITCODE) { throw "C tests failed" }
+    cl -nologo -std:c++17 -EHsc -W4 -WX -Iinclude tests\c\header_test.cpp -Fe:target\header_test.exe -Fo:target\ target\toknroll.lib; if ($LASTEXITCODE) { throw "cl failed" }
+    & target\header_test.exe; if ($LASTEXITCODE) { throw "header test failed" }
+    cl -nologo -std:c11 -W4 -WX tests\c\unload_test.c -Fe:target\unload_test.exe -Fo:target\; if ($LASTEXITCODE) { throw "cl failed" }   # opens the DLL itself, to free it again
+    & target\unload_test.exe "$Here\target\toknroll.dll"; if ($LASTEXITCODE) { throw "unload test failed" }
     cl -nologo -std:c11 -W4 -Iinclude examples\c\tokenize.c -Fe:target\tokenize.exe -Fo:target\ target\toknroll.lib; if ($LASTEXITCODE) { throw "cl failed" }
     & target\tokenize.exe $Source "Hello, Tok'n'Roll!"; if ($LASTEXITCODE) { throw "tokenize failed" }
 }
