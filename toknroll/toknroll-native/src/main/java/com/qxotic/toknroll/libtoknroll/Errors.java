@@ -37,7 +37,9 @@ final class Errors {
     }
 
     private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
-    private static CCharPointerHolder none;
+
+    /** "" after a success; once, in the running process (the class initializes at run time). */
+    private static final CCharPointerHolder NONE = CTypeConversion.toCString("");
 
     /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
     static void clear() {
@@ -83,9 +85,7 @@ final class Errors {
 
     static CCharPointer last() {
         Last last = LAST.get();
-        if (last.code != OK) return last.message.get();
-        if (none == null) none = CTypeConversion.toCString("");
-        return none.get();
+        return last.code != OK ? last.message.get() : NONE.get();
     }
 
     private Errors() {}
