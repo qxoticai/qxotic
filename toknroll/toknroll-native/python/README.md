@@ -48,7 +48,7 @@ Both wheels in one process are two runtimes that never interact, in any order.
 ## Install
 
 ```sh
-pip install toknroll            # the wheel carries the library: Linux x86_64 (glibc 2.17 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64
+pip install toknroll            # the wheel carries the library: Linux x86_64 and aarch64 (glibc 2.17 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64
 ```
 
 From a source checkout, `make python` in `toknroll/toknroll-native` stages the freshly built library into the package, then `pip install python/`.
