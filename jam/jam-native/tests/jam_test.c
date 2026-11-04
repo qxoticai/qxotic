@@ -792,6 +792,7 @@ static void suite_share(void) {
         jam_unshare(x, buf + 5000); jam_unshare(x, buf + 12288); jam_unshare(x, buf + 100);
         OK("null refused",  jam_share(x, NULL, 16, 0) == JAM_EINVAL);
         OK("empty refused", jam_share(x, buf, 0, 0) == JAM_EINVAL);
+        OK("negative refused", jam_share(x, buf, -1, 0) == JAM_EINVAL);
         OK("reserved flag refused", jam_share(x, buf, 16, 0x2u) == JAM_EINVAL);
         OK("all flags refused",     jam_share(x, buf, 16, ~0u) == JAM_EINVAL);
     }

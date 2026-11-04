@@ -50,7 +50,6 @@ public final class NativeJAM implements JAM, AutoCloseable {
     private static final ValueLayout C_INT32 = JAVA_INT;
     private static final ValueLayout C_UINT32 = JAVA_INT;
     private static final ValueLayout C_INT64 = JAVA_LONG;
-    private static final ValueLayout C_SIZE_T = JAVA_LONG;
     private static final ValueLayout C_POINTER = JAVA_LONG;
 
     private volatile long ctx; // owned jam_context*; 0 once closed
@@ -511,11 +510,11 @@ public final class NativeJAM implements JAM, AutoCloseable {
                 bind(
                         "jam_pack_size",
                         FunctionDescriptor.of(C_INT64, C_POINTER, C_INT32, C_INT32, C_INT32));
-        // int32_t jam_share(jam_context*, const void* p, size_t bytes, uint32_t flags)
+        // int32_t jam_share(jam_context*, const void* p, int64_t bytes, uint32_t flags)
         SHARE_FFM =
                 bind(
                         "jam_share",
-                        FunctionDescriptor.of(C_INT32, C_POINTER, C_POINTER, C_SIZE_T, C_UINT32));
+                        FunctionDescriptor.of(C_INT32, C_POINTER, C_POINTER, C_INT64, C_UINT32));
         // void jam_unshare(jam_context*, const void* p)
         UNSHARE_FFM = bind("jam_unshare", FunctionDescriptor.ofVoid(C_POINTER, C_POINTER));
         // const char* jam_last_error(int32_t* code)

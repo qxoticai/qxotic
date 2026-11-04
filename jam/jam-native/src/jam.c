@@ -560,19 +560,19 @@ static int ensure_kquant(jam_context* c, int seq, int kblocks) {
     return c->kq_xq && c->kq_dx && c->kq_xsum && ensure_repack(c, kblocks);
 }
 
-jam_status jam_share(jam_context* ctx, const void* p, size_t bytes, uint32_t flags) {
+jam_status jam_share(jam_context* ctx, const void* p, int64_t bytes, uint32_t flags) {
     /* Metal maps host memory in place, so it never copies and ignores JAM_SHARE_IMMUTABLE */
     if (flags & ~JAM_SHARE_IMMUTABLE) return jam_fail(JAM_EINVAL, "unknown share flags 0x%x", flags);
     if (!ctx) return jam_fail(JAM_EINVAL, "context is NULL");
-    if (!p || !bytes) return jam_fail(JAM_EINVAL, "nothing to share: p is %s, bytes %llu", p ? "set" : "NULL",
-                                      (unsigned long long) bytes);
-    if (bytes > UINTPTR_MAX - (uintptr_t) p)
+    if (!p || bytes <= 0) return jam_fail(JAM_EINVAL, "nothing to share: p is %s, bytes %lld", p ? "set" : "NULL",
+                                          (long long) bytes);
+    if ((uint64_t) bytes > UINTPTR_MAX - (uintptr_t) p)
         return jam_fail(JAM_EINVAL, "[%p, +%llu) runs past the end of the address space", p, (unsigned long long) bytes);
     if (ctx->fork_gen != atomic_load(&g_fork_gen))
         return jam_fail(JAM_ERROR, "the context was made before fork: make a new one in this process");
 #ifdef JAM_HAVE_METAL
     if (ctx->metal) {
-        jam_status st = jam_metal_share(ctx->metal, p, bytes);
+        jam_status st = jam_metal_share(ctx->metal, p, (size_t) bytes);
         if (st == JAM_OK) jam_succeed();
         else if (st == JAM_EINVAL)
             jam_fail(st, "[%p, +%llu) overlaps a share on this context", p, (unsigned long long) bytes);

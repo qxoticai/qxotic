@@ -148,10 +148,10 @@ JAM_API int64_t jam_pack_size(const jam_context* context, int32_t wt, int32_t m,
 /* ---- sharing: a hint for GPU backends; results never depend on it ---- */
 #define JAM_SHARE_IMMUTABLE 0x1u   /* the bytes never change while shared */
 
-/* [p, p + bytes) goes to many jam_mm calls, so a device maps it once. JAM_EUNSUPPORTED: ignored (a
- * CPU context). Shares on one context must not overlap (JAM_EINVAL). Unshare before freeing the
- * memory. Also during jam_mm. */
-JAM_API int32_t jam_share(jam_context* context, const void* p, size_t bytes, uint32_t flags);
+/* [p, p + bytes) goes to many jam_mm calls, so a device maps it once; bytes > 0. JAM_EUNSUPPORTED:
+ * ignored (a CPU context). Shares on one context must not overlap (JAM_EINVAL). Unshare before
+ * freeing the memory. Also during jam_mm. */
+JAM_API int32_t jam_share(jam_context* context, const void* p, int64_t bytes, uint32_t flags);
 JAM_API void    jam_unshare(jam_context* context, const void* p);   /* ends the share starting at p, if any */
 
 #ifdef __cplusplus
