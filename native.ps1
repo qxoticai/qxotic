@@ -8,6 +8,7 @@
 #   $WheelTest   a script block: the tests from outside the tree, run in target\ with wheelenv's python
 #   $WheelDeps   a script block: other wheels the installed one needs, built first
 #   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\default.iprof
+#   $MvnArg      optional, one more argument for the library's Maven build, as its Makefile passes
 $ErrorActionPreference = 'Stop'
 Push-Location $Here   # the caller's location back at the end, as make -C leaves it
 $Root = (Resolve-Path '..\..').Path
@@ -39,7 +40,7 @@ function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=na
         # $null passes no argument, so the pom's stays; a splatted array would not do: 5.1 splits its -name:value elements
         $opt = if ($Quick) { "-D$Name.image.opt=-Ob" } elseif ($pgo) { "-D$Name.image.opt=--pgo=$Here\target\pgo\default.iprof" }
         Push-Location $Root
-        try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests $opt; if ($LASTEXITCODE) { throw "mvn failed" } }
+        try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests $opt $MvnArg; if ($LASTEXITCODE) { throw "mvn failed" } }
         finally { Pop-Location }
     } finally { $env:NATIVE_IMAGE_OPTIONS = $options }
 }
