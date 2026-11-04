@@ -15,8 +15,10 @@ Usage:
   .venv/bin/python scripts/hf_edge_parity.py [OUT.json]
 """
 
+import ast
 import json
 import os
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -66,9 +68,27 @@ EDGE_TEXTS = [
     "� replacement", "x" + "́" * 20,
 ]
 
-# then every text of the test suite's own lists (suite_texts.json says how they were harvested)
-with open(Path(__file__).resolve().parent / "suite_texts.json", encoding="utf-8") as _f:
-    TEXTS = EDGE_TEXTS + json.load(_f)["texts"]
+
+
+def suite_texts():
+    """Every text of the test suite's own lists, each once, the edge texts left out: the Java lists
+    read by SuiteTexts.java from the compiled classes (mvn test-compile first), then
+    generate_ground_truth.py's GOLDEN_TEST_STRINGS with U+0000 written as U+FFFD, as that generator
+    writes it."""
+    root = Path(__file__).resolve().parents[1]
+    classpath = [str(p) for p in root.glob("toknroll-*/target/*classes")]
+    if not classpath:
+        sys.exit("no compiled classes under toknroll-*/target: mvn test-compile first")
+    java = subprocess.run(["java", "-cp", os.pathsep.join(classpath), str(root / "scripts/SuiteTexts.java")],
+                          check=True, capture_output=True, encoding="utf-8").stdout
+    generator = ast.parse((root / "toknroll-benchmarks/generate_ground_truth.py").read_text(encoding="utf-8"))
+    golden = next(n.value for n in generator.body if isinstance(n, ast.Assign) and n.targets[0].id == "GOLDEN_TEST_STRINGS")
+    golden = eval(compile(ast.Expression(body=golden), "GOLDEN_TEST_STRINGS", "eval"), {"__builtins__": {}})
+    texts = json.loads(java) + [s.replace("\0", "\ufffd") for s in golden]
+    return [t for t in dict.fromkeys(texts) if t not in EDGE_TEXTS]
+
+
+TEXTS = EDGE_TEXTS + suite_texts()
 
 
 def fetch(model, revision, path):
