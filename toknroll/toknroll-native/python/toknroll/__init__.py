@@ -233,7 +233,7 @@ class Tokenizer:
         lib, handle = self._lib, self._handle
         owner, address, count = _ids(ids, what)  # owner keeps the ids alive through the calls
         # a token is a few bytes: one pass almost always
-        return _filled(lambda out, capacity: _check(lib, lib.toknroll_decode(handle, address, count, out, capacity)),
+        return _filled(lambda out, capacity: _check(lib, lib.toknroll_decode(handle, address, count, 0, out, capacity, None)),
                        8 * count + 16)
 
     def token(self, id: int) -> str | None:

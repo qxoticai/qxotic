@@ -7,10 +7,12 @@
  *              A goroutine or a Java virtual thread may change OS thread between two calls, so it
  *              reads the message pinned to the thread that failed (runtime.LockOSThread) or goes by
  *              the returned code, which is always the call's own.
- *   Buffers    (out, capacity) follows snprintf: at most capacity elements are written and the number
- *              needed is returned. Text is NUL-terminated whenever capacity is not 0, cut to
- *              capacity - 1 bytes when longer, so it is whole when the return is below capacity.
- *              Capacity 0 sizes. Ids are counted in int32_t, bytes in int64_t.
+ *   Buffers    (out, token_capacity) and (out, byte_capacity) follow snprintf: at most that many
+ *              ids or bytes are written and the number needed is returned; capacity 0 sizes. Text
+ *              is NUL-terminated whenever byte_capacity is not 0, cut within byte_capacity - 1
+ *              bytes when longer, so it is whole when the return is below byte_capacity. Ids are
+ *              counted in int32_t, bytes in int64_t; a negative count, length or capacity is
+ *              TOKNROLL_EINVAL.
  *   Text       UTF-8. Text and token spellings come with their length in bytes, so any byte may be in
  *              them, a NUL included; with length 0 the pointer may be NULL. A malformed sequence reads
  *              as U+FFFD, as a UTF-8 decoder reads it. Sources and options end at their NUL.
@@ -122,28 +124,35 @@ TOKNROLL_API void                toknroll_tokenizer_free(toknroll_tokenizer* t);
 #define TOKNROLL_SPECIALS 1u /* tokens of a type other than normal, spelled in the text, stay whole */
 
 /* The ids of length bytes of text; by default every token is text. */
-TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, size_t length,
-                                     uint32_t flags, int32_t* out, int32_t capacity);
-/* The tokens' bytes: UTF-8, except where a token holds part of a character. An id outside the
- * vocabulary is TOKNROLL_EINVAL. */
+TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, int64_t length,
+                                     uint32_t flags, int32_t* out, int32_t token_capacity);
+/* The bytes ids[start, count) have in the whole text ids[0, count): UTF-8, except where a token
+ * holds part of a character. A tokenizer that adds a space before a text (SentencePiece) drops it
+ * from id 0 only, so a start past 0 continues the text, spaces and all, where ids + start would
+ * begin a new one. Only ids[start, count) are read. Over capacity, out holds the tokens that fit
+ * whole in byte_capacity - 1 bytes, then the NUL. decoded_tokens, unless NULL, gets how many from
+ * start, 0 when byte_capacity is 0: start + *decoded_tokens is count exactly when the text is
+ * whole. A start outside [0, count] or an id outside the vocabulary is TOKNROLL_EINVAL, and
+ * decoded_tokens is left as it was. */
 TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
-                                     char* out, int64_t capacity);
+                                     int32_t start, char* out, int64_t byte_capacity,
+                                     int32_t* decoded_tokens);
 /* count texts, text i the bytes [text_offsets[i], text_offsets[i + 1]) of texts; their ids go to
  * out, text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold
  * count + 1 entries. Encoded on all cores, a forked child's on the calling thread. Returns the
  * total, offsets[count]; over capacity, out gets a prefix and offsets is still complete, so
- * capacity 0 counts. */
+ * token_capacity 0 counts. */
 TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const char* texts,
                                            const int64_t* text_offsets, int32_t count, uint32_t flags,
-                                           int32_t* out, int32_t capacity, int32_t* offsets);
+                                           int32_t* out, int32_t token_capacity, int32_t* offsets);
 
 TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
 /* An id's TOKNROLL_TOKEN_* flags; negative, TOKNROLL_ENOTFOUND, when there is no such id. */
 TOKNROLL_API int64_t toknroll_token_flags(const toknroll_tokenizer* t, int32_t id);
 /* The spelling of an id, as the vocabulary writes it; TOKNROLL_ENOTFOUND when there is no such id. */
-TOKNROLL_API int64_t toknroll_token(const toknroll_tokenizer* t, int32_t id, char* out, int64_t capacity);
+TOKNROLL_API int64_t toknroll_token(const toknroll_tokenizer* t, int32_t id, char* out, int64_t byte_capacity);
 /* The id of a spelling, length bytes of it; TOKNROLL_ENOTFOUND when the vocabulary has no such token. */
-TOKNROLL_API int32_t toknroll_id(const toknroll_tokenizer* t, const char* token, size_t length);
+TOKNROLL_API int32_t toknroll_id(const toknroll_tokenizer* t, const char* token, int64_t length);
 
 #ifdef __cplusplus
 }

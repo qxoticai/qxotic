@@ -539,27 +539,10 @@ final class TiktokenModel extends AbstractTokenizationModel {
         encodeWord(utf8, 0, utf8.length, out);
     }
 
-    /**
-     * Each token in two 8-byte stores when it is short and 16 bytes of the array are left: the
-     * bytes past its end are garbage the next token overwrites.
-     */
     @Override
     public byte[] decodeBytes(IntSequence tokens) {
         byte[] out = new byte[countBytes(tokens)]; // which refuses an unknown id
-        int at = 0;
-        for (int i = 0, n = tokens.length(); i < n; i++) {
-            int id = tokens.intAt(i);
-            int length = shortLengths[id];
-            if (length != 0 && at + 16 <= out.length) {
-                LONGS.set(out, at, spellingWords[2 * id]);
-                LONGS.set(out, at + 8, spellingWords[2 * id + 1]);
-                at += length;
-            } else {
-                byte[] spelling = tokenBytesById[id];
-                System.arraycopy(spelling, 0, out, at, spelling.length);
-                at += spelling.length;
-            }
-        }
+        decodeBytesInto(tokens, 0, ByteBuffer.wrap(out));
         return out;
     }
 
@@ -590,10 +573,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
         if (tokenStartIndex < 0 || tokenStartIndex > length) {
             throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
         }
-        if (tokenStartIndex == length) {
-            return 0;
+        if (out.hasArray()) {
+            return decodeBytesInto(tokens, tokenStartIndex, out, out.array());
         }
-
         int consumed = 0;
         for (int i = tokenStartIndex; i < length; i++) {
             int tokenId = tokens.intAt(i);
@@ -620,6 +602,46 @@ final class TiktokenModel extends AbstractTokenizationModel {
             consumed++;
         }
         return consumed;
+    }
+
+    /**
+     * Over the buffer's array: a short token in two 8-byte stores when 16 bytes are left before the
+     * limit, the bytes past its end garbage the next token overwrites; a longer one copied.
+     */
+    private int decodeBytesInto(IntSequence tokens, int from, ByteBuffer out, byte[] array) {
+        int at = out.arrayOffset() + out.position();
+        int end = out.arrayOffset() + out.limit();
+        int i = from;
+        for (int n = tokens.length(); i < n; i++) {
+            int id = tokens.intAt(i);
+            int length = id >= 0 && id < shortLengths.length ? shortLengths[id] : 0;
+            if (length != 0 && at + 16 <= end) {
+                LONGS.set(array, at, spellingWords[2 * id]);
+                LONGS.set(array, at + 8, spellingWords[2 * id + 1]);
+                at += length;
+                continue;
+            }
+            byte[] spelling = id >= 0 && id < tokenBytesById.length ? tokenBytesById[id] : null;
+            if (spelling == null) {
+                throw unknownToken(id);
+            }
+            if (at + spelling.length > end) {
+                if (i == from) {
+                    throw new IllegalArgumentException(
+                            "Not enough output space for token at index "
+                                    + i
+                                    + ": need "
+                                    + spelling.length
+                                    + ", remaining "
+                                    + (end - at));
+                }
+                break;
+            }
+            System.arraycopy(spelling, 0, array, at, spelling.length);
+            at += spelling.length;
+        }
+        out.position(at - out.arrayOffset());
+        return i - from;
     }
 
     /** Names the engine encoder once one encodes for this model. */

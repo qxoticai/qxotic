@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
     for (int32_t i = 0; i < n; i++) printf("%" PRId32 "%s", ids[i], i + 1 < n ? " " : "\n");
 
     char text[1024];
-    if (toknroll_decode(t, ids, n, text, sizeof text) < 0) return fail("decode");
+    if (toknroll_decode(t, ids, n, 0, text, sizeof text, NULL) < 0) return fail("decode");
     printf("%s\n%" PRId32 " tokens, vocabulary %" PRId32 ", toknroll %s\n", text, n, toknroll_vocabulary_size(t), toknroll_version());
 
     free(ids);

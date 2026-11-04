@@ -12,11 +12,11 @@ int32_t n = toknroll_encode(t, text, strlen(text), 0, NULL, 0);   /* capacity 0 
 int32_t* ids = malloc(n * sizeof *ids);
 toknroll_encode(t, text, strlen(text), 0, ids, n);
 char back[256];
-toknroll_decode(t, ids, n, back, sizeof back);
+toknroll_decode(t, ids, n, 0, back, sizeof back, NULL);
 toknroll_tokenizer_free(t);
 ```
 
-The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.
+The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, token_capacity)` and `(out, byte_capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.
 `libjinfer` carries the same entry points, so `jinfer_model_tokenizer` hands out a model's tokenizer as a `toknroll_tokenizer` and one header serves both libraries.
 
 ## Build and check

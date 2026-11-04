@@ -6,6 +6,7 @@ import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import org.graalvm.nativeimage.IsolateThread;
@@ -18,7 +19,6 @@ import org.graalvm.nativeimage.c.type.CLongPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.VoidPointer;
 import org.graalvm.word.Pointer;
-import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
 /**
@@ -66,11 +66,13 @@ public final class Native {
     }
 
     /** length bytes of UTF-8, any byte among them; NULL only with length 0. */
-    private static String string(CCharPointer value, UnsignedWord length, String what) {
-        if (length.aboveThan(Integer.MAX_VALUE)) throw Errors.invalid(what + " is over 2 GiB");
-        if (length.equal(0)) return "";
+    private static String string(CCharPointer value, long length, String what) {
+        if (length < 0) throw Errors.invalid("length must not be negative");
+        if (length > Integer.MAX_VALUE) throw Errors.invalid(what + " is over 2 GiB");
+        if (length == 0) return "";
         if (value.isNull()) throw Errors.invalid(what + " is NULL");
-        return CTypeConversion.toJavaString(value, length, StandardCharsets.UTF_8);
+        return CTypeConversion.toJavaString(
+                value, WordFactory.unsigned(length), StandardCharsets.UTF_8);
     }
 
     /** Room for a text's ids: prose runs about four bytes a token, so a third of its bytes. */
@@ -117,6 +119,12 @@ public final class Native {
         private byte[] text = new byte[0];
         private IntSequence.Builder ids;
         private IntSequence view; // live, over ids
+        private byte[] chunk;
+
+        /** KEPT bytes for a decode to go through. */
+        byte[] chunk() {
+            return chunk == null ? (chunk = new byte[KEPT]) : chunk;
+        }
 
         byte[] text(int length) {
             if (text.length >= length + SLACK) return text;
@@ -166,6 +174,18 @@ public final class Native {
         for (; i < length; i++) into[i] = from.readByte(i);
     }
 
+    /** {@code bytes[0, n)} into the caller's memory at {@code address}. */
+    private static void write(byte[] bytes, long address, int n) {
+        if (n >= BULK) {
+            CTypeConversion.asByteBuffer(WordFactory.pointer(address), n).put(bytes, 0, n);
+            return;
+        }
+        Pointer to = WordFactory.pointer(address);
+        int i = 0;
+        for (; i + 8 <= n; i += 8) to.writeLong(i, (long) WellFormed.LONGS.get(bytes, i));
+        for (; i < n; i++) to.writeByte(i, bytes[i]);
+    }
+
     /** {@code ids[from, from + n)} into the caller's memory at {@code address}. */
     private static void write(IntSequence ids, int from, long address, int n) {
         if (n >= BULK) {
@@ -185,16 +205,17 @@ public final class Native {
     }
 
     /**
-     * snprintf for bytes: writes min(n, capacity) and a NUL, at capacity - 1 when they do not fit,
-     * unless capacity is 0; returns n.
+     * snprintf for bytes: writes min(n, byteCapacity) and a NUL, at byteCapacity - 1 when they do
+     * not fit, unless byteCapacity is 0; returns n.
      */
-    private static long bytes(byte[] value, CCharPointer out, long capacity) {
-        if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-        if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-        int n = (int) Math.min(value.length, capacity);
+    private static long bytes(byte[] value, CCharPointer out, long byteCapacity) {
+        if (byteCapacity < 0) throw Errors.invalid("byte_capacity must not be negative");
+        if (out.isNull() && byteCapacity > 0) throw Errors.invalid("out is NULL");
+        int n = (int) Math.min(value.length, byteCapacity);
         if (n > 0) CTypeConversion.asByteBuffer(out, n).put(value, 0, n);
-        if (capacity > value.length) out.write(value.length, (byte) 0);
-        else if (capacity > 0) out.write((int) capacity - 1, (byte) 0); // capacity <= n here
+        if (byteCapacity > value.length) out.write(value.length, (byte) 0);
+        else if (byteCapacity > 0)
+            out.write((int) byteCapacity - 1, (byte) 0); // byteCapacity <= n here
         return value.length;
     }
 
@@ -269,18 +290,19 @@ public final class Native {
             IsolateThread thread,
             ObjectHandle handle,
             CCharPointer text,
-            UnsignedWord length,
+            long length,
             int flags,
             CIntPointer out,
-            int capacity) {
+            int tokenCapacity) {
         try {
             Errors.clear();
             Loaded loaded = get(handle);
-            if (length.aboveThan(Integer.MAX_VALUE)) throw Errors.invalid("text is over 2 GiB");
-            if (text.isNull() && length.aboveThan(0)) throw Errors.invalid("text is NULL");
-            if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-            if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-            int n = (int) length.rawValue();
+            if (length < 0) throw Errors.invalid("length must not be negative");
+            if (length > Integer.MAX_VALUE) throw Errors.invalid("text is over 2 GiB");
+            if (text.isNull() && length > 0) throw Errors.invalid("text is NULL");
+            if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
+            if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
+            int n = (int) length;
             Buffers buffers = BUFFERS.get();
             byte[] utf8 = buffers.text(n);
             copy(text.rawValue(), utf8, n);
@@ -289,7 +311,7 @@ public final class Native {
             Specials matcher = specials(flags) ? loaded.specials() : null;
             encodeUtf8(loaded.tokenizer(), matcher, utf8, 0, n, ids);
             int count = ids.size();
-            write(buffers.view, 0, out.rawValue(), Math.min(count, capacity));
+            write(buffers.view, 0, out.rawValue(), Math.min(count, tokenCapacity));
             buffers.trim();
             return count;
         } catch (Throwable t) {
@@ -306,16 +328,16 @@ public final class Native {
             int count,
             int flags,
             CIntPointer out,
-            int capacity,
+            int tokenCapacity,
             CIntPointer offsets) {
         try {
             Errors.clear();
             Loaded loaded = get(handle);
-            if (count < 0 || capacity < 0)
-                throw Errors.invalid("count and capacity must not be negative");
+            if (count < 0) throw Errors.invalid("count must not be negative");
+            if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
             if (textOffsets.isNull() || offsets.isNull())
                 throw Errors.invalid("text_offsets and offsets must not be NULL");
-            if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
+            if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
             long base = textOffsets.read(0);
             if (base < 0) throw Errors.invalid("text_offsets must not be negative");
             long[] starts = new long[count + 1]; // the texts' offsets from the first
@@ -372,7 +394,7 @@ public final class Native {
                     ids.length,
                     r -> {
                         int from = at[runs[r]];
-                        int n = Math.min(ids[r].length(), capacity - from);
+                        int n = Math.min(ids[r].length(), tokenCapacity - from);
                         write(ids[r], 0, outAddress + 4L * from, n);
                     });
             return at[count];
@@ -387,42 +409,92 @@ public final class Native {
             ObjectHandle handle,
             CIntPointer ids,
             int count,
+            int start,
             CCharPointer out,
-            long capacity) {
+            long byteCapacity,
+            CIntPointer decodedTokens) {
         try {
             Errors.clear();
             Loaded loaded = get(handle);
             if (count < 0) throw Errors.invalid("count must not be negative");
             if (ids.isNull() && count > 0) throw Errors.invalid("ids is NULL");
-            if (capacity < 0) throw Errors.invalid("capacity must not be negative");
-            if (out.isNull() && capacity > 0) throw Errors.invalid("out is NULL");
-            Vocabulary vocab = loaded.tokenizer().vocabulary();
-            int[] copy = new int[count];
-            if (count > 0)
-                CTypeConversion.asByteBuffer(ids, 4 * count)
+            if (start < 0 || start > count)
+                throw Errors.invalid("start " + start + " is outside [0, count " + count + "]");
+            if (byteCapacity < 0) throw Errors.invalid("byte_capacity must not be negative");
+            if (out.isNull() && byteCapacity > 0) throw Errors.invalid("out is NULL");
+            int n = count - start;
+            if (n > Integer.MAX_VALUE / 4) throw Errors.invalid("ids are over 2 GiB");
+            // ids[start, count) alone, behind a copy of its first at index 0 when start is past 0:
+            // only a text's first token drops its leading space, and that copy's bytes are taken
+            // back off the size
+            int from = start > 0 && n > 0 ? 1 : 0; // where the ids begin in the copy
+            int[] copy = new int[from + n];
+            if (n > 0)
+                CTypeConversion.asByteBuffer(ids.addressOf(start), 4 * n)
                         .order(ByteOrder.nativeOrder())
                         .asIntBuffer()
-                        .get(copy);
-            for (int i = 0; i < count; i++) {
+                        .get(copy, from, n);
+            Tokenizer tokenizer = loaded.tokenizer();
+            Vocabulary vocab = tokenizer.vocabulary();
+            for (int i = from; i < copy.length; i++) {
                 if (!vocab.contains(copy[i]))
                     throw Errors.invalid(
                             "token id "
                                     + copy[i]
                                     + " at index "
-                                    + i
+                                    + (start + i - from)
                                     + " is outside the vocabulary of "
                                     + vocab.size());
             }
+            if (from == 1) copy[0] = copy[1];
             IntSequence tokens = IntSequence.wrap(copy);
-            Tokenizer tokenizer = loaded.tokenizer();
-            int size = countBytes(tokenizer, tokens); // refuses past 2 GiB
-            if (capacity == 0) return size;
-            // the tokens' own bytes, not a re-encoded string, so a partial UTF-8 sequence comes
-            // back as it is
-            return bytes(tokenizer.decodeBytes(tokens), out, capacity);
+            if (byteCapacity == 0) {
+                long size = size(tokenizer, tokens, from); // refuses past 2 GiB
+                if (decodedTokens.isNonNull()) decodedTokens.write(0);
+                return size;
+            }
+            // the tokens' own bytes, whole tokens as far as they fit in byteCapacity - 1 (the NUL's
+            // place): a chunk at a time through the thread's array, where the core stores words,
+            // then out in bulk; a direct buffer over the caller's memory measured slower
+            long room =
+                    Math.min(byteCapacity - 1, Integer.MAX_VALUE); // past 2 GiB the count refuses
+            byte[] chunk = BUFFERS.get().chunk();
+            ByteBuffer buffer = ByteBuffer.wrap(chunk);
+            int written = 0;
+            int next = from; // the next id to decode
+            while (next < copy.length) {
+                buffer.clear().limit((int) Math.min(chunk.length, room - written));
+                int consumed;
+                try {
+                    consumed = tokenizer.decodeBytesInto(tokens, next, buffer);
+                } catch (IllegalArgumentException full) { // id next does not fit, the ids checked
+                    if (room - written <= chunk.length) break; // nor would it in the room left
+                    chunk = new byte[(int) Math.min(2L * chunk.length, room - written)]; // > 64 KB
+                    buffer = ByteBuffer.wrap(chunk);
+                    continue;
+                }
+                if (consumed <= 0) throw new IllegalStateException("decode made no progress");
+                write(chunk, out.rawValue() + written, buffer.position());
+                written += buffer.position();
+                next += consumed;
+            }
+            // over capacity, the rest counted with what came before it: counted alone, its first
+            // token would lose its space (Metaspace), and this is the slow pass anyway
+            long size = next == copy.length ? written : size(tokenizer, tokens, from);
+            out.write(written, (byte) 0);
+            if (decodedTokens.isNonNull()) decodedTokens.write(next - from);
+            return size;
         } catch (Throwable t) {
             return Errors.set(t);
         }
+    }
+
+    /**
+     * The bytes tokens[from, n) take inside the whole: the whole less what tokens[0, from) take.
+     */
+    private static long size(Tokenizer tokenizer, IntSequence tokens, int from) {
+        long whole = countBytes(tokenizer, tokens);
+        return from == 0 ? whole : whole - tokenizer.countBytes(tokens.subSequence(0, from));
     }
 
     @CEntryPoint(name = "toknroll__vocabulary_size")
@@ -454,20 +526,23 @@ public final class Native {
 
     @CEntryPoint(name = "toknroll__token")
     static long token(
-            IsolateThread thread, ObjectHandle handle, int id, CCharPointer out, long capacity) {
+            IsolateThread thread,
+            ObjectHandle handle,
+            int id,
+            CCharPointer out,
+            long byteCapacity) {
         try {
             Errors.clear();
             Vocabulary vocab = get(handle).tokenizer().vocabulary();
             if (!vocab.contains(id)) throw Errors.notFound("no token with id " + id);
-            return bytes(vocab.token(id).getBytes(StandardCharsets.UTF_8), out, capacity);
+            return bytes(vocab.token(id).getBytes(StandardCharsets.UTF_8), out, byteCapacity);
         } catch (Throwable t) {
             return Errors.set(t);
         }
     }
 
     @CEntryPoint(name = "toknroll__id")
-    static int id(
-            IsolateThread thread, ObjectHandle handle, CCharPointer token, UnsignedWord length) {
+    static int id(IsolateThread thread, ObjectHandle handle, CCharPointer token, long length) {
         try {
             Errors.clear();
             Vocabulary vocab = get(handle).tokenizer().vocabulary();

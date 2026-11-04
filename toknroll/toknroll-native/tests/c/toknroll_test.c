@@ -82,7 +82,7 @@ static void other_thread_errors(void* p) {
 
 static void last_error_per_thread(void) {
     errors_box box = {tiny(), 99, 99, ""};
-    CHECK_ERROR(toknroll_decode(box.t, NULL, -1, NULL, 0), TOKNROLL_EINVAL, LE, "count must not be negative");
+    CHECK_ERROR(toknroll_decode(box.t, NULL, -1, 0, NULL, 0, NULL), TOKNROLL_EINVAL, LE, "count must not be negative");
     thread_join(thread_run(other_thread_errors, &box));
     CHECK_EQ(box.first_code, TOKNROLL_OK);
     CHECK_EQ(box.own_code, TOKNROLL_ENOTFOUND);
@@ -467,11 +467,13 @@ static void encode(void) {
     /* errors */
     CHECK_ERROR(toknroll_encode(NULL, "x", 1, 0, ids, 64), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
     CHECK_ERROR(toknroll_encode(t, NULL, 3, 0, ids, 64), TOKNROLL_EINVAL, LE, "text is NULL");
-    CHECK_ERROR(toknroll_encode(t, "x", 1, 0, ids, -1), TOKNROLL_EINVAL, LE, "capacity must not be negative");
+    CHECK_ERROR(toknroll_encode(t, "x", 1, 0, ids, -1), TOKNROLL_EINVAL, LE, "token_capacity must not be negative");
     CHECK_ERROR(toknroll_encode(t, "x", 1, 0, NULL, 4), TOKNROLL_EINVAL, LE, "out is NULL");
     CHECK_ERROR(toknroll_encode(t, "x", 1, 2, ids, 64), TOKNROLL_EINVAL, LE, "unknown flags 0x2");
     CHECK_ERROR(toknroll_encode(t, "x", 1, 0x80000000u, ids, 64), TOKNROLL_EINVAL, LE, "unknown flags 0x80000000");
-    CHECK_ERROR(toknroll_encode(t, "x", (size_t) 1 << 32, 0, ids, 64), TOKNROLL_EINVAL, LE, "over 2 GiB");
+    CHECK_ERROR(toknroll_encode(t, "x", (int64_t) 1 << 32, 0, ids, 64), TOKNROLL_EINVAL, LE, "over 2 GiB");
+    CHECK_ERROR(toknroll_encode(t, "x", -1, 0, ids, 64), TOKNROLL_EINVAL, LE, "length must not be negative");
+    CHECK_ERROR(toknroll_encode(t, "x", INT64_MIN, 0, NULL, 0), TOKNROLL_EINVAL, LE, "length must not be negative");
     toknroll_tokenizer_free(t);
 }
 
@@ -500,48 +502,167 @@ static void encode_specials(void) {
 static void decode(void) {
     toknroll_tokenizer* t = tiny();
     char out[64];
-    CHECK_EQ(toknroll_decode(t, HELLO, 4, out, 64), 5);
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, out, 64, NULL), 5);
     CHECK_STR(out, "hello");
     CHECK_CLEAR(LE);
-    /* capacity: 0 sizes; else the text cut to at most capacity - 1 bytes and a NUL, the whole size
-     * returned, below capacity exactly when the text is whole */
-    CHECK_EQ(toknroll_decode(t, HELLO, 4, NULL, 0), 5);
-    for (int64_t capacity = 1; capacity <= 5; capacity++) {
+    /* capacity: 0 sizes; else the tokens that fit whole in capacity - 1 bytes and a NUL, never part
+     * of a token, decoded_tokens saying how many, the whole size returned, below capacity exactly when the
+     * text is whole */
+    int32_t decoded_tokens = -7;
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, NULL, 0, NULL), 5);
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, NULL, 0, &decoded_tokens), 5);
+    CHECK_EQ(decoded_tokens, 0);
+    static const char* const cut[] = {"", "", "he", "hel", "hell", "hello"};   /* by capacity 1..6 */
+    static const int32_t fit[] = {0, 0, 1, 2, 3, 4};
+    for (int64_t capacity = 1; capacity <= 6; capacity++) {
         memset(out, 'Z', sizeof out);
-        CHECK_EQ(toknroll_decode(t, HELLO, 4, out, capacity), 5);
-        size_t n = strlen(out);
-        CHECK((int64_t) n < capacity && !strncmp(out, "hello", n));   /* a cut prefix, NUL-terminated */
+        CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, out, capacity, NULL), 5);
+        CHECK_STR(out, cut[capacity - 1]);    /* at capacity 2, "he" does not fit in one byte */
+        memset(out, 'Z', sizeof out);
+        decoded_tokens = -7;
+        CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, out, capacity, &decoded_tokens), 5);
+        CHECK_STR(out, cut[capacity - 1]);
+        CHECK_EQ(decoded_tokens, fit[capacity - 1]);
     }
-    CHECK_EQ(toknroll_decode(t, HELLO, 4, out, 6), 5);
-    CHECK_STR(out, "hello");
     memset(out, 'Z', sizeof out);
-    CHECK_EQ(toknroll_decode(t, HELLO, 4, out, 6), 5);
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, out, 6, NULL), 5);
     CHECK_EQ(out[6], 'Z');                    /* nothing past the NUL */
     /* no ids */
-    CHECK_EQ(toknroll_decode(t, NULL, 0, out, 64), 0);
+    CHECK_EQ(toknroll_decode(t, NULL, 0, 0, out, 64, NULL), 0);
     CHECK_STR(out, "");
-    CHECK_EQ(toknroll_decode(t, NULL, 0, NULL, 0), 0);
+    CHECK_EQ(toknroll_decode(t, NULL, 0, 0, NULL, 0, NULL), 0);
+    decoded_tokens = -7;
+    CHECK_EQ(toknroll_decode(t, NULL, 0, 0, out, 64, &decoded_tokens), 0);
+    CHECK_EQ(decoded_tokens, 0);
     /* the tokens' own bytes: half a character, a NUL inside, a special token's spelling */
     int32_t half[] = {0xE2};
-    CHECK_EQ(toknroll_decode(t, half, 1, out, 64), 1);
+    CHECK_EQ(toknroll_decode(t, half, 1, 0, out, 64, NULL), 1);
     CHECK((unsigned char) out[0] == 0xE2 && out[1] == 0);
     int32_t nul[] = {'a', 0, 'b'};
-    CHECK_EQ(toknroll_decode(t, nul, 3, out, 64), 3);
+    CHECK_EQ(toknroll_decode(t, nul, 3, 0, out, 64, NULL), 3);
     CHECK(!memcmp(out, "a\0b", 4));
     int32_t special[] = {ID_END, ID_USER};
-    CHECK_EQ(toknroll_decode(t, special, 2, out, 64), 13);
+    CHECK_EQ(toknroll_decode(t, special, 2, 0, out, 64, NULL), 13);
     CHECK_STR(out, "<|end|><user>");
-    /* errors */
+    /* start: ids[start, count) in the whole; start == count is no ids; only those ids are checked */
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 1, out, 64, NULL), 3);
+    CHECK_STR(out, "llo");
+    decoded_tokens = -7;
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 1, out, 3, &decoded_tokens), 3);
+    CHECK_STR(out, "ll");
+    CHECK_EQ(decoded_tokens, 2);
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 4, out, 64, &decoded_tokens), 0);
+    CHECK_STR(out, "");
+    CHECK_EQ(decoded_tokens, 0);
+    CHECK_EQ(toknroll_decode(t, NULL, 0, 0, NULL, 0, NULL), 0);
+    int32_t bad_then_good[] = {-1, 'a'};
+    CHECK_EQ(toknroll_decode(t, bad_then_good, 2, 1, out, 64, NULL), 1);   /* ids before start are not read */
+    CHECK_STR(out, "a");
+    /* errors: decoded_tokens is left as it was */
+    decoded_tokens = -7;
     int32_t outside[] = {'a', VOCAB_JSON};
-    CHECK_ERROR(toknroll_decode(t, outside, 2, out, 64), TOKNROLL_EINVAL, LE, "token id 259 at index 1 is outside the vocabulary of 259");
+    CHECK_ERROR(toknroll_decode(t, outside, 2, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id 259 at index 1 is outside the vocabulary of 259");
     int32_t negative[] = {-1};
-    CHECK_ERROR(toknroll_decode(t, negative, 1, out, 64), TOKNROLL_EINVAL, LE, "token id -1 at index 0");
-    CHECK_ERROR(toknroll_decode(t, negative, 1, NULL, 0), TOKNROLL_EINVAL, LE, "token id -1");   /* sizing checks too */
-    CHECK_ERROR(toknroll_decode(NULL, HELLO, 4, out, 64), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
-    CHECK_ERROR(toknroll_decode(t, HELLO, -1, out, 64), TOKNROLL_EINVAL, LE, "count must not be negative");
-    CHECK_ERROR(toknroll_decode(t, NULL, 2, out, 64), TOKNROLL_EINVAL, LE, "ids is NULL");
-    CHECK_ERROR(toknroll_decode(t, HELLO, 4, out, -1), TOKNROLL_EINVAL, LE, "capacity must not be negative");
-    CHECK_ERROR(toknroll_decode(t, HELLO, 4, NULL, 8), TOKNROLL_EINVAL, LE, "out is NULL");
+    CHECK_ERROR(toknroll_decode(t, negative, 1, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id -1 at index 0");
+    CHECK_ERROR(toknroll_decode(t, negative, 1, 0, NULL, 0, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id -1");   /* sizing checks too */
+    CHECK_ERROR(toknroll_decode(NULL, HELLO, 4, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
+    CHECK_ERROR(toknroll_decode(t, HELLO, -1, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "count must not be negative");
+    CHECK_ERROR(toknroll_decode(t, NULL, 2, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "ids is NULL");
+    CHECK_ERROR(toknroll_decode(t, HELLO, 4, 0, out, -1, &decoded_tokens), TOKNROLL_EINVAL, LE, "byte_capacity must not be negative");
+    CHECK_ERROR(toknroll_decode(t, HELLO, 4, 0, NULL, 8, &decoded_tokens), TOKNROLL_EINVAL, LE, "out is NULL");
+    CHECK_ERROR(toknroll_decode(t, HELLO, 4, -1, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "start -1 is outside [0, count 4]");
+    CHECK_ERROR(toknroll_decode(t, HELLO, 4, 5, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "start 5 is outside [0, count 4]");
+    CHECK_ERROR(toknroll_decode(t, outside, 2, 1, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id 259 at index 1");   /* absolute */
+    CHECK_ERROR(toknroll_decode(t, HELLO, INT32_MAX, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "ids are over 2 GiB");   /* before any read */
+    CHECK_EQ(decoded_tokens, -7);
+    toknroll_tokenizer_free(t);
+}
+
+/* every start and capacity of a text's ids: out holds exactly the bytes ids[start, start + decoded)
+ * have in the whole text, as many tokens as fit in capacity - 1, and they are all the rest exactly
+ * when that rest is whole */
+static int64_t prefix(toknroll_tokenizer* t, const int32_t* ids, int32_t k) {
+    return toknroll_decode(t, ids, k, 0, NULL, 0, NULL);   /* the bytes of the text's first k ids */
+}
+
+static void check_cuts(toknroll_tokenizer* t, const int32_t* ids, int32_t n, const char* text) {
+    int64_t size = (int64_t) strlen(text);
+    char* out = (char*) malloc((size_t) size + 1);
+    int wrong = 0;
+    for (int32_t start = 0; start <= n; start++) {
+        int64_t at = prefix(t, ids, start), rest = size - at;
+        for (int64_t capacity = 1; capacity <= rest + 1; capacity++) {
+            int32_t k = -7;
+            int64_t got = toknroll_decode(t, ids, n, start, out, capacity, &k);
+            int64_t kept = k < 0 || start + k > n ? -1 : prefix(t, ids, start + k) - at;
+            int64_t more = k >= 0 && start + k < n ? prefix(t, ids, start + k + 1) - at : rest;
+            wrong += got != rest || kept < 0 || kept >= capacity || (int64_t) strlen(out) != kept
+                     || memcmp(out, text + at, (size_t) kept) || (start + k == n) != (rest < capacity)
+                     || (start + k < n && more < capacity);   /* the next id would not have fit */
+        }
+    }
+    CHECK_EQ(wrong, 0);
+    free(out);
+}
+
+static void decode_cuts(void) {
+    toknroll_tokenizer* t = tiny();
+    static const char* texts[] = {"Hello, world!", "h\xC3\xA9llo <|end|> w\xC3\xB6rld", "hehehe", "\xF0\x9F\x8E\xB8 guitar"};
+    for (int i = 0; i < COUNT(texts); i++) {
+        int32_t ids[64];
+        int32_t n = toknroll_encode(t, texts[i], strlen(texts[i]), TOKNROLL_SPECIALS, ids, 64);
+        CHECK(n > 0);
+        check_cuts(t, ids, n, texts[i]);
+    }
+    toknroll_tokenizer_free(t);
+}
+
+/* a text decoded through a small buffer, each call starting where the last stopped, and streamed
+ * a token at a time: the pieces add up to the text, the spaces SentencePiece keeps in its tokens too */
+static void check_pieces(toknroll_tokenizer* t, const int32_t* ids, int32_t n, const char* text) {
+    char whole[256] = "", piece[9];
+    for (int32_t start = 0, k = 0; start < n; start += k) {
+        CHECK(toknroll_decode(t, ids, n, start, piece, sizeof piece, &k) >= 0);
+        CHECK(k > 0);   /* no token of these texts is over 8 bytes */
+        if (k <= 0) return;
+        strcat(whole, piece);
+    }
+    CHECK_STR(whole, text);
+    whole[0] = 0;
+    for (int32_t i = 0; i < n; i++) {   /* streaming: the newest id, in the context of the reply so far */
+        CHECK(toknroll_decode(t, ids, i + 1, i, piece, sizeof piece, NULL) >= 0);
+        strcat(whole, piece);
+    }
+    CHECK_STR(whole, text);
+}
+
+static void decode_resumes(void) {
+    toknroll_tokenizer* t = tiny();
+    const char* text = "Tok'n'Roll \xF0\x9F\x8E\xB8 hello <|end|> hello again, hello";
+    int32_t ids[128];
+    int32_t n = toknroll_encode(t, text, strlen(text), TOKNROLL_SPECIALS, ids, 128);
+    CHECK(n > 10);
+    check_pieces(t, ids, n, text);
+    toknroll_tokenizer_free(t);
+
+    const char* path = TMP("metaspace.json");
+    write_metaspace_json(path);
+    t = toknroll_tokenizer_load(path);
+    CHECK(t != NULL);
+    if (!t) return;
+    int32_t hi[8];
+    CHECK_EQ(toknroll_encode(t, "hi there", 8, 0, hi, 8), 2);
+    int32_t k = -7;
+    char out[16];
+    CHECK_EQ(toknroll_decode(t, hi, 2, 0, out, 4, &k), 8);
+    CHECK_STR(out, "hi");                      /* " there" does not fit */
+    CHECK_EQ(k, 1);
+    CHECK_EQ(toknroll_decode(t, hi, 2, k, out, sizeof out, NULL), 6);
+    CHECK_STR(out, " there");                  /* the rest of the text: its space kept */
+    CHECK_EQ(toknroll_decode(t, hi + k, 2 - k, 0, out, sizeof out, NULL), 5);
+    CHECK_STR(out, "there");                   /* a slice is a text of its own: its first space dropped */
+    check_pieces(t, hi, 2, "hi there");
+    check_cuts(t, hi, 2, "hi there");
     toknroll_tokenizer_free(t);
 }
 
@@ -555,7 +676,7 @@ static void round_trips(void) {
         char out[256];
         int32_t n = toknroll_encode(t, texts[i], strlen(texts[i]), 0, ids, 128);
         CHECK(n >= 0 && n <= 128);
-        CHECK_EQ(toknroll_decode(t, ids, n, out, sizeof out), (int64_t) strlen(texts[i]));
+        CHECK_EQ(toknroll_decode(t, ids, n, 0, out, sizeof out, NULL), (int64_t) strlen(texts[i]));
         CHECK_STR(out, texts[i]);
     }
     toknroll_tokenizer_free(t);
@@ -573,11 +694,18 @@ static void long_text(void) {   /* past the library's own buffers, whole and cut
     int32_t* ids = (int32_t*) malloc((size_t) n * sizeof *ids);
     CHECK_EQ(toknroll_encode(t, text, size, 0, ids, n), n);
     char* out = (char*) malloc(size + 1);
-    CHECK_EQ(toknroll_decode(t, ids, n, out, (int64_t) size + 1), (int64_t) size);
+    CHECK_EQ(toknroll_decode(t, ids, n, 0, out, (int64_t) size + 1, NULL), (int64_t) size);
     CHECK(!memcmp(out, text, size + 1));
-    CHECK_EQ(toknroll_decode(t, ids, n, out, (int64_t) size), (int64_t) size);   /* one short: cut, not whole */
+    int32_t decoded_tokens = -7;
+    CHECK_EQ(toknroll_decode(t, ids, n, 0, out, (int64_t) size, &decoded_tokens), (int64_t) size);   /* one short: the last token out */
     CHECK_EQ((int64_t) strlen(out), (int64_t) size - 1);
     CHECK(!memcmp(out, text, size - 1));
+    CHECK_EQ(decoded_tokens, n - 1);
+    /* 70000 bytes, in the library's second 64 KB chunk: 11666 words of 5 tokens, then "hell" */
+    CHECK_EQ(toknroll_decode(t, ids, n, 0, out, 70001, &decoded_tokens), (int64_t) size);
+    CHECK_EQ((int64_t) strlen(out), 70000);
+    CHECK(!memcmp(out, text, 70000));
+    CHECK_EQ(decoded_tokens, 11666 * 5 + 3);
     free(out);
     free(ids);
     free(text);
@@ -618,8 +746,8 @@ static void batch(void) {
     CHECK_EQ(toknroll_encode_batch(t, NULL, empties, 2, 0, out, 64, offsets), 0);
     /* errors */
     CHECK_ERROR(toknroll_encode_batch(NULL, texts, at, 4, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
-    CHECK_ERROR(toknroll_encode_batch(t, texts, at, -1, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "count and capacity must not be negative");
-    CHECK_ERROR(toknroll_encode_batch(t, texts, at, 4, 0, out, -1, offsets), TOKNROLL_EINVAL, LE, "count and capacity must not be negative");
+    CHECK_ERROR(toknroll_encode_batch(t, texts, at, -1, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "count must not be negative");
+    CHECK_ERROR(toknroll_encode_batch(t, texts, at, 4, 0, out, -1, offsets), TOKNROLL_EINVAL, LE, "token_capacity must not be negative");
     CHECK_ERROR(toknroll_encode_batch(t, texts, NULL, 4, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "text_offsets and offsets must not be NULL");
     CHECK_ERROR(toknroll_encode_batch(t, texts, at, 4, 0, out, 64, NULL), TOKNROLL_EINVAL, LE, "text_offsets and offsets must not be NULL");
     CHECK_ERROR(toknroll_encode_batch(t, texts, at, 4, 0, NULL, 64, offsets), TOKNROLL_EINVAL, LE, "out is NULL");
@@ -683,7 +811,7 @@ static void vocabulary(void) {
     CHECK_ERROR(toknroll_token(t, VOCAB_JSON, out, 16), TOKNROLL_ENOTFOUND, LE, "no token with id 259");
     CHECK_ERROR(toknroll_token(t, -1, out, 16), TOKNROLL_ENOTFOUND, LE, "no token with id -1");
     CHECK_ERROR(toknroll_token(NULL, 0, out, 16), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
-    CHECK_ERROR(toknroll_token(t, 0, out, -1), TOKNROLL_EINVAL, LE, "capacity must not be negative");
+    CHECK_ERROR(toknroll_token(t, 0, out, -1), TOKNROLL_EINVAL, LE, "byte_capacity must not be negative");
     CHECK_ERROR(toknroll_token(t, 0, NULL, 4), TOKNROLL_EINVAL, LE, "out is NULL");
     /* id: length bytes of a spelling */
     CHECK_EQ(toknroll_id(t, "he", 2), ID_HE);
@@ -698,7 +826,8 @@ static void vocabulary(void) {
     CHECK_ERROR(toknroll_id(t, NULL, 0), TOKNROLL_ENOTFOUND, LE, "no token");
     CHECK_ERROR(toknroll_id(t, NULL, 1), TOKNROLL_EINVAL, LE, "token is NULL");
     CHECK_ERROR(toknroll_id(NULL, "he", 2), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
-    CHECK_ERROR(toknroll_id(t, "he", (size_t) 1 << 32), TOKNROLL_EINVAL, LE, "over 2 GiB");
+    CHECK_ERROR(toknroll_id(t, "he", (int64_t) 1 << 32), TOKNROLL_EINVAL, LE, "over 2 GiB");
+    CHECK_ERROR(toknroll_id(t, "he", -1), TOKNROLL_EINVAL, LE, "length must not be negative");
     toknroll_tokenizer_free(t);
 }
 
@@ -758,7 +887,7 @@ static void encode_worker(void* p) {
         char back[128];
         int32_t count = toknroll_encode(w->t, text, (size_t) n, TOKNROLL_SPECIALS, ids, 64);
         if (count <= 0 || ids[0] != ID_HE || ids[count - 1] != ID_END) w->wrong++;
-        if (toknroll_decode(w->t, ids, count, back, sizeof back) != n || strcmp(back, text)) w->wrong++;
+        if (toknroll_decode(w->t, ids, count, 0, back, sizeof back, NULL) != n || strcmp(back, text)) w->wrong++;
         int32_t code;
         LE(&code);
         if (code != TOKNROLL_OK) w->wrong++;
@@ -899,7 +1028,7 @@ static void hub_reference(void) {
     CHECK_EQ(toknroll_encode(t, "Hello, world!", 13, 0, ids, 64), 4);
     CHECK(same_ids(ids, hello, 4));
     char out[64];
-    CHECK_EQ(toknroll_decode(t, hello, 4, out, 64), 13);
+    CHECK_EQ(toknroll_decode(t, hello, 4, 0, out, 64, NULL), 13);
     CHECK_STR(out, "Hello, world!");
     /* the same repository, spelled every way the grammar allows */
     static const char* spellings[] = {"hf.co/" QWEN, "huggingface.co/" QWEN, QWEN "/tokenizer.json", "  " QWEN "  ", QWEN "/"};
@@ -993,8 +1122,9 @@ static void real_engine(void) {
         counts[i] = toknroll_encode(t, PROSE[i], strlen(PROSE[i]), TOKNROLL_SPECIALS, want[i], 256);
         char back[512];
         CHECK(counts[i] >= 0);
-        CHECK_EQ(toknroll_decode(t, want[i], counts[i], back, sizeof back), (int64_t) strlen(PROSE[i]));
+        CHECK_EQ(toknroll_decode(t, want[i], counts[i], 0, back, sizeof back, NULL), (int64_t) strlen(PROSE[i]));
         CHECK_STR(back, PROSE[i]);
+        check_cuts(t, want[i], counts[i], PROSE[i]);
     }
     /* a batch of every text, many times over */
     enum { COPIES = 300 };
@@ -1047,7 +1177,7 @@ static void gguf_round_trips(void) {
         char back[512];
         int32_t n = toknroll_encode(t, PROSE[i], strlen(PROSE[i]), 0, ids, 256);
         CHECK(n >= 0 && n <= 256);
-        CHECK_EQ(toknroll_decode(t, ids, n, back, sizeof back), (int64_t) strlen(PROSE[i]));
+        CHECK_EQ(toknroll_decode(t, ids, n, 0, back, sizeof back, NULL), (int64_t) strlen(PROSE[i]));
         CHECK_STR(back, PROSE[i]);
     }
     toknroll_tokenizer_free(t);
@@ -1084,12 +1214,12 @@ static void size_then_fill(void) {
     int32_t n = toknroll_encode(t, text, length, TOKNROLL_SPECIALS, NULL, 0);
     int32_t* ids = (int32_t*) malloc((size_t) n * sizeof *ids);
     CHECK_EQ(toknroll_encode(t, text, length, TOKNROLL_SPECIALS, ids, n), n);
-    int64_t bytes = toknroll_decode(t, ids, n, NULL, 0);
+    int64_t bytes = toknroll_decode(t, ids, n, 0, NULL, 0, NULL);
     CHECK_EQ(bytes, (int64_t) length);
     char* out = (char*) malloc((size_t) bytes + 1);
-    CHECK_EQ(toknroll_decode(t, ids, n, out, bytes + 1), bytes);   /* below capacity: whole */
+    CHECK_EQ(toknroll_decode(t, ids, n, 0, out, bytes + 1, NULL), bytes);   /* below capacity: whole */
     CHECK(!memcmp(out, text, length + 1));
-    CHECK_EQ(toknroll_decode(t, ids, n, out, bytes), bytes);       /* at capacity: cut, the NUL in the last byte */
+    CHECK_EQ(toknroll_decode(t, ids, n, 0, out, bytes, NULL), bytes);       /* at capacity: cut, the NUL in the last byte */
     CHECK((int64_t) strlen(out) < bytes);
     int64_t spelled = toknroll_token(t, ID_END, NULL, 0);
     char token[16];
@@ -1111,7 +1241,7 @@ static void streaming_decode(void) {
     int half = 0;
     for (int32_t i = 0; i < n; i++) {
         char piece[16];
-        int64_t k = toknroll_decode(t, ids + i, 1, piece, sizeof piece);
+        int64_t k = toknroll_decode(t, ids + i, 1, 0, piece, sizeof piece, NULL);
         CHECK(k > 0 && k < 16);
         memcpy(streamed + at, piece, (size_t) k);
         at += (size_t) k;
@@ -1146,7 +1276,7 @@ static void without_specials(void) {
     for (int32_t i = 0; i < n; i++)
         if (toknroll_token_flags(t, ids[i]) & TOKNROLL_TOKEN_NORMAL) kept[k++] = ids[i];
     char out[64];
-    CHECK_EQ(toknroll_decode(t, kept, k, out, 64), 11);
+    CHECK_EQ(toknroll_decode(t, kept, k, 0, out, 64, NULL), 11);
     CHECK_STR(out, "hello world");
     toknroll_tokenizer_free(t);
 }
@@ -1163,7 +1293,7 @@ static void odd_arguments(void) {
     CHECK_EQ(ids[4], -7);
     char out[32];
     memset(out, 'Z', sizeof out);
-    CHECK_EQ(toknroll_decode(t, HELLO, 4, out, INT64_MAX), 5);
+    CHECK_EQ(toknroll_decode(t, HELLO, 4, 0, out, INT64_MAX, NULL), 5);
     CHECK(!strcmp(out, "hello") && out[6] == 'Z');
     CHECK_EQ(toknroll_token(t, ID_HE, out, INT64_MAX), 2);
     /* a spelling with a NUL inside, or bytes that are no UTF-8: no such token, never a crash */
@@ -1176,7 +1306,7 @@ static void odd_arguments(void) {
     int32_t n = toknroll_encode(t, (const char*) ascii, 128, 0, ids, 300);
     CHECK_EQ(n, 128);
     char back[300];
-    CHECK_EQ(toknroll_decode(t, ids, n, back, sizeof back), 128);
+    CHECK_EQ(toknroll_decode(t, ids, n, 0, back, sizeof back, NULL), 128);
     CHECK(!memcmp(back, ascii, 128));
     /* a malformed sequence reads as U+FFFD (EF BF BD), one per bad sequence, as a UTF-8 decoder reads it */
     static const struct { const char* bad; const char* read; } malformed[] = {
@@ -1377,6 +1507,8 @@ static const scenario scenarios[] = {
     {"encode", encode, NULL},
     {"encode_specials", encode_specials, NULL},
     {"decode", decode, NULL},
+    {"decode_cuts", decode_cuts, NULL},
+    {"decode_resumes", decode_resumes, NULL},
     {"round_trips", round_trips, NULL},
     {"long_text", long_text, NULL},
     {"batch", batch, NULL},

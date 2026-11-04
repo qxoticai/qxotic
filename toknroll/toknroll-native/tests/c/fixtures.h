@@ -54,6 +54,22 @@ static inline void gguf_u32(FILE* f, uint32_t v) { fwrite(&v, 4, 1, f); }   /* G
 static inline void gguf_u64(FILE* f, uint64_t v) { fwrite(&v, 8, 1, f); }
 static inline void gguf_str(FILE* f, const char* s) { gguf_u64(f, strlen(s)); fwrite(s, 1, strlen(s), f); }
 
+/* SentencePiece's way, as Llama's tokenizer.json writes it: a word's space is a leading U+2581, and
+ * the decoder drops a text's first one, so "hi there" is ids {7, 12} and 12 alone decodes to "there" */
+static inline void write_metaspace_json(const char* path) {
+    FILE* f = fopen(path, "wb");
+    if (!f) { printf("    cannot write %s\n", path); exit(2); }
+    fputs("{\"version\":\"1.0\",\"added_tokens\":[],\"normalizer\":null,\"post_processor\":null,"
+          "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"\\u2581\",\"prepend_scheme\":\"always\",\"split\":true},"
+          "\"decoder\":{\"type\":\"Metaspace\",\"replacement\":\"\\u2581\",\"prepend_scheme\":\"always\",\"split\":true},"
+          "\"model\":{\"type\":\"BPE\",\"dropout\":null,\"unk_token\":null,\"continuing_subword_prefix\":null,\"end_of_word_suffix\":null,"
+          "\"fuse_unk\":false,\"byte_fallback\":false,\"ignore_merges\":false,\"vocab\":{\"\\u2581\":0,\"h\":1,\"i\":2,\"t\":3,"
+          "\"e\":4,\"r\":5,\"\\u2581h\":6,\"\\u2581hi\":7,\"\\u2581t\":8,\"\\u2581th\":9,\"\\u2581the\":10,\"\\u2581ther\":11,"
+          "\"\\u2581there\":12,\"th\":13},\"merges\":[\"\\u2581 h\",\"\\u2581h i\",\"\\u2581 t\",\"t h\",\"\\u2581t h\",\"\\u2581th e\","
+          "\"\\u2581the r\",\"\\u2581ther e\"]}}", f);
+    fclose(f);
+}
+
 /* tokenizer.ggml.pre is pre: "gpt2", or a name only an option can make known */
 static inline void write_tiny_gguf(const char* path, const char* pre) {
     static const char* extra[] = {"he", "<|end|>", "<user>", "<unk>", "<unused>", "<0x41>"};
