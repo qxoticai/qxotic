@@ -149,9 +149,11 @@ TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const ch
 TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
 /* An id's TOKNROLL_TOKEN_* flags; negative, TOKNROLL_ENOTFOUND, when there is no such id. */
 TOKNROLL_API int64_t toknroll_token_flags(const toknroll_tokenizer* t, int32_t id);
-/* The spelling of an id, as the vocabulary writes it; TOKNROLL_ENOTFOUND when there is no such id. */
+/* The spelling of an id: a token of a type other than normal is its text, as TOKNROLL_SPECIALS matches
+ * it, any other as the vocabulary writes it; TOKNROLL_ENOTFOUND when there is no such id. */
 TOKNROLL_API int64_t toknroll_token(const toknroll_tokenizer* t, int32_t id, char* out, int64_t byte_capacity);
-/* The id of a spelling, length bytes of it; TOKNROLL_ENOTFOUND when the vocabulary has no such token. */
+/* The id of a spelling, length bytes of it, either kind toknroll_token gives; TOKNROLL_ENOTFOUND when the
+ * vocabulary has no such token. */
 TOKNROLL_API int32_t toknroll_id(const toknroll_tokenizer* t, const char* token, int64_t length);
 
 #ifdef __cplusplus

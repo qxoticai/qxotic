@@ -9,6 +9,8 @@ import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.ObjectHandle;
 import org.graalvm.nativeimage.ObjectHandles;
@@ -31,10 +33,31 @@ import org.graalvm.word.WordFactory;
 public final class Native {
     private static final ObjectHandles HANDLES = ObjectHandles.getGlobal();
 
-    /** A tokenizer and its special tokens, built once per handle. */
-    record Loaded(Tokenizer tokenizer, Specials specials) {
+    /**
+     * A tokenizer and its special tokens, built once per handle. A special token is spelled as its
+     * text, the text TOKNROLL_SPECIALS matches; a byte-level vocabulary spells it in its own
+     * alphabet (31 spaces as "ĠĠĠ..."), which no text contains.
+     */
+    record Loaded(Tokenizer tokenizer, Specials specials, Map<Integer, String> texts) {
         static Loaded of(Tokenizer tokenizer) {
-            return new Loaded(tokenizer, Specials.of(tokenizer));
+            Specials specials = Specials.of(tokenizer);
+            Map<Integer, String> texts = new HashMap<>();
+            specials.tokens().forEach((text, id) -> texts.put(id, text));
+            return new Loaded(tokenizer, specials, texts);
+        }
+
+        /** An id's spelling: a special token's text, any other's as the vocabulary writes it. */
+        String spelling(int id) {
+            String text = texts.get(id);
+            return text != null ? text : tokenizer.vocabulary().token(id);
+        }
+
+        /** A spelling's id, -1 when there is none: a special token's text first, as HF looks. */
+        int id(String spelling) {
+            Integer special = specials.tokens().get(spelling);
+            if (special != null) return special;
+            Vocabulary vocab = tokenizer.vocabulary();
+            return vocab.contains(spelling) ? vocab.id(spelling) : -1;
         }
     }
 
@@ -536,9 +559,10 @@ public final class Native {
             long byteCapacity) {
         try {
             Errors.clear();
-            Vocabulary vocab = get(handle).tokenizer().vocabulary();
-            if (!vocab.contains(id)) throw Errors.notFound("no token with id " + id);
-            return bytes(vocab.token(id).getBytes(StandardCharsets.UTF_8), out, byteCapacity);
+            Loaded loaded = get(handle);
+            if (!loaded.tokenizer().vocabulary().contains(id))
+                throw Errors.notFound("no token with id " + id);
+            return bytes(loaded.spelling(id).getBytes(StandardCharsets.UTF_8), out, byteCapacity);
         } catch (Throwable t) {
             return Errors.set(t);
         }
@@ -548,10 +572,10 @@ public final class Native {
     static int id(IsolateThread thread, ObjectHandle handle, CCharPointer token, long length) {
         try {
             Errors.clear();
-            Vocabulary vocab = get(handle).tokenizer().vocabulary();
             String s = string(token, length, "token");
-            if (!vocab.contains(s)) throw Errors.notFound("no token '" + s + "'");
-            return vocab.id(s);
+            int id = get(handle).id(s);
+            if (id < 0) throw Errors.notFound("no token '" + s + "'");
+            return id;
         } catch (Throwable t) {
             return Errors.set(t);
         }

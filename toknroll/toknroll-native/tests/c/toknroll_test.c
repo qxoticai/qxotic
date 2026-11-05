@@ -1314,6 +1314,22 @@ static void streaming_decode(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* an added token is spelled as its text, the one TOKNROLL_SPECIALS matches: phi-2's 50257 is 31 spaces,
+ * which its byte-level vocabulary writes "ĠĠĠ..." */
+static void added_token_text(void) {
+    offline();
+    toknroll_tokenizer* t = cached("microsoft/phi-2");
+    if (!t) return;
+    char text[64];
+    CHECK_EQ(toknroll_token(t, 50257, text, sizeof text), 31);
+    CHECK(strspn(text, " ") == 31);
+    CHECK_EQ(toknroll_id(t, text, 31), 50257);
+    int32_t ids[64];
+    CHECK_EQ(toknroll_encode(t, text, 31, TOKNROLL_SPECIALS, ids, 64), 1);
+    CHECK_EQ(ids[0], 50257);
+    toknroll_tokenizer_free(t);
+}
+
 /* every id's spelling leads back to it; every id has exactly one type and no reserved bit */
 static void vocabulary_round_trip(void) {
     toknroll_tokenizer* t = tiny();
@@ -1588,6 +1604,7 @@ static const scenario scenarios[] = {
     {"count_tokens", count_tokens, NULL},
     {"size_then_fill", size_then_fill, NULL},
     {"streaming_decode", streaming_decode, NULL},
+    {"added_token_text", added_token_text, NULL},
     {"vocabulary_round_trip", vocabulary_round_trip, NULL},
     {"without_specials", without_specials, NULL},
     {"odd_arguments", odd_arguments, NULL},
