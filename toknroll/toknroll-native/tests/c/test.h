@@ -13,6 +13,7 @@
 #  define _POSIX_C_SOURCE 200809L     /* setenv, fork, alarm: before any system header */
 #endif
 #include <fcntl.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -206,6 +207,9 @@ static void scenario_env(const scenario* s) {
 
 /* main: every scenario, a child each, or the one named here. The parent sets a child's variables too, so
  * they are in its environment from its start: a DLL's own C runtime copies the environment as it loads. */
+/* the seconds a scenario may take: past them a hang fails it, the run going on (a scenario may set less) */
+enum { WATCHDOG = 600 };
+
 static int test_main(int argc, char** argv, const scenario* scenarios, int count) {
     setvbuf(stdout, NULL, _IONBF, 0);
     make_dir("target/ctest");
@@ -213,6 +217,9 @@ static int test_main(int argc, char** argv, const scenario* scenarios, int count
         for (int i = 0; i < count; i++) {
             if (strcmp(argv[1], scenarios[i].name)) continue;
             scenario_env(&scenarios[i]);
+#ifndef _WIN32
+            alarm(WATCHDOG);   /* Windows: the runner waits only so long */
+#endif
             scenarios[i].run();
             return failures ? 1 : 0;
         }
@@ -231,14 +238,24 @@ static int test_main(int argc, char** argv, const scenario* scenarios, int count
         scenario_env(&scenarios[i]);
 #ifdef _WIN32
         const char* args[] = {argv[0], scenarios[i].name, NULL};
-        int code = (int) _spawnv(_P_WAIT, argv[0], args);
+        HANDLE child = (HANDLE) _spawnv(_P_NOWAIT, argv[0], args);
+        if (WaitForSingleObject(child, WATCHDOG * 1000) == WAIT_TIMEOUT) {
+            TerminateProcess(child, 124);
+            WaitForSingleObject(child, INFINITE);
+            printf("    timed out after %d s\n", WATCHDOG);
+        }
+        DWORD exited = 1;
+        GetExitCodeProcess(child, &exited);
+        CloseHandle(child);
+        int code = (int) exited;
 #else
         pid_t pid = fork();
         if (pid == 0) { execl(argv[0], argv[0], scenarios[i].name, (char*) NULL); _exit(127); }
         int status = 0;
         waitpid(pid, &status, 0);
         int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-        if (WIFSIGNALED(status)) printf("    killed by signal %d\n", WTERMSIG(status));
+        if (WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM) printf("    timed out after %d s\n", WATCHDOG);
+        else if (WIFSIGNALED(status)) printf("    killed by signal %d\n", WTERMSIG(status));
 #endif
         if (*name) env_set(name, had ? before : NULL);
         printf("%s %s\n", code == 0 ? "ok  " : code == SKIPPED ? "skip" : "FAIL", scenarios[i].name);
