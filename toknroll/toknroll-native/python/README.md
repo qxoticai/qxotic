@@ -42,7 +42,10 @@ A `Tokenizer` never changes, so it may be shared between threads; `encode` relea
 Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`), `Unsupported` (a valid tokenizer toknroll does not implement, also a `ValueError`); each has `.code`.
 An id outside int32 is an `OverflowError` and a non-int a `TypeError`, as in HF `tokenizers` and tiktoken.
 Remote metadata is fetched with `curl`, which must be on the PATH for hub sources only.
-It is cached in the platform cache directory, or where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says.
+It is cached where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says, else `TOKNROLL_CACHE_ROOT`, else jinfer's store: `JINFER_MODELS`, else the platform cache directory under `jinfer`.
+The HF hub cache (`HF_HUB_CACHE`, `HF_HOME`) is read too, so a file `transformers` fetched serves here, and never written.
+`-Dtoknroll.offline=true` serves the cache and never touches the network; set to anything but `false` it is offline, a misspelled true never means online.
+`TOKNROLL_OPTIONS` is split on whitespace, with no quoting and no `~`: a value holding a space goes through `configure`.
 The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.
 Python's logging then decides what shows; it shows warnings and errors until the application configures it.
 So `TOKNROLL_LOG=info` shows the downloads once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.

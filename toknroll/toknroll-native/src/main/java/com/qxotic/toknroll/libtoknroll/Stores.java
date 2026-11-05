@@ -37,7 +37,8 @@ final class Stores {
     }
 
     private static boolean flag(String property) {
-        return Boolean.parseBoolean(System.getProperty(property, "false").strip());
+        String value = System.getProperty(property);
+        return value != null && !value.strip().equalsIgnoreCase("false");
     }
 
     private Stores() {}

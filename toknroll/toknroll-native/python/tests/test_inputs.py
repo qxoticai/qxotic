@@ -420,6 +420,26 @@ class ErrorTypesTest(unittest.TestCase):
         self.assertEqual(len(declared), 13)
 
 
+class ConfigurationTest(unittest.TestCase):
+    def test_offline_set_to_anything_but_false_never_fetches(self):
+        """A misspelled true (1, yes) must never mean online: the knob is offline unless it says false."""
+        code = textwrap.dedent("""
+            import toknroll
+            try:
+                toknroll.load("no-such-owner-qa/no-such-repo")
+            except toknroll.NotFound as e:
+                assert "never fetches" in str(e), e
+            else:
+                raise SystemExit("loaded")
+            """)
+        for value in ("true", "TRUE", "1", "yes", "bogus", ""):
+            with self.subTest(value=value):
+                env = dict(os.environ, PYTHONPATH=str(Path(toknroll.__file__).resolve().parents[1]),
+                           TOKNROLL_OPTIONS=f"-Dtoknroll.offline={value}")
+                run = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+                self.assertEqual(run.returncode, 0, run.stderr)
+
+
 class LibraryLocationTest(unittest.TestCase):
     def test_platform_names(self):
         located = N.locate("toknroll")
