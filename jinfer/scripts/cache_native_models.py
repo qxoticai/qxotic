@@ -1,9 +1,14 @@
 """Caches every model the native suites load (toknroll's and jinfer's C tests, test_jinfer.py), through the
-libraries themselves: run once per build machine, online, with a python that has toknroll and jinfer installed
-(a check-wheel's target/wheelenv, or pip). Kokoro needs espeak-ng on the PATH to load, so the machine needs it
-for the speech checks too.
+libraries themselves: `make cache-models`, once per build machine, online, after both libraries are built
+(the manylinux container is a machine of its own: `make cache-models-in-container`). Kokoro needs espeak-ng on
+the PATH to load, so the machine needs it for the speech checks too.
 
 The suites run offline and skip the checks of a model not here; a skip fails the run unless CTEST_ALLOW_SKIP=1."""
+import sys
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[2]   # the packages in the tree, over the libraries built beside them
+sys.path[:0] = [str(root / "toknroll/toknroll-native/python"), str(root / "jinfer/jinfer-native/python")]
 import jinfer, toknroll
 
 for ref in ("Qwen/Qwen3-0.6B", "LiquidAI/LFM2.5-350M-GGUF:Q8_0", "microsoft/phi-2", "deepseek-ai/DeepSeek-V3",

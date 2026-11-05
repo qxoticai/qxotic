@@ -21,9 +21,10 @@ ARG MAVEN=3.9.16
 ARG ZIG=0.16.0
 ARG ZIG_SHA256_x86_64=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
 ARG ZIG_SHA256_aarch64=ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17
-# zip for the dist bundles; ffmpeg (RPM Fusion) for the image and audio codecs the jinfer checks exercise
+# zip for the dist bundles; ffmpeg (RPM Fusion) for the image and audio codecs the jinfer checks exercise,
+# espeak-ng for the speech ones
 RUN set -e; dnf install -y -q epel-release https://download1.rpmfusion.org/free/el/rpmfusion-free-release-8.noarch.rpm \
-    && dnf install -y -q zip ffmpeg && dnf clean all; \
+    && dnf install -y -q zip ffmpeg espeak-ng && dnf clean all; \
     case "$ARCH" in x86_64) g=x64 ;; *) g=$ARCH ;; esac; \
     case "$ARCH" in x86_64) sha=$GRAALVM_SHA256_x86_64; zsha=$ZIG_SHA256_x86_64 ;; *) sha=$GRAALVM_SHA256_aarch64; zsha=$ZIG_SHA256_aarch64 ;; esac; \
     curl -sSL -o /tmp/graalvm.tar.gz "https://gds.oracle.com/download/graal/${GRAALVM}_linux-${g}_bin.tar.gz"; \

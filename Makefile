@@ -114,6 +114,12 @@ test-fixtures: ## Fetch the tiktoken vocabularies, their golden truth, the enwik
 	python3 toknroll/scripts/download_enwik8.py
 	python3 jinfer/scripts/download_parakeet_fixtures.py
 
+cache-models: ## Cache every model the native suites load, through the libraries built here: online, once per machine, the container too (cache-models-in-container)
+	python3 jinfer/scripts/cache_native_models.py
+
+cache-models-in-container:
+	$(call in-container,cache-models)
+
 # Empty model caches: a test that reaches for a model fails instead of downloading one.
 NO_MODELS := HF_HOME=$(CURDIR)/.ci-empty-hf-home JINFER_MODELS=$(CURDIR)/.ci-no-models
 
@@ -212,4 +218,4 @@ help: ## Show this help
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
 .PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
-	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-linux wheels-here wheels-in-container publish-wheels
+	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures cache-models cache-models-in-container ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-linux wheels-here wheels-in-container publish-wheels

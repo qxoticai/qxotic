@@ -54,10 +54,11 @@ On Windows, `.\wheels.ps1 -Ref <tag>` builds them and `.\wheels.ps1 -Publish` up
 Each machine uploads its own wheels; copying every machine's `target/wheels/` to one machine and publishing from there works as well.
 Every build runs the libraries' `check-wheel`: the wheel installed into a fresh venv and its suite run from outside the tree.
 The suites load real models from the machine's cache, offline, and skip the checks of a model not there; the C suites and `test_jinfer.py` fail the run on a skip unless `CTEST_ALLOW_SKIP=1`, so a machine without the cache cannot look covered.
-Cache them once per build machine, online, with a python that has both packages installed, and put espeak-ng on the PATH for the speech checks:
+Cache them once per build machine, online, after both libraries are built there, and put espeak-ng on the PATH for the speech checks (the container image has it):
 
 ```sh
-python jinfer/scripts/cache_native_models.py
+make cache-models                  # on Windows: python jinfer\scripts\cache_native_models.py
+make cache-models-in-container     # the manylinux container keeps a cache of its own
 ```
 
 Record the platforms built, their test totals and skips, and the wheel file names with the release evidence.
