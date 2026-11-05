@@ -252,20 +252,20 @@ public final class Native {
     private static final int COUNT_CHUNK = 1 << 12;
 
     /**
-     * The bytes {@code tokens} decode to, refused past 2 GiB, where an int count would wrap.
-     * Counted in chunks summed in 64 bits first; a chunk may count a byte short of what it decodes
-     * to (Metaspace trims its first token's space), so the whole is counted once the sum fits, and
-     * a total that overflows by that little wraps negative.
+     * The bytes tokens[from, n) take inside the whole, refused past 2 GiB: in chunks summed in 64
+     * bits, each counted after the token before it, as only a text's first token drops its leading
+     * space (Metaspace).
      */
-    private static int countBytes(Tokenizer tokenizer, IntSequence tokens) {
-        int n = tokens.length();
-        if (n <= COUNT_CHUNK) return tokenizer.countBytes(tokens);
+    private static long size(Tokenizer tokenizer, IntSequence tokens, int from) {
         long sum = 0;
-        for (int i = 0; i < n; i += COUNT_CHUNK)
-            sum += tokenizer.countBytes(tokens.subSequence(i, Math.min(n, i + COUNT_CHUNK)));
-        int exact = sum > Integer.MAX_VALUE ? -1 : tokenizer.countBytes(tokens);
-        if (exact < 0) throw Errors.invalid("the decoded text is over 2 GiB");
-        return exact;
+        for (int i = from, n = tokens.length(); i < n; i += COUNT_CHUNK) {
+            int before = Math.max(0, i - 1);
+            sum +=
+                    tokenizer.countBytes(tokens.subSequence(before, Math.min(n, i + COUNT_CHUNK)))
+                            - tokenizer.countBytes(tokens.subSequence(before, i));
+        }
+        if (sum > Integer.MAX_VALUE) throw Errors.invalid("the decoded text is over 2 GiB");
+        return sum;
     }
 
     /** The shim's own failures (a configure call after the isolate exists) use the same channel. */
@@ -520,14 +520,6 @@ public final class Native {
         } catch (Throwable t) {
             return Errors.set(t);
         }
-    }
-
-    /**
-     * The bytes tokens[from, n) take inside the whole: the whole less what tokens[0, from) take.
-     */
-    private static long size(Tokenizer tokenizer, IntSequence tokens, int from) {
-        long whole = countBytes(tokenizer, tokens);
-        return from == 0 ? whole : whole - tokenizer.countBytes(tokens.subSequence(0, from));
     }
 
     @CEntryPoint(name = "toknroll__vocabulary_size")

@@ -786,6 +786,24 @@ static void decode_resumes(void) {
     CHECK_STR(out, "there");                   /* a slice is a text of its own: its first space dropped */
     check_pieces(t, hi, 2, "hi there");
     check_cuts(t, hi, 2, "hi there");
+
+    /* sizes past the library's 4096-id count chunks: a chunk counted on its own would drop its
+       first token's space, a byte short per chunk */
+    enum { WORDS = 3000 };
+    char* many = (char*) malloc(WORDS * 9);
+    char* end = many;
+    for (int i = 0; i < WORDS; i++) end += sprintf(end, i ? " hi there" : "hi there");
+    int64_t length = end - many;
+    int32_t* words = (int32_t*) malloc(2 * WORDS * sizeof *words);
+    CHECK_EQ(toknroll_encode(t, many, length, 0, words, 2 * WORDS), 2 * WORDS);
+    CHECK_EQ(toknroll_decode(t, words, 2 * WORDS, 0, NULL, 0, NULL), length);
+    const int32_t starts[] = {1, 4095, 4096, 4097, 2 * WORDS - 1};
+    for (int i = 0; i < COUNT(starts); i++)   /* the ids before start and after it make the text */
+        CHECK_EQ(toknroll_decode(t, words, starts[i], 0, NULL, 0, NULL)
+                         + toknroll_decode(t, words, 2 * WORDS, starts[i], NULL, 0, NULL),
+                 length);
+    free(words);
+    free(many);
     toknroll_tokenizer_free(t);
 }
 
