@@ -1,5 +1,6 @@
 """The edges of the binding: id buffers, errors, lifecycle, threads, the library itself."""
 import ctypes
+import ctypes.util
 import gc
 import multiprocessing
 import os
@@ -10,6 +11,7 @@ import tempfile
 import textwrap
 import threading
 import unittest
+import unittest.mock
 import weakref
 from array import array
 from concurrent.futures import ThreadPoolExecutor
@@ -446,16 +448,20 @@ class LibraryLocationTest(unittest.TestCase):
         self.assertIn(located.name, ("libtoknroll.so", "libtoknroll.dylib", "toknroll.dll"))
 
     def test_env_override_points_at_a_missing_file(self):
-        saved = os.environ.get("TOKNROLL_LIBRARY")
-        os.environ["TOKNROLL_LIBRARY"] = "/no/such/libtoknroll.so"
-        try:
-            located = N.locate("toknroll")  # the override is tried first, then the checkout and the package
-            self.assertTrue(located.is_file())
-        finally:
-            if saved is None:
-                del os.environ["TOKNROLL_LIBRARY"]
-            else:
-                os.environ["TOKNROLL_LIBRARY"] = saved
+        """An override is the one candidate: a typo in it is an error naming it, never another build in silence."""
+        with unittest.mock.patch.dict(os.environ, {"TOKNROLL_LIBRARY": "/no/such/libtoknroll.so"}):
+            with self.assertRaises(OSError) as e:
+                N.locate("toknroll")
+        self.assertIn("/no/such/libtoknroll.so", str(e.exception))
+        self.assertNotIn("target", str(e.exception))
+
+    def test_another_shared_library_is_not_a_toknroll(self):
+        libc = ctypes.util.find_library("c")
+        if not libc:
+            self.skipTest("no C library found by name")
+        with self.assertRaises(OSError) as e:
+            N.bind(ctypes.CDLL(libc))
+        self.assertIn("not a toknroll library", str(e.exception))
 
 
 if __name__ == "__main__":

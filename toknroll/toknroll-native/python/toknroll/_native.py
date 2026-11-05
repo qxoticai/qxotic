@@ -23,16 +23,16 @@ OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED = 0, -1, -2, -3, -4
 
 
 def locate(name: str) -> Path:
-    """The shared library called `name` (toknroll, jinfer): `<NAME>_LIBRARY`, then a source checkout's fresh
-    build, then the library the package carries, laid out per platform as `make python` does."""
+    """The shared library called `name` (toknroll, jinfer): `<NAME>_LIBRARY` alone when it is set, else a source
+    checkout's fresh build, then the library the package carries, laid out per platform as `make python` does."""
     system, machine = platform.system().lower(), platform.machine().lower()
     arch = {"x86_64": "x86-64", "amd64": "x86-64", "arm64": "aarch64"}.get(machine, machine)
     folder = f"{system}-{arch}"
     file = f"{name}.dll" if system == "windows" else f"lib{name}.dylib" if system == "darwin" else f"lib{name}.so"
     package = Path(sys.modules[name].__file__).resolve().parent
     override = os.environ.get(f"{name.upper()}_LIBRARY")
-    candidates = [Path(override)] if override else []
-    candidates += [package.parent.parent / "target" / file, package / "lib" / folder / file]
+    # an override is the one candidate: a typo in it must not run another build in silence
+    candidates = [Path(override)] if override else [package.parent.parent / "target" / file, package / "lib" / folder / file]
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -48,7 +48,10 @@ def bind(lib: C.CDLL) -> C.CDLL:
     a changed signature as corruption, so the versions are compared first."""
     from . import __version__  # at call time, once the package is complete
 
-    lib.toknroll_version.restype = C.c_char_p
+    try:
+        lib.toknroll_version.restype = C.c_char_p
+    except AttributeError:  # a shared library, not this one
+        raise OSError(f"{lib._name} is not a toknroll library: it has no toknroll_version") from None
     found = lib.toknroll_version().decode()
     if found != __version__:  # ponytail: exact while the API is 0.x; same major once it is stable
         raise OSError(f"toknroll {__version__}'s Python layer cannot drive the toknroll {found} in {lib._name}")

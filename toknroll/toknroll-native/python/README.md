@@ -63,4 +63,4 @@ pip install toknroll            # the wheel carries the library: Linux x86_64 an
 ```
 
 From a source checkout, `make python` in `toknroll/toknroll-native` stages the freshly built library into the package, then `pip install python/`.
-`TOKNROLL_LIBRARY=/path/to/libtoknroll.so` points the package at any build.
+`TOKNROLL_LIBRARY=/path/to/libtoknroll.so` points the package at any build, and at nothing else: a path that does not exist is an error, never a fallback.
