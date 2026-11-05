@@ -102,6 +102,8 @@ final class Workers {
                             () -> {
                                 PointerBase self = newWorker();
                                 listed.incrementAndGet();
+                                // ponytail: calloc failed: it ends here, a few frames outside
+                                // the gate, in a process that is out of memory anyway
                                 if (self.isNonNull()) loop(self);
                             },
                             "toknroll-batch-" + i);
