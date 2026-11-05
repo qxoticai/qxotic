@@ -499,7 +499,7 @@ public final class Native {
                 buffer.clear().limit((int) Math.min(chunk.length, room - written));
                 int consumed;
                 try {
-                    consumed = tokenizer.decodeBytesInto(tokens, next, buffer);
+                    consumed = ImplAccessor.decodeBytesIntoOwn(tokenizer, tokens, next, buffer);
                 } catch (IllegalArgumentException full) { // id next does not fit, the ids checked
                     if (room - written <= chunk.length) break; // nor would it in the room left
                     chunk = new byte[(int) Math.min(2L * chunk.length, room - written)]; // > 64 KB

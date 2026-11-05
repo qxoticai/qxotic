@@ -230,6 +230,47 @@ class TiktokenModelTest {
         }
     }
 
+    /**
+     * The library's own buffer takes padding past the output, within its limit, and no count: the
+     * same tokens consumed and the same bytes as the public call, chunk by chunk.
+     */
+    @Test
+    void decodeBytesIntoOwnConsumesAndWritesAsThePublicCall() {
+        TokenizationPipeline o200k =
+                (TokenizationPipeline)
+                        TiktokenFixtures.createTiktokenTokenizer(
+                                "o200k_base",
+                                Splitter.regex(TiktokenFixtures.splitPattern("o200k_base")));
+        TiktokenModel model = (TiktokenModel) o200k.model();
+        IntSequence tokens =
+                model.encode("Hello, Tok'n'Roll! The quick brown fox jumps over the lazy dog.");
+        byte[] expected = model.decodeBytes(tokens);
+        for (int chunkSize : new int[] {7, 16, 23, 64}) {
+            ByteBuffer own = ByteBuffer.allocate(chunkSize + WIDE_SLACK);
+            ByteBuffer out = ByteBuffer.allocate(expected.length);
+            int next = 0;
+            while (next < tokens.length()) {
+                own.clear().limit(chunkSize);
+                int consumed;
+                try {
+                    consumed = model.decodeBytesIntoOwn(tokens, next, own);
+                } catch (IllegalArgumentException full) { // a token longer than the chunk
+                    own.clear();
+                    consumed = model.decodeBytesIntoOwn(tokens, next, own);
+                }
+                assertTrue(consumed > 0);
+                assertEquals(
+                        consumed,
+                        model.decodeBytesInto(tokens, next, ByteBuffer.allocate(own.position())));
+                out.put(own.array(), 0, own.position());
+                next += consumed;
+            }
+            assertArrayEquals(expected, out.array(), "chunk " + chunkSize);
+        }
+    }
+
+    private static final int WIDE_SLACK = 16;
+
     @Test
     void decodeBytesIntoRoundTrip() {
         TiktokenModel model = model256();

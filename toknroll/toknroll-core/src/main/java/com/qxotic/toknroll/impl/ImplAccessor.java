@@ -212,6 +212,22 @@ public final class ImplAccessor {
      * never}) says; decoding writes each token's bytes, trimming the first token's leading space
      * with {@code trimLeadingSpace}. See {@link MetaspaceTokenizer}.
      */
+    /**
+     * {@link Tokenizer#decodeBytesInto} for a heap buffer the caller owns outright, so that bytes
+     * past the output may be written within its limit: a byte-level model then stores words without
+     * counting the fit first. Any other tokenizer decodes as the public call does.
+     */
+    public static int decodeBytesIntoOwn(
+            Tokenizer tokenizer, IntSequence tokens, int from, java.nio.ByteBuffer own) {
+        if (tokenizer instanceof TokenizationPipeline) {
+            TokenizationModel model = ((TokenizationPipeline) tokenizer).model();
+            if (model instanceof TiktokenModel) {
+                return ((TiktokenModel) model).decodeBytesIntoOwn(tokens, from, own);
+            }
+        }
+        return tokenizer.decodeBytesInto(tokens, from, own);
+    }
+
     public static Tokenizer metaspaceTokenizer(
             Tokenizer base, Normalizer normalizer, String prependScheme, boolean trimLeadingSpace) {
         return new MetaspaceTokenizer(base, normalizer, prependScheme, trimLeadingSpace);

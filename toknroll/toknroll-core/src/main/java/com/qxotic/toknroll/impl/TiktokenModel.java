@@ -545,7 +545,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     public byte[] decodeBytes(IntSequence tokens) {
         int total = countBytes(tokens); // which refuses an unknown id
         byte[] out = new byte[total];
-        decodeKnownInto(tokens, 0, tokens.length(), out, 0, total);
+        decodeInto(tokens, 0, ByteBuffer.wrap(out), total);
         return out;
     }
 
@@ -599,8 +599,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Over the buffer's array: the tokens that fit are counted first, which tells where the output
-     * ends, then written by {@link #decodeKnownInto}. Nothing past the output is written.
+     * Over a caller's array: the tokens that fit are counted first, which tells where the output
+     * ends, then written by {@link #decodeInto} with the windows bounded there. Nothing past the
+     * output is written.
      */
     private int decodeBytesInto(IntSequence tokens, int from, ByteBuffer out, byte[] array) {
         int at = out.arrayOffset() + out.position();
@@ -614,28 +615,38 @@ final class TiktokenModel extends AbstractTokenizationModel {
             stop += length;
         }
         if (last == from && from < tokens.length()) {
-            throw new IllegalArgumentException(
-                    "Not enough output space for token at index "
-                            + from
-                            + ": need "
-                            + spellingLength(tokens.intAt(from))
-                            + ", remaining "
-                            + (end - at));
+            throw notEnoughSpace(from, spellingLength(tokens.intAt(from)), end - at);
         }
-        decodeKnownInto(tokens, from, last, array, at, stop);
-        out.position(stop - out.arrayOffset());
-        return last - from;
+        return decodeInto(tokens, from, out, stop);
     }
 
     /**
-     * Writes the known ids {@code tokens[from, last)}, which spell exactly {@code [at, stop)} of
-     * {@code array}: a short token in two 8-byte stores while its WIDE-byte window stays within the
-     * output, the bytes past the token the next tokens' own; the last tokens of the output, and
-     * long ones, copied exactly.
+     * Into the library's own array, where padding past the output is harmless: no count, the
+     * windows bounded by the limit alone, as far as whole tokens fit; the ids known. The position
+     * advances by the bytes written; a first token that does not fit is an
+     * IllegalArgumentException.
      */
-    private void decodeKnownInto(
-            IntSequence tokens, int from, int last, byte[] array, int at, int stop) {
-        for (int i = from; i < last; i++) {
+    int decodeBytesIntoOwn(IntSequence tokens, int from, ByteBuffer own) {
+        int consumed = decodeInto(tokens, from, own, own.arrayOffset() + own.limit());
+        if (consumed == 0 && from < tokens.length()) {
+            throw notEnoughSpace(from, spellingLength(tokens.intAt(from)), own.remaining());
+        }
+        return consumed;
+    }
+
+    /**
+     * Writes known ids from {@code from} into the buffer's array, whole tokens as far as they fit
+     * its limit, and advances its position: a short token in two 8-byte stores while its WIDE-byte
+     * window stays before {@code stop}, the bytes past the token the next tokens' own; the rest
+     * copied exactly. {@code stop} is the output's end, which keeps every store inside it, or the
+     * limit for an array of the library's own.
+     */
+    private int decodeInto(IntSequence tokens, int from, ByteBuffer out, int stop) {
+        byte[] array = out.array();
+        int at = out.arrayOffset() + out.position();
+        int limit = out.arrayOffset() + out.limit();
+        int i = from;
+        for (int n = tokens.length(); i < n; i++) {
             int id = tokens.intAt(i);
             int length = shortLengths[id];
             if (length != 0 && at + WIDE <= stop) {
@@ -644,10 +655,25 @@ final class TiktokenModel extends AbstractTokenizationModel {
             } else {
                 byte[] spelling = tokenBytesById[id];
                 length = spelling.length;
+                if (at + length > limit) {
+                    break;
+                }
                 System.arraycopy(spelling, 0, array, at, length);
             }
             at += length;
         }
+        out.position(at - out.arrayOffset());
+        return i - from;
+    }
+
+    private static IllegalArgumentException notEnoughSpace(int index, int need, int remaining) {
+        return new IllegalArgumentException(
+                "Not enough output space for token at index "
+                        + index
+                        + ": need "
+                        + need
+                        + ", remaining "
+                        + remaining);
     }
 
     /** How many bytes an id spells; an unknown id is refused. */
