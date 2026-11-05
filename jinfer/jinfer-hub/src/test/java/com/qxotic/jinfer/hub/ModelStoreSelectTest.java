@@ -56,6 +56,32 @@ class ModelStoreSelectTest {
     }
 
     @Test
+    void offlineAQuantSelectsWhatItLastSelectedOnline() {
+        assertEquals(
+                "thing-Q8_0.gguf",
+                ModelStore.of(root, repository()).select("hf.co/jinfer-tests/thing:Q8_0"));
+        ModelStore offline = ModelStore.of(root); // no source to list
+        assertEquals("thing-Q8_0.gguf", offline.select("hf.co/jinfer-tests/thing:q8_0"));
+        UncheckedIOException never = // a quant never selected has no answer
+                assertThrows(
+                        UncheckedIOException.class,
+                        () -> offline.select("hf.co/jinfer-tests/thing:Q4_K_M"));
+        assertTrue(never.getMessage().contains("no source"), never.getMessage());
+    }
+
+    @Test
+    void onlineAlwaysListsAndTheSelectionFollows() {
+        ModelStore.of(root, repository()).select("hf.co/jinfer-tests/thing:Q8_0");
+        FakeSource renamed =
+                new FakeSource("fake").serving("", new RemoteFile("thing-v2-Q8_0.gguf", 10, null));
+        assertEquals(
+                "thing-v2-Q8_0.gguf",
+                ModelStore.of(root, renamed).select("hf.co/jinfer-tests/thing:Q8_0"));
+        assertEquals(
+                "thing-v2-Q8_0.gguf", ModelStore.of(root).select("hf.co/jinfer-tests/thing:Q8_0"));
+    }
+
+    @Test
     void offlineHasNoListingToSelectFrom() {
         UncheckedIOException e =
                 assertThrows(

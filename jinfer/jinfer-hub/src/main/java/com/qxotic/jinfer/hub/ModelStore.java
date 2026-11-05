@@ -291,17 +291,24 @@ public final class ModelStore {
     public String select(String ref) {
         requireRef(ref);
         ModelRef parsed = ModelRef.parse(ref);
-        requireOnlineFor(parsed.toString(), lookedIn(parsed), Policy.USE_CACHE);
         List<ModelSource> serving = sources.stream().filter(s -> s.supports(parsed)).toList();
+        if (serving.isEmpty() || offlineSource() != null) { // no listing: the quant's last answer
+            String known = selected(parsed);
+            if (known != null) return known;
+        }
+        requireOnlineFor(parsed.toString(), lookedIn(parsed), Policy.USE_CACHE);
         if (serving.isEmpty()) {
             throw new UncheckedIOException(
                     new IOException(parsed + ": no source in this store serves " + parsed.host()));
         }
+        String file;
         try {
-            return select(parsed, serving.getFirst()).path();
+            file = select(parsed, serving.getFirst()).path();
         } catch (IOException e) {
             throw new UncheckedIOException("could not resolve " + parsed + ": " + e, e);
         }
+        remember(parsed, file);
+        return file;
     }
 
     private Path resolve(String pathOrRef, Policy policy) {
@@ -1092,6 +1099,33 @@ public final class ModelStore {
             at = at.resolve(segment);
         }
         return at;
+    }
+
+    /**
+     * The file a quant last selected, kept as huggingface_hub keeps refs/main and ollama a tag's
+     * manifest: online always lists and rewrites it, offline answers from it.
+     */
+    private Path selection(ModelRef ref) {
+        return folderDir(ref).resolve("quants").resolve(ref.quant().toLowerCase(Locale.ROOT));
+    }
+
+    private String selected(ModelRef ref) {
+        if (ref.quant() == null) return null;
+        try {
+            String file = Files.readString(selection(ref)).strip();
+            return file.isEmpty() ? null : file;
+        } catch (IOException | InvalidPathException none) {
+            return null;
+        }
+    }
+
+    private void remember(ModelRef ref, String file) {
+        if (ref.quant() == null) return;
+        try {
+            Hub.writeRef(selection(ref), file);
+        } catch (IOException | InvalidPathException ignored) {
+            // ponytail: best effort; a read-only cache only loses the offline answer
+        }
     }
 
     private Path repoDir(ModelRef ref) {

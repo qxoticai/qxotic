@@ -272,7 +272,7 @@ final class Hub {
     /**
      * Writes a {@code refs/<branch>} file the way the hub does: content is the commit, atomically.
      */
-    private static void writeRef(Path refFile, String commit) throws IOException {
+    static void writeRef(Path refFile, String commit) throws IOException {
         byte[] bytes = commit.getBytes(StandardCharsets.UTF_8);
         if (Files.isRegularFile(refFile) && Arrays.equals(Files.readAllBytes(refFile), bytes))
             return;

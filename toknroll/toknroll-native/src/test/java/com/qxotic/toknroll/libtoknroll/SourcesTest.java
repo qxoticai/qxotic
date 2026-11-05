@@ -139,6 +139,14 @@ class SourcesTest {
     }
 
     @Test
+    void offlineAQuantReachesTheHeaderItSelectedOnline() {
+        Sources.locate(
+                "hf.co/t/thing:Q8_0", store(new FakeSource().serving("", "thing-Q8_0.gguf")));
+        Sources.Located at = Sources.locate("t/thing:Q8_0", ModelStore.of(root)); // no source
+        assertEquals("thing-Q8_0.gguf", at.ggufFile());
+    }
+
+    @Test
     void aTiktokenRepositoryGoesToTheLoadersOwnHubPath() {
         FakeSource fake = new FakeSource().serving("", "tiktoken.model", "tokenizer_config.json");
         Sources.Located at = Sources.locate("t/thing@v1", store(fake));
