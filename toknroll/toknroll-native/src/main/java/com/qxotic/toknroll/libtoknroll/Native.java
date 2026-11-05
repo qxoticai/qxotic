@@ -338,15 +338,18 @@ public final class Native {
             if (textOffsets.isNull() || offsets.isNull())
                 throw Errors.invalid("text_offsets and offsets must not be NULL");
             if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
+            // compared as they come: subtracting two wild offsets first could wrap
             long base = textOffsets.read(0);
             if (base < 0) throw Errors.invalid("text_offsets must not be negative");
             long[] starts = new long[count + 1]; // the texts' offsets from the first
+            long previous = base;
             for (int i = 1; i <= count; i++) {
-                starts[i] = textOffsets.read(i) - base;
-                if (starts[i] < starts[i - 1])
-                    throw Errors.invalid("text_offsets must not decrease, at " + i);
-                if (starts[i] - starts[i - 1] > Integer.MAX_VALUE)
+                long at = textOffsets.read(i);
+                if (at < previous) throw Errors.invalid("text_offsets must not decrease, at " + i);
+                if (at - previous > Integer.MAX_VALUE)
                     throw Errors.invalid("text " + (i - 1) + " is over 2^31 bytes");
+                starts[i] = at - base;
+                previous = at;
             }
             if (texts.isNull() && starts[count] > 0) throw Errors.invalid("texts is NULL");
             Tokenizer tokenizer = loaded.tokenizer();

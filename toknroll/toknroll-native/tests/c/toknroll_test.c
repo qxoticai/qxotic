@@ -757,6 +757,11 @@ static void batch(void) {
     CHECK_ERROR(toknroll_encode_batch(t, texts, back, 2, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "text_offsets must not decrease, at 2");
     const int64_t below[] = {-1, 3};
     CHECK_ERROR(toknroll_encode_batch(t, texts, below, 1, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "text_offsets must not be negative");
+    /* wild offsets are refused before any read: a difference that would wrap, a text past 2^31 bytes */
+    const int64_t wrap[] = {INT64_MAX, INT64_MIN};
+    CHECK_ERROR(toknroll_encode_batch(t, "x", wrap, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text_offsets must not decrease, at 1");
+    const int64_t huge[] = {0, INT64_MAX};
+    CHECK_ERROR(toknroll_encode_batch(t, "x", huge, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text 0 is over 2^31 bytes");
     CHECK_ERROR(toknroll_encode_batch(t, NULL, at, 4, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "texts is NULL");
     toknroll_tokenizer_free(t);
 }
