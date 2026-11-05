@@ -84,8 +84,16 @@ check-static: check-exports target/tokenize-static target/toknroll_test-static
 	./target/tokenize-static $(SOURCE) "Hello, Tok'n'Roll!"
 	./target/toknroll_test-static
 
-check: check-version check-exports check-c target/tokenize check-static
+check: check-version check-exports check-c target/tokenize check-static check-leaks
 	./target/tokenize $(SOURCE) "Hello, Tok'n'Roll!"
 	cd python && python3 -m unittest discover -s tests -t tests
 
-.PHONY: libtoknroll pgo-profile check check-c check-static
+# nothing the library allocates is lost, not even once at start: valgrind finds a block nothing points to.
+# ponytail: valgrind runs no AVX-512, so a QUICK build on an AVX-512 machine (x86-64-v4) is skipped
+check-leaks: target/tokenize
+	@if ! command -v valgrind > /dev/null; then echo "no valgrind: leaks not checked"; \
+	elif readelf -n $(LIB) | grep -q 'x86-64-v4'; then echo "an x86-64-v4 build valgrind cannot run: leaks not checked"; \
+	else valgrind -q --leak-check=full --errors-for-leak-kinds=definite --error-exitcode=1 \
+	    ./target/tokenize $(SOURCE) "Hello, Tok'n'Roll!" > /dev/null && echo "no block definitely lost"; fi
+
+.PHONY: libtoknroll pgo-profile check check-c check-static check-leaks

@@ -82,8 +82,6 @@ static port_tls_t key;
 static char program[] = STR(TOKNROLL_PROGRAM);   /* argv[0]; GraalVM parses the rest like a java command line */
 static char** options;                  /* configure's, copied */
 static int option_count;
-static char** argv;                     /* the runtime's command line, kept for its lifetime */
-static char* env;                       /* the environment's options, which argv points into */
 static const char* configured_by;       /* the public function configure came through, once */
 static long created;                    /* set when creation starts, port_load/port_store: then configure is too late */
 static long started;                    /* the runtime is up and this file's state with it: port_load/port_store */
@@ -267,27 +265,28 @@ static void start(void) {
      * overrides. Split on whitespace; a value with a space in it goes through configure. ponytail: no quoting */
     static const char blanks[] = " \t\r\n";
     const char* e = getenv(STR(TOKNROLL_OPTIONS_ENV));
-    env = port_strdup(e ? e : "");
+    char* env = port_strdup(e ? e : "");   /* argv points into it */
     if (!env) { out_of_memory(); return; }
     size_t tokens = 0;
     for (const char* s = env + strspn(env, blanks); *s; s += strspn(s, blanks)) {
         tokens++;
         s += strcspn(s, blanks);
     }
-    argv = malloc((3 + (size_t) option_count + tokens) * sizeof *argv);   /* argv[0], the image's own file, -Dtoknroll.program */
-    if (!argv) { out_of_memory(); return; }
+    char** argv = malloc((3 + (size_t) option_count + tokens) * sizeof *argv);   /* argv[0], the image's own file, -Dtoknroll.program */
+    char* self = NULL;   /* the image's own file as an option */
+    if (!argv) { free(env); out_of_memory(); return; }
     int argc = 0;
     argv[argc++] = program;
     for (int i = 0; i < option_count; i++) argv[argc++] = options[i];
 #ifdef TOKNROLL_SELF_PROPERTY
-    const char* self = self_path();
-    if (self) {
+    const char* path = self_path();
+    if (path) {
         static const char prefix[] = "-D" STR(TOKNROLL_SELF_PROPERTY) "=";
-        size_t size = sizeof prefix + strlen(self);
-        char* option = malloc(size);
-        if (!option) { out_of_memory(); return; }
-        snprintf(option, size, "%s%s", prefix, self);
-        argv[argc++] = option;
+        size_t size = sizeof prefix + strlen(path);
+        self = malloc(size);
+        if (!self) { free(argv); free(env); out_of_memory(); return; }
+        snprintf(self, size, "%s%s", prefix, path);
+        argv[argc++] = self;
     }
 #endif
     for (char* s = env + strspn(env, blanks); *s; s += strspn(s, blanks)) {
@@ -303,12 +302,17 @@ static void start(void) {
     params.argv = argv;
     graal_thread* thread;
     int rc = graal_create_isolate(&params, &isolate, &thread);
+    /* the runtime parsed its command line into strings of its own while starting: the C copy goes */
+    int from_env = *env != '\0';
+    free(self);
+    free(argv);
+    free(env);
     if (rc != 0) {
         /* the C API returns a code only; the runtime names a rejected option on stderr itself. 22 is
          * ARGUMENT_PARSING_FAILED in GraalVM's CEntryPointErrors, stable across the releases we build with */
         isolate = NULL;
         const char* source = STR(TOKNROLL_OPTIONS_ENV);
-        if (configured_by) source = *env ? "configure or the environment" : configured_by;
+        if (configured_by) source = from_env ? "configure or the environment" : configured_by;
         if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which", source);
         else failed("the runtime could not be started (error %d)", rc);
         return;
