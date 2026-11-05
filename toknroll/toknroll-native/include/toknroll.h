@@ -42,11 +42,14 @@
  *              tokenizer.json. A bare owner/repo is the repository root, a folder: it never opens a
  *              GGUF. A GGUF on a hub, named by :quant or a /path ending in .gguf, is read for its
  *              header only, never its weights. Files land in the cache jinfer shares;
- *              -Dtoknroll.cache.root, else TOKNROLL_CACHE_ROOT in the environment, moves it,
- *              -Dtoknroll.offline=true never fetches. Missing is TOKNROLL_ENOTFOUND; a malformed
- *              reference, an unknown host, a file named twice (by /path and :quant), a file of no
- *              known kind or one that does not parse is TOKNROLL_EINVAL. A valid one toknroll does not
- *              implement (the README lists the families it tests) is TOKNROLL_EUNSUPPORTED.
+ *              -Dtoknroll.cache.root, else TOKNROLL_CACHE_ROOT in the environment, moves it, though a
+ *              file the Hugging Face hub cache holds (HF_HUB_CACHE, else HF_HOME/hub, else
+ *              ~/.cache/huggingface/hub) is still read in place: HF_HUB_CACHE at an empty folder keeps
+ *              every load to the root. -Dtoknroll.offline=true never fetches. Missing is
+ *              TOKNROLL_ENOTFOUND; a malformed reference, an unknown host, a file named twice (by
+ *              /path and :quant), a file of no known kind or one that does not parse is
+ *              TOKNROLL_EINVAL. A valid one toknroll does not implement (the README lists the families
+ *              it tests) is TOKNROLL_EUNSUPPORTED.
  *                Qwen/Qwen3-0.6B                         the repository's tokenizer.json
  *                LiquidAI/LFM2.5-350M-GGUF:Q8_0          the header of that GGUF
  *                org/repo/tokenizers/v2                  a folder inside a repository

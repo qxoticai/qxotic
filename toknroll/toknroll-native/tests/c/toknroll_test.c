@@ -482,6 +482,24 @@ static void load_cache_root_from_the_environment(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* a file the Hugging Face hub cache holds is read in place, whatever the cache root: HF_HUB_CACHE is a
+ * hand-made hub cache, the root another, empty folder, and the load is offline */
+static void load_from_the_hub_cache(void) {
+    const char* dirs[] = {TMP("hfhub"), TMP("hfhub/models--ctest-hf--repo"), TMP("hfhub/models--ctest-hf--repo/refs"),
+                          TMP("hfhub/models--ctest-hf--repo/snapshots"),
+                          TMP("hfhub/models--ctest-hf--repo/snapshots/c0ffee")};
+    for (int i = 0; i < COUNT(dirs); i++) make_dir(dirs[i]);
+    write_file(TMP("hfhub/models--ctest-hf--repo/refs/main"), "c0ffee", 6);
+    write_tiny_gguf(TMP("hfhub/models--ctest-hf--repo/snapshots/c0ffee/tiny.gguf"), "gpt2");
+    char root[700];
+    snprintf(root, sizeof root, "-Dtoknroll.cache.root=%s", TMP("emptyroot"));
+    const char* options[] = {"-Dtoknroll.offline=true", root};
+    CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
+    toknroll_tokenizer* t = toknroll_tokenizer_load("ctest-hf/repo/tiny.gguf");
+    CHECK_STR(t ? "" : LE(NULL), "");
+    toknroll_tokenizer_free(t);
+}
+
 /* a valid tokenizer of a kind toknroll does not implement: the caller may fall back to another library */
 static void load_unsupported(void) {
     const char* wordpiece = TMP("wordpiece.json");
@@ -1630,6 +1648,7 @@ static const scenario scenarios[] = {
     {"load_by_content", load_by_content, NULL},
     {"load_references", load_references, NULL},
     {"load_unsupported", load_unsupported, NULL},
+    {"load_from_the_hub_cache", load_from_the_hub_cache, "HF_HUB_CACHE=" TMP("hfhub")},
     {"load_cache_root_from_the_environment", load_cache_root_from_the_environment,
      "TOKNROLL_CACHE_ROOT=" TMP("envcache")},
     {"encode", encode, NULL},
