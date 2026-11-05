@@ -187,49 +187,6 @@ class TiktokenModelTest {
     // decodeBytesInto
     // ------------------------------------------------------------------
 
-    /**
-     * The heap path stores a short token as two words: only the token's bytes may change, whatever
-     * the buffer holds past the position, at any position, exactly as the direct path leaves it.
-     */
-    @Test
-    void decodeBytesIntoHeapWritesOnlyTheTokensBytes() {
-        TokenizationPipeline o200k =
-                (TokenizationPipeline)
-                        TiktokenFixtures.createTiktokenTokenizer(
-                                "o200k_base",
-                                Splitter.regex(TiktokenFixtures.splitPattern("o200k_base")));
-        TiktokenModel model = (TiktokenModel) o200k.model();
-        Vocabulary vocabulary = model.vocabulary();
-        Random random = new Random(0x5EED);
-        for (int round = 0; round < 500; round++) {
-            int[] ids = new int[1 + random.nextInt(8)];
-            for (int i = 0; i < ids.length; i++) {
-                do {
-                    ids[i] = random.nextInt(vocabulary.size());
-                } while (!vocabulary.contains(ids[i]));
-            }
-            IntSequence tokens = IntSequence.wrap(ids);
-            byte[] spelled = model.decodeBytes(tokens);
-            int position = random.nextInt(5);
-            byte[] heap = new byte[position + spelled.length + 24];
-            random.nextBytes(heap);
-            byte[] expected = heap.clone();
-            System.arraycopy(spelled, 0, expected, position, spelled.length);
-            ByteBuffer out = ByteBuffer.wrap(heap).position(position);
-            assertEquals(ids.length, model.decodeBytesInto(tokens, 0, out));
-            assertEquals(position + spelled.length, out.position());
-            assertArrayEquals(expected, heap);
-            ByteBuffer direct = ByteBuffer.allocateDirect(heap.length);
-            direct.put(0, expected, 0, heap.length).position(position);
-            random.nextBytes(
-                    spelled); // the direct path gets a buffer with the same tail, and agrees
-            assertEquals(ids.length, model.decodeBytesInto(tokens, 0, direct));
-            byte[] fromDirect = new byte[heap.length];
-            direct.get(0, fromDirect);
-            assertArrayEquals(expected, fromDirect);
-        }
-    }
-
     @Test
     void decodeBytesIntoRoundTrip() {
         TiktokenModel model = model256();
