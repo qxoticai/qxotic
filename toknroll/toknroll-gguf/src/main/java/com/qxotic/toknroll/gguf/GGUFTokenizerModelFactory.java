@@ -6,7 +6,9 @@ import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 final class GGUFTokenizerModelFactory {
@@ -69,6 +71,25 @@ final class GGUFTokenizerModelFactory {
         if (tokens == null || tokens.length == 0) {
             throw new IllegalArgumentException(
                     "GGUF metadata key missing or empty: " + GGUFMetadataKeys.TOKENS);
+        }
+
+        // a spelling names one token, so an id is what toknroll_id says: llama.cpp refuses the file
+        // too (it asserts as many spellings as tokens), skipping an empty one, which it renames
+        Map<String, Integer> spelled = new HashMap<>(2 * tokens.length);
+        for (int i = 0; i < tokens.length; i++) {
+            if (tokens[i].isEmpty()) continue;
+            Integer first = spelled.putIfAbsent(tokens[i], i);
+            if (first != null) {
+                throw new IllegalArgumentException(
+                        GGUFMetadataKeys.TOKENS
+                                + "["
+                                + i
+                                + "] spells '"
+                                + tokens[i]
+                                + "', as token "
+                                + first
+                                + " does: each token needs a spelling of its own");
+            }
         }
 
         String[] normalizedTokens = new String[tokens.length];
