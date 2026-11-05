@@ -9,6 +9,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashMap;
@@ -236,10 +237,22 @@ final class SpecialsImpl implements Specials {
             node.id = tokenId;
         }
 
+        /** Every node frozen, by a loop: a token is as deep as it is long, too deep to recurse. */
         Node freeze() {
-            keys = building.keySet().stream().mapToInt(Integer::intValue).toArray();
-            children = building.values().stream().map(Node::freeze).toArray(Node[]::new);
-            building = null;
+            ArrayDeque<Node> unfrozen = new ArrayDeque<>();
+            unfrozen.push(this);
+            while (!unfrozen.isEmpty()) {
+                Node node = unfrozen.pop();
+                node.keys = new int[node.building.size()];
+                node.children = new Node[node.keys.length];
+                int i = 0;
+                for (Map.Entry<Integer, Node> child : node.building.entrySet()) {
+                    node.keys[i] = child.getKey();
+                    node.children[i++] = child.getValue();
+                    unfrozen.push(child.getValue());
+                }
+                node.building = null;
+            }
             return this;
         }
 

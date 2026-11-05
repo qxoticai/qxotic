@@ -100,6 +100,26 @@ class SpecialsTest {
         }
 
         @Test
+        void aSpecialTokenTensOfThousandsLongBuildsOnASmallStack() throws InterruptedException {
+            // a token is as deep in the trie as it is long: frozen by recursion, it overflowed
+            String token = "a".repeat(50_000);
+            Object[] outcome = new Object[1];
+            Runnable build =
+                    () -> {
+                        try {
+                            outcome[0] = specials(Mini.of(token), Set.of(token));
+                        } catch (Throwable t) {
+                            outcome[0] = t;
+                        }
+                    };
+            Thread small = new Thread(null, build, "small stack", 256 * 1024);
+            small.start();
+            small.join();
+            assertTrue(outcome[0] instanceof Specials, String.valueOf(outcome[0]));
+            assertEquals(Set.of(token), ((Specials) outcome[0]).tokens().keySet());
+        }
+
+        @Test
         void idsComeFromAVocabularyThatHoldsItsSpecialsApart() {
             Vocabulary vocabulary =
                     Toknroll.vocabulary(Map.of("<|s1|>", 100, "<|s2|>", 200), "a", "b");
@@ -636,7 +656,10 @@ class SpecialsTest {
         @Override
         public int decodeBytesInto(IntSequence tokens, int at, ByteBuffer out) {
             if (at == tokens.length()) return 0;
-            out.put(vocabulary.token(tokens.intAt(at)).getBytes(UTF_8)); // ponytail: tokens fit
+            byte[] bytes = vocabulary.token(tokens.intAt(at)).getBytes(UTF_8);
+            if (bytes.length > out.remaining()) // the contract's way: the caller grows and retries
+            throw new IllegalArgumentException("token " + tokens.intAt(at) + " does not fit");
+            out.put(bytes);
             return 1;
         }
 
