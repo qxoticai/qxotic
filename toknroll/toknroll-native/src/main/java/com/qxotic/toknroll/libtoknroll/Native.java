@@ -359,6 +359,7 @@ public final class Native {
             if (count < 0) throw Errors.invalid("count must not be negative");
             if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
             if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
+            Specials matcher = specials(flags) ? loaded.specials() : null; // bad flags: refused, texts or none
             if (count == 0) { // no text: the arrays may be NULL, as any pointer with length 0
                 if (offsets.isNonNull()) offsets.write(0, 0);
                 return 0;
@@ -380,7 +381,6 @@ public final class Native {
             }
             if (texts.isNull() && starts[count] > 0) throw Errors.invalid("texts is NULL");
             Tokenizer tokenizer = loaded.tokenizer();
-            Specials matcher = specials(flags) ? loaded.specials() : null;
             // raw addresses: a lambda in an image cannot capture a word
             long in = texts.rawValue() + base;
             // runs of texts of about equal bytes, several per core so a long text holds no core

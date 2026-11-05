@@ -110,9 +110,8 @@ def _id(value: object, what: str) -> int:
 
 
 def _ids(value, what: str) -> tuple[object, int, int]:
-    """(owner, address, count) of int32 ids: a writable int32 buffer in place, anything else copied once."""
-    if isinstance(value, array) and value.itemsize == 4 and value.typecode in ("i", "l"):
-        return value, value.buffer_info()[0], len(value)
+    """(owner, address, count) of int32 ids: a writable int32 buffer in place, anything else copied once.
+    The owner is a buffer export, so the ids cannot move while the call reads them: a resize raises."""
     try:
         view = memoryview(value)
     except TypeError:

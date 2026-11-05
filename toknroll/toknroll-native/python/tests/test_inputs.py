@@ -87,6 +87,17 @@ class IdBufferTest(unittest.TestCase):
                 self.assertIn("no token with id", str(e.exception))   # a gap below the size is no token either
                 self.assertIn("ids[0]", str(e.exception))
 
+    def test_ids_read_in_place_cannot_move_during_the_call(self):
+        """The call reads the array's memory with the GIL released: the owner it keeps is a buffer export, so a resize
+        from another thread raises instead of moving the ids under the call."""
+        ids = array("i", self.ids)
+        owner, address, count = toknroll._ids(ids, "decode")
+        self.assertEqual((address, count), (ids.buffer_info()[0], len(ids)))
+        with self.assertRaises(BufferError):
+            ids.append(1)
+        del owner
+        ids.append(1)  # released with the owner
+
     def test_a_million_ids(self):
         ids = self.t.encode("word " * 250_000)
         self.assertGreater(len(ids), 250_000)
@@ -297,6 +308,16 @@ class LengthTest(unittest.TestCase):
             data = b"Hello, world! and the rest of the buffer"
             self.assertEqual(lib.toknroll_encode(t._handle, data, 13, 0, None, 0), len(t.encode("Hello, world!")))
             self.assertEqual(lib.toknroll_encode(t._handle, None, 0, 0, None, 0), 0)   # no text, no pointer
+
+    def test_an_empty_batch_still_checks_its_flags(self):
+        """Count 0 takes NULL arrays and returns 0, but an unknown flag is EINVAL there as everywhere."""
+        lib = N.library()
+        with toknroll.load(GGUF) as t:
+            self.assertEqual(lib.toknroll_encode_batch(t._handle, None, None, 0, 0, None, 0, None), 0)
+            self.assertEqual(lib.toknroll_encode_batch(t._handle, None, None, 0, 2, None, 0, None), N.EINVAL)
+            code = ctypes.c_int32()
+            self.assertIn(b"unknown flags", lib.toknroll_last_error(ctypes.byref(code)))
+            self.assertEqual(code.value, N.EINVAL)
 
     def test_a_nul_is_a_character(self):
         with toknroll.load(GGUF) as t:
