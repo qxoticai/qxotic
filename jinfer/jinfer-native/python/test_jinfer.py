@@ -196,7 +196,7 @@ except TypeError as e:
 try:
     m.tokenizer.decode([10**6]); ok(False, "an out-of-range token id must be refused")
 except ValueError as e:  # toknroll's InvalidArgument: the tokenizer's errors are toknroll's
-    ok(type(e).__module__ == "toknroll" and "outside the vocabulary" in str(e), f"token id range: {e}")
+    ok(type(e).__module__ == "toknroll" and "no token with id" in str(e), f"token id range: {e}")
 try:
     m.chat("Hi", tools=[lambda x: x]); ok(False, "a lambda tool must be refused")
 except jinfer.InvalidArgument as e:

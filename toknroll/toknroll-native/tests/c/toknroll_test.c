@@ -632,10 +632,10 @@ static void decode(void) {
     /* errors: decoded_tokens is left as it was */
     decoded_tokens = -7;
     int32_t outside[] = {'a', VOCAB_JSON};
-    CHECK_ERROR(toknroll_decode(t, outside, 2, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id 259 at index 1 is outside the vocabulary of 259");
+    CHECK_ERROR(toknroll_decode(t, outside, 2, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "no token with id 259, at ids[1]");
     int32_t negative[] = {-1};
-    CHECK_ERROR(toknroll_decode(t, negative, 1, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id -1 at index 0");
-    CHECK_ERROR(toknroll_decode(t, negative, 1, 0, NULL, 0, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id -1");   /* sizing checks too */
+    CHECK_ERROR(toknroll_decode(t, negative, 1, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "no token with id -1, at ids[0]");
+    CHECK_ERROR(toknroll_decode(t, negative, 1, 0, NULL, 0, &decoded_tokens), TOKNROLL_EINVAL, LE, "no token with id -1");   /* sizing checks too */
     CHECK_ERROR(toknroll_decode(NULL, HELLO, 4, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
     CHECK_ERROR(toknroll_decode(t, HELLO, -1, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "count must not be negative");
     CHECK_ERROR(toknroll_decode(t, NULL, 2, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "ids is NULL");
@@ -643,7 +643,7 @@ static void decode(void) {
     CHECK_ERROR(toknroll_decode(t, HELLO, 4, 0, NULL, 8, &decoded_tokens), TOKNROLL_EINVAL, LE, "out is NULL");
     CHECK_ERROR(toknroll_decode(t, HELLO, 4, -1, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "start -1 is outside [0, count 4]");
     CHECK_ERROR(toknroll_decode(t, HELLO, 4, 5, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "start 5 is outside [0, count 4]");
-    CHECK_ERROR(toknroll_decode(t, outside, 2, 1, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "token id 259 at index 1");   /* absolute */
+    CHECK_ERROR(toknroll_decode(t, outside, 2, 1, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "no token with id 259, at ids[1]");   /* absolute */
     CHECK_ERROR(toknroll_decode(t, HELLO, INT32_MAX, 0, out, 64, &decoded_tokens), TOKNROLL_EINVAL, LE, "ids are over 2 GiB");   /* before any read */
     CHECK_EQ(decoded_tokens, -7);
     toknroll_tokenizer_free(t);

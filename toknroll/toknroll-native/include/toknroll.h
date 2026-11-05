@@ -132,8 +132,8 @@ TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* te
  * begin a new one. Only ids[start, count) are read. Over capacity, out holds the tokens that fit
  * whole in byte_capacity - 1 bytes, then the NUL. decoded_tokens, unless NULL, gets how many from
  * start, 0 when byte_capacity is 0: start + *decoded_tokens is count exactly when the text is
- * whole. A start outside [0, count] or an id outside the vocabulary is TOKNROLL_EINVAL, and
- * decoded_tokens is left as it was. */
+ * whole. A start outside [0, count] or an id no token has is TOKNROLL_EINVAL, and decoded_tokens
+ * is left as it was. */
 TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
                                      int32_t start, char* out, int64_t byte_capacity,
                                      int32_t* decoded_tokens);
@@ -146,6 +146,8 @@ TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const ch
                                            const int64_t* text_offsets, int32_t count, uint32_t flags,
                                            int32_t* out, int32_t token_capacity, int32_t* offsets);
 
+/* One past the largest id. An id below it may still have no token, a gap the file leaves:
+ * toknroll_token and toknroll_token_flags say TOKNROLL_ENOTFOUND for it, and decode refuses it. */
 TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
 /* An id's TOKNROLL_TOKEN_* flags; negative, TOKNROLL_ENOTFOUND, when there is no such id. */
 TOKNROLL_API int64_t toknroll_token_flags(const toknroll_tokenizer* t, int32_t id);

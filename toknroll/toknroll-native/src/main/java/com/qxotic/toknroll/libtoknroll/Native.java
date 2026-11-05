@@ -462,15 +462,10 @@ public final class Native {
                         .get(copy, from, n);
             Tokenizer tokenizer = loaded.tokenizer();
             Vocabulary vocab = tokenizer.vocabulary();
-            for (int i = from; i < copy.length; i++) {
+            for (int i = from; i < copy.length; i++) { // a gap below the size is no token either
                 if (!vocab.contains(copy[i]))
                     throw Errors.invalid(
-                            "token id "
-                                    + copy[i]
-                                    + " at index "
-                                    + (start + i - from)
-                                    + " is outside the vocabulary of "
-                                    + vocab.size());
+                            "no token with id " + copy[i] + ", at ids[" + (start + i - from) + "]");
             }
             if (from == 1) copy[0] = copy[1];
             IntSequence tokens = IntSequence.wrap(copy);
