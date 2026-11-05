@@ -884,6 +884,41 @@ static void round_trips(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* one token longer than the 64 KB a decode goes through at a time: the chunk grows to it, and over
+ * capacity it is left out whole */
+static void decode_a_token_past_the_chunk(void) {
+    enum { LONG = 70000 };
+    write_tiny_json(TMP("tiny-long.json"));
+    FILE* f = fopen(TMP("tiny-long.json"), "rb");
+    static char tiny[1 << 16], file[(1 << 16) + LONG + 64];
+    size_t n = fread(tiny, 1, sizeof tiny - 1, f);
+    fclose(f);
+    const char* at = strstr(tiny, "\"added_tokens\":[") + strlen("\"added_tokens\":[");
+    size_t k = (size_t) (at - tiny);
+    memcpy(file, tiny, k);
+    k += (size_t) sprintf(file + k, "{\"id\":300,\"special\":true,\"content\":\"");
+    memset(file + k, 'x', LONG);
+    k += LONG;
+    k += (size_t) sprintf(file + k, "\"},");
+    memcpy(file + k, at, n - (size_t) (at - tiny));
+    write_file(TMP("long-token.json"), file, k + n - (size_t) (at - tiny));
+    toknroll_tokenizer* t = toknroll_tokenizer_load(TMP("long-token.json"));
+    CHECK(t != NULL);
+    if (!t) return;
+    const int32_t ids[] = {ID_HE, 300};   /* "he", then the long one */
+    char* out = (char*) malloc(LONG + 3);
+    int32_t decoded = -7;
+    CHECK_EQ(toknroll_decode(t, ids, 2, 0, out, LONG + 3, &decoded), LONG + 2);
+    CHECK_EQ(decoded, 2);
+    CHECK(!memcmp(out, "he", 2) && out[2] == 'x' && out[LONG + 1] == 'x' && out[LONG + 2] == 0);
+    CHECK_EQ(toknroll_decode(t, ids, 2, 0, out, LONG, &decoded), LONG + 2);   /* it does not fit: left out */
+    CHECK_EQ(decoded, 1);
+    CHECK_STR(out, "he");
+    CHECK_EQ(toknroll_decode(t, ids, 2, 0, NULL, 0, NULL), LONG + 2);
+    free(out);
+    toknroll_tokenizer_free(t);
+}
+
 static void long_text(void) {   /* past the library's own buffers, whole and cut */
     toknroll_tokenizer* t = tiny();
     enum { REPEAT = 40000 };
@@ -1798,6 +1833,7 @@ static const scenario scenarios[] = {
     {"decode_resumes", decode_resumes, NULL},
     {"round_trips", round_trips, NULL},
     {"long_text", long_text, NULL},
+    {"decode_a_token_past_the_chunk", decode_a_token_past_the_chunk, NULL},
     {"batch", batch, NULL},
 #ifdef __linux__
     {"batch_threads_capped", batch_threads_capped, OPTIONS_VAR "=-XX:ActiveProcessorCount=2"},
