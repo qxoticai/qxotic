@@ -542,8 +542,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     @Override
     public byte[] decodeBytes(IntSequence tokens) {
-        byte[] out = new byte[countBytes(tokens)]; // which refuses an unknown id
-        decodeBytesInto(tokens, 0, ByteBuffer.wrap(out));
+        int total = countBytes(tokens); // which refuses an unknown id
+        byte[] out = new byte[total];
+        decodeKnownInto(tokens, 0, tokens.length(), out, 0, total);
         return out;
     }
 
@@ -606,43 +607,70 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Over the buffer's array: a short token in two 8-byte stores when 16 bytes are left before the
-     * limit, the bytes past its end garbage the next token overwrites; a longer one copied.
+     * Over the buffer's array: the tokens that fit are counted first, which tells where the output
+     * ends, then written by {@link #decodeKnownInto}. Nothing past the output is written.
      */
     private int decodeBytesInto(IntSequence tokens, int from, ByteBuffer out, byte[] array) {
         int at = out.arrayOffset() + out.position();
         int end = out.arrayOffset() + out.limit();
-        int i = from;
-        for (int n = tokens.length(); i < n; i++) {
-            int id = tokens.intAt(i);
-            int length = id >= 0 && id < shortLengths.length ? shortLengths[id] : 0;
-            if (length != 0 && at + 16 <= end) {
-                LONGS.set(array, at, spellingWords[2 * id]);
-                LONGS.set(array, at + 8, spellingWords[2 * id + 1]);
-                at += length;
-                continue;
-            }
-            byte[] spelling = id >= 0 && id < tokenBytesById.length ? tokenBytesById[id] : null;
-            if (spelling == null) {
-                throw unknownToken(id);
-            }
-            if (at + spelling.length > end) {
-                if (i == from) {
-                    throw new IllegalArgumentException(
-                            "Not enough output space for token at index "
-                                    + i
-                                    + ": need "
-                                    + spelling.length
-                                    + ", remaining "
-                                    + (end - at));
-                }
+        int last = from, stop = at; // the tokens that fit, and where their bytes end
+        for (int n = tokens.length(); last < n; last++) {
+            int length = spellingLength(tokens.intAt(last));
+            if (stop + length > end) {
                 break;
             }
-            System.arraycopy(spelling, 0, array, at, spelling.length);
-            at += spelling.length;
+            stop += length;
         }
-        out.position(at - out.arrayOffset());
-        return i - from;
+        if (last == from && from < tokens.length()) {
+            throw new IllegalArgumentException(
+                    "Not enough output space for token at index "
+                            + from
+                            + ": need "
+                            + spellingLength(tokens.intAt(from))
+                            + ", remaining "
+                            + (end - at));
+        }
+        decodeKnownInto(tokens, from, last, array, at, stop);
+        out.position(stop - out.arrayOffset());
+        return last - from;
+    }
+
+    /**
+     * Writes the known ids {@code tokens[from, last)}, which spell exactly {@code [at, stop)} of
+     * {@code array}: a short token in two 8-byte stores while its 16-byte window stays within the
+     * output, the bytes past the token the next tokens' own; the last tokens of the output, and
+     * long ones, copied exactly.
+     */
+    private void decodeKnownInto(
+            IntSequence tokens, int from, int last, byte[] array, int at, int stop) {
+        for (int i = from; i < last; i++) {
+            int id = tokens.intAt(i);
+            int length = shortLengths[id];
+            if (length != 0 && at + 16 <= stop) {
+                LONGS.set(array, at, spellingWords[2 * id]);
+                LONGS.set(array, at + 8, spellingWords[2 * id + 1]);
+            } else {
+                byte[] spelling = tokenBytesById[id];
+                length = spelling.length;
+                System.arraycopy(spelling, 0, array, at, length);
+            }
+            at += length;
+        }
+    }
+
+    /** How many bytes an id spells; an unknown id is refused. */
+    private int spellingLength(int id) {
+        if (id >= 0 && id < tokenBytesById.length) {
+            int length = shortLengths[id];
+            if (length != 0) {
+                return length;
+            }
+            byte[] spelling = tokenBytesById[id];
+            if (spelling != null) {
+                return spelling.length;
+            }
+        }
+        throw unknownToken(id);
     }
 
     /** Names the engine encoder once one encodes for this model. */
