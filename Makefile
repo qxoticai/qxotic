@@ -176,9 +176,9 @@ wheels: ## This machine's two wheels, built and checked from a clean export of R
 wheels-linux: ## The Linux wheels for this machine's architecture, in the manylinux container: on a Mac, Linux aarch64 (docker through Colima)
 	$(call from-export,wheels-in-container)
 
-wheels-here: # the two libraries and their checked wheels, in this tree, on this machine
-	$(MAKE) -C toknroll/toknroll-native libtoknroll check-wheel
-	$(MAKE) -C jinfer/jinfer-native libjinfer check-wheel
+wheels-here: # the two libraries, their checks (C, Python) and their checked wheels, in this tree, on this machine
+	$(MAKE) -C toknroll/toknroll-native libtoknroll check check-wheel
+	$(MAKE) -C jinfer/jinfer-native libjinfer check check-wheel
 
 # A target of this Makefile in the manylinux container of this machine's architecture, which pins the glibc
 # floor the wheels promise. It runs as the caller, with the caller's own passwd line (the JVM takes the home

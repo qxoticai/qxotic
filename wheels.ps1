@@ -28,8 +28,8 @@ New-Item -ItemType Directory -Force $export, $wheels | Out-Null
 git -C $PSScriptRoot -c core.autocrlf=false archive -o "$export.tar" $Ref; if ($LASTEXITCODE) { throw "git archive failed" }
 # Windows' own tar: a Git usr\bin on the PATH brings GNU tar, which reads C:\ as a remote host
 & "$env:SystemRoot\System32\tar.exe" -xf "$export.tar" -C $export; if ($LASTEXITCODE) { throw "tar failed" }
-& "$export\toknroll\toknroll-native\build.ps1" library check-wheel
-& "$export\jinfer\jinfer-native\build.ps1" library check-wheel
+& "$export\toknroll\toknroll-native\build.ps1" library check check-wheel
+& "$export\jinfer\jinfer-native\build.ps1" library check check-wheel
 foreach ($w in Get-Item "$export\toknroll\toknroll-native\target\wheel\*.whl", "$export\jinfer\jinfer-native\target\wheel\*.whl") {
     $parts = $w.Name.Split('-')   # a new wheel replaces the package's wheel for its platform
     Remove-Item "$wheels\$($parts[0])-*-$($parts[-1])" -ErrorAction Ignore
