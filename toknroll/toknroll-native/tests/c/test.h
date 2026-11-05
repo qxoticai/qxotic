@@ -75,6 +75,19 @@ static void write_file(const char* path, const void* data, size_t size) {
     fclose(f);
 }
 
+/* a file renamed to a UTF-8 name: Windows' C runtime reads names in the ANSI code page, so the wide call */
+static inline void rename_utf8(const char* from, const char* to) {
+#ifdef _WIN32
+    wchar_t wide_from[1024], wide_to[1024];
+    MultiByteToWideChar(CP_UTF8, 0, from, -1, wide_from, 1024);
+    MultiByteToWideChar(CP_UTF8, 0, to, -1, wide_to, 1024);
+    _wremove(wide_to);
+    if (_wrename(wide_from, wide_to)) { printf("    cannot rename to %s\n", to); exit(2); }
+#else
+    if (rename(from, to)) { printf("    cannot rename to %s\n", to); exit(2); }
+#endif
+}
+
 /* stderr into a file, the runtime's own writes included; captured_stderr reads it back, the caller frees */
 static void capture_stderr(void) {
     if (!freopen(TMP("stderr.txt"), "wb", stderr)) { printf("    cannot capture stderr\n"); exit(2); }

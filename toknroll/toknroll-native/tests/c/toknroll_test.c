@@ -448,6 +448,18 @@ static void load_paths(void) {
 
 #ifndef _WIN32
 /* a FIFO is refused, never opened: opening one with no writer blocks forever */
+/* a path is UTF-8 on every platform: a name beyond ASCII loads, and a missing one is named back as given */
+static void load_utf8_path(void) {
+    const char* path = TMP("caf\xC3\xA9 \xE6\xB5\x8B.json");   /* "cafe" with e acute, a space, a CJK character */
+    write_tiny_json(TMP("ascii.json"));
+    rename_utf8(TMP("ascii.json"), path);
+    toknroll_tokenizer* t = toknroll_tokenizer_load(path);
+    CHECK(t != NULL);
+    CHECK_EQ(toknroll_vocabulary_size(t), VOCAB_JSON);
+    toknroll_tokenizer_free(t);
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("./" TMP("\xC3\xBC-missing.json")), TOKNROLL_ENOTFOUND, LE, "\xC3\xBC-missing.json does not exist");
+}
+
 static void load_fifo(void) {
     alarm(30);   /* the regression hangs: a hang fails the scenario */
     unlink(TMP("fifo"));
@@ -1818,6 +1830,7 @@ static const scenario scenarios[] = {
 #ifndef _WIN32
     {"fork_children", fork_children, NULL},
     {"fork_during_first_batch", fork_during_first_batch, NULL},
+    {"load_utf8_path", load_utf8_path, NULL},
     {"load_fifo", load_fifo, NULL},
 #endif
 };
