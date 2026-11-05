@@ -1,6 +1,10 @@
 package com.qxotic.jinfer.libjinfer;
 
 import com.qxotic.jinfer.chat.ModelProvider;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
+import java.nio.file.NoSuchFileException;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
@@ -72,16 +76,42 @@ final class Errors {
         return ERROR;
     }
 
+    /**
+     * A message's bound in bytes: a parser that echoes its input line cannot make one megabytes
+     * long.
+     */
+    private static final int LIMIT = 1024; // ponytail: a fixed bound
+
+    /** A file the system refused, in its own words: java.nio leaves the reason out of some. */
+    private static String plain(FileSystemException f) {
+        if (f.getReason() != null) return f.getMessage(); // "file: reason"
+        if (f instanceof AccessDeniedException) return f.getFile() + ": permission denied";
+        if (f instanceof NoSuchFileException) return f.getFile() + ": does not exist";
+        return f.getFile() + ": cannot be read";
+    }
+
+    /** At most LIMIT bytes of UTF-8, cut at a character, "…" (3 bytes) marking the cut. */
+    private static String bounded(String message) {
+        byte[] utf8 = message.getBytes(StandardCharsets.UTF_8);
+        if (utf8.length <= LIMIT) return message;
+        int end = LIMIT - 3;
+        while ((utf8[end] & 0xC0) == 0x80) end--; // never inside a character
+        return new String(utf8, 0, end, StandardCharsets.UTF_8) + "…";
+    }
+
     static int set(Throwable t) {
         if (t instanceof java.io.UncheckedIOException u && u.getCause() != null) t = u.getCause();
         // a -Djinfer.* value a flags class refused: its own message is the one to report
         if (t instanceof ExceptionInInitializerError e && e.getCause() != null) t = e.getCause();
         String message = t.getMessage();
-        if (message == null || message.isBlank() || t instanceof NullPointerException) {
+        if (t instanceof FileSystemException f) message = plain(f); // not java.nio's class names
+        else if (message == null || message.isBlank() || t instanceof NullPointerException) {
             // a message-less failure names its origin, the one thing a C caller cannot recover
             StackTraceElement[] frames = t.getStackTrace();
             message = t.getClass().getSimpleName() + (frames.length > 0 ? " at " + frames[0] : "");
         }
+        // a caller logs it as it comes: one line, bounded, as toknroll's
+        message = bounded(message.strip().replaceAll("\\s*\\R\\s*", " | "));
         // the full story reaches the host's log callback at debug level, before the error is kept:
         // the callback may call back in (Python frees a dropped handle there), and a call clears it
         LOG.log(System.Logger.Level.DEBUG, "a call failed", t);

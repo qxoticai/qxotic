@@ -627,6 +627,13 @@ static void chat_errors(void) {
     CHECK_NULL_ERROR(jinfer_chat(m, NULL), JINFER_EINVAL, LE, "request_json is NULL");
     CHECK_NULL_ERROR(jinfer_chat(m, ""), JINFER_EINVAL, LE, "request_json is not valid JSON");
     CHECK_NULL_ERROR(jinfer_chat(m, "nope"), JINFER_EINVAL, LE, "request_json is not valid JSON");
+    char* wide = (char*) malloc(200001);   /* its parser echoes the line: the message stays one line, 1 KB */
+    memset(wide, 'x', 200000);
+    wide[0] = '{';
+    wide[200000] = 0;
+    CHECK_NULL_ERROR(jinfer_chat(m, wide), JINFER_EINVAL, LE, "request_json is not valid JSON");
+    CHECK(strlen(LE(NULL)) <= 1024 && !strchr(LE(NULL), '\n'));
+    free(wide);
     CHECK_NULL_ERROR(jinfer_chat(m, "[1]"), JINFER_EINVAL, LE, "request_json must be a JSON object");
     CHECK_NULL_ERROR(jinfer_chat(m, "{}"), JINFER_EINVAL, LE, "messages must be an array");
     CHECK_NULL_ERROR(jinfer_chat(m, "{\"messages\":\"hi\"}"), JINFER_EINVAL, LE, "messages must be an array");

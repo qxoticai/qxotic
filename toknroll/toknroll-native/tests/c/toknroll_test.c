@@ -509,6 +509,34 @@ static void encode_specials(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* a failure reads as one line of at most 1 KB, in the library's words: an input echoed whole, a
+ * Java class name or GraalVM's "Stack trace is imprecise" placeholder is a regression */
+static void error_messages(void) {
+    enum { BIG = 200000 };
+    char* big = (char*) malloc(BIG);
+    memset(big, '[', BIG);
+    big[0] = '{';
+    write_file(TMP("long.json"), big, BIG);   /* its parser echoes the line */
+    free(big);
+    CHECK(toknroll_tokenizer_load(TMP("long.json")) == NULL);
+    CHECK(strlen(LE(NULL)) <= 1024 && !strchr(LE(NULL), '\n'));
+    FILE* f = fopen(TMP("type.gguf"), "wb");   /* a metadata value of type -1 */
+    fwrite("GGUF", 1, 4, f);
+    gguf_u32(f, 3); gguf_u64(f, 0); gguf_u64(f, 1); gguf_str(f, "a"); gguf_u32(f, 0xFFFFFFFFu);
+    fclose(f);
+    CHECK_NULL_ERROR(toknroll_tokenizer_load(TMP("type.gguf")), TOKNROLL_EINVAL, LE, "Invalid metadata value type index: -1");
+    CHECK(!strstr(LE(NULL), "Stack trace is imprecise"));
+#ifndef _WIN32
+    write_file(TMP("locked.json"), "{}", 2);
+    chmod(TMP("locked.json"), 0);
+    if (geteuid() != 0) {   /* root reads anything */
+        CHECK_NULL_ERROR(toknroll_tokenizer_load(TMP("locked.json")), TOKNROLL_ERROR, LE, "locked.json: permission denied");
+        CHECK(!strstr(LE(NULL), "java."));
+    }
+    chmod(TMP("locked.json"), 0600);
+#endif
+}
+
 /* ---- decode ---- */
 
 static void decode(void) {
@@ -1523,6 +1551,7 @@ static const scenario scenarios[] = {
     {"load_references", load_references, NULL},
     {"encode", encode, NULL},
     {"encode_specials", encode_specials, NULL},
+    {"error_messages", error_messages, NULL},
     {"decode", decode, NULL},
     {"decode_cuts", decode_cuts, NULL},
     {"decode_resumes", decode_resumes, NULL},

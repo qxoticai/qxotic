@@ -1,6 +1,10 @@
 package com.qxotic.toknroll.libtoknroll;
 
 import com.qxotic.toknroll.TokenizerLoadException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
+import java.nio.file.NoSuchFileException;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
@@ -69,9 +73,18 @@ final class Errors {
         return ERROR;
     }
 
+    /**
+     * A message's bound in bytes: a parser that echoes its input line cannot make one megabytes
+     * long.
+     */
+    private static final int LIMIT = 1024; // ponytail: a fixed bound
+
     static int set(Throwable t) {
         String message = t.getMessage();
-        if (message == null || message.isBlank() || t instanceof NullPointerException) {
+        // a file the system refused, in the library's words, not java.nio's class names
+        if (t.getCause() instanceof FileSystemException f && f.toString().equals(message)) t = f;
+        if (t instanceof FileSystemException f) message = plain(f);
+        else if (message == null || message.isBlank() || t instanceof NullPointerException) {
             // a message-less failure names its origin, the one thing a C caller cannot recover
             StackTraceElement[] frames = t.getStackTrace();
             message = t.getClass().getSimpleName() + (frames.length > 0 ? " at " + frames[0] : "");
@@ -79,12 +92,30 @@ final class Errors {
         Throwable cause = t.getCause();
         if (cause != null && cause.getMessage() != null && !message.contains(cause.getMessage()))
             message += ": " + cause.getMessage();
+        message = bounded(Log.oneLine(message)); // a caller logs it as it comes: one line, bounded
         int code = code(t);
         Last last = LAST.get();
         if (last.message != null) last.message.close();
         last.message = CTypeConversion.toCString(message);
         last.code = code;
         return code;
+    }
+
+    /** A file the system refused, in its own words: java.nio leaves the reason out of some. */
+    private static String plain(FileSystemException f) {
+        if (f.getReason() != null) return f.getMessage(); // "file: reason"
+        if (f instanceof AccessDeniedException) return f.getFile() + ": permission denied";
+        if (f instanceof NoSuchFileException) return f.getFile() + ": does not exist";
+        return f.getFile() + ": cannot be read";
+    }
+
+    /** At most LIMIT bytes of UTF-8, cut at a character, "…" (3 bytes) marking the cut. */
+    private static String bounded(String message) {
+        byte[] utf8 = message.getBytes(StandardCharsets.UTF_8);
+        if (utf8.length <= LIMIT) return message;
+        int end = LIMIT - 3;
+        while ((utf8[end] & 0xC0) == 0x80) end--; // never inside a character
+        return new String(utf8, 0, end, StandardCharsets.UTF_8) + "…";
     }
 
     static int lastCode() {

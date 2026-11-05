@@ -116,8 +116,12 @@ final class Log {
     }
 
     /** One line: its breaks folded, a stack trace's frames joined by " | ". */
+    static String oneLine(String text) {
+        return text.strip().replaceAll("\\s*\\R\\s*", " | ");
+    }
+
     private static void emit(int at, String text) {
-        text = text.strip().replaceAll("\\s*\\R\\s*", " | ");
+        text = oneLine(text);
         if (fn == 0) {
             System.err.println(program + ": " + NAMES[at] + ": " + text);
             return;
