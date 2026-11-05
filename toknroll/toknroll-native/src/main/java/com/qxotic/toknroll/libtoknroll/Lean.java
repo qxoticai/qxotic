@@ -9,8 +9,11 @@ import java.util.function.BooleanSupplier;
  * -Dtoknroll.image.lean=true.
  */
 final class Lean implements BooleanSupplier {
+    /** The same answer as a constant: initialized at build time, so a branch on it is dead code. */
+    static final boolean IMAGE = Boolean.getBoolean("toknroll.image.lean");
+
     @Override
     public boolean getAsBoolean() {
-        return Boolean.getBoolean("toknroll.image.lean");
+        return IMAGE;
     }
 }

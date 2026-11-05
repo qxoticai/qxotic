@@ -1,11 +1,13 @@
 package com.qxotic.toknroll.libtoknroll;
 
+import com.oracle.svm.core.annotate.Alias;
 import com.oracle.svm.core.annotate.Substitute;
 import com.oracle.svm.core.annotate.TargetClass;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import java.util.function.BooleanSupplier;
 import org.graalvm.nativeimage.c.function.CFunctionPointer;
 import org.graalvm.nativeimage.c.function.InvokeCFunctionPointer;
 import org.graalvm.nativeimage.c.type.CCharPointer;
@@ -47,6 +49,7 @@ final class Log {
         level = given && callback.isNull() ? OFF : wanted < 0 ? WARN : wanted;
         fn = callback.rawValue();
         userData = user.rawValue();
+        if (!Lean.IMAGE) Jul.install(level); // libjinfer: its build-time loggers log there
         if (level != OFF && wanted < 0 && value != null && !value.isBlank())
             emit(
                     WARN,
@@ -81,7 +84,7 @@ final class Log {
         return text.strip().replaceAll("\\s*\\R\\s*", " | ");
     }
 
-    private static void emit(int at, String text) {
+    static void emit(int at, String text) {
         text = oneLine(text);
         if (fn == 0) {
             System.err.println(program + ": " + NAMES[at] + ": " + text);
@@ -170,4 +173,33 @@ final class Target_jdk_internal_logger_LazyLoggers {
     public static System.Logger getLogger(String name, Module module) {
         return Log.FINDER.getLogger(name, module);
     }
+}
+
+@TargetClass(className = "jdk.internal.logger.LazyLoggers$LazyLoggerAccessor")
+final class Target_jdk_internal_logger_LazyLoggers_LazyLoggerAccessor {
+    @Alias
+    native System.Logger createLogger();
+}
+
+/**
+ * A logger made while the image was built (libjinfer initializes its classes then) asks here for
+ * its backend the first time it logs: the finder's logger, at once. The JDK would first detect
+ * java.logging in the image and hand out a surrogate of its own, past the finder.
+ */
+@TargetClass(className = "jdk.internal.logger.BootstrapLogger")
+final class Target_jdk_internal_logger_BootstrapLogger {
+    @Substitute
+    static System.Logger getLogger(
+            Target_jdk_internal_logger_LazyLoggers_LazyLoggerAccessor accessor,
+            BooleanSupplier isLoading) {
+        return accessor.createLogger();
+    }
+
+    @Substitute
+    public static boolean useLazyLoggers() {
+        return true;
+    }
+
+    @Substitute
+    static void ensureBackendDetected() {}
 }
