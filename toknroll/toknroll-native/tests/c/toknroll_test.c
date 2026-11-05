@@ -793,6 +793,30 @@ static void long_text(void) {   /* past the library's own buffers, whole and cut
 
 /* ---- encode_batch ---- */
 
+#ifdef __linux__
+#include <dirent.h>
+static int threads_now(void) {   /* this process's threads, as Linux lists them */
+    int n = 0;
+    DIR* d = opendir("/proc/self/task");
+    for (struct dirent* e; d && (e = readdir(d));) n += e->d_name[0] != '.';
+    if (d) closedir(d);
+    return n;
+}
+
+/* OPTIONS_VAR caps the cores at 2: the first batch starts one thread beside the caller, not one per core */
+static void batch_threads_capped(void) {
+    toknroll_tokenizer* t = tiny();
+    int before = threads_now();
+    const char texts[] = "aaaabbbbccccddddeeeeffffgggghhhh";
+    int64_t at[9];
+    for (int i = 0; i <= 8; i++) at[i] = 4 * i;
+    int32_t out[64], offsets[9];
+    CHECK_EQ(toknroll_encode_batch(t, texts, at, 8, 0, out, 64, offsets), 32);
+    CHECK(threads_now() <= before + 1);
+    toknroll_tokenizer_free(t);
+}
+#endif
+
 static void batch(void) {
     toknroll_tokenizer* t = tiny();
     const char texts[] = "hello" "" "a<|end|>b" "\xC3\xA9";
@@ -1617,6 +1641,9 @@ static const scenario scenarios[] = {
     {"round_trips", round_trips, NULL},
     {"long_text", long_text, NULL},
     {"batch", batch, NULL},
+#ifdef __linux__
+    {"batch_threads_capped", batch_threads_capped, OPTIONS_VAR "=-XX:ActiveProcessorCount=2"},
+#endif
     {"batch_matches_encode", batch_matches_encode, NULL},
     {"vocabulary", vocabulary, NULL},
     {"token_flags", token_flags, NULL},
