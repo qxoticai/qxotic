@@ -106,11 +106,14 @@ class GGUFTokenizerParityTest {
                             "unsloth/DeepSeek-V3.2-GGUF",
                             "Q8_0/DeepSeek-V3.2-Q8_0-00001-of-00015.gguf",
                             "hf_deepseek_v3_2_ground_truth.json"),
+                    // llama.cpp's ids, which are Mistral's own (mistral-common, 80 of 80 chunks):
+                    // tokenizer.json's Metaspace (prepend_scheme first) skips the leading space
+                    // before a text that starts with one, where SentencePiece adds it
                     new ModelSpec(
                             "mistral_mistral7b_v0_3",
                             "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
                             "Mistral-7B-Instruct-v0.3-Q8_0.gguf",
-                            "hf_mistral_mistral7b_v0_3_ground_truth.json"),
+                            "llamacpp_mistral_mistral7b_v0_3_ground_truth.json"),
                     ModelSpec.llamaCppOnly(
                             "liquid_lfm2_5_2_6b",
                             "LiquidAI/LFM2.5-2.6B-GGUF",
@@ -121,11 +124,15 @@ class GGUFTokenizerParityTest {
                             "openbmb/MiniCPM5-2B-GGUF",
                             "c451f4d674096e6e6f1cc5d0abb6794bda638304",
                             "MiniCPM5-2B-Q4_K_M.gguf"),
-                    ModelSpec.llamaCppOnly(
+                    // Kimi's own tokenizer (moonshotai/Kimi-K3's tiktoken.model): llama.cpp's
+                    // kimi-k2
+                    // splitter cuts a combining mark from its letter, which Kimi's pattern keeps
+                    new ModelSpec(
                             "moonshot_kimi_k3",
                             "unsloth/Kimi-K3-GGUF",
                             "a0836360ce58dfec088d966a97f2ddc8a606279b",
-                            "UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00015.gguf"),
+                            "UD-IQ1_M/Kimi-K3-UD-IQ1_M-00001-of-00015.gguf",
+                            "hf_moonshot_kimi_k3_ground_truth.json"),
                     ModelSpec.llamaCppOnly(
                             "minimax_m3",
                             "unsloth/MiniMax-M3-GGUF",

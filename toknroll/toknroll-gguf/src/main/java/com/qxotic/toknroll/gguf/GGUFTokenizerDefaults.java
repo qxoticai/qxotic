@@ -64,14 +64,16 @@ final class GGUFTokenizerDefaults {
 
     private static final String GEMMA4_PATTERN = "[^\\n]+|[\\n]+";
 
-    // llama.cpp's kimi-k2 custom splitter excludes combining marks from letter runs, despite the
-    // historical regex comment.
+    // Kimi's own pattern (tokenization_kimi.py), combining marks in the letter runs: llama.cpp's
+    // custom kimi-k2 splitter drops them, so a Thai or Devanagari mark there becomes a piece of its
+    // own and ids diverge from the model's (tokenizers, and so training); followed here is the
+    // model
     static final String KIMI_K2_PATTERN =
             "[\\p{IsHan}]+|[^\\r"
                 + "\\n"
-                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
                 + "\\n"
-                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}|"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}|"
                 + " ?[^\\s\\p{L}\\p{N}]+[\\r"
                 + "\\n"
                 + "]*|\\s*[\\r"

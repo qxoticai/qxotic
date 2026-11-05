@@ -65,7 +65,9 @@ class GGUFTokenizerComponentsTest {
     }
 
     @Test
-    void kimiPatternSplitsCombiningMarksLikeLlamaCpp() {
+    void kimiPatternKeepsACombiningMarkWithItsLetterAsKimiDoes() {
+        // Kimi's tokenizer (tokenization_kimi.py) puts \p{M} in its letter runs; llama.cpp's
+        // kimi-k2 splitter does not, cutting the Thai mark off, so its ids differ from the model's
         Splitter splitter =
                 Splitter.regex(
                         Pattern.compile(
@@ -73,7 +75,7 @@ class GGUFTokenizerComponentsTest {
                                 Pattern.UNICODE_CHARACTER_CLASS));
 
         assertEquals(
-                List.of("ร", "์"),
+                List.of("ร์"),
                 splitter.splitAllToListEagerly("ร์").stream()
                         .map(CharSequence::toString)
                         .collect(Collectors.toList()));

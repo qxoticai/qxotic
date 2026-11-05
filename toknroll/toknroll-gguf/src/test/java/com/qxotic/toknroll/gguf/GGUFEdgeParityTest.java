@@ -38,10 +38,11 @@ import org.junit.jupiter.api.TestFactory;
  * <p>Every divergence fails. A known one fails with its cause in the message: llama.cpp matching a
  * control token in raw text, which its gpt-oss workaround renders, or a normal token it retypes
  * control by its name; llama.cpp's gpt-4o, Tekken, Pixtral and Kimi K2 regexes splitting a word at
- * a non-ASCII capital, where the model's own tokenizer and toknroll do not; and llama.cpp cutting
- * Laguna's newlines apart from carriage returns, which its tokenizer.json keeps together. The last
- * two are keyed on the file's {@code tokenizer.ggml.pre} and name only a first difference at such a
- * capital or carriage return.
+ * a non-ASCII capital, where the model's own tokenizer and toknroll do not; llama.cpp's Kimi K2
+ * splitter cutting a combining mark from its letter, which Kimi's own pattern keeps; and llama.cpp
+ * cutting Laguna's newlines apart from carriage returns, which its tokenizer.json keeps together.
+ * The last two are keyed on the file's {@code tokenizer.ggml.pre} and name only a first difference
+ * at such a capital or carriage return.
  */
 @Tag("local-external")
 class GGUFEdgeParityTest {
@@ -164,6 +165,18 @@ class GGUFEdgeParityTest {
                 && window.codePoints().anyMatch(c -> c > 127 && Character.isUpperCase(c))) {
             return "llama.cpp's rewritten regex splits at a non-ASCII capital; the model's own"
                     + " tokenizer and toknroll do not";
+        }
+        if ("kimi-k2".equals(pre)
+                && window.codePoints()
+                        .anyMatch(
+                                c ->
+                                        Character.getType(c) == Character.NON_SPACING_MARK
+                                                || Character.getType(c)
+                                                        == Character.COMBINING_SPACING_MARK
+                                                || Character.getType(c)
+                                                        == Character.ENCLOSING_MARK)) {
+            return "llama.cpp's kimi-k2 splitter cuts a combining mark from its letter; Kimi's own"
+                    + " pattern, and toknroll, keep it in the word";
         }
         if ("laguna".equals(pre) && window.indexOf('\r') >= 0) {
             return "llama.cpp's Laguna regex ([^\\n]+|[\\n]+) cuts newlines from carriage returns;"
