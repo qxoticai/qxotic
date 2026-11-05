@@ -4,6 +4,7 @@ import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteL
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
@@ -57,6 +58,36 @@ class HuggingFaceTokenizerLoaderValidationTest {
         Path file = tempDir.resolve("tokenizer.json");
         Files.writeString(file, json);
         assertThrows(RuntimeException.class, () -> HuggingFaceTokenizerLoader.fromLocal(file));
+    }
+
+    @Test
+    void anIdThatIsNoWholeNumberInRangeIsRefusedByName() throws Exception {
+        // the cast these replace truncated 257.9 to 257, wrapped 2^32 to 0, failed -1 without a
+        // message and sized the vocabulary by the largest id
+        for (String id : new String[] {"-1", "0.5", "256.9", "2147483648", "4294967296", "1e100"}) {
+            String vocab =
+                    "{\"version\":\"1.0\",\"model\":{\"type\":\"BPE\",\"vocab\":{\"a\":"
+                            + id
+                            + "},\"merges\":[]}}";
+            String added =
+                    "{\"version\":\"1.0\",\"added_tokens\":[{\"id\":"
+                            + id
+                            + ",\"content\":\"<x>\"}],"
+                            + "\"model\":{\"type\":\"BPE\",\"vocab\":{\"a\":0},\"merges\":[]}}";
+            assertRefused(vocab, "tokenizer.json:model.vocab['a'] is ");
+            assertRefused(added, "tokenizer.json:added_tokens['<x>'].id is ");
+        }
+    }
+
+    private void assertRefused(String json, String where) throws Exception {
+        Path file = Files.writeString(tempDir.resolve("tokenizer.json"), json);
+        Throwable t =
+                assertThrows(
+                        RuntimeException.class, () -> HuggingFaceTokenizerLoader.fromLocal(file));
+        String all = "";
+        for (; t != null; t = t.getCause()) all += t.getMessage() + " | ";
+        assertTrue(
+                all.contains(where) && all.contains(", not an id: a whole number from 0 to"), all);
     }
 
     @Test

@@ -640,6 +640,21 @@ public final class HuggingFaceTokenizerLoader {
         return adaptRegexForJava(pattern);
     }
 
+    /** The largest id a tokenizer may use: 2^24, sixty times the largest vocabulary there is. */
+    private static final int MAX_ID =
+            (1 << 24) - 1; // ponytail: a fixed bound, raise it if one grows
+
+    /**
+     * An id as the file writes it: a whole number from 0 to MAX_ID, else refused, naming where. A
+     * cast would truncate 257.9 to 257 and wrap 2^32 to 0; a huge id would size the vocabulary.
+     */
+    private static int id(Object value, String where) {
+        double id = ((Number) value).doubleValue();
+        if (id >= 0 && id <= MAX_ID && id == Math.rint(id)) return (int) id;
+        throw new IllegalArgumentException(
+                where + " is " + value + ", not an id: a whole number from 0 to " + MAX_ID);
+    }
+
     @SuppressWarnings("unchecked")
     private static TokenEntries buildTokenEntries(
             Map<String, Object> vocabMap, Object addedTokensObj, Normalizer normalizer) {
@@ -650,7 +665,7 @@ public final class HuggingFaceTokenizerLoader {
                 throw new IllegalArgumentException(
                         "tokenizer.json:model.vocab['" + e.getKey() + "'] must be numeric");
             }
-            maxId = Math.max(maxId, ((Number) value).intValue());
+            maxId = Math.max(maxId, id(value, "tokenizer.json:model.vocab['" + e.getKey() + "']"));
         }
 
         String[] tokens = new String[maxId + 1];
@@ -675,7 +690,7 @@ public final class HuggingFaceTokenizerLoader {
 
                 refuseUnsupportedMatching(
                         added, (String) contentObj, "tokenizer.json:added_tokens", normalizer);
-                int id = ((Number) idObj).intValue();
+                int id = id(idObj, "tokenizer.json:added_tokens['" + contentObj + "'].id");
                 if (id >= tokens.length) {
                     int oldLength = tokens.length;
                     tokens = Arrays.copyOf(tokens, id + 1);
