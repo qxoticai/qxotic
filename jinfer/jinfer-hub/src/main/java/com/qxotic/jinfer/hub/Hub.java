@@ -97,7 +97,11 @@ final class Hub {
             }
         } catch (IOException e) {
             throw new UncheckedIOException(
-                    "could not read the HuggingFace hub cache at " + hubCache + ": " + e, e);
+                    "could not read the HuggingFace hub cache at "
+                            + hubCache
+                            + ": "
+                            + ModelStore.why(e),
+                    e);
         }
         refs.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
         return refs;

@@ -251,6 +251,33 @@ class ModelStoreCacheTest {
         }
     }
 
+    @Test
+    void aFailureReadsInWordsWithNoJavaClassName(@TempDir Path root) throws IOException {
+        // the messages ended in the exception itself: its class name, and a refused file's path
+        // alone
+        Assumptions.assumeFalse(File.separatorChar == '\\', "POSIX permissions");
+        var store =
+                ModelStore.of(
+                        root,
+                        new FakeSource("down").failing(new IOException("connection refused")));
+        var down =
+                assertThrows(
+                        UncheckedIOException.class, () -> store.resolve("hf.co/words/model:Q8_0"));
+        assertEquals(
+                "could not resolve hf.co/words/model:Q8_0: connection refused", down.getMessage());
+        Path hub = Files.createDirectories(root.resolve("hf"));
+        Files.setPosixFilePermissions(hub, PosixFilePermissions.fromString("---------"));
+        try {
+            var refused = assertThrows(UncheckedIOException.class, () -> Hub.cached(hub));
+            assertTrue(
+                    refused.getMessage().endsWith(hub + ": permission denied"),
+                    refused.getMessage());
+            assertFalse(refused.getMessage().contains("java."), refused.getMessage());
+        } finally {
+            Files.setPosixFilePermissions(hub, PosixFilePermissions.fromString("rwxr-xr-x"));
+        }
+    }
+
     /**
      * A hub miss at the platform's default root, served over HTTP so it takes the hub-cache path.
      */

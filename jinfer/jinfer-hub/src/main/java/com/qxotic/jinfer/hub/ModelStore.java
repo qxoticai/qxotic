@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileStore;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
@@ -323,7 +324,7 @@ public final class ModelStore {
         try {
             file = select(parsed, serving.getFirst()).path();
         } catch (IOException e) {
-            throw new UncheckedIOException("could not resolve " + parsed + ": " + e, e);
+            throw new UncheckedIOException("could not resolve " + parsed + ": " + why(e), e);
         }
         remember(parsed, file);
         return file;
@@ -476,7 +477,7 @@ public final class ModelStore {
                         rejectWebPage(stage, url);
                     });
         } catch (IOException e) {
-            throw new UncheckedIOException("could not fetch " + url + ": " + e, e);
+            throw new UncheckedIOException("could not fetch " + url + ": " + why(e), e);
         }
         return dest;
     }
@@ -557,7 +558,7 @@ public final class ModelStore {
             try {
                 return Optional.ofNullable(cachedFile(ModelRef.parse(pathOrRef)));
             } catch (IOException e) {
-                throw new UncheckedIOException("could not look up " + pathOrRef + ": " + e, e);
+                throw new UncheckedIOException("could not look up " + pathOrRef + ": " + why(e), e);
             }
         }
         if (isHttpUrl(pathOrRef)) {
@@ -677,7 +678,7 @@ public final class ModelStore {
                     });
         } catch (IOException e) {
             throw new UncheckedIOException(
-                    "could not read the model cache at " + root + ": " + e, e);
+                    "could not read the model cache at " + root + ": " + why(e), e);
         }
         return found;
     }
@@ -765,7 +766,7 @@ public final class ModelStore {
             }
             return false;
         } catch (IOException e) {
-            throw new UncheckedIOException("could not evict " + ref + ": " + e, e);
+            throw new UncheckedIOException("could not evict " + ref + ": " + why(e), e);
         }
     }
 
@@ -793,7 +794,7 @@ public final class ModelStore {
             return Fetch.locked(key, () -> fetchRef(ref, policy));
         } catch (IOException e) {
             // the cause carries the only actionable part (refused proxy, DNS, TLS, timeout)
-            throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
+            throw new UncheckedIOException("could not resolve " + ref + ": " + why(e), e);
         }
     }
 
@@ -830,7 +831,7 @@ public final class ModelStore {
                         e.status == 401 || e.status == 403
                                 ? new IllegalArgumentException(RepositorySource.denied(ref), e)
                                 : new UncheckedIOException(
-                                        "could not resolve " + ref + ": " + e, e);
+                                        "could not resolve " + ref + ": " + why(e), e);
                 if (last) {
                     if (failure instanceof IllegalArgumentException denied) throw denied;
                     throw (UncheckedIOException) failure;
@@ -838,7 +839,7 @@ public final class ModelStore {
                 warn(source, ref, e);
             } catch (IOException e) {
                 if (last) {
-                    throw new UncheckedIOException("could not resolve " + ref + ": " + e, e);
+                    throw new UncheckedIOException("could not resolve " + ref + ": " + why(e), e);
                 }
                 warn(source, ref, e);
             }
@@ -971,6 +972,16 @@ public final class ModelStore {
         if (!writable(dest.getParent())) {
             throw new UncheckedIOException(new IOException("cache root is not writable: " + root));
         }
+    }
+
+    /**
+     * An IOException in words, as the end of a message: java.nio names a refused file by its path
+     * alone, and its class name is no reason a user can act on.
+     */
+    static String why(IOException e) {
+        if (e instanceof AccessDeniedException refused && refused.getReason() == null)
+            return refused.getFile() + ": permission denied";
+        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 
     /** Whether a file can be made at {@code path}: its nearest existing folder is writable. */
