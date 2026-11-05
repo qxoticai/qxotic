@@ -605,9 +605,22 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return consumed;
     }
 
+    /** The bytes a token of each length owns in its two words, read as the words are. */
+    private static final long[] OWNED_LOW = new long[17], OWNED_HIGH = new long[17];
+
+    static {
+        for (int length = 0; length <= 16; length++) {
+            byte[] owned = new byte[16];
+            Arrays.fill(owned, 0, length, (byte) 0xFF);
+            OWNED_LOW[length] = (long) LONGS.get(owned, 0);
+            OWNED_HIGH[length] = (long) LONGS.get(owned, 8);
+        }
+    }
+
     /**
      * Over the buffer's array: a short token in two 8-byte stores when 16 bytes are left before the
-     * limit, the bytes past its end garbage the next token overwrites; a longer one copied.
+     * limit, each store merging the token's own bytes into what the buffer holds, so that nothing
+     * past the token changes; a longer one copied.
      */
     private int decodeBytesInto(IntSequence tokens, int from, ByteBuffer out, byte[] array) {
         int at = out.arrayOffset() + out.position();
@@ -617,8 +630,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
             int id = tokens.intAt(i);
             int length = id >= 0 && id < shortLengths.length ? shortLengths[id] : 0;
             if (length != 0 && at + 16 <= end) {
-                LONGS.set(array, at, spellingWords[2 * id]);
-                LONGS.set(array, at + 8, spellingWords[2 * id + 1]);
+                long low = OWNED_LOW[length], high = OWNED_HIGH[length];
+                long kept0 = (long) LONGS.get(array, at) & ~low;
+                long kept1 = (long) LONGS.get(array, at + 8) & ~high;
+                LONGS.set(array, at, (spellingWords[2 * id] & low) | kept0);
+                LONGS.set(array, at + 8, (spellingWords[2 * id + 1] & high) | kept1);
                 at += length;
                 continue;
             }
