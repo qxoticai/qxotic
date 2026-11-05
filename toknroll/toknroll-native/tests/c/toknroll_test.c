@@ -567,6 +567,8 @@ static void encode(void) {
     CHECK_ERROR(toknroll_encode(t, "x", (int64_t) 1 << 32, 0, ids, 64), TOKNROLL_EINVAL, LE, "over 2 GiB");
     CHECK_ERROR(toknroll_encode(t, "x", -1, 0, ids, 64), TOKNROLL_EINVAL, LE, "length must not be negative");
     CHECK_ERROR(toknroll_encode(t, "x", INT64_MIN, 0, NULL, 0), TOKNROLL_EINVAL, LE, "length must not be negative");
+    /* just under 2^31: refused before any read, where the copy's slack once wrapped past the array */
+    CHECK_ERROR(toknroll_encode(t, "x", INT32_MAX - 10, 0, ids, 64), TOKNROLL_EINVAL, LE, "text is over 2 GiB");
     toknroll_tokenizer_free(t);
 }
 
@@ -911,6 +913,10 @@ static void batch(void) {
     CHECK_ERROR(toknroll_encode_batch(t, "x", wrap, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text_offsets must not decrease, at 1");
     const int64_t huge[] = {0, INT64_MAX};
     CHECK_ERROR(toknroll_encode_batch(t, "x", huge, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text 0 is over 2^31 bytes");
+    const int64_t under[] = {0, INT32_MAX - 10};   /* the copy's slack once wrapped past the array */
+    CHECK_ERROR(toknroll_encode_batch(t, "x", under, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text 0 is over 2^31 bytes");
+    /* refused before the count + 1 offsets are read */
+    CHECK_ERROR(toknroll_encode_batch(t, "x", huge, INT32_MAX, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "count is over 2^31 texts");
     CHECK_ERROR(toknroll_encode_batch(t, NULL, at, 4, 0, out, 64, offsets), TOKNROLL_EINVAL, LE, "texts is NULL");
     toknroll_tokenizer_free(t);
 }

@@ -83,9 +83,13 @@ public final class Native {
         return loaded;
     }
 
+    /** A NUL-terminated string, UTF-8 as the header promises, not the platform's default. */
     private static String string(CCharPointer value, String what) {
         if (value.isNull()) throw Errors.invalid(what + " is NULL");
-        return CTypeConversion.toJavaString(value);
+        int length = 0;
+        while (value.read(length) != 0) length++;
+        return CTypeConversion.toJavaString(
+                value, WordFactory.unsigned(length), StandardCharsets.UTF_8);
     }
 
     /** length bytes of UTF-8, any byte among them; NULL only with length 0. */
@@ -131,6 +135,9 @@ public final class Native {
      * vector load, which the JIT compiles to one instruction, runs a lane at a time here.
      */
     private static final int SLACK = 64;
+
+    /** The most one text (in bytes) or one batch (in texts) may hold: a Java array, with SLACK. */
+    private static final int MAX = Integer.MAX_VALUE - 8 - SLACK;
 
     /**
      * A calling thread's memory, kept for its next call so that a short one allocates nothing: the
@@ -321,7 +328,7 @@ public final class Native {
             Errors.clear();
             Loaded loaded = get(handle);
             if (length < 0) throw Errors.invalid("length must not be negative");
-            if (length > Integer.MAX_VALUE) throw Errors.invalid("text is over 2 GiB");
+            if (length > MAX) throw Errors.invalid("text is over 2 GiB");
             if (text.isNull() && length > 0) throw Errors.invalid("text is NULL");
             if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
             if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
@@ -357,9 +364,11 @@ public final class Native {
             Errors.clear();
             Loaded loaded = get(handle);
             if (count < 0) throw Errors.invalid("count must not be negative");
+            if (count > MAX) throw Errors.invalid("count is over 2^31 texts");
             if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
             if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
-            Specials matcher = specials(flags) ? loaded.specials() : null; // bad flags: refused, texts or none
+            Specials matcher =
+                    specials(flags) ? loaded.specials() : null; // bad flags: refused, texts or none
             if (count == 0) { // no text: the arrays may be NULL, as any pointer with length 0
                 if (offsets.isNonNull()) offsets.write(0, 0);
                 return 0;
@@ -374,7 +383,7 @@ public final class Native {
             for (int i = 1; i <= count; i++) {
                 long at = textOffsets.read(i);
                 if (at < previous) throw Errors.invalid("text_offsets must not decrease, at " + i);
-                if (at - previous > Integer.MAX_VALUE)
+                if (at - previous > MAX)
                     throw Errors.invalid("text " + (i - 1) + " is over 2^31 bytes");
                 starts[i] = at - base;
                 previous = at;
