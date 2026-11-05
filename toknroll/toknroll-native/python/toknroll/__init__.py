@@ -173,17 +173,11 @@ class Tokenizer:
     that made it: libtoknroll, or libjinfer for a model's tokenizer.
     """
 
-    __slots__ = ("_h", "_source", "_lib", "_owned", "__weakref__")
+    __slots__ = ("_h", "_source", "_lib", "__weakref__")
 
-    def __init__(self, handle: int, source: str, lib: C.CDLL | None = None, *, owned: bool = False):
-        """Internal: wraps a handle the library returned; use `load()`. Only an owned wrapper, the one `load`
-        or a library that hands out handles makes, frees the handle: any other is a view, and frees nothing."""
-        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
-            raise TypeError(f"Tokenizer: expected a handle the library returned, got {handle!r}")
-        self._lib = lib or N.library()
-        self._source = source
-        self._h = handle
-        self._owned = owned
+    def __init__(self, *args, **kwargs):
+        # a wrapper over a handle another owns would free it under its owner: _wrap makes the only one
+        raise TypeError("Tokenizer: use toknroll.load()")
 
     @property
     def _handle(self) -> int:
@@ -279,7 +273,7 @@ class Tokenizer:
         """Frees the tokenizer; idempotent. Every other method is refused afterwards. Close it
         when no other thread is using it, as with a file."""
         handle, self._h = getattr(self, "_h", None), None
-        if handle is not None and self._owned:
+        if handle is not None:
             self._lib.toknroll_tokenizer_free(handle)
 
     def __enter__(self):
@@ -330,4 +324,11 @@ def load(source: str | os.PathLike) -> Tokenizer:
         if text not in error.args[0]:  # a load error names its source, as open names its file
             raise type(error)(f"{text}: {error.args[0]}", error.code)
         raise error
-    return Tokenizer(handle, text, lib, owned=True)
+    return _wrap(handle, text, lib)
+
+
+def _wrap(handle: int, source: str, lib: C.CDLL) -> Tokenizer:
+    """load's, and libjinfer's for a model's tokenizer: the one Tokenizer over a new handle, which it frees."""
+    t = object.__new__(Tokenizer)
+    t._h, t._source, t._lib = handle, source, lib
+    return t

@@ -686,7 +686,7 @@ class _Tokens(_Context):
     @functools.cached_property
     def tokenizer(self) -> toknroll.Tokenizer:
         """The model's tokenizer, a `toknroll.Tokenizer` served by libjinfer; it outlives the model."""
-        return toknroll.Tokenizer(_check_ptr(N.lib.jinfer_model_tokenizer(self._h)), self.source, N.lib)
+        return toknroll._wrap(_check_ptr(N.lib.jinfer_model_tokenizer(self._h)), self.source, N.lib)
 
 
 _TOOL_ROUNDS = 8  # ponytail: a constant; make it an option when a caller needs more

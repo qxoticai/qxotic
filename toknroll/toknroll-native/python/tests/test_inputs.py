@@ -164,20 +164,17 @@ class LifecycleTest(unittest.TestCase):
                 call()
             self.assertIn("closed", str(e.exception))
 
-    def test_a_wrapper_over_a_live_handle_is_a_view_that_frees_nothing(self):
-        """Only load's own wrapper owns its handle: another Tokenizer over the same handle reads, and its close
-        or collection leaves the owner usable; a value that is no handle is refused."""
+    def test_a_tokenizer_is_only_loaded_never_built_over_a_handle(self):
+        """A second wrapper over a live handle would free it under its owner: Tokenizer() refuses, whatever it is
+        given, and the loaded one stays usable."""
         t = toknroll.load(GGUF)
-        view = toknroll.Tokenizer(t._h, "view", t._lib)
-        self.assertEqual(view.vocabulary_size, t.vocabulary_size)
-        view.close()
-        del view
+        for args in ((t._h, "view", t._lib), (t._h, "view"), ()):
+            with self.subTest(args=args), self.assertRaises(TypeError) as e:
+                toknroll.Tokenizer(*args)
+            self.assertIn("toknroll.load()", str(e.exception))
         gc.collect()
         self.assertEqual(t.decode(t.encode("still here")), "still here")
         t.close()
-        for bad in (True, 1.5, None, 0, -1, "1"):
-            with self.subTest(bad=bad), self.assertRaises(TypeError):
-                toknroll.Tokenizer(bad, "x", t._lib)
 
     def test_garbage_collection_frees(self):
         t = toknroll.load(GGUF)

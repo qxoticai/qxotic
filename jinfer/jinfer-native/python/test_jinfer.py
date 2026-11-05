@@ -562,5 +562,8 @@ if hasattr(os, "fork"):
     rc = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
     ok(rc == 0, f"forked child: {'hung' if rc == -signal.SIGALRM else rc}")
     ok(m.chat("Say hi.", max_tokens=4, temperature=0).text, "the parent answers after the fork")
+handle = m.tokenizer._h
+m.tokenizer.close()  # the handle jinfer_model_tokenizer gave is the caller's: closing frees it
+ok(N.lib.toknroll_vocabulary_size(ctypes.c_void_p(handle)) < 0, "a model tokenizer's close frees its handle")
 m.close()
 print(f"ok: {checks} checks")
