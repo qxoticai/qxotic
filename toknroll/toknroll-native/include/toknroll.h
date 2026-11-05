@@ -118,16 +118,16 @@ TOKNROLL_API int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data);
 /* Runtime options, as on a java command line: "-Dtoknroll.gguf.pre.my-model=alias:qwen2" registers a
  * pre-tokenizer, "-Dtoknroll.cache.root=/srv/cache" moves the hub cache, "-XX:MaxHeapSize=512m" caps
  * the heap, "-XX:ActiveProcessorCount=4" the cores a batch and the collector run on. An option is
- * UTF-8; on Windows the runtime reads its options in the ANSI code page, so one with a character that
- * page lacks is TOKNROLL_EINVAL. Once, before the runtime starts: only toknroll_version,
- * toknroll_last_error, toknroll_log_set and a free of NULL may come before it; a later call is
- * TOKNROLL_EINVAL. An option the runtime rejects fails this call, which starts it, TOKNROLL_ERROR, the
- * runtime naming it on stderr (an unknown -XX: option is rejected, an unknown -X one is ignored).
- * TOKNROLL_OPTIONS in the environment, the same options separated by whitespace, is read when the
- * runtime starts, here or at the first call, and applied after these, so it overrides them: the
- * program sets its options, whoever runs it has the last word. One it rejects fails that call. A start
- * that fails is final: every later call fails as it did, TOKNROLL_ERROR and its message; none starts
- * the runtime again. */
+ * UTF-8 and not blank, else TOKNROLL_EINVAL; on Windows the runtime reads its options in the ANSI code
+ * page, so one with a character that page lacks is TOKNROLL_EINVAL too. Once, before the runtime
+ * starts: only toknroll_version, toknroll_last_error, toknroll_log_set and a free of NULL may come
+ * before it; a later call is TOKNROLL_EINVAL. An option the runtime rejects fails this call, which
+ * starts it, TOKNROLL_ERROR, the runtime naming it on stderr (an unknown -XX: option is rejected, an
+ * unknown -X one is ignored). TOKNROLL_OPTIONS in the environment, the same options separated by
+ * whitespace, is read when the runtime starts, here or at the first call, and applied after these, so
+ * it overrides them: the program sets its options, whoever runs it has the last word. One it rejects
+ * fails that call. A start that fails is final: every later call fails as it did, TOKNROLL_ERROR and
+ * its message; none starts the runtime again. */
 TOKNROLL_API int32_t toknroll_configure(const char* const* options, int32_t count);
 
 /* A tokenizer from a path or a hub reference: Sources, above. */

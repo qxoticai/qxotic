@@ -153,6 +153,10 @@ static void configure_arguments(void) {
     CHECK_ERROR(toknroll_configure(NULL, 1), TOKNROLL_EINVAL, LE, "toknroll_configure: options is NULL or count negative");
     CHECK_ERROR(toknroll_configure(one, -1), TOKNROLL_EINVAL, LE, "options is NULL or count negative");
     CHECK_ERROR(toknroll_configure(one, 2), TOKNROLL_EINVAL, LE, "toknroll_configure: options[1] is NULL");
+    const char* blank[] = {"-Dtoknroll.offline=true", " \t"};
+    CHECK_ERROR(toknroll_configure(blank, 2), TOKNROLL_EINVAL, LE, "toknroll_configure: options[1] is blank");
+    blank[1] = "";
+    CHECK_ERROR(toknroll_configure(blank, 2), TOKNROLL_EINVAL, LE, "options[1] is blank");
     /* a refused call is no call: the next one still configures */
     CHECK_EQ(toknroll_configure(one, 1), TOKNROLL_OK);
     CHECK_CLEAR(LE);

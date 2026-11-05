@@ -101,12 +101,12 @@ JINFER_API int32_t     jinfer_log_set(jinfer_log_fn fn, void* user_data);
  * "-Djinfer.cache.sessions=16" keeps that many conversations warm (4), "-Djinfer.cache.budget=8g" bounds
  * the prompt cache's KV blocks (2g, 0 = off), "-Djinfer.offline=true" never downloads,
  * "-Djinfer.trace=true", "-Djam.*" and the other jinfer.* properties steer the engine,
- * "-XX:MaxHeapSize=4g" caps the heap. Once, before any other call into the library; a later call is
- * JINFER_EINVAL. toknroll_configure is the same call on the same runtime. An option the runtime rejects
- * fails this call, JINFER_ERROR, the runtime naming it on stderr (an unknown -XX: option is rejected, an
- * unknown -X one is ignored). JINFER_OPTIONS in the environment, the same options separated by
- * whitespace, is read when the runtime starts and applied after these, so it overrides them: the program
- * sets its options, whoever runs it has the last word. */
+ * "-XX:MaxHeapSize=4g" caps the heap. A blank option is JINFER_EINVAL. Once, before any other call into
+ * the library; a later call is JINFER_EINVAL. toknroll_configure is the same call on the same runtime.
+ * An option the runtime rejects fails this call, JINFER_ERROR, the runtime naming it on stderr (an
+ * unknown -XX: option is rejected, an unknown -X one is ignored). JINFER_OPTIONS in the environment, the
+ * same options separated by whitespace, is read when the runtime starts and applied after these, so it
+ * overrides them: the program sets its options, whoever runs it has the last word. */
 JINFER_API int32_t     jinfer_configure(const char* const* options, int32_t count);
 
 /* ------------------------------------------------------------------ model */

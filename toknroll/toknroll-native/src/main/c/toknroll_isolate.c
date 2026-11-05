@@ -531,8 +531,11 @@ int32_t toknroll__configure(const char* const* given, int32_t count, const char*
                             void (*error_set)(graal_thread*, int32_t, const char*)) {
     if (toknroll__created()) return too_late(who, error_set);
     if (count < 0 || (count && !given)) return early(TOKNROLL_EINVAL, "%s: options is NULL or count negative", who);
-    for (int32_t i = 0; i < count; i++)
+    for (int32_t i = 0; i < count; i++) {
         if (!given[i]) return early(TOKNROLL_EINVAL, "%s: options[%d] is NULL", who, (int) i);
+        if (!given[i][strspn(given[i], " \t\r\n")])   /* the runtime would drop it unsaid */
+            return early(TOKNROLL_EINVAL, "%s: options[%d] is blank", who, (int) i);
+    }
     char** copy = count ? calloc((size_t) count, sizeof *copy) : NULL;
     if (count && !copy) return early(TOKNROLL_ERROR, "%s: out of memory", who);
     for (int32_t i = 0; i < count; i++) {

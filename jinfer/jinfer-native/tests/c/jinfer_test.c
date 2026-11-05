@@ -93,6 +93,8 @@ static void configure(void) {
     CHECK_ERROR(jinfer_configure(NULL, 1), JINFER_EINVAL, LE, "jinfer_configure: options is NULL or count negative");
     CHECK_ERROR(jinfer_configure(one, -1), JINFER_EINVAL, LE, "options is NULL or count negative");
     CHECK_ERROR(jinfer_configure(one, 2), JINFER_EINVAL, LE, "jinfer_configure: options[1] is NULL");
+    const char* blank[] = {""};
+    CHECK_ERROR(jinfer_configure(blank, 1), JINFER_EINVAL, LE, "jinfer_configure: options[0] is blank");
     CHECK_EQ(jinfer_configure(one, 1), JINFER_OK);
     CHECK_CLEAR(LE);
     CHECK_ERROR(jinfer_configure(one, 1), JINFER_EINVAL, LE, "jinfer_configure must come once, before any other call into the library");
