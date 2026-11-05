@@ -6,6 +6,7 @@ import os
 import pickle
 import subprocess
 import sys
+import tempfile
 import textwrap
 import threading
 import unittest
@@ -322,6 +323,19 @@ class LengthTest(unittest.TestCase):
             toknroll.load(GGUF + "\0/junk")
         with self.assertRaisesRegex(ValueError, "embedded null byte"):
             toknroll.configure("-Dtoknroll.offline=true\0-Dtoknroll.cache.root=/x")
+
+    def test_a_path_is_taken_as_given(self):
+        """No stripping: a name may end in a space, and a padded path is the missing file it names,
+        as HF's from_file and Python's open take it."""
+        with tempfile.TemporaryDirectory() as d:
+            padded = os.path.join(d, "model ")
+            os.symlink(GGUF, padded)
+            with toknroll.load(padded) as t:
+                self.assertEqual(t.source, padded)
+        with self.assertRaises(toknroll.NotFound):
+            toknroll.load(GGUF + " ")
+        with self.assertRaises(toknroll.NotFound):
+            toknroll.load(GGUF + "\n")
 
 
 @needs_gguf

@@ -67,8 +67,7 @@ final class Sources {
 
     static Located locate(String source, ModelStore store) {
         if (source == null || source.isBlank()) throw Errors.invalid("source is empty");
-        source = source.strip();
-        if (!ModelStore.isRef(source)) {
+        if (!ModelStore.isRef(source)) { // a path is taken as given: a name may end in a space
             // a dotted first segment is a misspelled host, never an owner or a missing file
             if (!Files.exists(Path.of(source)) && source.matches("[^/\\\\:]+\\.[^/\\\\:]+/.+"))
                 throw Errors.invalid(
@@ -78,6 +77,7 @@ final class Sources {
                                 + " modelscope.cn");
             return local(source);
         }
+        source = source.strip(); // a ref is lenient, as ModelRef's own parse is
         ModelRef ref;
         try {
             ref = ModelRef.parse(source);
