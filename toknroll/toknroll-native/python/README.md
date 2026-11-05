@@ -18,8 +18,8 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 
 | You want | Call |
 |---|---|
-| ids | `encode(text)`, an `array('i')`: four bytes an id, nothing boxed, `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy; `specials=True` keeps spelled special tokens whole, by default they are text |
-| text | `decode(ids)`: an int32 buffer (`array('i')`, numpy) read in place, any other iterable of int copied once; a partial character decodes per `errors=`, `"replace"` by default as in tiktoken; `decode_bytes(ids)` for the raw bytes |
+| ids | `encode(text)`, an `array('i')`: four bytes an id, nothing boxed, `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy; `specials=True` keeps spelled added tokens whole, `CONTROL` or `USER_DEFINED` such as `<think>`, by default they are text; raw text either way, as tiktoken's `encode_ordinary`: no BOS, no EOS, no template, those belong to the chat template that writes the prompt |
+| text | `decode(ids)`: an int32 buffer (`array('i')`, numpy) read in place, any other iterable of int copied once; a partial character decodes per `errors=`, `"replace"` by default as in tiktoken; `decode_bytes(ids)` for the raw bytes; every id is spelled, special tokens included, as tiktoken does, where HF's `decode` skips them by default |
 | a token budget | `count_tokens(text)`, no list built |
 | many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores |
 | the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)` (a `TokenFlags` mask: `NORMAL`, `CONTROL`, `USER_DEFINED`, `BYTE`, ...), `None` when absent |
