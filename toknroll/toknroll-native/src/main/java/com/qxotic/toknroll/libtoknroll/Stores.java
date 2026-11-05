@@ -47,6 +47,7 @@ final class Stores {
         return flag("toknroll.offline") || flag("jinfer.offline");
     }
 
+    /** Set to anything but false: a misspelled true (1, yes) must never mean online. */
     private static boolean flag(String property) {
         String value = System.getProperty(property);
         return value != null && !value.strip().equalsIgnoreCase("false");
