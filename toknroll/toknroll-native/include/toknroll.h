@@ -75,10 +75,11 @@ extern "C" {
 #define TOKNROLL_VERSION_MINOR 4
 #define TOKNROLL_VERSION_PATCH 0
 
-#define TOKNROLL_OK         0
-#define TOKNROLL_ERROR     (-1) /* see toknroll_last_error() */
-#define TOKNROLL_EINVAL    (-2)
-#define TOKNROLL_ENOTFOUND (-3) /* file, repository or tokenizer */
+#define TOKNROLL_OK            0
+#define TOKNROLL_ERROR        (-1) /* see toknroll_last_error() */
+#define TOKNROLL_EINVAL       (-2)
+#define TOKNROLL_ENOTFOUND    (-3) /* file, repository or tokenizer */
+#define TOKNROLL_EUNSUPPORTED (-4) /* a valid tokenizer toknroll does not implement */
 
 /* Token flags, a 64-bit mask: bit n is GGUF token type n, exactly one of these six is set; higher
  * bits are reserved for flags to come. Control and user-defined are the special tokens. */

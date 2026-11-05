@@ -161,7 +161,7 @@ static const char* custom_gguf(void) {
 }
 
 static void options_unknown_pre(void) {
-    CHECK_NULL_ERROR(toknroll_tokenizer_load(custom_gguf()), TOKNROLL_EINVAL, LE, "Unsupported GGUF pre-tokenizer key 'ctest-pre'");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load(custom_gguf()), TOKNROLL_EUNSUPPORTED, LE, "Unsupported GGUF pre-tokenizer key 'ctest-pre'");
 }
 
 static void options_take_effect(void) {
@@ -480,6 +480,14 @@ static void load_cache_root_from_the_environment(void) {
     toknroll_tokenizer* t = toknroll_tokenizer_load("ctest-env/repo/tiny.gguf");
     CHECK_STR(t ? "" : LE(NULL), "");
     toknroll_tokenizer_free(t);
+}
+
+/* a valid tokenizer of a kind toknroll does not implement: the caller may fall back to another library */
+static void load_unsupported(void) {
+    const char* wordpiece = TMP("wordpiece.json");
+    const char* json = "{\"model\":{\"type\":\"WordPiece\",\"vocab\":{\"h\":0},\"unk_token\":\"h\"}}";
+    write_file(wordpiece, json, strlen(json));
+    CHECK_NULL_ERROR(toknroll_tokenizer_load(wordpiece), TOKNROLL_EUNSUPPORTED, LE, "tokenizer.json:model.type: WordPiece");
 }
 
 /* ---- encode ---- */
@@ -1597,6 +1605,7 @@ static const scenario scenarios[] = {
     {"load_folders", load_folders, NULL},
     {"load_by_content", load_by_content, NULL},
     {"load_references", load_references, NULL},
+    {"load_unsupported", load_unsupported, NULL},
     {"load_cache_root_from_the_environment", load_cache_root_from_the_environment,
      "TOKNROLL_CACHE_ROOT=" TMP("envcache")},
     {"encode", encode, NULL},

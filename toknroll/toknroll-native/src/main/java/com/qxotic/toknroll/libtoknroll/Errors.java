@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.libtoknroll;
 
 import com.qxotic.toknroll.TokenizerLoadException;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
@@ -14,7 +15,7 @@ import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
  * which clears it by succeeding.
  */
 final class Errors {
-    static final int OK = 0, ERROR = -1, EINVAL = -2, ENOTFOUND = -3;
+    static final int OK = 0, ERROR = -1, EINVAL = -2, ENOTFOUND = -3, EUNSUPPORTED = -4;
 
     /** A failure that names its own TOKNROLL_E* code. */
     static final class Failure extends RuntimeException {
@@ -59,10 +60,9 @@ final class Errors {
         if (t instanceof Failure f) return f.code;
         if (t instanceof java.io.UncheckedIOException u && u.getCause() != null)
             return code(u.getCause());
-        if (t instanceof TokenizerLoadException && t.getCause() != null) {
-            int cause = code(t.getCause());
-            return cause == ERROR ? ERROR : cause;
-        }
+        if (t instanceof TokenizerLoadException && t.getCause() != null) return code(t.getCause());
+        // well-formed, but asking for what toknroll does not implement: another library may load it
+        if (t instanceof UnsupportedTokenizerException) return EUNSUPPORTED;
         // a file that does not parse is bad input, as one of no known kind is: bad JSON, a GGUF cut
         if (t instanceof IllegalArgumentException
                 || t instanceof NullPointerException
