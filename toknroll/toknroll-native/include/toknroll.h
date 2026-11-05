@@ -17,8 +17,9 @@
  *              them, a NUL included; with length 0 the pointer may be NULL. A malformed sequence reads
  *              as U+FFFD, as a UTF-8 decoder reads it. Sources and options end at their NUL.
  *   Ownership  What you pass is borrowed for the call; no buffer is kept. A tokenizer is yours until
- *              toknroll_tokenizer_free, which accepts NULL. The one string returned to you,
- *              toknroll_last_error's, is the calling thread's until its next toknroll call.
+ *              toknroll_tokenizer_free, which accepts NULL. A string returned to you is the
+ *              library's: toknroll_version's for good, toknroll_last_error's until the calling
+ *              thread's next toknroll call.
  *   Threads    Any thread may call, and a tokenizer may be shared between threads: it never changes.
  *              toknroll_tokenizer_free is the exception: not during another call on the same tokenizer.
  *   Fork       A process may fork at any time; the child keeps every tokenizer it inherited.
@@ -141,21 +142,24 @@ TOKNROLL_API void                toknroll_tokenizer_free(toknroll_tokenizer* t);
 /* The ids of length bytes of text; by default every token is text. */
 TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, int64_t length,
                                      uint32_t flags, int32_t* out, int32_t token_capacity);
-/* The bytes ids[start, count) have in the whole text ids[0, count): UTF-8, except where a token
- * holds part of a character. A tokenizer that adds a space before a text (SentencePiece) drops it
- * from id 0 only, so a start past 0 continues the text, spaces and all, where ids + start would
- * begin a new one. Only ids[start, count) are read. Over capacity, out holds the tokens that fit
- * whole in byte_capacity - 1 bytes, then the NUL. decoded_tokens, unless NULL, gets how many from
- * start, 0 when byte_capacity is 0: start + *decoded_tokens is count exactly when the text is
- * whole. A start outside [0, count] or an id no token has is TOKNROLL_EINVAL, and decoded_tokens
- * is left as it was. */
+/* The text of ids[0, count), from the byte where id start begins: UTF-8, except where a token
+ * holds part of a character. Decoding from start gives the same bytes as decoding all of ids and
+ * dropping the first start tokens' bytes, so a text decoded in pieces is the text decoded whole; a
+ * tokenizer that adds a space before a text (SentencePiece) drops it from id 0 only. Only
+ * ids[start, count) are read. Over capacity, out holds the tokens that fit whole in
+ * byte_capacity - 1 bytes, then the NUL. decoded_tokens, unless NULL, gets how many tokens from
+ * start are in out, 0 when byte_capacity is 0: start + *decoded_tokens is count exactly when the
+ * text is whole. A start outside [0, count] or an id no token has is TOKNROLL_EINVAL, and
+ * decoded_tokens is left as it was. */
 TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t* ids, int32_t count,
                                      int32_t start, char* out, int64_t byte_capacity,
                                      int32_t* decoded_tokens);
 /* count texts, text i the bytes [text_offsets[i], text_offsets[i + 1]) of texts; their ids go to out,
  * text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold count + 1
- * entries, and with count 0 may be NULL. Encoded on all cores: the first batch starts a thread per
- * core beside the caller, kept until the process exits, which -XX:ActiveProcessorCount=N caps at N - 1
+ * entries, and with count 0 may be NULL. text_offsets must not decrease, and texts + text_offsets[i]
+ * must be an address, so a negative first offset or an end past the address space is
+ * TOKNROLL_EINVAL. Encoded on all cores: the first batch starts a thread per core beside the
+ * caller, kept until the process exits, which -XX:ActiveProcessorCount=N caps at N - 1
  * (toknroll_configure); a forked child's runs on the calling thread. Returns the total,
  * offsets[count]; over capacity, out gets a prefix and offsets is still complete, so token_capacity 0
  * counts. */

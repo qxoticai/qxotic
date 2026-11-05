@@ -60,7 +60,7 @@ A function returns its result.
 A count, index or position is a non-negative `int32_t`, a byte size a non-negative `int64_t`, and a negative value is an error.
 A negative count, length or capacity passed in is `EINVAL`, and so is one past what the library can hold (a Java array's 2 GiB): a limit is a check, never a narrower type.
 A constructor returns the handle, or NULL on failure.
-Only a function that cannot fail (`_free`, `_cancel`) returns `void`.
+Only a function with nothing to return (`_free`, `_cancel`) returns `void`; a bad handle shows in `last_error`.
 
 The three libraries share one table of codes, each with its prefix, and a header defines the ones its library can return:
 
@@ -86,7 +86,7 @@ The message behind the last result is per thread:
 const char* prefix_last_error(int32_t* code);   /* "" and OK after a success; *code unless NULL */
 ```
 
-Every call sets it, except `_last_error` itself and the functions that cannot fail (`_version`, an options struct's `_init`): a success clears it, and the string stays valid until the thread's next call into the library.
+Every call sets it, except `_last_error` itself, `_free(NULL)` and the functions that cannot fail (`_version`, an options struct's `_init`): a success clears it, and the string stays valid until the thread's next call into the library.
 A library never reports through `errno`, never calls `abort` or `exit`, and writes to stderr only what Configuration lists.
 No Java or C++ exception crosses the boundary: each entry point catches everything and returns a code.
 
