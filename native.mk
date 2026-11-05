@@ -77,8 +77,11 @@ check-exports:
 	@$(call EXPORTS,$(LIB)) | sort > target/exported.syms
 	@diff target/expected.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions$(if $(EXTRA_EXPORTS), and $(words $(EXTRA_EXPORTS)) more)"
 
-# The package carries this platform's library alone: a wheel holds what its tag names, whatever else this tree built
+# The package carries this platform's library alone: a wheel holds what its tag names, whatever else this tree built,
+# and runs on the tag's whole platform, so never a library built for this machine alone (QUICK=1)
 python: $(LIB)
+	@if readelf -n $(LIB) 2>/dev/null | grep -q 'x86-64-v4'; then \
+	    echo "$(LIB) needs x86-64-v4 (QUICK=1?): a package needs the x86-64-v3 floor, rebuild without QUICK"; exit 1; fi
 	rm -rf python/$(NAME)/lib && mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
 	cp $(ROOT)/LICENSE python/LICENSE   # pyproject's license-files: a pip install of python/ carries it, as the wheel does
 
