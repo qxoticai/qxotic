@@ -207,12 +207,13 @@ public final class ImplAccessor {
 
     /**
      * A SentencePiece tokenizer as the text sees it, a space ' ' where the vocabulary spells
-     * U+2581: encoding prepends U+2581 as {@code prependScheme} ({@code always}, {@code first} or
-     * {@code never}) says, decoding writes each token's bytes, trimming the first token's leading
-     * space with {@code trimLeadingSpace}. See {@link MetaspaceTokenizer}.
+     * U+2581: encoding runs {@code normalizer} (null for none; the base must not normalize again),
+     * then prepends U+2581 as {@code prependScheme} ({@code always}, {@code first} or {@code never})
+     * says; decoding writes each token's bytes, trimming the first token's leading space with
+     * {@code trimLeadingSpace}. See {@link MetaspaceTokenizer}.
      */
     public static Tokenizer metaspaceTokenizer(
-            Tokenizer base, String prependScheme, boolean trimLeadingSpace) {
-        return new MetaspaceTokenizer(base, prependScheme, trimLeadingSpace);
+            Tokenizer base, Normalizer normalizer, String prependScheme, boolean trimLeadingSpace) {
+        return new MetaspaceTokenizer(base, normalizer, prependScheme, trimLeadingSpace);
     }
 }

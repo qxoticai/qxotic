@@ -294,15 +294,16 @@ public final class HuggingFaceTokenizerLoader {
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
-        Tokenizer tokenizer = Toknroll.pipeline(normalizer, splitter, tokenizationModel);
         if (sentencePieceStyle) {
-            tokenizer =
-                    ImplAccessor.metaspaceTokenizer(
-                            tokenizer,
-                            prependScheme(metaspace),
-                            stripsLeadingSpace(root.get("decoder")));
+            // the wrapper normalizes, then prepends: HF's order, so a space the normalizer makes
+            // (NFKC of U+3000) gets no second one
+            return ImplAccessor.metaspaceTokenizer(
+                    Toknroll.pipeline(splitter, tokenizationModel),
+                    normalizer,
+                    prependScheme(metaspace),
+                    stripsLeadingSpace(root.get("decoder")));
         }
-        return tokenizer;
+        return Toknroll.pipeline(normalizer, splitter, tokenizationModel);
     }
 
     /**

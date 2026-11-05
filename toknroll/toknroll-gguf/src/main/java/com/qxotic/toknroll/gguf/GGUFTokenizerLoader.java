@@ -691,7 +691,7 @@ public final class GGUFTokenizerLoader {
     // the normalizer prepends and spells the spaces; decoding drops the prepended space, as
     // llama.cpp's SPM detokenizer does
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return ImplAccessor.metaspaceTokenizer(base, "never", true);
+        return ImplAccessor.metaspaceTokenizer(base, null, "never", true);
     }
 
     private String resolvePreTokenizerKey(GGUF gguf, String modelKey) {

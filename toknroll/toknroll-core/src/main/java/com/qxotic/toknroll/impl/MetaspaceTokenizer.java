@@ -1,22 +1,23 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Objects;
 
 /**
  * A SentencePiece tokenizer as the text sees it: its vocabulary spells a space U+2581, the text '
  * '.
  *
- * <p>Encoding prepends U+2581 as a Metaspace pre-tokenizer's {@code prepend_scheme} says: before
- * every text ({@code always}), before the start of the text only ({@code first}), or {@code never};
- * and never before text that starts with a space already. Spelling the text's own spaces is the
- * base pipeline's normalizer's work.
+ * <p>Encoding normalizes the text first, then prepends U+2581 as a Metaspace pre-tokenizer's
+ * {@code prepend_scheme} says: before every text ({@code always}), before the start of the text
+ * only ({@code first}), or {@code never}; and never before text that starts with a space already,
+ * one the normalizer made included (NFKC turns U+3000 into one). The base must not normalize
+ * again: the loaders give it none and hand the normalizer here.
  *
  * <p>Decoding writes each token's bytes: a byte token its byte, any other token its spelling with
  * U+2581 a space. With {@code trimLeadingSpace} it drops the space the first token starts with, as
@@ -26,16 +27,16 @@ import java.util.Objects;
 final class MetaspaceTokenizer implements Tokenizer {
 
     private static final char METASPACE = '\u2581';
-    private static final byte[] METASPACE_UTF8 =
-            String.valueOf(METASPACE).getBytes(StandardCharsets.UTF_8);
 
     private final Tokenizer base;
+    private final Normalizer normalizer;
     private final boolean prependAlways;
     private final boolean prependFirst;
     private final boolean trimLeadingSpace;
     private final byte[][] tokenBytes;
 
-    MetaspaceTokenizer(Tokenizer base, String prependScheme, boolean trimLeadingSpace) {
+    MetaspaceTokenizer(
+            Tokenizer base, Normalizer normalizer, String prependScheme, boolean trimLeadingSpace) {
         switch (prependScheme) {
             case "always":
             case "first":
@@ -45,6 +46,7 @@ final class MetaspaceTokenizer implements Tokenizer {
                 throw new IllegalArgumentException("prepend scheme: " + prependScheme);
         }
         this.base = base;
+        this.normalizer = normalizer == null ? Normalizer.identity() : normalizer;
         this.prependAlways = prependScheme.equals("always");
         this.prependFirst = prependScheme.equals("first");
         this.trimLeadingSpace = trimLeadingSpace;
@@ -70,11 +72,11 @@ final class MetaspaceTokenizer implements Tokenizer {
 
     @Override
     public void encodeInto(CharSequence text, int start, int end, IntSequence.Builder out) {
-        if (prepends(text, start, end)) {
-            String prefixed = METASPACE + text.subSequence(start, end).toString();
-            base.encodeInto(prefixed, 0, prefixed.length(), out);
-        } else {
+        if (passesThrough(start)) {
             base.encodeInto(text, start, end, out);
+        } else {
+            CharSequence ready = ready(text.subSequence(start, end), start == 0);
+            base.encodeInto(ready, 0, ready.length(), out);
         }
     }
 
@@ -83,46 +85,37 @@ final class MetaspaceTokenizer implements Tokenizer {
     public void encodeUtf8Into(byte[] utf8, int start, int end, IntSequence.Builder out) {
         Objects.requireNonNull(utf8, "utf8");
         Objects.checkFromToIndex(start, end, utf8.length);
-        if (prepends(utf8, start, end)) {
-            byte[] prefixed = new byte[METASPACE_UTF8.length + end - start];
-            System.arraycopy(METASPACE_UTF8, 0, prefixed, 0, METASPACE_UTF8.length);
-            System.arraycopy(utf8, start, prefixed, METASPACE_UTF8.length, end - start);
-            base.encodeUtf8Into(prefixed, 0, prefixed.length, out);
-        } else {
+        if (passesThrough(start)) {
             base.encodeUtf8Into(utf8, start, end, out);
+        } else {
+            String text = new String(utf8, start, end - start, StandardCharsets.UTF_8);
+            CharSequence ready = ready(text, start == 0);
+            base.encodeInto(ready, 0, ready.length(), out);
         }
     }
 
     @Override
     public int countTokens(CharSequence text, int start, int end) {
-        if (prepends(text, start, end)) {
-            String prefixed = METASPACE + text.subSequence(start, end).toString();
-            return base.countTokens(prefixed, 0, prefixed.length());
+        if (passesThrough(start)) {
+            return base.countTokens(text, start, end);
         }
-        return base.countTokens(text, start, end);
+        CharSequence ready = ready(text.subSequence(start, end), start == 0);
+        return base.countTokens(ready, 0, ready.length());
     }
 
-    // ponytail: the space test reads the text before the base's normalizer; a normalizer that
-    // turns a first char into a space (NFKC on U+3000) would need it after
-    private boolean prepends(CharSequence text, int start, int end) {
-        return start < end
-                && prependsAt(start == 0)
-                && text.charAt(start) != ' '
-                && text.charAt(start) != METASPACE;
+    /** Nothing to normalize, nothing to prepend at this start: the base reads the text as it is. */
+    private boolean passesThrough(int start) {
+        return normalizer == Normalizer.identity() && !prependsAt(start == 0);
     }
 
-    private boolean prepends(byte[] utf8, int start, int end) {
-        return start < end
-                && prependsAt(start == 0)
-                && utf8[start] != ' '
-                && !(end - start >= METASPACE_UTF8.length
-                        && Arrays.equals(
-                                utf8,
-                                start,
-                                start + METASPACE_UTF8.length,
-                                METASPACE_UTF8,
-                                0,
-                                METASPACE_UTF8.length));
+    /** The range normalized, U+2581 before it as the scheme says, unless a space starts it. */
+    private CharSequence ready(CharSequence range, boolean textStart) {
+        CharSequence normalized = normalizer.apply(range);
+        if (normalized.length() == 0 || !prependsAt(textStart)) {
+            return normalized;
+        }
+        char first = normalized.charAt(0);
+        return first == ' ' || first == METASPACE ? normalized : METASPACE + normalized.toString();
     }
 
     private boolean prependsAt(boolean textStart) {

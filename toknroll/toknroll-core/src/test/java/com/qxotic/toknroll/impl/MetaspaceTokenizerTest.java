@@ -33,9 +33,11 @@ class MetaspaceTokenizerTest {
     /** 256 byte tokens, then {@link #WORDS}, merged by score. */
     private static final SentencePieceBpeModel MODEL = model();
 
-    /** The pipeline the loaders build: a normalizer spells the spaces U+2581. */
-    private static final Tokenizer BASE =
-            Toknroll.pipeline((Normalizer) text -> text.toString().replace(' ', '▁'), MODEL);
+    /** The normalizer the loaders hand the wrapper: it spells the spaces U+2581. */
+    private static final Normalizer SPACES = text -> text.toString().replace(' ', '▁');
+
+    /** The base the loaders build under the wrapper: no normalizer of its own. */
+    private static final Tokenizer BASE = Toknroll.pipeline(Normalizer.identity(), MODEL);
 
     private static SentencePieceBpeModel model() {
         int n = 256 + WORDS.length;
@@ -55,7 +57,7 @@ class MetaspaceTokenizerTest {
     }
 
     private static Tokenizer metaspace(String scheme, boolean trim) {
-        return new MetaspaceTokenizer(BASE, scheme, trim);
+        return new MetaspaceTokenizer(BASE, SPACES, scheme, trim);
     }
 
     private static int[] ids(Tokenizer tokenizer, String text) {
@@ -67,6 +69,20 @@ class MetaspaceTokenizerTest {
     }
 
     // ---- encode: Metaspace's prepend_scheme ----
+
+    /** The prepend sees the normalized text: the space NFKC makes of U+3000 or U+00A0 is a space. */
+    @Test
+    void aSpaceTheNormalizerMakesGetsNoSecondOne() {
+        Normalizer nfkc =
+                Normalizer.sequence(Normalizer.unicode(java.text.Normalizer.Form.NFKC), SPACES);
+        for (String scheme : new String[] {"always", "first"}) {
+            Tokenizer tokenizer = new MetaspaceTokenizer(BASE, nfkc, scheme, true);
+            assertArrayEquals(model("▁hello"), ids(tokenizer, " hello"), scheme);
+            assertArrayEquals(model("▁hello"), ids(tokenizer, "　hello"), scheme);
+            assertArrayEquals(model("▁hello"), ids(tokenizer, " hello"), scheme);
+            assertEquals(model("▁hello").length, tokenizer.countTokens("　hello"), scheme);
+        }
+    }
 
     @Test
     void alwaysAndFirstPrependBeforeTheText() {
@@ -220,7 +236,7 @@ class MetaspaceTokenizerTest {
                         new VocabularyImpl(tokens, types), new float[258]);
         Tokenizer base = Toknroll.pipeline((Normalizer) t -> t.toString().replace(' ', '▁'), model);
         for (boolean trim : new boolean[] {true, false}) {
-            Tokenizer tokenizer = new MetaspaceTokenizer(base, "never", trim);
+            Tokenizer tokenizer = new MetaspaceTokenizer(base, null, "never", trim);
             Specials specials = Specials.of(tokenizer);
             assertEquals(Map.of("  ", 256, "<s>", 257), specials.tokens(), "trim " + trim);
             assertArrayEquals(
