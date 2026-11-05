@@ -436,6 +436,7 @@ static void load_paths(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load("./ctest-missing.json"), TOKNROLL_ENOTFOUND, LE, "does not exist");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("~/ctest-missing/tokenizer.json"), TOKNROLL_ENOTFOUND, LE, "does not exist");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/ctest-missing.gguf"), TOKNROLL_ENOTFOUND, LE, "does not exist");   /* a path, no repository */
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-mydir/tokenizer.json"), TOKNROLL_ENOTFOUND, LE, "ctest-mydir/tokenizer.json does not exist");   /* nor one */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-missing.json"), TOKNROLL_EINVAL, LE, "is neither a file here nor a reference");
 }
 

@@ -146,7 +146,7 @@ public record ModelRef(
             component(segment, "path segment", FILE);
         }
         // what a listing would find out too, said before any fetch
-        require(quant == null || !namesAModelFile(path), namedTwice(path, quant));
+        require(quant == null || !namesAFile(path), namedTwice(path, quant));
     }
 
     /**
@@ -190,10 +190,10 @@ public record ModelRef(
             return false;
         }
         List<String> parts = segments(rest);
-        // owner/repo names a REPOSITORY, and no repository is called model.gguf: a two-segment
-        // string ending in a model extension is a relative path meant for modelPath(...). Three
-        // segments or more is the file-in-repository form (owner/repo/mmproj-F32.gguf), untouched.
-        return parts.size() >= 2 && !(parts.size() == 2 && namesAModelFile(parts.get(1)));
+        // owner/repo names a REPOSITORY, and no repository is called model.gguf or tokenizer.json:
+        // a two-segment string ending in a file's extension is a relative path. Three segments or
+        // more is the file-in-repository form (owner/repo/mmproj-F32.gguf), untouched.
+        return parts.size() >= 2 && !(parts.size() == 2 && namesAFile(parts.get(1)));
     }
 
     /**
@@ -207,9 +207,9 @@ public record ModelRef(
     }
 
     /** A file someone means to load, never the name of a repository. */
-    private static boolean namesAModelFile(String segment) {
+    private static boolean namesAFile(String segment) {
         String lower = segment.toLowerCase(Locale.ROOT);
-        return lower.endsWith(".gguf") || lower.endsWith(".safetensors");
+        return lower.endsWith(".gguf") || lower.endsWith(".safetensors") || lower.endsWith(".json");
     }
 
     /**

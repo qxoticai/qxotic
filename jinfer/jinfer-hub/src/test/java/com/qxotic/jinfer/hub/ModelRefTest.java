@@ -146,6 +146,8 @@ class ModelRefTest {
     void aRelativeModelFileIsAPathNotARepository() {
         // the mistake this catches: a relative path handed to model(String) instead of modelPath
         assertFalse(ModelRef.isRef("models/llama.gguf"), "no repository is called llama.gguf");
+        assertFalse(ModelRef.isRef("mydir/tokenizer.json"), "nor tokenizer.json");
+        assertTrue(ModelRef.isRef("owner/repo/tokenizer.json"), "a file in a repository");
         assertFalse(ModelRef.isRef("out/model.safetensors"));
 
         // three segments is the file-in-repository form, which must keep working
