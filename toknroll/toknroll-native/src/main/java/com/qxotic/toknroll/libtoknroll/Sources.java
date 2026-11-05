@@ -172,6 +172,15 @@ final class Sources {
             throw new UncheckedIOException(e);
         }
         if (hasGgufMagic(head)) return Kind.GGUF;
+        // JSON may not start with one (RFC 8259); Hugging Face and Python's json refuse it too
+        if (head.length >= 3
+                && (head[0] & 0xFF) == 0xEF
+                && (head[1] & 0xFF) == 0xBB
+                && (head[2] & 0xFF) == 0xBF)
+            throw Errors.invalid(
+                    file
+                            + " starts with a UTF-8 byte order mark, which JSON does not allow:"
+                            + " save it without one");
         for (byte b : head) {
             if (b == '{') return Kind.JSON;
             if (!Character.isWhitespace(b)) break;

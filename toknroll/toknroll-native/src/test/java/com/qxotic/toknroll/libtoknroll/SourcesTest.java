@@ -64,6 +64,24 @@ class SourcesTest {
     }
 
     @Test
+    void aByteOrderMarkIsRefusedByName() throws Exception {
+        // as Hugging Face and Python's json refuse it, not "is not a tokenizer"
+        Path bom = disk.resolve("bom.json");
+        Files.write(bom, "\uFEFF{\"model\":{}}".getBytes(StandardCharsets.UTF_8));
+        Errors.Failure e =
+                assertThrows(
+                        Errors.Failure.class,
+                        () -> Sources.load(bom.toString(), store(new FakeSource())));
+        assertEquals(Errors.EINVAL, e.code);
+        assertTrue(
+                e.getMessage()
+                        .endsWith(
+                                "starts with a UTF-8 byte order mark, which JSON does not allow:"
+                                        + " save it without one"),
+                e.getMessage());
+    }
+
+    @Test
     void aFifoIsRefusedNotOpened() throws Exception {
         assumeFalse(System.getProperty("os.name").startsWith("Windows"), "no FIFOs on Windows");
         Path fifo = disk.resolve("fifo");

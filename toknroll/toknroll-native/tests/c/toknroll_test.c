@@ -442,6 +442,9 @@ static void load_by_content(void) {
     const char* json_cut = TMP("cut.json");
     write_file(json_cut, "{\"model\": {\"type\": \"BPE\"", 25);
     CHECK_NULL_ERROR(toknroll_tokenizer_load(json_cut), TOKNROLL_EINVAL, LE, "Line 1, Column 25");
+    const char* bom = TMP("bom.json");   /* refused as Hugging Face refuses it, by name */
+    write_file(bom, "\xEF\xBB\xBF{}", 5);
+    CHECK_NULL_ERROR(toknroll_tokenizer_load(bom), TOKNROLL_EINVAL, LE, "starts with a UTF-8 byte order mark");
 }
 
 static void load_references(void) {
