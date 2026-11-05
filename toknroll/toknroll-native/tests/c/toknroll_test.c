@@ -80,6 +80,22 @@ static void other_thread_errors(void* p) {
     snprintf(box->own, sizeof box->own, "%s", m);
 }
 
+typedef struct { int32_t code; char message[128]; } peeked;
+static void peek(void* p) {
+    peeked* r = (peeked*) p;
+    snprintf(r->message, sizeof r->message, "%s", LE(&r->code));
+}
+
+/* before the runtime starts, as after, a failure is the failing thread's own */
+static void last_error_before_start(void) {
+    CHECK_ERROR(toknroll_configure(NULL, 1), TOKNROLL_EINVAL, LE, "options is NULL");
+    peeked other = {99, "unread"};
+    thread_join(thread_run(peek, &other));
+    CHECK_EQ(other.code, TOKNROLL_OK);   /* a thread that never called sees nothing */
+    CHECK_STR(other.message, "");
+    CHECK(strstr(LE(NULL), "options is NULL") != NULL);   /* the failing thread keeps its own */
+}
+
 static void last_error_per_thread(void) {
     errors_box box = {tiny(), 99, 99, ""};
     CHECK_ERROR(toknroll_decode(box.t, NULL, -1, 0, NULL, 0, NULL), TOKNROLL_EINVAL, LE, "count must not be negative");
@@ -1517,6 +1533,7 @@ static void returned_strings(void) {
 static const scenario scenarios[] = {
     {"version", version, NULL},
     {"last_error_per_call", last_error_per_call, NULL},
+    {"last_error_before_start", last_error_before_start, NULL},
     {"last_error_per_thread", last_error_per_thread, NULL},
     {"configure_arguments", configure_arguments, NULL},
     {"configure_after_a_call", configure_after_a_call, NULL},

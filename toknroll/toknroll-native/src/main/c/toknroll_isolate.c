@@ -87,8 +87,9 @@ static char* env;                       /* the environment's options, which argv
 static const char* configured_by;       /* the public function configure came through, once */
 static long created;                    /* set when creation starts, port_load/port_store: then configure is too late */
 static long started;                    /* the runtime is up and this file's state with it: port_load/port_store */
-static char early_error[256];           /* a failure with no isolate to hold the message: before it, or a forked child's */
-static int32_t early_code;
+/* a failure with no isolate to hold the message, before it or in a forked child: the calling thread's own */
+static PORT_THREAD_LOCAL char early_error[256];
+static PORT_THREAD_LOCAL int32_t early_code;
 static char start_error[256];           /* why there is no runtime, for every later call to say again */
 static int32_t start_code;
 

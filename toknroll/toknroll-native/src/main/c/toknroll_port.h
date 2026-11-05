@@ -1,7 +1,7 @@
-/* What the shims need from the platform, and nothing more: run a function once, keep one value per thread
- * with a destructor at thread exit, duplicate a string, read and write a flag across threads, and check a
- * printf format. POSIX everywhere but Windows, where the same come from the Win32 API (fiber-local storage
- * is the thread-local storage that has destructors). */
+/* What the shims need from the platform, and nothing more: run a function once, declare a thread-local
+ * variable, keep one value per thread with a destructor at thread exit, duplicate a string, read and write
+ * a flag across threads, and check a printf format. POSIX everywhere but Windows, where the same come from
+ * the Win32 API (fiber-local storage is the thread-local storage that has destructors). */
 #ifndef TOKNROLL_PORT_H
 #define TOKNROLL_PORT_H
 #include <string.h>
@@ -25,9 +25,11 @@ static inline int port_tls_create(port_tls_t* key, void (*destructor)(void*)) { 
 #define port_tls_get(key) FlsGetValue(key)
 #define port_tls_set(key, value) FlsSetValue(key, value)
 #define port_strdup _strdup
+#define PORT_THREAD_LOCAL __declspec(thread)
 #define port_load(flag) InterlockedCompareExchange((flag), 0, 0)   /* flag: a long* */
 #define port_store(flag, value) InterlockedExchange((flag), (value))
 #else
+#define PORT_THREAD_LOCAL _Thread_local
 #include <pthread.h>
 typedef pthread_once_t port_once_t;
 #define PORT_ONCE_INIT PTHREAD_ONCE_INIT
