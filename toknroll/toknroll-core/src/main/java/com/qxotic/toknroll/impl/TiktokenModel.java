@@ -48,7 +48,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
     private final LongLongMap merges;
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
-    // a token of up to 16 bytes as two words, its bytes zero-padded, for decode to store whole
+    // a token of up to WIDE bytes as two words, its bytes zero-padded, for decode to store whole
+    private static final int WIDE = 16;
     private final long[] spellingWords;
     // its length, or 0 for a longer token, which decode copies
     private final byte[] shortLengths;
@@ -77,8 +78,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
         this.shortLengths = new byte[tokenBytesById.length];
         for (int id = 0; id < tokenBytesById.length; id++) {
             byte[] spelling = tokenBytesById[id];
-            if (spelling != null && spelling.length <= 16) {
-                byte[] padded = Arrays.copyOf(spelling, 16);
+            if (spelling != null && spelling.length <= WIDE) {
+                byte[] padded = Arrays.copyOf(spelling, WIDE);
                 spellingWords[2 * id] = (long) LONGS.get(padded, 0);
                 spellingWords[2 * id + 1] = (long) LONGS.get(padded, 8);
                 shortLengths[id] = (byte) spelling.length;
@@ -551,20 +552,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
     @Override
     public int countBytes(IntSequence tokens) {
         Objects.requireNonNull(tokens, "tokens");
-        int length = tokens.length();
-        int totalBytes = 0;
-        for (int i = 0; i < length; i++) {
-            int tokenId = tokens.intAt(i);
-            byte[] tokenBytes =
-                    (tokenId >= 0 && tokenId < tokenBytesById.length)
-                            ? tokenBytesById[tokenId]
-                            : null;
-            if (tokenBytes == null) {
-                throw unknownToken(tokenId);
-            }
-            totalBytes += tokenBytes.length;
+        int total = 0;
+        for (int i = 0, n = tokens.length(); i < n; i++) {
+            total += spellingLength(tokens.intAt(i));
         }
-        return totalBytes;
+        return total;
     }
 
     @Override
@@ -637,7 +629,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     /**
      * Writes the known ids {@code tokens[from, last)}, which spell exactly {@code [at, stop)} of
-     * {@code array}: a short token in two 8-byte stores while its 16-byte window stays within the
+     * {@code array}: a short token in two 8-byte stores while its WIDE-byte window stays within the
      * output, the bytes past the token the next tokens' own; the last tokens of the output, and
      * long ones, copied exactly.
      */
@@ -646,7 +638,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         for (int i = from; i < last; i++) {
             int id = tokens.intAt(i);
             int length = shortLengths[id];
-            if (length != 0 && at + 16 <= stop) {
+            if (length != 0 && at + WIDE <= stop) {
                 LONGS.set(array, at, spellingWords[2 * id]);
                 LONGS.set(array, at + 8, spellingWords[2 * id + 1]);
             } else {
