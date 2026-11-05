@@ -79,7 +79,9 @@ final class Sources {
                         "'"
                                 + source
                                 + "': unknown host; a hub is hf.co, huggingface.co or"
-                                + " modelscope.cn");
+                                + " modelscope.cn, and a local path is written './"
+                                + source
+                                + "'");
             return local(source);
         }
         source = source.strip(); // a ref is lenient, as ModelRef's own parse is

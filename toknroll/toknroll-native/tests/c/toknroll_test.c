@@ -495,6 +495,9 @@ static void load_references(void) {
     /* malformed: refused as spelled, before any lookup */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo@"), TOKNROLL_EINVAL, LE, "empty revision");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("example.com/owner/repo"), TOKNROLL_EINVAL, LE, "unknown host");
+    CHECK_HAS(LE(NULL), "a local path is written './example.com/owner/repo'");
+    /* which is: a missing file, no host */
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("./example.com/owner/repo"), TOKNROLL_ENOTFOUND, LE, "does not exist");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo/x-Q8_0.gguf:Q8_0"), TOKNROLL_EINVAL, LE, "already names a file");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo:Q8_0:Q4_0"), TOKNROLL_EINVAL, LE, "single path component");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("hf.co/owner"), TOKNROLL_EINVAL, LE, "owner/repo");
