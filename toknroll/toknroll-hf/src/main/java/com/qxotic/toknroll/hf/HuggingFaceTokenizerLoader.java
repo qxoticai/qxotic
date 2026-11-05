@@ -231,15 +231,12 @@ public final class HuggingFaceTokenizerLoader {
 
         Map<String, Object> root = parseObject(tokenizerJson);
         Map<String, Object> model = asObject(root.get("model"), "tokenizer.json:model");
-        // Files written before tokenizers tagged its models (gpt2) carry no type: merges mean BPE.
-        if (model.get("type") == null && !model.containsKey("merges")) {
-            // the older files of a WordPiece or Unigram model name no type: valid, not BPE
-            throw unsupported("tokenizer.json:model.type", "absent, and no merges", "BPE");
-        }
+        // Files written before tokenizers tagged its models carry no type: merges mean BPE (gpt2),
+        // none means WordPiece or Unigram (bert): a valid file either way
         String modelType =
-                model.get("type") == null && model.containsKey("merges")
-                        ? "BPE"
-                        : asString(model.get("type"), "tokenizer.json:model.type");
+                model.get("type") != null
+                        ? asString(model.get("type"), "tokenizer.json:model.type")
+                        : model.containsKey("merges") ? "BPE" : "absent, and no merges";
         if (!"BPE".equals(modelType)) {
             throw unsupported("tokenizer.json:model.type", modelType, "BPE");
         }

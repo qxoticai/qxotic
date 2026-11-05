@@ -3,6 +3,7 @@ package com.qxotic.toknroll.libtoknroll;
 import com.qxotic.jinfer.hub.ModelRef;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import com.qxotic.toknroll.hf.HuggingFaceTokenizerLoader;
 import java.io.FileNotFoundException;
@@ -11,6 +12,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
@@ -118,19 +120,19 @@ final class Sources {
         } catch (IllegalArgumentException e) {
             throw failure(e);
         } catch (UncheckedIOException e) {
-            // offline, either way the store knows it: built without sources, or its own knob. The
-            // store holds no tokenizer.json for the ref: a tiktoken repository keeps its files in
-            // the loader's own cache, which its cache-only path reads, or reports as not cached
+            // offline, either way the store knows it: built without sources, or its own knob. A
+            // repository the store has no file of may be a tiktoken one, whose files live in the
+            // loader's own cache: its cache-only path reads them, or says not cached
             if (e.getMessage().contains("no source")
                     || e.getCause() instanceof FileNotFoundException) {
-                if (ref.quant() == null && !isGguf(ref.path())) return Located.tiktoken(ref);
-                throw notCached(source); // a GGUF has no such cache
+                if (ref.quant() == null && ref.path().isEmpty()) return Located.tiktoken(ref);
+                throw notCached(source);
             }
             throw e;
         }
     }
 
-    static Errors.Failure notCached(String source) {
+    private static Errors.Failure notCached(String source) {
         return Errors.notFound(source + " is not cached, and offline mode never fetches");
     }
 
@@ -232,8 +234,9 @@ final class Sources {
                             ref.owner(), ref.repo(), ref.revision(), offline, false)
                     : HuggingFaceTokenizerLoader.fromHuggingFace(
                             ref.owner(), ref.repo(), ref.revision(), offline, false);
-        } catch (RuntimeException e) {
-            if (offline) throw notCached(ref.toString()); // its cache-only path found nothing
+        } catch (TokenizerLoadException e) {
+            // offline, the transport answers every request with a NoSuchFileException
+            if (e.getCause() instanceof NoSuchFileException) throw notCached(ref.toString());
             throw e;
         }
     }
