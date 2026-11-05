@@ -139,7 +139,8 @@ static void env_set(const char* name, const char* value) {   /* NULL removes it 
 
 /* none of the libraries' variables the shell may have set, but the scenario's own */
 static void scenario_env(const scenario* s) {
-    static const char* const libraries[] = {"TOKNROLL_LOG", "TOKNROLL_OPTIONS", "JINFER_LOG", "JINFER_OPTIONS"};
+    static const char* const libraries[] = {"TOKNROLL_LOG", "TOKNROLL_OPTIONS", "TOKNROLL_CACHE_ROOT", "JINFER_LOG",
+                                            "JINFER_OPTIONS"};
     for (int k = 0; k < COUNT(libraries); k++) env_set(libraries[k], NULL);
     if (s->env) {
         char name[64];

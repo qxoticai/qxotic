@@ -467,6 +467,19 @@ static void load_references(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo?x=1"), TOKNROLL_EINVAL, LE, "no hub name has");
 }
 
+/* TOKNROLL_CACHE_ROOT moves the store as -Dtoknroll.cache.root does: a file under it loads offline */
+static void load_cache_root_from_the_environment(void) {
+    const char* dirs[] = {TMP("envcache"), TMP("envcache/hf.co"), TMP("envcache/hf.co/ctest-env"),
+                          TMP("envcache/hf.co/ctest-env/repo")};
+    for (int i = 0; i < COUNT(dirs); i++) make_dir(dirs[i]);
+    write_tiny_gguf(TMP("envcache/hf.co/ctest-env/repo/tiny.gguf"), "gpt2");
+    const char* offline[] = {"-Dtoknroll.offline=true"};
+    CHECK_EQ(toknroll_configure(offline, 1), TOKNROLL_OK);
+    toknroll_tokenizer* t = toknroll_tokenizer_load("ctest-env/repo/tiny.gguf");
+    CHECK_STR(t ? "" : LE(NULL), "");
+    toknroll_tokenizer_free(t);
+}
+
 /* ---- encode ---- */
 
 static void encode(void) {
@@ -1582,6 +1595,8 @@ static const scenario scenarios[] = {
     {"load_folders", load_folders, NULL},
     {"load_by_content", load_by_content, NULL},
     {"load_references", load_references, NULL},
+    {"load_cache_root_from_the_environment", load_cache_root_from_the_environment,
+     "TOKNROLL_CACHE_ROOT=" TMP("envcache")},
     {"encode", encode, NULL},
     {"encode_specials", encode_specials, NULL},
     {"error_messages", error_messages, NULL},

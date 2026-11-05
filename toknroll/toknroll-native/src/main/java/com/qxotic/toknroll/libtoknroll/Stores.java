@@ -7,10 +7,11 @@ import java.nio.file.Path;
 
 /**
  * The store hub references resolve through: jinfer's, so a file either library fetched serves the
- * other, configured by toknroll's own two knobs. {@code -Dtoknroll.cache.root} moves the cache,
- * {@code -Dtoknroll.offline=true} builds a store with no sources, which serves the cache and
- * refuses the network. Absent both, the standard store applies, where the {@code jinfer.*}
- * spellings govern: in libjinfer, which carries both faces on one runtime, those are the knobs.
+ * other, configured by toknroll's own two knobs. {@code -Dtoknroll.cache.root} ({@code
+ * TOKNROLL_CACHE_ROOT} in the environment) moves the cache, {@code -Dtoknroll.offline=true} builds
+ * a store with no sources, which serves the cache and refuses the network. Absent both, the
+ * standard store applies, where the {@code jinfer.*} spellings govern: in libjinfer, which carries
+ * both faces on one runtime, those are the knobs.
  */
 final class Stores {
     private static volatile ModelStore store;
@@ -22,13 +23,23 @@ final class Stores {
     }
 
     private static ModelStore create() {
-        String root = System.getProperty("toknroll.cache.root");
+        String root = root();
         boolean offline = flag("toknroll.offline");
         if (root == null && !offline) return ModelStore.standard();
         Path at = root == null ? ModelStore.standard().root() : Path.of(root);
         return offline
                 ? ModelStore.of(at)
                 : ModelStore.of(at, new HuggingFaceSource(), new ModelScopeSource());
+    }
+
+    /**
+     * The cache root as the GGUF and tokenizer.json caches inside this library read it, so all
+     * agree: {@code -Dtoknroll.cache.root}, else {@code TOKNROLL_CACHE_ROOT}, a blank one unset.
+     */
+    private static String root() {
+        String root = System.getProperty("toknroll.cache.root");
+        if (root == null || root.isBlank()) root = System.getenv("TOKNROLL_CACHE_ROOT");
+        return root == null || root.isBlank() ? null : root;
     }
 
     /** What the loaders' own fetches honour: either library's spelling of offline. */
