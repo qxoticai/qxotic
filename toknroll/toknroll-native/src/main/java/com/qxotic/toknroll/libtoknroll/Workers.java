@@ -2,7 +2,6 @@ package com.qxotic.toknroll.libtoknroll;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntConsumer;
@@ -96,29 +95,21 @@ final class Workers {
     private static synchronized void start() {
         if (started) return;
         started = true;
-        CountDownLatch listed = new CountDownLatch(THREADS - 1);
+        AtomicInteger listed = new AtomicInteger(); // all a worker keeps of its start
         for (int i = 1; i < THREADS; i++) {
             Thread worker =
                     new Thread(
                             () -> {
                                 PointerBase self = newWorker();
-                                listed.countDown();
+                                listed.incrementAndGet();
                                 if (self.isNonNull()) loop(self);
                             },
                             "toknroll-batch-" + i);
             worker.setDaemon(true);
             worker.start();
         }
-        boolean interrupted = false;
-        for (; ; ) {
-            try {
-                listed.await();
-                break;
-            } catch (InterruptedException e) {
-                interrupted = true;
-            }
-        }
-        if (interrupted) Thread.currentThread().interrupt();
+        // ponytail: yields for the threads' start, once per process; nothing to wake, nothing kept
+        while (listed.get() < THREADS - 1) Thread.yield();
     }
 
     /** A worker's life: wait in C, then work on whatever jobs are queued. */
