@@ -21,7 +21,7 @@ class HubTest(unittest.TestCase):
         """A hub tiktoken checkout keeps its files in the loader's own cache: offline, the same root serves it."""
         with tempfile.TemporaryDirectory() as root:
             def run(source, *options):  # configure is once per process: each load in its own
-                return fresh(f"toknroll.configure('-Dtoknroll.cache.root={root}', *{options!r})\n"
+                return fresh(f"toknroll.configure({'-Dtoknroll.cache.root=' + root!r}, *{options!r})\n"   # repr: a Windows path has backslashes
                              f"print(toknroll.load({source!r}).vocabulary_size)")
             warm = run("moonshotai/Kimi-K3")
             self.assertEqual(warm.returncode, 0, warm.stderr)

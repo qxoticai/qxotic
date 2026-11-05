@@ -63,7 +63,7 @@ class LoadTest(unittest.TestCase):
             toknroll.load("/no/such/dir/tokenizer.json")
         self.assertIsInstance(e.exception, FileNotFoundError)
         self.assertEqual(e.exception.code, -3)
-        self.assertIn(str(Path("/no/such/dir/tokenizer.json")), str(e.exception))   # as the platform spells it
+        self.assertIn("/no/such/dir/tokenizer.json does not exist", str(e.exception))   # as written, on every platform
         with self.assertRaises(toknroll.InvalidArgument) as e:
             toknroll.load("")
         self.assertIsInstance(e.exception, ValueError)
