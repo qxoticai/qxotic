@@ -125,12 +125,15 @@ def _ids(value, what: str) -> tuple[object, int, int]:
     except TypeError:
         view = None  # an iterable of int
     if view is not None:
-        if view.format in "il" and view.itemsize == 4 and view.c_contiguous and not view.readonly:
+        if view.format in ("i", "l") and view.itemsize == 4 and view.ndim == 1 and view.c_contiguous and not view.readonly:
             raw = (C.c_char * view.nbytes).from_buffer(view)
             return raw, C.addressof(raw), view.nbytes // 4
         if view.format in ("B", "b", "c"):
             raise TypeError(f"{what}: bytes are ambiguous as ids; pass an array('i') or an int32 view")
-        value = view.tolist()
+        try:
+            value = view.tolist()  # twice as fast as iterating a numpy int64 array
+        except NotImplementedError:  # tolist knows native formats only: a ctypes or big-endian array iterates as ints below
+            pass
     try:
         ids = array("i", value)
     except TypeError:

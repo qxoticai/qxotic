@@ -43,6 +43,8 @@ class IdBufferTest(unittest.TestCase):
             "memoryview": memoryview(ids),
             "array('l')": array("l", ids),
             "array('q')": array("q", ids),
+            "ctypes int32": (ctypes.c_int32 * len(ids))(*ids),  # format '<i': not native to tolist, iterated
+            "ctypes int64": (ctypes.c_int64 * len(ids))(*ids),
         }
         for name, value in shapes.items():
             if value is None:
@@ -68,6 +70,12 @@ class IdBufferTest(unittest.TestCase):
         ro = view.copy(); ro.flags.writeable = False
         self.assertEqual(self.t.decode(ro), text)                             # read-only: copied
         self.assertEqual(self.t.decode(numpy.array([], dtype=numpy.int32)), "")
+        self.assertEqual(self.t.decode(view.astype(">i4")), text)             # big-endian: iterated
+        self.assertEqual(self.t.decode(view.astype(">u4")), text)
+        with self.assertRaises(TypeError):  # a 2-D array is a batch, not ids: refused as HF and tiktoken refuse it
+            self.t.decode(numpy.stack([view, view]))
+        with self.assertRaises(TypeError):
+            self.t.decode(numpy.int32(ids[0]))                                # 0-D: not a sequence either
 
     def test_rejected_ids(self):
         for bad, kind in (([1.5], TypeError), (["a"], TypeError), ([2**40], OverflowError), ([None], TypeError),
