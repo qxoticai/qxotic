@@ -318,8 +318,8 @@ static void log_callback_may_free(void) {   /* JINFER_LOG=debug */
 
 static void load_errors(void) {
     offline();
-    CHECK_NULL_ERROR(jinfer_model_load(NULL, NULL), JINFER_EINVAL, LE, "ref is NULL");
-    CHECK_NULL_ERROR(jinfer_model_load("", NULL), JINFER_EINVAL, LE, "ref is empty");
+    CHECK_NULL_ERROR(jinfer_model_load(NULL, NULL), JINFER_EINVAL, LE, "source is NULL");
+    CHECK_NULL_ERROR(jinfer_model_load("", NULL), JINFER_EINVAL, LE, "source is empty");
     CHECK_NULL_ERROR(jinfer_model_load("./" TMP("missing.gguf"), NULL), JINFER_ENOTFOUND, LE, "no such file");
     CHECK_NULL_ERROR(jinfer_model_load("./ctest-missing.gguf", NULL), JINFER_ENOTFOUND, LE, "no such file");
     CHECK_NULL_ERROR(jinfer_model_load("~/ctest-missing.gguf", NULL), JINFER_ENOTFOUND, LE, "no such file");
@@ -440,7 +440,8 @@ static void language_model(void) {
     CHECK_NULL_ERROR(jinfer_speak(m, "{\"input\":\"x\"}"), JINFER_EUNSUPPORTED, LE, "is a language model, not a speech model");
     CHECK_NULL_ERROR(jinfer_transcribe(m, out, 4, 16000), JINFER_EUNSUPPORTED, LE, "not a transcription model");
     CHECK_ERROR(jinfer_embed(m, texts, 1, 0, out, 4), JINFER_EUNSUPPORTED, LE, "not an embedding model");
-    CHECK_ERROR(jinfer_rerank(m, "q", texts, 1, NULL, out), JINFER_EUNSUPPORTED, LE, "not a reranking model");
+    CHECK_ERROR(jinfer_rerank(m, "q", texts, 1, NULL, out, 1), JINFER_EUNSUPPORTED, LE, "not a reranking model");
+    CHECK_ERROR(jinfer_rerank(m, "q", texts, 1, NULL, NULL, 0), JINFER_EUNSUPPORTED, LE, "not a reranking model");   /* sizing too */
     jinfer_model_free(m);
 }
 
@@ -488,10 +489,12 @@ static void state(void) {
     CHECK_ERROR(jinfer_state_ingest(s, negative, 1), JINFER_EINVAL, LE, "token id -1 outside");
     CHECK_EQ(jinfer_state_position(s), 0);               /* a refused ingest ingests nothing */
     CHECK_ERROR(jinfer_state_ingest(s, ids, -1), JINFER_EINVAL, LE, "count must not be negative");
-    CHECK_ERROR(jinfer_state_ingest(s, NULL, 1), JINFER_EINVAL, LE, "tokens is NULL");
+    CHECK_ERROR(jinfer_state_ingest(s, NULL, 1), JINFER_EINVAL, LE, "ids is NULL");
     CHECK_EQ(jinfer_state_ingest(s, ids, 1), 1);
     CHECK_ERROR(jinfer_state_logits(s, logits, -1), JINFER_EINVAL, LE, "float_capacity must not be negative");
     CHECK_ERROR(jinfer_state_logits(s, NULL, 4), JINFER_EINVAL, LE, "out is NULL");
+    CHECK_ERROR(jinfer_state_embedding(s, logits, vocab), JINFER_EUNSUPPORTED, LE, "is a language model, not an embedding model");
+    CHECK_EQ(jinfer_model_property(m, JINFER_EMBEDDING_DIMENSION), 0);   /* the two agree */
     CHECK_ERROR(jinfer_state_ingest(NULL, ids, 1), JINFER_EINVAL, LE, "state is NULL");
     CHECK_ERROR(jinfer_state_position(NULL), JINFER_EINVAL, LE, "state is NULL");
     CHECK_ERROR(jinfer_state_reset(NULL), JINFER_EINVAL, LE, "state is NULL");
@@ -848,7 +851,7 @@ static void embedding_model(void) {
     CHECK_NULL_ERROR(jinfer_chat(e, HI), JINFER_EUNSUPPORTED, LE, "is an embedding model, not a language model");
     CHECK_ERROR(jinfer_prepare(e, HI), JINFER_EUNSUPPORTED, LE, "not a language model");
     CHECK_NULL_ERROR(jinfer_speak(e, "{\"input\":\"x\"}"), JINFER_EUNSUPPORTED, LE, "not a speech model");
-    CHECK_ERROR(jinfer_rerank(e, "q", texts, 1, NULL, out), JINFER_EUNSUPPORTED, LE, "not a reranking model");
+    CHECK_ERROR(jinfer_rerank(e, "q", texts, 1, NULL, out, 1), JINFER_EUNSUPPORTED, LE, "not a reranking model");
     toknroll_tokenizer* t = jinfer_model_tokenizer(e);
     CHECK(t != NULL);
     toknroll_tokenizer_free(t);
@@ -868,15 +871,21 @@ static void reranker(void) {
     CHECK_EQ(jinfer_model_property(r, JINFER_HAS_CHAT), 0);
     const char* docs[] = {"Paris is the capital of France.", "Bananas are yellow."};
     float scores[3] = {0, 0, -7};
-    CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, NULL, scores), JINFER_OK);
+    CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, NULL, scores, 3), 2);
     CHECK(scores[0] > scores[1] && scores[2] == -7);
-    CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, "Judge whether the document answers the query.", scores), JINFER_OK);
+    CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, "Judge whether the document answers the query.", scores, 2), 2);
     CHECK(scores[0] > scores[1]);
-    CHECK_EQ(jinfer_rerank(r, "q", NULL, 0, NULL, NULL), JINFER_OK);
-    CHECK_ERROR(jinfer_rerank(r, NULL, docs, 2, NULL, scores), JINFER_EINVAL, LE, "query is NULL");
-    CHECK_ERROR(jinfer_rerank(r, "q", NULL, 2, NULL, scores), JINFER_EINVAL, LE, "documents is NULL");
-    CHECK_ERROR(jinfer_rerank(r, "q", docs, 2, NULL, NULL), JINFER_EINVAL, LE, "scores is NULL");
-    CHECK_ERROR(jinfer_rerank(r, "q", docs, -1, NULL, scores), JINFER_EINVAL, LE, "count must not be negative");
+    /* capacity 0 sizes, before any work; too little room writes nothing */
+    CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, NULL, NULL, 0), 2);
+    scores[0] = -7;
+    CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, NULL, scores, 1), 2);
+    CHECK(scores[0] == -7);
+    CHECK_EQ(jinfer_rerank(r, "q", NULL, 0, NULL, NULL, 0), 0);
+    CHECK_ERROR(jinfer_rerank(r, NULL, docs, 2, NULL, scores, 2), JINFER_EINVAL, LE, "query is NULL");
+    CHECK_ERROR(jinfer_rerank(r, "q", NULL, 2, NULL, scores, 2), JINFER_EINVAL, LE, "documents is NULL");
+    CHECK_ERROR(jinfer_rerank(r, "q", docs, 2, NULL, NULL, 2), JINFER_EINVAL, LE, "out is NULL");
+    CHECK_ERROR(jinfer_rerank(r, "q", docs, 2, NULL, scores, -1), JINFER_EINVAL, LE, "float_capacity must not be negative");
+    CHECK_ERROR(jinfer_rerank(r, "q", docs, -1, NULL, scores, 2), JINFER_EINVAL, LE, "count must not be negative");
     CHECK_NULL_ERROR(jinfer_model_tokenizer(r), JINFER_EUNSUPPORTED, LE, "it exposes no tokenizer");
     CHECK_NULL_ERROR(jinfer_chat(r, HI), JINFER_EUNSUPPORTED, LE, "not a language model");
     jinfer_model_free(r);

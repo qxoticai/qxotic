@@ -51,7 +51,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
         "jinfer_speak": ([P, S], P),
         "jinfer_transcribe": ([P, F, I32, I32], P),
         "jinfer_embed": ([P, C.POINTER(S), I32, I32, F, I32], I32),
-        "jinfer_rerank": ([P, S, C.POINTER(S), I32, S, F], I32),
+        "jinfer_rerank": ([P, S, C.POINTER(S), I32, S, F, I32], I32),
         "jinfer_prepare": ([P, S], I32),
     }
     for name, (argtypes, restype) in sig.items():

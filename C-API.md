@@ -18,7 +18,7 @@ A handle is made by `_new` (from arguments) or `_load` (from a file, path or hub
 There is no `_create`, `_destroy` or `_release`.
 
 ```c
-jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* options);
+jinfer_model* jinfer_model_load(const char* source, const jinfer_model_options* options);
 void          jinfer_model_free(jinfer_model* model);
 jam_context*  jam_context_new(const jam_context_options* options);
 void          jam_context_free(jam_context* context);

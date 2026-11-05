@@ -39,7 +39,7 @@ jinfer_stream* jinfer__chat(T, jinfer_model*, const char*);
 jinfer_stream* jinfer__speak(T, jinfer_model*, const char*);
 jinfer_stream* jinfer__transcribe(T, jinfer_model*, const float*, int32_t, int32_t);
 int32_t jinfer__embed(T, jinfer_model*, const char* const*, int32_t, int32_t, float*, int32_t);
-int32_t jinfer__rerank(T, jinfer_model*, const char*, const char* const*, int32_t, const char*, float*);
+int32_t jinfer__rerank(T, jinfer_model*, const char*, const char* const*, int32_t, const char*, float*, int32_t);
 int32_t jinfer__prepare(T, jinfer_model*, const char*);
 
 const char* jinfer_version(void) { return XSTR(JINFER_VERSION_MAJOR) "." XSTR(JINFER_VERSION_MINOR) "." XSTR(JINFER_VERSION_PATCH); }
@@ -49,7 +49,7 @@ int32_t jinfer_log_set(jinfer_log_fn fn, void* user_data) { return toknroll__log
 int32_t jinfer_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "jinfer_configure", jinfer__error_set); }
 
 void jinfer_model_options_init(jinfer_model_options* o) { memset(o, 0, sizeof *o); o->struct_size = (int64_t) sizeof *o; }
-jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o) { THREAD; return t ? jinfer__model_load(t, ref, o) : NULL; }
+jinfer_model* jinfer_model_load(const char* source, const jinfer_model_options* o) { THREAD; return t ? jinfer__model_load(t, source, o) : NULL; }
 void jinfer_model_free(jinfer_model* m) { if (!m) return; THREAD; if (t) jinfer__model_free(t, m); }   /* NULL never starts the runtime, here and below */
 int32_t jinfer_model_property(const jinfer_model* m, int32_t key) { THREAD; return t ? jinfer__model_property(t, m, key) : JINFER_ERROR; }
 const char* jinfer_model_info(const jinfer_model* m) { THREAD; return t ? jinfer__model_info(t, m) : ""; }
@@ -59,7 +59,7 @@ jinfer_state* jinfer_state_new(jinfer_model* m, int32_t capacity) { THREAD; retu
 void jinfer_state_free(jinfer_state* s) { if (!s) return; THREAD; if (t) jinfer__state_free(t, s); }
 int32_t jinfer_state_reset(jinfer_state* s) { THREAD; return t ? jinfer__state_reset(t, s) : JINFER_ERROR; }
 int32_t jinfer_state_position(const jinfer_state* s) { THREAD; return t ? jinfer__state_position(t, s) : JINFER_ERROR; }
-int32_t jinfer_state_ingest(jinfer_state* s, const int32_t* tokens, int32_t count) { THREAD; return t ? jinfer__state_ingest(t, s, tokens, count) : JINFER_ERROR; }
+int32_t jinfer_state_ingest(jinfer_state* s, const int32_t* ids, int32_t count) { THREAD; return t ? jinfer__state_ingest(t, s, ids, count) : JINFER_ERROR; }
 int32_t jinfer_state_logits(const jinfer_state* s, float* out, int32_t cap) { THREAD; return t ? jinfer__state_logits(t, s, out, cap) : JINFER_ERROR; }
 int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t cap) { THREAD; return t ? jinfer__state_embedding(t, s, out, cap) : JINFER_ERROR; }
 
@@ -75,5 +75,5 @@ jinfer_stream* jinfer_speak(jinfer_model* m, const char* request_json) { THREAD;
 jinfer_stream* jinfer_transcribe(jinfer_model* m, const float* pcm, int32_t count, int32_t rate) { THREAD; return t ? jinfer__transcribe(t, m, pcm, count, rate) : NULL; }
 
 int32_t jinfer_embed(jinfer_model* m, const char* const* texts, int32_t count, int32_t dim, float* out, int32_t cap) { THREAD; return t ? jinfer__embed(t, m, texts, count, dim, out, cap) : JINFER_ERROR; }
-int32_t jinfer_rerank(jinfer_model* m, const char* query, const char* const* docs, int32_t count, const char* instruction, float* scores) { THREAD; return t ? jinfer__rerank(t, m, query, docs, count, instruction, scores) : JINFER_ERROR; }
+int32_t jinfer_rerank(jinfer_model* m, const char* query, const char* const* docs, int32_t count, const char* instruction, float* out, int32_t cap) { THREAD; return t ? jinfer__rerank(t, m, query, docs, count, instruction, out, cap) : JINFER_ERROR; }
 int32_t jinfer_prepare(jinfer_model* m, const char* request_json) { THREAD; return t ? jinfer__prepare(t, m, request_json) : JINFER_ERROR; }

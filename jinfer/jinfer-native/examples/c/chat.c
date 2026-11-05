@@ -13,13 +13,13 @@ static void log_line(int32_t level, const char* message, void* user_data) {
 }
 
 int main(int argc, char** argv) {
-    const char* ref = argc > 1 ? argv[1] : "LiquidAI/LFM2.5-350M-GGUF:Q8_0";
+    const char* source = argc > 1 ? argv[1] : "LiquidAI/LFM2.5-350M-GGUF:Q8_0";
     const char* request = argc > 2 ? argv[2]   /* a chat.completions request; its text is JSON text, escaped */
         : "{\"messages\":[{\"role\":\"user\",\"content\":\"What is the capital of France? One sentence.\"}],\"max_tokens\":64,\"temperature\":0}";
     if (jinfer_log_set(log_line, NULL) != JINFER_OK) { fprintf(stderr, "log: %s\n", jinfer_last_error(NULL)); return 1; }   /* before any other call */
     printf("libjinfer %s\n", jinfer_version());
 
-    jinfer_model* model = jinfer_model_load(ref, NULL);
+    jinfer_model* model = jinfer_model_load(source, NULL);
     if (!model) { fprintf(stderr, "load: %s\n", jinfer_last_error(NULL)); return 1; }
     printf("context %" PRId32 ", vocab %" PRId32 "\n", jinfer_model_property(model, JINFER_CONTEXT_CAPACITY), jinfer_model_property(model, JINFER_VOCAB_SIZE));
 

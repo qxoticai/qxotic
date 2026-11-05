@@ -56,7 +56,7 @@ There are no prompt templates, chains, memory classes, callbacks, retries or opt
 | embeddings, reranking | `embedder.embed(texts)`, `reranker.rerank(query, documents)` |
 | speech, transcription | `speaker.speak(text).save("out.wav")`, `transcriber.transcribe("speech.wav").words` |
 | a warm prompt cache | `chat.prepare()` once; `prompt_cache="catalog.jkvf"` at load keeps it across processes |
-| the context size | `jinfer.load(ref, context_capacity=8192)`, up to `model.max_context_length`; the default (`0`) is 4096 or the maximum when smaller, `jinfer.MAXIMUM_CONTEXT` (`-1`) the maximum |
+| the context size | `jinfer.load(source, context_capacity=8192)`, up to `model.max_context_length`; the default (`0`) is 4096 or the maximum when smaller, `jinfer.MAXIMUM_CONTEXT` (`-1`) the maximum |
 | log lines | `logging.getLogger("jinfer")` |
 
 `jinfer.OpenAI(model_ref)` replaces `OpenAI(api_key=...)` as a migration aid; code written for the OpenAI SDK then runs in-process, unchanged.

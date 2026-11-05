@@ -45,9 +45,9 @@ Every call returns a plain typed object; nothing is a dict you have to know the 
 | reranking | `reranker.rerank(query, documents)` gives one score per document |
 | speech | `speech = speaker.speak(text, speed=1.2)`; iterate PCM chunks, or `speech.audio`, `speech.save("out.wav")` |
 | transcription | `transcriber.transcribe("speech.wav")` or `(pcm, sample_rate=16000)`; `.text` and timed `.words` |
-| tokens | `model.tokenizer` is a [`toknroll.Tokenizer`](https://pypi.org/project/toknroll/): `encode(text)` gives an `array('i')`, `decode(ids)`, `count_tokens`, `encode_batch`, `vocabulary_size`, `token(id)`, `id(token)`; `toknroll.load(ref)` gives one without the weights |
+| tokens | `model.tokenizer` is a [`toknroll.Tokenizer`](https://pypi.org/project/toknroll/): `encode(text)` gives an `array('i')`, `decode(ids)`, `count_tokens`, `encode_batch`, `vocabulary_size`, `token(id)`, `id(token)`; `toknroll.load(source)` gives one without the weights |
 | token budgets | `len(model.tokenizer.encode(text))` against `model.context_capacity` (the state in use) and `model.max_context_length` (the model's bound) |
-| the context size | `jinfer.load(ref, context_capacity=8192)`: the tokens of context the model's states hold, up to its maximum; the default (`None` or `0`) is 4096, or the maximum when smaller, for every kind of model, `jinfer.MAXIMUM_CONTEXT` (`-1`) is the maximum, above it is refused |
+| the context size | `jinfer.load(source, context_capacity=8192)`: the tokens of context the model's states hold, up to its maximum; the default (`0`) is 4096, or the maximum when smaller, for every kind of model, `jinfer.MAXIMUM_CONTEXT` (`-1`) is the maximum, above it is refused |
 | log lines | `logging.getLogger("jinfer")`, as many as `JINFER_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads), `debug` (loads, kernels) |
 
 Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`), `Cancelled`; each has `.code`.

@@ -23,7 +23,7 @@ Each one is as short as the documentation allows for the task.
 
 ## The shape of each library
 
-**jinfer** has one entry point, `jinfer.load(ref)`, which returns the class the model file calls for: `LanguageModel`, `Embedder`, `Reranker`, `Speaker` or `Transcriber`.
+**jinfer** has one entry point, `jinfer.load(source)`, which returns the class the model file calls for: `LanguageModel`, `Embedder`, `Reranker`, `Speaker` or `Transcriber`.
 Every call returns a typed object, every option is a keyword, and the stream and the result are the same object.
 The engine keeps conversation state, runs tools, enforces schemas while decoding, and resolves and caches models from the hub.
 
@@ -529,7 +529,7 @@ One difference above is usability rather than scope, and it is a public API deci
 
 Explicit companions stay: a capability is on when its companion is named and off when it is not, which is a property worth more than one saved argument.
 
-The context size is now the caller's, as in ollama and llama-cpp-python: `jinfer.load(ref, context_capacity=8192)` sizes the states the model runs in, up to `model.max_context_length`, which the model file sets and nobody raises.
+The context size is now the caller's, as in ollama and llama-cpp-python: `jinfer.load(source, context_capacity=8192)` sizes the states the model runs in, up to `model.max_context_length`, which the model file sets and nobody raises.
 Left out, it is 4096 or the maximum when smaller; `-1` is the maximum; above it the load is refused with the bound in the message.
 
 One defect surfaced while writing the vision snippets and is fixed: a generation that failed (an image sent to a model loaded without its projector) raised "the stream has not finished" instead of the engine's own message, because reading the result of a failed stream overwrote the thread's last error before Python read it.

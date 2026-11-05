@@ -81,10 +81,11 @@ public final class Native {
     // ---- model ----
 
     @CEntryPoint(name = "jinfer__model_load")
-    static ObjectHandle modelLoad(IsolateThread thread, CCharPointer ref, Options.Struct options) {
+    static ObjectHandle modelLoad(
+            IsolateThread thread, CCharPointer source, Options.Struct options) {
         try {
             Errors.clear();
-            return HANDLES.create(Model.load(string(ref, "ref"), Options.read(options)));
+            return HANDLES.create(Model.load(string(source, "source"), Options.read(options)));
         } catch (Throwable t) {
             Errors.set(t);
             return WordFactory.nullPointer();
@@ -199,17 +200,17 @@ public final class Native {
     }
 
     @CEntryPoint(name = "jinfer__state_ingest")
-    static int ingest(IsolateThread thread, ObjectHandle handle, CIntPointer tokens, int count) {
+    static int ingest(IsolateThread thread, ObjectHandle handle, CIntPointer ids, int count) {
         try {
             Errors.clear();
             State state = get(handle, State.class, "state");
             if (count < 0) throw Errors.invalid("count must not be negative");
-            if (tokens.isNull() && count > 0) throw Errors.invalid("tokens is NULL");
-            int[] ids = new int[count];
-            for (int i = 0; i < count; i++) ids[i] = tokens.read(i);
+            if (ids.isNull() && count > 0) throw Errors.invalid("ids is NULL");
+            int[] copy = new int[count];
+            for (int i = 0; i < count; i++) copy[i] = ids.read(i);
             state.exclusive.enter();
             try {
-                return state.ingest(ids);
+                return state.ingest(copy);
             } finally {
                 state.exclusive.leave();
             }
@@ -431,16 +432,20 @@ public final class Native {
             CCharPointerPointer documents,
             int count,
             CCharPointer instruction,
-            CFloatPointer scores) {
+            CFloatPointer out,
+            int floatCapacity) {
         try {
             Errors.clear();
             Model model = get(handle, Model.class, "model");
             String q = string(query, "query");
             List<String> docs = strings(documents, count, "documents");
-            if (scores.isNull() && count > 0) throw Errors.invalid("scores is NULL");
+            if (floatCapacity < 0) throw Errors.invalid("float_capacity must not be negative");
+            if (out.isNull() && floatCapacity > 0) throw Errors.invalid("out is NULL");
+            // known before any work: a call that only sizes, or has too little room, costs nothing
+            int size = model.rerankSize(count);
+            if (size > floatCapacity) return size;
             String task = instruction.isNull() ? null : CTypeConversion.toJavaString(instruction);
-            floats(model.rerank(q, docs, task), scores, count);
-            return Errors.OK;
+            return floats(model.rerank(q, docs, task), out, floatCapacity);
         } catch (Throwable t) {
             return Errors.set(t);
         }

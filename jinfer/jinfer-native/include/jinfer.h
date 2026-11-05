@@ -134,8 +134,9 @@ typedef struct {
 } jinfer_model_options;
 
 JINFER_API void          jinfer_model_options_init(jinfer_model_options* o);
-/* A model from a hub reference or a path; options NULL = all defaults. */
-JINFER_API jinfer_model* jinfer_model_load(const char* ref, const jinfer_model_options* o);
+/* A model from a source: a hub reference or a path, as toknroll_tokenizer_load takes; options NULL = all
+ * defaults. */
+JINFER_API jinfer_model* jinfer_model_load(const char* source, const jinfer_model_options* o);
 JINFER_API void          jinfer_model_free(jinfer_model* m);
 
 enum {   /* jinfer_model_property's keys; every value spelled out: they are the ABI */
@@ -172,10 +173,11 @@ JINFER_API int32_t       jinfer_state_reset(jinfer_state* s);
 JINFER_API int32_t       jinfer_state_position(const jinfer_state* s);
 
 /* A forward pass only; returns the new position, JINFER_EINVAL past the context capacity. */
-JINFER_API int32_t jinfer_state_ingest(jinfer_state* s, const int32_t* tokens, int32_t count);
+JINFER_API int32_t jinfer_state_ingest(jinfer_state* s, const int32_t* ids, int32_t count);
 /* The last position projected, JINFER_VOCAB_SIZE floats. */
 JINFER_API int32_t jinfer_state_logits(const jinfer_state* s, float* out, int32_t float_capacity);
-/* What was ingested pooled, JINFER_EMBEDDING_DIMENSION floats. */
+/* What was ingested pooled, JINFER_EMBEDDING_DIMENSION floats; JINFER_EUNSUPPORTED but on an embedding
+ * model. */
 JINFER_API int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t float_capacity);
 
 /* ------------------------------ stream: every generation, stepped like a statement */
@@ -202,10 +204,12 @@ JINFER_API jinfer_stream* jinfer_speak(jinfer_model* m, const char* request_json
 JINFER_API jinfer_stream* jinfer_transcribe(jinfer_model* m, const float* pcm, int32_t count, int32_t sample_rate);
 
 /* ---------------------------------------------------------- retrieval, prompt cache */
+/* count x dimension floats, row-major; dimension 0 = the model's own. */
 JINFER_API int32_t jinfer_embed(jinfer_model* m, const char* const* texts, int32_t count, int32_t dimension,
-                                float* out, int32_t float_capacity);   /* count x dimension row-major; 0 = native */
+                                float* out, int32_t float_capacity);
+/* A score per document, count floats, higher is more relevant; instruction NULL = the model's default. */
 JINFER_API int32_t jinfer_rerank(jinfer_model* m, const char* query, const char* const* documents, int32_t count,
-                                 const char* instruction, float* scores);   /* scores[count]; NULL = model default */
+                                 const char* instruction, float* out, int32_t float_capacity);
 JINFER_API int32_t jinfer_prepare(jinfer_model* m, const char* request_json);  /* computes and caches this prefix now */
 
 #ifdef __cplusplus

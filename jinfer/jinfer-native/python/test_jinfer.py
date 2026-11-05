@@ -92,7 +92,12 @@ ok(jinfer.MAXIMUM_CONTEXT == -1, "the maximum is -1, as in C and Java")
 with jinfer.load(LM, context_capacity=jinfer.MAXIMUM_CONTEXT) as whole:
     ok(whole.context_capacity == m.max_context_length, "context_capacity=MAXIMUM_CONTEXT is the maximum")
 with jinfer.load(LM, context_capacity=0) as zero:
-    ok(zero.context_capacity == m.context_capacity, "context_capacity=0 is the default, as None is")
+    ok(zero.context_capacity == m.context_capacity, "context_capacity=0 is the default")
+    ok(zero.source == LM, f"the source is what load was given: {zero.source!r}")
+try:
+    jinfer.load(LM, context_capacity=None); ok(False, "None is no capacity: 0 is the default")
+except TypeError as e:
+    ok("context_capacity: got NoneType" in str(e), f"None refused: {e}")
 try:
     jinfer.load(LM, context_capacity=2**32 - 1); ok(False, "a capacity past int32 must be refused, not wrapped to -1")
 except jinfer.InvalidArgument as e:

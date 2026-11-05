@@ -146,7 +146,7 @@ final class Model {
     }
 
     private static Model load0(String ref, Options.Values options) throws IOException {
-        if (ref.isBlank()) throw Errors.invalid("ref is empty");
+        if (ref.isBlank()) throw Errors.invalid("source is empty");
         List<String> refs = new ArrayList<>();
         refs.add(ref);
         refs.addAll(options.companions().values());
@@ -366,10 +366,16 @@ final class Model {
         return all;
     }
 
-    /** jinfer_rerank: one score per document; a null instruction is the model's default. */
-    synchronized float[] rerank(String query, List<String> documents, String instruction) {
+    /** jinfer_rerank's result size, a score per document; refused but on a reranker, sizing too. */
+    int rerankSize(int count) {
         if (reranker == null)
             throw Errors.unsupported(name + " is " + article() + ", not a reranking model");
+        return count;
+    }
+
+    /** jinfer_rerank: one score per document; a null instruction is the model's default. */
+    synchronized float[] rerank(String query, List<String> documents, String instruction) {
+        rerankSize(documents.size());
         String task = instruction == null ? reranker.reranker().defaultInstruction() : instruction;
         float[] scores = new float[documents.size()];
         int[] at = {0};

@@ -81,8 +81,11 @@ final class State {
     }
 
     float[] embedding() {
-        if (!(cm instanceof EmbeddingModel em))
-            throw Errors.unsupported(model.name + " projects no embedding");
+        // an embedding model's: a language model could pool its hidden states, untrained as an
+        // embedding
+        if (model.kind != Model.Kind.EMBEDDING || !(cm instanceof EmbeddingModel em))
+            throw Errors.unsupported(
+                    model.name + " is " + model.article() + ", not an embedding model");
         if (state.position() == 0) throw Errors.invalid("nothing ingested yet");
         float[][] out = new float[1][];
         em.projectEmbedding(state, view -> out[0] = floats((MemoryView<?>) view, "embedding"));

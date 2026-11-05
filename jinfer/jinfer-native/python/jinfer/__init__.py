@@ -625,13 +625,13 @@ class Speech(_Stream):
 # ---- models ----
 
 class Model:
-    """A loaded model; `load` returns the subclass the file calls for. `ref` is what `load` was
+    """A loaded model; `load` returns the subclass the file calls for. `source` is what `load` was
     given, `name` the model file's name. Closed by `close()`, a `with` block or garbage collection."""
 
-    def __init__(self, ptr, ref: str, info: dict):
+    def __init__(self, ptr, source: str, info: dict):
         self._ptr = ptr
         self._info = info
-        self.ref = ref
+        self.source = source
         self.name = info["name"]
 
     @property
@@ -661,7 +661,7 @@ class Model:
     def __repr__(self):
         # what is really running: the first kernel backend is the one the matmuls take
         kernels = ", ".join(self._info.get("kernels") or ["?"])
-        return f"jinfer.{type(self).__name__}({self.ref!r}, kernels={kernels}, threads={self._info.get('threads', '?')})"
+        return f"jinfer.{type(self).__name__}({self.source!r}, kernels={kernels}, threads={self._info.get('threads', '?')})"
 
 
 class _Context(Model):
@@ -685,7 +685,7 @@ class _Tokens(_Context):
     @functools.cached_property
     def tokenizer(self) -> toknroll.Tokenizer:
         """The model's tokenizer, a `toknroll.Tokenizer` served by libjinfer; it outlives the model."""
-        return toknroll.Tokenizer(_check_ptr(N.lib.jinfer_model_tokenizer(self._h)), self.ref, N.lib)
+        return toknroll.Tokenizer(_check_ptr(N.lib.jinfer_model_tokenizer(self._h)), self.source, N.lib)
 
 
 _TOOL_ROUNDS = 8  # ponytail: a constant; make it an option when a caller needs more
@@ -875,7 +875,7 @@ class Reranker(_Context):
         documents = [documents] if isinstance(documents, str) else list(documents)
         buf, ptr = _floats(len(documents))
         _check(N.lib.jinfer_rerank(self._h, _utf8(query, "query"), _strings(documents, "rerank"), len(documents),
-                                   _utf8(instruction, "instruction") if instruction else None, ptr))
+                                   _utf8(instruction, "instruction") if instruction else None, ptr, len(documents)))
         return buf.tolist()
 
 
@@ -930,9 +930,9 @@ def configure(*options: str) -> None:
     _check(N.lib.jinfer_configure(_strings(options, "configure"), len(options)))
 
 
-def load(ref: str | os.PathLike, *, companions: dict[str, str] | None = None,
-         prompt_cache: str | os.PathLike | None = None, context_capacity: int | None = None) -> Model:
-    """Loads a hub reference such as "LiquidAI/LFM2.5-350M-GGUF:Q8_0" or a local path, downloading
+def load(source: str | os.PathLike, *, companions: dict[str, str] | None = None,
+         prompt_cache: str | os.PathLike | None = None, context_capacity: int = 0) -> Model:
+    """Loads a source, a hub reference such as "LiquidAI/LFM2.5-350M-GGUF:Q8_0" or a local path, downloading
     once. The file decides what comes back: a LanguageModel, Embedder, Reranker, Speaker or
     Transcriber. From JINFER_LOG=info on, a download shows its progress on stderr at a terminal and logs
     it otherwise; Ctrl-C during one ends the process, and the download resumes next time.
@@ -940,18 +940,18 @@ def load(ref: str | os.PathLike, *, companions: dict[str, str] | None = None,
     Options: companions ({"media": ref} for vision and audio in, {"voice": ref} for speech),
     prompt_cache (a catalog file, read at load and extended at close, so prepared prompts survive
     the process), context_capacity (the tokens of state the model keeps, at most its
-    `max_context_length`; None or 0 is the default, 4096 or the maximum when smaller, for every kind of
+    `max_context_length`; 0 is the default, 4096 or the maximum when smaller, for every kind of
     model; `MAXIMUM_CONTEXT` (-1) is the maximum; above it is refused). The thread
     count is the process's: `configure("-Djinfer.threads=N")`.
     """
-    ref = os.fspath(ref)
-    if context_capacity is not None and (isinstance(context_capacity, bool) or not isinstance(context_capacity, int)):
+    source = os.fspath(source)
+    if isinstance(context_capacity, bool) or not isinstance(context_capacity, int):
         raise TypeError(f"context_capacity: got {type(context_capacity).__name__}")
-    if context_capacity is not None and not -2**31 <= context_capacity < 2**31:  # the C field would wrap
+    if not -2**31 <= context_capacity < 2**31:  # the C field would wrap
         raise InvalidArgument(f"context_capacity {context_capacity} does not fit a 32-bit integer")
     options = N.ModelOptions()
     N.lib.jinfer_model_options_init(C.byref(options))
-    options.context_capacity = context_capacity or 0
+    options.context_capacity = context_capacity
     if companions:  # ctypes keeps what is assigned to a pointer field alive with the struct
         options.companions = _strings([f"{k}={v}" for k, v in companions.items()], "companions")
         options.companion_count = len(companions)
@@ -961,12 +961,12 @@ def load(ref: str | os.PathLike, *, companions: dict[str, str] | None = None,
     # as it would end the jinfer CLI; the partial file resumes next time
     previous = signal.signal(signal.SIGINT, signal.SIG_DFL) if threading.current_thread() is threading.main_thread() else None
     try:
-        ptr = _check_ptr(N.lib.jinfer_model_load(_utf8(ref, "ref"), C.byref(options)))
+        ptr = _check_ptr(N.lib.jinfer_model_load(_utf8(source, "source"), C.byref(options)))
     finally:
         if previous is not None:
             signal.signal(signal.SIGINT, previous)
     info = json.loads(_check_text(N.lib.jinfer_model_info(ptr)).decode())
-    return _KINDS.get(info["kind"], Model)(ptr, ref, info)
+    return _KINDS.get(info["kind"], Model)(ptr, source, info)
 
 
 from ._openai import OpenAI  # noqa: E402,F401  (needs load above; a migration aid, not in __all__)
