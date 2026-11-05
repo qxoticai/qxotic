@@ -59,7 +59,7 @@ final class Hub {
         String xdg = System.getenv("XDG_CACHE_HOME");
         return xdg != null && !xdg.isBlank()
                 ? Path.of(xdg, "huggingface", "hub")
-                : Path.of(System.getProperty("user.home"), ".cache", "huggingface", "hub");
+                : Path.of(ModelStore.home(), ".cache", "huggingface", "hub");
     }
 
     /** GGUFs in the hub cache's CURRENT snapshots, as refs. */

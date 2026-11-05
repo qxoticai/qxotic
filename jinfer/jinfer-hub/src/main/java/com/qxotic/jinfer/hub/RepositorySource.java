@@ -260,7 +260,7 @@ class RepositorySource implements ModelSource {
         } else if (home != null && !home.isBlank()) {
             token = Path.of(home, "token");
         } else {
-            token = Path.of(System.getProperty("user.home"), ".cache", "huggingface", "token");
+            token = Path.of(ModelStore.home(), ".cache", "huggingface", "token");
         }
         try {
             return Files.isRegularFile(token)

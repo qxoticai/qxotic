@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -172,31 +173,16 @@ class ModelStoreCacheTest {
     })
     void offlineSettingsGateRemoteAccess(
             String value, String property, String expected, @TempDir Path root) throws Exception {
-        String classes =
-                Path.of(
-                                ModelStore.class
-                                        .getProtectionDomain()
-                                        .getCodeSource()
-                                        .getLocation()
-                                        .toURI())
-                        .toString();
         Path output = root.resolve("stdout.txt"), error = root.resolve("stderr.txt");
-        List<String> command = new ArrayList<>();
-        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
-        command.add("-ea");
-        if (property != null) command.add("-Djinfer.offline=" + property);
-        command.addAll(
-                List.of(
-                        "-cp",
-                        classes + File.pathSeparator + System.getProperty("java.class.path"),
-                        OfflineProbe.class.getName(),
-                        root.toString()));
         var builder =
-                new ProcessBuilder(command)
+                probe(
+                                OfflineProbe.class,
+                                property == null
+                                        ? List.of()
+                                        : List.of("-Djinfer.offline=" + property),
+                                root.toString())
                         .redirectOutput(output.toFile())
                         .redirectError(error.toFile());
-        for (String variable : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"))
-            builder.environment().remove(variable);
         if (value == null) builder.environment().remove("JINFER_OFFLINE");
         else builder.environment().put("JINFER_OFFLINE", value);
         builder.environment().put("HF_HUB_CACHE", root.resolve("hf").toString());
@@ -207,6 +193,86 @@ class ModelStoreCacheTest {
             assertEquals(expected, Files.readString(output).strip());
         } finally {
             process.destroyForcibly();
+        }
+    }
+
+    /**
+     * A JVM of this classpath running {@code main}, with none of the options an environment adds.
+     */
+    private static ProcessBuilder probe(Class<?> main, List<String> flags, String... args) {
+        // the module path holds this module and the ones it reads; a plain classpath runs them all
+        String path = System.getProperty("java.class.path");
+        String modules = System.getProperty("jdk.module.path");
+        if (modules != null) path = modules + File.pathSeparator + path;
+        List<String> command = new ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.add("-ea");
+        command.addAll(flags);
+        command.add("-cp");
+        command.add(path);
+        command.add(main.getName());
+        command.addAll(List.of(args));
+        var builder = new ProcessBuilder(command);
+        for (String variable : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"))
+            builder.environment().remove(variable);
+        return builder;
+    }
+
+    @Test
+    void aContainersHomeIsFollowedAndAHubCacheItCannotWriteIsOnlyRead(@TempDir Path root)
+            throws Exception {
+        // the JDK reads user.home from the passwd file, so a container's HOME went unseen; and a
+        // miss beside a hub cache this user cannot write failed instead of landing in the store
+        Assumptions.assumeFalse(File.separatorChar == '\\', "POSIX homes and permissions");
+        Path home = Files.createDirectories(root.resolve("home"));
+        Path readOnly = Files.createDirectories(root.resolve("hf"));
+        Files.setPosixFilePermissions(readOnly, PosixFilePermissions.fromString("r-xr-xr-x"));
+        Path output = root.resolve("stdout.txt"), error = root.resolve("stderr.txt");
+        var builder =
+                probe(HomeProbe.class, List.of())
+                        .redirectOutput(output.toFile())
+                        .redirectError(error.toFile());
+        for (String variable :
+                List.of("XDG_CACHE_HOME", "JINFER_MODELS", "JINFER_OFFLINE", "HF_HOME"))
+            builder.environment().remove(variable);
+        builder.environment().put("HOME", home.toString());
+        builder.environment().put("HF_HUB_CACHE", readOnly.toString());
+        Process process = builder.start();
+        try {
+            assertTrue(process.waitFor(20, TimeUnit.SECONDS), "home probe timed out");
+            assertEquals(0, process.exitValue(), Files.readString(error));
+            List<String> lines = Files.readAllLines(output);
+            assertTrue(Path.of(lines.get(0)).startsWith(home), "the store's root: " + lines);
+            assertTrue(
+                    Path.of(lines.get(1)).startsWith(lines.get(0)), "the miss, fetched: " + lines);
+        } finally {
+            process.destroyForcibly();
+            Files.setPosixFilePermissions(readOnly, PosixFilePermissions.fromString("rwxr-xr-x"));
+        }
+    }
+
+    /**
+     * A hub miss at the platform's default root, served over HTTP so it takes the hub-cache path.
+     */
+    public static class HomeProbe {
+        public static void main(String[] args) throws Exception {
+            Path root = ModelStore.ambientRoot();
+            System.out.println(root);
+            if (!root.startsWith(System.getenv("HOME"))) return; // never fetch into a real cache
+            String commit = "c".repeat(40);
+            try (FileServer server = FileServer.start()) {
+                server.serve(
+                        "/api/models/home-test/model/refs",
+                        "{\"branches\":[{\"name\":\"main\",\"targetCommit\":\"" + commit + "\"}]}");
+                server.serve(
+                        "/api/models/home-test/model/tree/" + commit,
+                        "[{\"type\":\"file\",\"path\":\"model-Q8_0.gguf\",\"size\":7,\"lfs\":{\"oid\":\""
+                                + ModelStorePullTest.hash("weights")
+                                + "\"}}]");
+                server.serve("/home-test/model/resolve/" + commit + "/model-Q8_0.gguf", "weights");
+                var store = ModelStore.of(root, new HuggingFaceSource(URI.create(server.url(""))));
+                System.out.println(store.resolve("hf.co/home-test/model:Q8_0"));
+            }
         }
     }
 

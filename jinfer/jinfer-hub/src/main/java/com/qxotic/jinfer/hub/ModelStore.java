@@ -124,8 +124,11 @@ public final class ModelStore {
     public static ModelStore of(Path root, ModelSource... sources) {
         Objects.requireNonNull(root, "root");
         Path normalized = root.toAbsolutePath().normalize();
+        // a hub cache this user cannot write (a read-only mount) is still read; a miss lands in
+        // root
         boolean hubShare =
-                normalized.equals(platformCache().resolve("jinfer").toAbsolutePath().normalize());
+                normalized.equals(platformCache().resolve("jinfer").toAbsolutePath().normalize())
+                        && writable(Hub.cache());
         return new ModelStore(normalized, hubShare, List.of(sources));
     }
 
@@ -161,10 +164,25 @@ public final class ModelStore {
         return platformCache().resolve("jinfer");
     }
 
+    /**
+     * The user's home: on POSIX $HOME, which a container sets while the JDK's user.home comes from
+     * the passwd file; on Windows user.home, where a $HOME is a shell's (Git Bash), not the user's.
+     */
+    static String home() {
+        String home = System.getenv("HOME");
+        return isWindows() || home == null || home.isBlank()
+                ? System.getProperty("user.home")
+                : home;
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
     private static Path platformCache() {
-        String home = System.getProperty("user.home");
+        String home = home();
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (os.contains("win")) {
+        if (isWindows()) {
             String localAppData = System.getenv("LOCALAPPDATA");
             return localAppData != null && !localAppData.isBlank()
                     ? Path.of(localAppData)
@@ -950,13 +968,18 @@ public final class ModelStore {
      * surface.
      */
     private void requireWritable(Path dest) {
-        Path dir = dest.getParent();
+        if (!writable(dest.getParent())) {
+            throw new UncheckedIOException(new IOException("cache root is not writable: " + root));
+        }
+    }
+
+    /** Whether a file can be made at {@code path}: its nearest existing folder is writable. */
+    private static boolean writable(Path path) {
+        Path dir = path;
         while (dir != null && !Files.exists(dir)) {
             dir = dir.getParent();
         }
-        if (dir == null || !Files.isWritable(dir)) {
-            throw new UncheckedIOException(new IOException("cache root is not writable: " + root));
-        }
+        return dir != null && Files.isWritable(dir);
     }
 
     /**
