@@ -304,7 +304,7 @@ PORT_PRINTF(1, 2) static void failed(const char* format, ...) {
     no_runtime();
 }
 
-static void out_of_memory(void) { failed("the runtime could not be started: out of memory"); }
+static void out_of_memory(void) { failed("the runtime could not be started: out of memory, a new process is needed"); }
 
 static void start(void) {
     port_store(&created, 1);
@@ -369,8 +369,8 @@ static void start(void) {
         isolate = NULL;
         const char* source = STR(TOKNROLL_OPTIONS_ENV);
         if (configured_by) source = from_env ? "configure or the environment" : configured_by;
-        if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which", source);
-        else failed("the runtime could not be started (error %d)", rc);
+        if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which; a new process is needed", source);
+        else failed("the runtime could not be started (error %d), a new process is needed", rc);
         return;
     }
     attached(thread);

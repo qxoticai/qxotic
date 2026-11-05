@@ -970,7 +970,9 @@ public final class ModelStore {
      */
     private void requireWritable(Path dest) {
         if (!writable(dest.getParent())) {
-            throw new UncheckedIOException(new IOException("cache root is not writable: " + root));
+            String refused = "cache root is not writable: " + root;
+            throw new UncheckedIOException(
+                    refused, new IOException(refused)); // the words, not the class
         }
     }
 

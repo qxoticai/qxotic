@@ -46,8 +46,9 @@
  *              the cache jinfer shares; -Dtoknroll.cache.root, else TOKNROLL_CACHE_ROOT in the
  *              environment, moves it, though a file the Hugging Face hub cache holds (HF_HUB_CACHE, else
  *              HF_HOME/hub, else ~/.cache/huggingface/hub) is still read in place: HF_HUB_CACHE at an
- *              empty folder keeps every load to the root. -Dtoknroll.offline=true never fetches, nor does
- *              any value but false. Missing is TOKNROLL_ENOTFOUND; a malformed reference, an unknown
+ *              empty folder keeps every load to the root. -Dtoknroll.offline=true never fetches: false,
+ *              0, off and no, in any case, mean online, any other value offline, so a misspelled true
+ *              never fetches either. Missing is TOKNROLL_ENOTFOUND; a malformed reference, an unknown
  *              host, a file named twice (by /path and :quant), a file of no known kind or one that does
  *              not parse is TOKNROLL_EINVAL. A valid one toknroll does not implement (the README lists
  *              the families it tests) is TOKNROLL_EUNSUPPORTED.
