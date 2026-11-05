@@ -41,18 +41,18 @@ pgo-profile:
 	@[ -f "$(CORPUS)" ] || python3 $(ROOT)/toknroll/scripts/download_enwik8.py
 	mkdir -p target/pgo && cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -q -pl toknroll/toknroll-native -am test-compile \
 	  dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(abspath target/pgo/classpath)
-	cc -std=c11 -O2 -fPIC -Wall -Iinclude -c src/main/c/toknroll_isolate.c -o target/pgo/toknroll_isolate.o   # Workers' threads
+	$(CC) -std=c11 -O2 -fPIC -Wall -Iinclude -c src/main/c/toknroll_isolate.c -o target/pgo/toknroll_isolate.o   # Workers' threads
 	cd target/pgo && rm -f default.iprof && NATIVE_IMAGE_OPTIONS="$(IMAGE_OPTIONS)" $(NATIVE_IMAGE) --pgo-instrument \
 	  -H:NativeLinkerOption=$(abspath target/pgo/toknroll_isolate.o) \
 	  -cp $(abspath target/classes):$(abspath target/test-classes):$$(cat classpath) com.qxotic.toknroll.libtoknroll.PgoTraining -o train
 	cd target/pgo && ./train "$(CORPUS)" $(PGO_SOURCES)
 
 target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
-	cc -std=c99 -Wall -Wextra -Wpedantic -Iinclude -o $@ $< -L target -ltoknroll -Wl,-rpath,$(abspath target)
+	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Iinclude -o $@ $< -L target -ltoknroll -Wl,-rpath,$(abspath target)
 
 # The static archive: the example linked against it, no shared library in sight, and only toknroll_* exported.
 target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
-	cc -std=c99 -Wall -Wextra -Wpedantic -DTOKNROLL_STATIC -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
+	$(CC) -std=c99 -Wall -Wextra -Wpedantic -DTOKNROLL_STATIC -Iinclude -o $@ $< $(STATIC) $(SYSLIBS)
 
 # The C tests (tests/c): every function's results, error codes and special cases, each scenario in a
 # process of its own; the header compiled as C++ too.
@@ -60,15 +60,15 @@ TEST_DEPS = tests/c/toknroll_test.c tests/c/test.h tests/c/fixtures.h include/to
 CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude
 LINK_TEST = -L target -ltoknroll -Wl,-rpath,$(abspath target) -lpthread
 target/toknroll_test: $(TEST_DEPS) $(LIB)
-	cc $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
+	$(CC) $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
 target/toknroll_test-static: $(TEST_DEPS) $(STATIC)
-	cc $(CFLAGS_TEST) -DTOKNROLL_STATIC -o $@ $< $(STATIC) $(SYSLIBS)
+	$(CC) $(CFLAGS_TEST) -DTOKNROLL_STATIC -o $@ $< $(STATIC) $(SYSLIBS)
 target/header_test: tests/c/header_test.cpp include/toknroll.h $(LIB)
-	c++ -std=c++11 -Wall -Wextra -Wpedantic -Werror -Iinclude -o $@ $< $(LINK_TEST)
+	$(CXX) -std=c++11 -Wall -Wextra -Wpedantic -Werror -Iinclude -o $@ $< $(LINK_TEST)
 
 # not linked against the library: it opens it, by path, to close it again (dlclose)
 target/unload_test: tests/c/unload_test.c tests/c/fixtures.h
-	cc $(CFLAGS_TEST) -o $@ $< $(if $(filter linux,$(OS)),-ldl)
+	$(CC) $(CFLAGS_TEST) -o $@ $< $(if $(filter linux,$(OS)),-ldl)
 
 check-c: target/toknroll_test target/header_test target/unload_test
 	./target/toknroll_test
