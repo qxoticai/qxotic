@@ -290,12 +290,14 @@ class SourcesTest {
         try {
             for (String source :
                     new String[] {"t/thing:Q8_0", "t/thing", "t/thing/sub", "t/thing/vocab.json"}) {
+                // a plain ref goes on to the tiktoken loader's own cache, which is empty too
                 Errors.Failure e =
                         assertThrows(
                                 Errors.Failure.class,
-                                () -> Sources.locate(source, store(fake)),
+                                () -> Sources.load(source, store(fake)),
                                 source);
                 assertEquals(Errors.ENOTFOUND, e.code, source);
+                assertTrue(e.getMessage().contains("offline"), e.getMessage());
             }
             // a .gguf path needs no lookup: it is handed to the header reader, whose offline
             // transport refuses

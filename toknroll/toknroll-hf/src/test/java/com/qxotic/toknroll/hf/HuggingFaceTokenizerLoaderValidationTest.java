@@ -145,6 +145,25 @@ class HuggingFaceTokenizerLoaderValidationTest {
     private static final String METASPACE_PRE_TOKENIZER =
             "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}";
 
+    /**
+     * BERT's files name no model type and have no merges: a WordPiece model, unsupported, not
+     * malformed.
+     */
+    @Test
+    void aModelWithoutTypeOrMergesIsUnsupportedNotMalformed() throws Exception {
+        Path file =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"),
+                        "{\"version\":\"1.0\",\"model\":{\"vocab\":{\"[UNK]\":0,\"hello\":1},"
+                                + "\"unk_token\":\"[UNK]\"},\"added_tokens\":[]}");
+        UnsupportedTokenizerException refused =
+                assertThrows(
+                        UnsupportedTokenizerException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(file));
+        assertTrue(
+                refused.getMessage().contains("tokenizer.json:model.type"), refused.getMessage());
+    }
+
     /** A well-formed option that would make another tokenizer is refused, never read as absent. */
     @Test
     void aBehaviorChangingModelOptionIsRefused() throws Exception {

@@ -72,6 +72,8 @@ final class Sources {
 
     static Located locate(String source, ModelStore store) {
         if (source == null || source.isBlank()) throw Errors.invalid("source is empty");
+        if (source.contains("://")) // a browser's URL, pasted: the grammar has no scheme
+        throw Errors.invalid("'" + source + "' is a URL, not a source: write [host/]owner/repo");
         if (!ModelStore.isRef(source)) { // a path is taken as given: a name may end in a space
             // a dotted first segment is a misspelled host, never an owner or a missing file
             if (!Files.exists(Path.of(source)) && source.matches("[^/\\\\:]+\\.[^/\\\\:]+/.+"))
@@ -116,12 +118,20 @@ final class Sources {
         } catch (IllegalArgumentException e) {
             throw failure(e);
         } catch (UncheckedIOException e) {
-            // offline, either way the store knows it: built without sources, or its own knob
+            // offline, either way the store knows it: built without sources, or its own knob. The
+            // store holds no tokenizer.json for the ref: a tiktoken repository keeps its files in
+            // the loader's own cache, which its cache-only path reads, or reports as not cached
             if (e.getMessage().contains("no source")
-                    || e.getCause() instanceof FileNotFoundException)
-                throw Errors.notFound(source + " is not cached, and offline mode never fetches");
+                    || e.getCause() instanceof FileNotFoundException) {
+                if (ref.quant() == null && !isGguf(ref.path())) return Located.tiktoken(ref);
+                throw notCached(source); // a GGUF has no such cache
+            }
             throw e;
         }
+    }
+
+    static Errors.Failure notCached(String source) {
+        return Errors.notFound(source + " is not cached, and offline mode never fetches");
     }
 
     /**
@@ -216,11 +226,16 @@ final class Sources {
 
     private static Tokenizer tiktokenFromHub(ModelRef ref) {
         boolean offline = Stores.offline();
-        return ref.host().equals("modelscope.cn")
-                ? HuggingFaceTokenizerLoader.fromModelScope(
-                        ref.owner(), ref.repo(), ref.revision(), offline, false)
-                : HuggingFaceTokenizerLoader.fromHuggingFace(
-                        ref.owner(), ref.repo(), ref.revision(), offline, false);
+        try {
+            return ref.host().equals("modelscope.cn")
+                    ? HuggingFaceTokenizerLoader.fromModelScope(
+                            ref.owner(), ref.repo(), ref.revision(), offline, false)
+                    : HuggingFaceTokenizerLoader.fromHuggingFace(
+                            ref.owner(), ref.repo(), ref.revision(), offline, false);
+        } catch (RuntimeException e) {
+            if (offline) throw notCached(ref.toString()); // its cache-only path found nothing
+            throw e;
+        }
     }
 
     /**
