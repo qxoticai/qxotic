@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGMLType;
@@ -17,6 +19,7 @@ import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -61,6 +64,25 @@ class SourcesTest {
     }
 
     @Test
+    void aFifoIsRefusedNotOpened() throws Exception {
+        assumeFalse(System.getProperty("os.name").startsWith("Windows"), "no FIFOs on Windows");
+        Path fifo = disk.resolve("fifo");
+        assertEquals(0, new ProcessBuilder("mkfifo", fifo.toString()).start().waitFor());
+        // on a thread of its own: the regression blocks in open(), which no interrupt ends
+        Errors.Failure e =
+                assertTimeoutPreemptively(
+                        Duration.ofSeconds(10),
+                        () ->
+                                assertThrows(
+                                        Errors.Failure.class,
+                                        () ->
+                                                Sources.load(
+                                                        fifo.toString(), store(new FakeSource()))));
+        assertEquals(Errors.EINVAL, e.code);
+        assertTrue(e.getMessage().endsWith("is not a regular file"), e.getMessage());
+    }
+
+    @Test
     void aMissingPathIsNotFound() {
         Errors.Failure e =
                 assertThrows(
@@ -92,6 +114,14 @@ class SourcesTest {
         assertEquals("thing-Q8_0.gguf", at.ggufFile());
         assertEquals("thing", at.repository().repo());
         assertFalse(fake.fetched, "the store names the file; the reader fetches the header");
+    }
+
+    @Test
+    void offlineAQuantReachesTheHeaderItSelectedOnline() {
+        Sources.locate(
+                "hf.co/t/thing:Q8_0", store(new FakeSource().serving("", "thing-Q8_0.gguf")));
+        Sources.Located at = Sources.locate("t/thing:Q8_0", ModelStore.of(root)); // no source
+        assertEquals("thing-Q8_0.gguf", at.ggufFile());
     }
 
     @Test
@@ -136,14 +166,6 @@ class SourcesTest {
         assertEquals(Errors.ENOTFOUND, e.code);
         assertTrue(e.getMessage().contains("thing-Q8_0.gguf"), e.getMessage());
         assertFalse(fake.fetched, "a bare reference never opens a GGUF");
-    }
-
-    @Test
-    void offlineAQuantReachesTheHeaderItSelectedOnline() {
-        Sources.locate(
-                "hf.co/t/thing:Q8_0", store(new FakeSource().serving("", "thing-Q8_0.gguf")));
-        Sources.Located at = Sources.locate("t/thing:Q8_0", ModelStore.of(root)); // no source
-        assertEquals("thing-Q8_0.gguf", at.ggufFile());
     }
 
     @Test

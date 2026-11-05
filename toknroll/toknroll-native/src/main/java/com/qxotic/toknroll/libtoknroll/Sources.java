@@ -161,6 +161,8 @@ final class Sources {
 
     /** The file's content decides: a GGUF by its magic, a tokenizer.json by being a JSON object. */
     static Kind sniff(Path file) {
+        // a FIFO, a socket or a device would block or stream: only a regular file is opened
+        if (!Files.isRegularFile(file)) throw Errors.invalid(file + " is not a regular file");
         byte[] head;
         try (InputStream in = Files.newInputStream(file)) {
             head = in.readNBytes(64);

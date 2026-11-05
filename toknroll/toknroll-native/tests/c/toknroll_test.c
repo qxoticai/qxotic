@@ -361,6 +361,17 @@ static void load_paths(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-missing.json"), TOKNROLL_EINVAL, LE, "is neither a file here nor a reference");
 }
 
+#ifndef _WIN32
+/* a FIFO is refused, never opened: opening one with no writer blocks forever */
+static void load_fifo(void) {
+    alarm(30);   /* the regression hangs: a hang fails the scenario */
+    unlink(TMP("fifo"));
+    CHECK(mkfifo(TMP("fifo"), 0600) == 0);
+    CHECK_NULL_ERROR(toknroll_tokenizer_load(TMP("fifo")), TOKNROLL_EINVAL, LE, "is not a regular file");
+    unlink(TMP("fifo"));
+}
+#endif
+
 static void load_folders(void) {
     const char* with = TMP("with");
     const char* without = TMP("without");
@@ -1544,6 +1555,7 @@ static const scenario scenarios[] = {
     {"returned_strings", returned_strings, NULL},
 #ifndef _WIN32
     {"fork_children", fork_children, NULL},
+    {"load_fifo", load_fifo, NULL},
 #endif
 };
 
