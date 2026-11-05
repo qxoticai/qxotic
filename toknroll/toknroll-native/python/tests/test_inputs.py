@@ -1,7 +1,9 @@
 """The edges of the binding: id buffers, errors, lifecycle, threads, the library itself."""
 import ctypes
 import gc
+import multiprocessing
 import os
+import pickle
 import subprocess
 import sys
 import textwrap
@@ -340,6 +342,15 @@ class ErrorTypesTest(unittest.TestCase):
         self.assertTrue(issubclass(toknroll.NotFound, FileNotFoundError))
         self.assertEqual(toknroll.InvalidArgument("m", -2).code, -2)
         self.assertEqual(str(toknroll.NotFound("gone", -3)), "gone")
+
+    def test_errors_pickle(self):
+        """An error pickles with its code, so one raised in a worker reaches the parent, not a broken pool."""
+        for error in (toknroll.ToknrollError("m", -1), toknroll.InvalidArgument("m", -2), toknroll.NotFound("m", -3)):
+            back = pickle.loads(pickle.dumps(error))
+            self.assertEqual((type(back), str(back), back.code), (type(error), "m", error.code))
+        with multiprocessing.get_context("fork").Pool(1) as pool:
+            with self.assertRaises(toknroll.NotFound):
+                pool.apply(toknroll.load, ("/no/such/file",))
 
     @needs_gguf
     def test_a_success_clears_the_last_error(self):

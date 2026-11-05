@@ -55,6 +55,9 @@ class ToknrollError(Exception):
         super().__init__(message)
         self.code = code
 
+    def __reduce__(self):
+        return (type(self), (self.args[0], self.code))  # pickled with its code: a worker's error reaches the parent
+
 
 class InvalidArgument(ToknrollError, ValueError):
     """A bad argument: an id outside the vocabulary, a malformed source."""
