@@ -39,7 +39,7 @@ __version__ = "0.4.0"  # the toknroll release the library was built from; make c
 
 class TokenFlags(IntFlag):
     """A token's flags: bit n is GGUF token type n, exactly one of these six today; higher bits
-    are reserved. CONTROL and USER_DEFINED are the special tokens."""
+    are reserved. CONTROL, USER_DEFINED and UNKNOWN are the special tokens, the ones `specials=True` matches."""
 
     NORMAL = 1 << 1
     UNKNOWN = 1 << 2
@@ -111,7 +111,7 @@ def _id(value: object, what: str) -> int:
 
 def _ids(value, what: str) -> tuple[object, int, int]:
     """(owner, address, count) of int32 ids: a writable int32 buffer in place, anything else copied once."""
-    if isinstance(value, array) and value.itemsize == 4 and value.typecode in "il":
+    if isinstance(value, array) and value.itemsize == 4 and value.typecode in ("i", "l"):
         return value, value.buffer_info()[0], len(value)
     try:
         view = memoryview(value)

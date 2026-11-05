@@ -23,7 +23,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | a token budget | `count_tokens(text)`, no list built |
 | many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores |
 | the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)` (a `TokenFlags` mask: `NORMAL`, `CONTROL`, `USER_DEFINED`, `BYTE`, ...), `None` when absent |
-| text without the specials | `decode(i for i in ids if not tokenizer.token_flags(i) & (TokenFlags.CONTROL \| TokenFlags.USER_DEFINED))`: the special kinds only, a `BYTE` token is part of a character |
+| text without the specials | `decode(i for i in ids if not tokenizer.token_flags(i) & SPECIAL)` with `SPECIAL = TokenFlags.CONTROL \| TokenFlags.USER_DEFINED \| TokenFlags.UNKNOWN`: the special kinds only, a `BYTE` token is part of a character |
 | another process | a `Tokenizer` pickles as its `source`, so `multiprocessing` and `concurrent.futures` just work |
 | the runtime | `toknroll.configure("-Dtoknroll.gguf.pre.my-model=alias:qwen2", "-XX:MaxHeapSize=512m", "-XX:ActiveProcessorCount=4")` once, before first use: a GGUF pre-tokenizer name, a heap cap, a cap on the threads `encode_batch` spreads over |
 

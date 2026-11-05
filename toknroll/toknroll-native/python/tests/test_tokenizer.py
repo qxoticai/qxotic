@@ -8,9 +8,10 @@ from array import array
 from pathlib import Path
 
 from support import (BYTE_FALLBACK, DEEPSEEK_JSON, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, byte_level_json, needs_byte_fallback,
-                     needs_deepseek, needs_numpy, needs_tiktoken_dir, numpy, toknroll)
+                     needs_deepseek, needs_tiktoken_dir, numpy, toknroll)
 
 F = toknroll.TokenFlags
+SPECIAL = F.CONTROL | F.USER_DEFINED | F.UNKNOWN  # the README's recipe: the kinds specials=True matches
 
 
 class LoadTest(unittest.TestCase):
@@ -178,13 +179,13 @@ class EncodeDecodeTest(unittest.TestCase):
         self.assertEqual(self.t.encode("no specials here", specials=True), self.t.encode("no specials here"))
         mixed = self.t.encode("Hello<|im_end|>world<|im_start|>", specials=True)
         self.assertEqual(self.t.decode(mixed), "Hello<|im_end|>world<|im_start|>")
-        self.assertEqual(sum(1 for i in mixed if self.t.token_flags(i) & (F.CONTROL | F.USER_DEFINED)), 2)
+        self.assertEqual(sum(1 for i in mixed if self.t.token_flags(i) & SPECIAL), 2)
         self.assertEqual(self.t.count_tokens("<|im_end|>", specials=True), 1)
 
     def test_decode_without_specials_is_a_filter(self):
         """The README's recipe: the special kinds dropped, every other token kept."""
         ids = self.t.encode("Hello<|im_end|>", specials=True)
-        self.assertEqual(self.t.decode(i for i in ids if not self.t.token_flags(i) & (F.CONTROL | F.USER_DEFINED)), "Hello")
+        self.assertEqual(self.t.decode(i for i in ids if not self.t.token_flags(i) & SPECIAL), "Hello")
 
     @needs_byte_fallback
     def test_decode_without_specials_keeps_byte_tokens(self):
@@ -192,7 +193,7 @@ class EncodeDecodeTest(unittest.TestCase):
         with toknroll.load(BYTE_FALLBACK) as t:
             ids = t.encode("a\0b")
             self.assertTrue(any(t.token_flags(i) & F.BYTE for i in ids))
-            self.assertEqual(t.decode(i for i in ids if not t.token_flags(i) & (F.CONTROL | F.USER_DEFINED)), "a\0b")
+            self.assertEqual(t.decode(i for i in ids if not t.token_flags(i) & SPECIAL), "a\0b")
             self.assertEqual(t.decode(i for i in ids if t.token_flags(i) & F.NORMAL), "ab")
 
     def test_encode_rejects_non_text(self):
@@ -308,7 +309,7 @@ class VocabularyTest(unittest.TestCase):
             self.assertEqual(bin(flags & kinds).count("1"), 1, f"id {i}: {flags!r}")
             self.assertEqual(flags & ~kinds, 0)
         self.assertEqual(self.t.token_flags(self.t.encode("Hello")[0]), F.NORMAL)
-        self.assertTrue(self.t.token_flags(self.t.id("<|im_end|>")) & (F.CONTROL | F.USER_DEFINED))
+        self.assertTrue(self.t.token_flags(self.t.id("<|im_end|>")) & SPECIAL)
 
     def test_flag_values_match_the_header(self):
         header = (Path(__file__).resolve().parents[2] / "include" / "toknroll.h").read_text()
