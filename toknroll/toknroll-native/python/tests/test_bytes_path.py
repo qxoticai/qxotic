@@ -92,7 +92,7 @@ class BytesPathTest(unittest.TestCase):
         for bad in (None, 5, b"bytes", {1: "x"}, {1, 2}, ["ok", None], ["ok", 5], ["ok", b"bytes"], [["nested"]]):
             with self.subTest(bad=bad), self.assertRaises(TypeError) as e:
                 t.encode_batch(bad)
-        self.assertIn("encode_batch", str(e.exception))  # the call is named, as every argument error names it
+        self.assertIn("encode_batch[0]", str(e.exception))  # the call and the element are named
         self.assertEqual(t.encode_batch([]), [])
 
     def test_ids_decode_back_to_the_text(self):

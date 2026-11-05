@@ -69,6 +69,9 @@ class LoadTest(unittest.TestCase):
         self.assertIsInstance(e.exception, ValueError)
         with self.assertRaises(toknroll.InvalidArgument):
             toknroll.load("not-a-reference")
+        with self.assertRaises(toknroll.InvalidArgument) as e:  # a browser's URL, pasted
+            toknroll.load("https://huggingface.co/Qwen/Qwen3-0.6B")
+        self.assertIn("owner/repo", str(e.exception))
         with tempfile.TemporaryDirectory() as empty:
             with self.assertRaises(toknroll.NotFound) as e:
                 toknroll.load(empty)

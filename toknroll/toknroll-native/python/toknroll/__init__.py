@@ -132,6 +132,8 @@ def _ids(value, what: str) -> tuple[object, int, int]:
         ids = array("i", value)
     except TypeError:
         raise TypeError(f"{what}: expected int32 ids") from None
+    except OverflowError as e:
+        raise OverflowError(f"{what}: {e}") from None
     return ids, ids.buffer_info()[0], len(ids)
 
 
@@ -170,13 +172,17 @@ class Tokenizer:
     that made it: libtoknroll, or libjinfer for a model's tokenizer.
     """
 
-    __slots__ = ("_h", "_source", "_lib", "__weakref__")
+    __slots__ = ("_h", "_source", "_lib", "_owned", "__weakref__")
 
-    def __init__(self, handle: int, source: str, lib: C.CDLL | None = None):
-        """Internal: wraps a handle the library returned. Use `load()`."""
+    def __init__(self, handle: int, source: str, lib: C.CDLL | None = None, *, owned: bool = False):
+        """Internal: wraps a handle the library returned; use `load()`. Only an owned wrapper, the one `load`
+        or a library that hands out handles makes, frees the handle: any other is a view, and frees nothing."""
+        if isinstance(handle, bool) or not isinstance(handle, int) or handle <= 0:
+            raise TypeError(f"Tokenizer: expected a handle the library returned, got {handle!r}")
         self._lib = lib or N.library()
         self._source = source
         self._h = handle
+        self._owned = owned
 
     @property
     def _handle(self) -> int:
@@ -218,7 +224,7 @@ class Tokenizer:
         if isinstance(texts, str):  # a str iterates as its characters: a text given as a batch
             raise TypeError("encode_batch takes a sequence of texts; encode takes one")
         lib, handle = self._lib, self._handle
-        data = [_text(text, "encode_batch") for text in texts]
+        data = [_text(text, f"encode_batch[{i}]") for i, text in enumerate(texts)]
         count = len(data)
         joined = b"".join(data)  # the texts travel as one buffer, text i at text_offsets[i:i + 2]
         text_offsets = array("q", accumulate(map(len, data), initial=0))
@@ -272,7 +278,7 @@ class Tokenizer:
         """Frees the tokenizer; idempotent. Every other method is refused afterwards. Close it
         when no other thread is using it, as with a file."""
         handle, self._h = getattr(self, "_h", None), None
-        if handle is not None:
+        if handle is not None and self._owned:
             self._lib.toknroll_tokenizer_free(handle)
 
     def __enter__(self):
@@ -323,4 +329,4 @@ def load(source: str | os.PathLike) -> Tokenizer:
         if text not in error.args[0]:  # a load error names its source, as open names its file
             raise type(error)(f"{text}: {error.args[0]}", error.code)
         raise error
-    return Tokenizer(handle, text, lib)
+    return Tokenizer(handle, text, lib, owned=True)

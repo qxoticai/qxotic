@@ -2,9 +2,13 @@
 a platform wheel only of a distribution with binaries, and tags it after the interpreter that builds it, so
 both are said here: WHEEL_PLAT, from the Makefile, is the platform tag read off the library (its glibc floor,
 its minimum macOS); without it, this machine's. Everything else is in pyproject.toml."""
+import glob
 import os
 
 from setuptools import Distribution, setup
+
+if not os.path.exists("LICENSE") or not glob.glob("toknroll/lib/*/*"):  # what `make python` stages
+    raise SystemExit("the package is built from a staged tree: run `make python` in toknroll-native first")
 from setuptools.command.bdist_wheel import bdist_wheel
 
 

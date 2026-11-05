@@ -68,7 +68,10 @@ def bind(lib: C.CDLL) -> C.CDLL:
         "toknroll_id": ([P, S, I64], I32),
     }
     for name, (argtypes, restype) in sig.items():
-        fn = getattr(lib, name)
+        try:
+            fn = getattr(lib, name)
+        except AttributeError:  # the version matched, the symbol table does not: a build that is not whole
+            raise OSError(f"{lib._name} says toknroll {found} but has no {name}") from None
         fn.argtypes, fn.restype = argtypes, restype
     return lib
 

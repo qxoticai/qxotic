@@ -86,6 +86,8 @@ class IdBufferTest(unittest.TestCase):
                 self.assertIsInstance(e.exception, ValueError)
                 self.assertIn("no token with id", str(e.exception))   # a gap below the size is no token either
                 self.assertIn("ids[0]", str(e.exception))
+            else:  # raised here, not by the library: the call is named, an overflow too
+                self.assertTrue(str(e.exception).startswith("decode:"), str(e.exception))
 
     def test_ids_read_in_place_cannot_move_during_the_call(self):
         """The call reads the array's memory with the GIL released: the owner it keeps is a buffer export, so a resize
@@ -161,6 +163,21 @@ class LifecycleTest(unittest.TestCase):
             with self.assertRaises(ValueError) as e:
                 call()
             self.assertIn("closed", str(e.exception))
+
+    def test_a_wrapper_over_a_live_handle_is_a_view_that_frees_nothing(self):
+        """Only load's own wrapper owns its handle: another Tokenizer over the same handle reads, and its close
+        or collection leaves the owner usable; a value that is no handle is refused."""
+        t = toknroll.load(GGUF)
+        view = toknroll.Tokenizer(t._h, "view", t._lib)
+        self.assertEqual(view.vocabulary_size, t.vocabulary_size)
+        view.close()
+        del view
+        gc.collect()
+        self.assertEqual(t.decode(t.encode("still here")), "still here")
+        t.close()
+        for bad in (True, 1.5, None, 0, -1, "1"):
+            with self.subTest(bad=bad), self.assertRaises(TypeError):
+                toknroll.Tokenizer(bad, "x", t._lib)
 
     def test_garbage_collection_frees(self):
         t = toknroll.load(GGUF)
