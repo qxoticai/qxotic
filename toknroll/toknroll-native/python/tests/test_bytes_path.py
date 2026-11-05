@@ -84,6 +84,14 @@ class BytesPathTest(unittest.TestCase):
             t.encode_batch("abc")
         self.assertEqual(t.encode_batch(iter(["ab", "c"])), [t.encode("ab"), t.encode("c")])
 
+    def test_a_batch_is_texts_only(self):
+        """Not iterable, or an element that is not a str: TypeError, as HF and tiktoken raise, nothing encoded."""
+        t = self.tokenizers[0]
+        for bad in (None, 5, b"bytes", {1: "x"}, {1, 2}, ["ok", None], ["ok", 5], ["ok", b"bytes"], [["nested"]]):
+            with self.subTest(bad=bad), self.assertRaises(TypeError):
+                t.encode_batch(bad)
+        self.assertEqual(t.encode_batch([]), [])
+
     def test_ids_decode_back_to_the_text(self):
         texts = corpus(2, 200)
         for t in self.tokenizers:
