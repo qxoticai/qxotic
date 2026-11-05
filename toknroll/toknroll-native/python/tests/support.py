@@ -21,6 +21,11 @@ _json = sorted(Path.home().glob(".cache/huggingface/hub/models--Qwen--Qwen3-0.6B
 TIKTOKEN_JSON = os.environ.get("TOKNROLL_TEST_TIKTOKEN_JSON") or (str(_json[0]) if _json else None)
 needs_hub = unittest.skipIf(OFFLINE, "TOKNROLL_OFFLINE=1")
 
+# A byte-level tokenizer.json whose added tokens are spelled outside ASCII: DeepSeek V3's, "<｜begin▁of▁sentence｜>".
+_deepseek = sorted(Path.home().glob(".cache/huggingface/hub/models--deepseek-ai--DeepSeek-V3*/snapshots/*/tokenizer.json"))
+DEEPSEEK_JSON = os.environ.get("TOKNROLL_TEST_DEEPSEEK_JSON") or (str(_deepseek[0]) if _deepseek else None)
+needs_deepseek = unittest.skipIf(DEEPSEEK_JSON is None, "no local DeepSeek V3 tokenizer.json: set TOKNROLL_TEST_DEEPSEEK_JSON")
+
 # A tiktoken checkout: a folder holding tiktoken.model and tokenizer_config.json, no tokenizer.json (Kimi's).
 _tiktoken = sorted(Path.home().glob(".cache/huggingface/hub/models--moonshotai--Kimi-K*/snapshots/*/tiktoken.model"))
 TIKTOKEN_DIR = os.environ.get("TOKNROLL_TEST_TIKTOKEN_DIR") or (str(_tiktoken[0].parent) if _tiktoken else None)

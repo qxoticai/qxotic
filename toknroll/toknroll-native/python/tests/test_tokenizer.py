@@ -6,8 +6,8 @@ import unittest
 from array import array
 from pathlib import Path
 
-from support import (BYTE_FALLBACK, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, needs_byte_fallback, needs_gguf, needs_numpy,
-                     needs_tiktoken_dir, numpy, toknroll)
+from support import (BYTE_FALLBACK, DEEPSEEK_JSON, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, needs_byte_fallback, needs_deepseek,
+                     needs_gguf, needs_numpy, needs_tiktoken_dir, numpy, toknroll)
 
 F = toknroll.TokenFlags
 
@@ -296,6 +296,16 @@ class VocabularyTest(unittest.TestCase):
             self.assertIn(f"#define TOKNROLL_TOKEN_{flag.name}", header)
             shift = int(header.split(f"TOKNROLL_TOKEN_{flag.name}")[1].split("<<")[1].split(")")[0])
             self.assertEqual(flag.value, 1 << shift, flag.name)
+
+    @needs_deepseek
+    def test_an_added_token_is_spelled_as_the_file_spells_it(self):
+        """token and id use the surface spelling of an added token, as HF does, not its byte-level alphabet."""
+        surface = "<｜begin▁of▁sentence｜>"
+        with toknroll.load(DEEPSEEK_JSON) as t:
+            self.assertEqual(t.id(surface), 0)
+            self.assertEqual(t.token(0), surface)
+            self.assertEqual(list(t.encode(surface, specials=True)), [0])
+            self.assertEqual(t.decode([0]), surface)
 
     def test_lookups_reject_wrong_types(self):
         for bad in ("x", 1.5, None):
