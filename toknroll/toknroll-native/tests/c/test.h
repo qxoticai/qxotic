@@ -12,6 +12,7 @@
 #elif !defined(_POSIX_C_SOURCE)
 #  define _POSIX_C_SOURCE 200809L     /* setenv, fork, alarm: before any system header */
 #endif
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -140,6 +141,19 @@ static void env_set(const char* name, const char* value) {   /* NULL removes it;
 #endif
 }
 
+/* A scenario's end when what it needs is not here, said why: counted apart, never a pass, and failing the
+ * run unless CTEST_ALLOW_SKIP is set, so a machine without the cache cannot look covered. */
+#define SKIPPED 77   /* its exit status, automake's */
+static void skip(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    printf("    skipped: ");
+    vprintf(format, args);
+    printf("\n");
+    va_end(args);
+    exit(SKIPPED);
+}
+
 /* none of the libraries' variables the shell may have set, but the scenario's own */
 static void scenario_env(const scenario* s) {
     static const char* const libraries[] = {"TOKNROLL_LOG", "TOKNROLL_OPTIONS", "TOKNROLL_CACHE_ROOT", "JINFER_LOG",
@@ -167,25 +181,36 @@ static int test_main(int argc, char** argv, const scenario* scenarios, int count
         printf("no scenario %s\n", argv[1]);
         return 2;
     }
-    int failed = 0;
+    int failed = 0, skipped = 0;
     for (int i = 0; i < count; i++) {
+        /* the scenario's own variable is its alone: what it was before comes back after */
+        char name[64] = "", before[1024] = "";
+        const char* had = NULL;
+        if (scenarios[i].env) {
+            snprintf(name, sizeof name, "%.*s", (int) (strchr(scenarios[i].env, '=') - scenarios[i].env), scenarios[i].env);
+            if ((had = getenv(name))) snprintf(before, sizeof before, "%s", had);
+        }
         scenario_env(&scenarios[i]);
 #ifdef _WIN32
         const char* args[] = {argv[0], scenarios[i].name, NULL};
-        int ok = _spawnv(_P_WAIT, argv[0], args) == 0;
+        int code = (int) _spawnv(_P_WAIT, argv[0], args);
 #else
         pid_t pid = fork();
         if (pid == 0) { execl(argv[0], argv[0], scenarios[i].name, (char*) NULL); _exit(127); }
         int status = 0;
         waitpid(pid, &status, 0);
-        int ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
         if (WIFSIGNALED(status)) printf("    killed by signal %d\n", WTERMSIG(status));
 #endif
-        printf("%s %s\n", ok ? "ok  " : "FAIL", scenarios[i].name);
-        failed += !ok;
+        if (*name) env_set(name, had ? before : NULL);
+        printf("%s %s\n", code == 0 ? "ok  " : code == SKIPPED ? "skip" : "FAIL", scenarios[i].name);
+        failed += code != 0 && code != SKIPPED;
+        skipped += code == SKIPPED;
     }
-    printf("%d of %d scenarios passed\n", count - failed, count);
-    return failed ? 1 : 0;
+    printf("%d of %d scenarios passed, %d skipped\n", count - failed - skipped, count, skipped);
+    int allowed = getenv("CTEST_ALLOW_SKIP") != NULL;
+    if (skipped && !allowed) printf("a skipped scenario fails the run: cache what it names, or set CTEST_ALLOW_SKIP=1\n");
+    return failed || (skipped && !allowed) ? 1 : 0;
 }
 
 #endif

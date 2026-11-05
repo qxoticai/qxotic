@@ -1191,16 +1191,16 @@ static void offline(void) {
     if (toknroll_configure(options, 1) != TOKNROLL_OK) { printf("    configure: %s\n", LE(NULL)); exit(1); }
 }
 
+/* a real tokenizer from the cache: skipped, and counted so, when it is not there */
 static toknroll_tokenizer* cached(const char* ref) {
     toknroll_tokenizer* t = toknroll_tokenizer_load(ref);
-    if (!t) printf("    skipped: %s is not cached (%s)\n", ref, LE(NULL));
+    if (!t) skip("%s is not cached (%s)", ref, LE(NULL));
     return t;
 }
 
 static void hub_reference(void) {
     offline();
     toknroll_tokenizer* t = cached(QWEN);
-    if (!t) return;
     CHECK_EQ(toknroll_vocabulary_size(t), QWEN_VOCAB);
     static const int32_t hello[] = {9707, 11, 1879, 0};
     int32_t ids[64];
@@ -1236,7 +1236,6 @@ static void hub_reference(void) {
 static void every_special_token(void) {
     offline();
     toknroll_tokenizer* t = cached(QWEN);
-    if (!t) return;
     int control = 0, user = 0, wrong = 0;
     for (int32_t id = 0; id < QWEN_VOCAB; id++) {
         int64_t flags = toknroll_token_flags(t, id);
@@ -1262,7 +1261,6 @@ static void every_special_token(void) {
 static void gguf_reference(void) {   /* a GGUF on the hub: read for its header, from the cache */
     offline();
     toknroll_tokenizer* t = cached(LFM_GGUF);
-    if (!t) return;
     CHECK_EQ(toknroll_vocabulary_size(t), 65536);
     static const int32_t hello[] = {36309, 521, 2031, 510};
     int32_t ids[16];
@@ -1294,7 +1292,6 @@ static void prose_worker(void* p) {
 static void real_engine(void) {
     offline();
     toknroll_tokenizer* t = cached(QWEN);
-    if (!t) return;
     static int32_t want[PROSE_COUNT][256];
     int32_t counts[PROSE_COUNT];
     for (int i = 0; i < PROSE_COUNT; i++) {
@@ -1350,7 +1347,6 @@ static void real_engine(void) {
 static void gguf_round_trips(void) {
     offline();
     toknroll_tokenizer* t = cached(LFM_GGUF);
-    if (!t) return;
     for (int i = 0; i < PROSE_COUNT; i++) {
         int32_t ids[256];
         char back[512];
@@ -1437,7 +1433,6 @@ static void streaming_decode(void) {
 static void added_token_text(void) {
     offline();
     toknroll_tokenizer* t = cached("microsoft/phi-2");
-    if (!t) return;
     char text[64];
     CHECK_EQ(toknroll_token(t, 50257, text, sizeof text), 31);
     CHECK(strspn(text, " ") == 31);

@@ -30,15 +30,15 @@ static jinfer_model* load(const char* ref) {
     return m;
 }
 
-/* an optional model: NULL, said so, when it is not cached */
-static jinfer_model* load_if_cached(const char* ref, const char* companion) {
+/* a model the scenario needs from the cache: skipped, and counted so, when it is not there */
+static jinfer_model* cached_model(const char* ref, const char* companion) {
     jinfer_model_options o;
     jinfer_model_options_init(&o);
     const char* companions[] = {companion};
     o.companions = companion ? companions : NULL;
     o.companion_count = companion ? 1 : 0;
     jinfer_model* m = jinfer_model_load(ref, &o);
-    if (!m) printf("    skipped: %s is not cached (%s)\n", ref, LE(NULL));
+    if (!m) skip("%s is not cached (%s)", ref, LE(NULL));
     return m;
 }
 
@@ -870,8 +870,7 @@ static void embedding_model(void) {
 
 static void reranker(void) {
     offline();
-    jinfer_model* r = load_if_cached(RERANKER, NULL);
-    if (!r) return;
+    jinfer_model* r = cached_model(RERANKER, NULL);
     CHECK_EQ(jinfer_model_property(r, JINFER_HAS_RERANK), 1);
     int32_t max = jinfer_model_property(r, JINFER_MAX_CONTEXT_LENGTH);
     CHECK_EQ(jinfer_model_property(r, JINFER_CONTEXT_CAPACITY), max < 4096 ? max : 4096);   /* the default, a reranker's too */
@@ -900,60 +899,54 @@ static void reranker(void) {
 
 static void speech_and_transcription(void) {
     offline();
-    jinfer_model* tts = load_if_cached(SPEAKER, VOICE);
-    jinfer_model* asr = load_if_cached(TRANSCRIBER, NULL);
+    jinfer_model* tts = cached_model(SPEAKER, VOICE);
+    jinfer_model* asr = cached_model(TRANSCRIBER, NULL);
     static float audio[24000 * 20];
-    int32_t samples = 0, rate = 0;
-    if (tts) {
-        rate = jinfer_model_property(tts, JINFER_SAMPLE_RATE);
-        CHECK_EQ(rate, 24000);
-        CHECK_EQ(jinfer_model_property(tts, JINFER_HAS_SPEECH), 1);
-        jinfer_stream* s = jinfer_speak(tts, "{\"input\":\"Turns out, matrix multiplications can talk.\",\"speed\":1.2}");
-        CHECK(s != NULL);
-        int32_t rc, chunks = 0;
-        while ((rc = jinfer_stream_step(s)) == JINFER_OK) {
-            int32_t count = 0;
-            const float* pcm = jinfer_stream_samples(s, &count);
-            CHECK(pcm != NULL && count > 0);
-            if (pcm && samples + count <= (int32_t) (sizeof audio / sizeof *audio)) memcpy(audio + samples, pcm, (size_t) count * sizeof *pcm);
-            samples += count;
-            chunks++;
-        }
-        CHECK_EQ(rc, JINFER_DONE);
-        CHECK(chunks > 0 && samples > rate && samples < 10 * rate);   /* a second to ten */
-        CHECK(jinfer_stream_result(s)[0] == '{');
-        jinfer_stream_free(s);
-        CHECK_NULL_ERROR(jinfer_speak(tts, "{}"), JINFER_EINVAL, LE, "request_json needs a non-empty \"input\" string");
-        CHECK_NULL_ERROR(jinfer_speak(tts, "{\"input\":\"\"}"), JINFER_EINVAL, LE, "non-empty \"input\"");
-        CHECK_NULL_ERROR(jinfer_speak(tts, "{\"input\":\"x\",\"speed\":\"fast\"}"), JINFER_EINVAL, LE, "\"speed\" must be a number");
-        CHECK_NULL_ERROR(jinfer_speak(tts, "{\"input\":\"x\",\"speed\":0}"), JINFER_EINVAL, LE, "\"speed\" must be positive");
-        CHECK_NULL_ERROR(jinfer_speak(tts, NULL), JINFER_EINVAL, LE, "request_json is NULL");
-        CHECK_NULL_ERROR(jinfer_speak(NULL, "{\"input\":\"x\"}"), JINFER_EINVAL, LE, "model is NULL");
-        CHECK_NULL_ERROR(jinfer_chat(tts, HI), JINFER_EUNSUPPORTED, LE, "not a language model");
-        /* cancelled mid-speech */
-        s = jinfer_speak(tts, "{\"input\":\"A much longer sentence, spoken slowly, so that there is time to stop it in the middle of a word.\"}");
-        jinfer_stream_cancel(s);
-        CHECK_EQ(jinfer_stream_step(s), JINFER_ECANCELLED);
-        jinfer_stream_free(s);
+    int32_t samples = 0, rate = jinfer_model_property(tts, JINFER_SAMPLE_RATE);
+    CHECK_EQ(rate, 24000);
+    CHECK_EQ(jinfer_model_property(tts, JINFER_HAS_SPEECH), 1);
+    jinfer_stream* s = jinfer_speak(tts, "{\"input\":\"Turns out, matrix multiplications can talk.\",\"speed\":1.2}");
+    CHECK(s != NULL);
+    int32_t rc, chunks = 0;
+    while ((rc = jinfer_stream_step(s)) == JINFER_OK) {
+        int32_t count = 0;
+        const float* pcm = jinfer_stream_samples(s, &count);
+        CHECK(pcm != NULL && count > 0);
+        if (pcm && samples + count <= (int32_t) (sizeof audio / sizeof *audio)) memcpy(audio + samples, pcm, (size_t) count * sizeof *pcm);
+        samples += count;
+        chunks++;
     }
-    if (asr) {
-        CHECK_EQ(jinfer_model_property(asr, JINFER_SAMPLE_RATE), 16000);
-        CHECK_EQ(jinfer_model_property(asr, JINFER_HAS_TRANSCRIPTION), 1);
-        float silence[1600] = {0};
-        CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, 1600, 0), JINFER_EINVAL, LE, "sample_rate must be positive");
-        CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, 1600, -16000), JINFER_EINVAL, LE, "sample_rate must be positive");
-        CHECK_NULL_ERROR(jinfer_transcribe(asr, NULL, 10, 16000), JINFER_EINVAL, LE, "pcm is NULL");
-        CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, -1, 16000), JINFER_EINVAL, LE, "count must not be negative");
-        CHECK_NULL_ERROR(jinfer_transcribe(NULL, silence, 1600, 16000), JINFER_EINVAL, LE, "model is NULL");
-        if (tts && samples > 0) {   /* what the speaker said, at its own rate: the library resamples */
-            jinfer_stream* s = jinfer_transcribe(asr, audio, samples, rate);
-            char text[1024];
-            CHECK_EQ(drain(s, text, sizeof text), JINFER_DONE);
-            const char* result = jinfer_stream_result(s);
-            CHECK(strstr(result, "matrix") || strstr(result, "Matrix"));
-            jinfer_stream_free(s);
-        }
-    }
+    CHECK_EQ(rc, JINFER_DONE);
+    CHECK(chunks > 0 && samples > rate && samples < 10 * rate);   /* a second to ten */
+    CHECK(jinfer_stream_result(s)[0] == '{');
+    jinfer_stream_free(s);
+    CHECK_NULL_ERROR(jinfer_speak(tts, "{}"), JINFER_EINVAL, LE, "request_json needs a non-empty \"input\" string");
+    CHECK_NULL_ERROR(jinfer_speak(tts, "{\"input\":\"\"}"), JINFER_EINVAL, LE, "non-empty \"input\"");
+    CHECK_NULL_ERROR(jinfer_speak(tts, "{\"input\":\"x\",\"speed\":\"fast\"}"), JINFER_EINVAL, LE, "\"speed\" must be a number");
+    CHECK_NULL_ERROR(jinfer_speak(tts, "{\"input\":\"x\",\"speed\":0}"), JINFER_EINVAL, LE, "\"speed\" must be positive");
+    CHECK_NULL_ERROR(jinfer_speak(tts, NULL), JINFER_EINVAL, LE, "request_json is NULL");
+    CHECK_NULL_ERROR(jinfer_speak(NULL, "{\"input\":\"x\"}"), JINFER_EINVAL, LE, "model is NULL");
+    CHECK_NULL_ERROR(jinfer_chat(tts, HI), JINFER_EUNSUPPORTED, LE, "not a language model");
+    /* cancelled mid-speech */
+    s = jinfer_speak(tts, "{\"input\":\"A much longer sentence, spoken slowly, so that there is time to stop it in the middle of a word.\"}");
+    jinfer_stream_cancel(s);
+    CHECK_EQ(jinfer_stream_step(s), JINFER_ECANCELLED);
+    jinfer_stream_free(s);
+    CHECK_EQ(jinfer_model_property(asr, JINFER_SAMPLE_RATE), 16000);
+    CHECK_EQ(jinfer_model_property(asr, JINFER_HAS_TRANSCRIPTION), 1);
+    float silence[1600] = {0};
+    CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, 1600, 0), JINFER_EINVAL, LE, "sample_rate must be positive");
+    CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, 1600, -16000), JINFER_EINVAL, LE, "sample_rate must be positive");
+    CHECK_NULL_ERROR(jinfer_transcribe(asr, NULL, 10, 16000), JINFER_EINVAL, LE, "pcm is NULL");
+    CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, -1, 16000), JINFER_EINVAL, LE, "count must not be negative");
+    CHECK_NULL_ERROR(jinfer_transcribe(NULL, silence, 1600, 16000), JINFER_EINVAL, LE, "model is NULL");
+    /* what the speaker said, at its own rate: the library resamples */
+    s = jinfer_transcribe(asr, audio, samples, rate);
+    char text[1024];
+    CHECK_EQ(drain(s, text, sizeof text), JINFER_DONE);
+    const char* result = jinfer_stream_result(s);
+    CHECK(strstr(result, "matrix") || strstr(result, "Matrix"));
+    jinfer_stream_free(s);
     jinfer_model_free(tts);
     jinfer_model_free(asr);
 }
