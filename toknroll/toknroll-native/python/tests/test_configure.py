@@ -1,22 +1,7 @@
 """toknroll.configure: runtime options before first use. Each case runs in a fresh interpreter."""
-import os
-import subprocess
-import sys
 import unittest
-from pathlib import Path
 
-from support import GGUF, toknroll
-
-HERE = Path(__file__).resolve().parents[1]
-
-
-def fresh(code: str, options: str | None = None) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k != "TOKNROLL_OPTIONS"}
-    if options is not None:
-        env["TOKNROLL_OPTIONS"] = options
-    head = "" if "TOKNROLL_INSTALLED" in env else f"import sys; sys.path.insert(0, {str(HERE)!r})\n"  # the wheel's package, under check-wheel
-    return subprocess.run([sys.executable, "-c", head + f"import toknroll\n{code}"],
-                          capture_output=True, text=True, timeout=120, env=env)
+from support import GGUF, fresh, toknroll
 
 
 class ConfigureTest(unittest.TestCase):
@@ -49,15 +34,15 @@ class ConfigureTest(unittest.TestCase):
         text = "Numbers 1234567 and words"
         encode = f"t = toknroll.load({GGUF!r}); print(list(t.encode({text!r})))"
         gpt2 = fresh(f"toknroll.configure('-Dtoknroll.gguf.pre.lfm2=alias:gpt2'); {encode}")
-        qwen2 = fresh(encode, options="-Dtoknroll.gguf.pre.lfm2=alias:qwen2")
-        both = fresh(f"toknroll.configure('-Dtoknroll.gguf.pre.lfm2=alias:gpt2'); {encode}", options="-Dtoknroll.gguf.pre.lfm2=alias:qwen2")
+        qwen2 = fresh(encode, TOKNROLL_OPTIONS="-Dtoknroll.gguf.pre.lfm2=alias:qwen2")
+        both = fresh(f"toknroll.configure('-Dtoknroll.gguf.pre.lfm2=alias:gpt2'); {encode}", TOKNROLL_OPTIONS="-Dtoknroll.gguf.pre.lfm2=alias:qwen2")
         for run in (gpt2, qwen2, both):
             self.assertEqual(run.returncode, 0, run.stderr)
         self.assertNotEqual(gpt2.stdout, qwen2.stdout, "the two aliases must split differently for the test to mean anything")
         self.assertEqual(both.stdout, qwen2.stdout, "TOKNROLL_OPTIONS must override what configure set")
 
     def test_a_rejected_environment_option_names_the_variable(self):
-        out = fresh(f"try:\n    toknroll.load({GGUF!r})\nexcept toknroll.ToknrollError as e:\n    print('failed:', e)", options="-XX:NoSuchOptionAtAll=1")
+        out = fresh(f"try:\n    toknroll.load({GGUF!r})\nexcept toknroll.ToknrollError as e:\n    print('failed:', e)", TOKNROLL_OPTIONS="-XX:NoSuchOptionAtAll=1")
         self.assertIn("TOKNROLL_OPTIONS", out.stdout, out.stdout + out.stderr)
         self.assertIn("NoSuchOptionAtAll", out.stderr, "the runtime names the option on stderr")
 

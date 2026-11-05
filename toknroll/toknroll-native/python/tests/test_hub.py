@@ -1,23 +1,9 @@
 """Hub sources: tokenizer.json repositories and GGUF headers, metadata only. TOKNROLL_OFFLINE=1 skips."""
-import os
-import subprocess
-import sys
 import tempfile
 import unicodedata
 import unittest
-from pathlib import Path
 
-from support import EDGE_TEXTS, GGUF, HUB_GGUF, HUB_JSON, needs_hub, toknroll
-
-HERE = Path(__file__).resolve().parents[1]
-
-
-def fresh(code: str, *options: str) -> subprocess.CompletedProcess:
-    """`code` in a new interpreter with these runtime options configured first; configure is once per process."""
-    env = {k: v for k, v in os.environ.items() if k != "TOKNROLL_OPTIONS"}
-    head = "" if "TOKNROLL_INSTALLED" in env else f"import sys; sys.path.insert(0, {str(HERE)!r})\n"
-    return subprocess.run([sys.executable, "-c", f"{head}import toknroll; toknroll.configure(*{options!r})\n{code}"],
-                          capture_output=True, text=True, timeout=300, env=env)
+from support import EDGE_TEXTS, GGUF, HUB_GGUF, HUB_JSON, fresh, needs_hub, toknroll
 
 
 @needs_hub
@@ -34,14 +20,15 @@ class HubTest(unittest.TestCase):
     def test_a_tiktoken_repository_warmed_online_loads_offline(self):
         """A hub tiktoken checkout keeps its files in the loader's own cache: offline, the same root serves it."""
         with tempfile.TemporaryDirectory() as root:
-            warm = fresh("print(toknroll.load('moonshotai/Kimi-K3').vocabulary_size)", f"-Dtoknroll.cache.root={root}")
+            def run(source, *options):  # configure is once per process: each load in its own
+                return fresh(f"toknroll.configure('-Dtoknroll.cache.root={root}', *{options!r})\n"
+                             f"print(toknroll.load({source!r}).vocabulary_size)")
+            warm = run("moonshotai/Kimi-K3")
             self.assertEqual(warm.returncode, 0, warm.stderr)
-            cold = fresh("print(toknroll.load('moonshotai/Kimi-K3').vocabulary_size)",
-                         f"-Dtoknroll.cache.root={root}", "-Dtoknroll.offline=true")
-            self.assertEqual(cold.returncode, 0, cold.stderr)
-            self.assertEqual(cold.stdout, warm.stdout)
-            missing = fresh("toknroll.load('moonshotai/Kimi-K2.6')", f"-Dtoknroll.cache.root={root}", "-Dtoknroll.offline=true")
-            self.assertIn("is not cached, and offline mode never fetches", missing.stderr)  # another repository: not served
+            cold = run("moonshotai/Kimi-K3", "-Dtoknroll.offline=true")
+            self.assertEqual(cold.stdout, warm.stdout, cold.stderr)
+            missing = run("moonshotai/Kimi-K2.6", "-Dtoknroll.offline=true")  # another repository: not served
+            self.assertIn("is not cached, and offline mode never fetches", missing.stderr)
 
     def test_the_host_may_be_written(self):
         with toknroll.load(HUB_JSON) as a, toknroll.load("hf.co/" + HUB_JSON) as b, toknroll.load("huggingface.co/" + HUB_JSON) as c:

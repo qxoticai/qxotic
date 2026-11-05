@@ -5,15 +5,11 @@ registered pre-tokenizer, logged as the first GGUF loads."""
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from support import HUB_JSON, needs_hub, tiny_gguf
-
-HERE = Path(__file__).resolve().parents[1]
-CLEARED = ("XDG_CACHE_HOME", "HF_HOME", "HF_HUB_CACHE", "JINFER_MODELS", "TOKNROLL_OPTIONS", "TOKNROLL_LOG")
+from support import HUB_JSON, fresh, needs_hub, tiny_gguf
 REPLACE = "-Dtoknroll.gguf.pre.gpt2=alias:qwen2"
 REPLACED = REPLACE + " replaces the registered pre-tokenizer 'gpt2'"
 
@@ -31,19 +27,6 @@ BARE = ("import ctypes\n"
         "lib = N.bind(ctypes.CDLL(str(N.locate('toknroll'))))\n"
         "def configure(*options):\n"
         "    assert lib.toknroll_configure((ctypes.c_char_p * len(options))(*(o.encode() for o in options)), len(options)) == 0\n")
-
-
-def fresh(code: str, log: str | None = None, cache: str | None = None) -> subprocess.CompletedProcess:
-    """code in a new interpreter, toknroll imported, TOKNROLL_LOG=log; with cache, the HF cache in that folder
-    too (the code moves toknroll's own there, through configure, which takes a path with spaces)"""
-    env = {k: v for k, v in os.environ.items() if k not in CLEARED}
-    if log is not None:
-        env["TOKNROLL_LOG"] = log
-    if cache is not None:
-        env["HF_HOME"] = os.path.join(cache, "hf")
-    head = "" if "TOKNROLL_INSTALLED" in env else f"import sys; sys.path.insert(0, {str(HERE)!r})\n"
-    return subprocess.run([sys.executable, "-c", head + "import toknroll\n" + code],
-                          capture_output=True, text=True, timeout=300, env=env)
 
 
 def root(cache: str) -> str:
@@ -82,10 +65,10 @@ class PackageTest(Fixture):
     def test_levels(self):
         for log, want in (("off", 0), ("OFF", 0), ("error", 0), (" Error ", 0), ("warn", 1), ("debug", 1), ("", 1)):
             with self.subTest(log=log):
-                self.assertEqual(len(records(fresh(RECORDS + self.warned() + PRINT, log))), want)
+                self.assertEqual(len(records(fresh(RECORDS + self.warned() + PRINT, TOKNROLL_LOG=log))), want)
 
     def test_an_unknown_value_warns_once_and_means_warn(self):
-        lines = records(fresh(RECORDS + self.warned() + PRINT, "verbose"))
+        lines = records(fresh(RECORDS + self.warned() + PRINT, TOKNROLL_LOG="verbose"))
         self.assertEqual(lines, [["WARNING", "toknroll.native: TOKNROLL_LOG=verbose is not off, error, warn,"
                                              " info or debug: warn applies"],
                                  ["WARNING", "com.qxotic.toknroll.gguf.GGUFTokenizerLoader: " + REPLACED]])
@@ -114,7 +97,7 @@ class PackageTest(Fixture):
         for log, downloads in ((None, False), ("off", False), ("info", True)):
             with self.subTest(log=log), tempfile.TemporaryDirectory() as cache:
                 code = f"toknroll.configure({root(cache)!r})\ntoknroll.load({HUB_JSON!r})\n"
-                run = fresh(RECORDS + code + PRINT, log, cache)
+                run = fresh(RECORDS + code + PRINT, TOKNROLL_LOG=log, HF_HOME=os.path.join(cache, "hf"))  # the HF cache there too
                 lines = records(run)
                 self.assertEqual(any(level == "INFO" and "jinfer.hub: download" in m for level, m in lines), downloads, lines)
                 self.assertEqual(run.stderr, "", "the library wrote to stderr")
@@ -122,7 +105,7 @@ class PackageTest(Fixture):
 
 class BareLibraryTest(Fixture):
     def bare(self, before: str, log: str | None = None) -> subprocess.CompletedProcess:
-        run = fresh(BARE + before + f"configure({REPLACE!r})\nassert lib.toknroll_tokenizer_load({self.gguf.encode()!r})\n", log)
+        run = fresh(BARE + before + f"configure({REPLACE!r})\nassert lib.toknroll_tokenizer_load({self.gguf.encode()!r})\n", TOKNROLL_LOG=log)
         self.assertEqual(run.returncode, 0, run.stderr)
         return run
 
@@ -142,7 +125,7 @@ class BareLibraryTest(Fixture):
     def test_info_writes_a_download_to_stderr(self):
         with tempfile.TemporaryDirectory() as cache:
             run = fresh(BARE + f"configure({root(cache)!r})\nassert lib.toknroll_tokenizer_load({HUB_JSON.encode()!r})",
-                        "info", cache)
+                        TOKNROLL_LOG="info", HF_HOME=os.path.join(cache, "hf"))
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertIn("toknroll: info: jinfer.hub: download", run.stderr)
 

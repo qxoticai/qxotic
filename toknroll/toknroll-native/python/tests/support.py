@@ -1,5 +1,6 @@
 """Shared fixtures: the local GGUF every test can use, and whether the hub may be touched."""
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -12,6 +13,17 @@ OFFLINE = os.environ.get("TOKNROLL_OFFLINE") == "1"
 HUB_JSON = "Qwen/Qwen3-0.6B"               # a tokenizer.json repository
 HUB_GGUF = "LiquidAI/LFM2.5-350M-GGUF:Q8_0"  # a GGUF whose header is fetched
 needs_hub = unittest.skipIf(OFFLINE, "TOKNROLL_OFFLINE=1")
+CLEARED = ("XDG_CACHE_HOME", "HF_HOME", "HF_HUB_CACHE", "JINFER_MODELS", "TOKNROLL_OPTIONS", "TOKNROLL_LOG")
+
+
+def fresh(code: str, **env: str | None) -> subprocess.CompletedProcess:
+    """`code` in a new interpreter with toknroll imported: the cache and toknroll variables cleared, then `env` set,
+    a None left unset."""
+    clean = {k: v for k, v in os.environ.items() if k not in CLEARED}
+    clean.update({k: v for k, v in env.items() if v is not None})
+    head = "" if "TOKNROLL_INSTALLED" in clean else f"import sys; sys.path.insert(0, {sys.path[0]!r})\n"
+    return subprocess.run([sys.executable, "-c", head + "import toknroll\n" + code],
+                          capture_output=True, text=True, timeout=300, env=clean)
 
 
 _HUB = Path(os.environ.get("HF_HUB_CACHE") or Path(os.environ.get("HF_HOME") or Path.home() / ".cache/huggingface") / "hub")
