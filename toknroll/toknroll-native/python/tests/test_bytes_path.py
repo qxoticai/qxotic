@@ -77,6 +77,13 @@ class BytesPathTest(unittest.TestCase):
             for texts in (["one"], ["", "two"], ["a", "b", "c"]):
                 self.assertEqual(t.encode_batch(texts), [t.encode(x) for x in texts])
 
+    def test_one_text_is_not_a_batch(self):
+        """A str iterates as its characters, so a text given as a batch is refused; any other iterable of texts goes."""
+        t = self.tokenizers[0]
+        with self.assertRaises(TypeError):
+            t.encode_batch("abc")
+        self.assertEqual(t.encode_batch(iter(["ab", "c"])), [t.encode("ab"), t.encode("c")])
+
     def test_ids_decode_back_to_the_text(self):
         texts = corpus(2, 200)
         for t in self.tokenizers:

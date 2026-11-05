@@ -27,7 +27,7 @@ import operator
 import os
 import threading
 from array import array
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from enum import IntFlag
 from itertools import accumulate
 
@@ -208,8 +208,10 @@ class Tokenizer:
         data = _text(text, "count_tokens")
         return _check(self._lib, self._lib.toknroll_encode(self._handle, data, len(data), _flags(specials), None, 0))
 
-    def encode_batch(self, texts: Sequence[str], *, specials: bool = False) -> list[array[int]]:
+    def encode_batch(self, texts: Iterable[str], *, specials: bool = False) -> list[array[int]]:
         """`encode` over many texts in one call; the library spreads them over the cores."""
+        if isinstance(texts, str):  # a str iterates as its characters: a text given as a batch
+            raise TypeError("encode_batch takes a sequence of texts; encode takes one")
         lib, handle = self._lib, self._handle
         data = [_text(text, "encode_batch") for text in texts]
         count = len(data)
