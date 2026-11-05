@@ -86,6 +86,11 @@ static void peek(void* p) {
     snprintf(r->message, sizeof r->message, "%s", LE(&r->code));
 }
 
+static void start_the_runtime(void* p) {
+    (void) p;
+    toknroll_tokenizer_free(tiny());
+}
+
 /* before the runtime starts, as after, a failure is the failing thread's own */
 static void last_error_before_start(void) {
     CHECK_ERROR(toknroll_configure(NULL, 1), TOKNROLL_EINVAL, LE, "options is NULL");
@@ -94,6 +99,12 @@ static void last_error_before_start(void) {
     CHECK_EQ(other.code, TOKNROLL_OK);   /* a thread that never called sees nothing */
     CHECK_STR(other.message, "");
     CHECK(strstr(LE(NULL), "options is NULL") != NULL);   /* the failing thread keeps its own */
+    /* and keeps it once another thread starts the runtime, until its own next call */
+    thread_join(thread_run(start_the_runtime, NULL));
+    CHECK_ERROR(TOKNROLL_EINVAL, TOKNROLL_EINVAL, LE, "options is NULL");
+    toknroll_tokenizer* t = tiny();
+    CHECK_CLEAR(LE);
+    toknroll_tokenizer_free(t);
 }
 
 static void last_error_per_thread(void) {

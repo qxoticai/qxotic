@@ -44,7 +44,7 @@ int32_t jinfer__prepare(T, jinfer_model*, const char*);
 
 const char* jinfer_version(void) { return XSTR(JINFER_VERSION_MAJOR) "." XSTR(JINFER_VERSION_MINOR) "." XSTR(JINFER_VERSION_PATCH); }
 /* never create the isolate just to report on it: that is a call, and a call clears the error being read */
-const char* jinfer_last_error(int32_t* code) { T t = toknroll__running() ? toknroll__thread() : NULL; return t ? jinfer__last_error(t, code) : toknroll__early_error(code); }
+const char* jinfer_last_error(int32_t* code) { return toknroll__last_error_of(code, jinfer__last_error); }
 int32_t jinfer_log_set(jinfer_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "jinfer_log_set", jinfer__error_set); }   /* toknroll_log_set's too: one per process */
 int32_t jinfer_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "jinfer_configure", jinfer__error_set); }
 

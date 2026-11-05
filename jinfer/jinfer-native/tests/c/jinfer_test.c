@@ -101,6 +101,20 @@ static void configure(void) {
     CHECK_ERROR(jinfer_log_set(NULL, NULL), JINFER_EINVAL, LE, "jinfer_log_set must come once");
 }
 
+static void start_the_runtime(void* p) {
+    (void) p;
+    jinfer_model_property(NULL, JINFER_VOCAB_SIZE);   /* refused, on this thread alone */
+}
+
+/* a refusal before the runtime starts stays the failing thread's, once another thread starts it, until
+ * that thread's own next call */
+static void last_error_before_start(void) {
+    CHECK_ERROR(jinfer_configure(NULL, 1), JINFER_EINVAL, LE, "options is NULL");
+    thread_join(thread_run(start_the_runtime, NULL));
+    CHECK_ERROR(JINFER_EINVAL, JINFER_EINVAL, LE, "jinfer_configure: options is NULL");
+    CHECK_ERROR(jinfer_model_property(NULL, JINFER_VOCAB_SIZE), JINFER_EINVAL, LE, "model is NULL");
+}
+
 static void configure_through_toknroll(void) {
     const char* one[] = {"-Djinfer.offline=true"};
     CHECK_EQ(toknroll_configure(one, 1), TOKNROLL_OK);
@@ -986,6 +1000,7 @@ static const scenario scenarios[] = {
     {"version", version, NULL},
     {"configure", configure, NULL},
     {"configure_through_toknroll", configure_through_toknroll, NULL},
+    {"last_error_before_start", last_error_before_start, NULL},
     {"configure_rejected", configure_rejected, NULL},
     {"options_from_the_environment", options_from_the_environment, "JINFER_OPTIONS=-Djinfer.threads=3"},
     {"log_set_once", log_set_once, NULL},

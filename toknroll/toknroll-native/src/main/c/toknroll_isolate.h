@@ -13,12 +13,12 @@ graal_thread* toknroll__thread(void);   /* attached on first use; NULL when ther
 graal_thread* toknroll__enter(void);    /* toknroll__thread inside the fork gate; always followed by leave */
 void toknroll__leave(void);
 int toknroll__created(void);            /* the runtime has started, or failed to: configure is too late */
-int toknroll__running(void);            /* it started, and serves this process: last_error asks it, not the early error */
 /* toknroll_log_set and jinfer_log_set for the public function `who`: kept for the runtime's start */
 typedef void (*toknroll__log_fn)(int32_t level, const char* message, void* user_data);
 int32_t toknroll__log(toknroll__log_fn fn, void* user_data, const char* who,
                       void (*error_set)(graal_thread*, int32_t, const char*));
-const char* toknroll__early_error(int32_t* code);   /* the last failure no runtime could hold */
+/* toknroll_last_error and jinfer_last_error: the thread's own early failure, else the runtime's record */
+const char* toknroll__last_error_of(int32_t* code, const char* (*runtime)(graal_thread*, int32_t*));
 /* configure for the public function `who`; error_set reports through that API's own last error */
 int32_t toknroll__configure(const char* const* options, int32_t count, const char* who,
                             void (*error_set)(graal_thread*, int32_t, const char*));

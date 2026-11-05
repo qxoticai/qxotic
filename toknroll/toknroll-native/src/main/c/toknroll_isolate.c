@@ -106,6 +106,12 @@ PORT_PRINTF(2, 3) static int32_t early(int32_t code, const char* format, ...) {
     return early_code = code;
 }
 
+/* a new call: the thread's last early failure is over */
+static void early_clear(void) {
+    early_error[0] = '\0';
+    early_code = TOKNROLL_OK;
+}
+
 /* the early error a call that finds no runtime leaves: why there is none, whatever came between */
 static void no_runtime(void) {
     memcpy(early_error, start_error, sizeof early_error);
@@ -382,6 +388,7 @@ static void init(void) {
 }
 
 graal_thread* toknroll__thread(void) {
+    early_clear();   /* every call passes here, libjinfer's and libtoknroll's: what fails below sets it again */
     if (!port_load(&started)) port_once(&once, init);
 #ifdef REFUSE
     if (forked) { no_runtime(); return NULL; }
@@ -483,16 +490,27 @@ void toknroll__workers_wake(void) {}
 
 int toknroll__created(void) { return port_load(&created) != 0; }
 
-int toknroll__running(void) {
+/* it started, and serves this process: last_error asks it, not the early error */
+static int running(void) {
 #ifdef REFUSE
     if (forked) return 0;
 #endif
     return port_load(&started) != 0;
 }
 
-const char* toknroll__early_error(int32_t* code) {
+static const char* early_last(int32_t* code) {
     if (code) *code = early_code;
     return early_error;
+}
+
+/* The calling thread's last failure: its own early one, which stands until its next call, else what the
+ * runtime holds for it. Never starts the runtime just to report on it. */
+const char* toknroll__last_error_of(int32_t* code, const char* (*runtime)(graal_thread*, int32_t*)) {
+    if (early_error[0] || !running()) return early_last(code);
+    graal_thread* t = toknroll__enter();   /* clears an early error that is empty already */
+    const char* last = t ? runtime(t, code) : early_last(code);   /* NULL: the attach failed, as it says */
+    toknroll__leave();
+    return last;
 }
 
 #define ONCE "%s must come once, before any other call into the library"
@@ -549,6 +567,6 @@ int32_t toknroll__log(toknroll__log_fn fn, void* user_data, const char* who,
     log_fn = fn;
     log_user_data = user_data;
     port_store(&log_given, 1);
-    early_error[0] = '\0';
-    return early_code = TOKNROLL_OK;
+    early_clear();
+    return TOKNROLL_OK;
 }
