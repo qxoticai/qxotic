@@ -488,9 +488,8 @@ public final class GGUFTokenizerLoader {
                             + user
                             + "/"
                             + repository
-                            + "@"
-                            + String.valueOf(revision)
-                            + "#"
+                            + (revision == null ? "" : "@" + revision) // as a reference spells it
+                            + "/"
                             + ggufPath,
                     e);
         }

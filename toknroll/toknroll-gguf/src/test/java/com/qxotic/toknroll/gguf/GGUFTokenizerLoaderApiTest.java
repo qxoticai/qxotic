@@ -1,11 +1,13 @@
 package com.qxotic.toknroll.gguf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.UnsupportedTokenizerException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -98,6 +100,24 @@ class GGUFTokenizerLoaderApiTest {
         assertThrows(
                 RuntimeException.class,
                 () -> loader.fromHuggingFace("unsloth", "nonexistent", "not-a-gguf.txt"));
+    }
+
+    @Test
+    void aFailedFetchNamesTheFileAsAReferenceSpellsIt() {
+        // it read "owner/repo@null#x.gguf": a revision only when there is one, a path after a '/'
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+        String[][] cases = {
+            {null, "ctest-nobody/repo/x.gguf"}, {"v1", "ctest-nobody/repo@v1/x.gguf"}
+        };
+        for (String[] c : cases) {
+            TokenizerLoadException e =
+                    assertThrows(
+                            TokenizerLoadException.class,
+                            () ->
+                                    loader.fromHuggingFace(
+                                            "ctest-nobody", "repo", c[0], "x.gguf", true, false));
+            assertEquals("[huggingface] Failed to load GGUF tokenizer for " + c[1], e.getMessage());
+        }
     }
 
     @Test

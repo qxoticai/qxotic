@@ -426,7 +426,8 @@ static void load_references(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load("hf.co/ctest-nobody/no-such-repo"), TOKNROLL_ENOTFOUND, LE, "");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("huggingface.co/ctest-nobody/no-such-repo@v1"), TOKNROLL_ENOTFOUND, LE, "");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("modelscope.cn/ctest-nobody/no-such-repo"), TOKNROLL_ENOTFOUND, LE, "");
-    CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-nobody/repo/sub/x.gguf"), TOKNROLL_ENOTFOUND, LE, "");
+    /* the file named as the reference spells it, no Java null in it */
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-nobody/repo/sub/x.gguf"), TOKNROLL_ENOTFOUND, LE, "ctest-nobody/repo/sub/x.gguf");
     /* malformed: refused as spelled, before any lookup */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo@"), TOKNROLL_EINVAL, LE, "empty revision");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("example.com/owner/repo"), TOKNROLL_EINVAL, LE, "unknown host");
