@@ -64,6 +64,8 @@ static void last_error_per_call(void) {
     CHECK_HAS(LE(NULL), "unknown flags");
     toknroll_version();                            /* nor does toknroll_version */
     CHECK_HAS(LE(NULL), "unknown flags");
+    toknroll_tokenizer_free(NULL);                 /* nor a free of NULL */
+    CHECK_HAS(LE(NULL), "unknown flags");
     CHECK_EQ(toknroll_vocabulary_size(t), VOCAB_JSON);   /* the next call does */
     CHECK_CLEAR(LE);
     CHECK_ERROR(toknroll_vocabulary_size(NULL), TOKNROLL_EINVAL, LE, "tokenizer is NULL");
