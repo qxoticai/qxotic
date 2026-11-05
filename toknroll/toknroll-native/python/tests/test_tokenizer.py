@@ -1,4 +1,5 @@
 """The tokenizer: loading, encode and decode, batches, the vocabulary, flags."""
+import copy
 import os
 import pickle
 import tempfile
@@ -334,6 +335,16 @@ class PicklingTest(unittest.TestCase):
             self.assertEqual(clone.source, t.source)
             self.assertEqual(clone.encode("hello"), t.encode("hello"))
             clone.close()
+
+    def test_a_closed_tokenizer_is_refused_everywhere(self):
+        """Pickling and copying reload the source, a with block hands it back: none of them for a closed one."""
+        t = toknroll.load(GGUF)
+        t.close()
+        for use in (lambda: pickle.dumps(t), lambda: copy.copy(t), lambda: copy.deepcopy(t)):
+            with self.assertRaisesRegex(ValueError, "closed"):
+                use()
+        with self.assertRaisesRegex(ValueError, "closed"), t:
+            pass
 
     def test_processes(self):
         import multiprocessing

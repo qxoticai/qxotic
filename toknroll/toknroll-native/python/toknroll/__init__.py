@@ -286,6 +286,7 @@ class Tokenizer:
             self._lib.toknroll_tokenizer_free(handle)
 
     def __enter__(self):
+        self._handle  # closed: refused, as every call is
         return self
 
     def __exit__(self, *exc):
@@ -298,7 +299,8 @@ class Tokenizer:
             pass
 
     def __reduce__(self):
-        return (load, (self._source,))  # pickling, multiprocessing: the other side loads the source
+        self._handle  # closed: refused, as every call is
+        return (load, (self._source,))  # pickling, copying, multiprocessing: the other side loads the source
 
     def __repr__(self) -> str:
         if self._h is None:
