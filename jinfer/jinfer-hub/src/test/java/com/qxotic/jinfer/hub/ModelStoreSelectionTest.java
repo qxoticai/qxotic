@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.hub;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -198,6 +199,8 @@ class ModelStoreSelectionTest {
                         () -> ModelStore.of(root, source).resolve("hf.co/acme/repo"));
         assertTrue(failure.getMessage().contains("safetensors"), failure.getMessage());
         assertTrue(failure.getMessage().contains("convert_hf_to_gguf"), failure.getMessage());
+        // toknroll reads it too: no product named
+        assertFalse(failure.getMessage().contains("jinfer"), failure.getMessage());
     }
 
     @Test

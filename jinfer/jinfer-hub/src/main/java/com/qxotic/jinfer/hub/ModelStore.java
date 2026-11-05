@@ -1061,9 +1061,9 @@ public final class ModelStore {
         if (safetensors) {
             return new IllegalArgumentException(
                     where
-                            + " has no GGUF files (it ships safetensors). jinfer loads GGUF:"
-                            + " convert it with llama.cpp's convert_hf_to_gguf.py, or use a GGUF"
-                            + " repackage of the same model.");
+                            + " has no GGUF files (it ships safetensors): convert it with"
+                            + " llama.cpp's convert_hf_to_gguf.py, or use a GGUF repackage of the"
+                            + " same model.");
         }
         return new IllegalArgumentException(
                 where + " has no .gguf files. Contains: " + names(files));
