@@ -13,8 +13,6 @@ void jinfer__error_set(graal_thread*, int32_t, const char*);
 
 typedef graal_thread* T;
 #define THREAD T t = toknroll__thread()
-#define STR(x) #x
-#define XSTR(x) STR(x)
 
 const char* jinfer__last_error(T, int32_t*);
 jinfer_model* jinfer__model_load(T, const char*, const jinfer_model_options*);
@@ -42,7 +40,7 @@ int32_t jinfer__embed(T, jinfer_model*, const char* const*, int32_t, int32_t, fl
 int32_t jinfer__rerank(T, jinfer_model*, const char*, const char* const*, int32_t, const char*, float*, int32_t);
 int32_t jinfer__prepare(T, jinfer_model*, const char*);
 
-const char* jinfer_version(void) { return XSTR(JINFER_VERSION_MAJOR) "." XSTR(JINFER_VERSION_MINOR) "." XSTR(JINFER_VERSION_PATCH); }
+const char* jinfer_version(void) { return STR(JINFER_VERSION_MAJOR) "." STR(JINFER_VERSION_MINOR) "." STR(JINFER_VERSION_PATCH); }
 /* never create the isolate just to report on it: that is a call, and a call clears the error being read */
 const char* jinfer_last_error(int32_t* code) { return toknroll__last_error_of(code, jinfer__last_error); }
 int32_t jinfer_log_set(jinfer_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "jinfer_log_set", jinfer__error_set); }   /* toknroll_log_set's too: one per process */

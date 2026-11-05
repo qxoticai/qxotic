@@ -1,9 +1,13 @@
 /* What the shims need from toknroll_isolate.c: the calling thread's isolate thread, the state before there
- * is a runtime, configure and log_set; and what Workers.java needs. Private to the libraries: nothing declared
- * here is exported. */
+ * is a runtime, configure and log_set; what Workers.java needs; and STR, which all three use. Private to the
+ * libraries: nothing declared here is exported. */
 #ifndef TOKNROLL_ISOLATE_H
 #define TOKNROLL_ISOLATE_H
 #include <stdint.h>
+
+/* a macro's value as a string literal: STR(TOKNROLL_PROGRAM) is "toknroll" */
+#define STR_(x) #x
+#define STR(x) STR_(x)
 
 /* GraalVM's graal_isolatethread_t, opaque: the first argument of every entry point the image exports.
  * Named here, not by GraalVM's header, which exists only once the image is built. */

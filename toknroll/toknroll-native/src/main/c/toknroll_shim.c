@@ -12,8 +12,6 @@ void toknroll__error_set(T, int32_t, const char*);
 /* the body of a forwarding function: the call inside the gate, or fail when there is no runtime */
 #define CALL(type, fail, call) { T t = toknroll__enter(); type r = t ? (call) : (fail); toknroll__leave(); return r; }
 #define CALL_VOID(call) { T t = toknroll__enter(); if (t) (call); toknroll__leave(); }
-#define STR(x) #x
-#define XSTR(x) STR(x)
 
 const char* toknroll__last_error(T, int32_t*);
 toknroll_tokenizer* toknroll__tokenizer_load(T, const char*);
@@ -26,7 +24,7 @@ int64_t toknroll__token_flags(T, const toknroll_tokenizer*, int32_t);
 int64_t toknroll__token(T, const toknroll_tokenizer*, int32_t, char*, int64_t);
 int32_t toknroll__id(T, const toknroll_tokenizer*, const char*, int64_t);
 
-const char* toknroll_version(void) { return XSTR(TOKNROLL_VERSION_MAJOR) "." XSTR(TOKNROLL_VERSION_MINOR) "." XSTR(TOKNROLL_VERSION_PATCH); }
+const char* toknroll_version(void) { return STR(TOKNROLL_VERSION_MAJOR) "." STR(TOKNROLL_VERSION_MINOR) "." STR(TOKNROLL_VERSION_PATCH); }
 const char* toknroll_last_error(int32_t* code) { return toknroll__last_error_of(code, toknroll__last_error); }
 int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "toknroll_log_set", toknroll__error_set); }
 int32_t toknroll_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "toknroll_configure", toknroll__error_set); }

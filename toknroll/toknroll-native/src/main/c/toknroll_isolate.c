@@ -50,8 +50,6 @@ _Static_assert(sizeof(void*) == 8 && sizeof(size_t) == 8, "the C API assumes a 6
 /* TOKNROLL_SELF_PROPERTY, when defined (libjinfer: jam.native.library.path): the runtime is told this
  * image's own file as that property, so a native library linked INTO the image (libjam) is loaded from
  * the image itself, through the ordinary System.load path every platform resolves symbols on. */
-#define STR_(x) #x
-#define STR(x) STR_(x)
 
 /* graal_isolate.h, spelled out because it exists only once the image is built, after this file is
  * compiled. graal_isolate is graal_isolate_t, opaque. isolate_params is graal_create_isolate_params_t,
