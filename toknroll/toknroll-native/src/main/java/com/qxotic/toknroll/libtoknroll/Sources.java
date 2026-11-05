@@ -164,7 +164,8 @@ final class Sources {
                                 + " [host/]owner/repo[@revision][/path][:quant]");
             // a C string reaches no shell: ~ is a folder's name, as fopen reads it
             String home = source.startsWith("~") ? " (~ is not expanded: write the full path)" : "";
-            throw Errors.notFound(path + " does not exist" + home);
+            throw Errors.notFound(
+                    source + " does not exist" + home); // as written: no \ for a / on Windows
         }
         return Files.isDirectory(path) ? Located.folder(path) : Located.file(path);
     }
