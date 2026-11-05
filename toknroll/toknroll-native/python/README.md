@@ -31,6 +31,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 |---|---|
 | a `tokenizer.json`, or the directory holding one | `toknroll.load("./my-model/")` |
 | a GGUF file | `toknroll.load("model-Q8_0.gguf")`, the tokenizer read from its header |
+| a tiktoken checkout | `toknroll.load("./Kimi-K3/")`: a folder holding `tiktoken.model` and the `tokenizer_config.json` with its regex, local or on a hub |
 | a hub repository | `toknroll.load("Qwen/Qwen3-0.6B")`: its `tokenizer.json`; `modelscope.cn/Qwen/Qwen3-0.6B` for ModelScope, `@rev` pins a revision |
 | a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")` or `.../LFM2.5-350M-Q8_0.gguf`: the header only, never the weights |
 | a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file a path names |

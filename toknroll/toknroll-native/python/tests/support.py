@@ -21,6 +21,11 @@ _json = sorted(Path.home().glob(".cache/huggingface/hub/models--Qwen--Qwen3-0.6B
 TIKTOKEN_JSON = os.environ.get("TOKNROLL_TEST_TIKTOKEN_JSON") or (str(_json[0]) if _json else None)
 needs_hub = unittest.skipIf(OFFLINE, "TOKNROLL_OFFLINE=1")
 
+# A tiktoken checkout: a folder holding tiktoken.model and tokenizer_config.json, no tokenizer.json (Kimi's).
+_tiktoken = sorted(Path.home().glob(".cache/huggingface/hub/models--moonshotai--Kimi-K*/snapshots/*/tiktoken.model"))
+TIKTOKEN_DIR = os.environ.get("TOKNROLL_TEST_TIKTOKEN_DIR") or (str(_tiktoken[0].parent) if _tiktoken else None)
+needs_tiktoken_dir = unittest.skipIf(TIKTOKEN_DIR is None, "no local tiktoken checkout: set TOKNROLL_TEST_TIKTOKEN_DIR")
+
 # A tokenizer with byte fallback, whose BYTE tokens spell part of a character: any Gemma 4's, GGUF or tokenizer.json.
 _byte = sorted(Path.home().glob(".cache/huggingface/hub/models--google--gemma-4-*/snapshots/*/tokenizer.json")) + sorted(
     Path.home().glob(".cache/huggingface/hub/models--google--gemma-4-*/snapshots/*/*.gguf"))

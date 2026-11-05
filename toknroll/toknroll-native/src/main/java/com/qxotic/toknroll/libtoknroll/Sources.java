@@ -38,8 +38,11 @@ final class Sources {
                     ? ggufFromHub(at.repository(), at.ggufFile())
                     : tiktokenFromHub(at.repository());
         if (!at.folder()) return read(at.path());
-        if (!Files.isRegularFile(at.path().resolve("tokenizer.json")))
-            throw Errors.notFound(at.path() + " holds no tokenizer.json"); // missing, as a file is
+        // a folder holds a tokenizer.json, or a tiktoken.model read as a hub checkout is; neither
+        // is missing, as a file is
+        if (!Files.isRegularFile(at.path().resolve("tokenizer.json"))
+                && !Files.isRegularFile(at.path().resolve("tiktoken.model")))
+            throw Errors.notFound(at.path() + " holds no tokenizer.json nor tiktoken.model");
         return HuggingFaceTokenizerLoader.fromLocal(at.path());
     }
 
@@ -178,7 +181,7 @@ final class Sources {
                     throw Errors.invalid(
                             file
                                     + " is not a tokenizer: expected a GGUF, a tokenizer.json, or a"
-                                    + " folder holding one");
+                                    + " folder holding one or a tiktoken.model");
         };
     }
 

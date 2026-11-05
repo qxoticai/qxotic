@@ -325,5 +325,8 @@ def load(source: str | os.PathLike) -> Tokenizer:
     lib = N.library()
     handle = lib.toknroll_tokenizer_load(_cstring(text, "load"))
     if not handle:
-        raise _error(lib)
+        error = _error(lib)
+        if text not in error.args[0]:  # a load error names its source, as open names its file
+            raise type(error)(f"{text}: {error.args[0]}", error.code)
+        raise error
     return Tokenizer(handle, text, lib)

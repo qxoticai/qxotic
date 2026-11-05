@@ -6,7 +6,8 @@ import unittest
 from array import array
 from pathlib import Path
 
-from support import BYTE_FALLBACK, EDGE_TEXTS, GGUF, needs_byte_fallback, needs_gguf, needs_numpy, numpy, toknroll
+from support import (BYTE_FALLBACK, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, needs_byte_fallback, needs_gguf, needs_numpy,
+                     needs_tiktoken_dir, numpy, toknroll)
 
 F = toknroll.TokenFlags
 
@@ -69,8 +70,25 @@ class LoadTest(unittest.TestCase):
         with self.assertRaises(toknroll.InvalidArgument):
             toknroll.load("not-a-reference")
         with tempfile.TemporaryDirectory() as empty:
-            with self.assertRaises(toknroll.ToknrollError):
+            with self.assertRaises(toknroll.NotFound) as e:
                 toknroll.load(empty)
+            self.assertIn("tiktoken.model", str(e.exception))   # the two files a folder may hold, both named
+
+    def test_a_load_error_names_its_source(self):
+        """The library's unsupported-config message says tokenizer.json:field, not which one: load adds the source."""
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "tokenizer.json").write_text('{"model": {"type": "Unigram"}}')
+            with self.assertRaises(toknroll.InvalidArgument) as e:
+                toknroll.load(d)
+            self.assertTrue(str(e.exception).startswith(d), str(e.exception))
+            self.assertIn("Unigram", str(e.exception))
+
+    @needs_tiktoken_dir
+    def test_a_tiktoken_checkout_loads_from_its_folder(self):
+        """A folder holding tiktoken.model and its tokenizer_config.json, as the hub form reads it."""
+        with toknroll.load(TIKTOKEN_DIR) as t:
+            self.assertEqual(t.source, TIKTOKEN_DIR)
+            self.assertEqual(t.decode(t.encode("Hello, Tok'n'Roll! 🎸")), "Hello, Tok'n'Roll! 🎸")
 
 
 @needs_gguf
