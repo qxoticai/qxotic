@@ -7,7 +7,8 @@
  *   258          "<user>", an added token that is not special (user-defined)
  *   259..261     the GGUF only: "<unk>" (unknown), "<unused>" (unused), "<0x41>" (byte)
  *
- * "hello" is [256, 108, 108, 111]. */
+ * "hello" is [256, 108, 108, 111]. write_gapped_json moves "he" to 300, so 256 and 259..299 are ids
+ * no token has, a gap such as a real vocabulary can leave. */
 #ifndef FIXTURES_H
 #define FIXTURES_H
 #include <stdio.h>
@@ -30,7 +31,7 @@ static inline void byte_spellings(char spelling[256][4]) {
     }
 }
 
-static inline void write_tiny_json(const char* path) {
+static inline void write_tiny_json_he(const char* path, int he) {
     char spelling[256][4];
     byte_spellings(spelling);
     FILE* f = fopen(path, "wb");
@@ -46,9 +47,11 @@ static inline void write_tiny_json(const char* path) {
         const char* s = spelling[b];
         fprintf(f, "\"%s%s\":%d,", (*s == '"' || *s == '\\') ? "\\" : "", s, b);
     }
-    fputs("\"he\":256},\"merges\":[\"h e\"]}}", f);
+    fprintf(f, "\"he\":%d},\"merges\":[\"h e\"]}}", he);
     fclose(f);
 }
+static inline void write_tiny_json(const char* path) { write_tiny_json_he(path, ID_HE); }
+static inline void write_gapped_json(const char* path) { write_tiny_json_he(path, 300); }
 
 static inline void gguf_u32(FILE* f, uint32_t v) { fwrite(&v, 4, 1, f); }   /* GGUF is little-endian, as every target is */
 static inline void gguf_u64(FILE* f, uint64_t v) { fwrite(&v, 8, 1, f); }

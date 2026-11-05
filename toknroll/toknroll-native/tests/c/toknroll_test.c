@@ -118,6 +118,34 @@ static void last_error_per_thread(void) {
     toknroll_tokenizer_free(box.t);
 }
 
+/* vocabulary_size is one past the largest id; an id below it no token has is no token anywhere */
+static void vocabulary_with_a_gap(void) {
+    const char* path = TMP("gapped.json");
+    write_gapped_json(path);
+    toknroll_tokenizer* t = toknroll_tokenizer_load(path);
+    CHECK(t != NULL);
+    if (!t) return;
+    CHECK_EQ(toknroll_vocabulary_size(t), 301);
+    CHECK_EQ(toknroll_id(t, "he", 2), 300);
+    int32_t ids[8];
+    CHECK_EQ(toknroll_encode(t, "hello", 5, 0, ids, 8), 4);
+    CHECK_EQ(ids[0], 300);
+    char out[16];
+    CHECK_EQ(toknroll_decode(t, ids, 4, 0, out, sizeof out, NULL), 5);
+    CHECK_STR(out, "hello");
+    CHECK_EQ(toknroll_token_flags(t, ID_END), TOKNROLL_TOKEN_CONTROL);   /* the added tokens keep theirs */
+    const int32_t gaps[] = {256, 259, 299};
+    for (int i = 0; i < COUNT(gaps); i++) {
+        CHECK_ERROR(toknroll_token(t, gaps[i], out, sizeof out), TOKNROLL_ENOTFOUND, LE, "no token with id");
+        CHECK_ERROR(toknroll_token_flags(t, gaps[i]), TOKNROLL_ENOTFOUND, LE, "no token with id");
+        int32_t two[] = {300, gaps[i]}, decoded = -7;
+        CHECK_ERROR(toknroll_decode(t, two, 2, 0, out, sizeof out, &decoded), TOKNROLL_EINVAL, LE, ", at ids[1]");
+        CHECK_EQ(decoded, -7);   /* left as it was */
+    }
+    CHECK_ERROR(toknroll_token(t, 301, out, sizeof out), TOKNROLL_ENOTFOUND, LE, "no token with id 301");
+    toknroll_tokenizer_free(t);
+}
+
 /* ---- configure ---- */
 
 static void configure_arguments(void) {
@@ -1702,6 +1730,7 @@ static const scenario scenarios[] = {
     {"last_error_per_call", last_error_per_call, NULL},
     {"last_error_before_start", last_error_before_start, NULL},
     {"last_error_per_thread", last_error_per_thread, NULL},
+    {"vocabulary_with_a_gap", vocabulary_with_a_gap, NULL},
     {"configure_arguments", configure_arguments, NULL},
     {"configure_after_a_call", configure_after_a_call, NULL},
     {"configure_rejected", configure_rejected, NULL},
