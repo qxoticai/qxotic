@@ -438,7 +438,7 @@ class LibraryLocationTest(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"TOKNROLL_LIBRARY": "/no/such/libtoknroll.so"}):
             with self.assertRaises(OSError) as e:
                 N.locate("toknroll")
-        self.assertIn("/no/such/libtoknroll.so", str(e.exception))
+        self.assertIn(str(Path("/no/such/libtoknroll.so")), str(e.exception))  # as the platform spells it
         self.assertNotIn("target", str(e.exception))
 
     def test_another_shared_library_is_not_a_toknroll(self):
