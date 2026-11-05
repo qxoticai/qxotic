@@ -80,6 +80,7 @@ check-exports:
 # The package carries this platform's library alone: a wheel holds what its tag names, whatever else this tree built
 python: $(LIB)
 	rm -rf python/$(NAME)/lib && mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
+	cp $(ROOT)/LICENSE python/LICENSE   # pyproject's license-files: a pip install of python/ carries it, as the wheel does
 
 # The release tools, one venv for both packages (the root's publish-wheels makes the same one, by the same
 # path, to upload with): pip builds the wheel, twine
@@ -90,7 +91,6 @@ $(TOOLS)/bin/twine:
 	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q twine auditwheel
 
 wheel: python $(TOOLS)/bin/twine
-	cp $(ROOT)/LICENSE python/LICENSE
 	rm -rf target/wheel python/build && WHEEL_PLAT=$(WHEEL_PLAT) $(TOOLS)/bin/pip wheel -q --no-deps -w target/wheel ./python
 
 # The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the wheels it

@@ -33,12 +33,12 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://qxotic.ai"
-Documentation = "https://qxotic.ai/toknroll"
+Documentation = "https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/python/README.md"
 Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
 [tool.setuptools]
-packages = ["toknroll", "toknroll.lib"]
+packages = ["toknroll"]  # the library under lib/ is package data, not a package
 
 [tool.setuptools.package-data]
 toknroll = ["lib/*/*", "py.typed"]

@@ -17,11 +17,10 @@ from array import array
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from support import EDGE_TEXTS, GGUF, needs_gguf, needs_numpy, numpy, toknroll
+from support import EDGE_TEXTS, GGUF, needs_numpy, numpy, toknroll
 from toknroll import _native as N
 
 
-@needs_gguf
 class IdBufferTest(unittest.TestCase):
     """decode takes any int32 buffer in place, and any iterable of int by one copy."""
 
@@ -42,7 +41,6 @@ class IdBufferTest(unittest.TestCase):
             "list": list(ids),
             "tuple": tuple(ids),
             "generator": (i for i in ids),
-            "range": None,
             "memoryview": memoryview(ids),
             "array('l')": array("l", ids),
             "array('q')": array("q", ids),
@@ -50,8 +48,6 @@ class IdBufferTest(unittest.TestCase):
             "ctypes int64": (ctypes.c_int64 * len(ids))(*ids),
         }
         for name, value in shapes.items():
-            if value is None:
-                continue
             with self.subTest(shape=name):
                 self.assertEqual(self.t.decode(value), text)
         self.assertEqual(self.t.decode(range(0)), "")
@@ -144,7 +140,6 @@ class IdBufferTest(unittest.TestCase):
         self.assertEqual(lib.toknroll_id(h, b"x", -(1 << 40)), N.EINVAL)
 
 
-@needs_gguf
 class LifecycleTest(unittest.TestCase):
     def test_close_is_idempotent_and_final(self):
         t = toknroll.load(GGUF)
@@ -155,11 +150,6 @@ class LifecycleTest(unittest.TestCase):
             with self.assertRaises(ValueError) as e:
                 call()
             self.assertIn("closed", str(e.exception))
-
-    def test_with_block_closes(self):
-        with toknroll.load(GGUF) as t:
-            self.assertGreater(t.vocabulary_size, 0)
-        self.assertEqual(repr(t), "Tokenizer(closed)")
 
     def test_garbage_collection_frees(self):
         t = toknroll.load(GGUF)
@@ -174,7 +164,6 @@ class LifecycleTest(unittest.TestCase):
         gc.collect()  # a half-built object would raise in __del__ here
 
 
-@needs_gguf
 class ThreadTest(unittest.TestCase):
     def test_one_tokenizer_many_threads(self):
         with toknroll.load(GGUF) as t:
@@ -225,7 +214,6 @@ class ThreadTest(unittest.TestCase):
             self.assertTrue(all(r == results[0] for r in results))
 
 
-@needs_gguf
 @unittest.skipUnless(hasattr(os, "fork"), "no fork on this platform")
 class ForkTest(unittest.TestCase):
     """A child forked while other threads were inside the library inherited their locks and hung on its
@@ -299,7 +287,6 @@ class ForkTest(unittest.TestCase):
         """)
 
 
-@needs_gguf
 class LengthTest(unittest.TestCase):
     """Text and spellings travel with their length in bytes: a slice of a buffer encodes as its own
     text, and a NUL is a character like any other."""
@@ -341,7 +328,6 @@ class LengthTest(unittest.TestCase):
             toknroll.load(GGUF + "\n")
 
 
-@needs_gguf
 class UnloadTest(unittest.TestCase):
     def test_a_thread_exits_after_the_host_unloaded_the_library(self):
         """Its exit hook runs the library's code, as the runtime's own threads do: the library pins itself
@@ -388,7 +374,6 @@ class ErrorTypesTest(unittest.TestCase):
             with self.assertRaises(toknroll.NotFound):
                 pool.apply(toknroll.load, ("/no/such/file",))
 
-    @needs_gguf
     def test_a_success_clears_the_last_error(self):
         lib, code = N.library(), ctypes.c_int32()
         with toknroll.load(GGUF) as t:

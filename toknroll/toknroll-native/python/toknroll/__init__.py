@@ -29,7 +29,7 @@ import threading
 from array import array
 from collections.abc import Iterable
 from enum import IntFlag
-from itertools import accumulate
+from itertools import accumulate, pairwise
 
 from . import _native as N
 
@@ -81,10 +81,6 @@ def _error(lib: C.CDLL, code: int | None = None) -> ToknrollError:
     return {N.EINVAL: InvalidArgument, N.ENOTFOUND: NotFound, N.EUNSUPPORTED: Unsupported}.get(code, ToknrollError)(message, code)
 
 
-def _flags(specials: bool) -> int:
-    return 1 if specials else 0  # TOKNROLL_SPECIALS
-
-
 def _check(lib: C.CDLL, rc: int) -> int:
     if rc < 0:
         raise _error(lib, rc)
@@ -117,13 +113,6 @@ def _ids(value, what: str) -> tuple[object, int, int]:
     """(owner, address, count) of int32 ids: a writable int32 buffer in place, anything else copied once."""
     if isinstance(value, array) and value.itemsize == 4 and value.typecode in "il":
         return value, value.buffer_info()[0], len(value)
-    if isinstance(value, list):  # fromlist: a quarter faster than array("i", value)
-        ids = array("i")
-        try:
-            ids.fromlist(value)
-        except TypeError:
-            raise TypeError(f"{what}: expected int32 ids") from None
-        return ids, ids.buffer_info()[0], len(ids)
     try:
         view = memoryview(value)
     except TypeError:
@@ -211,17 +200,17 @@ class Tokenizer:
         # prose runs about four bytes a token: one pass almost always, a second when it does not
         capacity = len(data) // 2 + 16
         out = array("i", bytes(4 * capacity))
-        n = _check(lib, lib.toknroll_encode(self._handle, data, len(data), _flags(specials), out.buffer_info()[0], capacity))
+        n = _check(lib, lib.toknroll_encode(self._handle, data, len(data), bool(specials), out.buffer_info()[0], capacity))
         if n > capacity:
             out = array("i", bytes(4 * n))
-            _check(lib, lib.toknroll_encode(self._handle, data, len(data), _flags(specials), out.buffer_info()[0], n))
+            _check(lib, lib.toknroll_encode(self._handle, data, len(data), bool(specials), out.buffer_info()[0], n))
         del out[n:]
         return out
 
     def count_tokens(self, text: str, *, specials: bool = False) -> int:
         """`len(encode(text))` without building the list."""
         data = _text(text, "count_tokens")
-        return _check(self._lib, self._lib.toknroll_encode(self._handle, data, len(data), _flags(specials), None, 0))
+        return _check(self._lib, self._lib.toknroll_encode(self._handle, data, len(data), bool(specials), None, 0))
 
     def encode_batch(self, texts: Iterable[str], *, specials: bool = False) -> list[array[int]]:
         """`encode` over many texts in one call; the library spreads them over the cores."""
@@ -235,13 +224,13 @@ class Tokenizer:
         offsets = array("i", bytes(4 * (count + 1)))
         capacity = len(joined) // 2 + 16 * count
         out = array("i", bytes(4 * capacity))
-        n = _check(lib, lib.toknroll_encode_batch(handle, joined, text_offsets.buffer_info()[0], count, _flags(specials),
+        n = _check(lib, lib.toknroll_encode_batch(handle, joined, text_offsets.buffer_info()[0], count, bool(specials),
                                                   out.buffer_info()[0], capacity, offsets.buffer_info()[0]))
         if n > capacity:
             out = array("i", bytes(4 * n))
-            _check(lib, lib.toknroll_encode_batch(handle, joined, text_offsets.buffer_info()[0], count, _flags(specials),
+            _check(lib, lib.toknroll_encode_batch(handle, joined, text_offsets.buffer_info()[0], count, bool(specials),
                                                   out.buffer_info()[0], n, offsets.buffer_info()[0]))
-        return [out[start:end] for start, end in zip(offsets, offsets[1:])]
+        return [out[start:end] for start, end in pairwise(offsets)]
 
     def decode_bytes(self, ids: Iterable[int]) -> bytes:
         """The tokens' bytes: UTF-8, except where a token holds part of a character. Any int32
@@ -286,7 +275,7 @@ class Tokenizer:
             self._lib.toknroll_tokenizer_free(handle)
 
     def __enter__(self):
-        self._handle  # closed: refused, as every call is
+        self._handle  # raises when closed, as every call does
         return self
 
     def __exit__(self, *exc):
@@ -299,7 +288,7 @@ class Tokenizer:
             pass
 
     def __reduce__(self):
-        self._handle  # closed: refused, as every call is
+        self._handle  # raises when closed, as every call does
         return (load, (self._source,))  # pickling, copying, multiprocessing: the other side loads the source
 
     def __repr__(self) -> str:

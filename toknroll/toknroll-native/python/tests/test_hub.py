@@ -2,13 +2,13 @@
 import unicodedata
 import unittest
 
-from support import EDGE_TEXTS, GGUF, HUB_GGUF, HUB_JSON, needs_gguf, needs_hub, toknroll
+from support import EDGE_TEXTS, GGUF, HUB_GGUF, HUB_JSON, needs_hub, toknroll
 
 
 @needs_hub
 class HubTest(unittest.TestCase):
     def test_tokenizer_json_repository(self):
-        with toknroll.load(HUB_JSON) as q:
+        with toknroll.load(HUB_JSON + "@c1899de289a04d12100db370d81485cdf75e47ca") as q:  # pinned: the ids below are this revision's
             self.assertEqual(list(q.encode("Hello, world!")), [9707, 11, 1879, 0])
             self.assertEqual(q.id("<|im_end|>"), 151645)
             self.assertEqual(q.vocabulary_size, 151669)
@@ -40,7 +40,6 @@ class HubTest(unittest.TestCase):
             toknroll.load("huggingface.com/" + HUB_JSON)
         self.assertIn("modelscope.cn", str(e.exception))
 
-    @needs_gguf
     def test_gguf_header_from_the_hub_matches_the_local_file(self):
         with toknroll.load(HUB_GGUF) as remote, toknroll.load(GGUF) as local:
             for text in EDGE_TEXTS[:20]:

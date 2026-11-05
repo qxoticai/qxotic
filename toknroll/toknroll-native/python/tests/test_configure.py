@@ -5,7 +5,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from support import GGUF, needs_gguf, toknroll
+from support import GGUF, toknroll
 
 HERE = Path(__file__).resolve().parents[1]
 
@@ -14,11 +14,11 @@ def fresh(code: str, options: str | None = None) -> subprocess.CompletedProcess:
     env = {k: v for k, v in os.environ.items() if k != "TOKNROLL_OPTIONS"}
     if options is not None:
         env["TOKNROLL_OPTIONS"] = options
-    return subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(HERE)!r}); import toknroll\n{code}"],
+    head = "" if "TOKNROLL_INSTALLED" in env else f"import sys; sys.path.insert(0, {str(HERE)!r})\n"  # the wheel's package, under check-wheel
+    return subprocess.run([sys.executable, "-c", head + f"import toknroll\n{code}"],
                           capture_output=True, text=True, timeout=120, env=env)
 
 
-@needs_gguf
 class ConfigureTest(unittest.TestCase):
     def test_a_pre_tokenizer_alias_changes_the_split(self):
         text = "Numbers 1234567 and words"

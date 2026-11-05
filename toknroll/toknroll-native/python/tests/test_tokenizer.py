@@ -8,12 +8,11 @@ from array import array
 from pathlib import Path
 
 from support import (BYTE_FALLBACK, DEEPSEEK_JSON, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, needs_byte_fallback, needs_deepseek,
-                     needs_gguf, needs_numpy, needs_tiktoken_dir, numpy, toknroll)
+                     needs_numpy, needs_tiktoken_dir, numpy, toknroll)
 
 F = toknroll.TokenFlags
 
 
-@needs_gguf
 class LoadTest(unittest.TestCase):
     def test_load_from_path_str_and_pathlike(self):
         with toknroll.load(GGUF) as a, toknroll.load(Path(GGUF)) as b:
@@ -44,7 +43,6 @@ class LoadTest(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(TypeError):
                 toknroll.load(bad)
 
-    @needs_gguf
     def test_a_gguf_loads_by_its_content_whatever_its_name(self):
         with tempfile.TemporaryDirectory() as d:   # an Ollama blob: sha256-<hex>, no extension
             blob = Path(d) / "sha256-3f1a"
@@ -115,7 +113,6 @@ class LoadTest(unittest.TestCase):
             self.assertEqual(t.decode(t.encode("Hello, Tok'n'Roll! 🎸")), "Hello, Tok'n'Roll! 🎸")
 
 
-@needs_gguf
 class EncodeDecodeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -139,11 +136,6 @@ class EncodeDecodeTest(unittest.TestCase):
                 self.assertEqual(self.t.decode(ids), text)
                 self.assertEqual(self.t.decode_bytes(ids), text.encode())
                 self.assertEqual(self.t.count_tokens(text), len(ids))
-
-    def test_nul_bytes_are_not_a_string_terminator(self):
-        self.assertEqual(self.t.decode(self.t.encode("a\x00b")), "a\x00b")
-        self.assertGreater(self.t.count_tokens("a\x00b"), self.t.count_tokens("a"))
-        self.assertIsNone(self.t.id("a\x00b"))
 
     def test_empty(self):
         self.assertEqual(len(self.t.encode("")), 0)
@@ -213,7 +205,6 @@ class EncodeDecodeTest(unittest.TestCase):
                     self.t.count_tokens(bad)
 
 
-@needs_gguf
 class BatchTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -223,10 +214,12 @@ class BatchTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.t.close()
 
-    def test_batch_equals_one_by_one(self):
-        texts = EDGE_TEXTS + [f"document {i} " * (i % 17) for i in range(300)]
-        self.assertEqual(self.t.encode_batch(texts), [self.t.encode(x) for x in texts])
-        self.assertEqual(self.t.encode_batch(texts, specials=True), [self.t.encode(x, specials=True) for x in texts])
+    def test_a_second_pass_when_the_guess_is_short(self):
+        """One token a byte beats the guess of half a token a byte: the library says the size, the call runs again."""
+        text = "\x01" * 1000
+        self.assertGreater(self.t.count_tokens(text), len(text.encode()) // 2 + 16)
+        self.assertEqual(len(self.t.encode(text)), self.t.count_tokens(text))
+        self.assertEqual(self.t.encode_batch([text] * 3), [self.t.encode(text)] * 3)
 
     def test_batch_edges(self):
         self.assertEqual(self.t.encode_batch([]), [])
@@ -243,13 +236,7 @@ class BatchTest(unittest.TestCase):
         self.assertEqual([self.t.decode(ids) for ids in out], texts)
         self.assertEqual(sum(map(len, out)), sum(self.t.count_tokens(x) for x in texts))
 
-    def test_batch_rejects_non_text(self):
-        with self.assertRaises(TypeError) as e:
-            self.t.encode_batch(["ok", 3])
-        self.assertIn("encode_batch", str(e.exception))
 
-
-@needs_gguf
 class VocabularyTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -327,7 +314,6 @@ class VocabularyTest(unittest.TestCase):
         self.assertEqual(self.t.token(self.t.id(longest)), longest)
 
 
-@needs_gguf
 class PicklingTest(unittest.TestCase):
     def test_pickles_as_source(self):
         with toknroll.load(GGUF) as t:

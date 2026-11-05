@@ -70,7 +70,9 @@ class BytesPathTest(unittest.TestCase):
     def test_a_batch_cut_into_runs_equals_one_by_one(self):
         texts = EDGE_TEXTS + corpus(1, 400) + ["", "", ""] + ["long " * 60_000]
         for t in self.tokenizers:
-            self.assertEqual(t.encode_batch(texts), [t.encode(x) for x in texts], t.source)
+            for specials in (False, True):
+                self.assertEqual(t.encode_batch(texts, specials=specials), [t.encode(x, specials=specials) for x in texts],
+                                 (t.source, specials))
 
     def test_fewer_texts_than_runs(self):
         for t in self.tokenizers:
@@ -88,8 +90,9 @@ class BytesPathTest(unittest.TestCase):
         """Not iterable, or an element that is not a str: TypeError, as HF and tiktoken raise, nothing encoded."""
         t = self.tokenizers[0]
         for bad in (None, 5, b"bytes", {1: "x"}, {1, 2}, ["ok", None], ["ok", 5], ["ok", b"bytes"], [["nested"]]):
-            with self.subTest(bad=bad), self.assertRaises(TypeError):
+            with self.subTest(bad=bad), self.assertRaises(TypeError) as e:
                 t.encode_batch(bad)
+        self.assertIn("encode_batch", str(e.exception))  # the call is named, as every argument error names it
         self.assertEqual(t.encode_batch([]), [])
 
     def test_ids_decode_back_to_the_text(self):
@@ -100,17 +103,15 @@ class BytesPathTest(unittest.TestCase):
     def test_a_short_buffer_gets_a_prefix_and_the_whole_count(self):
         texts = [x.encode() for x in corpus(3, 60)]
         for t in self.tokenizers:
-            full, ids, offsets = raw_batch(t, texts, 10_000_000)
-            self.assertEqual(len(ids), full)
-            for capacity in (0, 1, full // 3, full - 1):
-                n, prefix, short_offsets = raw_batch(t, texts, capacity)
-                self.assertEqual(n, full)
-                self.assertEqual(prefix, ids[:capacity])
-                self.assertEqual(short_offsets, offsets)
-            for x in texts[:5]:
-                n, whole = raw_encode(t, x, 1_000_000)
-                self.assertEqual(raw_encode(t, x, 0), (n, array("i")))
-                self.assertEqual(raw_encode(t, x, n // 2), (n, whole[: n // 2]))
+            for specials in (False, True):
+                full, ids, offsets = raw_batch(t, texts, 10_000_000, specials)
+                self.assertEqual(len(ids), full)
+                for capacity in (0, 1, full // 3, full - 1):
+                    self.assertEqual(raw_batch(t, texts, capacity, specials), (full, ids[:capacity], offsets))
+                for x in texts[:5]:
+                    n, whole = raw_encode(t, x, 1_000_000, specials)
+                    self.assertEqual(raw_encode(t, x, 0, specials), (n, array("i")))
+                    self.assertEqual(raw_encode(t, x, n // 2, specials), (n, whole[: n // 2]))
 
     def test_specials_split_the_text_and_the_rest_encodes_as_plain_text(self):
         special = "<|im_end|>"
@@ -122,17 +123,6 @@ class BytesPathTest(unittest.TestCase):
                 for k, part in enumerate(x.split(special)):
                     expected += array("i", [t.id(special)] if k else []) + t.encode(part)
                 self.assertEqual(t.encode(x, specials=True), expected, (t.source, x))
-
-    def test_a_short_buffer_gets_a_prefix_and_the_whole_count_with_specials(self):
-        texts = [x.encode() for x in corpus(6, 60)]
-        for t in self.tokenizers:
-            full, ids, offsets = raw_batch(t, texts, 10_000_000, True)
-            for capacity in (0, 1, full // 3, full - 1):
-                self.assertEqual(raw_batch(t, texts, capacity, True), (full, ids[:capacity], offsets))
-            for x in texts[:5]:
-                n, whole = raw_encode(t, x, 1_000_000, True)
-                self.assertEqual(raw_encode(t, x, 0, True), (n, array("i")))
-                self.assertEqual(raw_encode(t, x, n // 2, True), (n, whole[: n // 2]))
 
     def test_ill_formed_bytes_around_specials_encode_as_their_replacement(self):
         for t in self.tokenizers:
