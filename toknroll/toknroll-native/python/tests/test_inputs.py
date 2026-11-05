@@ -307,6 +307,14 @@ class LengthTest(unittest.TestCase):
             self.assertIsNone(t.id("<|im_start|>\0"))   # looked up whole, not cut at the NUL
             self.assertIsNotNone(t.id("<|im_start|>"))
 
+    def test_a_nul_ends_no_c_string(self):
+        """A source or an option is a C string: a NUL would load or configure the prefix silently,
+        so it is refused as Python's `open` refuses it."""
+        with self.assertRaisesRegex(ValueError, "embedded null byte"):
+            toknroll.load(GGUF + "\0/junk")
+        with self.assertRaisesRegex(ValueError, "embedded null byte"):
+            toknroll.configure("-Dtoknroll.offline=true\0-Dtoknroll.cache.root=/x")
+
 
 @needs_gguf
 class UnloadTest(unittest.TestCase):

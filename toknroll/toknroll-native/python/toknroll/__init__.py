@@ -93,6 +93,14 @@ def _text(value: object, what: str) -> bytes:
     return value.encode()
 
 
+def _cstring(value: object, what: str) -> bytes:
+    """A C string: a text without NUL, which would end it early and load the prefix."""
+    data = _text(value, what)
+    if b"\0" in data:
+        raise ValueError(f"{what}: embedded null byte")
+    return data
+
+
 def _id(value: object, what: str) -> int:
     """A token id as the C API takes it: any `__index__` int in range(2**31), else OverflowError, as HF and tiktoken raise."""
     value = operator.index(value)  # a float or a str is Python's own TypeError
@@ -298,7 +306,7 @@ def configure(*options: str) -> None:
     option fails this one, and `TOKNROLL_OPTIONS` in the environment overrides what is given here. This
     configures libtoknroll: a tokenizer served by libjinfer (`model.tokenizer`) takes the same `-Dtoknroll.*`
     options through `jinfer.configure` and `JINFER_OPTIONS`."""
-    data = (C.c_char_p * len(options))(*(_text(option, "configure") for option in options))
+    data = (C.c_char_p * len(options))(*(_cstring(option, "configure") for option in options))
     lib = N.library()
     _check(lib, lib.toknroll_configure(data, len(options)))
 
@@ -312,7 +320,7 @@ def load(source: str | os.PathLike) -> Tokenizer:
     if os.path.exists(text):
         text = os.path.abspath(text)  # the source outlives the working directory: pickling, repr
     lib = N.library()
-    handle = lib.toknroll_tokenizer_load(text.encode())
+    handle = lib.toknroll_tokenizer_load(_cstring(text, "load"))
     if not handle:
         raise _error(lib)
     return Tokenizer(handle, text, lib)
