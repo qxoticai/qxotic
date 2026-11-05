@@ -265,6 +265,10 @@ public final class HuggingFaceTokenizerLoader {
         }
 
         boolean ignoreMerges = Boolean.TRUE.equals(model.get("ignore_merges"));
+        Object dropout = model.get("dropout"); // HF tokenizers 1.0 refuses any; 0 changes nothing
+        if (dropout instanceof Number && ((Number) dropout).doubleValue() != 0) {
+            throw unsupported("tokenizer.json:model.dropout", dropout.toString(), "null or 0");
+        }
         Vocabulary vocabulary = ImplAccessor.createVocabulary(entries.tokens, entries.tokenTypes);
         TokenizationModel tokenizationModel;
         Splitter splitter;
@@ -274,6 +278,14 @@ public final class HuggingFaceTokenizerLoader {
             if (ignoreMerges) {
                 throw unsupported(
                         "tokenizer.json:model.ignore_merges", "true", "false for SentencePiece");
+            }
+            // without it HF emits the unknown token where the bytes would be spelled: refused,
+            // never encoded as the other tokenizer
+            if (vocabMap.containsKey("<0x00>") && !Boolean.TRUE.equals(model.get("byte_fallback"))) {
+                throw unsupported(
+                        "tokenizer.json:model.byte_fallback",
+                        String.valueOf(model.get("byte_fallback")),
+                        "true for a vocabulary with byte tokens");
             }
             refuseOtherSentencePieceStages(preTokenizerObj, spacesSpelled);
             long[][] packed = packMerges(mergeIds(vocabulary, model.get("merges")));
@@ -1006,6 +1018,11 @@ public final class HuggingFaceTokenizerLoader {
                     spaced = true;
                     break;
                 case "Metaspace":
+                    Object replacement = step.get("replacement"); // decoding turns ▁ into spaces
+                    if (replacement != null && !String.valueOf(METASPACE).equals(replacement)) {
+                        throw unsupported(
+                                "tokenizer.json:decoder", step.toString(), "Metaspace of ▁");
+                    }
                     spaced = true;
                     strips |= !"never".equals(prependScheme(step));
                     break;

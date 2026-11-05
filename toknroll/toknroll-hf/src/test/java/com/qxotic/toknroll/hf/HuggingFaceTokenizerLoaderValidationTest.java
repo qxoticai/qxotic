@@ -133,10 +133,49 @@ class HuggingFaceTokenizerLoaderValidationTest {
                 buildBpeModel(vocab, "[\"h e\",[\"e\",\"l\"]]", ""),
                 "tokenizer.json:model.merges[1] names 'el" + absent);
         assertRefusedAs( // and on the SentencePiece path
-                buildBpeModel(buildSentencePieceVocab(Map.of("▁", 256)), "[\"▁ zz\"]", ""),
+                buildBpeModel(
+                        buildSentencePieceVocab(Map.of("▁", 256)),
+                        "[\"▁ zz\"]",
+                        ",\"byte_fallback\":true"),
                 "tokenizer.json:model.merges[0] names 'zz" + absent,
-                "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                METASPACE_PRE_TOKENIZER,
                 MISTRAL_DECODER);
+    }
+
+    private static final String METASPACE_PRE_TOKENIZER =
+            "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}";
+
+    /** A well-formed option that would make another tokenizer is refused, never read as absent. */
+    @Test
+    void aBehaviorChangingModelOptionIsRefused() throws Exception {
+        String byteLevel = buildByteLevelVocab(Map.of("he", 256));
+        assertRefusedAs( // HF tokenizers 1.0 refuses any dropout; 0 is the no-op it loads
+                buildBpeModel(byteLevel, "[\"h e\"]", ",\"dropout\":1.0"),
+                "Unsupported tokenizer config at tokenizer.json:model.dropout: 1.0"
+                        + " (supported: null or 0)");
+        assertNotNull(
+                HuggingFaceTokenizerLoader.fromLocal(
+                        Files.writeString(
+                                tempDir.resolve("tokenizer.json"),
+                                buildTokenizerJson(
+                                        buildBpeModel(byteLevel, "[\"h e\"]", ",\"dropout\":0.0"),
+                                        "\"pre_tokenizer\":{\"type\":\"ByteLevel\"}",
+                                        "\"decoder\":{\"type\":\"ByteLevel\"}"))));
+        String sentencePiece = buildSentencePieceVocab(Map.of("▁", 256));
+        for (String fallback : new String[] {",\"byte_fallback\":false", ""}) { // absent is false
+            assertRefusedAs( // HF emits <unk> where the bytes would be spelled
+                    buildBpeModel(sentencePiece, "[]", fallback),
+                    "Unsupported tokenizer config at tokenizer.json:model.byte_fallback: "
+                            + (fallback.isEmpty() ? "null" : "false")
+                            + " (supported: true for a vocabulary with byte tokens)",
+                    METASPACE_PRE_TOKENIZER,
+                    MISTRAL_DECODER);
+        }
+        assertRefusedAs( // a Metaspace decoder of another replacement would leave ▁ in the text
+                buildBpeModel(sentencePiece, "[]", ",\"byte_fallback\":true"),
+                "Unsupported tokenizer config at tokenizer.json:decoder: ",
+                METASPACE_PRE_TOKENIZER,
+                "\"decoder\":{\"type\":\"Metaspace\",\"replacement\":\"_\"}");
     }
 
     private void assertRefusedAs(String model, String message, String... rootFields)

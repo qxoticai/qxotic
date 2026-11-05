@@ -92,6 +92,19 @@ def byte_level_json(path, merges=(), added=()):
     return str(path)
 
 
+def sentencepiece_json(path, normalizer=None, decoder_replacement="▁", **model):
+    """A SentencePiece-style tokenizer.json: ▁ is 0, "a" 1, "<unk>" 2, then the 256 byte tokens; Metaspace in
+    and out, byte fallback on; `model` fields override the model's, `normalizer` is the normalizer's JSON."""
+    import json
+    vocab = {"▁": 0, "a": 1, "<unk>": 2, **{f"<0x{b:02X}>": 3 + b for b in range(256)}}
+    model = {"type": "BPE", "vocab": vocab, "merges": [], "unk_token": "<unk>", "byte_fallback": True, **model}
+    Path(path).write_text(json.dumps({
+        "version": "1.0", "normalizer": normalizer, "model": model, "added_tokens": [],
+        "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": True},
+        "decoder": {"type": "Metaspace", "replacement": decoder_replacement, "prepend_scheme": "first", "split": True}}))
+    return str(path)
+
+
 def tiny_gguf(path, pre="gpt2"):
     """A GGUF tokenizer, header only, as the C tests' fixtures.h writes it: byte b is id b, "he" 256."""
     import struct

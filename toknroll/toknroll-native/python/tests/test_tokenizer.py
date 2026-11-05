@@ -8,7 +8,7 @@ from array import array
 from pathlib import Path
 
 from support import (BYTE_FALLBACK, DEEPSEEK_JSON, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, byte_level_json, needs_byte_fallback,
-                     needs_deepseek, needs_tiktoken_dir, numpy, toknroll)
+                     needs_deepseek, needs_tiktoken_dir, numpy, sentencepiece_json, toknroll)
 
 F = toknroll.TokenFlags
 SPECIAL = F.CONTROL | F.USER_DEFINED | F.UNKNOWN  # the README's recipe: the kinds specials=True matches
@@ -257,6 +257,27 @@ class ReferenceCasesTest(unittest.TestCase):
                 self.assertEqual(list(t.encode("<x>more", specials=True)), [257])
                 self.assertEqual(list(t.encode("<x>mo", specials=True)), [256, 109, 111])
                 self.assertEqual(list(t.encode("a<x>b", specials=True)), [97, 256, 98])
+
+    def test_the_metaspace_prefix_sees_the_normalized_text(self):
+        """NFKC makes a space of U+3000 and U+00A0: no second ▁ before it, as HF's order gives."""
+        with tempfile.TemporaryDirectory() as d:
+            path = sentencepiece_json(Path(d, "tokenizer.json"), normalizer={"type": "NFKC"})
+            with toknroll.load(path) as t:
+                for text in (" a", "　a", " a"):
+                    self.assertEqual(list(t.encode(text)), [0, 1], repr(text))
+                    self.assertEqual(t.count_tokens(text), 2, repr(text))
+
+    def test_a_model_option_that_makes_another_tokenizer_is_refused(self):
+        """dropout, HF 1.0 refuses it; byte_fallback off, HF emits <unk> where the bytes would be; a Metaspace decoder
+        of another replacement, HF keeps ▁ in the text: each Unsupported at load, never a different tokenizer."""
+        with tempfile.TemporaryDirectory() as d:
+            for name, kwargs in (("dropout", {"dropout": 1.0}), ("byte_fallback", {"byte_fallback": False}),
+                                 ("decoder", {"decoder_replacement": "_"})):
+                with self.subTest(name), self.assertRaises(toknroll.Unsupported) as e:
+                    toknroll.load(sentencepiece_json(Path(d, "tokenizer.json"), **kwargs))
+                self.assertIn(name, str(e.exception))
+            with toknroll.load(sentencepiece_json(Path(d, "tokenizer.json"), dropout=0.0)) as t:  # 0 changes nothing
+                self.assertEqual(list(t.encode("a")), [0, 1])
 
     @needs_byte_fallback
     def test_byte_tokens_decode_to_their_bytes(self):
