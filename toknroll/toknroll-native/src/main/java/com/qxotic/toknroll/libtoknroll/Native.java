@@ -388,6 +388,10 @@ public final class Native {
                 previous = at;
             }
             if (texts.isNull() && starts[count] > 0) throw Errors.invalid("texts is NULL");
+            // an end past intptr_t is no address; one short of it but past the caller's buffer is
+            // the caller's, as with any pointer
+            if (previous > Long.MAX_VALUE - texts.rawValue())
+                throw Errors.invalid("text_offsets reach past the end of memory");
             Tokenizer tokenizer = loaded.tokenizer();
             // raw addresses: a lambda in an image cannot capture a word
             long in = texts.rawValue() + base;

@@ -973,6 +973,8 @@ static void batch(void) {
     CHECK_ERROR(toknroll_encode_batch(t, "x", wrap, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text_offsets must not decrease, at 1");
     const int64_t huge[] = {0, INT64_MAX};
     CHECK_ERROR(toknroll_encode_batch(t, "x", huge, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text 0 is over 2^31 bytes");
+    const int64_t top[] = {INT64_MAX - 1, INT64_MAX};   /* consistent, but no address: once a crash */
+    CHECK_ERROR(toknroll_encode_batch(t, "x", top, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "past the end of memory");
     const int64_t under[] = {0, INT32_MAX - 10};   /* the copy's slack once wrapped past the array */
     CHECK_ERROR(toknroll_encode_batch(t, "x", under, 1, 0, out, 8, offsets), TOKNROLL_EINVAL, LE, "text 0 is over 2^31 bytes");
     /* refused before the count + 1 offsets are read */
