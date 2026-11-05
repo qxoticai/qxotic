@@ -32,23 +32,26 @@
  *              callback. From info on, a download at a terminal draws its progress on stderr instead
  *              of logging it. Beyond them the library writes nothing to stdout or stderr, but for
  *              the runtime naming an option it rejects.
- *   Sources    A path, or a reference to a hub. Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x, a
- *              backslash, owner/file.gguf or a name that exists on disk is a path; anything else is a
- *              reference, [host/]owner/repo[@revision][/path][:quant], the host hf.co (the default),
- *              huggingface.co or modelscope.cn. To force the hub, write the host; to force the disk,
- *              write ./ What is reached decides the format: a file by its content, the GGUF magic or a
- *              JSON tokenizer.json, whatever its name; a folder by name, its tokenizer.json. A bare
- *              owner/repo is the repository root, a folder: it never opens a GGUF. A GGUF on a hub,
- *              named by :quant or a /path ending in .gguf, is read for its header only, never its
- *              weights. Files land in the cache jinfer shares; -Dtoknroll.cache.root moves it,
+ *   Sources    A path, or a reference to a hub, in UTF-8: a file whose name is not UTF-8 cannot be
+ *              named. Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x (~ is not expanded, as fopen
+ *              does not), a backslash, owner/file.gguf or a name that exists on disk is a path;
+ *              anything else is a reference, [host/]owner/repo[@revision][/path][:quant], the host
+ *              hf.co (the default), huggingface.co or modelscope.cn. To force the hub, write the host;
+ *              to force the disk, write ./ What is reached decides the format: a file by its content,
+ *              the GGUF magic or a JSON tokenizer.json, whatever its name; a folder by name, its
+ *              tokenizer.json. A bare owner/repo is the repository root, a folder: it never opens a
+ *              GGUF. A GGUF on a hub, named by :quant or a /path ending in .gguf, is read for its
+ *              header only, never its weights. Files land in the cache jinfer shares;
+ *              -Dtoknroll.cache.root, else TOKNROLL_CACHE_ROOT in the environment, moves it,
  *              -Dtoknroll.offline=true never fetches. Missing is TOKNROLL_ENOTFOUND; a malformed
  *              reference, an unknown host, a file named twice (by /path and :quant), a file of no
- *              known kind or one that does not parse is TOKNROLL_EINVAL.
+ *              known kind or one that does not parse is TOKNROLL_EINVAL. A valid one toknroll does not
+ *              implement (the README lists the families it tests) is TOKNROLL_EUNSUPPORTED.
  *                Qwen/Qwen3-0.6B                         the repository's tokenizer.json
  *                LiquidAI/LFM2.5-350M-GGUF:Q8_0          the header of that GGUF
  *                org/repo/tokenizers/v2                  a folder inside a repository
  *                modelscope.cn/Qwen/Qwen3-0.6B@v1        the other hub, a pinned revision
- *                ~/.ollama/models/blobs/sha256-3f1a...   a GGUF with no extension
+ *                /srv/ollama/blobs/sha256-3f1a...        a GGUF with no extension
  *   Stability  Before 1.0 any release may break this API. From 1.0 a PATCH changes nothing a caller
  *              relies on, a MINOR only adds, a MAJOR may break, and every release is checked.
  */
