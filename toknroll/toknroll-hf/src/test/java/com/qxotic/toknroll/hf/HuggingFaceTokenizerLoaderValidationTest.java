@@ -267,6 +267,72 @@ class HuggingFaceTokenizerLoaderValidationTest {
     }
 
     @Test
+    void addedTokensAndNormalizersHuggingFaceRefusesAreRefusedByIndex() throws Exception {
+        // tokenizers 0.23.3 refuses each file; the loader used to skip the entry, or failed later
+        String bpe = buildBpeModel(buildByteLevelVocab(Map.of("he", 256)), "[\"h e\"]", "");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:normalizer.normalizers[1] is null",
+                "\"normalizer\":{\"type\":\"Sequence\",\"normalizers\":[{\"type\":\"NFC\"},null]}");
+        for (String notAList : new String[] {"null", "{}", "\"x\""}) {
+            assertRefusedAs(
+                    bpe,
+                    "tokenizer.json:added_tokens must be a list",
+                    "\"added_tokens\":" + notAList);
+        }
+        assertRefusedAs(
+                bpe, "tokenizer.json:added_tokens[0] must be an object", "\"added_tokens\":[5]");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:added_tokens[0].id must be numeric",
+                "\"added_tokens\":[{\"content\":\"<x>\"}]");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:added_tokens[0].content must be a string",
+                "\"added_tokens\":[{\"id\":257}]");
+    }
+
+    @Test
+    void anAddedTokenMustAgreeWithEveryOtherSpellingOfItsIdAndIdOfItsSpelling() throws Exception {
+        // where they disagree Hugging Face renumbers or drops the token: refused, never guessed
+        String bpe = buildBpeModel(buildByteLevelVocab(Map.of("he", 256)), "[\"h e\"]", "");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:added_tokens[0] gives id 256 to '<x>', which is 'he'",
+                "\"added_tokens\":[" + added(256, "<x>") + "]");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:added_tokens[0] gives 'he' id 257, which is id 256",
+                "\"added_tokens\":[" + added(257, "he") + "]");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:added_tokens[1] gives id 257 to '<y>', which is '<x>'",
+                "\"added_tokens\":[" + added(257, "<x>") + "," + added(257, "<y>") + "]");
+        assertRefusedAs(
+                bpe,
+                "tokenizer.json:added_tokens[1] gives '<x>' id 258, which is id 257",
+                "\"added_tokens\":[" + added(257, "<x>") + "," + added(258, "<x>") + "]");
+        // agreeing loads: a repeat (Yi-6B lists <fim_suffix> twice), a vocabulary token's own id,
+        // empty content, and no added_tokens at all
+        for (String agreeing :
+                new String[] {
+                    "\"added_tokens\":[" + added(257, "<x>") + "," + added(257, "<x>") + "]",
+                    "\"added_tokens\":[" + added(256, "he") + "]",
+                    "\"added_tokens\":[" + added(257, "") + "]",
+                    "\"pre_tokenizer\":null"
+                }) {
+            Path file =
+                    Files.writeString(
+                            tempDir.resolve("tokenizer.json"), buildTokenizerJson(bpe, agreeing));
+            assertNotNull(HuggingFaceTokenizerLoader.fromLocal(file), agreeing);
+        }
+    }
+
+    private static String added(int id, String content) {
+        return "{\"id\":" + id + ",\"content\":\"" + content + "\",\"special\":true}";
+    }
+
+    @Test
     void nonBpeModelTypeIsRejected() throws Exception {
         String json = "{\"model\":{\"type\":\"Unigram\",\"vocab\":{\"h\":0},\"merges\":[]}}";
         Path file = tempDir.resolve("tokenizer.json");

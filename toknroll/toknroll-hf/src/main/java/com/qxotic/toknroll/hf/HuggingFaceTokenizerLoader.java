@@ -15,6 +15,7 @@ import java.text.Normalizer.Form;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -281,7 +282,8 @@ public final class HuggingFaceTokenizerLoader {
             }
             // without it HF emits the unknown token where the bytes would be spelled: refused,
             // never encoded as the other tokenizer
-            if (vocabMap.containsKey("<0x00>") && !Boolean.TRUE.equals(model.get("byte_fallback"))) {
+            if (vocabMap.containsKey("<0x00>")
+                    && !Boolean.TRUE.equals(model.get("byte_fallback"))) {
                 throw unsupported(
                         "tokenizer.json:model.byte_fallback",
                         String.valueOf(model.get("byte_fallback")),
@@ -693,44 +695,60 @@ public final class HuggingFaceTokenizerLoader {
         int[] tokenTypes = new int[tokens.length];
         Arrays.fill(tokenTypes, StandardTokenType.NORMAL.getId());
 
-        if (addedTokensObj instanceof List<?>) {
-            for (Object obj : (List<?>) addedTokensObj) {
-                if (!(obj instanceof Map<?, ?>)) {
-                    continue;
-                }
-                Map<String, Object> added = (Map<String, Object>) obj;
-                Object idObj = added.get("id");
-                Object contentObj = added.get("content");
-                if (!(idObj instanceof Number) || !(contentObj instanceof String)) {
-                    continue;
-                }
-
-                refuseUnsupportedMatching(
-                        added, (String) contentObj, "tokenizer.json:added_tokens", normalizer);
-                int id = id(idObj, "tokenizer.json:added_tokens['" + contentObj + "'].id");
-                if (id >= tokens.length) {
-                    int oldLength = tokens.length;
-                    tokens = Arrays.copyOf(tokens, id + 1);
-                    tokenTypes = Arrays.copyOf(tokenTypes, id + 1);
-                    Arrays.fill(
-                            tokenTypes,
-                            oldLength,
-                            tokenTypes.length,
-                            StandardTokenType.NORMAL.getId());
-                }
-                boolean special = Boolean.TRUE.equals(added.get("special"));
-                if (tokens[id] == null || special) {
-                    // Keep decode semantics aligned for explicit special/control tokens,
-                    // but do not clobber normal vocab entries.
-                    tokens[id] = (String) contentObj;
-                }
-                // Specials.of matches every added token whole, as Hugging Face matches it: the
-                // flag says only whether decoding may hide it.
-                tokenTypes[id] =
-                        special
-                                ? StandardTokenType.CONTROL.getId()
-                                : StandardTokenType.USER_DEFINED.getId();
+        // absent, as Hugging Face allows; otherwise a list of objects, each an id and its content
+        List<?> addedTokens = List.of();
+        if (addedTokensObj != null) {
+            if (!(addedTokensObj instanceof List<?>)) {
+                throw new IllegalArgumentException("tokenizer.json:added_tokens must be a list");
             }
+            addedTokens = (List<?>) addedTokensObj;
+        }
+        Map<String, Integer> spelled = new HashMap<>(); // an added token's id, by its content
+        for (int i = 0; i < addedTokens.size(); i++) {
+            String where = "tokenizer.json:added_tokens[" + i + "]";
+            Map<String, Object> added = asObject(addedTokens.get(i), where);
+            if (!(added.get("id") instanceof Number)) {
+                throw new IllegalArgumentException(where + ".id must be numeric");
+            }
+            String content = asString(added.get("content"), where + ".content");
+            refuseUnsupportedMatching(added, content, "tokenizer.json:added_tokens", normalizer);
+            int id = id(added.get("id"), "tokenizer.json:added_tokens['" + content + "'].id");
+            if (id >= tokens.length) {
+                int oldLength = tokens.length;
+                tokens = Arrays.copyOf(tokens, id + 1);
+                tokenTypes = Arrays.copyOf(tokenTypes, id + 1);
+                Arrays.fill(
+                        tokenTypes, oldLength, tokenTypes.length, StandardTokenType.NORMAL.getId());
+            }
+            // one id, one spelling, as the vocabulary and every other added token have them
+            // (Hugging Face renumbers or drops a token that disagrees); a repeat agrees
+            if (tokens[id] != null && !tokens[id].equals(content)) {
+                throw new IllegalArgumentException(
+                        where
+                                + " gives id "
+                                + id
+                                + " to '"
+                                + content
+                                + "', which is '"
+                                + tokens[id]
+                                + "'");
+            }
+            Integer other = spelled.putIfAbsent(content, id);
+            if (other == null && vocabMap.get(content) instanceof Number) {
+                other = ((Number) vocabMap.get(content)).intValue();
+            }
+            if (other != null && other != id) {
+                throw new IllegalArgumentException(
+                        where + " gives '" + content + "' id " + id + ", which is id " + other);
+            }
+            boolean special = Boolean.TRUE.equals(added.get("special"));
+            tokens[id] = content;
+            // Specials.of matches every added token whole, as Hugging Face matches it: the
+            // flag says only whether decoding may hide it.
+            tokenTypes[id] =
+                    special
+                            ? StandardTokenType.CONTROL.getId()
+                            : StandardTokenType.USER_DEFINED.getId();
         }
 
         for (int i = 0; i < tokens.length; i++) {
@@ -880,8 +898,14 @@ public final class HuggingFaceTokenizerLoader {
             throw new IllegalArgumentException(
                     "tokenizer.json:normalizer.normalizers must be a list");
         }
+        List<?> children = (List<?>) childrenObj;
         List<Normalizer> chain = new ArrayList<>();
-        for (Object child : (List<?>) childrenObj) {
+        for (int i = 0; i < children.size(); i++) {
+            Object child = children.get(i);
+            if (child == null || child == Json.NULL) { // Hugging Face refuses it too
+                throw new IllegalArgumentException(
+                        "tokenizer.json:normalizer.normalizers[" + i + "] is null");
+            }
             chain.add(parseNormalizer(child));
         }
         return chain.isEmpty()
