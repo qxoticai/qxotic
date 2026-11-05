@@ -137,12 +137,23 @@ static int forked_by_runtime(void) {
     return !c || __atomic_load_n(&c->busy, __ATOMIC_RELAXED);
 }
 
+static int any_busy(void) {   /* the caller holds the gate's lock */
+    for (caller* c = callers; c; c = c->next)
+        if (__atomic_load_n(&c->busy, __ATOMIC_SEQ_CST)) return 1;
+    return 0;
+}
+
+/* Waits for every busy thread, the lock released between looks: a busy thread may need it, as a first
+ * batch does to list its workers. A thread entering meanwhile steps back, seeing forking. */
 static void fork_prepare(void) {
     if (forked_by_runtime()) return;
-    gate_lock();
     __atomic_store_n(&forking, 1, __ATOMIC_SEQ_CST);
-    for (caller* c = callers; c; c = c->next)
-        while (__atomic_load_n(&c->busy, __ATOMIC_SEQ_CST)) sched_yield();
+    for (;;) {
+        gate_lock();
+        if (!any_busy()) return;   /* held until fork_done */
+        gate_unlock();
+        sched_yield();
+    }
 }
 
 static void fork_done(void) {

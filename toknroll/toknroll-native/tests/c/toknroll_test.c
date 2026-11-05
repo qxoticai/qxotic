@@ -1153,6 +1153,30 @@ static void fork_children(void) {
     CHECK_EQ(toknroll_encode(t, "hello", 5, 0, ids, 16), 4);   /* the parent carries on */
     toknroll_tokenizer_free(t);
 }
+
+/* forks while another thread runs the process's first batch, the one that starts the workers: fork once
+ * held the lock a new worker lists itself under while it waited for that batch, and neither moved */
+typedef struct { toknroll_tokenizer* t; volatile int total; } first;
+static void first_batch(void* p) {
+    first* f = (first*) p;
+    int32_t ids[16], offsets[3];
+    const int64_t at[] = {0, 5, 10};
+    f->total = toknroll_encode_batch(f->t, "hellohello", at, 2, 0, ids, 16, offsets) + 1;   /* 0 while running */
+}
+
+static void fork_during_first_batch(void) {
+    first f = {tiny(), 0};
+    alarm(120);   /* the deadlock was a hang */
+    thread_t batch = thread_run(first_batch, &f);
+    while (!f.total) {
+        pid_t pid = fork();
+        if (pid == 0) _exit(0);
+        CHECK_EQ(child_status(pid), 0);
+    }
+    thread_join(batch);
+    CHECK_EQ(f.total - 1, 8);
+    toknroll_tokenizer_free(f.t);
+}
 #endif
 
 /* ---- the everyday paths, on the real tokenizers the cache holds (skipped, and said so, without) ---- */
@@ -1722,6 +1746,7 @@ static const scenario scenarios[] = {
     {"returned_strings", returned_strings, NULL},
 #ifndef _WIN32
     {"fork_children", fork_children, NULL},
+    {"fork_during_first_batch", fork_during_first_batch, NULL},
     {"load_fifo", load_fifo, NULL},
 #endif
 };
