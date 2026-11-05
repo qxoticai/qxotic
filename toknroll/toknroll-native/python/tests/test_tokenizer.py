@@ -7,8 +7,8 @@ import unittest
 from array import array
 from pathlib import Path
 
-from support import (BYTE_FALLBACK, DEEPSEEK_JSON, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, needs_byte_fallback, needs_deepseek,
-                     needs_numpy, needs_tiktoken_dir, numpy, toknroll)
+from support import (BYTE_FALLBACK, DEEPSEEK_JSON, EDGE_TEXTS, GGUF, TIKTOKEN_DIR, byte_level_json, needs_byte_fallback,
+                     needs_deepseek, needs_numpy, needs_tiktoken_dir, numpy, toknroll)
 
 F = toknroll.TokenFlags
 
@@ -235,6 +235,38 @@ class BatchTest(unittest.TestCase):
         self.assertEqual(len(out), 10_000)
         self.assertEqual([self.t.decode(ids) for ids in out], texts)
         self.assertEqual(sum(map(len, out)), sum(self.t.count_tokens(x) for x in texts))
+
+
+class ReferenceCasesTest(unittest.TestCase):
+    """Cases an external review once found diverging from HF; the ids are HF tokenizers 1.0rc3's."""
+
+    def test_merges_apply_by_rank_not_by_a_whole_token_in_the_vocabulary(self):
+        """abcd is in the vocabulary, but b+c ranks first: a, bc, d, as ranked merging gives."""
+        with tempfile.TemporaryDirectory() as d:
+            with toknroll.load(byte_level_json(Path(d, "tokenizer.json"), merges=["b c", "a b", "ab c", "abc d"])) as t:
+                self.assertEqual(list(t.encode("abc")), [97, 256])
+                self.assertEqual(list(t.encode("abcd")), [97, 256, 100])
+                self.assertEqual(list(t.encode("abcdx")), [97, 256, 100, 120])
+
+    def test_a_special_that_prefixes_another_still_matches(self):
+        """<x> and <x>more: the longer wins where both fit, the shorter matches on its own."""
+        with tempfile.TemporaryDirectory() as d:
+            with toknroll.load(byte_level_json(Path(d, "tokenizer.json"), added=["<x>", "<x>more"])) as t:
+                self.assertEqual(list(t.encode("<x>", specials=True)), [256])
+                self.assertEqual(list(t.encode("<x>more", specials=True)), [257])
+                self.assertEqual(list(t.encode("<x>mo", specials=True)), [256, 109, 111])
+                self.assertEqual(list(t.encode("a<x>b", specials=True)), [97, 256, 98])
+
+    @needs_byte_fallback
+    def test_byte_tokens_decode_to_their_bytes(self):
+        """A lone byte token is its byte, not U+FFFD: the replacement is decode's business, not decode_bytes'."""
+        with toknroll.load(BYTE_FALLBACK) as t:
+            c3, a9 = t.id("<0xC3>"), t.id("<0xA9>")
+            self.assertTrue(t.token_flags(c3) & F.BYTE)
+            self.assertEqual(t.decode_bytes([c3]), b"\xc3")
+            self.assertEqual(t.decode_bytes([c3, a9]), "é".encode())
+            self.assertEqual(t.decode([c3, a9]), "é")
+            self.assertEqual(t.decode([c3]), "�")
 
 
 class VocabularyTest(unittest.TestCase):

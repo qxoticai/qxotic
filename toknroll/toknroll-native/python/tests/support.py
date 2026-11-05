@@ -72,6 +72,26 @@ EDGE_TEXTS = [
 ]
 
 
+def byte_level_json(path, merges=(), added=()):
+    """A byte-level BPE tokenizer.json: GPT-2's 256-byte alphabet (byte b is id b), the merges' tokens after
+    it in order, then the added tokens, each special; text is one piece (no regex)."""
+    import json
+    printable = list(range(33, 127)) + list(range(161, 173)) + list(range(174, 256))
+    extra = 0
+    vocab = {}
+    for b in range(256):
+        vocab[chr(b) if b in printable else chr(256 + extra)] = b
+        extra += b not in printable
+    for merge in merges:
+        vocab["".join(merge.split())] = len(vocab)
+    tokens = [{"id": len(vocab) + i, "content": text, "special": True, "single_word": False, "lstrip": False, "rstrip": False,
+               "normalized": False} for i, text in enumerate(added)]
+    Path(path).write_text(json.dumps({
+        "version": "1.0", "model": {"type": "BPE", "vocab": vocab, "merges": list(merges)}, "added_tokens": tokens,
+        "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": False, "use_regex": False}, "decoder": {"type": "ByteLevel"}}))
+    return str(path)
+
+
 def tiny_gguf(path, pre="gpt2"):
     """A GGUF tokenizer, header only, as the C tests' fixtures.h writes it: byte b is id b, "he" 256."""
     import struct
