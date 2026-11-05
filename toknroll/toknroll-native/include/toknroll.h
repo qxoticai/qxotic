@@ -98,7 +98,8 @@ extern "C" {
 
 typedef struct toknroll_tokenizer toknroll_tokenizer;
 
-enum { TOKNROLL_LOG_DEBUG = 0, TOKNROLL_LOG_INFO = 1, TOKNROLL_LOG_WARN = 2, TOKNROLL_LOG_ERROR = 3 };   /* a line's level */
+/* a line's level */
+enum { TOKNROLL_LOG_DEBUG = 0, TOKNROLL_LOG_INFO = 1, TOKNROLL_LOG_WARN = 2, TOKNROLL_LOG_ERROR = 3 };
 typedef void (*toknroll_log_fn)(int32_t level, const char* message, void* user_data);
 
 /* "0.4.0", the toknroll release the library was built from. */
@@ -106,23 +107,27 @@ TOKNROLL_API const char* toknroll_version(void);
 /* The message of the thread's last call; *code = its code unless code is NULL. "" and TOKNROLL_OK after a
  * success. */
 TOKNROLL_API const char* toknroll_last_error(int32_t* code);
-/* The library's log lines go to fn instead of stderr, with user_data as its last argument; with fn NULL
- * they go nowhere, whatever TOKNROLL_LOG says. A line is UTF-8, without a newline, and names what wrote
- * it: "jinfer.hub: download hf.co/...". The callback runs on any thread, inside your own call included,
- * and may call only toknroll_last_error and toknroll_tokenizer_free, on a tokenizer no call is using; it
- * and user_data stay for the life of the process. Once, before any other call, toknroll_configure
- * included; a later call is TOKNROLL_EINVAL. */
+/* The library's log lines go to fn instead of stderr, with user_data as its last argument; with fn
+ * NULL they go nowhere, whatever TOKNROLL_LOG says. A line is UTF-8, without a newline, and names what
+ * wrote it: "jinfer.hub: download hf.co/...". The callback runs on any thread, several at once, inside
+ * your own call included, and may call only toknroll_last_error and toknroll_tokenizer_free, on a
+ * tokenizer no call is using; message is the callback's for that call only: copy it to keep it. fn and
+ * user_data stay for the life of the process. Once, before toknroll_configure and every call that
+ * starts the runtime; a later call is TOKNROLL_EINVAL. */
 TOKNROLL_API int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data);
 /* Runtime options, as on a java command line: "-Dtoknroll.gguf.pre.my-model=alias:qwen2" registers a
  * pre-tokenizer, "-Dtoknroll.cache.root=/srv/cache" moves the hub cache, "-XX:MaxHeapSize=512m" caps
  * the heap, "-XX:ActiveProcessorCount=4" the cores a batch and the collector run on. An option is
  * UTF-8; on Windows the runtime reads its options in the ANSI code page, so one with a character that
- * page lacks is TOKNROLL_EINVAL. Once, before any other call into the library; a later call is
- * TOKNROLL_EINVAL. An option the runtime rejects fails this call, TOKNROLL_ERROR, the runtime naming
- * it on stderr (an unknown -XX: option is rejected, an unknown -X one is ignored). TOKNROLL_OPTIONS in
- * the environment, the same options separated by whitespace, is read when the runtime starts and
- * applied after these, so it overrides them: the program sets its options, whoever runs it has the
- * last word. */
+ * page lacks is TOKNROLL_EINVAL. Once, before the runtime starts: only toknroll_version,
+ * toknroll_last_error, toknroll_log_set and a free of NULL may come before it; a later call is
+ * TOKNROLL_EINVAL. An option the runtime rejects fails this call, which starts it, TOKNROLL_ERROR, the
+ * runtime naming it on stderr (an unknown -XX: option is rejected, an unknown -X one is ignored).
+ * TOKNROLL_OPTIONS in the environment, the same options separated by whitespace, is read when the
+ * runtime starts, here or at the first call, and applied after these, so it overrides them: the
+ * program sets its options, whoever runs it has the last word. One it rejects fails that call. A start
+ * that fails is final: every later call fails as it did, TOKNROLL_ERROR and its message; none starts
+ * the runtime again. */
 TOKNROLL_API int32_t toknroll_configure(const char* const* options, int32_t count);
 
 /* A tokenizer from a path or a hub reference: Sources, above. */
@@ -131,7 +136,7 @@ TOKNROLL_API void                toknroll_tokenizer_free(toknroll_tokenizer* t);
 
 /* Options for toknroll_encode and toknroll_encode_batch, or'ed together; 0 is the default. An
  * unknown bit is TOKNROLL_EINVAL. */
-#define TOKNROLL_SPECIALS 1u /* tokens of a type other than normal, spelled in the text, stay whole */
+#define TOKNROLL_SPECIALS 1u /* control, user-defined and unknown tokens, spelled in the text, stay whole */
 
 /* The ids of length bytes of text; by default every token is text. */
 TOKNROLL_API int32_t toknroll_encode(const toknroll_tokenizer* t, const char* text, int64_t length,
@@ -163,8 +168,8 @@ TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const ch
 TOKNROLL_API int32_t toknroll_vocabulary_size(const toknroll_tokenizer* t);
 /* An id's TOKNROLL_TOKEN_* flags; negative, TOKNROLL_ENOTFOUND, when there is no such id. */
 TOKNROLL_API int64_t toknroll_token_flags(const toknroll_tokenizer* t, int32_t id);
-/* The spelling of an id: a token of a type other than normal is its text, as TOKNROLL_SPECIALS matches
- * it, any other as the vocabulary writes it; TOKNROLL_ENOTFOUND when there is no such id. */
+/* The spelling of an id: a control, user-defined or unknown token is its text, as TOKNROLL_SPECIALS
+ * matches it, any other as the vocabulary writes it; TOKNROLL_ENOTFOUND when there is no such id. */
 TOKNROLL_API int64_t toknroll_token(const toknroll_tokenizer* t, int32_t id, char* out, int64_t byte_capacity);
 /* The id of a spelling, length bytes of it, either kind toknroll_token gives; TOKNROLL_ENOTFOUND when the
  * vocabulary has no such token. */
