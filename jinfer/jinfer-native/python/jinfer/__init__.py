@@ -72,6 +72,7 @@ __all__ = ["load", "configure", "Model", "LanguageModel", "Embedder", "Reranker"
            "JinferError", "InvalidArgument", "NotFound", "Cancelled", "MAXIMUM_CONTEXT"]
 
 __version__ = N.lib.jinfer_version().decode()
+# built from $Format:%H$
 
 MAXIMUM_CONTEXT = -1
 """`load(context_capacity=MAXIMUM_CONTEXT)`: the model's whole trained context, its `max_context_length`;

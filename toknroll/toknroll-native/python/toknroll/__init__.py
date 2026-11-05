@@ -35,6 +35,7 @@ from . import _native as N
 
 __all__ = ["load", "configure", "Tokenizer", "TokenFlags", "ToknrollError", "InvalidArgument", "NotFound", "Unsupported"]
 __version__ = "0.4.0"  # the toknroll release the library was built from; make check-version keeps the four spellings equal
+# built from $Format:%H$
 
 
 class TokenFlags(IntFlag):

@@ -1,0 +1,3 @@
+# git archive writes the commit into each package's "built from" line, which publish-wheels checks
+toknroll/toknroll-native/python/toknroll/__init__.py export-subst
+jinfer/jinfer-native/python/jinfer/__init__.py export-subst

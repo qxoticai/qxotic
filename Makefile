@@ -192,7 +192,9 @@ TOOLS := target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconf
 $(TOOLS)/bin/twine:
 	rm -rf $(TOOLS) && python3 -m venv $(TOOLS) && $(TOOLS)/bin/pip install -q twine auditwheel
 
-publish-wheels: $(TOOLS)/bin/twine ## Upload target/wheels/ to PyPI after twine check, skipping wheels it holds: each machine uploads its own (TWINE_REPOSITORY=testpypi rehearses; credentials from ~/.pypirc)
+publish-wheels: $(TOOLS)/bin/twine ## Upload target/wheels/ to PyPI after twine check, skipping wheels it holds, each built from REF (HEAD): each machine uploads its own (TWINE_REPOSITORY=testpypi rehearses; credentials from ~/.pypirc)
+	@c=$$(git rev-parse '$(REF)^{commit}') && for w in target/wheels/*.whl; do n=$${w##*/}; \
+	  unzip -p $$w $${n%%-*}/__init__.py | grep -q "built from $$c" || { echo "$$w is not built from $(REF), $$c"; exit 1; }; done
 	$(TOOLS)/bin/twine check --strict target/wheels/*.whl
 	$(TOOLS)/bin/twine upload --skip-existing target/wheels/*.whl
 
