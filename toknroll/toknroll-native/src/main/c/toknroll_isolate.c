@@ -27,6 +27,8 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <sched.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 #endif
 #include <stdarg.h>
 #include <stddef.h>
@@ -570,4 +572,60 @@ int32_t toknroll__log(toknroll__log_fn fn, void* user_data, const char* who,
     port_store(&log_given, 1);
     early_clear();
     return TOKNROLL_OK;
+}
+
+/* ---- The terminal, for the hub's download board: TerminalSupport's few console calls, made here so the
+ * image carries no Foreign Function API (Target_TerminalSupport.java). fd is 0, 1 or 2. ---- */
+
+#ifdef _WIN32
+static HANDLE std_handle(int fd) { return GetStdHandle(fd == 1 ? STD_OUTPUT_HANDLE : fd == 2 ? STD_ERROR_HANDLE : STD_INPUT_HANDLE); }
+static UINT code_page_before;   /* the console's output code page before toknroll__tty_utf8 set UTF-8, restored at exit */
+static void restore_code_page(void) { SetConsoleOutputCP(code_page_before); }
+#endif
+
+/* 1 when fd is a terminal (Windows: a console) */
+int toknroll__tty(int fd) {
+#ifdef _WIN32
+    DWORD mode;
+    return GetConsoleMode(std_handle(fd), &mode) ? 1 : 0;
+#else
+    return isatty(fd) == 1;
+#endif
+}
+
+/* 1 when fd is a terminal that takes ANSI sequences; on Windows the console is switched to them */
+int toknroll__tty_ansi(int fd) {
+#ifdef _WIN32
+    DWORD mode;
+    HANDLE h = std_handle(fd);
+    return GetConsoleMode(h, &mode) && SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) ? 1 : 0;
+#else
+    return isatty(fd) == 1;
+#endif
+}
+
+/* the columns of fd's terminal, 0 when it has none */
+int toknroll__tty_columns(int fd) {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO info;   /* the visible window, not the scrollback buffer */
+    return GetConsoleScreenBufferInfo(std_handle(fd), &info) ? info.srWindow.Right - info.srWindow.Left + 1 : 0;
+#else
+    struct winsize size;
+    return ioctl(fd, TIOCGWINSZ, &size) == 0 ? size.ws_col : 0;
+#endif
+}
+
+/* Windows: 1 once the console's output code page is UTF-8, set here and restored at exit; elsewhere 0,
+ * the locale decides */
+int toknroll__tty_utf8(void) {
+#ifdef _WIN32
+    UINT now = GetConsoleOutputCP();
+    if (!now) return 0;
+    if (now == CP_UTF8) return 1;
+    if (!SetConsoleOutputCP(CP_UTF8)) return 0;
+    if (!code_page_before) { code_page_before = now; atexit(restore_code_page); }
+    return 1;
+#else
+    return 0;
+#endif
 }
