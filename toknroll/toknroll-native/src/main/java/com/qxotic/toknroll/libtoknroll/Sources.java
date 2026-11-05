@@ -39,7 +39,9 @@ final class Sources {
                     : tiktokenFromHub(at.repository());
         if (!at.folder()) return read(at.path());
         // a folder holds a tokenizer.json, or a tiktoken.model read as a hub checkout is; neither
-        // is missing, as a file is
+        // is missing, as a file is; one that cannot be listed is not missing either
+        if (!Files.isReadable(at.path()))
+            throw new Errors.Failure(Errors.ERROR, at.path() + ": permission denied");
         if (!Files.isRegularFile(at.path().resolve("tokenizer.json"))
                 && !Files.isRegularFile(at.path().resolve("tiktoken.model")))
             throw Errors.notFound(at.path() + " holds no tokenizer.json nor tiktoken.model");

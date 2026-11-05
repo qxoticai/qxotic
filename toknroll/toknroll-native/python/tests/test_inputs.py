@@ -86,8 +86,8 @@ class IdBufferTest(unittest.TestCase):
                 self.t.decode(bad)
             if kind is toknroll.InvalidArgument:
                 self.assertIsInstance(e.exception, ValueError)
-                self.assertIn("outside the vocabulary", str(e.exception))
-                self.assertIn("index 0", str(e.exception))
+                self.assertIn("no token with id", str(e.exception))   # a gap below the size is no token either
+                self.assertIn("ids[0]", str(e.exception))
 
     def test_a_million_ids(self):
         ids = self.t.encode("word " * 250_000)
@@ -370,12 +370,15 @@ class ErrorTypesTest(unittest.TestCase):
         self.assertTrue(issubclass(toknroll.InvalidArgument, ValueError))
         self.assertTrue(issubclass(toknroll.NotFound, toknroll.ToknrollError))
         self.assertTrue(issubclass(toknroll.NotFound, FileNotFoundError))
+        self.assertTrue(issubclass(toknroll.Unsupported, toknroll.ToknrollError))
+        self.assertTrue(issubclass(toknroll.Unsupported, ValueError))
         self.assertEqual(toknroll.InvalidArgument("m", -2).code, -2)
         self.assertEqual(str(toknroll.NotFound("gone", -3)), "gone")
 
     def test_errors_pickle(self):
         """An error pickles with its code, so one raised in a worker reaches the parent, not a broken pool."""
-        for error in (toknroll.ToknrollError("m", -1), toknroll.InvalidArgument("m", -2), toknroll.NotFound("m", -3)):
+        for error in (toknroll.ToknrollError("m", -1), toknroll.InvalidArgument("m", -2), toknroll.NotFound("m", -3),
+                      toknroll.Unsupported("m", -4)):
             back = pickle.loads(pickle.dumps(error))
             self.assertEqual((type(back), str(back), back.code), (type(error), "m", error.code))
         with multiprocessing.get_context("fork").Pool(1) as pool:

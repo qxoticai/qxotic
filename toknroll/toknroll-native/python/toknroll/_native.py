@@ -19,7 +19,7 @@ import platform
 import sys
 from pathlib import Path
 
-OK, ERROR, EINVAL, ENOTFOUND = 0, -1, -2, -3
+OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED = 0, -1, -2, -3, -4
 
 
 def locate(name: str) -> Path:

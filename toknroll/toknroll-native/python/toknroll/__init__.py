@@ -33,7 +33,7 @@ from itertools import accumulate
 
 from . import _native as N
 
-__all__ = ["load", "configure", "Tokenizer", "TokenFlags", "ToknrollError", "InvalidArgument", "NotFound"]
+__all__ = ["load", "configure", "Tokenizer", "TokenFlags", "ToknrollError", "InvalidArgument", "NotFound", "Unsupported"]
 __version__ = "0.4.0"  # the toknroll release the library was built from; make check-version keeps the four spellings equal
 
 
@@ -68,13 +68,17 @@ class NotFound(ToknrollError, FileNotFoundError):
     """A file, repository or token that does not exist."""
 
 
+class Unsupported(ToknrollError, ValueError):
+    """A valid tokenizer toknroll does not implement: WordPiece, Unigram, a pre-tokenizer it has no code for."""
+
+
 def _error(lib: C.CDLL, code: int | None = None) -> ToknrollError:
     """The calling thread's last error; the code is read from the library when the call returned none."""
     box = C.c_int32()
     text = lib.toknroll_last_error(C.byref(box))
     message = text.decode("utf-8", "replace") if text else ""
     code = box.value if code is None else code
-    return {N.EINVAL: InvalidArgument, N.ENOTFOUND: NotFound}.get(code, ToknrollError)(message, code)
+    return {N.EINVAL: InvalidArgument, N.ENOTFOUND: NotFound, N.EUNSUPPORTED: Unsupported}.get(code, ToknrollError)(message, code)
 
 
 def _flags(specials: bool) -> int:

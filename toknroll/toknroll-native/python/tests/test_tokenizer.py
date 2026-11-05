@@ -78,10 +78,33 @@ class LoadTest(unittest.TestCase):
         """The library's unsupported-config message says tokenizer.json:field, not which one: load adds the source."""
         with tempfile.TemporaryDirectory() as d:
             Path(d, "tokenizer.json").write_text('{"model": {"type": "Unigram"}}')
-            with self.assertRaises(toknroll.InvalidArgument) as e:
+            with self.assertRaises(toknroll.Unsupported) as e:
                 toknroll.load(d)
             self.assertTrue(str(e.exception).startswith(d), str(e.exception))
             self.assertIn("Unigram", str(e.exception))
+
+    def test_a_valid_tokenizer_toknroll_does_not_implement_is_unsupported(self):
+        """WordPiece is a tokenizer, not a malformed file: Unsupported, a ValueError as HF raises, code -4."""
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "tokenizer.json").write_text(
+                '{"model": {"type": "WordPiece", "vocab": {"[UNK]": 0, "a": 1}, "unk_token": "[UNK]"}}')
+            with self.assertRaises(toknroll.Unsupported) as e:
+                toknroll.load(d)
+            self.assertIsInstance(e.exception, ValueError)
+            self.assertEqual(e.exception.code, -4)
+            self.assertIn("WordPiece", str(e.exception))
+
+    @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "root and Windows read everything")
+    def test_an_unreadable_folder_is_a_permission_error_not_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.chmod(d, 0)
+            try:
+                with self.assertRaises(toknroll.ToknrollError) as e:
+                    toknroll.load(d)
+            finally:
+                os.chmod(d, 0o700)
+            self.assertNotIsInstance(e.exception, toknroll.NotFound)
+            self.assertIn("permission denied", str(e.exception))
 
     @needs_tiktoken_dir
     def test_a_tiktoken_checkout_loads_from_its_folder(self):
