@@ -81,7 +81,7 @@ class HuggingFaceTokenizerLoaderValidationTest {
                             + ",\"content\":\"<x>\"}],"
                             + "\"model\":{\"type\":\"BPE\",\"vocab\":{\"a\":0},\"merges\":[]}}";
             assertRefused(vocab, "tokenizer.json:model.vocab['a'] is ");
-            assertRefused(added, "tokenizer.json:added_tokens['<x>'].id is ");
+            assertRefused(added, "tokenizer.json:added_tokens[0].id is ");
         }
     }
 

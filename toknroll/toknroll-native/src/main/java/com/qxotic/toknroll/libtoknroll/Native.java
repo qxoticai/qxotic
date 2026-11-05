@@ -88,8 +88,7 @@ public final class Native {
         if (value.isNull()) throw Errors.invalid(what + " is NULL");
         int length = 0;
         while (value.read(length) != 0) length++;
-        return CTypeConversion.toJavaString(
-                value, WordFactory.unsigned(length), StandardCharsets.UTF_8);
+        return string(value, length, what);
     }
 
     /** length bytes of UTF-8, any byte among them; NULL only with length 0. */
@@ -367,8 +366,8 @@ public final class Native {
             if (count > MAX) throw Errors.invalid("count is over 2^31 texts");
             if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
             if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
-            Specials matcher =
-                    specials(flags) ? loaded.specials() : null; // bad flags: refused, texts or none
+            // bad flags are refused even with no texts
+            Specials matcher = specials(flags) ? loaded.specials() : null;
             if (count == 0) { // no text: the arrays may be NULL, as any pointer with length 0
                 if (offsets.isNonNull()) offsets.write(0, 0);
                 return 0;

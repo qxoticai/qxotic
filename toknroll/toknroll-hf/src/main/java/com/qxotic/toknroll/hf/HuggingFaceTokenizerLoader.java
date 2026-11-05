@@ -668,6 +668,8 @@ public final class HuggingFaceTokenizerLoader {
      * cast would truncate 257.9 to 257 and wrap 2^32 to 0; a huge id would size the vocabulary.
      */
     private static int id(Object value, String where) {
+        if (!(value instanceof Number))
+            throw new IllegalArgumentException(where + " must be numeric");
         double id = ((Number) value).doubleValue();
         if (id >= 0 && id <= MAX_ID && id == Math.rint(id)) return (int) id;
         throw new IllegalArgumentException(
@@ -679,12 +681,8 @@ public final class HuggingFaceTokenizerLoader {
             Map<String, Object> vocabMap, Object addedTokensObj, Normalizer normalizer) {
         int maxId = -1;
         for (Map.Entry<String, Object> e : vocabMap.entrySet()) {
-            Object value = e.getValue();
-            if (!(value instanceof Number)) {
-                throw new IllegalArgumentException(
-                        "tokenizer.json:model.vocab['" + e.getKey() + "'] must be numeric");
-            }
-            maxId = Math.max(maxId, id(value, "tokenizer.json:model.vocab['" + e.getKey() + "']"));
+            String where = "tokenizer.json:model.vocab['" + e.getKey() + "']";
+            maxId = Math.max(maxId, id(e.getValue(), where));
         }
 
         String[] tokens = new String[maxId + 1];
@@ -707,12 +705,9 @@ public final class HuggingFaceTokenizerLoader {
         for (int i = 0; i < addedTokens.size(); i++) {
             String where = "tokenizer.json:added_tokens[" + i + "]";
             Map<String, Object> added = asObject(addedTokens.get(i), where);
-            if (!(added.get("id") instanceof Number)) {
-                throw new IllegalArgumentException(where + ".id must be numeric");
-            }
+            int id = id(added.get("id"), where + ".id");
             String content = asString(added.get("content"), where + ".content");
             refuseUnsupportedMatching(added, content, "tokenizer.json:added_tokens", normalizer);
-            int id = id(added.get("id"), "tokenizer.json:added_tokens['" + content + "'].id");
             if (id >= tokens.length) {
                 int oldLength = tokens.length;
                 tokens = Arrays.copyOf(tokens, id + 1);

@@ -28,6 +28,7 @@ import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.FutureTask;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
@@ -100,23 +101,13 @@ class SpecialsTest {
         }
 
         @Test
-        void aSpecialTokenTensOfThousandsLongBuildsOnASmallStack() throws InterruptedException {
+        void aSpecialTokenTensOfThousandsLongBuildsOnASmallStack() throws Exception {
             // a token is as deep in the trie as it is long: frozen by recursion, it overflowed
             String token = "a".repeat(50_000);
-            Object[] outcome = new Object[1];
-            Runnable build =
-                    () -> {
-                        try {
-                            outcome[0] = specials(Mini.of(token), Set.of(token));
-                        } catch (Throwable t) {
-                            outcome[0] = t;
-                        }
-                    };
-            Thread small = new Thread(null, build, "small stack", 256 * 1024);
-            small.start();
-            small.join();
-            assertTrue(outcome[0] instanceof Specials, String.valueOf(outcome[0]));
-            assertEquals(Set.of(token), ((Specials) outcome[0]).tokens().keySet());
+            FutureTask<Specials> build =
+                    new FutureTask<>(() -> specials(Mini.of(token), Set.of(token)));
+            new Thread(null, build, "small stack", 256 * 1024).start();
+            assertEquals(Set.of(token), build.get().tokens().keySet()); // get rethrows its error
         }
 
         @Test
