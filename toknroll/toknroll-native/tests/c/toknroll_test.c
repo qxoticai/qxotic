@@ -370,6 +370,8 @@ static void load_paths(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load(NULL), TOKNROLL_EINVAL, LE, "source is NULL");
     CHECK_NULL_ERROR(toknroll_tokenizer_load(""), TOKNROLL_EINVAL, LE, "source is empty");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("  \t"), TOKNROLL_EINVAL, LE, "source is empty");
+    /* no shell reads a C string: ~ is a folder's name, never the home folder nor a hub owner */
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("~/ctest-none/tokenizer.json"), TOKNROLL_ENOTFOUND, LE, "~ is not expanded");
     CHECK_NULL_ERROR(toknroll_tokenizer_load(TMP("missing.json")), TOKNROLL_ENOTFOUND, LE, "does not exist");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("./ctest-missing.json"), TOKNROLL_ENOTFOUND, LE, "does not exist");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("~/ctest-missing/tokenizer.json"), TOKNROLL_ENOTFOUND, LE, "does not exist");

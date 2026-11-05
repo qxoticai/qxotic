@@ -148,7 +148,9 @@ final class Sources {
                                 + source
                                 + "' is neither a file here nor a reference:"
                                 + " [host/]owner/repo[@revision][/path][:quant]");
-            throw Errors.notFound(path + " does not exist");
+            // a C string reaches no shell: ~ is a folder's name, as fopen reads it
+            String home = source.startsWith("~") ? " (~ is not expanded: write the full path)" : "";
+            throw Errors.notFound(path + " does not exist" + home);
         }
         return Files.isDirectory(path) ? Located.folder(path) : Located.file(path);
     }

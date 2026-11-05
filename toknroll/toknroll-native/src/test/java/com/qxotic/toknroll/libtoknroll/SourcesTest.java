@@ -92,6 +92,23 @@ class SourcesTest {
                                         disk.resolve("none").toString(), store(new FakeSource())));
         assertEquals(Errors.ENOTFOUND, e.code);
         assertTrue(e.getMessage().contains("does not exist"));
+        assertFalse(e.getMessage().contains("~"), "a hint only where a ~ was written");
+    }
+
+    @Test
+    void aTildeIsAFolderNameAndAMissingOneSaysItIsNotExpanded() {
+        // no shell reads a C string: ~/x is the path as given, never a hub reference nor $HOME/x
+        Errors.Failure e =
+                assertThrows(
+                        Errors.Failure.class,
+                        () ->
+                                Sources.locate(
+                                        "~/ctest-none/tokenizer.json", store(new FakeSource())));
+        assertEquals(Errors.ENOTFOUND, e.code);
+        assertEquals(
+                "~/ctest-none/tokenizer.json does not exist (~ is not expanded: write the full"
+                        + " path)",
+                e.getMessage());
     }
 
     @Test
