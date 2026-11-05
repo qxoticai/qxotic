@@ -8,33 +8,33 @@ if "TOKNROLL_INSTALLED" not in os.environ:  # the checkout's package; check-whee
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import toknroll  # noqa: E402
 
-_found = sorted(Path.home().glob(".cache/huggingface/hub/models--LiquidAI--LFM2.5-350M-GGUF/snapshots/*/LFM2.5-350M-Q8_0.gguf"))
-GGUF = os.environ.get("TOKNROLL_TEST_GGUF") or (str(_found[0]) if _found else None)
 OFFLINE = os.environ.get("TOKNROLL_OFFLINE") == "1"
 HUB_JSON = "Qwen/Qwen3-0.6B"               # a tokenizer.json repository
 HUB_GGUF = "LiquidAI/LFM2.5-350M-GGUF:Q8_0"  # a GGUF whose header is fetched
-
-needs_gguf = unittest.skipIf(GGUF is None, "no local GGUF: set TOKNROLL_TEST_GGUF")
-
-# A tokenizer of the tiktoken family, the kind toknroll-vector's engine encodes: Qwen3's (the qwen2 pattern).
-_json = sorted(Path.home().glob(".cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/*/tokenizer.json"))
-TIKTOKEN_JSON = os.environ.get("TOKNROLL_TEST_TIKTOKEN_JSON") or (str(_json[0]) if _json else None)
 needs_hub = unittest.skipIf(OFFLINE, "TOKNROLL_OFFLINE=1")
 
+
+def _local(env: str, *patterns: str) -> str | None:
+    """A fixture on this machine: `env` names it, else the first match of the patterns under the HF hub cache."""
+    found = sorted(path for pattern in patterns for path in Path.home().glob(".cache/huggingface/hub/" + pattern))
+    return os.environ.get(env) or (str(found[0]) if found else None)
+
+
+# The GGUF every test can use.
+GGUF = _local("TOKNROLL_TEST_GGUF", "models--LiquidAI--LFM2.5-350M-GGUF/snapshots/*/LFM2.5-350M-Q8_0.gguf")
+# A tokenizer of the tiktoken family, the kind toknroll-vector's engine encodes: Qwen3's (the qwen2 pattern).
+TIKTOKEN_JSON = _local("TOKNROLL_TEST_TIKTOKEN_JSON", "models--Qwen--Qwen3-0.6B/snapshots/*/tokenizer.json")
 # A byte-level tokenizer.json whose added tokens are spelled outside ASCII: DeepSeek V3's, "<｜begin▁of▁sentence｜>".
-_deepseek = sorted(Path.home().glob(".cache/huggingface/hub/models--deepseek-ai--DeepSeek-V3*/snapshots/*/tokenizer.json"))
-DEEPSEEK_JSON = os.environ.get("TOKNROLL_TEST_DEEPSEEK_JSON") or (str(_deepseek[0]) if _deepseek else None)
-needs_deepseek = unittest.skipIf(DEEPSEEK_JSON is None, "no local DeepSeek V3 tokenizer.json: set TOKNROLL_TEST_DEEPSEEK_JSON")
-
+DEEPSEEK_JSON = _local("TOKNROLL_TEST_DEEPSEEK_JSON", "models--deepseek-ai--DeepSeek-V3*/snapshots/*/tokenizer.json")
 # A tiktoken checkout: a folder holding tiktoken.model and tokenizer_config.json, no tokenizer.json (Kimi's).
-_tiktoken = sorted(Path.home().glob(".cache/huggingface/hub/models--moonshotai--Kimi-K*/snapshots/*/tiktoken.model"))
-TIKTOKEN_DIR = os.environ.get("TOKNROLL_TEST_TIKTOKEN_DIR") or (str(_tiktoken[0].parent) if _tiktoken else None)
-needs_tiktoken_dir = unittest.skipIf(TIKTOKEN_DIR is None, "no local tiktoken checkout: set TOKNROLL_TEST_TIKTOKEN_DIR")
-
+TIKTOKEN_DIR = _local("TOKNROLL_TEST_TIKTOKEN_DIR", "models--moonshotai--Kimi-K*/snapshots/*")
 # A tokenizer with byte fallback, whose BYTE tokens spell part of a character: any Gemma 4's, GGUF or tokenizer.json.
-_byte = sorted(Path.home().glob(".cache/huggingface/hub/models--google--gemma-4-*/snapshots/*/tokenizer.json")) + sorted(
-    Path.home().glob(".cache/huggingface/hub/models--google--gemma-4-*/snapshots/*/*.gguf"))
-BYTE_FALLBACK = os.environ.get("TOKNROLL_TEST_BYTE_FALLBACK") or (str(_byte[0]) if _byte else None)
+BYTE_FALLBACK = _local("TOKNROLL_TEST_BYTE_FALLBACK", "models--google--gemma-4-*/snapshots/*/tokenizer.json",
+                       "models--google--gemma-4-*/snapshots/*/*.gguf")
+
+needs_gguf = unittest.skipIf(GGUF is None, "no local GGUF: set TOKNROLL_TEST_GGUF")
+needs_deepseek = unittest.skipIf(DEEPSEEK_JSON is None, "no local DeepSeek V3 tokenizer.json: set TOKNROLL_TEST_DEEPSEEK_JSON")
+needs_tiktoken_dir = unittest.skipIf(TIKTOKEN_DIR is None, "no local tiktoken checkout: set TOKNROLL_TEST_TIKTOKEN_DIR")
 needs_byte_fallback = unittest.skipIf(BYTE_FALLBACK is None, "no local Gemma 4: set TOKNROLL_TEST_BYTE_FALLBACK")
 
 try:

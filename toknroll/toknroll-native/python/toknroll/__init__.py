@@ -323,9 +323,7 @@ def configure(*options: str) -> None:
 def load(source: str | os.PathLike) -> Tokenizer:
     """A tokenizer from a tokenizer.json or its directory, a GGUF file, or `owner/repo[:QUANT]`
     on a hub. Remote sources fetch tokenizer metadata only, never weights, and cache it on disk."""
-    text = os.fspath(source)
-    if not isinstance(text, str):
-        raise TypeError(f"load: expected str or PathLike, got {type(source).__name__}")
+    text = os.fspath(source)  # anything else is fspath's TypeError; bytes reach _cstring's
     if os.path.exists(text):
         text = os.path.abspath(text)  # the source outlives the working directory: pickling, repr
     lib = N.library()
