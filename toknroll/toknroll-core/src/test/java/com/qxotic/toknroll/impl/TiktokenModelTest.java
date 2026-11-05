@@ -545,6 +545,9 @@ class TiktokenModelTest {
                                 TiktokenModel.fromVocabularyAndMerges(
                                         vocabulary(byteLevelTokens(255)),
                                         new LongLongMap(new long[0], new long[0])));
-        assertEquals("Missing singleton byte token for value 255", e.getMessage());
+        assertEquals(
+                "a byte-level BPE needs a token for each of the 256 bytes, as toknroll runs it, and"
+                        + " byte 255 has none",
+                e.getMessage());
     }
 }

@@ -748,8 +748,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private static UnsupportedTokenizerException missingSingletonByte(int value) {
-        // a valid vocabulary, but byte-level BPE as toknroll runs it needs all 256
-        return new UnsupportedTokenizerException("Missing singleton byte token for value " + value);
+        return new UnsupportedTokenizerException(
+                "a byte-level BPE needs a token for each of the 256 bytes, as toknroll runs it, and"
+                        + " byte "
+                        + value
+                        + " has none");
     }
 
     /**
