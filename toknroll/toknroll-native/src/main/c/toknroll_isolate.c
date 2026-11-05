@@ -189,10 +189,14 @@ static void fork_child(void) {
 #endif
 
 /* the record of a thread the runtime knows: listed, under key; the caller holds the gate's lock. NULL out
- * of memory, and the thread stays attached without one: its next call tries again. */
+ * of memory, the thread detached again: attached without a record it would be outside the gate, so its
+ * next call starts afresh. */
 static caller* attached(graal_thread* thread) {
     caller* c = calloc(1, sizeof *c);
-    if (!c) return NULL;
+    if (!c) {
+        graal_detach_thread(thread);
+        return NULL;
+    }
     c->thread = thread;
 #ifdef GATE
     c->next = callers;
@@ -390,9 +394,12 @@ graal_thread* toknroll__thread(void) {
         if (own) return own;
         graal_thread* t;
         gate_lock();
-        c = graal_attach_thread(isolate, &t) == 0 ? attached(t) : NULL;   /* ponytail: unreported; fails only out of memory */
+        c = graal_attach_thread(isolate, &t) == 0 ? attached(t) : NULL;   /* fails only out of memory */
         gate_unlock();
-        if (!c) return NULL;
+        if (!c) {
+            early(TOKNROLL_ERROR, "the thread could not be attached to the runtime: out of memory");
+            return NULL;
+        }
     }
     return c->thread;
 }
