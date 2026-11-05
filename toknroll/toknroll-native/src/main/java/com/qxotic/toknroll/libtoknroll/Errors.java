@@ -96,6 +96,9 @@ final class Errors {
         int code = code(t);
         Last last = LAST.get();
         if (last.message != null) last.message.close();
+        // ponytail: a thread's last message outlives it, at most LIMIT bytes per thread that
+        // failed;
+        // freeing it at thread exit would take a hook from the C side's detach
         last.message = CTypeConversion.toCString(message);
         last.code = code;
         return code;
