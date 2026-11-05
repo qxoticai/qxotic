@@ -326,6 +326,7 @@ class LengthTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "embedded null byte"):
             toknroll.configure("-Dtoknroll.offline=true\0-Dtoknroll.cache.root=/x")
 
+    @unittest.skipIf(os.name == "nt", "Windows strips a trailing space from a name, and a symlink needs a privilege")
     def test_a_path_is_taken_as_given(self):
         """No stripping: a name may end in a space, and a padded path is the missing file it names,
         as HF's from_file and Python's open take it."""
@@ -383,7 +384,7 @@ class ErrorTypesTest(unittest.TestCase):
                       toknroll.Unsupported("m", -4)):
             back = pickle.loads(pickle.dumps(error))
             self.assertEqual((type(back), str(back), back.code), (type(error), "m", error.code))
-        with multiprocessing.get_context("fork").Pool(1) as pool:
+        with multiprocessing.get_context("spawn").Pool(1) as pool:  # spawn: the one start method every platform has
             with self.assertRaises(toknroll.NotFound):
                 pool.apply(toknroll.load, ("/no/such/file",))
 
