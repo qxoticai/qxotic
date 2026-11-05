@@ -1,13 +1,19 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.MISTRAL_DECODER;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildBpeModel;
 import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildSentencePieceVocab;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildTokenizerJson;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -88,6 +94,137 @@ class HuggingFaceTokenizerLoaderValidationTest {
         for (; t != null; t = t.getCause()) all += t.getMessage() + " | ";
         assertTrue(
                 all.contains(where) && all.contains(", not an id: a whole number from 0 to"), all);
+    }
+
+    @Test
+    void mergesHuggingFaceRefusesAreRefusedByIndex() throws Exception {
+        // tokenizers 0.23.3 refuses every one of these files; the loader used to skip the merge
+        String vocab = buildByteLevelVocab(Map.of("he", 256));
+        String list = "tokenizer.json:model.merges must be a list";
+        assertRefusedAs("{\"type\":\"BPE\",\"vocab\":" + vocab + "}", list);
+        for (String merges : new String[] {"null", "\"h e\"", "5"}) {
+            assertRefusedAs(buildBpeModel(vocab, merges, ""), list);
+        }
+        String[] shapes = {
+            "\"h\"",
+            "\"\"",
+            "\"h  e\"",
+            "\"h e \"",
+            "\"h e x\"",
+            "123",
+            "[\"h\"]",
+            "[\"h\",\"e\",\"l\"]",
+            "[\"h\",1]"
+        };
+        for (String bad : shapes) {
+            assertRefusedAs(
+                    buildBpeModel(vocab, "[\"h e\"," + bad + "]", ""),
+                    "tokenizer.json:model.merges[1] is ");
+        }
+        assertRefusedAs( // a string quoted, so an empty one or a doubled space shows
+                buildBpeModel(vocab, "[\"h  e\"]", ""),
+                "tokenizer.json:model.merges[0] is 'h  e', not \"left right\" or [\"left\","
+                        + " \"right\"]");
+        String absent = "', which is not in the vocabulary";
+        assertRefusedAs(
+                buildBpeModel(vocab, "[\"h e\",\"h zz\"]", ""),
+                "tokenizer.json:model.merges[1] names 'zz" + absent);
+        assertRefusedAs( // the merged token, too
+                buildBpeModel(vocab, "[\"h e\",[\"e\",\"l\"]]", ""),
+                "tokenizer.json:model.merges[1] names 'el" + absent);
+        assertRefusedAs( // and on the SentencePiece path
+                buildBpeModel(buildSentencePieceVocab(Map.of("▁", 256)), "[\"▁ zz\"]", ""),
+                "tokenizer.json:model.merges[0] names 'zz" + absent,
+                "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"▁\"}",
+                MISTRAL_DECODER);
+    }
+
+    private void assertRefusedAs(String model, String message, String... rootFields)
+            throws Exception {
+        Path file =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"), buildTokenizerJson(model, rootFields));
+        int merges = model.indexOf("\"merges\"");
+        String loaded =
+                (merges < 0 ? "no merges" : model.substring(merges)) + String.join(",", rootFields);
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(file),
+                        loaded);
+        assertTrue(refused.getMessage().startsWith(message), refused.getMessage());
+    }
+
+    @Test
+    void aByteLevelModelRefusesADecoderThatReadsItsIdsAsOtherText() throws Exception {
+        // Hugging Face decodes [he, l] as "he l" under WordPiece or no decoder; toknroll as "hel"
+        String model = buildBpeModel(buildByteLevelVocab(Map.of("he", 256)), "[\"h e\"]", "");
+        String byteLevel = "{\"type\":\"ByteLevel\"}";
+        String[][] others = { // the decoder, as the refusal names it
+            {"{\"type\":\"WordPiece\",\"prefix\":\"##\"}", "WordPiece"},
+            {"{\"type\":\"Metaspace\",\"replacement\":\"▁\"}", "Metaspace"},
+            {"{\"type\":\"NoSuchDecoder\"}", "NoSuchDecoder"},
+            {
+                "{\"type\":\"Sequence\",\"decoders\":[" + byteLevel + ",{\"type\":\"Fuse\"}]}",
+                "ByteLevel+Fuse"
+            },
+            {"{\"type\":\"Sequence\",\"decoders\":[]}", "an empty Sequence"}
+        };
+        for (String[] other : others) {
+            assertRefusedAs(
+                    model,
+                    "Unsupported tokenizer config at tokenizer.json:decoder: "
+                            + other[1]
+                            + " (supported: ByteLevel for a byte-level model)",
+                    "\"decoder\":" + other[0]);
+        }
+        // the bytes decoded: ByteLevel, alone in a Sequence, or no decoder stated
+        String[] bytes = {
+            byteLevel, "{\"type\":\"Sequence\",\"decoders\":[" + byteLevel + "]}", "null"
+        };
+        for (String decoder : bytes) {
+            Path file =
+                    Files.writeString(
+                            tempDir.resolve("tokenizer.json"),
+                            buildTokenizerJson(model, "\"decoder\":" + decoder));
+            Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(file);
+            assertEquals("hel", tokenizer.decode(tokenizer.encode("hel")), decoder);
+        }
+    }
+
+    @Test
+    void aValidTokenizerToknrollDoesNotImplementIsUnsupportedAMalformedOneIsNot() throws Exception {
+        // unsupported says another library may load it; a plain refusal, that the file is broken
+        String bpe = buildBpeModel(buildByteLevelVocab(Map.of("he", 256)), "[\"h e\"]", "");
+        assertUnsupported(true, "{\"type\":\"Unigram\",\"vocab\":[[\"h\",0.0]]}");
+        assertUnsupported(true, bpe, "\"decoder\":{\"type\":\"WordPiece\",\"prefix\":\"##\"}");
+        assertUnsupported(true, bpe, "\"normalizer\":{\"type\":\"Precompiled\"}");
+        // a byte-level model whose text never becomes bytes: Hugging Face drops what is not a token
+        assertUnsupported(
+                true,
+                bpe,
+                "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\" \"},"
+                        + "\"behavior\":\"Isolated\"}");
+        // a prefix space toknroll never adds
+        assertUnsupported(
+                true, bpe, "\"pre_tokenizer\":{\"type\":\"ByteLevel\",\"add_prefix_space\":true}");
+        assertUnsupported(false, bpe, "\"normalizer\":5");
+        assertUnsupported(false, buildBpeModel(buildByteLevelVocab(Map.of()), "[\"h\"]", ""));
+    }
+
+    private void assertUnsupported(boolean unsupported, String model, String... rootFields)
+            throws Exception {
+        Path file =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"), buildTokenizerJson(model, rootFields));
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(file));
+        assertEquals(
+                unsupported,
+                refused instanceof UnsupportedTokenizerException,
+                refused.getMessage());
     }
 
     @Test

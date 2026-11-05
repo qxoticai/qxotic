@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -275,7 +276,7 @@ public final class HuggingFaceTokenizerLoader {
                         "tokenizer.json:model.ignore_merges", "true", "false for SentencePiece");
             }
             refuseOtherSentencePieceStages(preTokenizerObj, spacesSpelled);
-            long[][] packed = buildPackedMergesFromJson(vocabulary, model.get("merges"));
+            long[][] packed = packMerges(mergeIds(vocabulary, model.get("merges")));
             tokenizationModel =
                     ImplAccessor.createSentencePieceBpeModel(vocabulary, packed[0], packed[1]);
             Normalizer base = normalizer == null ? Normalizer.identity() : normalizer;
@@ -288,8 +289,8 @@ public final class HuggingFaceTokenizerLoader {
                             splits ? new String[0] : entries.tokens, false);
         } else {
             splitter = parsePreTokenizer(preTokenizerObj);
-            String[] mergeSpecs = extractMerges(model.get("merges"));
-            List<MergeRule> merges = buildMerges(vocabulary, mergeSpecs);
+            requireByteLevel(preTokenizerObj, root.get("decoder"));
+            List<MergeRule> merges = mergeRules(mergeIds(vocabulary, model.get("merges")));
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
@@ -513,6 +514,9 @@ public final class HuggingFaceTokenizerLoader {
      * whole.
      */
     private static Splitter byteLevelSplitter(Map<String, Object> preTokenizer) {
+        if (Boolean.TRUE.equals(preTokenizer.get("add_prefix_space"))) { // never prepended here
+            throw unsupported("tokenizer.json:pre_tokenizer.add_prefix_space", "true", "false");
+        }
         Object useRegex = preTokenizer.get("use_regex");
         if (Boolean.FALSE.equals(useRegex)) {
             return Splitter.identity();
@@ -1043,6 +1047,43 @@ public final class HuggingFaceTokenizerLoader {
         return strips;
     }
 
+    /**
+     * A byte-level model's text becomes bytes and its ids bytes again, as Hugging Face's ByteLevel
+     * stages do: a pre-tokenizer without one drops what no token spells, another decoder reads the
+     * ids as other text, so either is refused, not ignored. ponytail: a stage not stated at all
+     * runs as bytes, where Hugging Face would skip it; no released file leaves one out.
+     */
+    private static void requireByteLevel(Object preTokenizerObj, Object decoderObj) {
+        if (preTokenizerObj != null
+                && preTokenizerObj != Json.NULL
+                && !byteLevel(preTokenizerObj)) {
+            throw unsupported(
+                    "tokenizer.json:pre_tokenizer",
+                    String.valueOf(((Map<?, ?>) preTokenizerObj).get("type")),
+                    "one with a ByteLevel stage for a byte-level model");
+        }
+        if (decoderObj == null || decoderObj == Json.NULL) return;
+        List<Map<String, Object>> steps = new ArrayList<>();
+        flattenDecoder(decoderObj, steps);
+        if (steps.size() != 1 || !"ByteLevel".equals(steps.get(0).get("type"))) {
+            StringJoiner types = new StringJoiner("+").setEmptyValue("an empty Sequence");
+            steps.forEach(step -> types.add(String.valueOf(step.get("type"))));
+            throw unsupported(
+                    "tokenizer.json:decoder", types.toString(), "ByteLevel for a byte-level model");
+        }
+    }
+
+    /** Whether a pre-tokenizer, or a step of its Sequence, is ByteLevel. */
+    private static boolean byteLevel(Object preTokenizer) {
+        if (!(preTokenizer instanceof Map<?, ?>)) return false;
+        Map<?, ?> stage = (Map<?, ?>) preTokenizer;
+        Object steps = stage.get("pretokenizers");
+        return "ByteLevel".equals(stage.get("type"))
+                || steps instanceof List<?>
+                        && ((List<?>) steps)
+                                .stream().anyMatch(HuggingFaceTokenizerLoader::byteLevel);
+    }
+
     /** The decoder's steps in order, Sequences flattened. */
     @SuppressWarnings("unchecked")
     private static void flattenDecoder(Object decoderObj, List<Map<String, Object>> steps) {
@@ -1129,13 +1170,25 @@ public final class HuggingFaceTokenizerLoader {
     static final String LAGUNA_SPLIT_REGEX = "(?:\\r?\\n)+(?!\\r?\\n)";
 
     @SuppressWarnings("unchecked")
+    private static final List<String> SPLIT_BEHAVIORS =
+            List.of("Removed", "Isolated", "MergedWithPrevious", "MergedWithNext");
+
     private static Splitter parseSplitPreTokenizer(Map<String, Object> preTokenizer) {
         Object patternObj = preTokenizer.get("pattern");
         if (!(patternObj instanceof Map<?, ?>)) {
             throw new IllegalArgumentException(
                     "tokenizer.json:pre_tokenizer.pattern must be an object");
         }
-        String behavior = (String) preTokenizer.getOrDefault("behavior", "Removed");
+        String behavior =
+                asString(
+                        preTokenizer.getOrDefault("behavior", "Removed"),
+                        "tokenizer.json:pre_tokenizer.behavior");
+        if (!SPLIT_BEHAVIORS.contains(behavior)) { // at load, not at the first encode
+            throw unsupported(
+                    "tokenizer.json:pre_tokenizer.behavior",
+                    behavior,
+                    String.join("/", SPLIT_BEHAVIORS));
+        }
         boolean invert = Boolean.TRUE.equals(preTokenizer.get("invert"));
         Map<String, Object> patternMap = (Map<String, Object>) patternObj;
 
@@ -1258,10 +1311,7 @@ public final class HuggingFaceTokenizerLoader {
                 mergeWithNext(all, invert, out);
                 break;
             default:
-                throw unsupported(
-                        "tokenizer.json:pre_tokenizer.behavior",
-                        behavior,
-                        "Removed/Isolated/MergedWithPrevious/MergedWithNext");
+                throw new AssertionError(behavior); // SPLIT_BEHAVIORS, checked at load
         }
         return out; // empty when Removed takes it all, as in Hugging Face
     }
@@ -1305,98 +1355,80 @@ public final class HuggingFaceTokenizerLoader {
         return invert ? !span.match() : span.match();
     }
 
-    private static String[] extractMerges(Object mergesObj) {
+    /**
+     * {@code model.merges} as Hugging Face reads it: each a {@code "left right"} string or a {@code
+     * ["left", "right"]} pair, joining two vocabulary tokens into a third. Anything else is
+     * refused, as Hugging Face refuses it, never skipped. Returns the {left, right, merged} ids of
+     * each merge, flat, in rank order.
+     */
+    private static int[] mergeIds(Vocabulary vocabulary, Object mergesObj) {
         if (!(mergesObj instanceof List<?>)) {
-            return new String[0];
+            throw new IllegalArgumentException("tokenizer.json:model.merges must be a list");
         }
-        List<String> merges = new ArrayList<>();
-        for (Object item : (List<?>) mergesObj) {
-            if (item instanceof String) {
-                merges.add((String) item);
-                continue;
-            }
-            if (item instanceof List<?>) {
-                List<?> pair = (List<?>) item;
+        List<?> merges = (List<?>) mergesObj;
+        int[] ids = new int[3 * merges.size()];
+        int rank = 0;
+        for (Object merge : merges) {
+            String left = null;
+            String right = null;
+            if (merge instanceof String) {
+                String spec = (String) merge;
+                int space = spec.indexOf(' ');
+                if (space >= 0 && space == spec.lastIndexOf(' ')) {
+                    left = spec.substring(0, space);
+                    right = spec.substring(space + 1);
+                }
+            } else if (merge instanceof List<?>) {
+                List<?> pair = (List<?>) merge;
                 if (pair.size() == 2
                         && pair.get(0) instanceof String
                         && pair.get(1) instanceof String) {
-                    merges.add(pair.get(0) + " " + pair.get(1));
+                    left = (String) pair.get(0);
+                    right = (String) pair.get(1);
                 }
             }
-        }
-        return merges.toArray(new String[0]);
-    }
-
-    private static List<MergeRule> buildMerges(Vocabulary vocabulary, String[] mergeSpecs) {
-        List<MergeRule> merges = new ArrayList<>(mergeSpecs.length);
-        for (int rank = 0; rank < mergeSpecs.length; rank++) {
-            int space = mergeSpecs[rank].indexOf(' ');
-            if (space < 0) {
-                continue;
+            if (left == null) {
+                throw new IllegalArgumentException(
+                        mergeAt(rank)
+                                + " is "
+                                + (merge instanceof String ? "'" + merge + "'" : merge)
+                                + ", not \"left right\" or [\"left\", \"right\"]");
             }
-            String left = mergeSpecs[rank].substring(0, space);
-            String right = mergeSpecs[rank].substring(space + 1);
-            int leftId = ImplAccessor.getIdOrNegative(vocabulary, left);
-            int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
-            int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
-            if (leftId >= 0 && rightId >= 0 && mergedId >= 0) {
-                merges.add(MergeRule.of(leftId, rightId, rank));
-            }
-        }
-        return merges;
-    }
-
-    private static long[][] buildPackedMergesFromJson(Vocabulary vocabulary, Object mergesObj) {
-        if (!(mergesObj instanceof List<?>)) {
-            return new long[][] {new long[0], new long[0]};
-        }
-        List<?> merges = (List<?>) mergesObj;
-        long[] keys = new long[merges.size()];
-        long[] values = new long[merges.size()];
-        int size = 0;
-        int rank = 0;
-        for (Object item : merges) {
-            String left, right;
-            if (item instanceof String) {
-                String spec = (String) item;
-                int space = spec.indexOf(' ');
-                if (space < 0) {
-                    continue;
-                }
-                left = spec.substring(0, space);
-                right = spec.substring(space + 1);
-            } else if (item instanceof List<?>) {
-                List<?> pair = (List<?>) item;
-                if (pair.size() != 2
-                        || !(pair.get(0) instanceof String)
-                        || !(pair.get(1) instanceof String)) {
-                    continue;
-                }
-                left = (String) pair.get(0);
-                right = (String) pair.get(1);
-            } else {
-                continue;
-            }
-            int leftId = ImplAccessor.getIdOrNegative(vocabulary, left);
-            int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
-            if (leftId < 0 || rightId < 0) {
-                continue;
-            }
-            int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
-            if (mergedId < 0) {
-                continue;
-            }
-            keys[size] = ImplAccessor.pairKey(leftId, rightId);
-            values[size] = ImplAccessor.packMerge(rank, mergedId);
-            size++;
+            ids[3 * rank] = mergeToken(vocabulary, left, rank);
+            ids[3 * rank + 1] = mergeToken(vocabulary, right, rank);
+            ids[3 * rank + 2] = mergeToken(vocabulary, left + right, rank);
             rank++;
         }
-        if (size == 0) {
-            return new long[][] {new long[0], new long[0]};
+        return ids;
+    }
+
+    private static int mergeToken(Vocabulary vocabulary, String token, int rank) {
+        int id = ImplAccessor.getIdOrNegative(vocabulary, token);
+        if (id < 0) {
+            throw new IllegalArgumentException(
+                    mergeAt(rank) + " names '" + token + "', which is not in the vocabulary");
         }
-        if (size < merges.size()) {
-            keys = Arrays.copyOf(keys, size);
-            values = Arrays.copyOf(values, size);
+        return id;
+    }
+
+    private static String mergeAt(int rank) {
+        return "tokenizer.json:model.merges[" + rank + "]";
+    }
+
+    private static List<MergeRule> mergeRules(int[] ids) {
+        List<MergeRule> rules = new ArrayList<>(ids.length / 3);
+        for (int rank = 0; rank < ids.length / 3; rank++) {
+            rules.add(MergeRule.of(ids[3 * rank], ids[3 * rank + 1], rank));
+        }
+        return rules;
+    }
+
+    private static long[][] packMerges(int[] ids) {
+        long[] keys = new long[ids.length / 3];
+        long[] values = new long[ids.length / 3];
+        for (int rank = 0; rank < keys.length; rank++) {
+            keys[rank] = ImplAccessor.pairKey(ids[3 * rank], ids[3 * rank + 1]);
+            values[rank] = ImplAccessor.packMerge(rank, ids[3 * rank + 2]);
         }
         return new long[][] {keys, values};
     }

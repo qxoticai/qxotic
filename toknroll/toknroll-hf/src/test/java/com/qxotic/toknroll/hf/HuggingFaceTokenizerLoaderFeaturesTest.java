@@ -14,6 +14,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import com.qxotic.toknroll.Vocabulary;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +27,18 @@ import org.junit.jupiter.api.io.TempDir;
 class HuggingFaceTokenizerLoaderFeaturesTest {
 
     @TempDir Path tempDir;
+
+    /** A ByteLevel stage that maps bytes without splitting, as Llama 3's follows its Split. */
+    private static final String BYTE_LEVEL_STAGE =
+            "{\"type\":\"ByteLevel\",\"add_prefix_space\":false,\"use_regex\":false}";
+
+    private static String byteLevelAfter(String split) {
+        return "\"pre_tokenizer\":{\"type\":\"Sequence\",\"pretokenizers\":["
+                + split
+                + ","
+                + BYTE_LEVEL_STAGE
+                + "]}";
+    }
 
     @Test
     void byteLevelPreTokenizerAloneSplitsWithTheGpt2Regex() throws Exception {
@@ -247,7 +260,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                                         buildByteLevelVocab(Map.of("a,b", 300)),
                                         "[]",
                                         ",\"ignore_merges\":true"),
-                                "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Isolated\"}"));
+                                byteLevelAfter(
+                                        "{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Isolated\"}")));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {97, 44, 98}, tokenizer.encode("a,b").toArray());
@@ -259,7 +273,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                 writeTokenizerJson(
                         buildTokenizerJson(
                                 buildBpeModel(buildByteLevelVocab(Map.of()), "[]", ""),
-                                "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Removed\"}"));
+                                byteLevelAfter(
+                                        "{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Removed\"}")));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {97, 98}, tokenizer.encode("a,b").toArray());
@@ -274,7 +289,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                                         buildByteLevelVocab(Map.of("a,", 301)),
                                         "[]",
                                         ",\"ignore_merges\":true"),
-                                "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"MergedWithPrevious\"}"));
+                                byteLevelAfter(
+                                        "{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"MergedWithPrevious\"}")));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {301, 98}, tokenizer.encode("a,b").toArray());
@@ -289,7 +305,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                                         buildByteLevelVocab(Map.of(",b", 302)),
                                         "[]",
                                         ",\"ignore_merges\":true"),
-                                "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"MergedWithNext\"}"));
+                                byteLevelAfter(
+                                        "{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"MergedWithNext\"}")));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {97, 302}, tokenizer.encode("a,b").toArray());
@@ -304,7 +321,8 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                                         buildByteLevelVocab(Map.of("ab", 256, "cd", 257)),
                                         "[]",
                                         ",\"ignore_merges\":true"),
-                                "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"Regex\":\"[a-z]+\"},\"behavior\":\"Removed\",\"invert\":true}"));
+                                byteLevelAfter(
+                                        "{\"type\":\"Split\",\"pattern\":{\"Regex\":\"[a-z]+\"},\"behavior\":\"Removed\",\"invert\":true}")));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {256, 257}, tokenizer.encode("ab,cd").toArray());
@@ -317,8 +335,10 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                         buildTokenizerJson(
                                 buildBpeModel(buildByteLevelVocab(Map.of()), "[]", ""),
                                 "\"pre_tokenizer\":{\"type\":\"Sequence\",\"pretokenizers\":["
-                                    + "{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Isolated\"},{\"type\":\"Split\",\"pattern\":{\"String\":\":\"},\"behavior\":\"Isolated\"}]"
-                                    + " }"));
+                                    + "{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Isolated\"},{\"type\":\"Split\",\"pattern\":{\"String\":\":\"},\"behavior\":\"Isolated\"},"
+                                        + BYTE_LEVEL_STAGE
+                                        + "]"
+                                        + " }"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(
@@ -488,10 +508,12 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                                 buildBpeModel(buildByteLevelVocab(Map.of()), "[]", ""),
                                 "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Contiguous\"}"));
 
-        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
-        IllegalArgumentException error =
-                assertThrows(IllegalArgumentException.class, () -> tokenizer.encode("a,b"));
-        assertTrue(error.getMessage().contains("pre_tokenizer.behavior"));
+        // at load, not at the first encode
+        UnsupportedTokenizerException error =
+                assertThrows(
+                        UnsupportedTokenizerException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
+        assertTrue(error.getMessage().contains("pre_tokenizer.behavior: Contiguous"));
     }
 
     @Test
