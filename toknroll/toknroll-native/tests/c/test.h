@@ -12,6 +12,7 @@
 #elif !defined(_POSIX_C_SOURCE)
 #  define _POSIX_C_SOURCE 200809L     /* setenv, fork, alarm: before any system header */
 #endif
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -19,6 +20,7 @@
 #include <string.h>
 #ifdef _WIN32
 #  include <direct.h>
+#  include <io.h>
 #  include <process.h>
 #  include <windows.h>
 #  define NL "\r\n"                   /* the end of a line the library writes: Java's line separator */
@@ -93,12 +95,35 @@ static void capture_stderr(void) {
     if (!freopen(TMP("stderr.txt"), "wb", stderr)) { printf("    cannot capture stderr\n"); exit(2); }
 }
 
+/* a captured file's text, the caller frees */
+static char* captured(const char* path) {
+    FILE* f = fopen(path, "rb");
+    char* text = (char*) calloc(1, 1 << 20);
+    if (f) { (void) !fread(text, 1, (1 << 20) - 1, f); fclose(f); }   /* ponytail: a MiB of output is plenty */
+    return text;
+}
+
 static char* captured_stderr(void) {
     fflush(stderr);
-    FILE* f = fopen(TMP("stderr.txt"), "rb");
-    char* text = (char*) calloc(1, 1 << 20);
-    if (f) { (void) !fread(text, 1, (1 << 20) - 1, f); fclose(f); }   /* ponytail: a MiB of stderr is plenty */
-    return text;
+    return captured(TMP("stderr.txt"));
+}
+
+/* stdout into a file at its descriptor, the runtime's native writes included; captured_stdout gives the
+ * descriptor back, for the checks' own lines, and reads the file */
+static int stdout_kept = -1;
+static inline void capture_stdout(void) {
+    fflush(stdout);
+    int file = open(TMP("stdout.txt"), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    stdout_kept = dup(1);
+    dup2(file, 1);
+    close(file);
+}
+
+static inline char* captured_stdout(void) {
+    fflush(stdout);
+    dup2(stdout_kept, 1);
+    close(stdout_kept);
+    return captured(TMP("stdout.txt"));
 }
 
 /* ---- threads ---- */

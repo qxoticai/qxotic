@@ -295,6 +295,25 @@ static void warn_once(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* the header's promise: beyond its log lines, which go to stderr, the library writes nothing to stdout */
+static void writes_nothing_to_stdout(void) {
+    capture_stdout();
+    warn_once();   /* a warning, logged to stderr */
+    toknroll_tokenizer* t = tiny();
+    int32_t ids[8], offsets[2];
+    const int64_t at[] = {0, 5};
+    char out[16];
+    toknroll_encode(t, "hello", 5, 0, ids, 8);
+    toknroll_decode(t, ids, 4, 0, out, sizeof out, NULL);
+    toknroll_encode_batch(t, "hello", at, 1, 0, ids, 8, offsets);
+    toknroll_encode(t, "x", 1, 2, ids, 8);   /* refused */
+    toknroll_tokenizer_free(t);
+    toknroll_tokenizer_free(toknroll_tokenizer_load("./" TMP("missing.json")));
+    char* written = captured_stdout();
+    CHECK_STR(written, "");
+    free(written);
+}
+
 static void log_set_once(void) {
     CHECK_EQ(toknroll_log_set(keep_line, &seen), TOKNROLL_OK);
     CHECK_CLEAR(LE);
@@ -1801,6 +1820,7 @@ static const scenario scenarios[] = {
     {"options_environment_rejected", options_environment_rejected, OPTIONS_VAR "= -XX:+NoSuchOptionAnywhere "},
     {"options_rejected_either_way", options_rejected_either_way, OPTIONS_VAR "=-XX:+NoSuchOptionAnywhere"},
     {"log_set_once", log_set_once, NULL},
+    {"writes_nothing_to_stdout", writes_nothing_to_stdout, NULL},
     {"log_set_after_a_call", log_set_after_a_call, NULL},
     {"log_set_after_configure", log_set_after_configure, NULL},
     {"log_to_stderr_by_default", log_to_stderr_by_default, NULL},
