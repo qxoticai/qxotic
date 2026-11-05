@@ -332,13 +332,13 @@ public final class Native {
             if (text.isNull() && length > 0) throw Errors.invalid("text is NULL");
             if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
             if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
+            Specials matcher = specials(flags) ? loaded.specials() : null;
             int n = (int) length;
             Buffers buffers = BUFFERS.get();
             byte[] utf8 = buffers.text(n);
             copy(text.rawValue(), utf8, n);
             IntSequence.Builder ids = buffers.ids();
             ids.ensureCapacity(estimate(n)); // a long text's ids in one array, not grown into
-            Specials matcher = specials(flags) ? loaded.specials() : null;
             encodeUtf8(loaded.tokenizer(), matcher, utf8, 0, n, ids);
             int count = ids.size();
             write(buffers.view, 0, out.rawValue(), Math.min(count, tokenCapacity));
