@@ -34,7 +34,7 @@ echo 'Hello, World!' | jbang toknroll@qxoticai --count --source Qwen/Qwen3.6-35B
 
 ## Or from C and Python
 
-`libtoknroll` is Tok'n'Roll as a shared library with a C API, [`toknroll.h`](toknroll-native/include/toknroll.h): twelve functions, the same sources, built with GraalVM Native Image.
+`libtoknroll` is Tok'n'Roll as a shared library with a C API, [`toknroll.h`](toknroll-native/include/toknroll.h): thirteen functions, the same sources, built with GraalVM Native Image.
 The `toknroll` Python package binds it, with no Python ML stack behind it.
 
 ```python
@@ -62,7 +62,7 @@ See [toknroll-native](toknroll-native/).
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>    <!-- tokenizer.json loading (HF / ModelScope) -->
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
