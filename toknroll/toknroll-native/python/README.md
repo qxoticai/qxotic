@@ -36,6 +36,8 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")` or `.../LFM2.5-350M-Q8_0.gguf`: the header only, never the weights |
 | a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file a path names |
 
+`decode(encode(text))` is the text after the model's own normalization, NFC where its `tokenizer.json` says so, spaces through `▁` in a SentencePiece model, exactly as the reference tokenizer does; `decode_bytes` gives the bytes.
+A token's spelling is its source's: `▁<` from a `tokenizer.json` as HF spells it, ` <` from a GGUF as llama.cpp does, the same ids and text either way.
 A hub source is `[host/]owner/repo[@rev][/path][:quant]`: a bare word is a local path, never a repository, and `@rev` comes before the file path, `owner/repo@main/model-Q8_0.gguf`.
 BPE tokenizers only, the families the [main README](../../README.md) lists and others built from the same components: a `tokenizer.json` that uses a component outside that set is refused at load, as `Unsupported` naming the field, never loaded approximately.
 A `Tokenizer` never changes, so it may be shared between threads; `encode` releases the GIL.
