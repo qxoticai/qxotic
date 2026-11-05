@@ -37,6 +37,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 
 A `Tokenizer` never changes, so it may be shared between threads; `encode` releases the GIL.
 Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`); each has `.code`.
+An id outside int32 is an `OverflowError` and a non-int a `TypeError`, as in HF `tokenizers` and tiktoken.
 Remote metadata is fetched with `curl`, which must be on the PATH for hub sources only.
 It is cached in the platform cache directory, or where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says.
 The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.

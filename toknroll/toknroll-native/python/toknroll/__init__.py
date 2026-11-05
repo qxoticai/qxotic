@@ -23,6 +23,7 @@ int32 buffer the same way, so `decode(encode(text))` copies nothing in either di
 from __future__ import annotations
 
 import ctypes as C
+import operator
 import os
 import threading
 from array import array
@@ -92,9 +93,11 @@ def _text(value: object, what: str) -> bytes:
     return value.encode()
 
 
-def _int(value: object, what: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise TypeError(f"{what}: expected int, got {type(value).__name__}")
+def _id(value: object, what: str) -> int:
+    """A token id as the C API takes it: any `__index__` int in range(2**31), else OverflowError, as HF and tiktoken raise."""
+    value = operator.index(value)  # a float or a str is Python's own TypeError
+    if not 0 <= value < 2**31:
+        raise OverflowError(f"{what}: id {value} not in range(2**31)")
     return value
 
 
@@ -106,7 +109,7 @@ def _ids(value, what: str) -> tuple[object, int, int]:
         ids = array("i")
         try:
             ids.fromlist(value)
-        except (TypeError, OverflowError):
+        except TypeError:
             raise TypeError(f"{what}: expected int32 ids") from None
         return ids, ids.buffer_info()[0], len(ids)
     try:
@@ -122,7 +125,7 @@ def _ids(value, what: str) -> tuple[object, int, int]:
         value = view.tolist()
     try:
         ids = array("i", value)
-    except (TypeError, OverflowError):
+    except TypeError:
         raise TypeError(f"{what}: expected int32 ids") from None
     return ids, ids.buffer_info()[0], len(ids)
 
@@ -241,7 +244,7 @@ class Tokenizer:
 
     def token(self, id: int) -> str | None:
         """The spelling of an id; None when the vocabulary has no such id."""
-        lib, handle, id = self._lib, self._handle, _int(id, "token")
+        lib, handle, id = self._lib, self._handle, _id(id, "token")
         try:  # spellings are short: one pass almost always
             return str(_filled(lambda out, capacity: _check(lib, lib.toknroll_token(handle, id, out, capacity)), 64), "utf-8")
         except NotFound:
@@ -249,7 +252,7 @@ class Tokenizer:
 
     def token_flags(self, id: int) -> TokenFlags | None:
         """An id's `TokenFlags`; None when the vocabulary has no such id."""
-        rc = self._lib.toknroll_token_flags(self._handle, _int(id, "token_flags"))
+        rc = self._lib.toknroll_token_flags(self._handle, _id(id, "token_flags"))
         return None if rc == N.ENOTFOUND else TokenFlags(_check(self._lib, rc))
 
     def id(self, token: str) -> int | None:

@@ -216,10 +216,16 @@ class VocabularyTest(unittest.TestCase):
             self.assertEqual(self.t.id(spelling), i, f"id {i} spelled {spelling!r}")
 
     def test_absent(self):
-        for i in (n := self.t.vocabulary_size, n + 1, 10**9, -1, -(10**9)):
+        for i in (n := self.t.vocabulary_size, n + 1, 10**9, 2**31 - 1):
             with self.subTest(id=i):
                 self.assertIsNone(self.t.token(i))
                 self.assertIsNone(self.t.token_flags(i))
+        for i in (-1, -(10**9), 2**31, 2**32, 2**64):  # not an id at all: OverflowError, as HF and tiktoken raise
+            with self.subTest(id=i):
+                with self.assertRaises(OverflowError):
+                    self.t.token(i)
+                with self.assertRaises(OverflowError):
+                    self.t.token_flags(i)
         self.assertIsNone(self.t.id("surely not a token"))
         self.assertIsNone(self.t.id(""))
 
@@ -241,7 +247,7 @@ class VocabularyTest(unittest.TestCase):
             self.assertEqual(flag.value, 1 << shift, flag.name)
 
     def test_lookups_reject_wrong_types(self):
-        for bad in ("x", 1.5, None, True):
+        for bad in ("x", 1.5, None):
             with self.subTest(bad=bad):
                 with self.assertRaises(TypeError):
                     self.t.token(bad)
@@ -249,6 +255,9 @@ class VocabularyTest(unittest.TestCase):
                     self.t.token_flags(bad)
         with self.assertRaises(TypeError):
             self.t.id(5)
+        self.assertEqual(self.t.token(True), self.t.token(1))  # any __index__ int is an id, as everywhere in Python
+        if numpy:
+            self.assertEqual(self.t.token(numpy.int32(1)), self.t.token(1))
 
     def test_a_long_spelling_round_trips(self):
         longest = max((self.t.token(i) for i in range(0, self.t.vocabulary_size, 97)), key=len)

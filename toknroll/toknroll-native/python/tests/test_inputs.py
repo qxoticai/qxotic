@@ -70,7 +70,7 @@ class IdBufferTest(unittest.TestCase):
         self.assertEqual(self.t.decode(numpy.array([], dtype=numpy.int32)), "")
 
     def test_rejected_ids(self):
-        for bad, kind in (([1.5], TypeError), (["a"], TypeError), ([2**40], TypeError), ([None], TypeError),
+        for bad, kind in (([1.5], TypeError), (["a"], TypeError), ([2**40], OverflowError), ([None], TypeError),
                           ("string", TypeError), (5, TypeError), ([-1], toknroll.InvalidArgument),
                           ([10**9], toknroll.InvalidArgument), ([self.t.vocabulary_size], toknroll.InvalidArgument)):
             with self.subTest(bad=bad), self.assertRaises(kind) as e:
