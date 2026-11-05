@@ -175,6 +175,27 @@ static void options_take_effect(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* configure's options are UTF-8: on Windows passed on in the ANSI code page, the one the runtime reads */
+static void options_utf8(void) {
+    const char* alias[] = {"-Dtoknroll.gguf.pre.caf\xC3\xA9=alias:gpt2"};
+    CHECK_EQ(toknroll_configure(alias, 1), TOKNROLL_OK);
+    const char* path = TMP("cafe.gguf");
+    write_tiny_gguf(path, "caf\xC3\xA9");
+    toknroll_tokenizer* t = toknroll_tokenizer_load(path);
+    CHECK_STR(t ? "" : LE(NULL), "");
+    toknroll_tokenizer_free(t);
+}
+
+/* OPTIONS_VAR set as UTF-8 text: a pre-tokenizer named "caf\xC3\xA9" (cafe, e acute), aliased only by it,
+ * loads, the variable read as the runtime reads its options (on Windows, the ANSI code page) */
+static void options_from_the_environment_utf8(void) {
+    const char* path = TMP("cafe.gguf");
+    write_tiny_gguf(path, "caf\xC3\xA9");
+    toknroll_tokenizer* t = toknroll_tokenizer_load(path);
+    CHECK_STR(t ? "" : LE(NULL), "");
+    toknroll_tokenizer_free(t);
+}
+
 static void options_from_the_environment(void) {   /* OPTIONS_VAR alone */
     toknroll_tokenizer* t = toknroll_tokenizer_load(custom_gguf());
     CHECK(t != NULL);
@@ -1631,6 +1652,9 @@ static const scenario scenarios[] = {
     {"options_unknown_pre", options_unknown_pre, NULL},
     {"options_take_effect", options_take_effect, NULL},
     {"options_from_the_environment", options_from_the_environment, OPTIONS_VAR "=" ALIAS_CTEST},
+    {"options_utf8", options_utf8, NULL},
+    {"options_from_the_environment_utf8", options_from_the_environment_utf8,
+     OPTIONS_VAR "=-Dtoknroll.gguf.pre.caf\xC3\xA9=alias:gpt2"},
     {"options_environment_wins", options_environment_wins, OPTIONS_VAR "=-Dtoknroll.gguf.pre.ctest-pre=alias:no-such-scheme"},
     {"options_environment_rejected", options_environment_rejected, OPTIONS_VAR "= -XX:+NoSuchOptionAnywhere "},
     {"options_rejected_either_way", options_rejected_either_way, OPTIONS_VAR "=-XX:+NoSuchOptionAnywhere"},

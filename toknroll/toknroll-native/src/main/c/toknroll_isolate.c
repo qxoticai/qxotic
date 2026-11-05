@@ -220,21 +220,55 @@ static void pin(void) {
 #endif
 }
 
+#ifdef _WIN32
+/* wide in the ANSI code page, the one the runtime reads its command line in on Windows; NULL when the page
+ * lacks a character (passed on, the string would be another), or out of memory */
+static char* ansi(const wchar_t* wide) {
+    UINT page = GetACP();
+    int exact = page != CP_UTF8;   /* a UTF-8 page lacks nothing, and the call refuses the check for it */
+    BOOL lost = FALSE;
+    DWORD flags = exact ? WC_NO_BEST_FIT_CHARS : 0;
+    int size = WideCharToMultiByte(page, flags, wide, -1, NULL, 0, NULL, exact ? &lost : NULL);
+    char* s = size > 0 && !lost ? malloc((size_t) size) : NULL;
+    if (s) WideCharToMultiByte(page, flags, wide, -1, s, size, NULL, NULL);
+    return s;
+}
+#endif
+
+/* a UTF-8 option, copied as the runtime reads it; on Windows NULL as ansi's, or when it is not UTF-8 */
+static char* option_copy(const char* utf8) {
+#ifdef _WIN32
+    int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, NULL, 0);
+    wchar_t* wide = size > 0 ? malloc((size_t) size * sizeof *wide) : NULL;
+    if (!wide) return NULL;
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, wide, size);
+    char* s = ansi(wide);
+    free(wide);
+    return s;
+#else
+    return port_strdup(utf8);
+#endif
+}
+
 #ifdef TOKNROLL_SELF_PROPERTY
 /* The path of the file this code was loaded from, the shared library or the program it is linked into,
- * found from the address of anything in it. */
-static const char* self_path(void) {
+ * found from the address of anything in it, as the runtime reads it: a copy, NULL when there is none. */
+static char* self_path(void) {
 #ifdef _WIN32
-    static char path[4096 * 3];   /* UTF-8, the encoding the runtime reads its options in; a path is wide on Windows */
     wchar_t wide[4096];
     HMODULE module;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             (LPCSTR) &isolate, &module)) return NULL;
-    if (!GetModuleFileNameW(module, wide, (DWORD) (sizeof wide / sizeof *wide))) return NULL;
-    return WideCharToMultiByte(CP_UTF8, 0, wide, -1, path, (int) sizeof path, NULL, NULL) ? path : NULL;
+    DWORD length = GetModuleFileNameW(module, wide, (DWORD) (sizeof wide / sizeof *wide));
+    if (length == 0 || length == sizeof wide / sizeof *wide) return NULL;   /* none, or cut short */
+    char* path = ansi(wide);
+    if (path) return path;
+    wchar_t brief[4096];   /* the page lacks one of its characters (a Chinese folder on a Latin system): 8.3, ASCII */
+    length = GetShortPathNameW(wide, brief, (DWORD) (sizeof brief / sizeof *brief));
+    return length && length < sizeof brief / sizeof *brief ? ansi(brief) : NULL;
 #else
     Dl_info self;
-    return dladdr((const void*) &isolate, &self) ? self.dli_fname : NULL;
+    return dladdr((const void*) &isolate, &self) ? port_strdup(self.dli_fname) : NULL;
 #endif
 }
 #endif
@@ -264,7 +298,7 @@ static void start(void) {
      * environment, which wins: later wins as on a command line; last -Dtoknroll.program, which nothing
      * overrides. Split on whitespace; a value with a space in it goes through configure. ponytail: no quoting */
     static const char blanks[] = " \t\r\n";
-    const char* e = getenv(STR(TOKNROLL_OPTIONS_ENV));
+    const char* e = getenv(STR(TOKNROLL_OPTIONS_ENV));   /* as the runtime reads it: on Windows, the ANSI code page */
     char* env = port_strdup(e ? e : "");   /* argv points into it */
     if (!env) { out_of_memory(); return; }
     size_t tokens = 0;
@@ -279,13 +313,14 @@ static void start(void) {
     argv[argc++] = program;
     for (int i = 0; i < option_count; i++) argv[argc++] = options[i];
 #ifdef TOKNROLL_SELF_PROPERTY
-    const char* path = self_path();
+    char* path = self_path();
     if (path) {
         static const char prefix[] = "-D" STR(TOKNROLL_SELF_PROPERTY) "=";
         size_t size = sizeof prefix + strlen(path);
         self = malloc(size);
+        if (self) snprintf(self, size, "%s%s", prefix, path);
+        free(path);
         if (!self) { free(argv); free(env); out_of_memory(); return; }
-        snprintf(self, size, "%s%s", prefix, path);
         argv[argc++] = self;
     }
 #endif
@@ -467,12 +502,16 @@ int32_t toknroll__configure(const char* const* given, int32_t count, const char*
     char** copy = count ? calloc((size_t) count, sizeof *copy) : NULL;
     if (count && !copy) return early(TOKNROLL_ERROR, "%s: out of memory", who);
     for (int32_t i = 0; i < count; i++) {
-        copy[i] = port_strdup(given[i]);
-        if (!copy[i]) {
-            while (i--) free(copy[i]);
-            free(copy);
-            return early(TOKNROLL_ERROR, "%s: out of memory", who);
-        }
+        copy[i] = option_copy(given[i]);
+        if (copy[i]) continue;
+        for (int32_t j = 0; j < i; j++) free(copy[j]);
+        free(copy);
+#ifdef _WIN32   /* ponytail: out of memory reads as this too */
+        return early(TOKNROLL_EINVAL, "%s: options[%d] is not UTF-8, or has a character the ANSI code page lacks,"
+                                      " which the runtime reads its options in", who, (int) i);
+#else
+        return early(TOKNROLL_ERROR, "%s: out of memory", who);
+#endif
     }
     options = copy;
     option_count = count;

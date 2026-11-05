@@ -115,12 +115,14 @@ TOKNROLL_API const char* toknroll_last_error(int32_t* code);
 TOKNROLL_API int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data);
 /* Runtime options, as on a java command line: "-Dtoknroll.gguf.pre.my-model=alias:qwen2" registers a
  * pre-tokenizer, "-Dtoknroll.cache.root=/srv/cache" moves the hub cache, "-XX:MaxHeapSize=512m" caps
- * the heap, "-XX:ActiveProcessorCount=4" the cores a batch and the collector run on. Once, before any
- * other call into the library; a later call is TOKNROLL_EINVAL. An option the runtime rejects fails
- * this call, TOKNROLL_ERROR, the runtime naming it on stderr (an unknown -XX: option is rejected, an
- * unknown -X one is ignored). TOKNROLL_OPTIONS in the environment, the same options separated by
- * whitespace, is read when the runtime starts and applied after these, so it overrides them: the
- * program sets its options, whoever runs it has the last word. */
+ * the heap, "-XX:ActiveProcessorCount=4" the cores a batch and the collector run on. An option is
+ * UTF-8; on Windows the runtime reads its options in the ANSI code page, so one with a character that
+ * page lacks is TOKNROLL_EINVAL. Once, before any other call into the library; a later call is
+ * TOKNROLL_EINVAL. An option the runtime rejects fails this call, TOKNROLL_ERROR, the runtime naming
+ * it on stderr (an unknown -XX: option is rejected, an unknown -X one is ignored). TOKNROLL_OPTIONS in
+ * the environment, the same options separated by whitespace, is read when the runtime starts and
+ * applied after these, so it overrides them: the program sets its options, whoever runs it has the
+ * last word. */
 TOKNROLL_API int32_t toknroll_configure(const char* const* options, int32_t count);
 
 /* A tokenizer from a path or a hub reference: Sources, above. */

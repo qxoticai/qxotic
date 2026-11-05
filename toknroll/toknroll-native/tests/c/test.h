@@ -129,9 +129,12 @@ typedef struct {
     const char* env;   /* "NAME=value" set before it runs, or NULL */
 } scenario;
 
-static void env_set(const char* name, const char* value) {   /* NULL removes it */
+static void env_set(const char* name, const char* value) {   /* NULL removes it; value is UTF-8 */
 #ifdef _WIN32
-    _putenv_s(name, value ? value : "");
+    wchar_t wname[64], wvalue[1024];   /* set wide, so a non-ASCII value is not the ANSI code page's */
+    if (!MultiByteToWideChar(CP_UTF8, 0, name, -1, wname, 64)) wname[0] = 0;
+    if (!MultiByteToWideChar(CP_UTF8, 0, value ? value : "", -1, wvalue, 1024)) wvalue[0] = 0;
+    _wputenv_s(wname, wvalue);
 #else
     if (value) setenv(name, value, 1); else unsetenv(name);
 #endif
