@@ -339,7 +339,8 @@ static void log_to_stderr_by_default(void) {
     warn_once();
     char* err = captured_stderr();
     CHECK_HAS(err, PROGRAM ": warn: com.qxotic.toknroll.gguf.GGUFTokenizerLoader: " REPLACED);
-    CHECK(err && strstr(err, NL) == err + strlen(err) - strlen(NL));   /* one line, ended */
+    const char* end = err ? strstr(err, NL) : NULL;
+    CHECK(end && !end[strlen(NL)]);   /* one line, ended: its first line end is its last character */
     free(err);
 }
 
@@ -1058,21 +1059,21 @@ static void batch(void) {
 
 static void batch_matches_encode(void) {   /* many texts, every core: each text's ids as encode makes them */
     toknroll_tokenizer* t = tiny();
-    enum { COUNT = 3000 };
-    char* texts = (char*) malloc(COUNT * 64);
-    int64_t* at = (int64_t*) malloc((COUNT + 1) * sizeof *at);
+    enum { TEXTS = 3000 };
+    char* texts = (char*) malloc(TEXTS * 64);
+    int64_t* at = (int64_t*) malloc((TEXTS + 1) * sizeof *at);
     at[0] = 0;
-    for (int i = 0; i < COUNT; i++) {
+    for (int i = 0; i < TEXTS; i++) {
         int n = snprintf(texts + at[i], 64, "%s %d <|end|>%.*s", i % 3 ? "hello" : "h\xC3\xA9", i, i % 17, "abcdefghijklmnopq");
         at[i + 1] = at[i] + n;
     }
-    int32_t* offsets = (int32_t*) malloc((COUNT + 1) * sizeof *offsets);
-    int32_t total = toknroll_encode_batch(t, texts, at, COUNT, TOKNROLL_SPECIALS, NULL, 0, offsets);
+    int32_t* offsets = (int32_t*) malloc((TEXTS + 1) * sizeof *offsets);
+    int32_t total = toknroll_encode_batch(t, texts, at, TEXTS, TOKNROLL_SPECIALS, NULL, 0, offsets);
     CHECK(total > 0);
     int32_t* out = (int32_t*) malloc((size_t) total * sizeof *out);
-    CHECK_EQ(toknroll_encode_batch(t, texts, at, COUNT, TOKNROLL_SPECIALS, out, total, offsets), total);
+    CHECK_EQ(toknroll_encode_batch(t, texts, at, TEXTS, TOKNROLL_SPECIALS, out, total, offsets), total);
     int wrong = 0;
-    for (int i = 0; i < COUNT; i++) {
+    for (int i = 0; i < TEXTS; i++) {
         int32_t ids[128];
         int32_t n = toknroll_encode(t, texts + at[i], (size_t) (at[i + 1] - at[i]), TOKNROLL_SPECIALS, ids, 128);
         if (n != offsets[i + 1] - offsets[i] || !same_ids(ids, out + offsets[i], n)) wrong++;
