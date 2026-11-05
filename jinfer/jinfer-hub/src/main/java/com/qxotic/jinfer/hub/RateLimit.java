@@ -1,10 +1,10 @@
 package com.qxotic.jinfer.hub;
 
 import com.qxotic.fetch.Transport;
+import java.time.DateTimeException;
 import java.time.Duration;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -70,14 +70,32 @@ final class RateLimit {
     private static Duration retryAfter(String value, long nowEpochMillis) {
         long s = seconds(value);
         if (s >= 0) return Duration.ofSeconds(s);
+        long at = httpDate(value);
+        return at < 0 ? null : Duration.ofMillis(Math.max(0, at - nowEpochMillis));
+    }
+
+    private static final String MONTHS = "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+    /**
+     * An HTTP-date, RFC 1123's "Sun, 06 Nov 1994 08:49:37 GMT", as epoch milliseconds; -1 for
+     * anything else. Read by hand: DateTimeFormatter brings the locale data of every calendar.
+     */
+    static long httpDate(String value) {
+        String[] part = value.strip().split("[ ,:]+");
+        int month = part.length == 8 && part[7].equals("GMT") ? MONTHS.indexOf(part[2]) : -1;
+        if (month < 0 || month % 3 != 0 || part[2].length() != 3) return -1;
         try {
-            long at =
-                    ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)
-                            .toInstant()
-                            .toEpochMilli();
-            return Duration.ofMillis(Math.max(0, at - nowEpochMillis));
-        } catch (DateTimeParseException e) {
-            return null;
+            return LocalDateTime.of(
+                                    Integer.parseInt(part[3]),
+                                    month / 3 + 1,
+                                    Integer.parseInt(part[1]),
+                                    Integer.parseInt(part[4]),
+                                    Integer.parseInt(part[5]),
+                                    Integer.parseInt(part[6]))
+                            .toEpochSecond(ZoneOffset.UTC)
+                    * 1000;
+        } catch (NumberFormatException | DateTimeException malformed) {
+            return -1;
         }
     }
 
