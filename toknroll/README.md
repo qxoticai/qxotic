@@ -110,8 +110,21 @@ Token-perfect against each model's own tokenizer, with the [known divergences](#
 - **inclusionAI**: Ling 3.0, Ling 3.1
 - **JetBrains**: Mellum 2
 
-Other BPE tokenizers built from the same components likely work. They just are not parity-tested.
-A `tokenizer.json` that uses a component outside that set, another model type, a normalizer or a pre-tokenizer these families do not, is refused at load, the unsupported field named: a tokenizer is never loaded approximately.
+Another BPE tokenizer built from the same components loads too; it is just not parity-tested.
+A `tokenizer.json` that uses a component outside that set is refused at load as unsupported, the field named: a tokenizer is never loaded approximately.
+Common models that do not load, and why:
+
+| Model | Refused for |
+|---|---|
+| phi-4, RoBERTa | added tokens with `lstrip` or `rstrip` |
+| TinyLlama | the `Prepend` normalizer |
+| SmolLM2, StarCoder2, DeepSeek-LLM | the `Digits` pre-tokenizer |
+| Falcon | the `Punctuation` pre-tokenizer |
+| Pythia, OLMo, BLOOM | a vocabulary without every single-byte token |
+| Yi | a decoder sequence the loader does not know |
+| BERT, XLM-R, ALBERT | WordPiece, not BPE |
+| T5 | Unigram, not BPE |
+| OPT, ChatGLM, Baichuan, InternLM | no `tokenizer.json`: `vocab.json` plus `merges.txt`, or `tokenizer.model`, are not read |
 
 ## Raw text and special tokens
 

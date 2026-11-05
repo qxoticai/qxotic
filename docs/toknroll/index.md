@@ -38,21 +38,21 @@ import TabItem from '@theme/TabItem';
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-core</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 
 <!-- HuggingFace tokenizer.json loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 
 <!-- GGUF (llama.cpp) tokenizer loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-gguf</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 

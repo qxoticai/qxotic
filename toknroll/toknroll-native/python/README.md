@@ -41,7 +41,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 `decode` spells every id, special tokens included, as tiktoken does, where HF's `decode` skips them by default; the recipe above drops them.
 A token holding part of a character decodes per `errors=`, `"replace"` by default as in tiktoken.
 `decode(encode(text))` is the text after the model's own normalization, NFC where its `tokenizer.json` says so, spaces through `▁` in a SentencePiece model, exactly as the reference tokenizer does; `decode_bytes` gives the bytes.
-A token's spelling is its source's: `▁<` from a `tokenizer.json` as HF spells it, ` <` from a GGUF as llama.cpp does, the same ids and text either way.
+A token's spelling is its source's: `▁<` from a `tokenizer.json` as HF spells it, ` <` from a GGUF as llama.cpp does, the same ids and text either way; an added token is spelled as the text that matches it, so one whose content is `▁▁` reads as two spaces.
 A hub source is `[host/]owner/repo[@rev][/path][:quant]`: a bare word is a local path, never a repository, and `@rev` comes before the file path, `owner/repo@main/model-Q8_0.gguf`.
 BPE tokenizers only, the families the [main README](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md) lists and others built from the same components: a `tokenizer.json` that uses a component outside that set is refused at load, as `Unsupported` naming the field, never loaded approximately.
 A `Tokenizer` never changes, so it may be shared between threads, `close` being the one call to make when no other thread is using it; every call releases the GIL.
@@ -49,7 +49,7 @@ Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `Value
 An id that is negative or past int32 is an `OverflowError` and a non-int a `TypeError`, as in HF `tokenizers` and tiktoken.
 Remote metadata is fetched with `curl`, which must be on the PATH for hub sources only.
 It is cached where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says, else `TOKNROLL_CACHE_ROOT`, else in jinfer's store, the platform cache directory under `jinfer`.
-The HF hub cache (`HF_HUB_CACHE`, `HF_HOME`) is read too, so a file `transformers` fetched serves here, and never written.
+The HF hub cache (`HF_HUB_CACHE`, `HF_HOME`) is read too, so a file `transformers` fetched serves here; with the default cache root, a file fetched here is published there as well, so `transformers` finds it.
 `-Dtoknroll.offline=true` serves the cache and never touches the network; set to anything but `false` it is offline, a misspelled true never means online.
 `TOKNROLL_OPTIONS` is split on whitespace, with no quoting and no `~`: a value holding a space goes through `configure`.
 The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.
