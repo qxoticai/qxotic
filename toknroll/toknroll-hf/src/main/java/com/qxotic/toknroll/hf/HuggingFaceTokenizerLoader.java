@@ -803,9 +803,10 @@ public final class HuggingFaceTokenizerLoader {
         return (String) value;
     }
 
-    private static IllegalArgumentException unsupported(
+    /** A well-formed field toknroll does not implement; a malformed one is a plain IAE. */
+    private static UnsupportedTokenizerException unsupported(
             String path, String actual, String expected) {
-        return new IllegalArgumentException(
+        return new UnsupportedTokenizerException(
                 "Unsupported tokenizer config at "
                         + path
                         + ": "
@@ -831,8 +832,7 @@ public final class HuggingFaceTokenizerLoader {
             return null;
         }
         if (!(normalizerObj instanceof Map<?, ?>)) {
-            throw new IllegalArgumentException(
-                    "Unsupported tokenizer config at tokenizer.json:normalizer");
+            throw new IllegalArgumentException("tokenizer.json:normalizer must be an object");
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> normalizer = (Map<String, Object>) normalizerObj;
@@ -883,9 +883,8 @@ public final class HuggingFaceTokenizerLoader {
         Map<String, Object> patternMap = (Map<String, Object>) patternObj;
         Object literal = patternMap.get("String");
         if (!(literal instanceof String)) {
-            throw new IllegalArgumentException(
-                    "Unsupported tokenizer config at tokenizer.json:normalizer.pattern (only"
-                            + " pattern.String is supported)");
+            throw unsupported(
+                    "tokenizer.json:normalizer.pattern", patternMap.toString(), "a String pattern");
         }
         String needle = (String) literal;
         return text -> text.toString().replace(needle, content);
@@ -1070,8 +1069,7 @@ public final class HuggingFaceTokenizerLoader {
             return null;
         }
         if (!(preTokenizerObj instanceof Map<?, ?>)) {
-            throw new IllegalArgumentException(
-                    "Unsupported tokenizer config at tokenizer.json:pre_tokenizer");
+            throw new IllegalArgumentException("tokenizer.json:pre_tokenizer must be an object");
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> preTokenizer = (Map<String, Object>) preTokenizerObj;
@@ -1189,8 +1187,8 @@ public final class HuggingFaceTokenizerLoader {
         }
 
         throw new IllegalArgumentException(
-                "Unsupported tokenizer config at tokenizer.json:pre_tokenizer.pattern (only Regex"
-                        + " and String are supported)");
+                "tokenizer.json:pre_tokenizer.pattern must be {\"Regex\": ...} or {\"String\":"
+                        + " ...}");
     }
 
     private static List<Span> splitByLiteral(

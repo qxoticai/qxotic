@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.format.gguf.Builder;
+import com.qxotic.format.gguf.GGUF;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -95,5 +98,15 @@ class GGUFTokenizerLoaderApiTest {
         assertThrows(
                 RuntimeException.class,
                 () -> loader.fromHuggingFace("unsloth", "nonexistent", "not-a-gguf.txt"));
+    }
+
+    @Test
+    void aModelToknrollDoesNotImplementIsUnsupported() {
+        // an unknown pre-tokenizer is too: options_unknown_pre in the C tests, on a whole GGUF
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+        GGUF model = Builder.newBuilder().putString("tokenizer.ggml.model", "ctest-model").build();
+        UnsupportedTokenizerException e =
+                assertThrows(UnsupportedTokenizerException.class, () -> loader.fromGGUF(model));
+        assertTrue(e.getMessage().startsWith("Unsupported GGUF tokenizer model 'ctest-model'"));
     }
 }

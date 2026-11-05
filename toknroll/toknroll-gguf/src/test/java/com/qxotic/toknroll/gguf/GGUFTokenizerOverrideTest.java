@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.gguf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,6 +13,7 @@ import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import com.qxotic.toknroll.Vocabulary;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
@@ -63,6 +65,16 @@ class GGUFTokenizerOverrideTest {
         builder.aliasPreTokenizer("b", "charly");
         registerScheme(builder, "charly", charByChar());
         assertChunks(builder, "a", "ab", List.of("a", "b"));
+    }
+
+    @Test
+    void aliasToAnUnknownNameIsTheCallersMistakeNotAnUnsupportedFile() {
+        // TOKNROLL_EINVAL, not EUNSUPPORTED: a caller falls back on unsupported, hiding its typo
+        GGUFTokenizerLoader.Builder builder = GGUFTokenizerLoader.createBuilderWithBuiltins();
+        builder.aliasPreTokenizer("a", "no-such-scheme");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, builder::build);
+        assertFalse(e instanceof UnsupportedTokenizerException, e.getMessage());
+        assertTrue(e.getMessage().startsWith("pre-tokenizer alias 'a' points at unknown"));
     }
 
     @Test

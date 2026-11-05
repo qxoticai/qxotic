@@ -10,6 +10,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenizationPipeline;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.ByteBuffer;
@@ -448,5 +449,18 @@ class TiktokenModelTest {
             types[i] = StandardTokenType.NORMAL.getId();
         }
         return types;
+    }
+
+    @Test
+    void aVocabularyWithoutEveryByteIsUnsupportedNotMalformed() {
+        // a valid vocabulary, but byte-level BPE as toknroll runs it needs all 256 bytes
+        UnsupportedTokenizerException e =
+                assertThrows(
+                        UnsupportedTokenizerException.class,
+                        () ->
+                                TiktokenModel.fromVocabularyAndMerges(
+                                        vocabulary(byteLevelTokens(255)),
+                                        new LongLongMap(new long[0], new long[0])));
+        assertEquals("Missing singleton byte token for value 255", e.getMessage());
     }
 }

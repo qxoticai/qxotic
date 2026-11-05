@@ -8,6 +8,7 @@ import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.Toknroll;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -509,7 +510,7 @@ public final class GGUFTokenizerLoader {
 
         Function<GGUF, TokenizationModel> modelFactory = registries.modelFactories.get(modelKey);
         if (modelFactory == null) {
-            throw new IllegalArgumentException(
+            throw new UnsupportedTokenizerException(
                     "Unsupported GGUF tokenizer model '"
                             + modelKey
                             + "' (supported: "
@@ -556,7 +557,7 @@ public final class GGUFTokenizerLoader {
         Function<GGUF, Normalizer> normalizerFactory =
                 registries.normalizers.get(resolveAlias(registries.aliases, normalizerKey));
         if (normalizerFactory == null) {
-            throw new IllegalArgumentException(
+            throw new UnsupportedTokenizerException(
                     "Unsupported GGUF normalizer key '"
                             + normalizerKey
                             + "' for model '"
@@ -576,12 +577,13 @@ public final class GGUFTokenizerLoader {
     }
 
     /**
-     * An unknown {@code tokenizer.ggml.pre} name - either at resolution time or as an alias target.
-     * A distinct type so callers can attach their own remedy without matching on message text; the
-     * message already carries the no-rebuild remedy, the {@code toknroll.gguf.pre.*} system
-     * property.
+     * An unknown {@code tokenizer.ggml.pre} name in a file. A distinct type so callers can attach
+     * their own remedy without matching on message text; the message already carries the no-rebuild
+     * remedy, the {@code toknroll.gguf.pre.*} system property. An alias pointing at an unknown name
+     * is the caller's own mistake, a plain {@link IllegalArgumentException}.
      */
-    public static final class UnsupportedPreTokenizerException extends IllegalArgumentException {
+    public static final class UnsupportedPreTokenizerException
+            extends UnsupportedTokenizerException {
         UnsupportedPreTokenizerException(String message) {
             super(message);
         }
@@ -619,7 +621,9 @@ public final class GGUFTokenizerLoader {
         for (String name : aliases.keySet()) {
             String terminal = resolveAlias(aliases, name);
             if (!splitters.containsKey(terminal)) {
-                throw new UnsupportedPreTokenizerException(
+                // the caller's own option, not the file's ask: a plain refusal, nothing to fall
+                // back to
+                throw new IllegalArgumentException(
                         "pre-tokenizer alias '"
                                 + name
                                 + "' points at unknown pre-tokenizer '"

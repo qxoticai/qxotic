@@ -2,6 +2,7 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.UnsupportedTokenizerException;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
@@ -700,8 +701,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return new NoSuchElementException(String.valueOf(tokenId));
     }
 
-    private static IllegalArgumentException missingSingletonByte(int value) {
-        return new IllegalArgumentException("Missing singleton byte token for value " + value);
+    private static UnsupportedTokenizerException missingSingletonByte(int value) {
+        // a valid vocabulary, but byte-level BPE as toknroll runs it needs all 256
+        return new UnsupportedTokenizerException("Missing singleton byte token for value " + value);
     }
 
     /**
