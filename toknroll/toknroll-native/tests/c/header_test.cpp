@@ -3,7 +3,8 @@
 #include "toknroll.h"
 #include <string>
 
-static_assert(TOKNROLL_OK == 0 && TOKNROLL_ERROR == -1 && TOKNROLL_EINVAL == -2 && TOKNROLL_ENOTFOUND == -3, "codes");
+static_assert(TOKNROLL_OK == 0 && TOKNROLL_ERROR == -1 && TOKNROLL_EINVAL == -2 && TOKNROLL_ENOTFOUND == -3
+              && TOKNROLL_EUNSUPPORTED == -4, "codes");
 static_assert(TOKNROLL_SPECIALS == 1u, "flags");
 static_assert(TOKNROLL_TOKEN_NORMAL == 2 && TOKNROLL_TOKEN_BYTE == 64, "token flags");
 static_assert(TOKNROLL_LOG_DEBUG == 0 && TOKNROLL_LOG_ERROR == 3, "log levels");
