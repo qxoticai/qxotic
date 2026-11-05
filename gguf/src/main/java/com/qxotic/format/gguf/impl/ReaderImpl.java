@@ -22,6 +22,7 @@ final class ReaderImpl {
 
     private static final List<Integer> SUPPORTED_GGUF_VERSIONS = List.of(3);
     private static final int MAX_TENSOR_NAME_BYTES = 64;
+    private static final int METADATA_VALUE_TYPES = MetadataValueType.values().length;
     private int version;
     private int alignment;
     private Map<String, Object> metadata;
@@ -69,9 +70,9 @@ final class ReaderImpl {
         int ggmlTypeId = readInt(byteChannel); // ggml_type type;
         try {
             return GGMLType.fromId(ggmlTypeId);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) { // not chained: its message would repeat ours
             throw new GGUFFormatException(
-                    "Tensor " + tensorName + " has unknown GGML type ID " + ggmlTypeId, e);
+                    "Tensor " + tensorName + " has unknown GGML type ID " + ggmlTypeId);
         }
     }
 
@@ -383,11 +384,10 @@ final class ReaderImpl {
     private MetadataValueType readMetadataValueType(ReadableByteChannel byteChannel)
             throws IOException {
         int index = readInt(byteChannel);
-        try {
-            return MetadataValueType.fromIndex(index);
-        } catch (ArrayIndexOutOfBoundsException e) {
-            throw new GGUFFormatException("Invalid metadata value type index: " + index, e);
+        if (index < 0 || index >= METADATA_VALUE_TYPES) { // checked: no exception to chain
+            throw new GGUFFormatException("Invalid metadata value type index: " + index);
         }
+        return MetadataValueType.fromIndex(index);
     }
 
     private int getAlignment() {

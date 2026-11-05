@@ -175,10 +175,14 @@ public class ReadWriteTest extends GGUFTest {
         long keyLength = buffer.getLong(pos);
         pos += 8 + (int) keyLength; // Skip key length and key bytes
 
-        // Write invalid metadata value type (999)
-        buffer.putInt(pos, 999);
-
-        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+        // one past the last type, far past it, and 0xFFFFFFFF read as -1
+        for (int bad : new int[] {MetadataValueType.values().length, 999, -1}) {
+            buffer.putInt(pos, bad);
+            GGUFFormatException e =
+                    assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+            assertEquals("Invalid metadata value type index: " + bad, e.getMessage());
+            assertNull(e.getCause());
+        }
     }
 
     @Test
@@ -267,13 +271,17 @@ public class ReadWriteTest extends GGUFTest {
 
     @Test
     public void testUnknownTensorTypeIdIsAFormatError() {
-        byte[] info = tensorInfo("w", new long[] {1}, GGMLType.F32, 0);
-        // the type id sits right before the trailing 8-byte offset; 999 is no ggml type
-        ByteBuffer.wrap(info).order(ByteOrder.LITTLE_ENDIAN).putInt(info.length - 12, 999);
-        byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {info});
-        GGUFFormatException e =
-                assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
-        assertTrue(e.getMessage().contains("w") && e.getMessage().contains("999"));
+        for (int bad : new int[] {999, -1}) {
+            byte[] info = tensorInfo("w", new long[] {1}, GGMLType.F32, 0);
+            // the type id sits right before the trailing 8-byte offset
+            ByteBuffer.wrap(info).order(ByteOrder.LITTLE_ENDIAN).putInt(info.length - 12, bad);
+            byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {info});
+            GGUFFormatException e =
+                    assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+            // the id said once: fromId's own message is not chained after it
+            assertEquals("Tensor w has unknown GGML type ID " + bad, e.getMessage());
+            assertNull(e.getCause());
+        }
     }
 
     @Test
