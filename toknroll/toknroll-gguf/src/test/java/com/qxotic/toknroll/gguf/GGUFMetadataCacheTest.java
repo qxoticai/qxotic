@@ -53,7 +53,7 @@ class GGUFMetadataCacheTest {
                         .resolve("main")
                         .resolve("gemma-4-E2B-it-Q8_0.gguf.metadata");
         Files.createDirectories(cachedPath.getParent());
-        Files.writeString(cachedPath, "cached", StandardCharsets.UTF_8);
+        Files.write(cachedPath, minimalGguf()); // a cached header is served only when it is one
 
         Path actual =
                 cache.fetchHuggingFace(
@@ -76,7 +76,7 @@ class GGUFMetadataCacheTest {
                         .resolve("quantized")
                         .resolve("Qwen3.6-35B-A3B-Q8_0.gguf.metadata");
         Files.createDirectories(cachedPath.getParent());
-        Files.writeString(cachedPath, "cached", StandardCharsets.UTF_8);
+        Files.write(cachedPath, minimalGguf()); // a cached header is served only when it is one
 
         Path actual =
                 cache.fetchHuggingFace(
@@ -101,7 +101,7 @@ class GGUFMetadataCacheTest {
                         .resolve("master")
                         .resolve("Qwen3.6-35B-A3B-Q8_0.gguf.metadata");
         Files.createDirectories(cachedPath.getParent());
-        Files.writeString(cachedPath, "cached", StandardCharsets.UTF_8);
+        Files.write(cachedPath, minimalGguf()); // a cached header is served only when it is one
 
         Path actual =
                 cache.fetchModelScope(
@@ -191,7 +191,7 @@ class GGUFMetadataCacheTest {
                         .resolve("main")
                         .resolve("Llama-3.2-1B-Instruct-Q8_0.gguf.metadata");
         Files.createDirectories(cachedPath.getParent());
-        Files.writeString(cachedPath, "cached", StandardCharsets.UTF_8);
+        Files.write(cachedPath, minimalGguf()); // a cached header is served only when it is one
 
         IOException error =
                 assertThrows(
@@ -227,6 +227,33 @@ class GGUFMetadataCacheTest {
         GGUF parsed = GGUF.read(first);
         assertNotNull(parsed);
         assertEquals("test-value", parsed.getString("test.key"));
+    }
+
+    @Test
+    void fetchPartialMetadata_corruptCacheFileIsFetchedAgain() throws Exception {
+        byte[] ggufBytes = minimalGguf();
+        AtomicInteger hits = new AtomicInteger();
+        startServer(
+                "/corrupt-cache.gguf",
+                exchange -> writeBytes(exchange, ggufBytes, 200, hits.incrementAndGet()));
+
+        GGUFMetadataCache cache = GGUFMetadataCache.create(tempDir);
+        String url = serverUrl("/corrupt-cache.gguf");
+        Path target = tempDir.resolve("corrupt-cache.gguf.metadata");
+        Files.write(target, "garbage".getBytes(StandardCharsets.UTF_8)); // no GGUF magic
+
+        Path served = cache.fetchPartialMetadata("test", url, target, null, false);
+
+        assertEquals(1, hits.get(), "a cache file without the magic is fetched again");
+        assertEquals("test-value", GGUF.read(served).getString("test.key"));
+        // offline, the same corrupt file is a miss, not a parse failure
+        Files.write(target, "garbage".getBytes(StandardCharsets.UTF_8));
+        assertThrows(
+                IOException.class,
+                () ->
+                        GGUFMetadataCache.create(tempDir, Transport.offline())
+                                .fetchPartialMetadata("test", url, target, null, false));
+        assertFalse(Files.exists(target), "the corrupt file is gone");
     }
 
     @Test

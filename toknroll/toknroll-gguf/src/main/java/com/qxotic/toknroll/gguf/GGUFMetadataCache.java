@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Map;
 
 final class GGUFMetadataCache {
@@ -129,7 +130,9 @@ final class GGUFMetadataCache {
             throws IOException {
         Path normalizedTarget = target.toAbsolutePath().normalize();
         if (!forceRefresh && Files.exists(normalizedTarget)) {
-            return normalizedTarget;
+            if (hasGgufMagic(normalizedTarget)) return normalizedTarget;
+            // a corrupt cache file is fetched again, as tiktoken refetches on a bad hash
+            Files.deleteIfExists(normalizedTarget);
         }
 
         Files.createDirectories(normalizedTarget.getParent());
@@ -182,6 +185,13 @@ final class GGUFMetadataCache {
             } finally {
                 Files.deleteIfExists(partial);
             }
+        }
+    }
+
+    /** Whether the file starts with "GGUF": a cached header without it fails at its magic. */
+    private static boolean hasGgufMagic(Path file) throws IOException {
+        try (InputStream in = Files.newInputStream(file)) {
+            return Arrays.equals(in.readNBytes(4), new byte[] {'G', 'G', 'U', 'F'});
         }
     }
 
