@@ -70,7 +70,9 @@ class MetaspaceTokenizerTest {
 
     // ---- encode: Metaspace's prepend_scheme ----
 
-    /** The prepend sees the normalized text: the space NFKC makes of U+3000 or U+00A0 is a space. */
+    /**
+     * The prepend sees the normalized text: the space NFKC makes of U+3000 or U+00A0 is a space.
+     */
     @Test
     void aSpaceTheNormalizerMakesGetsNoSecondOne() {
         Normalizer nfkc =

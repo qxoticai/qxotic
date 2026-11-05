@@ -221,7 +221,8 @@ class TiktokenModelTest {
             assertArrayEquals(expected, heap);
             ByteBuffer direct = ByteBuffer.allocateDirect(heap.length);
             direct.put(0, expected, 0, heap.length).position(position);
-            random.nextBytes(spelled); // the direct path gets a buffer with the same tail, and agrees
+            random.nextBytes(
+                    spelled); // the direct path gets a buffer with the same tail, and agrees
             assertEquals(ids.length, model.decodeBytesInto(tokens, 0, direct));
             byte[] fromDirect = new byte[heap.length];
             direct.get(0, fromDirect);

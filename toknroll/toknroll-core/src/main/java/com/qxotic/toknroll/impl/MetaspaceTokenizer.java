@@ -13,11 +13,11 @@ import java.util.Objects;
  * A SentencePiece tokenizer as the text sees it: its vocabulary spells a space U+2581, the text '
  * '.
  *
- * <p>Encoding normalizes the text first, then prepends U+2581 as a Metaspace pre-tokenizer's
- * {@code prepend_scheme} says: before every text ({@code always}), before the start of the text
- * only ({@code first}), or {@code never}; and never before text that starts with a space already,
- * one the normalizer made included (NFKC turns U+3000 into one). The base must not normalize
- * again: the loaders give it none and hand the normalizer here.
+ * <p>Encoding normalizes the text first, then prepends U+2581 as a Metaspace pre-tokenizer's {@code
+ * prepend_scheme} says: before every text ({@code always}), before the start of the text only
+ * ({@code first}), or {@code never}; and never before text that starts with a space already, one
+ * the normalizer made included (NFKC turns U+3000 into one). The base must not normalize again: the
+ * loaders give it none and hand the normalizer here.
  *
  * <p>Decoding writes each token's bytes: a byte token its byte, any other token its spelling with
  * U+2581 a space. With {@code trimLeadingSpace} it drops the space the first token starts with, as
