@@ -394,11 +394,14 @@ try:
 except jinfer.InvalidArgument as e:
     ok("Path" in str(e), f"unknown bytes: {e}")
 
+skipped = []   # a model not here skips its checks, said at the end: the run fails on it, as the C suite's does
+
 def cached(ref, **kw):
     try:
         return jinfer.load(ref, **kw)
     except jinfer.JinferError:
         print(f"skipped: {ref} is not cached")
+        skipped.append(ref)
         return None
 
 # a corrupt image is refused, never decoded into a frame nobody sent
@@ -566,4 +569,6 @@ handle = m.tokenizer._h
 m.tokenizer.close()  # the handle jinfer_model_tokenizer gave is the caller's: closing frees it
 ok(N.lib.toknroll_vocabulary_size(ctypes.c_void_p(handle)) < 0, "a model tokenizer's close frees its handle")
 m.close()
-print(f"ok: {checks} checks")
+print(f"ok: {checks} checks, {len(skipped)} models skipped")
+if skipped and not os.environ.get("CTEST_ALLOW_SKIP"):
+    sys.exit("a skipped model fails the run: cache " + ", ".join(skipped) + ", or set CTEST_ALLOW_SKIP=1")
