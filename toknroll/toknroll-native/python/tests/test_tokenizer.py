@@ -6,7 +6,7 @@ import unittest
 from array import array
 from pathlib import Path
 
-from support import EDGE_TEXTS, GGUF, needs_gguf, needs_numpy, numpy, toknroll
+from support import BYTE_FALLBACK, EDGE_TEXTS, GGUF, needs_byte_fallback, needs_gguf, needs_numpy, numpy, toknroll
 
 F = toknroll.TokenFlags
 
@@ -148,8 +148,18 @@ class EncodeDecodeTest(unittest.TestCase):
         self.assertEqual(self.t.count_tokens("<|im_end|>", specials=True), 1)
 
     def test_decode_without_specials_is_a_filter(self):
+        """The README's recipe: the special kinds dropped, every other token kept."""
         ids = self.t.encode("Hello<|im_end|>", specials=True)
-        self.assertEqual(self.t.decode(i for i in ids if self.t.token_flags(i) & F.NORMAL), "Hello")
+        self.assertEqual(self.t.decode(i for i in ids if not self.t.token_flags(i) & (F.CONTROL | F.USER_DEFINED)), "Hello")
+
+    @needs_byte_fallback
+    def test_decode_without_specials_keeps_byte_tokens(self):
+        """A BYTE token is part of a character: keeping NORMAL tokens only, as the README once said, lost it."""
+        with toknroll.load(BYTE_FALLBACK) as t:
+            ids = t.encode("a\0b")
+            self.assertTrue(any(t.token_flags(i) & F.BYTE for i in ids))
+            self.assertEqual(t.decode(i for i in ids if not t.token_flags(i) & (F.CONTROL | F.USER_DEFINED)), "a\0b")
+            self.assertEqual(t.decode(i for i in ids if t.token_flags(i) & F.NORMAL), "ab")
 
     def test_encode_rejects_non_text(self):
         for bad in (None, 5, b"bytes", ["a"]):
