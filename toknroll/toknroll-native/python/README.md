@@ -36,6 +36,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")` or `.../LFM2.5-350M-Q8_0.gguf`: the header only, never the weights |
 | a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file a path names |
 
+A hub source is `[host/]owner/repo[@rev][/path][:quant]`: a bare word is a local path, never a repository, and `@rev` comes before the file path, `owner/repo@main/model-Q8_0.gguf`.
 BPE tokenizers only, the families the [main README](../../README.md) lists and others built from the same components: a `tokenizer.json` that uses a component outside that set is refused at load, as `Unsupported` naming the field, never loaded approximately.
 A `Tokenizer` never changes, so it may be shared between threads; `encode` releases the GIL.
 Errors are `toknroll.ToknrollError` subclasses: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`), `Unsupported` (a valid tokenizer toknroll does not implement, also a `ValueError`); each has `.code`.
