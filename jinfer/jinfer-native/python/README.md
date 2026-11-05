@@ -83,7 +83,7 @@ A knob both need, such as a GGUF pre-tokenizer registration, is given to both.
 ## Install
 
 ```sh
-pip install jinfer            # the wheel carries the library: Linux x86_64 with AVX2 and Linux aarch64 (glibc 2.17 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64 with AVX2
+pip install jinfer            # the wheel carries the library: Linux x86_64 with AVX2 and Linux aarch64 (glibc 2.28 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64 with AVX2
 ```
 
 From a source checkout, `make python` in `jinfer/jinfer-native` stages the freshly built library into the package, then `pip install python/`.

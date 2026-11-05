@@ -16,7 +16,8 @@ toknroll_decode(t, ids, n, 0, back, sizeof back, NULL);
 toknroll_tokenizer_free(t);
 ```
 
-The contract is the one `jinfer.h` keeps: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, token_capacity)` and `(out, byte_capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.
+The contract is [C-API.md](../../C-API.md)'s, restated in the header's opening comment: pointer-returning functions return NULL and int functions a negative code, `toknroll_last_error` has the message and the code per thread; `(out, token_capacity)` and `(out, byte_capacity)` buffers follow snprintf; strings are UTF-8 and borrowed, text with its length in bytes; any thread may call and a tokenizer may be shared.
+It is built and tested on Linux x86-64 and aarch64, macOS on Apple silicon and Windows x86-64; x86-64 means x86-64-v3, a CPU with AVX2.
 `libjinfer` carries the same entry points, so `jinfer_model_tokenizer` hands out a model's tokenizer as a `toknroll_tokenizer` and one header serves both libraries.
 
 ## Build and check
@@ -39,11 +40,11 @@ This machine's two wheels from a clean export of a ref, and the upload to PyPI, 
 
 Hub references are fetched through `curl` on the PATH (the `fetch` module's process transport), so the image carries no TLS stack of its own; local files need nothing.
 Without a profile, at `-O2`, the builder's default, the shared library is 17 MB and the archive 18 MB; with the JDK's HTTPS stack inside it was 32 MB.
-The size follows the code: `-O3` is 12 MB larger for 18% more encode throughput, `-Os` 6 MB smaller for 19% less, and the floor, one entry point and the runtime, is 8 MB.
-What ships is the PGO build, which Oracle GraalVM compiles at `-O3` but only on the paths the profile ran, so it stays near the `-O2` size: 16 MB on Windows.
+The size follows the code: `-Os` is 3 MB smaller for 9% less single-threaded encode throughput, and the floor, one entry point and the runtime, is 5 MB.
+What ships is the PGO build, which Oracle GraalVM compiles at `-O3` but only on the paths the profile ran, so it stays near the `-O2` size: 16 MB on Linux and on Windows.
 
 The shared library's soname follows the version, `libtoknroll.so.0.4` (`@rpath/libtoknroll.0.4.dylib` on a Mac); the build links `target/libtoknroll.so.0.4` to the library, and the release bundle carries the file under that name.
-The shared library exports the header's thirteen functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header.
+On Linux and macOS the shared library exports the header's thirteen functions and nothing else, neither GraalVM's `graal_*` runtime API nor the entry points behind the header; a Windows DLL has no export list, so `toknroll.dll` exports the runtime's symbols too, and a program binds the thirteen by name as on any DLL.
 `libtoknroll.a` is the same image as one relocatable object with every symbol but the header's thirteen made local: nothing of the runtime behind it is visible to the program that links it, and it needs only the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS.
 A program that links it defines `TOKNROLL_STATIC` before including the header, so `TOKNROLL_API` asks for no import.
 It is for programs that want no shared library; a GraalVM host image cannot link it (two runtimes in one image), so libjinfer compiles the entry points into its own image instead.

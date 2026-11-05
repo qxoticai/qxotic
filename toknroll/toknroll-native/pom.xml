@@ -22,7 +22,7 @@
     <maven.compiler.release>25</maven.compiler.release>
     <maven.compiler.testRelease>25</maven.compiler.testRelease>
     <toknroll.image.name>libtoknroll</toknroll.image.name>
-    <!-- -O2, the builder's default: -O3 bought 18% encode throughput for 11 MB of code (see the README).
+    <!-- -O2, the builder's default, and on GraalVM CE the same code as -O3.
          What ships replaces it: Oracle GraalVM's PGO build, which compiles at -O3 the paths the profile ran -->
     <toknroll.image.opt>-O2</toknroll.image.opt>
     <toknroll.image.skip>false</toknroll.image.skip>
