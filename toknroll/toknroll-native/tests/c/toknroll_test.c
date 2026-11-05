@@ -863,6 +863,11 @@ static void batch(void) {
     offsets[0] = 99;
     CHECK_EQ(toknroll_encode_batch(t, NULL, none, 0, 0, NULL, 0, offsets), 0);
     CHECK_EQ(offsets[0], 0);
+    /* no text, so the arrays may be NULL, as a pointer with length 0 may */
+    CHECK_EQ(toknroll_encode_batch(t, NULL, NULL, 0, 0, NULL, 0, NULL), 0);
+    offsets[0] = 99;
+    CHECK_EQ(toknroll_encode_batch(t, NULL, NULL, 0, 0, NULL, 0, offsets), 0);
+    CHECK_EQ(offsets[0], 0);
     const int64_t empties[] = {0, 0, 0};
     CHECK_EQ(toknroll_encode_batch(t, NULL, empties, 2, 0, out, 64, offsets), 0);
     /* errors */

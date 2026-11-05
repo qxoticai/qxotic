@@ -147,10 +147,11 @@ TOKNROLL_API int64_t toknroll_decode(const toknroll_tokenizer* t, const int32_t*
                                      int32_t* decoded_tokens);
 /* count texts, text i the bytes [text_offsets[i], text_offsets[i + 1]) of texts; their ids go to out,
  * text i's at [offsets[i], offsets[i + 1]), offsets[0] being 0. Both offset arrays hold count + 1
- * entries. Encoded on all cores: the first batch starts a thread per core beside the caller, kept
- * until the process exits, which -XX:ActiveProcessorCount=N caps at N - 1 (toknroll_configure); a
- * forked child's runs on the calling thread. Returns the total, offsets[count]; over capacity, out
- * gets a prefix and offsets is still complete, so token_capacity 0 counts. */
+ * entries, and with count 0 may be NULL. Encoded on all cores: the first batch starts a thread per
+ * core beside the caller, kept until the process exits, which -XX:ActiveProcessorCount=N caps at N - 1
+ * (toknroll_configure); a forked child's runs on the calling thread. Returns the total,
+ * offsets[count]; over capacity, out gets a prefix and offsets is still complete, so token_capacity 0
+ * counts. */
 TOKNROLL_API int32_t toknroll_encode_batch(const toknroll_tokenizer* t, const char* texts,
                                            const int64_t* text_offsets, int32_t count, uint32_t flags,
                                            int32_t* out, int32_t token_capacity, int32_t* offsets);

@@ -358,9 +358,13 @@ public final class Native {
             Loaded loaded = get(handle);
             if (count < 0) throw Errors.invalid("count must not be negative");
             if (tokenCapacity < 0) throw Errors.invalid("token_capacity must not be negative");
+            if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
+            if (count == 0) { // no text: the arrays may be NULL, as any pointer with length 0
+                if (offsets.isNonNull()) offsets.write(0, 0);
+                return 0;
+            }
             if (textOffsets.isNull() || offsets.isNull())
                 throw Errors.invalid("text_offsets and offsets must not be NULL");
-            if (out.isNull() && tokenCapacity > 0) throw Errors.invalid("out is NULL");
             // compared as they come: subtracting two wild offsets first could wrap
             long base = textOffsets.read(0);
             if (base < 0) throw Errors.invalid("text_offsets must not be negative");
