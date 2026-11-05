@@ -110,7 +110,8 @@ Token-perfect against each model's own tokenizer, with the [known divergences](#
 - **inclusionAI**: Ling 3.0, Ling 3.1
 - **JetBrains**: Mellum 2
 
-Other BPE-based tokenizers likely work. They just are not parity-tested.
+Other BPE tokenizers built from the same components likely work. They just are not parity-tested.
+A `tokenizer.json` that uses a component outside that set, another model type, a normalizer or a pre-tokenizer these families do not, is refused at load, the unsupported field named: a tokenizer is never loaded approximately.
 
 ## Raw text and special tokens
 
