@@ -2,10 +2,15 @@ package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /** Context behavior, no model needed: selection, required properties, property binding. */
@@ -45,6 +50,28 @@ class JinferChatAutoConfigurationTest {
                             assertThat(context).hasNotFailed();
                             assertThat(context).doesNotHaveBean(JinferChatModel.class);
                         });
+    }
+
+    @Test
+    void outputModalitiesBindAsTheEngineEnum() {
+        JinferChatProperties bound =
+                new Binder(
+                                new MapConfigurationPropertySource(
+                                        Map.of(
+                                                "spring.ai.jinfer.chat.model", "/x.gguf",
+                                                "spring.ai.jinfer.chat.output-modalities",
+                                                        "text,audio")))
+                        .bind("spring.ai.jinfer.chat", JinferChatProperties.class)
+                        .get();
+        assertThat(bound.toOptions().getOutputModalities())
+                .isEqualTo(Set.of(Modality.TEXT, Modality.AUDIO));
+        JinferChatProperties unset =
+                new Binder(
+                                new MapConfigurationPropertySource(
+                                        Map.of("spring.ai.jinfer.chat.model", "/x.gguf")))
+                        .bind("spring.ai.jinfer.chat", JinferChatProperties.class)
+                        .get();
+        assertThat(unset.toOptions().getOutputModalities()).as("text alone").isNull();
     }
 
     @Test

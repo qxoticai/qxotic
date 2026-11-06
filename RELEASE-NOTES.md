@@ -61,6 +61,8 @@ The one unchanged artifact is `json`, at 0.2.0.
   Prompts are read by parts too: a user message's text and media reach the model in the order written, and tool results are read from their parts (text; a media result is refused in words).
   `JinferEmbeddingModel.getEmbeddingContent` returns the framed document text, so Spring's default batched path embeds what the provider's own does.
   The starter configures 2.1's session memory (`SessionService`, `SessionAdvisors`) in place of the chat memory it deprecates for 3.0; it requires Spring Boot 4.2.
+- **Spoken replies in Spring AI.** `JinferChatOptions.outputModalities` says what a reply may be made of: unset is text alone, `TEXT` and `AUDIO` let LFM3-Omni choose speech when the prompt asks, `AUDIO` alone makes it speak.
+  The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call` and a part per stretch from `stream`; `spring.ai.jinfer.chat.output-modalities` sets the default in Spring Boot.
 
 ### Behaviour changes
 

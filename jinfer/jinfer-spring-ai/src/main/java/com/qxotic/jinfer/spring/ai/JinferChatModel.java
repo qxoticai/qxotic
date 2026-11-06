@@ -6,12 +6,14 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Grammar;
+import com.qxotic.jinfer.media.Media;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
@@ -29,6 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.part.MediaPart;
 import org.springframework.ai.chat.messages.part.MessagePart;
 import org.springframework.ai.chat.messages.part.ReasoningPart;
 import org.springframework.ai.chat.messages.part.StreamingPartIndexer;
@@ -305,11 +308,16 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
         messages.addAll(JinferMappings.toMessages(prompt.getInstructions(), videoSampler));
+        // a spoken reply does not reason: allowing audio turns thinking off, as the server does,
+        // so one option opens the voice
+        boolean speaks =
+                options.getOutputModalities() != null
+                        && options.getOutputModalities().contains(Modality.AUDIO);
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         messages,
                         tools,
-                        options.getThinking() != Boolean.FALSE,
+                        options.getThinking() != Boolean.FALSE && !speaks,
                         options.getMaxTokens() == null ? -1 : options.getMaxTokens(),
                         options.getMaxReasoningTokens(),
                         options.getReasoningCutoffMessage(),
@@ -331,7 +339,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                         grammar(options),
                         ChatEngine.ForcedTool.NONE, // Spring AI has no forced-tool-call knob
                         options.getStopSequences(),
-                        null); // Spring AI has no chat_template_kwargs equivalent
+                        null, // Spring AI has no chat_template_kwargs equivalent
+                        options.getOutputModalities()); // null = text alone
         return engine.prepare(lowered);
     }
 
@@ -532,6 +541,19 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                     }
                                     // other channels are structural: a claimed call span surfaces
                                     // nothing until the finished reply's parsed calls
+                                }
+
+                                @Override
+                                public void onMedia(Media part) {
+                                    // a stretch of speech is its own chunk, a WAV media part; not
+                                    // stamped, as the aggregator carries no media: the words are
+                                    // the transcript deltas above, the audio is for a subscriber
+                                    // to collect
+                                    if (part instanceof Media.Audio clip)
+                                        sink.next(
+                                                chunk(
+                                                        MediaPart.of(JinferMappings.audio(clip)),
+                                                        id));
                                 }
 
                                 @Override

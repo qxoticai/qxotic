@@ -1,9 +1,14 @@
 package com.qxotic.jinfer.spring.ai;
 
+import com.qxotic.jinfer.chat.Modality;
 import java.time.Duration;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.model.tool.DefaultToolCallingChatOptions;
 import org.springframework.ai.model.tool.StructuredOutputChatOptions;
@@ -12,10 +17,10 @@ import org.springframework.ai.tool.ToolCallback;
 
 /**
  * {@link ChatOptions} for {@link JinferChatModel}: the Spring AI common options plus jinfer's
- * extras ({@code seed}, {@code minP}, {@code thinking}, {@code timeout}). Implements {@link
- * ToolCallingChatOptions} - required, or the framework's ToolCallingAdvisor silently skips tool
- * execution - and {@link StructuredOutputChatOptions}, the native structured-output hook (the
- * schema is enforced token-level via grammar-constrained decoding).
+ * extras ({@code seed}, {@code minP}, {@code thinking}, {@code timeout}, {@code outputModalities}).
+ * Implements {@link ToolCallingChatOptions} - required, or the framework's ToolCallingAdvisor
+ * silently skips tool execution - and {@link StructuredOutputChatOptions}, the native
+ * structured-output hook (the schema is enforced token-level via grammar-constrained decoding).
  */
 public final class JinferChatOptions extends DefaultToolCallingChatOptions
         implements StructuredOutputChatOptions {
@@ -28,6 +33,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     private final Duration timeout;
     private final String outputSchema;
     private final String grammar;
+    private final Set<Modality> outputModalities;
 
     private JinferChatOptions(
             Builder b,
@@ -60,6 +66,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         this.timeout = b.timeout;
         this.outputSchema = b.outputSchema;
         this.grammar = b.grammar;
+        this.outputModalities = b.outputModalities;
     }
 
     /** Sampling seed; null = a fresh random seed per request (set one to pin sampling). */
@@ -127,6 +134,18 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         return grammar;
     }
 
+    /**
+     * What the reply may be made of; null = text alone, which never switches into speech. Allowed,
+     * not required: with text and audio allowed the model chooses, steered by the prompt, and audio
+     * alone makes it speak. Speech comes as a {@code MediaPart} of {@code audio/wav}, whole from
+     * {@code call}, a part per stretch from {@code stream}. Only a model loaded with its voice can
+     * speak; a spoken reply cannot offer tools or follow a grammar, and does not reason: allowing
+     * audio turns {@code thinking} off. See {@link Modality}.
+     */
+    public Set<Modality> getOutputModalities() {
+        return outputModalities;
+    }
+
     /** The Spring AI common options (and tools) plus every jinfer extra. */
     @Override
     public boolean equals(Object o) {
@@ -139,7 +158,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 && Objects.equals(reasoningCutoffMessage, that.reasoningCutoffMessage)
                 && Objects.equals(timeout, that.timeout)
                 && Objects.equals(outputSchema, that.outputSchema)
-                && Objects.equals(grammar, that.grammar);
+                && Objects.equals(grammar, that.grammar)
+                && Objects.equals(outputModalities, that.outputModalities);
     }
 
     @Override
@@ -153,7 +173,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 reasoningCutoffMessage,
                 timeout,
                 outputSchema,
-                grammar);
+                grammar,
+                outputModalities);
     }
 
     public static Builder builder() {
@@ -180,7 +201,8 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 .reasoningCutoffMessage(reasoningCutoffMessage)
                 .timeout(timeout)
                 .outputSchema(outputSchema)
-                .grammar(grammar);
+                .grammar(grammar)
+                .outputModalities(outputModalities);
     }
 
     /** Adapts portable Spring options without inventing a second defaults-merge policy. */
@@ -215,6 +237,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         private Duration timeout;
         private String outputSchema;
         private String grammar;
+        private Set<Modality> outputModalities;
 
         private Builder() {}
 
@@ -262,6 +285,20 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
             return this;
         }
 
+        /** What the reply may be made of; see {@link JinferChatOptions#getOutputModalities()}. */
+        public Builder outputModalities(Modality... output) {
+            return outputModalities(output == null ? null : List.of(output));
+        }
+
+        /** As {@link #outputModalities(Modality...)}; null or empty = unset, text alone. */
+        public Builder outputModalities(Collection<Modality> output) {
+            this.outputModalities =
+                    output == null || output.isEmpty()
+                            ? null
+                            : Collections.unmodifiableSet(EnumSet.copyOf(output));
+            return this;
+        }
+
         /**
          * Spring ChatClient's precedence seam: values from {@code other} override this builder;
          * inherited fields and tools are handled by Spring, Jinfer fields here.
@@ -279,6 +316,7 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
                 if (j.timeout != null) timeout = j.timeout;
                 if (j.outputSchema != null) outputSchema = j.outputSchema;
                 if (j.grammar != null) grammar = j.grammar;
+                if (j.outputModalities != null) outputModalities = j.outputModalities;
             }
             return this;
         }

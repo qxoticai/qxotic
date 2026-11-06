@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.spring.ai.JinferChatOptions;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -36,6 +38,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param reasoningCutoffMessage what the model "decides" when the budget runs out, in its own
  *     words; unset = a paragraph break
  * @param timeout wall-clock generation deadline; null = none
+ * @param outputModalities what a reply may be made of, {@code text,audio} for a model with a voice
+ *     to choose speech when the prompt asks for it, {@code audio} to make it speak; unset = text
+ *     alone, which never switches into speech. A request's own options override it
  * @param speculationDepth draft tokens per verify block for self-speculative decoding (0 disables,
  *     unset = the engine's default); inert unless the model carries a draft head (e.g. Gemma 4's
  *     MTP sidecar as companions.speculation)
@@ -57,6 +62,7 @@ public record JinferChatProperties(
         Integer maxReasoningTokens,
         String reasoningCutoffMessage,
         Duration timeout,
+        Set<Modality> outputModalities,
         Integer speculationDepth) {
 
     /** Translates Boot's flat properties into Spring AI's single generation-options object. */
@@ -72,6 +78,7 @@ public record JinferChatProperties(
                 .maxReasoningTokens(maxReasoningTokens)
                 .reasoningCutoffMessage(reasoningCutoffMessage)
                 .timeout(timeout)
+                .outputModalities(outputModalities)
                 .build();
     }
 }

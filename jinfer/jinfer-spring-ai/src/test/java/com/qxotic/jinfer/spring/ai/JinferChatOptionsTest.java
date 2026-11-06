@@ -7,9 +7,11 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Modality;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -52,6 +54,7 @@ class JinferChatOptionsTest {
                 .thinking(false)
                 .timeout(Duration.ofSeconds(3))
                 .outputSchema("{\"type\":\"object\"}")
+                .outputModalities(Modality.TEXT, Modality.AUDIO)
                 .build();
     }
 
@@ -82,6 +85,31 @@ class JinferChatOptionsTest {
         assertEquals(Boolean.FALSE, copy.getThinking());
         assertEquals(Duration.ofSeconds(3), copy.getTimeout());
         assertEquals("{\"type\":\"object\"}", copy.getOutputSchema());
+        assertEquals(Set.of(Modality.TEXT, Modality.AUDIO), copy.getOutputModalities());
+    }
+
+    @Test
+    void outputModalitiesAreASetOrUnset() {
+        assertNull(JinferChatOptions.builder().build().getOutputModalities(), "text alone");
+        assertNull(JinferChatOptions.builder().outputModalities().build().getOutputModalities());
+        assertNull(
+                JinferChatOptions.builder()
+                        .outputModalities((Modality[]) null)
+                        .build()
+                        .getOutputModalities());
+        JinferChatOptions spoken =
+                JinferChatOptions.builder()
+                        .outputModalities(Modality.AUDIO, Modality.TEXT, Modality.AUDIO)
+                        .build();
+        assertEquals(Set.of(Modality.TEXT, Modality.AUDIO), spoken.getOutputModalities());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> spoken.getOutputModalities().add(Modality.IMAGE),
+                "the set is the options' own");
+        assertNotEquals(
+                spoken, JinferChatOptions.builder().outputModalities(Modality.AUDIO).build());
+        assertEquals(spoken, spoken.mutate().build());
+        assertEquals(spoken.hashCode(), spoken.mutate().build().hashCode());
     }
 
     @Test
@@ -123,10 +151,12 @@ class JinferChatOptionsTest {
                         .thinking(true)
                         .timeout(Duration.ofSeconds(30))
                         .outputSchema("old")
+                        .outputModalities(Modality.TEXT)
                         .build();
         JinferChatOptions request =
                 JinferChatOptions.builder()
                         .topP(0.8)
+                        .outputModalities(Modality.AUDIO)
                         .seed(2L)
                         .minP(0.0)
                         .thinking(false)
@@ -147,6 +177,7 @@ class JinferChatOptionsTest {
         assertEquals(Boolean.FALSE, merged.getThinking());
         assertEquals(Duration.ofSeconds(2), merged.getTimeout());
         assertEquals("new", merged.getOutputSchema());
+        assertEquals(Set.of(Modality.AUDIO), merged.getOutputModalities());
     }
 
     @Test

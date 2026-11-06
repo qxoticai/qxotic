@@ -1,19 +1,25 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
+import com.qxotic.toknroll.IntSequence;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
@@ -471,6 +477,45 @@ class JinferMappingsTest {
         Content.Reasoning reasoning = (Content.Reasoning) out.get(0).content().get(0);
         assertEquals("hmm, let me think", ((Content.Text) reasoning.content().get(0)).text());
         assertEquals("42", ((Content.Text) out.get(0).content().get(1)).text());
+    }
+
+    @Test
+    void speechIsAWavMediaPartAfterItsTranscript() throws IOException {
+        // a spoken reply: the transcript as text, the clip whole as a Content.Speech
+        float[] pcm = new float[2400];
+        for (int i = 0; i < pcm.length; i++) pcm[i] = (float) Math.sin(i * 0.1);
+        com.qxotic.jinfer.media.Media.Audio clip =
+                new com.qxotic.jinfer.media.Media.Audio(pcm, 24000, 1);
+        Message reply =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Text("Paris.", null),
+                                new Content.Speech(
+                                        clip, new SpokenTurn(IntSequence.empty(), 0, List.of()))));
+        AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
+        assertEquals("Paris.", ai.getText());
+        assertEquals(2, ai.getParts().size());
+        MediaPart speech = (MediaPart) ai.getParts().get(1);
+        assertEquals(JinferMappings.WAV, speech.media().getMimeType());
+        // the WAV names the clip's own rate and channels (a decode would resample to 16 kHz)
+        ByteBuffer wav =
+                ByteBuffer.wrap(speech.media().getDataAsByteArray()).order(ByteOrder.LITTLE_ENDIAN);
+        assertEquals(1, wav.getShort(22), "channels");
+        assertEquals(24000, wav.getInt(24), "sample rate");
+        assertEquals(pcm.length * 2, wav.getInt(40), "PCM16 bytes: the WAV is the clip");
+        assertEquals(16000, AudioCodec.decode(wav.array()).sampleRate(), "decodable, resampled");
+
+        // history side: our own reply replays through its metadata, speech and all; a foreign
+        // assistant's media part is not something the template can say, so it is left out
+        assertSame(reply, JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM).get(0));
+        AssistantMessage foreign =
+                AssistantMessage.builder()
+                        .part(TextPart.of("Paris."))
+                        .part(MediaPart.of(JinferMappings.audio(clip)))
+                        .build();
+        Message replayed = JinferMappings.toMessages(List.of(foreign), VideoSampler.UNIFORM).get(0);
+        assertEquals(List.of(new Content.Text("Paris.", null)), replayed.content());
     }
 
     @Test

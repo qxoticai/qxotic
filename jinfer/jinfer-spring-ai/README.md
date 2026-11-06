@@ -88,6 +88,7 @@ The starter creates beans from these properties:
 Chat is enabled when its model is configured and no other chat provider is selected.
 Model sources may be remote references or local paths and resolve during application startup.
 Add companions under `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
+`spring.ai.jinfer.chat.output-modalities=text,audio` lets a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
 An embedder takes its projector the same way, as `spring.ai.jinfer.embedding.companions.media`.
 
 The [translation table](https://qxotic.ai/jinfer#the-same-knob-at-each-face) maps settings between Spring AI, LangChain4j, the CLI and the server.
@@ -299,6 +300,39 @@ Audio and video require a model and companion that support those inputs; this LF
 Configure video frame selection with `videoSampler`.
 Jinfer does not fetch media during inference.
 
+## Spoken replies
+
+A model with a voice, LFM3-Omni with its projector attached, can answer in speech through the chat model.
+What a reply may be made of is the `outputModalities` option: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` let the model choose, steered by the prompt; `AUDIO` alone makes it speak.
+The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call`, and a part per stretch from `stream`:
+
+```java
+try (var omni = JinferChatModel.builder()
+        .model("LiquidAI/LFM3-Omni-2B-GGUF:Q8_0")
+        .companion("media", "LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf")
+        .options(JinferChatOptions.builder()
+                .outputModalities(Modality.TEXT, Modality.AUDIO)
+                .build())
+        .build()) {
+
+    ChatResponse response = omni.call(new Prompt(List.of(
+            new SystemMessage("Respond with interleaved text and audio."),
+            new UserMessage("What is the capital of France?"))));
+
+    AssistantMessage reply = response.getResult().getOutput();
+    System.out.println(reply.getText()); // the transcript
+    for (MessagePart part : reply.getParts()) {
+        if (part instanceof MediaPart speech) {
+            Files.write(Path.of("reply.wav"), speech.media().getDataAsByteArray());
+        }
+    }
+}
+```
+
+The same option on a request's `JinferChatOptions` opens or closes the voice for that request alone, and `spring.ai.jinfer.chat.output-modalities=text,audio` sets the default in Spring Boot.
+A streamed reply's media chunks are not aggregated: `ChatClient.stream().content()` yields the transcript, and a subscriber to `ChatModel.stream` collects the audio parts, each chunk a WAV of its own.
+A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+
 ## Embeddings and reranking
 
 When using reranking without the Spring Boot starter, add the RAG API.
@@ -380,7 +414,7 @@ The [Spring AI cache integration tests](src/test/java/com/qxotic/jinfer/spring/a
 
 ## Speech synthesis
 
-`JinferSpeechModel` implements Spring AI's `TextToSpeechModel`.
+`JinferSpeechModel` implements Spring AI's `TextToSpeechModel` over a model made for it; an LFM3-Omni speaks through the chat model instead, see [Spoken replies](#spoken-replies).
 `call` returns a complete WAV file; `stream` emits ordered, headerless little-endian PCM16 chunks.
 This example saves a WAV file, then reports the chunks from a second synthesis:
 

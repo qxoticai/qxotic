@@ -38,6 +38,7 @@ import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.Resource;
+import org.springframework.util.MimeType;
 
 /**
  * The mapping seam between Spring AI's message/tool model and jinfer's. One output shape: typed
@@ -240,6 +241,9 @@ final class JinferMappings {
      */
     static final String REPLY_KEY = "jinfer.reply";
 
+    /** A spoken reply's media type: the container that carries its own rate and channels. */
+    static final MimeType WAV = MimeType.valueOf("audio/wav");
+
     private static Message assistant(AssistantMessage ai) {
         // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
         // its verbatim ids (byte-exact re-encode: what makes retained-session extension hits
@@ -361,6 +365,14 @@ final class JinferMappings {
     /**
      * The reply's content as parts: a reasoning span whole, text, calls with canonical JSON args.
      */
+    /** A clip as Spring media: WAV, so the bytes name their own sample rate and channels. */
+    static org.springframework.ai.content.Media audio(Media.Audio clip) {
+        return org.springframework.ai.content.Media.builder()
+                .mimeType(WAV)
+                .data(AudioCodec.wav(clip))
+                .build();
+    }
+
     private static void collect(List<Content> content, List<MessagePart> parts) {
         for (Content part : content) {
             switch (part) {
@@ -379,6 +391,7 @@ final class JinferMappings {
                             r.content().stream().filter(c -> !(c instanceof Content.Text)).toList(),
                             parts);
                 }
+                case Content.Speech s -> parts.add(MediaPart.of(audio(s.audio())));
                 case Content.ToolCall c -> {
                     // pythonic syntaxes carry no call ids: mint stable positional ones (what
                     // Ollama's server does); ids never render back into the prompt (the
