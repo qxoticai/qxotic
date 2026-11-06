@@ -173,8 +173,8 @@ The architectures the library carries are jinfer's ports, listed in the [jinfer 
 `JINFER_LIBRARY=/path/to/libjinfer.so` points the package at any build.
 `pydantic` is optional.
 The C API the package binds is [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h), with `toknroll.h` for the tokenizer, usable from any language with a foreign function interface.
-## Links
 
+## Links
 
 - [jinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer): the engine, the ports, the Java API, the server and the framework providers.
 - [libjinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native): the shared library, its C API [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h), this package and its [examples](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native/python/examples).
