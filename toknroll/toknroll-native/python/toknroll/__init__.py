@@ -91,7 +91,10 @@ def _check(lib: C.CDLL, rc: int) -> int:
 def _text(value: object, what: str) -> bytes:
     if not isinstance(value, str):
         raise TypeError(f"{what}: expected str, got {type(value).__name__}")
-    return value.encode()
+    try:
+        return value.encode()
+    except UnicodeEncodeError as e:  # a lone surrogate: no UTF-8 spells it, so no tokenizer reads it
+        raise ValueError(f"{what}: {e}") from None
 
 
 def _cstring(value: object, what: str) -> bytes:
@@ -104,7 +107,10 @@ def _cstring(value: object, what: str) -> bytes:
 
 def _id(value: object, what: str) -> int:
     """A token id as the C API takes it: any `__index__` int in range(2**31), else OverflowError, as HF and tiktoken raise."""
-    value = operator.index(value)  # a float or a str is Python's own TypeError
+    try:
+        value = operator.index(value)
+    except TypeError:
+        raise TypeError(f"{what}: expected an int id, got {type(value).__name__}") from None
     if not 0 <= value < 2**31:
         raise OverflowError(f"{what}: id {value} not in range(2**31)")
     return value

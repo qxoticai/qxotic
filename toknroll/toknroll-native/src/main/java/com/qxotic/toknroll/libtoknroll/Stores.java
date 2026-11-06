@@ -4,6 +4,7 @@ import com.qxotic.jinfer.hub.HuggingFaceSource;
 import com.qxotic.jinfer.hub.ModelScopeSource;
 import com.qxotic.jinfer.hub.ModelStore;
 import java.nio.file.Path;
+import java.util.Locale;
 
 /**
  * The store hub references resolve through: jinfer's, so a file either library fetched serves the
@@ -47,10 +48,17 @@ final class Stores {
         return flag("toknroll.offline") || flag("jinfer.offline");
     }
 
-    /** Set to anything but false: a misspelled true (1, yes) must never mean online. */
+    /**
+     * Online only for the spellings of false jinfer-hub reads (false, 0, off, no): set to anything
+     * else it is offline, since a misspelled true (ture, 1x) must never mean online.
+     */
     private static boolean flag(String property) {
         String value = System.getProperty(property);
-        return value != null && !value.strip().equalsIgnoreCase("false");
+        if (value == null) return false;
+        return switch (value.strip().toLowerCase(Locale.ROOT)) {
+            case "false", "0", "off", "no" -> false;
+            default -> true;
+        };
     }
 
     private Stores() {}

@@ -17,7 +17,7 @@ from array import array
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from support import EDGE_TEXTS, GGUF, needs_numpy, numpy, toknroll
+from support import EDGE_TEXTS, GGUF, needs_hub, needs_numpy, numpy, toknroll
 from toknroll import _native as N
 
 
@@ -75,6 +75,13 @@ class IdBufferTest(unittest.TestCase):
             self.t.decode(numpy.stack([view, view]))
         with self.assertRaises(TypeError):
             self.t.decode(numpy.int32(ids[0]))                                # 0-D: not a sequence either
+
+    def test_a_type_error_names_the_call(self):
+        for call, kind, name in ((lambda: self.t.token(1.5), TypeError, "token"), (lambda: self.t.token("1"), TypeError, "token"),
+                                 (lambda: self.t.encode("\ud800"), ValueError, "encode"), (lambda: self.t.id("\ud800"), ValueError, "id")):
+            with self.subTest(name=name), self.assertRaises(kind) as e:
+                call()
+            self.assertTrue(str(e.exception).startswith(name + ":"), str(e.exception))
 
     def test_rejected_ids(self):
         for bad, kind in (([1.5], TypeError), (["a"], TypeError), ([2**40], OverflowError), ([None], TypeError),
@@ -455,11 +462,30 @@ class ConfigurationTest(unittest.TestCase):
             else:
                 raise SystemExit("loaded")
             """)
-        for value in ("true", "TRUE", "1", "yes", "bogus", ""):
+        for value in ("true", "TRUE", "1", "yes", "on", "bogus", "ture", ""):
             with self.subTest(value=value):
                 env = dict(os.environ, PYTHONPATH=str(Path(toknroll.__file__).resolve().parents[1]),
                            TOKNROLL_OPTIONS=f"-Dtoknroll.offline={value}")
                 run = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+                self.assertEqual(run.returncode, 0, run.stderr)
+
+    @needs_hub
+    def test_offline_spelled_false_any_way_jinfer_reads_it_is_online(self):
+        """false, 0, off and no are online, the spellings jinfer-hub reads as false: one process, one meaning."""
+        code = textwrap.dedent("""
+            import toknroll
+            try:
+                toknroll.load("no-such-owner-qa/no-such-repo")
+            except toknroll.NotFound as e:
+                assert "never fetches" not in str(e), e
+            else:
+                raise SystemExit("loaded")
+            """)
+        for value in ("false", "False", "0", "off", "NO"):
+            with self.subTest(value=value):
+                env = dict(os.environ, PYTHONPATH=str(Path(toknroll.__file__).resolve().parents[1]),
+                           TOKNROLL_OPTIONS=f"-Dtoknroll.offline={value}")
+                run = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=120)
                 self.assertEqual(run.returncode, 0, run.stderr)
 
 
