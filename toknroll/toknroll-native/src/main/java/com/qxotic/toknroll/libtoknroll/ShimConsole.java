@@ -7,9 +7,10 @@ import org.graalvm.nativeimage.c.function.CFunction;
 /**
  * The hub's console in the image: isatty, the window size and the console code page through the
  * shim's C helpers (toknroll_isolate.c), where the JVM's provider links them through the Foreign
- * Function API. The image keeps this provider and leaves the hub's out, so the Foreign Function API
- * and its method-handle machinery stay out of it. On a JVM these natives have no binding: no
- * console, as the hub without a provider.
+ * Function API. Given to the hub as the runtime starts (TerminalSupport.use); the image leaves the
+ * Console service out altogether, so the Foreign Function API and its method-handle machinery stay
+ * out of it (the feature drops a whole service when one provider is excluded, so a second provider
+ * cannot be chosen through it). On a JVM these natives have no binding: no console.
  */
 public final class ShimConsole implements Console {
     private static final boolean IMAGE = ImageInfo.inImageRuntimeCode();

@@ -94,13 +94,40 @@ class PackageTest(Fixture):
 
     @needs_hub
     def test_a_download_logs_at_info_only(self):
+        # progress off: the download is the log's, a start and a done record at INFO, nothing on stderr
         for log, downloads in ((None, False), ("off", False), ("info", True)):
             with self.subTest(log=log), tempfile.TemporaryDirectory() as cache:
                 code = f"toknroll.configure({root(cache)!r})\ntoknroll.load({HUB_JSON!r})\n"
-                run = fresh(RECORDS + code + PRINT, TOKNROLL_LOG=log, HF_HOME=os.path.join(cache, "hf"))  # the HF cache there too
+                run = fresh(RECORDS + code + PRINT, TOKNROLL_LOG=log, TOKNROLL_PROGRESS="off",
+                            HF_HOME=os.path.join(cache, "hf"))  # the HF cache there too
                 lines = records(run)
                 self.assertEqual(any(level == "INFO" and "jinfer.hub: download" in m for level, m in lines), downloads, lines)
                 self.assertEqual(run.stderr, "", "the library wrote to stderr")
+
+    @needs_hub
+    def test_progress_is_on_unless_the_user_says_off(self):
+        # on by default: without a terminal (this pipe) the start, a line at each tenth and the done line go
+        # to stderr, whatever the log level, and the log gets none; the variable, and the property over it,
+        # turn it off entirely
+        on = ({}, {"TOKNROLL_PROGRESS": "on"}, {"TOKNROLL_OPTIONS": "-Dtoknroll.progress=on", "TOKNROLL_PROGRESS": "off"})
+        for how in on:
+            with self.subTest(how=how), tempfile.TemporaryDirectory() as cache:
+                code = f"toknroll.configure({root(cache)!r})\ntoknroll.load({HUB_JSON!r})\n"
+                run = fresh(RECORDS + code + PRINT, HF_HOME=os.path.join(cache, "hf"), **how)
+                lines = records(run)
+                self.assertFalse(any("jinfer.hub: download" in m for _, m in lines), lines)
+                err = run.stderr.splitlines()
+                self.assertTrue(any(" done in " in line for line in err), run.stderr)
+                self.assertTrue(any("%  " in line for line in err), run.stderr)
+                self.assertNotIn("\x1b[", run.stderr, "an escape sequence off a terminal")
+                self.assertNotIn("jinfer.hub:", run.stderr, "a log line, not progress")
+        off = ({"TOKNROLL_PROGRESS": "off"}, {"TOKNROLL_OPTIONS": "-Dtoknroll.progress=off", "TOKNROLL_PROGRESS": "on"})
+        for how in off:
+            with self.subTest(how=how), tempfile.TemporaryDirectory() as cache:
+                code = f"toknroll.configure({root(cache)!r})\ntoknroll.load({HUB_JSON!r})\n"
+                run = fresh(code, HF_HOME=os.path.join(cache, "hf"), **how)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(run.stderr, "", "progress off: nothing on stderr")
 
 
 class BareLibraryTest(Fixture):
@@ -122,12 +149,22 @@ class BareLibraryTest(Fixture):
         self.assertEqual(self.bare("assert lib.toknroll_log_set(N.LogFn(), None) == 0\n", "debug").stderr, "")
 
     @needs_hub
-    def test_info_writes_a_download_to_stderr(self):
+    def test_a_download_on_stderr_is_progress_or_at_info_the_log(self):
+        # the library alone, no callback: a download is its progress on stderr, plain lines here; with
+        # progress off it is the log's, a line at info
         with tempfile.TemporaryDirectory() as cache:
-            run = fresh(BARE + f"configure({root(cache)!r})\nassert lib.toknroll_tokenizer_load({HUB_JSON.encode()!r})",
-                        TOKNROLL_LOG="info", HF_HOME=os.path.join(cache, "hf"))
+            code = BARE + f"configure({root(cache)!r})\nassert lib.toknroll_tokenizer_load({HUB_JSON.encode()!r})"
+            run = fresh(code, TOKNROLL_LOG="info", HF_HOME=os.path.join(cache, "hf"))
+            self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertIn("download hf.co/" + HUB_JSON, run.stderr)
+            self.assertIn("%  ", run.stderr)
+            self.assertNotIn("toknroll: info:", run.stderr, "progress is not a log line")
+        with tempfile.TemporaryDirectory() as cache:
+            code = BARE + f"configure({root(cache)!r})\nassert lib.toknroll_tokenizer_load({HUB_JSON.encode()!r})"
+            run = fresh(code, TOKNROLL_LOG="info", TOKNROLL_PROGRESS="off", HF_HOME=os.path.join(cache, "hf"))
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertIn("toknroll: info: jinfer.hub: download", run.stderr)
+            self.assertNotIn("%  ", run.stderr)
 
 
 if __name__ == "__main__":

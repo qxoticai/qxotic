@@ -20,6 +20,7 @@
 #  define OPTIONS_VAR "TOKNROLL_OPTIONS"
 #  define WORKER "batch-"             /* libtoknroll's own, toknroll-batch-N */
 #endif
+#include "progress.h"   /* a download's progress: on unless the host says off, plain lines on a pipe, the board on a pty */
 
 #define LE toknroll_last_error
 static const int32_t HELLO[] = {ID_HE, 108, 108, 111};
@@ -1879,6 +1880,7 @@ static const scenario scenarios[] = {
     {"gguf", gguf, NULL},
     {"threads", threads, NULL},
     {"hub_reference", hub_reference, NULL},
+    PROGRESS_SCENARIOS
     {"every_special_token", every_special_token, NULL},
     {"gguf_reference", gguf_reference, NULL},
     {"real_engine", real_engine, NULL},

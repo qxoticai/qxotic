@@ -34,10 +34,10 @@ target/chat: examples/c/chat.c $(HEADERS) $(LIB)
 # The C tests (tests/c): jinfer.h's functions on the cached models, and toknroll's tests again, against
 # the toknroll functions libjinfer carries (TEST_LIBJINFER); both headers compiled as C++ too.
 CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude -I$(TOKNROLL)/include -I$(TOKNROLL)/tests/c
-LINK_TEST = -L target -ljinfer -Wl,-rpath,$(abspath target) -lpthread
+LINK_TEST = -L target -ljinfer -Wl,-rpath,$(abspath target) -lpthread $(if $(filter Linux,$(shell uname -s)),-lutil)   # forkpty
 target/jinfer_test: tests/c/jinfer_test.c $(TOKNROLL)/tests/c/test.h $(HEADERS) $(LIB)
 	$(CC) $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
-target/toknroll_test: $(TOKNROLL)/tests/c/toknroll_test.c $(TOKNROLL)/tests/c/test.h $(TOKNROLL)/tests/c/fixtures.h $(HEADERS) $(LIB)
+target/toknroll_test: $(TOKNROLL)/tests/c/toknroll_test.c $(TOKNROLL)/tests/c/test.h $(TOKNROLL)/tests/c/fixtures.h $(TOKNROLL)/tests/c/progress.h $(HEADERS) $(LIB)
 	$(CC) $(CFLAGS_TEST) -DTEST_LIBJINFER -o $@ $< $(LINK_TEST)
 target/header_test: tests/c/header_test.cpp $(HEADERS) $(LIB)
 	$(CXX) -std=c++11 -Wall -Wextra -Wpedantic -Werror -Iinclude -I$(TOKNROLL)/include -o $@ $< $(LINK_TEST)

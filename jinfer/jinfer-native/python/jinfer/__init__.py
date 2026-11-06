@@ -29,7 +29,8 @@ Transcriber, each with only the methods that apply. Options are keyword-only and
 the model's own default. Embeddings and audio are float32 `array.array` buffers, zero-copy into
 numpy or torch; scores are floats. The library's lines go to `logging.getLogger("jinfer")`, as many as
 JINFER_LOG lets through: off, error, warn (the default), info or debug; Python's logging then decides what
-shows. From info on, a download at a terminal shows jinfer's progress board on stderr.
+shows. A download shows its progress on stderr, jinfer's live board on a terminal and a line at each tenth
+elsewhere; `JINFER_PROGRESS=off`, or `-Djinfer.progress=off` through `configure`, turns it off entirely.
 """
 from __future__ import annotations
 

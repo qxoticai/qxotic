@@ -34,9 +34,12 @@
  *              FreeLibrary) succeeds and leaves it in place.
  *   Logging    JINFER_LOG picks the lines, the toknroll_* functions' included: off, error, warn (the
  *              default), info or debug. They go to stderr, "jinfer: info: jinfer.hub: download ...",
- *              or to jinfer_log_set's callback. From info on, a download at a terminal draws its
- *              progress on stderr instead of logging it. Beyond them the library writes to stderr
- *              only the runtime's name for an option it rejects.
+ *              or to jinfer_log_set's callback. Beyond them the library writes to stderr only the
+ *              runtime's name for an option it rejects.
+ *   Progress   A download shows its progress on stderr, whatever JINFER_LOG says: a live board when
+ *              stderr is a terminal, a line at each tenth otherwise. JINFER_PROGRESS=off, or the
+ *              -Djinfer.progress=off option over it, turns that off entirely; the download is then a
+ *              start and a done line at info, for the log.
  *   Defaults   A request field left out takes the model file's value, listed by jinfer_model_info,
  *              never the library's.
  *   Downloads  run through curl on the PATH: the library carries no TLS stack of its own.

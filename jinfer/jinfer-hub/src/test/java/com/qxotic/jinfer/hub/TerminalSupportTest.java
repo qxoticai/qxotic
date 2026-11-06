@@ -50,6 +50,24 @@ class TerminalSupportTest {
     }
 
     @Test
+    void aGivenConsoleAnswersFromThenOn() {
+        TerminalSupport.use(
+                new Console() {
+                    @Override
+                    public int columns(int fd) {
+                        return 42;
+                    }
+                });
+        try {
+            assertEquals(42, TerminalSupport.columns(2));
+            assertFalse(TerminalSupport.isTerminal(2), "the defaults stand for the rest");
+        } finally {
+            TerminalSupport.use(null);
+        }
+        assertTrue(TerminalSupport.columns(2) > 0, "back to the provider");
+    }
+
+    @Test
     void unicodeFollowsLocalePrecedence() {
         assertTrue(TerminalSupport.isUtf8(Map.of("LANG", "en_US.UTF-8")));
         assertTrue(TerminalSupport.isUtf8(Map.of("LC_ALL", "C.utf8", "LANG", "C")));

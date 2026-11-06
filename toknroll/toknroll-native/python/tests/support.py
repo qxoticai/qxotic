@@ -13,7 +13,7 @@ OFFLINE = os.environ.get("TOKNROLL_OFFLINE") == "1"
 HUB_JSON = "Qwen/Qwen3-0.6B"               # a tokenizer.json repository
 HUB_GGUF = "LiquidAI/LFM2.5-350M-GGUF:Q8_0"  # a GGUF whose header is fetched
 needs_hub = unittest.skipIf(OFFLINE, "TOKNROLL_OFFLINE=1")
-CLEARED = ("XDG_CACHE_HOME", "HF_HOME", "HF_HUB_CACHE", "JINFER_MODELS", "TOKNROLL_OPTIONS", "TOKNROLL_LOG")
+CLEARED = ("XDG_CACHE_HOME", "HF_HOME", "HF_HUB_CACHE", "JINFER_MODELS", "TOKNROLL_OPTIONS", "TOKNROLL_LOG", "TOKNROLL_PROGRESS")
 
 
 def fresh(code: str, **env: str | None) -> subprocess.CompletedProcess:

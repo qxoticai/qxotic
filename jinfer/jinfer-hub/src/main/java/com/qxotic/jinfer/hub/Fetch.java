@@ -215,10 +215,10 @@ final class Fetch {
         }
     }
 
-    /** A line above the live region on a terminal; a log line everywhere else. */
+    /** A line above the live region on a terminal; a plain line everywhere else. */
     static void announce(String message) {
         if (Progress.BOARD) Board.announce(message);
-        else LOG.log(System.Logger.Level.INFO, message);
+        else line(message);
     }
 
     /** Seconds of zero movement before a download attempt is abandoned and retried. */
@@ -1309,15 +1309,26 @@ final class Fetch {
         return System.err;
     }
 
-    /** Where progress goes when no terminal is watching: the application's logging, at INFO. */
+    /** Where a download's start and done lines go when progress is off: logging, at INFO. */
     private static final System.Logger LOG = System.getLogger("jinfer.hub");
 
+    /** A line of progress: stderr when progress is on without a terminal, else the log at INFO. */
+    private static void line(String text) {
+        if (Progress.PLAIN) {
+            progress().println(text);
+            progress().flush();
+        } else {
+            LOG.log(System.Logger.Level.INFO, text);
+        }
+    }
+
     /**
-     * One transfer's progress. A terminal gets a live row on the {@link Board}; anything else (a
-     * pipe, a CI log, a library embedded in a service) gets one INFO line per decile on the {@code
-     * jinfer.hub} logger, so the host's logging configuration decides whether and where it shows. A
-     * non-UTF-8 console falls back to ASCII glyphs; {@code NO_COLOR} or {@code TERM=dumb} falls all
-     * the way back to the log lines.
+     * One transfer's progress, shown while {@link #ENABLED}: a terminal gets a live row on the
+     * {@link Board}; anything else (a pipe, a CI log, a service's stderr) gets a line at each
+     * tenth. Switched off by an embedder, the {@code jinfer.hub} logger gets a start and a done
+     * line at INFO, so the host's logging decides whether and where they show. A non-UTF-8 console
+     * falls back to ASCII glyphs; {@code NO_COLOR} or {@code TERM=dumb} falls back to the plain
+     * lines.
      *
      * <p>Worker threads write the fields, the Board's ticker reads them - each is independently
      * volatile, so a frame may briefly mix a fresh phase with a stale rate, which costs one tick of
@@ -1337,13 +1348,44 @@ final class Fetch {
         /** The eighth-blocks a sub-cell leading edge is built from, 1/8 first. */
         private static final String EIGHTHS = "\u258f\u258e\u258d\u258c\u258b\u258a\u2589";
 
-        // Detect and prepare the descriptor we paint, including Windows virtual-terminal mode; only
-        // when INFO lines show, so a library logging at warn keeps the terminal quiet
-        private static final boolean BOARD =
-                LOG.isLoggable(System.Logger.Level.INFO)
+        /**
+         * Whether downloads show progress at all: on unless {@code -Djinfer.progress}, else {@code
+         * JINFER_PROGRESS}, says off. On, a terminal gets the Board and anything else a line at
+         * each tenth, both on stderr and whatever the log level, so a multi-GB download is never a
+         * silent hour; off, nothing on stderr, and the log gets a start and a done line at INFO for
+         * the host's logging to show or not. Whether to animate is never a setting: it is what
+         * stderr is.
+         */
+        static final boolean ENABLED = enabled();
+
+        // Detect and prepare the descriptor we paint, including Windows virtual-terminal mode;
+        // NO_COLOR and TERM=dumb refuse escape sequences, not progress
+        static final boolean BOARD =
+                ENABLED
                         && System.getenv("NO_COLOR") == null
                         && !"dumb".equals(System.getenv("TERM"))
                         && TerminalSupport.enableAnsi(2);
+
+        /** Progress on, no terminal: plain lines on stderr. */
+        static final boolean PLAIN = ENABLED && !BOARD;
+
+        private static boolean enabled() {
+            Boolean property = flag(System.getProperty("jinfer.progress"));
+            if (property != null) return property;
+            Boolean environment = flag(System.getenv("JINFER_PROGRESS"));
+            return environment == null || environment;
+        }
+
+        /** on, true, 1, yes and off, false, 0, no, in any case; null for anything else. */
+        private static Boolean flag(String value) {
+            if (value == null) return null;
+            return switch (value.strip().toLowerCase(Locale.ROOT)) {
+                case "1", "true", "on", "yes" -> true;
+                case "0", "false", "off", "no" -> false;
+                default -> null;
+            };
+        }
+
         private static final boolean UNICODE =
                 progress().charset().contains(StandardCharsets.UTF_8)
                         && (!BOARD || TerminalSupport.enableUtf8());
@@ -1362,6 +1404,7 @@ final class Fetch {
         private boolean added; // registered on the Board (once, across retries)
         private long firstStartNanos; // the plain log's "done" line times the whole transfer
         private long firstStartBytes = -1;
+        private int tenth; // the plain log's last line: one at each tenth of the total
 
         Progress(String label, long total) {
             this.label = label;
@@ -1373,6 +1416,7 @@ final class Fetch {
             phase = "";
             startBytes = already;
             startNanos = System.nanoTime();
+            tenth = total > 0 ? (int) (10 * already / total) : 10;
             if (firstStartBytes < 0) {
                 firstStartBytes = already;
                 firstStartNanos = startNanos;
@@ -1389,15 +1433,18 @@ final class Fetch {
                 }
                 return;
             }
-            LOG.log(
-                    System.Logger.Level.INFO,
+            line(
                     label
                             + "  "
                             + size(total)
                             + (already > 0 ? ", resuming at " + size(already) : ""));
         }
 
-        /** Bytes so far, shown on a terminal only: a log gets the start and done lines. */
+        /**
+         * Bytes so far: a terminal repaints its row; plain progress gets a line at each tenth of
+         * the total, none for the sha256 read-back or an unsized transfer, whose done line says it
+         * all; progress off hears nothing until done.
+         */
         void at(long written) {
             lastWritten = written;
             ModelStore.ProgressListener host = listener;
@@ -1405,7 +1452,31 @@ final class Fetch {
                 host.progress(label, written, total);
                 return;
             }
-            if (BOARD) Board.repaint(false);
+            if (BOARD) {
+                Board.repaint(false);
+                return;
+            }
+            if (!PLAIN) return;
+            String line = tenth(written);
+            if (line != null) line(line);
+        }
+
+        /** The plain log's line when {@code written} crosses a tenth of the total, else null. */
+        String tenth(long written) {
+            if (!phase.isEmpty() || total <= 0) return null;
+            int now = (int) (10 * written / total);
+            if (now <= tenth || now >= 10) return null;
+            tenth = now;
+            double seconds = (System.nanoTime() - startNanos) / 1e9;
+            long rate = seconds > 0 ? (long) ((written - startBytes) / seconds) : 0;
+            return String.format(
+                    Locale.ROOT,
+                    "%s  %d%%  %s/%s (%s/s)",
+                    label,
+                    now * 10,
+                    size(written),
+                    size(total),
+                    size(rate));
         }
 
         /**
@@ -1434,8 +1505,7 @@ final class Fetch {
             }
             double seconds = (System.nanoTime() - firstStartNanos) / 1e9;
             long moved = total - Math.max(0, firstStartBytes);
-            LOG.log(
-                    System.Logger.Level.INFO,
+            line(
                     String.format(
                             Locale.ROOT,
                             "%s  %s done in %.1f s (%s/s)",
@@ -1446,10 +1516,12 @@ final class Fetch {
         }
 
         void note(String message) {
-            if (listener != null || !BOARD) {
+            if (listener != null) {
                 LOG.log(System.Logger.Level.INFO, label + ": " + message);
-            } else {
+            } else if (BOARD) {
                 Board.announce("  " + label + ": " + message);
+            } else {
+                line(label + ": " + message);
             }
         }
 

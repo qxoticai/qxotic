@@ -5,7 +5,7 @@ OPT    = $(if $(QUICK),-Ob,$(if $(PGO),--pgo=$(abspath $(PROFILE))))
 STATIC := target/libtoknroll.a
 DIST_LIBS = $(LIB) $(STATIC)
 # What the image needs from the system: the shared library carries these as NEEDED, a static consumer links them
-SYSLIBS = -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt)
+SYSLIBS = -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt -lutil)
 WHEEL_TEST = TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
 # What `make check` tokenizes: a hub repository, metadata only
 SOURCE ?= Qwen/Qwen3-0.6B
@@ -56,9 +56,9 @@ target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
 
 # The C tests (tests/c): every function's results, error codes and special cases, each scenario in a
 # process of its own; the header compiled as C++ too.
-TEST_DEPS = tests/c/toknroll_test.c tests/c/test.h tests/c/fixtures.h include/toknroll.h
+TEST_DEPS = tests/c/toknroll_test.c tests/c/test.h tests/c/fixtures.h tests/c/progress.h include/toknroll.h
 CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude
-LINK_TEST = -L target -ltoknroll -Wl,-rpath,$(abspath target) -lpthread
+LINK_TEST = -L target -ltoknroll -Wl,-rpath,$(abspath target) -lpthread $(if $(filter Linux,$(shell uname -s)),-lutil)   # forkpty
 target/toknroll_test: $(TEST_DEPS) $(LIB)
 	$(CC) $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
 target/toknroll_test-static: $(TEST_DEPS) $(STATIC)

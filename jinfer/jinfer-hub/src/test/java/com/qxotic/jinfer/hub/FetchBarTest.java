@@ -59,7 +59,7 @@ class FetchBarTest {
                 """;
         List<String> command =
                 new ArrayList<>(List.of("python3", "-c", script, Integer.toString(columns)));
-        command.addAll(probeCommand());
+        command.addAll(probeCommand("-Djinfer.progress=on"));
         Path output = dir.resolve("terminal.txt"), error = dir.resolve("stderr.txt");
         Process process;
         try {
@@ -95,16 +95,18 @@ class FetchBarTest {
         }
     }
 
-    private static List<String> probeCommand() throws Exception {
+    private static List<String> probeCommand(String... flags) throws Exception {
         String classes =
                 Path.of(Fetch.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                         .toString();
-        return List.of(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "--enable-native-access=ALL-UNNAMED",
-                "-cp",
-                classes + File.pathSeparator + System.getProperty("java.class.path"),
-                ProgressProbe.class.getName());
+        List<String> command = new ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.add("--enable-native-access=ALL-UNNAMED");
+        command.addAll(List.of(flags));
+        command.add("-cp");
+        command.add(classes + File.pathSeparator + System.getProperty("java.class.path"));
+        command.add(ProgressProbe.class.getName());
+        return command;
     }
 
     @ParameterizedTest
@@ -135,26 +137,49 @@ class FetchBarTest {
         }
     }
 
-    /** A log gets two lines per download, start and done, never the bar's frames. */
+    /** Progress off, the default: the log gets two lines per download, start and done. */
     @Test
-    void redirectedProgressIsAStartLineAndADoneLine(@TempDir Path dir) throws Exception {
+    void progressOffIsAStartLineAndADoneLineInTheLog(@TempDir Path dir) throws Exception {
+        List<String> lines = probeLines(dir, "model-Q8_0");
+        assertEquals(2, lines.size(), lines.toString());
+        assertTrue(lines.getFirst().startsWith("INFO: "), "a log record: " + lines.getFirst());
+        assertTrue(lines.getFirst().endsWith("model-Q8_0.gguf  1000 B"), lines.getFirst());
+        assertTrue(lines.getLast().contains("model-Q8_0.gguf  1000 B done in "), lines.getLast());
+    }
+
+    /** Progress on without a terminal: plain lines on stderr, a tenth between start and done. */
+    @Test
+    void progressOnWithoutATerminalIsPlainLinesWithTenths(@TempDir Path dir) throws Exception {
+        List<String> lines = probeLines(dir, "model-Q8_0", "-Djinfer.progress=on");
+        assertEquals(List.of("model-Q8_0.gguf  1000 B"), List.of(lines.getFirst()));
+        assertTrue(lines.get(1).startsWith("model-Q8_0.gguf  50%  500 B/1000 B ("), lines.get(1));
+        assertTrue(lines.getLast().startsWith("model-Q8_0.gguf  1000 B done in "), lines.getLast());
+        assertEquals(3, lines.size(), lines.toString());
+    }
+
+    /** The env is the knob too; a false property wins over it. */
+    @Test
+    void thePropertyWinsOverTheEnvironment(@TempDir Path dir) throws Exception {
+        List<String> lines = probeLines(dir, "model-Q8_0", "-Djinfer.progress=off");
+        assertEquals(2, lines.size(), lines.toString());
+    }
+
+    private static List<String> probeLines(Path dir, String label, String... flags)
+            throws Exception {
         Path output = dir.resolve("stdout.txt"), error = dir.resolve("stderr.txt");
         var builder =
-                new ProcessBuilder(probeCommand())
+                new ProcessBuilder(probeCommand(flags))
                         .redirectOutput(output.toFile())
                         .redirectError(error.toFile());
         builder.environment().remove("NO_COLOR");
+        builder.environment().put("JINFER_PROGRESS", flags.length == 0 ? "off" : "on");
         Process process = builder.start();
         try {
             assertTrue(process.waitFor(20, TimeUnit.SECONDS), "probe timed out");
             assertEquals(0, process.exitValue(), Files.readString(error));
-            List<String> lines =
-                    Files.readString(error).lines().filter(l -> l.contains("model-Q8_0")).toList();
-            assertEquals(2, lines.size(), Files.readString(error));
-            assertTrue(lines.getFirst().endsWith("model-Q8_0.gguf  1000 B"), lines.getFirst());
-            assertTrue(
-                    lines.getLast().contains("model-Q8_0.gguf  1000 B done in "), lines.getLast());
-            assertFalse(Files.readString(error).contains("eta"), Files.readString(error));
+            String all = Files.readString(error);
+            assertFalse(all.contains("\u001b["), "no escape sequence off a terminal: " + all);
+            return all.lines().filter(l -> l.contains(label)).toList();
         } finally {
             process.destroyForcibly();
         }

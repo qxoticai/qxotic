@@ -3,9 +3,10 @@ package com.qxotic.jinfer.hub;
 /**
  * The console probes behind {@link TerminalSupport}, one provider per runtime: on a JVM {@link
  * FfmConsole}, which links libc and kernel32 through the Foreign Function API and is the service
- * provider this module registers; a native image registers its own and leaves that one out. A
- * provider overrides what it can probe; the defaults are no console. Descriptors are 0, 1 or 2; a
- * probe that cannot be made answers false or 0, never throws.
+ * provider this module registers; a native image leaves that service out and {@link
+ * TerminalSupport#use gives} its own at start. A provider overrides what it can probe; the defaults
+ * are no console. Descriptors are 0, 1 or 2; a probe that cannot be made answers false or 0, never
+ * throws.
  */
 public interface Console {
     /** Whether the descriptor is a terminal. */

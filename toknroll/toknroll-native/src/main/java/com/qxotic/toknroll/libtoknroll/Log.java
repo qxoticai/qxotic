@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.libtoknroll;
 
+import com.qxotic.jinfer.hub.TerminalSupport;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Locale;
@@ -46,6 +47,9 @@ final class Log {
         level = given && callback.isNull() ? OFF : wanted < 0 ? WARN : wanted;
         fn = callback.rawValue();
         userData = user.rawValue();
+        progressKnob();
+        TerminalSupport.use(
+                new ShimConsole()); // the image's console: the JVM's provider is not in it
         if (level != OFF && wanted < 0 && value != null && !value.isBlank())
             emit(
                     WARN,
@@ -55,6 +59,18 @@ final class Log {
                             + "="
                             + value
                             + " is not off, error, warn, info or debug: warn applies");
+    }
+
+    /**
+     * The hub shows a download's progress as -Djinfer.progress, else JINFER_PROGRESS, says; this
+     * program's names for them, -D{@code <program>}.progress and {@code <PROGRAM>}_PROGRESS, are
+     * mapped onto the hub's before any fetch, the property over the variable.
+     */
+    private static void progressKnob() {
+        if (program.equals("jinfer")) return;
+        String value = System.getProperty(program + ".progress");
+        if (value == null) value = System.getenv(program.toUpperCase(Locale.ROOT) + "_PROGRESS");
+        if (value != null) System.setProperty("jinfer.progress", value);
     }
 
     /**

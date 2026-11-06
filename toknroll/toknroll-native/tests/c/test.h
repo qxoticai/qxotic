@@ -196,7 +196,7 @@ static void skip(const char* format, ...) {
 /* none of the libraries' variables the shell may have set, but the scenario's own */
 static void scenario_env(const scenario* s) {
     static const char* const libraries[] = {"TOKNROLL_LOG", "TOKNROLL_OPTIONS", "TOKNROLL_CACHE_ROOT", "JINFER_LOG",
-                                            "JINFER_OPTIONS"};
+                                            "JINFER_OPTIONS", "TOKNROLL_PROGRESS", "JINFER_PROGRESS"};
     for (int k = 0; k < COUNT(libraries); k++) env_set(libraries[k], NULL);
     if (s->env) {
         char name[64];
@@ -210,7 +210,10 @@ static void scenario_env(const scenario* s) {
 /* the seconds a scenario may take: past them a hang fails it, the run going on (a scenario may set less) */
 enum { WATCHDOG = 600 };
 
+static const char* test_self;   /* this program, for a scenario that runs another in a process of its own */
+
 static int test_main(int argc, char** argv, const scenario* scenarios, int count) {
+    test_self = argv[0];
     setvbuf(stdout, NULL, _IONBF, 0);
     make_dir("target/ctest");
     if (argc > 1) {
@@ -228,6 +231,7 @@ static int test_main(int argc, char** argv, const scenario* scenarios, int count
     }
     int failed = 0, skipped = 0;
     for (int i = 0; i < count; i++) {
+        if (scenarios[i].name[0] == '.') continue;   /* a helper another scenario runs by name, not a scenario */
         /* the scenario's own variable is its alone: what it was before comes back after */
         char name[64] = "", before[1024] = "";
         const char* had = NULL;
