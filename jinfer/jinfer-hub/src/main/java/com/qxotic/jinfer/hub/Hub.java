@@ -294,10 +294,10 @@ final class Hub {
     private static final AtomicLong STAGED = new AtomicLong();
 
     /**
-     * The name of a {@code .part} file of the folder for this process to write: its pid and a
-     * count, which only a stale file of an earlier process with the same pid can hold, and that one
-     * is overwritten. No random name: a SecureRandom is the security providers, in a native image.
-     * The pid is read at use, as a static would be the image builder's.
+     * A {@code .part} name of the folder for this process to write: pid and count, so only a stale
+     * file of an earlier process can hold it, and that one is overwritten. No random name: a
+     * SecureRandom is the security providers, in a native image. The pid is read at use, as a
+     * static would be the image builder's.
      */
     private static Path staging(Path dir, String prefix) {
         return dir.resolve(

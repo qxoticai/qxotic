@@ -140,7 +140,7 @@ class FetchBarTest {
     /** Progress off, the default: the log gets two lines per download, start and done. */
     @Test
     void progressOffIsAStartLineAndADoneLineInTheLog(@TempDir Path dir) throws Exception {
-        List<String> lines = probeLines(dir, "model-Q8_0");
+        List<String> lines = probeLines(dir, "model-Q8_0", "off");
         assertEquals(2, lines.size(), lines.toString());
         assertTrue(lines.getFirst().startsWith("INFO: "), "a log record: " + lines.getFirst());
         assertTrue(lines.getFirst().endsWith("model-Q8_0.gguf  1000 B"), lines.getFirst());
@@ -150,7 +150,7 @@ class FetchBarTest {
     /** Progress on without a terminal: plain lines on stderr, a tenth between start and done. */
     @Test
     void progressOnWithoutATerminalIsPlainLinesWithTenths(@TempDir Path dir) throws Exception {
-        List<String> lines = probeLines(dir, "model-Q8_0", "-Djinfer.progress=on");
+        List<String> lines = probeLines(dir, "model-Q8_0", "on");
         assertEquals(List.of("model-Q8_0.gguf  1000 B"), List.of(lines.getFirst()));
         assertTrue(lines.get(1).startsWith("model-Q8_0.gguf  50%  500 B/1000 B ("), lines.get(1));
         assertTrue(lines.getLast().startsWith("model-Q8_0.gguf  1000 B done in "), lines.getLast());
@@ -160,11 +160,12 @@ class FetchBarTest {
     /** The env is the knob too; a false property wins over it. */
     @Test
     void thePropertyWinsOverTheEnvironment(@TempDir Path dir) throws Exception {
-        List<String> lines = probeLines(dir, "model-Q8_0", "-Djinfer.progress=off");
+        List<String> lines = probeLines(dir, "model-Q8_0", "on", "-Djinfer.progress=off");
         assertEquals(2, lines.size(), lines.toString());
     }
 
-    private static List<String> probeLines(Path dir, String label, String... flags)
+    /** The probe's stderr lines naming the label, JINFER_PROGRESS set to env, flags on the JVM. */
+    private static List<String> probeLines(Path dir, String label, String env, String... flags)
             throws Exception {
         Path output = dir.resolve("stdout.txt"), error = dir.resolve("stderr.txt");
         var builder =
@@ -172,7 +173,7 @@ class FetchBarTest {
                         .redirectOutput(output.toFile())
                         .redirectError(error.toFile());
         builder.environment().remove("NO_COLOR");
-        builder.environment().put("JINFER_PROGRESS", flags.length == 0 ? "off" : "on");
+        builder.environment().put("JINFER_PROGRESS", env);
         Process process = builder.start();
         try {
             assertTrue(process.waitFor(20, TimeUnit.SECONDS), "probe timed out");

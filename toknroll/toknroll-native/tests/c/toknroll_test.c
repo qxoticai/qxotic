@@ -20,7 +20,6 @@
 #  define OPTIONS_VAR "TOKNROLL_OPTIONS"
 #  define WORKER "batch-"             /* libtoknroll's own, toknroll-batch-N */
 #endif
-#include "progress.h"   /* a download's progress: on unless the host says off, plain lines on a pipe, the board on a pty */
 
 #define LE toknroll_last_error
 static const int32_t HELLO[] = {ID_HE, 108, 108, 111};
@@ -1339,6 +1338,8 @@ static void fork_during_first_batch(void) {
 /* ---- the everyday paths, on the real tokenizers the cache holds (skipped, and said so, without) ---- */
 
 #define QWEN "Qwen/Qwen3-0.6B"
+
+#include "progress.h"   /* a download's progress: on unless the host says off, plain lines on a pipe, the board on a pty */
 #define QWEN_VOCAB 151669
 #define LFM_GGUF "LiquidAI/LFM2.5-350M-GGUF:Q8_0"
 

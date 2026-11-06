@@ -1,13 +1,12 @@
 /* A download's progress, as the C API's host sees it: on unless the host says off, plain lines on stderr
  * where there is no terminal, the live board on one; off, nothing. The download is Qwen's tokenizer.json
  * (11 MB) over an empty cache root, so the network; without it the scenario skips, which fails the run as a
- * missing fixture does. Included by toknroll_test.c after PROGRAM is defined. */
+ * missing fixture does. Included by toknroll_test.c after PROGRAM and QWEN are defined. */
 #ifdef TEST_LIBJINFER
 #  define PROGRESS_VAR "JINFER_PROGRESS"
 #else
 #  define PROGRESS_VAR "TOKNROLL_PROGRESS"
 #endif
-#define PROGRESS_REF "Qwen/Qwen3-0.6B"
 
 #ifdef _WIN32
 #  include <process.h>
@@ -45,8 +44,8 @@ static void progress_download(const char* option) {
     env_set("HF_HOME", hf);   /* the hub's write-through goes there, not to this machine's cache */
     const char* options[] = {root, option};
     CHECK_EQ(toknroll_configure(options, option ? 2 : 1), TOKNROLL_OK);
-    toknroll_tokenizer* t = toknroll_tokenizer_load(PROGRESS_REF);
-    if (!t) skip("%s does not download (offline?): %s", PROGRESS_REF, toknroll_last_error(NULL));
+    toknroll_tokenizer* t = toknroll_tokenizer_load(QWEN);
+    if (!t) skip("%s does not download (offline?): %s", QWEN, toknroll_last_error(NULL));
     toknroll_tokenizer_free(t);
     progress_remove(dir);
 }
@@ -55,7 +54,7 @@ static void progress_on_by_default(void) {   /* nothing said, no terminal: plain
     capture_stderr();
     progress_download(NULL);
     char* err = captured_stderr();
-    CHECK_HAS(err, "download hf.co/" PROGRESS_REF);
+    CHECK_HAS(err, "download hf.co/" QWEN);
     CHECK_HAS(err, "tokenizer.json  ");
     CHECK_HAS(err, "%  ");   /* a tenth */
     CHECK_HAS(err, " done in ");
@@ -107,7 +106,7 @@ static void progress_on_a_terminal(void) {   /* nothing said, stderr a pseudo-te
     waitpid(pid, &status, 0);
     close(master);
     CHECK_EQ(WIFEXITED(status) ? WEXITSTATUS(status) : -1, 0);
-    CHECK_HAS(out, "download hf.co/" PROGRESS_REF);
+    CHECK_HAS(out, "download hf.co/" QWEN);
     CHECK_HAS(out, "\x1b[2K");   /* a repainted row */
     CHECK_HAS(out, "tokenizer.json");
     CHECK(!strstr(out, "tokenizer.json  "));   /* no plain line, label then two spaces: the board's rows only */

@@ -1370,20 +1370,10 @@ final class Fetch {
         static final boolean PLAIN = ENABLED && !BOARD;
 
         private static boolean enabled() {
-            Boolean property = flag(System.getProperty("jinfer.progress"));
+            Boolean property = ModelStore.flag(System.getProperty("jinfer.progress"));
             if (property != null) return property;
-            Boolean environment = flag(System.getenv("JINFER_PROGRESS"));
+            Boolean environment = ModelStore.flag(System.getenv("JINFER_PROGRESS"));
             return environment == null || environment;
-        }
-
-        /** on, true, 1, yes and off, false, 0, no, in any case; null for anything else. */
-        private static Boolean flag(String value) {
-            if (value == null) return null;
-            return switch (value.strip().toLowerCase(Locale.ROOT)) {
-                case "1", "true", "on", "yes" -> true;
-                case "0", "false", "off", "no" -> false;
-                default -> null;
-            };
         }
 
         private static final boolean UNICODE =

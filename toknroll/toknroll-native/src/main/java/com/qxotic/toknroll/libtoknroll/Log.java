@@ -62,9 +62,9 @@ final class Log {
     }
 
     /**
-     * The hub shows a download's progress as -Djinfer.progress, else JINFER_PROGRESS, says; this
-     * program's names for them, -D{@code <program>}.progress and {@code <PROGRAM>}_PROGRESS, are
-     * mapped onto the hub's before any fetch, the property over the variable.
+     * This program's names for the hub's progress knob, -D<program>.progress and
+     * <PROGRAM>_PROGRESS, mapped onto -Djinfer.progress before any fetch, the property over the
+     * variable.
      */
     private static void progressKnob() {
         if (program.equals("jinfer")) return;

@@ -621,7 +621,10 @@ public final class ModelStore {
         return Boolean.TRUE.equals(flag(System.getenv("JINFER_OFFLINE"))) ? "JINFER_OFFLINE" : null;
     }
 
-    private static Boolean flag(String value) {
+    /**
+     * on, true, 1, yes and off, false, 0, no, in any case; null for anything else, unset included.
+     */
+    static Boolean flag(String value) {
         if (value == null) return null;
         return switch (value.strip().toLowerCase(Locale.ROOT)) {
             case "1", "true", "on", "yes" -> true;
