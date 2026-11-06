@@ -7,6 +7,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -38,6 +39,14 @@ class TerminalSupportTest {
             info.set(ValueLayout.JAVA_SHORT, 14, (short) 0);
             assertTrue(FfmConsole.windowsColumns(info) <= 0);
         }
+    }
+
+    @Test
+    void theJvmsConsoleIsTheForeignFunctionProvider() {
+        Console provided = ServiceLoader.load(Console.class).findFirst().orElseThrow();
+        assertEquals(FfmConsole.class, provided.getClass());
+        assertFalse(new Console() {}.isTerminal(1), "the defaults are no console");
+        assertEquals(0, new Console() {}.columns(1));
     }
 
     @Test

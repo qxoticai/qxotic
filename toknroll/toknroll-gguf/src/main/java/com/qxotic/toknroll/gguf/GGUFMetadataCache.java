@@ -188,9 +188,10 @@ final class GGUFMetadataCache {
     private static final AtomicLong STAGED = new AtomicLong();
 
     /**
-     * The target's staging file, next to it, named by this process and a count: only a stale file
-     * of an earlier process with this pid can hold the name, and it is overwritten. No random name,
-     * so no SecureRandom and the security providers behind it in a native image.
+     * The target's staging file, next to it: its pid and a count, which only a stale file of an
+     * earlier process with the same pid can hold, and that one is overwritten. No random name: a
+     * SecureRandom is the security providers, in a native image. The pid is read at use, as a
+     * static would be the image builder's.
      */
     private static Path staging(Path target) {
         return target.resolveSibling(

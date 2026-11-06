@@ -3,7 +3,6 @@ package com.qxotic.jinfer.hub;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -262,7 +261,7 @@ final class Hub {
         Path tmp = staging(dest.getParent(), ".jinfer-link-");
         try {
             Path target = dest.getParent().toAbsolutePath().relativize(blob.toAbsolutePath());
-            Files.delete(tmp);
+            Files.deleteIfExists(tmp); // a stale one would be in the link's way
             try {
                 Files.createSymbolicLink(tmp, target);
             } catch (IOException | UnsupportedOperationException noSymlinks) {
@@ -295,20 +294,14 @@ final class Hub {
     private static final AtomicLong STAGED = new AtomicLong();
 
     /**
-     * A new, empty {@code .part} file of the folder, named by this process and a count: a name only
-     * a stale file of an earlier process with this pid can hold, in which case the next count. No
-     * random name, so no SecureRandom and the security providers behind it in a native image.
+     * The name of a {@code .part} file of the folder for this process to write: its pid and a
+     * count, which only a stale file of an earlier process with the same pid can hold, and that one
+     * is overwritten. No random name: a SecureRandom is the security providers, in a native image.
+     * The pid is read at use, as a static would be the image builder's.
      */
-    private static Path staging(Path dir, String prefix) throws IOException {
-        long pid = ProcessHandle.current().pid();
-        for (; ; ) {
-            Path file = dir.resolve(prefix + pid + "-" + STAGED.incrementAndGet() + ".part");
-            try {
-                return Files.createFile(file);
-            } catch (FileAlreadyExistsException stale) {
-                // the next count
-            }
-        }
+    private static Path staging(Path dir, String prefix) {
+        return dir.resolve(
+                prefix + ProcessHandle.current().pid() + "-" + STAGED.incrementAndGet() + ".part");
     }
 
     /** A git commit hash, fit to be a snapshot directory name. */

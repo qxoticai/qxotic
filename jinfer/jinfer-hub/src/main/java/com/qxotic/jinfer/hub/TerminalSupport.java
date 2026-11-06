@@ -19,27 +19,7 @@ public final class TerminalSupport {
         for (Console provided : ServiceLoader.load(Console.class)) {
             return provided;
         }
-        return new Console() {
-            @Override
-            public boolean isTerminal(int fd) {
-                return false;
-            }
-
-            @Override
-            public int columns(int fd) {
-                return 0;
-            }
-
-            @Override
-            public boolean enableAnsi(int fd) {
-                return false;
-            }
-
-            @Override
-            public boolean enableUtf8() {
-                return false;
-            }
-        };
+        return new Console() {}; // no provider: no console
     }
 
     /** Whether standard descriptor 0, 1 or 2 is a terminal; false when unavailable. */
