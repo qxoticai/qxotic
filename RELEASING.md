@@ -63,6 +63,21 @@ make cache-models-in-container     # the manylinux container keeps a cache of it
 
 Record the platforms built, their test totals and skips, and the wheel file names with the release evidence.
 
+## C libraries
+
+The native libraries for C are the release zips, one per platform, assets of the GitHub release on the tag: `libtoknroll-<version>-<platform>.zip` and `libjinfer-<version>-<platform>.zip`, each a prefix tree (`include/`, `lib/` with the library under its soname, the linker's name, the static archive where there is one, and `lib/pkgconfig/<name>.pc`; `bin\` for the DLL on Windows) with the README and the license.
+Each machine builds its own from the same export the wheels come from, checks it, and uploads it:
+
+```sh
+make -C toknroll/toknroll-native dist check-dist     # the zip, unzipped to a prefix of its own, the C example built with pkg-config alone
+make -C jinfer/jinfer-native dist check-dist
+make -C toknroll/toknroll-native publish-dist TAG=<tag>   # the zip and its checksum as assets of the release, through gh
+make -C jinfer/jinfer-native publish-dist TAG=<tag>
+```
+
+On Windows, `.\build.ps1 dist` in each native directory builds the zip; upload it with `gh release upload <tag> target\dist\*.zip target\dist\*.sha256`.
+The release itself is created once, `gh release create <tag>`, before the first upload.
+
 ## Consumer artifacts and native libraries
 
 ```sh

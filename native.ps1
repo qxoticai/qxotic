@@ -86,6 +86,18 @@ function Build-Wheel {   # tagged py3-none-win_amd64 by setup.py: ctypes over a 
     Remove-Item -Recurse -Force target\wheel, python\build -ErrorAction Ignore
     & "$Tools\Scripts\pip" wheel -q --no-deps -w target\wheel .\python; if ($LASTEXITCODE) { throw "pip wheel failed" }
 }
+function Build-Dist {   # the release zip as native.mk's dist: a prefix tree, Windows' own layout (bin\ for the DLL, lib\ for the import library)
+    $version = ((Get-Content "include\$Name.h") -match "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) " | ForEach-Object { ($_ -split ' ')[-1] }) -join '.'
+    $dist = "lib$Name-$version-$Platform"
+    Remove-Item -Recurse -Force "target\dist\$dist", "target\dist\$dist.zip" -ErrorAction Ignore
+    New-Item -ItemType Directory -Force "target\dist\$dist\include", "target\dist\$dist\lib", "target\dist\$dist\bin" | Out-Null
+    Copy-Item $Headers "target\dist\$dist\include\"; Copy-Item $Lib "target\dist\$dist\bin\"; Copy-Item "target\$Name.lib" "target\dist\$dist\lib\"
+    Copy-Item README.md, "$Root\LICENSE" "target\dist\$dist\"
+    Compress-Archive -Path "target\dist\$dist" -DestinationPath "target\dist\$dist.zip"
+    $hash = (Get-FileHash "target\dist\$dist.zip" -Algorithm SHA256).Hash.ToLower()
+    [IO.File]::WriteAllText("$Here\target\dist\$dist.zip.sha256", "$hash  $dist.zip`n")
+    Get-Item "target\dist\$dist.zip" | Format-Table Name, Length | Out-String | Write-Host; Get-Content "target\dist\$dist.zip.sha256"
+}
 function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the wheels it depends on, tested from outside the checkout
     Build-Wheel
     $whl = (Get-Item target\wheel\*.whl).FullName; $deps = & $WheelDeps
@@ -108,12 +120,13 @@ function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders
 try {
     foreach ($t in $Targets) {
         switch ($t) {
-            'help'        { Get-Content "$Here\build.ps1" | Select-Object -Skip 1 | Select-Object -First 6 | ForEach-Object { $_ -replace '^#\s?', '' }; "This machine's two wheels from a clean export: ..\..\wheels.ps1." }
+            'help'        { Get-Content "$Here\build.ps1" | Select-Object -Skip 1 | Select-Object -First 7 | ForEach-Object { $_ -replace '^#\s?', '' }; "This machine's two wheels from a clean export: ..\..\wheels.ps1." }
             'library'     { Build-Library }
             'check'       { Run-Check }
             'python'      { Stage-Python }
             'wheel'       { Build-Wheel }
             'check-wheel' { Check-Wheel }
+            'dist'        { Build-Dist }
             default       { throw "no target '$t'" }
         }
     }

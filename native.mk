@@ -65,7 +65,9 @@ help::
 	@echo 'make python                stage $(LIB), the headers and a pkg-config file into python/$(NAME)/'
 	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
 	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the tests from outside the tree'
-	@echo 'make dist                  release bundle: headers, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
+	@echo 'make dist                  the release zip, a prefix tree: include/, lib/ with the library, its soname and .pc, README, LICENSE -> target/dist/$(DIST).zip'
+	@echo 'make check-dist            the zip unzipped to a prefix of its own, the C example built with pkg-config alone'
+	@echo 'make publish-dist TAG=<tag>   the zip and its checksum as assets of that GitHub release (gh)'
 	@echo 'This machine'"'"'s two wheels from a clean export, and PyPI: make wheels, make publish-wheels at the root.'
 
 check-version:   # the header, the wheel, the pom and (where it is a literal) the package name the same release
@@ -120,15 +122,37 @@ check-wheel: wheel
 	 echo "the C example builds and runs against the installed wheel: $(NAME)-config --cflags --libs"
 	@PKG_CONFIG_PATH=$$(target/wheelenv/bin/$(NAME)-config --pkgconfigdir) pkg-config --exists $(NAME) && echo "pkg-config finds $(NAME) there" || echo "no pkg-config here: the .pc file not checked"
 
-# What a release carries per platform: headers, libraries, the wheel, so pip users need no second download.
-dist: wheel
-	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/include target/dist/$(DIST)/lib/$(PLATFORM) target/dist/$(DIST)/python
+# What a release carries per platform, for C and anyone without Python (the wheel is its own delivery): a
+# prefix tree, include/, lib/ with the library under its soname, the linker's name linked to it, the static
+# archive where there is one, and lib/pkgconfig/$(NAME).pc. Unzipped into /usr/local pkg-config finds it with
+# no setup; elsewhere PKG_CONFIG_PATH=<prefix>/lib/pkgconfig. The platform is in the zip's name, not inside it.
+dist: $(LIB)
+	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/include target/dist/$(DIST)/lib/pkgconfig
 	cp $(HEADERS) target/dist/$(DIST)/include/
-	cp $(DIST_LIBS) target/dist/$(DIST)/lib/$(PLATFORM)/
-	cd target/dist/$(DIST)/lib/$(PLATFORM) && mv $(notdir $(LIB)) $(SONAME) && ln -s $(SONAME) $(notdir $(LIB))   # the file by its soname, the name a linker looks for beside it
+	cp $(DIST_LIBS) target/dist/$(DIST)/lib/
+	cd target/dist/$(DIST)/lib && mv $(notdir $(LIB)) $(SONAME) && ln -s $(SONAME) $(notdir $(LIB))
+	@printf '%s\n' 'prefix=$${pcfiledir}/../..' 'includedir=$${prefix}/include' 'libdir=$${prefix}/lib' '' \
+	    'Name: $(NAME)' 'Description: $(DESCRIPTION)' 'Version: $(VERSION)' \
+	    'Cflags: -I$${includedir}' 'Libs: -L$${libdir} -l$(NAME) -Wl,-rpath,$${libdir}' > target/dist/$(DIST)/lib/pkgconfig/$(NAME).pc
 	cp README.md $(ROOT)/LICENSE target/dist/$(DIST)/
-	cp target/wheel/*.whl target/dist/$(DIST)/python/
 	cd target/dist && rm -f $(DIST).zip && zip -qry $(DIST).zip $(DIST) && sha256sum $(DIST).zip > $(DIST).zip.sha256
 	@ls -la target/dist/$(DIST).zip && cat target/dist/$(DIST).zip.sha256
 
-.PHONY: help check-version check-exports python wheel check-wheel dist
+# The zip as a user gets it: unzipped to a prefix of its own, the C example built with pkg-config alone and run.
+check-dist: dist
+	rm -rf target/distenv && mkdir -p target/distenv && cd target/distenv && unzip -q ../dist/$(DIST).zip
+	@PKG_CONFIG_PATH=$(abspath target/distenv/$(DIST)/lib/pkgconfig) pkg-config --cflags --libs $(NAME) > /dev/null 2>&1 || { echo "no pkg-config here: the zip not checked"; exit 0; }; \
+	 PKG_CONFIG_PATH=$(abspath target/distenv/$(DIST)/lib/pkgconfig); export PKG_CONFIG_PATH; \
+	 $(CC) -std=c99 -o target/dist-example $(WHEEL_EXAMPLE) $$(pkg-config --cflags --libs $(NAME)) && \
+	 ./target/dist-example $(WHEEL_EXAMPLE_ARGS) > target/dist-example.out 2>&1 && ! grep -q "did not load" target/dist-example.out && \
+	 echo "the C example builds and runs against the unzipped $(DIST) with pkg-config alone"
+
+# The zip to the release on GitHub, as an asset of the tag that names this version: make publish-dist TAG=<tag>
+publish-dist:
+	@tag="$(TAG)"; [ -n "$$tag" ] || { echo "make publish-dist TAG=<tag>, the release's tag"; exit 1; }; \
+	 case "$$tag" in *v$(VERSION)) ;; *) echo "tag $$tag does not name version $(VERSION), the zip's"; exit 1;; esac; \
+	 [ -f target/dist/$(DIST).zip ] || { echo "no target/dist/$(DIST).zip: make dist"; exit 1; }; \
+	 sha256sum -c target/dist/$(DIST).zip.sha256 --quiet --status || { echo "the zip does not match its checksum"; exit 1; }; \
+	 gh release upload "$$tag" target/dist/$(DIST).zip target/dist/$(DIST).zip.sha256 --clobber && echo "uploaded $(DIST).zip to $$tag"
+
+.PHONY: help check-version check-exports python wheel check-wheel dist check-dist publish-dist

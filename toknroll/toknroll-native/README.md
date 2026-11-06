@@ -24,7 +24,7 @@ x86-64 means x86-64-v3, a CPU with AVX2.
 
 ## Getting the library
 
-- `make dist` here builds the release bundle, `target/dist/libtoknroll-<version>-<platform>.zip`: the header, the shared library and the static archive, this README, the license and the wheel.
+- The release zip, `libtoknroll-<version>-<platform>.zip`, an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/toknroll.h`, `lib/` with the shared library under its soname, the linker's name linked to it, the static archive and `lib/pkgconfig/toknroll.pc`, this README and the license. Unzipped into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install toknroll`: the [wheel](https://pypi.org/project/toknroll/) carries the shared library, `toknroll.h` and a pkg-config file in the installed package, and `toknroll-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
@@ -62,9 +62,10 @@ The library is a Java runtime compiled ahead of time; it starts at `toknroll_con
 | log lines | `TOKNROLL_LOG` picks them: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`; they go to stderr, or to `toknroll_log_set`'s callback, set once before any other call, NULL for nowhere |
 | download progress | shown on stderr whatever `TOKNROLL_LOG` says: a live board when stderr is a terminal, a line at each tenth otherwise; `TOKNROLL_PROGRESS=off`, or `-Dtoknroll.progress=off`, turns it off entirely, and the download is then a start and a done line at info |
 | the cache | `-Dtoknroll.cache.root=<dir>`, else `TOKNROLL_CACHE_ROOT`, else jinfer's store under the platform cache directory; a file the Hugging Face hub cache holds (`HF_HUB_CACHE`, `HF_HOME`) is read in place |
+| a rate-limited hub | waited out as it asks, a listing for a minute at most and a download for half an hour, the first wait logged at warn; past that the 429 is the error |
 | offline | `-Dtoknroll.offline=true` serves the cache and never touches the network; `false`, `0`, `off` and `no` mean online, anything else offline |
 | GGUF pre-tokenizers | `-Dtoknroll.gguf.pre.<name>=alias:<known>` names a scheme the file does not |
-| threads, heap | `-XX:ActiveProcessorCount=<n>` caps what `toknroll_encode_batch` spreads over, `-XX:MaxHeapSize=<size>` the heap |
+| threads, heap | `-XX:ActiveProcessorCount=<n>` caps what `toknroll_encode_batch` spreads over, `-XX:MaxHeapSize=<size>` the heap, about 256 MB for a 262k-token vocabulary; the runtime reserves the address space its heap may grow to, so under a virtual memory limit (`ulimit -v`) cap the heap, or the start fails saying so |
 
 Hub references are fetched through `curl` on the PATH, so the image carries no TLS stack of its own; local files need nothing.
 [C-API.md](../../C-API.md#configuration) has the rules behind the table.
@@ -83,7 +84,9 @@ make check                  # versions agree, exports vs header, the C suite aga
 make python                 # stage the shared library into python/toknroll/lib/<platform>/
 make wheel                  # the platform-tagged wheel -> target/wheel/
 make check-wheel            # the wheel as a user gets it: twine, a fresh venv, pip install, the suite from outside the tree
-make dist                   # the release bundle -> target/dist/
+make dist                   # the release zip, a prefix tree -> target/dist/
+make check-dist             # the zip unzipped to a prefix of its own, the C example built with pkg-config alone
+make publish-dist TAG=<tag> # the zip and its checksum as assets of that GitHub release
 ```
 
 On Windows, `.\build.ps1` in this directory has the same targets.
