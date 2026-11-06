@@ -35,9 +35,12 @@
  *              succeeds and leaves it in place.
  *   Logging    TOKNROLL_LOG picks the lines: off, error, warn (the default), info or debug. They go
  *              to stderr, "toknroll: info: jinfer.hub: download ...", or to toknroll_log_set's
- *              callback. From info on, a download at a terminal draws its progress on stderr instead
- *              of logging it. Beyond them the library writes nothing to stdout or stderr, but for
- *              the runtime naming an option it rejects.
+ *              callback. Beyond them the library writes nothing to stdout or stderr, but for the
+ *              runtime naming an option it rejects.
+ *   Progress   A download shows its progress on stderr, whatever TOKNROLL_LOG says: a live board when
+ *              stderr is a terminal, a line at each tenth otherwise. TOKNROLL_PROGRESS=off, or the
+ *              -Dtoknroll.progress=off option over it, turns that off entirely; the download is then a
+ *              start and a done line at info, for the log.
  *   Sources    A path, or a reference to a hub, in UTF-8: a file whose name is not UTF-8 cannot be named.
  *              Spelling tells them apart: /x, C:\x, ./x, ../x, ~/x (~ is not expanded, as fopen does
  *              not), a backslash, dir/x.gguf, dir/x.json or a name that exists on disk is a path, taken

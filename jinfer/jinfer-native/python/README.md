@@ -133,7 +133,8 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 - A conversation's turns are served from the engine's kept state, so a turn costs only its new tokens; `reply.usage.cached_tokens` shows it. A fork shares the prefix; a rewind recomputes nothing and keeps the system prompt; `prepare()` computes the prefix before the user types. With `prompt_cache=path`, what a model prepared is written when it closes and read by the next one.
 - Structured output is enforced while decoding, so malformed JSON cannot come back. Validate meaning if you need to; there is no format to retry.
 - Quiet by default: only warnings and errors reach `logging`.
-  `JINFER_LOG=info` adds the downloads, at a terminal as jinfer's progress board, and as INFO records otherwise, which show once the application logs at INFO (`logging.basicConfig(level=logging.INFO)`); `JINFER_LOG=off` silences the library.
+  `JINFER_LOG=info` adds the downloads as INFO records, which show once the application logs at INFO (`logging.basicConfig(level=logging.INFO)`); `JINFER_LOG=off` silences the library.
+  A download shows its progress on stderr, jinfer's live board on a terminal and a line at each tenth elsewhere; `JINFER_PROGRESS=off`, or `-Djinfer.progress=off` through `configure`, turns it off entirely.
   Ctrl-C during a download ends the process; the download resumes next time.
   `repr(model)` names the kernels and threads that actually run.
 - Any thread may call. A model may be shared between threads; a reply, speech or conversation belongs to one thread at a time. `async for` on a reply or speech steps in a worker thread; wrap one-shot calls in `asyncio.to_thread`.

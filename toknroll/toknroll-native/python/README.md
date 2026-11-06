@@ -123,6 +123,7 @@ It is split on whitespace, with no quoting and no `~`: a value holding a space g
 The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.
 Python's logging then decides what shows; it shows warnings and errors until the application configures it.
 So `TOKNROLL_LOG=info` shows the downloads once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.
+A download shows its progress on stderr, toknroll's live board on a terminal and a line at each tenth elsewhere; `TOKNROLL_PROGRESS=off`, or `-Dtoknroll.progress=off` through `configure`, turns it off entirely.
 
 ## With jinfer
 
