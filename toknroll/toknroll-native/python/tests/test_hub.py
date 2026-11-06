@@ -1,7 +1,10 @@
 """Hub sources: tokenizer.json repositories and GGUF headers, metadata only. TOKNROLL_OFFLINE=1 skips."""
+import errno
+import os
 import tempfile
 import unicodedata
 import unittest
+from pathlib import Path
 
 from support import EDGE_TEXTS, GGUF, HUB_GGUF, HUB_JSON, fresh, needs_hub, toknroll
 
@@ -48,6 +51,26 @@ class HubTest(unittest.TestCase):
         with self.assertRaises(toknroll.NotFound) as e:
             toknroll.load("LiquidAI/LFM2.5-350M-GGUF")
         self.assertIn("Q8_0", str(e.exception))
+        self.assertEqual((e.exception.errno, e.exception.filename), (errno.ENOENT, "LiquidAI/LFM2.5-350M-GGUF"), "open's FileNotFoundError")
+
+    def test_a_corrupt_cached_copy_says_to_delete_it(self):
+        with tempfile.TemporaryDirectory() as root:
+            def run(source):  # configure is once per process: each load in its own
+                return fresh(f"toknroll.configure({'-Dtoknroll.cache.root=' + root!r})\nprint(toknroll.load({source!r}).vocabulary_size)",
+                             HF_HOME=os.path.join(root, "hf"))
+            warm = run(HUB_JSON)
+            self.assertEqual(warm.returncode, 0, warm.stderr)
+            (cached,) = [p for p in Path(root).rglob("tokenizer.json") if not p.is_symlink()] or [None]
+            self.assertIsNotNone(cached, "the store holds the file")
+            cached.write_text("{ not json")
+            bad = run(HUB_JSON)
+            self.assertNotEqual(bad.returncode, 0)
+            self.assertIn("the cache's copy: delete it to fetch it again", bad.stderr)
+
+    def test_a_refs_revision_is_refused_in_words(self):
+        with self.assertRaises(toknroll.InvalidArgument) as e:
+            toknroll.load(HUB_JSON + "@refs/pr/1/tokenizer.json")
+        self.assertIn("a revision is a branch, a tag or a commit", str(e.exception))
 
     def test_a_misspelled_host_is_invalid_not_an_owner(self):
         with self.assertRaises(toknroll.InvalidArgument) as e:

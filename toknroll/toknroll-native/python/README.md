@@ -34,7 +34,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 - **One loader for every file the models ship.** A `tokenizer.json` or its folder, a GGUF read for its header only, a tiktoken checkout, and any of them by hub reference, Hugging Face or ModelScope, metadata fetched and cached, weights never.
   No other package reads all three formats.
 - **Fast, and out of the GIL.** Hundreds of MB/s of text on one core, `encode_batch` over every core, every call releasing the GIL; ids come back as an `array('i')`, four bytes each, that numpy and torch read without a copy.
-- **Nothing to carry.** A 7 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container.
+- **Nothing to carry.** A 6 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container.
 - **Honest about its scope.** Raw text in, ids out, as tiktoken's `encode_ordinary`: no BOS, no EOS, no padding, no truncation, no offsets.
   Those belong to the chat template and the model, and leaving them out is what keeps the ids exact.
 - **The same engine everywhere.** Tok'n'Roll is a Java library, `libtoknroll` is its native build, and [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) is thirteen functions any language calls; [jinfer](https://pypi.org/project/jinfer/) serves its models' tokenizers through this very class.
@@ -113,7 +113,7 @@ An id that is negative or past int32 is an `OverflowError` and a non-int a `Type
 
 Remote metadata is fetched with `curl` and cached where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says, else `TOKNROLL_CACHE_ROOT`, else in jinfer's store, the platform cache directory under `jinfer`.
 The HF hub cache (`HF_HUB_CACHE`, `HF_HOME`) is read too, so a file `transformers` fetched serves here; with the default cache root, a file fetched here is published there as well, so `transformers` finds it.
-`-Dtoknroll.offline=true` serves the cache and never touches the network; `false`, `0`, `off` and `no` mean online, and anything else offline, so a misspelled true never means online.
+`-Dtoknroll.offline=true` serves the cache and never touches the network; `false`, `0`, `off`, `no` and an empty value mean online, and anything else offline, so a misspelled true never means online.
 `toknroll.configure` takes the runtime's options once, before the library's first use; a later call is refused.
 `TOKNROLL_OPTIONS` in the environment holds the same options, applied after `configure`'s so they override them: the program sets its options, whoever runs it has the last word.
 It is split on whitespace, with no quoting and no `~`: a value holding a space goes through `configure`.
@@ -122,8 +122,8 @@ It is split on whitespace, with no quoting and no `~`: a value holding a space g
 
 The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.
 Python's logging then decides what shows; it shows warnings and errors until the application configures it.
-So `TOKNROLL_LOG=info` shows the downloads once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.
 A download shows its progress on stderr, toknroll's live board on a terminal and a line at each tenth elsewhere; `TOKNROLL_PROGRESS=off`, or `-Dtoknroll.progress=off` through `configure`, turns it off entirely.
+With progress off, `TOKNROLL_LOG=info` logs each download instead, a start and a done record, shown once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.
 
 ## From C
 

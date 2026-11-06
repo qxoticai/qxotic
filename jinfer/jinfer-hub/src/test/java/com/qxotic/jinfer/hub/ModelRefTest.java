@@ -177,6 +177,13 @@ class ModelRefTest {
         var emptyRevision =
                 assertThrows(IllegalArgumentException.class, () -> ModelRef.parse("owner/repo:@"));
         assertEquals("empty revision", emptyRevision.getMessage());
+        var refsRevision =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ModelRef.parse("owner/repo@refs/pr/3/tokenizer.json"));
+        assertTrue(
+                refsRevision.getMessage().startsWith("a revision is a branch"),
+                refsRevision.getMessage());
     }
 
     @Test

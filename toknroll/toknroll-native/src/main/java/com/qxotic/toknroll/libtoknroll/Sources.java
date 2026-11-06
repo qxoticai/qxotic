@@ -52,7 +52,19 @@ final class Sources {
     /** The source as written names the fetch's failures, as the store's own do. */
     private static Tokenizer load(String source, Located at) {
         if (at.repository() != null) return fromHub(source, at);
-        if (!at.folder()) return read(at.path());
+        if (!at.folder()) {
+            try {
+                return read(at.path());
+            } catch (RuntimeException e) {
+                // a hub file the cache holds is never refetched over a bad copy: the reader's error
+                // says which file, and this says what to do
+                boolean failure = e instanceof Errors.Failure;
+                if (!ModelStore.isRef(source)
+                        || (failure && ((Errors.Failure) e).code != Errors.EINVAL)) throw e;
+                throw Errors.invalid(
+                        e.getMessage() + "; the cache's copy: delete it to fetch it again");
+            }
+        }
         // a folder holds a tokenizer.json, or a tiktoken.model read as a hub checkout is; neither
         // is missing, as a file is; one that cannot be listed is not missing either
         if (!Files.isReadable(at.path()))

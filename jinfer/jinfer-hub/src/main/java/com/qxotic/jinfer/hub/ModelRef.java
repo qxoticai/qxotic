@@ -270,6 +270,13 @@ public record ModelRef(
             int revisionEnd = repositoryColon > revisionAt ? repositoryColon : repository.length();
             require(revisionEnd > revisionAt + 1, "empty revision");
             require(repositoryColon < 0 || revisionAt < repositoryColon, shape(ref));
+            // a revision is one segment: refs/pr/N and refs/convert/... are not it, nor is what
+            // follows
+            // them a path, so say so instead of treating pr/N as a file
+            require(
+                    !repository.substring(revisionAt + 1, revisionEnd).equals("refs"),
+                    "a revision is a branch, a tag or a commit, not a refs/... path; name the"
+                            + " commit");
         }
 
         // the quant is a colon in the FINAL segment

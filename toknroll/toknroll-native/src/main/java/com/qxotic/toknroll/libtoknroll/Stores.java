@@ -49,14 +49,15 @@ final class Stores {
     }
 
     /**
-     * Online only for the spellings of false jinfer-hub reads (false, 0, off, no): set to anything
-     * else it is offline, since a misspelled true (ture, 1x) must never mean online.
+     * Online only for the spellings of false jinfer-hub reads (false, 0, off, no) and an empty
+     * value, which is unset: set to anything else it is offline, since a misspelled true (ture, 1x)
+     * must never mean online.
      */
     private static boolean flag(String property) {
         String value = System.getProperty(property);
         if (value == null) return false;
         return switch (value.strip().toLowerCase(Locale.ROOT)) {
-            case "false", "0", "off", "no" -> false;
+            case "", "false", "0", "off", "no" -> false;
             default -> true;
         };
     }

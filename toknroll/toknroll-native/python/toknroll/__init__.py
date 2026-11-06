@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ctypes as C
 import operator
+import errno
 import os
 import threading
 from array import array
@@ -56,6 +57,9 @@ class ToknrollError(Exception):
     def __init__(self, message: str, code: int):
         super().__init__(message)
         self.code = code
+
+    def __str__(self) -> str:
+        return self.args[0]  # the library's message, whatever an OSError subclass would make of errno and filename
 
     def __reduce__(self):
         return (type(self), (self.args[0], self.code))  # pickled with its code: a worker's error reaches the parent
@@ -328,7 +332,9 @@ def load(source: str | os.PathLike) -> Tokenizer:
     if not handle:
         error = _error(lib)
         if text not in error.args[0]:  # a load error names its source, as open names its file
-            raise type(error)(f"{text}: {error.args[0]}", error.code)
+            error = type(error)(f"{text}: {error.args[0]}", error.code)
+        if isinstance(error, NotFound):  # the FileNotFoundError it is: errno and filename set, as open's
+            error.errno, error.filename = errno.ENOENT, text
         raise error
     return _wrap(handle, text, lib)
 

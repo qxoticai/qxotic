@@ -30,8 +30,7 @@ def locate(name: str) -> Path:
     override = os.environ.get(f"{name.upper()}_LIBRARY")
     # an override is the one candidate: a typo in it must not run another build in silence
     looked = [Path(override)] if override else [package.parent.parent / "target" / built, package / "lib" / folder / shipped]
-    candidates = looked if override else [looked[0], *sorted(looked[1].parent.glob(shipped))]
-    for candidate in candidates:
+    for candidate in looked if override else [looked[0], *sorted(looked[1].parent.glob(shipped))]:
         if candidate.is_file():
             return candidate
     raise OSError(

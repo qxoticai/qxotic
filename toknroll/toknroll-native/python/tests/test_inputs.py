@@ -462,7 +462,7 @@ class ConfigurationTest(unittest.TestCase):
             else:
                 raise SystemExit("loaded")
             """)
-        for value in ("true", "TRUE", "1", "yes", "on", "bogus", "ture", ""):
+        for value in ("true", "TRUE", "1", "yes", "on", "bogus", "ture"):   # a blank value is unset, so online, as jinfer-hub reads it
             with self.subTest(value=value):
                 env = dict(os.environ, PYTHONPATH=str(Path(toknroll.__file__).resolve().parents[1]),
                            TOKNROLL_OPTIONS=f"-Dtoknroll.offline={value}")
@@ -481,7 +481,7 @@ class ConfigurationTest(unittest.TestCase):
             else:
                 raise SystemExit("loaded")
             """)
-        for value in ("false", "False", "0", "off", "NO"):
+        for value in ("false", "False", "0", "off", "NO", ""):   # and a blank value: unset
             with self.subTest(value=value):
                 env = dict(os.environ, PYTHONPATH=str(Path(toknroll.__file__).resolve().parents[1]),
                            TOKNROLL_OPTIONS=f"-Dtoknroll.offline={value}")
