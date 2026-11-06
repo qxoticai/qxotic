@@ -108,16 +108,16 @@
     <jinfer.preload />
 
     <!-- Spring provider modules -->
-    <langchain4j.version>1.21.0</langchain4j.version>
-    <spring-ai.version>2.0.1</spring-ai.version>
+    <langchain4j.version>1.23.0</langchain4j.version>
+    <spring-ai.version>2.1.0-RC2</spring-ai.version>
     <!-- enforcer pin, see dependencyManagement -->
-    <jackson-core.version>3.1.5</jackson-core.version>
-    <spring-boot.version>4.1.1</spring-boot.version>
+    <jackson-core.version>3.1.8</jackson-core.version>
+    <spring-boot.version>4.2.0-RC2</spring-boot.version>
     <!-- Direct provider dependencies aligned with Spring Boot's tested stack. -->
-    <spring-framework.version>7.0.9</spring-framework.version>
-    <reactor.version>3.8.7</reactor.version>
+    <spring-framework.version>7.1.0-RC2</spring-framework.version>
+    <reactor.version>3.9.0-RC1</reactor.version>
     <reactive-streams.version>1.0.4</reactive-streams.version>
-    <micrometer.version>1.17.1</micrometer.version>
+    <micrometer.version>1.18.0-RC2</micrometer.version>
 
     <!-- test libraries shared by the backend modules -->
     <assertj.version>3.27.7</assertj.version>
