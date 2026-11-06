@@ -22,7 +22,12 @@
  *              thread's next toknroll call.
  *   Threads    Any thread may call, and a tokenizer may be shared between threads: it never changes.
  *              toknroll_tokenizer_free is the exception: not during another call on the same tokenizer.
- *   Fork       A process may fork at any time; the child keeps every tokenizer it inherited.
+ *   Fork       Best effort, not a guarantee. A child keeps the tokenizers it inherited and may go on
+ *              using them, its batches on the calling thread: the library holds a fork back until no
+ *              call of its is in progress, but a thread of its runtime's own (a garbage collection, a
+ *              download) is not under its control, and a child forked while one was at work may hang
+ *              on its first call. A fork from a log callback is inside a call and is not held back.
+ *              The safe shapes are the usual ones: load after the fork, or spawn.
  *   Settings   The library is a Java runtime compiled ahead of time. toknroll_configure passes it
  *              options as a java command line would, before the first call, and the TOKNROLL_OPTIONS
  *              environment variable adds to or overrides them; nothing requires either. Once started
