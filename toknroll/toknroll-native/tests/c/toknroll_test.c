@@ -1381,9 +1381,9 @@ static void heap_too_small(void) {
     CHECK_EQ(code, TOKNROLL_ERROR);
     CHECK_HAS(message, "out of memory");
     CHECK_HAS(message, "-XX:MaxHeapSize");
-    toknroll_tokenizer* small = toknroll_tokenizer_load(tiny_json());   /* the process is still usable */
-    CHECK(small != NULL);
-    toknroll_tokenizer_free(small);
+    toknroll_tokenizer* tiny = toknroll_tokenizer_load(tiny_json());   /* the process is still usable; `small` is a Windows macro */
+    CHECK(tiny != NULL);
+    toknroll_tokenizer_free(tiny);
 }
 
 static void hub_reference(void) {
