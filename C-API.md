@@ -168,7 +168,7 @@ A stderr line reads `jinfer: info: jinfer.hub: download ...`: the library, the l
 The callback gets the level as `PREFIX_LOG_DEBUG` (0) to `PREFIX_LOG_ERROR` (3) and the rest of the line, UTF-8, without a newline: a stack trace, at debug, folds onto it, its frames joined by ` | `.
 The callback may call the library's `last_error` and its `_free` functions, on a handle no call is using, even while the library starts.
 `prefix_log_set` comes once, before any other call, configure included; a later call is `EINVAL`.
-From `info` on, a download at a terminal draws its progress on stderr instead of logging it, whether or not a callback is set.
+A download's progress is not logging: it goes to stderr whatever the variable and the callback say, the live board when stderr is a terminal and a line at each tenth otherwise, unless `TOKNROLL_PROGRESS` or `JINFER_PROGRESS` is `off` (or the `-Dprefix.progress=off` option, which wins over the variable), when nothing is drawn and the download is a start and a done line at `info`, for the log.
 In libjinfer, `JINFER_LOG` covers the `toknroll_*` functions it carries too, and `toknroll_log_set` is `jinfer_log_set`: one callback serves the library.
 The Python packages set the callback as they load the library, so their lines go to `logging.getLogger("toknroll")` and `logging.getLogger("jinfer")`, as many as the variable lets through; Python's logging then decides what shows.
 
