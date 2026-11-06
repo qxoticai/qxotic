@@ -11,11 +11,12 @@ UPPER := $(shell echo $(NAME) | tr a-z A-Z)
 LIB   := target/lib$(NAME).$(if $(filter darwin,$(OS)),dylib,so)
 VERSION := $(shell grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -)
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
-# The soname follows the version, never set by hand: the minor while the major is 0 (any minor may break),
-# the major from 1.0. The build names the library by it (native-cc.sh) and links target/$(SONAME) to it, so
-# a program linked against target/ runs from there.
+# The soname follows the version, never set by hand: the whole version while the major is 0, as ABI
+# compatibility is not guaranteed between any two 0.x releases (a program loads the release it was built
+# against and no other), the major from 1.0. The build names the library by it (native-cc.sh) and links
+# target/$(SONAME) to it, so a program linked against target/ runs from there.
 MAJOR := $(word 1,$(subst ., ,$(VERSION)))
-SOVERSION := $(if $(filter 0,$(MAJOR)),0.$(word 2,$(subst ., ,$(VERSION))),$(MAJOR))
+SOVERSION := $(if $(filter 0,$(MAJOR)),$(VERSION),$(MAJOR))
 SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).so.$(SOVERSION))
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 # native-image's options: the caller's (NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 asks for another target than

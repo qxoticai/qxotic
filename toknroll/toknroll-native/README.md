@@ -39,7 +39,7 @@ Any thread may call, and a tokenizer may be shared; a fork keeps every tokenizer
 Linking the shared library:
 
 ```sh
-cc -Iinclude tokenize.c -L<dir> -ltoknroll            # Linux, macOS: the soname is libtoknroll.so.0.4, @rpath/libtoknroll.0.4.dylib
+cc -Iinclude tokenize.c -L<dir> -ltoknroll            # Linux, macOS: the soname is libtoknroll.so.0.4.0, @rpath/libtoknroll.0.4.0.dylib
 cl /Iinclude tokenize.c /link /LIBPATH:<dir> toknroll.lib   # Windows: the import library beside toknroll.dll
 ```
 
@@ -96,7 +96,7 @@ This machine's wheels from a clean export of a ref, and the upload to PyPI, are 
 `toknroll_isolate.c` owns the runtime: it starts it with configure's options and then `TOKNROLL_OPTIONS`, hands it the log callback, gates calls across a fork, and probes the terminal for the download board, so the image needs no Foreign Function API.
 libjinfer compiles both files into its own image, and one runtime serves both APIs there.
 
-The build links the shared library with an export list of the header's functions and gives it its soname, derived from the version, `libtoknroll.so.0.4`; `target/libtoknroll.so.0.4` links to the library, and the bundle carries the file under that name.
+The build links the shared library with an export list of the header's functions and gives it its soname, derived from the version, `libtoknroll.so.0.4.0` while the major is 0, as the ABI is not guaranteed between 0.x releases; `target/libtoknroll.so.0.4.0` links to the library, and the bundle carries the file under that name.
 
 The image is lean on purpose.
 Downloads go through `curl` as a process, not the JDK's HTTP client, which with its TLS stack is 18 MB; logging is the image's own `System.LoggerFinder`, not `java.util.logging`; the hub's terminal probes come from the shim, not the Foreign Function API; staging files are named without `SecureRandom`.

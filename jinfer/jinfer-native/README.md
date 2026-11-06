@@ -40,7 +40,7 @@ A forked child is refused: the runtime's threads stayed in the parent, so every 
 Linking the shared library:
 
 ```sh
-cc -Iinclude -I../../toknroll/toknroll-native/include chat.c -L<dir> -ljinfer     # Linux, macOS: the soname is libjinfer.so.0.4, @rpath/libjinfer.0.4.dylib
+cc -Iinclude -I../../toknroll/toknroll-native/include chat.c -L<dir> -ljinfer     # Linux, macOS: the soname is libjinfer.so.0.4.0, @rpath/libjinfer.0.4.0.dylib
 cl /Iinclude /I..\..\toknroll\toknroll-native\include chat.c /link /LIBPATH:<dir> jinfer.lib   # Windows: the import library beside jinfer.dll
 ```
 
@@ -97,7 +97,7 @@ The Java side is `com.qxotic.jinfer.libjinfer`: one `@CEntryPoint` per header fu
 The chat dialect is jinfer-server's own: `OpenAiChat` is the seam the server exposes, so the library and `/v1/chat/completions` lower and answer identically.
 
 GraalVM links shared libraries with an export list that names its own runtime API and entry points, so toknroll-native's `src/main/c/native-cc.sh` wraps the C compiler for both libraries and makes the list the shims' globals and libjam's names at the link step.
-The wrapper also gives the library its soname, derived from the version, `libjinfer.so.0.4`; `target/libjinfer.so.0.4` links to the library, and the bundle carries the file under that name.
+The wrapper also gives the library its soname, derived from the version, `libjinfer.so.0.4.0` while the major is 0, as the ABI is not guaranteed between 0.x releases; `target/libjinfer.so.0.4.0` links to the library, and the bundle carries the file under that name.
 libjam, the kernel library, is linked whole (jam-native's static archive, the pom's whole-archive line) and loaded from the library's own file: the isolate shim hands the runtime its path as `jam.native.library.path`, so nothing is extracted at run time.
 `NATIVE_CC_LOG=<file> make libjinfer` records every compiler and linker line the build ran.
 

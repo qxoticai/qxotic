@@ -65,8 +65,10 @@
  *                org/repo/tokenizers/v2                  a folder inside a repository
  *                modelscope.cn/Qwen/Qwen3-0.6B@v1        the other hub, a pinned revision
  *                /srv/ollama/blobs/sha256-3f1a...        a GGUF with no extension
- *   Stability  Before 1.0 any release may break this API. From 1.0 a PATCH changes nothing a caller
- *              relies on, a MINOR only adds, a MAJOR may break, and every release is checked.
+ *   Stability  Before 1.0 any release may break this API or its ABI, and the soname is the whole
+ *              version: a program loads the release it was built against. From 1.0 a PATCH changes
+ *              nothing a caller relies on, a MINOR only adds, a MAJOR may break, and every release is
+ *              checked.
  */
 #ifndef TOKNROLL_H
 #define TOKNROLL_H

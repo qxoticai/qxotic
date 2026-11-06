@@ -202,7 +202,7 @@ The version is the project's release version; `make check-version` keeps the hea
 The soname is derived from it by the build, never set by hand, so a program built against one ABI refuses to start against another instead of misreading it.
 
 Before 1.0 (alpha), as practice:
-- the soname carries the minor version, `libprefix.so.0.4` on Linux and `@rpath/libprefix.0.4.dylib` on macOS;
+- the soname carries the whole version, `libprefix.so.0.4.0` on Linux and `@rpath/libprefix.0.4.0.dylib` on macOS: a program loads the release it was built against and no other;
 - any release may break the API or the ABI, and nothing checks it.
 
 From 1.0, enforced:

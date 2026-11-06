@@ -50,8 +50,10 @@
  *              that apply (input, speed). Text inside a request is JSON text: escape it. A
  *              schema-constrained reply cannot come back malformed: tokens outside the schema are
  *              never sampled.
- *   Stability  Before 1.0 any release may break this API. From 1.0 a PATCH changes nothing a caller
- *              relies on, a MINOR only adds, a MAJOR may break, and every release is checked.
+ *   Stability  Before 1.0 any release may break this API or its ABI, and the soname is the whole
+ *              version: a program loads the release it was built against. From 1.0 a PATCH changes
+ *              nothing a caller relies on, a MINOR only adds, a MAJOR may break, and every release is
+ *              checked.
  */
 #ifndef JINFER_H
 #define JINFER_H

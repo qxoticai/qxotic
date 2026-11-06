@@ -5,7 +5,7 @@
 # on the line (toknroll_*, jinfer_*), plus libjam's names when its archive is linked in (jam's Java side
 # resolves them with dlsym at run time). GraalVM links with -Bsymbolic-functions on Linux, and Mach-O binds
 # two-level, so the library's own calls never reach a same-named symbol of another library.
-# NATIVE_SONAME=libx.so.0.4 (libx.0.4.dylib on a Mac) is the soname (install name, under @rpath) of the
+# NATIVE_SONAME=libx.so.0.4.0 (libx.0.4.0.dylib on a Mac) is the soname (install name, under @rpath) of the
 # shared library linked as libx.so (libx.dylib), and of no other: the Makefiles derive it from the version.
 # NATIVE_CC_LOG=file appends every command line (static.sh replays the link from it); NATIVE_CC picks the compiler.
 [ -n "$NATIVE_CC_LOG" ] && printf '%s\n' "$*" >> "$NATIVE_CC_LOG"
