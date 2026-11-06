@@ -2,4 +2,5 @@ LICENSE
 build/
 *.egg-info/
 toknroll/lib/
+toknroll/include/
 __pycache__/

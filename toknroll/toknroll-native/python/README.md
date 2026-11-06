@@ -125,6 +125,18 @@ Python's logging then decides what shows; it shows warnings and errors until the
 So `TOKNROLL_LOG=info` shows the downloads once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.
 A download shows its progress on stderr, toknroll's live board on a terminal and a line at each tenth elsewhere; `TOKNROLL_PROGRESS=off`, or `-Dtoknroll.progress=off` through `configure`, turns it off entirely.
 
+## From C
+
+The wheel is the C library too: `toknroll.h`, `libtoknroll` and a pkg-config file live in the installed package, and the package says where.
+
+```sh
+cc tokenize.c $(python -m toknroll --cflags) $(python -m toknroll --libs)         # the include flag, the library and an rpath into the venv
+PKG_CONFIG_PATH=$(python -m toknroll --pkgconfig) pkg-config --cflags --libs toknroll
+```
+
+On Windows the flags are `cl`'s, `/I` and `/LIBPATH` with `toknroll.lib`, one per line, and `toknroll.dll` sits beside the import library.
+The C API is [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h); nothing else is a tool here, `jbang toknroll@qxoticai` is.
+
 ## With jinfer
 
 [jinfer](https://pypi.org/project/jinfer/)'s `model.tokenizer` is this class, served by libjinfer, which carries its own toknroll; the jinfer wheel pins the exact toknroll it embeds, and the class checks the library's version when it binds.

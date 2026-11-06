@@ -13,6 +13,8 @@ SYMS := jinfer|toknroll|jam
 EXTRA_EXPORTS := JNI_OnLoad_jam Java_com_qxotic_jam_libjam_NativeJAM_newJni Java_com_qxotic_jam_libjam_NativeJAM_mmJni Java_com_qxotic_jam_libjam_NativeJAM_freeJni
 WHEEL_DEPS = $(TOKNROLL)/target/wheel/*.whl
 WHEEL_TEST = JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
+DESCRIPTION = jinfer, local LLM inference with a C API
+WHEEL_EXAMPLE = examples/c/chat.c
 
 help::
 	@echo 'make libjinfer             -O3, native-image'"'"'s default target, what ships -> $(LIB); NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 for AVX-512'

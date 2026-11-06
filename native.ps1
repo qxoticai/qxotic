@@ -7,6 +7,7 @@
 #   $PyTest      a script block: the Python tests, in the tree
 #   $WheelTest   a script block: the tests from outside the tree, run in target\ with wheelenv's python
 #   $WheelDeps   a script block: other wheels the installed one needs, built first
+#   $WheelExample  the C example built against the installed wheel, and $WheelExampleArgs, how it is run
 #   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\default.iprof
 #   $MvnArg      optional, one more argument for the library's Maven build, as its Makefile passes
 $ErrorActionPreference = 'Stop'
@@ -61,9 +62,10 @@ function Check-Exports {   # every function the headers declare is exported; the
     "exports match the headers: $($header.Count) functions"
 }
 function Run-Check { Check-Version; Check-Exports; & $Example; & $PyTest }
-function Stage-Python {   # this platform's library alone, as native.mk's python
-    Remove-Item -Recurse -Force "python\$Name\lib" -ErrorAction Ignore
-    New-Item -ItemType Directory -Force "python\$Name\lib\$Platform" | Out-Null; Copy-Item $Lib "python\$Name\lib\$Platform\"
+function Stage-Python {   # this platform's library, its import library and the headers, as native.mk's python
+    Remove-Item -Recurse -Force "python\$Name\lib", "python\$Name\include" -ErrorAction Ignore
+    New-Item -ItemType Directory -Force "python\$Name\lib\$Platform", "python\$Name\include" | Out-Null
+    Copy-Item $Lib, "target\$Name.lib" "python\$Name\lib\$Platform\"; Copy-Item $Headers "python\$Name\include\"
 }
 function Ensure-Tools {   # one venv per Python, as native.mk's: pip builds the wheel, twine checks it
     if (Test-Path "$Tools\Scripts\twine.exe") { return }
@@ -88,6 +90,11 @@ function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders
     try { Set-Item "Env:$($Name.ToUpper())_INSTALLED" '1'; & $WheelTest } finally { Remove-Item "Env:$($Name.ToUpper())_INSTALLED"; Pop-Location }
     if (-not (python -m zipfile -l $whl | Select-String 'LICENSE')) { throw "no LICENSE in the wheel" }
     "the wheel carries the license"
+    $cflags = & target\wheelenv\Scripts\python -m $Name --cflags; $libs = & target\wheelenv\Scripts\python -m $Name --libs   # one flag per line
+    cl -nologo -std:c11 -W4 $cflags $WheelExample -Fe:target\wheel-example.exe -Fo:target\ /link $libs; if ($LASTEXITCODE) { throw "cl failed against the wheel" }
+    $path = $env:PATH; $env:PATH = (& target\wheelenv\Scripts\python -m $Name --pkgconfig | Split-Path) + ";$env:PATH"   # the DLL beside the import library
+    try { & target\wheel-example.exe @WheelExampleArgs | Out-Null; if ($LASTEXITCODE) { throw "the example failed against the wheel" } } finally { $env:PATH = $path }
+    "the C example builds and runs against the installed wheel: python -m $Name --cflags --libs"
 }
 
 try {

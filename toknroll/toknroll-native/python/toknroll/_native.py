@@ -23,16 +23,19 @@ def locate(name: str) -> Path:
     system, machine = platform.system().lower(), platform.machine().lower()
     arch = {"x86_64": "x86-64", "amd64": "x86-64", "arm64": "aarch64"}.get(machine, machine)
     folder = f"{system}-{arch}"
-    file = f"{name}.dll" if system == "windows" else f"lib{name}.dylib" if system == "darwin" else f"lib{name}.so"
     package = Path(sys.modules[name].__file__).resolve().parent
+    built = f"{name}.dll" if system == "windows" else f"lib{name}.dylib" if system == "darwin" else f"lib{name}.so"
+    # the package's copy is named by its soname, lib<name>.so.<version>, the name a C program linked against it loads
+    shipped = f"{name}.dll" if system == "windows" else f"lib{name}.*.dylib" if system == "darwin" else f"lib{name}.so.*"
     override = os.environ.get(f"{name.upper()}_LIBRARY")
     # an override is the one candidate: a typo in it must not run another build in silence
-    candidates = [Path(override)] if override else [package.parent.parent / "target" / file, package / "lib" / folder / file]
+    looked = [Path(override)] if override else [package.parent.parent / "target" / built, package / "lib" / folder / shipped]
+    candidates = looked if override else [looked[0], *sorted(looked[1].parent.glob(shipped))]
     for candidate in candidates:
         if candidate.is_file():
             return candidate
     raise OSError(
-        f"lib{name} not found for {folder}; looked at " + ", ".join(map(str, candidates))
+        f"lib{name} not found for {folder}; looked at " + ", ".join(map(str, looked))
         + f". Set {name.upper()}_LIBRARY to the shared library, or build it with `make lib{name}`."
     )
 

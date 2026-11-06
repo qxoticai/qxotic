@@ -7,10 +7,12 @@ import asyncio, base64, ctypes, enum, json, logging, math, os, signal, subproces
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
-if "JINFER_INSTALLED" not in os.environ:  # the checkout's package; check-wheel tests the installed one
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-START = dict(os.environ)  # what a fresh interpreter below starts from, before this one's own JINFER_LOG
 HERE = os.path.dirname(os.path.abspath(__file__))
+if "JINFER_INSTALLED" in os.environ:  # check-wheel tests the installed package: this script's own directory, where the checkout's is, out of the path
+    sys.path = [p for p in sys.path if os.path.abspath(p or os.curdir) != HERE]
+else:
+    sys.path.insert(0, HERE)
+START = dict(os.environ)  # what a fresh interpreter below starts from, before this one's own JINFER_LOG
 
 
 def fresh(code, **env):
@@ -40,6 +42,14 @@ def ok(cond, what):
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it
 ok(jinfer.__version__ == "0.4.0", "version")
+# python -m jinfer: where a C build finds this install's headers and library, the version the package's
+flags = subprocess.run([sys.executable, "-m", "jinfer", "--version", "--cflags", "--libs", "--pkgconfig"], capture_output=True, text=True, timeout=60,
+                       env={**os.environ, **({} if "JINFER_INSTALLED" in os.environ else {"PYTHONPATH": HERE})})   # -m finds the package as this script did
+ok(flags.returncode == 0 and flags.stdout.splitlines()[0] == jinfer.__version__, f"python -m jinfer: {flags.stderr}")
+include = Path(flags.stdout.splitlines()[1][2:])
+ok(include == Path(jinfer.__file__).resolve().parent / "include", f"--cflags names the package's include directory: {include}")
+ok(not os.environ.get("JINFER_INSTALLED") or {p.name for p in include.iterdir()} == {"jinfer.h", "toknroll.h"}, "an installed wheel carries both headers")
+ok(str(N.locate("jinfer").parent) in flags.stdout.splitlines()[2], "--libs names the library's directory")
 ok(not hasattr(jinfer, "Context") and not hasattr(jinfer, "Timings") and not hasattr(jinfer.LanguageModel, "decide") and "OpenAI" not in jinfer.__all__, "the surface is the documented one")
 try:
     jinfer.load("nobody/does-not-exist-GGUF:Q8_0")

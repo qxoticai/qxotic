@@ -23,11 +23,16 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(QUICK),-march=native))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
 # SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
+# DESCRIPTION, the pkg-config file's line; WHEEL_EXAMPLE and WHEEL_EXAMPLE_ARGS, the C example built against
+# the installed wheel and how it is run;
 # EXPORT_HEADERS, those whose functions the library exports; EXTRA_EXPORTS, the exported names no header
 # declares; DIST_LIBS, what the release bundle carries beside the headers; WHEEL_DEPS, other wheels the
 # installed one needs; WHEEL_TEST, the tests run from target/ with wheelenv's python.
 SYMS ?= $(NAME)
 HEADERS ?= include/$(NAME).h
+DESCRIPTION ?= lib$(NAME)
+WHEEL_EXAMPLE ?= examples/c/$(NAME).c
+WHEEL_EXAMPLE_ARGS ?=
 EXPORT_HEADERS ?= $(HEADERS)
 EXTRA_EXPORTS ?=
 DIST_LIBS ?= $(LIB)
@@ -56,7 +61,7 @@ $(LIB):
 	@echo "$(LIB) is not built: make lib$(NAME)" >&2; exit 1
 
 help::
-	@echo 'make python                stage $(LIB) into python/$(NAME)/lib/$(PLATFORM)/'
+	@echo 'make python                stage $(LIB), the headers and a pkg-config file into python/$(NAME)/'
 	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
 	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the tests from outside the tree'
 	@echo 'make dist                  release bundle: headers, library, README, LICENSE, wheel -> target/dist/$(DIST).zip'
@@ -77,12 +82,17 @@ check-exports:
 	@$(call EXPORTS,$(LIB)) | sort > target/exported.syms
 	@diff target/expected.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions$(if $(EXTRA_EXPORTS), and $(words $(EXTRA_EXPORTS)) more)"
 
-# The package carries this platform's library alone: a wheel holds what its tag names, whatever else this tree built,
+# The package carries this platform's library alone, under its soname, with the headers and a pkg-config file
+# beside it (python -m $(NAME) says where): a wheel holds what its tag names, whatever else this tree built,
 # and runs on the tag's whole platform, so never a library built for this machine alone (QUICK=1)
 python: $(LIB)
 	@if readelf -n $(LIB) 2>/dev/null | grep -q 'x86-64-v4'; then \
 	    echo "$(LIB) needs x86-64-v4 (QUICK=1?): a package needs the x86-64-v3 floor, rebuild without QUICK"; exit 1; fi
-	rm -rf python/$(NAME)/lib && mkdir -p python/$(NAME)/lib/$(PLATFORM) && cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/
+	rm -rf python/$(NAME)/lib python/$(NAME)/include && mkdir -p python/$(NAME)/lib/$(PLATFORM)/pkgconfig python/$(NAME)/include
+	cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/$(SONAME) && cp $(HEADERS) python/$(NAME)/include/   # by its soname: a C program linked against it loads it by that name
+	@printf '%s\n' 'prefix=$${pcfiledir}/../../..' 'includedir=$${prefix}/include' 'libdir=$${pcfiledir}/..' '' \
+	    'Name: $(NAME)' 'Description: $(DESCRIPTION)' 'Version: $(VERSION)' \
+	    'Cflags: -I$${includedir}' 'Libs: $${libdir}/$(SONAME) -Wl,-rpath,$${libdir}' > python/$(NAME)/lib/$(PLATFORM)/pkgconfig/$(NAME).pc
 	cp $(ROOT)/LICENSE python/LICENSE   # pyproject's license-files: a pip install of python/ carries it, as the wheel does
 
 # The release tools, one venv for both packages (the root's publish-wheels makes the same one, by the same
@@ -104,6 +114,10 @@ check-wheel: wheel
 	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(WHEEL_DEPS)
 	cd target && $(WHEEL_TEST)
 	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
+	@cflags=$$(target/wheelenv/bin/python -m $(NAME) --cflags) && libs=$$(target/wheelenv/bin/python -m $(NAME) --libs) && \
+	 $(CC) -std=c99 -o target/wheel-example $(WHEEL_EXAMPLE) $$cflags $$libs && ./target/wheel-example $(WHEEL_EXAMPLE_ARGS) > /dev/null && \
+	 echo "the C example builds and runs against the installed wheel: python -m $(NAME) --cflags --libs"
+	@PKG_CONFIG_PATH=$$(target/wheelenv/bin/python -m $(NAME) --pkgconfig) pkg-config --exists $(NAME) && echo "pkg-config finds $(NAME) there" || echo "no pkg-config here: the .pc file not checked"
 
 # What a release carries per platform: headers, libraries, the wheel, so pip users need no second download.
 dist: wheel

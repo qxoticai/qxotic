@@ -7,6 +7,9 @@ DIST_LIBS = $(LIB) $(STATIC)
 # What the image needs from the system: the shared library carries these as NEEDED, a static consumer links them
 SYSLIBS = -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt -lutil)
 WHEEL_TEST = TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
+DESCRIPTION = toknroll, LLM tokenization with a C API
+WHEEL_EXAMPLE = examples/c/tokenize.c
+WHEEL_EXAMPLE_ARGS = $(SOURCE) "Hello, Tok'n'Roll!"
 # What `make check` tokenizes: a hub repository, metadata only
 SOURCE ?= Qwen/Qwen3-0.6B
 

@@ -2,4 +2,5 @@ LICENSE
 build/
 *.egg-info/
 jinfer/lib/
+jinfer/include/
 __pycache__/

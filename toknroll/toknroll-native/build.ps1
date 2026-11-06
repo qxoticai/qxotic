@@ -42,5 +42,6 @@ $Example = {
 }
 $PyTest = { Push-Location python; try { python -m unittest discover -s tests -t tests; if ($LASTEXITCODE) { throw "tests failed" } } finally { Pop-Location } }
 $WheelDeps = { }
+$WheelExample = 'examples\c\tokenize.c'; $WheelExampleArgs = @($Source, "Hello, Tok'n'Roll!")
 $WheelTest = { & wheelenv\Scripts\python -m unittest discover -s ..\python\tests -t ..\python\tests; if ($LASTEXITCODE) { throw "tests failed" } }
 . "$PSScriptRoot\..\..\native.ps1"

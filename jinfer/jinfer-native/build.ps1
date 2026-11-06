@@ -23,5 +23,6 @@ $Example = {
 }
 $PyTest = { python python\test_jinfer.py; if ($LASTEXITCODE) { throw "checks failed" } }
 $WheelDeps = { & "$Toknroll\build.ps1" wheel | Out-Host; (Get-Item "$Toknroll\target\wheel\*.whl").FullName }   # the installed wheel needs toknroll's, built from this tree
+$WheelExample = 'examples\c\chat.c'; $WheelExampleArgs = @()
 $WheelTest = { & wheelenv\Scripts\python ..\python\test_jinfer.py; if ($LASTEXITCODE) { throw "checks failed" } }
 . "$PSScriptRoot\..\..\native.ps1"

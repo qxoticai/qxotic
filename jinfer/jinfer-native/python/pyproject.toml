@@ -41,4 +41,4 @@ Issues = "https://github.com/qxoticai/qxotic/issues"
 packages = ["jinfer", "jinfer.lib"]
 
 [tool.setuptools.package-data]
-jinfer = ["lib/*/*", "py.typed"]
+jinfer = ["lib/*/*", "lib/*/pkgconfig/*", "include/*", "py.typed"]  # the library, its pkg-config file and the headers: python -m jinfer says where

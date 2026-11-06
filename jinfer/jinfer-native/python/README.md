@@ -143,6 +143,18 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 - `jinfer.configure("-Djinfer.threads=8", "-Djinfer.cache.sessions=16", "-Djinfer.cache.budget=8g", "-Djinfer.offline=true", "-XX:MaxHeapSize=4g")` passes the runtime the options a java command line would, once and before the first load; the engine's `jinfer.*` and `jam.*` properties are all reachable this way. A later call is refused, and a rejected option fails this one. `JINFER_OPTIONS="-Djinfer.threads=4"` in the environment holds the same options and overrides them, so the box a program runs on can retune it without a code change.
 - A scalar schema (`int`, `str`, `bool`, `Literal`, `Enum`) travels as `{"value": ...}` on the wire, so the model's first token is anchored; `reply.parsed` is the value, `reply.text` the JSON. Objects and lists go as they are.
 
+## From C
+
+The wheel is the C library too: `jinfer.h`, `toknroll.h`, `libjinfer` and a pkg-config file live in the installed package, and the package says where.
+
+```sh
+cc chat.c $(python -m jinfer --cflags) $(python -m jinfer --libs)         # the include flag, the library and an rpath into the venv
+PKG_CONFIG_PATH=$(python -m jinfer --pkgconfig) pkg-config --cflags --libs jinfer
+```
+
+On Windows the flags are `cl`'s, `/I` and `/LIBPATH` with `jinfer.lib`, one per line, and `jinfer.dll` sits beside the import library.
+The C API is [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h); nothing else is a tool here, `jbang jinfer@qxoticai` is.
+
 ## With toknroll
 
 libjinfer carries its own toknroll: a model's tokenizer lives in jinfer's runtime, and `model.tokenizer` is a [`toknroll.Tokenizer`](https://pypi.org/project/toknroll/) served by libjinfer.

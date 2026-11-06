@@ -492,7 +492,7 @@ class ConfigurationTest(unittest.TestCase):
 class LibraryLocationTest(unittest.TestCase):
     def test_platform_names(self):
         located = N.locate("toknroll")
-        self.assertIn(located.name, ("libtoknroll.so", "libtoknroll.dylib", "toknroll.dll"))
+        self.assertRegex(located.name, r"^(libtoknroll\.so(\.\d+\.\d+)?|libtoknroll(\.\d+\.\d+)?\.dylib|toknroll\.dll)$")   # a checkout's build, or the wheel's copy by its soname
 
     def test_env_override_points_at_a_missing_file(self):
         """An override is the one candidate: a typo in it is an error naming it, never another build in silence."""
