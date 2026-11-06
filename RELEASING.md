@@ -66,17 +66,15 @@ Record the platforms built, their test totals and skips, and the wheel file name
 ## C libraries
 
 The native libraries for C are the release archives, one per platform, assets of the GitHub release on the tag: `libtoknroll-<version>-<platform>.tar.gz` and `libjinfer-<version>-<platform>.tar.gz`, a `.zip` on Windows, each a prefix tree (`include/`, `lib/` with the library under its soname, the linker's name, the static archive where there is one, and `lib/pkgconfig/<name>.pc`; `bin\` for the DLL on Windows) with the README and the license.
-Each machine builds its own from the same export the wheels come from, checks it, and uploads it:
+Each machine builds and checks its own from a clean export of the tag, as the wheels, and they collect in `target/dists/`:
 
 ```sh
-make -C toknroll/toknroll-native dist check-dist     # the tarball, unpacked to a prefix of its own, the C example built with pkg-config alone
-make -C jinfer/jinfer-native dist check-dist
-make -C toknroll/toknroll-native publish-dist TAG=<tag>   # the tarball and its checksum as assets of the release, through gh
-make -C jinfer/jinfer-native publish-dist TAG=<tag>
+make dists REF=<tag>           # Linux (in the container) or macOS -> target/dists/
+make dists-linux REF=<tag>     # on a Mac: the Linux aarch64 archives, in the container
 ```
 
-On Windows, `.\build.ps1 dist` in each native directory builds the zip; upload it with `gh release upload <tag> target\dist\*.zip target\dist\*.sha256`.
-The release itself is created once, `gh release create <tag>`, before the first upload.
+On Windows, `.\dists.ps1 -Ref <tag>` builds the two zips into `target\dists\`.
+Copying every machine's `target/dists/` to one machine gives the eight archives and their checksums; the release is created once, `gh release create <tag>`, and the archives uploaded with `gh release upload <tag> target/dists/*`.
 
 ## Consumer artifacts and native libraries
 

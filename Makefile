@@ -193,6 +193,31 @@ endef
 wheels-in-container:
 	$(call in-container,wheels-here)
 
+# The release archives for C, as the wheels: built and checked from a clean export of REF on each machine, Linux
+# in the manylinux container for the glibc floor, then collected in target/dists/, one per library and platform.
+ARCHIVES := target/dists-src
+define archives-from-export
+rm -rf $(ARCHIVES) $(ARCHIVES).tar && mkdir -p $(ARCHIVES) target/dists
+git archive -o $(ARCHIVES).tar $(REF) && tar -xf $(ARCHIVES).tar -C $(ARCHIVES)
+$(MAKE) -C $(ARCHIVES) $(1)
+for a in $(ARCHIVES)/toknroll/toknroll-native/target/dist/*.tar.gz $(ARCHIVES)/jinfer/jinfer-native/target/dist/*.tar.gz; do \
+  f=$${a##*/}; rm -f target/dists/$${f%%-*}-*-$${f#*-*-} target/dists/$${f%%-*}-*-$${f#*-*-}.sha256 && cp $$a $$a.sha256 target/dists/; done
+@ls -l target/dists/*.tar.gz target/dists/*.zip 2>/dev/null | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
+endef
+
+dists: ## This machine's two release archives for C, built and checked from a clean export of REF (HEAD): Linux in the manylinux container, macOS natively -> target/dists/
+	$(call archives-from-export,$(if $(filter Linux,$(shell uname -s)),dists-in-container,dists-here))
+
+dists-linux: ## The Linux archives for this machine's architecture, in the manylinux container: on a Mac, Linux aarch64
+	$(call archives-from-export,dists-in-container)
+
+dists-here: # the two libraries, their checks, their archives and the archives' checks, in this tree, on this machine
+	$(MAKE) -C toknroll/toknroll-native libtoknroll check dist check-dist
+	$(MAKE) -C jinfer/jinfer-native libjinfer check dist check-dist
+
+dists-in-container:
+	$(call in-container,dists-here)
+
 # The release tools' venv: native.mk's, by the same path, so an in-tree build and publishing share it.
 TOOLS := target/pytools/$(shell python3 -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep="-")')
 $(TOOLS)/bin/twine:
@@ -217,5 +242,5 @@ help: ## Show this help
 	@echo
 	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
-.PHONY: default help package compile install jar jinfer-jar test jinfer-test jota-test \
+.PHONY: dists dists-linux dists-here dists-in-container default help package compile install jar jinfer-jar test jinfer-test jota-test \
 	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures cache-models cache-models-in-container ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-linux wheels-here wheels-in-container publish-wheels
