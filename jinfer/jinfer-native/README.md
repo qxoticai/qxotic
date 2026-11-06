@@ -23,7 +23,7 @@ The models are jinfer's ports, the [Python README](python/README.md#models) list
 
 ## Getting the library
 
-- The release zip, `libjinfer-<version>-<platform>.zip`, an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/` with both headers, `lib/` with the shared library under its soname, the linker's name linked to it and `lib/pkgconfig/jinfer.pc`, this README and the license. Unzipped into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
+- The release tarball, `libjinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/` with both headers, `lib/` with the shared library under its soname, the linker's name linked to it and `lib/pkgconfig/jinfer.pc`, this README and the license. Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install jinfer`: the [wheel](https://pypi.org/project/jinfer/) carries the shared library, both headers and a pkg-config file in the installed package, and `jinfer-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
@@ -45,7 +45,7 @@ cl /Iinclude /I..\..\toknroll\toknroll-native\include chat.c /link /LIBPATH:<dir
 ```
 
 On Linux and macOS the library exports the two headers' functions and libjam's kernels, nothing else.
-A Windows DLL has no export list, so `jinfer.dll` exports the runtime's symbols too; a program binds by name as on any DLL.
+A Windows DLL has no export list, so `jinfer.dll` exports the runtime's symbols too, and the zip carries `jinfer.def`, the API's module definition, for another toolchain's import library (`dlltool -d jinfer.def -l libjinfer.a`); a program binds by name as on any DLL.
 There is no static archive: libjam, the kernel library, is linked into the image whole, and the image is the unit.
 
 ## Configuration
@@ -82,9 +82,9 @@ make qa                   # the corner cases: threads, lifetime at interpreter e
 make python               # stage the library into the Python package
 make wheel                # the platform-tagged wheel -> target/wheel/
 make check-wheel          # the wheel as a user gets it: twine, a fresh venv, pip install, the test from outside the tree
-make dist                 # the release zip, a prefix tree -> target/dist/
-make check-dist           # the zip unzipped to a prefix of its own, the C example built with pkg-config alone
-make publish-dist TAG=<tag> # the zip and its checksum as assets of that GitHub release
+make dist                 # the release tarball, a prefix tree -> target/dist/
+make check-dist           # the tarball unpacked to a prefix of its own, the C example built with pkg-config alone
+make publish-dist TAG=<tag> # the tarball and its checksum as assets of that GitHub release
 ```
 
 `make libjinfer` from the repository root does the same.

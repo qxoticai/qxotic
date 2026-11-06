@@ -10,6 +10,9 @@ param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $
 $Here = $PSScriptRoot; $Name = 'jinfer'
 $Toknroll = "$PSScriptRoot\..\..\toknroll\toknroll-native"
 $Headers = 'include\jinfer.h', "$Toknroll\include\toknroll.h"; $Syms = 'jinfer|toknroll'   # the library carries toknroll's C face too
+# what the DLL exports, as the Makefile's EXPORT_HEADERS and EXTRA_EXPORTS: the two faces, libjam's C API, and libjam's JNI entry points
+$ExportHeaders = $Headers + "$PSScriptRoot\..\..\jam\jam-native\include\jam.h"; $ExportSyms = 'jinfer|toknroll|jam'
+$ExtraExports = 'JNI_OnLoad_jam', 'Java_com_qxotic_jam_libjam_NativeJAM_newJni', 'Java_com_qxotic_jam_libjam_NativeJAM_mmJni', 'Java_com_qxotic_jam_libjam_NativeJAM_freeJni'
 $MvnArg = '-Dtoknroll.image.skip=true'   # as the Makefile: this image carries toknroll's entry points, toknroll.dll stays toknroll's own build
 $Example = {
     # the C tests (tests\c), and toknroll's against the toknroll functions this library carries; the headers as C++ too

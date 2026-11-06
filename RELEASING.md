@@ -65,13 +65,13 @@ Record the platforms built, their test totals and skips, and the wheel file name
 
 ## C libraries
 
-The native libraries for C are the release zips, one per platform, assets of the GitHub release on the tag: `libtoknroll-<version>-<platform>.zip` and `libjinfer-<version>-<platform>.zip`, each a prefix tree (`include/`, `lib/` with the library under its soname, the linker's name, the static archive where there is one, and `lib/pkgconfig/<name>.pc`; `bin\` for the DLL on Windows) with the README and the license.
+The native libraries for C are the release archives, one per platform, assets of the GitHub release on the tag: `libtoknroll-<version>-<platform>.tar.gz` and `libjinfer-<version>-<platform>.tar.gz`, a `.zip` on Windows, each a prefix tree (`include/`, `lib/` with the library under its soname, the linker's name, the static archive where there is one, and `lib/pkgconfig/<name>.pc`; `bin\` for the DLL on Windows) with the README and the license.
 Each machine builds its own from the same export the wheels come from, checks it, and uploads it:
 
 ```sh
-make -C toknroll/toknroll-native dist check-dist     # the zip, unzipped to a prefix of its own, the C example built with pkg-config alone
+make -C toknroll/toknroll-native dist check-dist     # the tarball, unpacked to a prefix of its own, the C example built with pkg-config alone
 make -C jinfer/jinfer-native dist check-dist
-make -C toknroll/toknroll-native publish-dist TAG=<tag>   # the zip and its checksum as assets of the release, through gh
+make -C toknroll/toknroll-native publish-dist TAG=<tag>   # the tarball and its checksum as assets of the release, through gh
 make -C jinfer/jinfer-native publish-dist TAG=<tag>
 ```
 

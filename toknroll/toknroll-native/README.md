@@ -24,7 +24,7 @@ x86-64 means x86-64-v3, a CPU with AVX2.
 
 ## Getting the library
 
-- The release zip, `libtoknroll-<version>-<platform>.zip`, an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/toknroll.h`, `lib/` with the shared library under its soname, the linker's name linked to it, the static archive and `lib/pkgconfig/toknroll.pc`, this README and the license. Unzipped into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
+- The release tarball, `libtoknroll-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/toknroll.h`, `lib/` with the shared library under its soname, the linker's name linked to it, the static archive and `lib/pkgconfig/toknroll.pc`, this README and the license. Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install toknroll`: the [wheel](https://pypi.org/project/toknroll/) carries the shared library, `toknroll.h` and a pkg-config file in the installed package, and `toknroll-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
@@ -44,7 +44,7 @@ cl /Iinclude tokenize.c /link /LIBPATH:<dir> toknroll.lib   # Windows: the impor
 ```
 
 On Linux and macOS the library exports the header's thirteen functions and nothing else, neither GraalVM's runtime API nor the entry points behind the header.
-A Windows DLL has no export list, so `toknroll.dll` exports the runtime's symbols too; a program binds the thirteen by name as on any DLL.
+A Windows DLL has no export list, so `toknroll.dll` exports the runtime's symbols too, and the zip carries `toknroll.def`, the API's module definition, for another toolchain's import library (`dlltool -d toknroll.def -l libtoknroll.a`); a program binds the thirteen by name as on any DLL.
 
 `libtoknroll.a` is the same image as one relocatable object with every symbol but the thirteen made local, for a program that wants no shared library.
 It needs the system libraries the image does, `-lz -ldl -lpthread -lm`, then `-lrt` on Linux or `-framework Foundation` on macOS, and the program defines `TOKNROLL_STATIC` before including the header, so `TOKNROLL_API` asks for no import.
@@ -84,9 +84,9 @@ make check                  # versions agree, exports vs header, the C suite aga
 make python                 # stage the shared library into python/toknroll/lib/<platform>/
 make wheel                  # the platform-tagged wheel -> target/wheel/
 make check-wheel            # the wheel as a user gets it: twine, a fresh venv, pip install, the suite from outside the tree
-make dist                   # the release zip, a prefix tree -> target/dist/
-make check-dist             # the zip unzipped to a prefix of its own, the C example built with pkg-config alone
-make publish-dist TAG=<tag> # the zip and its checksum as assets of that GitHub release
+make dist                   # the release tarball, a prefix tree -> target/dist/
+make check-dist             # the tarball unpacked to a prefix of its own, the C example built with pkg-config alone
+make publish-dist TAG=<tag> # the tarball and its checksum as assets of that GitHub release
 ```
 
 On Windows, `.\build.ps1` in this directory has the same targets.

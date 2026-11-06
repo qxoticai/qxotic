@@ -9,6 +9,8 @@
 #   $WheelDeps   a script block: other wheels the installed one needs, built first
 #   $WheelExample  the C example built against the installed wheel, and $WheelExampleArgs, how it is run
 #   $Description the pkg-config file's Description line
+#   $ExportHeaders, $ExportSyms, $ExtraExports  optional: the headers whose functions the DLL exports (default $Headers), their
+#                prefixes (default $Syms), and exported names no header declares (libjam's JNI entry points)
 #   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\default.iprof
 #   $MvnArg      optional, one more argument for the library's Maven build, as its Makefile passes
 $ErrorActionPreference = 'Stop'
@@ -30,6 +32,15 @@ function Enter-Toolchain {   # cl, link, dumpbin for the shims, the image and th
 function Check-NativeImage {   # 25.0.4 is the floor: the isolate parameters the C shims use
     $v = (native-image --version | Select-Object -First 1) -replace '^native-image (\S+).*', '$1'
     if ([version](($v -split '\.')[0..2] -join '.') -lt [version]'25.0.4') { throw "native-image $v is too old: 25.0.4 or later" }   # 25.0.4.1.1: [version] takes four parts at most
+}
+function Write-Exports {   # target\$Name.def, the API's module definition: the headers' functions and the extra names, for another toolchain's import library
+    # (not a link input: the image's objects export the runtime's own names by directives of their own, and link.exe exports the union)
+    $headers = if ($ExportHeaders) { $ExportHeaders } else { $Headers }; $syms = if ($ExportSyms) { $ExportSyms } else { $Syms }
+    $names = (Select-String -Path $headers -Pattern "^[A-Z]+_API.*?(($syms)_[a-z0-9_]+)\(").Matches | ForEach-Object { $_.Groups[1].Value }
+    $names = @($names) + @($ExtraExports) | Sort-Object -Unique
+    New-Item -ItemType Directory -Force target | Out-Null
+    [IO.File]::WriteAllText("$Here\target\$Name.def", (@("LIBRARY $Name", "EXPORTS") + $names -join "`r`n") + "`r`n")
+    "$($names.Count) exports in target\$Name.def"
 }
 function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=native) or a PGO profile asks for another
     Enter-Toolchain; Check-NativeImage
@@ -54,12 +65,14 @@ function Check-Version {   # the header, the wheel, the pom and (where it is a l
     if ($h -ne $w -or $h -ne $m -or ($p -and $h -ne $p)) { throw "version drift: header $h, wheel $w, pom $m, package $p" }
     "version $h everywhere"
 }
-function Check-Exports {   # every function the headers declare is exported; the runtime's own names (graal_*, JNU_*) ride along on Windows
+function Check-Exports {   # every function the headers declare is exported, and the module definition's names are all there is
     Enter-Toolchain
     $header = (Select-String -Path $Headers -Pattern "^[A-Z]+_API.*?(($Syms)_[a-z0-9_]+)\(").Matches | ForEach-Object { $_.Groups[1].Value } | Sort-Object
-    $exported = dumpbin /nologo /EXPORTS $Lib | ForEach-Object { if ($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+(\S+)') { $Matches[1] } } | Where-Object { $_ -match "^($Syms)_[^_]" } | Sort-Object
+    $all = dumpbin /nologo /EXPORTS $Lib | ForEach-Object { if ($_ -match '^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+(\S+)') { $Matches[1] } } | Sort-Object
+    $exported = $all | Where-Object { $_ -match "^($Syms)_[^_]" }
     $diff = Compare-Object $header $exported
     if ($diff) { $diff | Format-Table | Out-String | Write-Host; throw "exports differ from the headers" }
+    "$($all.Count - $exported.Count) exports beyond the headers, the runtime's own, as a Windows DLL has no export list"
     "exports match the headers: $($header.Count) functions"
 }
 function Run-Check { Check-Version; Check-Exports; & $Example; & $PyTest }
@@ -86,12 +99,13 @@ function Build-Wheel {   # tagged py3-none-win_amd64 by setup.py: ctypes over a 
     Remove-Item -Recurse -Force target\wheel, python\build -ErrorAction Ignore
     & "$Tools\Scripts\pip" wheel -q --no-deps -w target\wheel .\python; if ($LASTEXITCODE) { throw "pip wheel failed" }
 }
-function Build-Dist {   # the release zip as native.mk's dist: a prefix tree, Windows' own layout (bin\ for the DLL, lib\ for the import library)
+function Build-Dist {   # the release zip as native.mk's dist: a prefix tree, Windows' own layout (bin\ for the DLL, lib\ for the import library and the .def)
+    Write-Exports | Out-Host
     $version = ((Get-Content "include\$Name.h") -match "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) " | ForEach-Object { ($_ -split ' ')[-1] }) -join '.'
     $dist = "lib$Name-$version-$Platform"
     Remove-Item -Recurse -Force "target\dist\$dist", "target\dist\$dist.zip" -ErrorAction Ignore
     New-Item -ItemType Directory -Force "target\dist\$dist\include", "target\dist\$dist\lib", "target\dist\$dist\bin" | Out-Null
-    Copy-Item $Headers "target\dist\$dist\include\"; Copy-Item $Lib "target\dist\$dist\bin\"; Copy-Item "target\$Name.lib" "target\dist\$dist\lib\"
+    Copy-Item $Headers "target\dist\$dist\include\"; Copy-Item $Lib "target\dist\$dist\bin\"; Copy-Item "target\$Name.lib", "target\$Name.def" "target\dist\$dist\lib\"   # the .def: another toolchain's import library
     Copy-Item README.md, "$Root\LICENSE" "target\dist\$dist\"
     Compress-Archive -Path "target\dist\$dist" -DestinationPath "target\dist\$dist.zip"
     $hash = (Get-FileHash "target\dist\$dist.zip" -Algorithm SHA256).Hash.ToLower()
