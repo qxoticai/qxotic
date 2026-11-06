@@ -193,27 +193,29 @@ endef
 wheels-in-container:
 	$(call in-container,wheels-here)
 
-# The release archives for C, as the wheels: built and checked from a clean export of REF on each machine, Linux
-# in the manylinux container for the glibc floor, then collected in target/dists/, one per library and platform.
+# The release archives, as the wheels: the two libraries for C and the jinfer command, built and checked from a clean
+# export of REF on each machine, Linux in the manylinux container for the glibc floor, then collected in target/dists/,
+# one per library or command and platform.
 ARCHIVES := target/dists-src
 define archives-from-export
 rm -rf $(ARCHIVES) $(ARCHIVES).tar && mkdir -p $(ARCHIVES) target/dists
 git archive -o $(ARCHIVES).tar $(REF) && tar -xf $(ARCHIVES).tar -C $(ARCHIVES)
 $(MAKE) -C $(ARCHIVES) $(1)
-for a in $(ARCHIVES)/toknroll/toknroll-native/target/dist/*.tar.gz $(ARCHIVES)/jinfer/jinfer-native/target/dist/*.tar.gz; do \
+for a in $(ARCHIVES)/toknroll/toknroll-native/target/dist/*.tar.gz $(ARCHIVES)/jinfer/jinfer-native/target/dist/*.tar.gz $(ARCHIVES)/jinfer/jinfer-cli/target/dist/*.tar.gz; do \
   f=$${a##*/}; rm -f target/dists/$${f%%-*}-*-$${f#*-*-} target/dists/$${f%%-*}-*-$${f#*-*-}.sha256 && cp $$a $$a.sha256 target/dists/; done
 @ls -l target/dists/*.tar.gz target/dists/*.zip 2>/dev/null | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
 endef
 
-dists: ## This machine's two release archives for C, built and checked from a clean export of REF (HEAD): Linux in the manylinux container, macOS natively -> target/dists/
+dists: ## This machine's three release archives, libtoknroll, libjinfer and the jinfer command, built and checked from a clean export of REF (HEAD): Linux in the manylinux container, macOS natively -> target/dists/
 	$(call archives-from-export,$(if $(filter Linux,$(shell uname -s)),dists-in-container,dists-here))
 
 dists-linux: ## The Linux archives for this machine's architecture, in the manylinux container: on a Mac, Linux aarch64
 	$(call archives-from-export,dists-in-container)
 
-dists-here: # the two libraries, their checks, their archives and the archives' checks, in this tree, on this machine
+dists-here: # the two libraries and the command, their checks, their archives and the archives' checks, in this tree, on this machine
 	$(MAKE) -C toknroll/toknroll-native libtoknroll check dist check-dist
 	$(MAKE) -C jinfer/jinfer-native libjinfer check dist check-dist
+	$(MAKE) -C jinfer/jinfer-cli image check dist check-dist
 
 dists-in-container:
 	$(call in-container,dists-here)

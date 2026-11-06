@@ -21,14 +21,7 @@ $Platform = 'windows-x86-64'
 # chr(45) is "-": PowerShell 5.1 strips the quotes inside a native command's argument
 $Tools = "$Root\target\pytools\" + (python -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep=chr(45))')
 
-function Enter-Toolchain {   # cl, link, dumpbin for the shims, the image and the checks: Visual Studio's own environment
-    if (Get-Command cl -ErrorAction SilentlyContinue) { return }
-    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
-    Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-    Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64' | Out-Null
-    # clang (jam builds on the MSVC ABI with it), cmake and ninja: Build Tools components, not on the dev shell's PATH
-    $env:Path = "$vs\VC\Tools\Llvm\x64\bin;$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;$env:Path"
-}
+. "$Root\toolchain.ps1"   # Enter-Toolchain: cl, link, dumpbin for the shims, the image and the checks, clang for jam
 function Check-NativeImage {   # 25.0.4 is the floor: the isolate parameters the C shims use
     $v = (native-image --version | Select-Object -First 1) -replace '^native-image (\S+).*', '$1'
     if ([version](($v -split '\.')[0..2] -join '.') -lt [version]'25.0.4') { throw "native-image $v is too old: 25.0.4 or later" }   # 25.0.4.1.1: [version] takes four parts at most

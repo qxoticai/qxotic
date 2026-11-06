@@ -11,6 +11,13 @@ Do not add `com.qxotic:jinfer-cli` as a Maven or Gradle dependency. Use the libr
 described in the [jinfer guide](../README.md) for application integration.
 GraalVM Native Image can compile the CLI into a standalone executable.
 
+## Getting the command
+
+- The release archive, `jinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: `bin/jinfer`, this README, the license and the [notice](../jinfer-native/NOTICE).
+  Unpack it anywhere and run `bin/jinfer`; it needs no Java.
+  Linux x86-64 and aarch64 (glibc 2.17 or later), macOS aarch64 and Windows x86-64; the x86-64 builds need x86-64-v3, any CPU since 2013.
+- The executable JAR, or a native image for this machine, built from the source as below.
+
 ## Build and run
 
 Run the build commands from the repository root. They require Maven 3.9+, CMake, and a C compiler.
@@ -286,3 +293,9 @@ Generated text and WAV bytes go to stdout; diagnostics and timings go to stderr.
 For WAV pipelines on Windows, use `cmd` or PowerShell 7.4+.
 
 Exit statuses: `0` success/help, `1` operational failure, `2` invalid invocation, `130` handled interruption.
+
+## License
+
+Apache 2.0 for the command's own code.
+The executable in the release archive is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in the archive's [NOTICE](../jinfer-native/NOTICE): use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms.
+For that case build it with GraalVM CE, `JAVA_HOME=<GraalVM CE> make image` in `jinfer/jinfer-cli`, which carries the runtime under GPLv2 with the Classpath Exception and no fee condition; the community compiler is slower, prefill most of all.

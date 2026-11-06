@@ -1,19 +1,19 @@
-libjinfer
+libjinfer and the jinfer command
 Copyright 2026 Quixotic AI (https://qxotic.ai)
 
-The library's own code is licensed under the Apache License, Version 2.0 (see LICENSE).
+Their own code is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 Oracle GraalVM (https://www.graalvm.org)
-  The binary in the release archive and in the jinfer wheel is a native image built with
-  Oracle GraalVM. It contains Oracle's Native Image runtime and the parts of the Java class
-  library it uses, redistributed under the GraalVM Free Terms and Conditions (GFTC),
+  The binaries in the release archives and in the jinfer wheel are native images built with
+  Oracle GraalVM. They contain Oracle's Native Image runtime and the parts of the Java class
+  library they use, redistributed under the GraalVM Free Terms and Conditions (GFTC),
   https://www.oracle.com/downloads/licenses/graal-free-license.html, with Oracle's notices in
-  the binary intact. The GFTC counts those portions of a native image as the unmodified
+  them intact. The GFTC counts those portions of a native image as the unmodified
   Program and permits redistributing it "provided that You do not charge Your licensees any
   fees associated with such distribution or use of the Program, including, without
   limitation, fees for products that include or are bundled with a copy of the Program".
-  What that means: you may use this binary as it is, in commercial products and paid services
-  included. Charging a fee for a product that bundles a copy of it is not within the GFTC;
+  What that means: you may use these binaries as they are, in commercial products and paid
+  services included. Charging a fee for a product that bundles a copy is not within the GFTC;
   that takes a license from Oracle, or a build with GraalVM CE, see README.md, which carries
   the runtime under the GNU General Public License version 2 with the Classpath Exception and
   no such condition.
