@@ -37,8 +37,11 @@ Documentation = "https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-
 Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
+[project.scripts]
+toknroll-config = "toknroll._config:main"  # the C world's <name>-config: --cflags, --libs, --pkgconfigdir, --version
+
 [tool.setuptools]
 packages = ["toknroll"]  # the library under lib/ is package data, not a package
 
 [tool.setuptools.package-data]
-toknroll = ["lib/*/*", "lib/*/pkgconfig/*", "include/*", "py.typed"]  # the library, its pkg-config file and the headers: python -m toknroll says where
+toknroll = ["lib/*/*", "lib/*/pkgconfig/*", "include/*", "py.typed"]  # the library, its pkg-config file and the headers: toknroll-config says where

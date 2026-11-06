@@ -98,11 +98,11 @@ function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders
     if (-not (python -m zipfile -l $whl | Select-String 'LICENSE')) { throw "no LICENSE in the wheel" }
     "the wheel carries the license"
     Enter-Toolchain   # cl, for the example: check-wheel alone has not built anything yet
-    $cflags = & target\wheelenv\Scripts\python -m $Name --cflags; $libs = & target\wheelenv\Scripts\python -m $Name --libs   # one flag per line
+    $cflags = & "target\wheelenv\Scripts\$Name-config.exe" --cflags; $libs = & "target\wheelenv\Scripts\$Name-config.exe" --libs   # one flag per line
     cl -nologo -std:c11 -W4 $cflags $WheelExample -Fe:target\wheel-example.exe -Fo:target\ /link $libs; if ($LASTEXITCODE) { throw "cl failed against the wheel" }
-    $path = $env:PATH; $env:PATH = (& target\wheelenv\Scripts\python -m $Name --pkgconfig | Split-Path) + ";$env:PATH"   # the DLL beside the import library
+    $path = $env:PATH; $env:PATH = (& "target\wheelenv\Scripts\$Name-config.exe" --pkgconfigdir | Split-Path) + ";$env:PATH"   # the DLL beside the import library
     try { & target\wheel-example.exe @WheelExampleArgs | Out-Null; if ($LASTEXITCODE) { throw "the example failed against the wheel" } } finally { $env:PATH = $path }
-    "the C example builds and runs against the installed wheel: python -m $Name --cflags --libs"
+    "the C example builds and runs against the installed wheel: $Name-config --cflags --libs"
 }
 
 try {

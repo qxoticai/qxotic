@@ -42,10 +42,10 @@ def ok(cond, what):
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it
 ok(jinfer.__version__ == "0.4.0", "version")
-# python -m jinfer: where a C build finds this install's headers and library, the version the package's
-flags = subprocess.run([sys.executable, "-m", "jinfer", "--version", "--cflags", "--libs", "--pkgconfig"], capture_output=True, text=True, timeout=60,
-                       env={**os.environ, **({} if "JINFER_INSTALLED" in os.environ else {"PYTHONPATH": HERE})})   # -m finds the package as this script did
-ok(flags.returncode == 0 and flags.stdout.splitlines()[0] == jinfer.__version__, f"python -m jinfer: {flags.stderr}")
+# jinfer-config: where a C build finds this install's headers and library, the version the package's
+flags = subprocess.run([sys.executable, "-c", "from jinfer._config import main; import sys; sys.argv[1:] = ['--version', '--cflags', '--libs', '--pkgconfigdir']; raise SystemExit(main())"],
+                       capture_output=True, text=True, timeout=60, env={**os.environ, **({} if "JINFER_INSTALLED" in os.environ else {"PYTHONPATH": HERE})})
+ok(flags.returncode == 0 and flags.stdout.splitlines()[0] == jinfer.__version__, f"jinfer-config: {flags.stderr}")
 include = Path(flags.stdout.splitlines()[1][2:])
 ok(include == Path(jinfer.__file__).resolve().parent / "include", f"--cflags names the package's include directory: {include}")
 ok(not os.environ.get("JINFER_INSTALLED") or {p.name for p in include.iterdir()} == {"jinfer.h", "toknroll.h"}, "an installed wheel carries both headers")

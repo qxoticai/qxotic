@@ -37,8 +37,11 @@ Documentation = "https://qxotic.ai/jinfer"
 Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
+[project.scripts]
+jinfer-config = "jinfer._config:main"  # the C world's <name>-config: --cflags, --libs, --pkgconfigdir, --version
+
 [tool.setuptools]
 packages = ["jinfer", "jinfer.lib"]
 
 [tool.setuptools.package-data]
-jinfer = ["lib/*/*", "lib/*/pkgconfig/*", "include/*", "py.typed"]  # the library, its pkg-config file and the headers: python -m jinfer says where
+jinfer = ["lib/*/*", "lib/*/pkgconfig/*", "include/*", "py.typed"]  # the library, its pkg-config file and the headers: jinfer-config says where

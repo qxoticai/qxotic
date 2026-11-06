@@ -83,7 +83,7 @@ check-exports:
 	@diff target/expected.syms target/exported.syms && echo "exports match the headers: $$(wc -l < target/header.syms | tr -d " ") functions$(if $(EXTRA_EXPORTS), and $(words $(EXTRA_EXPORTS)) more)"
 
 # The package carries this platform's library alone, under its soname, with the headers and a pkg-config file
-# beside it (python -m $(NAME) says where): a wheel holds what its tag names, whatever else this tree built,
+# beside it ($(NAME)-config says where): a wheel holds what its tag names, whatever else this tree built,
 # and runs on the tag's whole platform, so never a library built for this machine alone (QUICK=1)
 python: $(LIB)
 	@if readelf -n $(LIB) 2>/dev/null | grep -q 'x86-64-v4'; then \
@@ -114,10 +114,10 @@ check-wheel: wheel
 	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(WHEEL_DEPS)
 	cd target && $(WHEEL_TEST)
 	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
-	@cflags=$$(target/wheelenv/bin/python -m $(NAME) --cflags) && libs=$$(target/wheelenv/bin/python -m $(NAME) --libs) && \
+	@cflags=$$(target/wheelenv/bin/$(NAME)-config --cflags) && libs=$$(target/wheelenv/bin/$(NAME)-config --libs) && \
 	 $(CC) -std=c99 -o target/wheel-example $(WHEEL_EXAMPLE) $$cflags $$libs && ./target/wheel-example $(WHEEL_EXAMPLE_ARGS) > /dev/null && \
-	 echo "the C example builds and runs against the installed wheel: python -m $(NAME) --cflags --libs"
-	@PKG_CONFIG_PATH=$$(target/wheelenv/bin/python -m $(NAME) --pkgconfig) pkg-config --exists $(NAME) && echo "pkg-config finds $(NAME) there" || echo "no pkg-config here: the .pc file not checked"
+	 echo "the C example builds and runs against the installed wheel: $(NAME)-config --cflags --libs"
+	@PKG_CONFIG_PATH=$$(target/wheelenv/bin/$(NAME)-config --pkgconfigdir) pkg-config --exists $(NAME) && echo "pkg-config finds $(NAME) there" || echo "no pkg-config here: the .pc file not checked"
 
 # What a release carries per platform: headers, libraries, the wheel, so pip users need no second download.
 dist: wheel

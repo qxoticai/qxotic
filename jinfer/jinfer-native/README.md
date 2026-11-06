@@ -24,7 +24,7 @@ The models are jinfer's ports, the [Python README](python/README.md#models) list
 ## Getting the library
 
 - `make dist` here builds the release bundle, `target/dist/libjinfer-<version>-<platform>.zip`: both headers, the shared library, this README, the license and the wheel.
-- `pip install jinfer`: the [wheel](https://pypi.org/project/jinfer/) carries the shared library, both headers and a pkg-config file in the installed package, and `python -m jinfer --cflags --libs` (or `--pkgconfig`) says where, so a C build in a virtual environment needs nothing else.
+- `pip install jinfer`: the [wheel](https://pypi.org/project/jinfer/) carries the shared library, both headers and a pkg-config file in the installed package, and `jinfer-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
 ## From C

@@ -109,3 +109,38 @@ def library() -> C.CDLL:
     # started first, whose lines then go where that one said
     lib.toknroll_log_set(log_callback("toknroll"), None)
     return lib
+
+
+def config(name: str, argv: list[str] | None = None) -> int:
+    """<name>-config, the C world's own convention (python3-config, numpy-config, pybind11-config): where this
+    install's headers and library are, in the platform compiler's flags, one per line.
+
+        cc tokenize.c $(toknroll-config --cflags) $(toknroll-config --libs)
+        PKG_CONFIG_PATH=$(toknroll-config --pkgconfigdir) pkg-config --cflags --libs toknroll
+
+    Nothing else: the library is the API, jbang <name>@qxoticai the tool."""
+    import argparse
+    import importlib
+
+    parser = argparse.ArgumentParser(prog=f"{name}-config", description=f"where this install's C headers and lib{name} are")
+    parser.add_argument("--version", action="store_true", help="the package's version, the library's too")
+    parser.add_argument("--cflags", action="store_true", help="the include flag")
+    parser.add_argument("--libs", action="store_true", help="the link flags")
+    parser.add_argument("--pkgconfigdir", action="store_true", help=f"the directory holding {name}.pc, for PKG_CONFIG_PATH")
+    args = parser.parse_args(argv)
+    if not any(vars(args).values()):
+        parser.print_help()
+        return 2
+    module = importlib.import_module(name)
+    library = locate(name)
+    libdir, include = library.parent, Path(module.__file__).resolve().parent / "include"
+    windows = sys.platform == "win32"
+    if args.version:
+        print(module.__version__)
+    if args.cflags:
+        print(f"/I{include}" if windows else f"-I{include}")
+    if args.libs:
+        print(f"/LIBPATH:{libdir}\n{name}.lib" if windows else f"{library} -Wl,-rpath,{libdir}")
+    if args.pkgconfigdir:
+        print(libdir / "pkgconfig")
+    return 0

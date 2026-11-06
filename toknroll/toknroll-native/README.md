@@ -25,7 +25,7 @@ x86-64 means x86-64-v3, a CPU with AVX2.
 ## Getting the library
 
 - `make dist` here builds the release bundle, `target/dist/libtoknroll-<version>-<platform>.zip`: the header, the shared library and the static archive, this README, the license and the wheel.
-- `pip install toknroll`: the [wheel](https://pypi.org/project/toknroll/) carries the shared library, `toknroll.h` and a pkg-config file in the installed package, and `python -m toknroll --cflags --libs` (or `--pkgconfig`) says where, so a C build in a virtual environment needs nothing else.
+- `pip install toknroll`: the [wheel](https://pypi.org/project/toknroll/) carries the shared library, `toknroll.h` and a pkg-config file in the installed package, and `toknroll-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
 ## From C
