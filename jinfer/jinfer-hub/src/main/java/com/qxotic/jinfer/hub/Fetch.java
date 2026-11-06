@@ -373,7 +373,8 @@ final class Fetch {
         Map<String, String> ranged = downloadHeaders(headers);
         ranged.put("Range", "bytes=0-0");
         try {
-            Transport.Response response = send(URI.create(url), ranged, LISTING_TIMEOUT);
+            Transport.Response response =
+                    send(URI.create(url), ranged, LISTING_TIMEOUT, RateLimit.LISTING_BUDGET);
             try (InputStream drain = response.body()) {
                 // NEVER readAllBytes here: a server that ignores Range answers 200 with the
                 // WHOLE file, and draining it would stream gigabytes into nothing
@@ -392,7 +393,8 @@ final class Fetch {
 
     /** A GET whose body is a String - the listing APIs. */
     static String getString(String url, Map<String, String> headers) throws IOException {
-        Transport.Response response = send(URI.create(url), headers, LISTING_TIMEOUT);
+        Transport.Response response =
+                send(URI.create(url), headers, LISTING_TIMEOUT, RateLimit.LISTING_BUDGET);
         try (InputStream in = response.body()) {
             // capped: a listing is megabytes at the wildest; an endless body must not be our OOM
             byte[] body = in.readNBytes(64 << 20);
@@ -1058,9 +1060,16 @@ final class Fetch {
 
     /**
      * Sends a GET, waiting out a server rate limit (HTTP 429, or 503 with a stated wait) instead of
-     * failing on it - see {@link RateLimit}.
+     * failing on it - see {@link RateLimit}: a download for its budget, a listing for the shorter
+     * one, past which the 429 is returned like any other status.
      */
     private static Transport.Response send(URI uri, Map<String, String> headers, Duration timeout)
+            throws IOException {
+        return send(uri, headers, timeout, RateLimit.BUDGET);
+    }
+
+    static Transport.Response send(
+            URI uri, Map<String, String> headers, Duration timeout, Duration budget)
             throws IOException {
         long waitedNanos = 0;
         for (int backoff = 0; ; backoff++) {
@@ -1086,12 +1095,21 @@ final class Fetch {
                             .plusMillis(
                                     ThreadLocalRandom.current()
                                             .nextLong(250, 1_250)); // spread the workers
-            if (Duration.ofNanos(waitedNanos).plus(wait).compareTo(RateLimit.BUDGET) > 0) {
+            if (Duration.ofNanos(waitedNanos).plus(wait).compareTo(budget) > 0) {
                 return response;
             }
             response.close();
             String host = sent.uri().getHost();
             if (RateLimit.hold(host, wait)) {
+                // a warning, not progress: the host's log hears it whatever shows on stderr
+                LOG.log(
+                        System.Logger.Level.WARNING,
+                        host
+                                + " is rate limiting this address (HTTP "
+                                + status
+                                + "): waiting "
+                                + Math.max(1, wait.toSeconds())
+                                + " s before asking again");
                 announce(
                         host
                                 + " is rate limiting this address (HTTP "

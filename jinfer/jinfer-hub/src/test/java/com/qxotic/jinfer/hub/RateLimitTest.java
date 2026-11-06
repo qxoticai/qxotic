@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -106,6 +107,38 @@ class RateLimitTest {
                 Duration.ofSeconds(4),
                 RateLimit.requested(headers(Map.of("RateLimit-Reset", List.of("4"))), 0));
         assertNull(RateLimit.requested(headers(Map.of()), 0));
+    }
+
+    @Test
+    void aRateLimitThatNeverLiftsIsGivenUpWithinTheBudget() throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.setExecutor(
+                Executors.newCachedThreadPool(Thread.ofPlatform().daemon(true).factory()));
+        AtomicInteger hits = new AtomicInteger();
+        server.createContext(
+                "/forever",
+                exchange -> {
+                    hits.incrementAndGet();
+                    exchange.getResponseHeaders().add("Retry-After", "1");
+                    exchange.sendResponseHeaders(429, -1);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            URI uri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/forever");
+            long t0 = System.nanoTime();
+            try (var response =
+                    Fetch.send(uri, Map.of(), Duration.ofSeconds(5), Duration.ofSeconds(3))) {
+                assertEquals(429, response.status(), "past the budget, the 429 is the answer");
+            }
+            double seconds = (System.nanoTime() - t0) / 1e9;
+            assertTrue(
+                    seconds >= 1.0 && seconds < 10, "waited within the budget: " + seconds + " s");
+            assertTrue(
+                    hits.get() >= 2 && hits.get() <= 4, "asked again a few times: " + hits.get());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test

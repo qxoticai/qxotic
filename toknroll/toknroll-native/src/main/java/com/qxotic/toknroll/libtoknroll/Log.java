@@ -36,6 +36,13 @@ final class Log {
     private static volatile int level = WARN; // a line below it is never formatted
 
     /**
+     * This program's options variable, TOKNROLL_OPTIONS or JINFER_OPTIONS, for a message to name.
+     */
+    static String optionsVariable() {
+        return program.toUpperCase(Locale.ROOT) + "_OPTIONS";
+    }
+
+    /**
      * The runtime's first act, from the isolate's start: given is whether the host called log_set,
      * fn its callback (NULL: nowhere).
      */

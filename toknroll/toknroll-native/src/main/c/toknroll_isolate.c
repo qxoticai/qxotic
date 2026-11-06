@@ -289,7 +289,13 @@ static char* self_path(void) {
     return length && length < sizeof brief / sizeof *brief ? ansi(brief) : NULL;
 #else
     Dl_info self;
-    return dladdr((const void*) &isolate, &self) ? port_strdup(self.dli_fname) : NULL;
+    if (!dladdr((const void*) &isolate, &self)) return NULL;
+    /* as the loader opened it, which is relative when the program's rpath is: the runtime wants it absolute */
+    char* absolute = realpath(self.dli_fname, NULL);
+    if (!absolute) return port_strdup(self.dli_fname);
+    char* copy = port_strdup(absolute);
+    free(absolute);
+    return copy;
 #endif
 }
 #endif
@@ -370,6 +376,9 @@ static void start(void) {
         const char* source = STR(TOKNROLL_OPTIONS_ENV);
         if (configured_by) source = from_env ? "configure or the environment" : configured_by;
         if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which; a new process is needed", source);
+        /* 801 and 802: the address space the runtime reserves for the heap it may grow to, tens of GB of
+         * virtual memory, not RAM, exceeds what this process may have (ulimit -v, a container's limit) */
+        else if (rc == 801 || rc == 802) failed("the runtime could not be started (error %d): it could not reserve the address space for its heap, more virtual memory than this process may have; raise the limit (ulimit -v), or cap the heap with -XX:MaxHeapSize=<size> through configure or %s; a new process is needed", rc, STR(TOKNROLL_OPTIONS_ENV));
         else failed("the runtime could not be started (error %d), a new process is needed", rc);
         return;
     }

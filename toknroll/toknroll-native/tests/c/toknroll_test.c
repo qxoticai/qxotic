@@ -1356,6 +1356,36 @@ static toknroll_tokenizer* cached(const char* ref) {
     return t;
 }
 
+#ifdef __linux__
+#include <sys/resource.h>
+/* under a virtual memory limit below the address space the runtime reserves for its heap, the start fails in
+ * words: what it reserved, and the two ways out (the limit, or -XX:MaxHeapSize); the limit is this
+ * process's own, set before the first call (macOS does not enforce RLIMIT_AS; Windows has none) */
+static void address_space_too_small(void) {
+    struct rlimit limit = {8ULL << 30, 8ULL << 30};
+    if (setrlimit(RLIMIT_AS, &limit) != 0) skip("setrlimit: %s", strerror(errno));
+    CHECK_NULL_ERROR(toknroll_tokenizer_load(tiny_json()), TOKNROLL_ERROR, LE, "could not reserve the address space");
+    CHECK_HAS(LE(NULL), "-XX:MaxHeapSize");
+}
+#endif
+
+/* a heap too small for a 151k-token vocabulary: out of memory names the knob, and the process goes on */
+static void heap_too_small(void) {
+    const char* options[] = {"-Dtoknroll.offline=true", "-XX:MaxHeapSize=64m"};   /* configure is once: both at once */
+    CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
+    toknroll_tokenizer* t = toknroll_tokenizer_load(QWEN);
+    if (t) { toknroll_tokenizer_free(t); FAIL_AT("%s loaded in 64 MB: raise the test's vocabulary", QWEN); return; }
+    int32_t code = 0;
+    const char* message = LE(&code);
+    if (code == TOKNROLL_ENOTFOUND) skip("%s is not cached (%s)", QWEN, message);
+    CHECK_EQ(code, TOKNROLL_ERROR);
+    CHECK_HAS(message, "out of memory");
+    CHECK_HAS(message, "-XX:MaxHeapSize");
+    toknroll_tokenizer* small = toknroll_tokenizer_load(tiny_json());   /* the process is still usable */
+    CHECK(small != NULL);
+    toknroll_tokenizer_free(small);
+}
+
 static void hub_reference(void) {
     offline();
     toknroll_tokenizer* t = cached(QWEN);
@@ -1881,6 +1911,10 @@ static const scenario scenarios[] = {
     {"gguf", gguf, NULL},
     {"threads", threads, NULL},
     {"hub_reference", hub_reference, NULL},
+#ifdef __linux__
+    {"address_space_too_small", address_space_too_small, NULL},
+#endif
+    {"heap_too_small", heap_too_small, NULL},
     PROGRESS_SCENARIOS
     {"every_special_token", every_special_token, NULL},
     {"gguf_reference", gguf_reference, NULL},

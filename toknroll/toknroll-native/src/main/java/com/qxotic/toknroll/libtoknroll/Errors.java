@@ -81,6 +81,13 @@ final class Errors {
 
     static int set(Throwable t) {
         String message = t.getMessage();
+        // the runtime's own words name -Xmx, a flag it does not take here: the knob is the image's
+        if (t instanceof OutOfMemoryError)
+            message =
+                    "out of memory: the runtime's heap is full; raise it with"
+                            + " -XX:MaxHeapSize=<size> through configure or "
+                            + Log.optionsVariable()
+                            + " (a vocabulary of 262k tokens needs about 256 MB)";
         // a file the system refused, in the library's words, not java.nio's class names
         if (t.getCause() instanceof FileSystemException f && f.toString().equals(message)) t = f;
         if (t instanceof FileSystemException f) message = plain(f);

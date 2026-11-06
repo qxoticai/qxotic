@@ -23,8 +23,14 @@ final class RateLimit {
     /** The longest single wait honored; a server asking for more is treated as asking for this. */
     static final Duration MAX_WAIT = Duration.ofMinutes(15);
 
-    /** The total a single request may spend waiting before its 429 is reported as a failure. */
+    /** The total a download request may spend waiting before its 429 is reported as a failure. */
     static final Duration BUDGET = Duration.ofMinutes(30);
+
+    /**
+     * The same for a listing, the small request a load blocks on: a C caller with no cancellation
+     * cannot tell a half hour of polite waiting from a hang.
+     */
+    static final Duration LISTING_BUDGET = Duration.ofMinutes(1);
 
     private static final Map<String, Long> HOLD_UNTIL = new ConcurrentHashMap<>(); // nanoTime
 
