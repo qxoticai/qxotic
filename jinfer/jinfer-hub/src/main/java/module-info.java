@@ -4,4 +4,9 @@ module com.qxotic.jinfer.hub {
     requires com.qxotic.fetch;
 
     exports com.qxotic.jinfer.hub;
+
+    uses com.qxotic.jinfer.hub.Console;
+
+    provides com.qxotic.jinfer.hub.Console with
+            com.qxotic.jinfer.hub.FfmConsole;
 }

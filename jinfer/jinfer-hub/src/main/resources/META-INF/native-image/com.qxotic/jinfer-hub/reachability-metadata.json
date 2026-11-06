@@ -1,5 +1,5 @@
 {
-  "comment": "TerminalSupport, shared by download progress and the CLI: libc isatty/ioctl on Linux and macOS; kernel32 console handles, modes, width and code page on Windows.",
+  "comment": "FfmConsole, the JVM's console behind TerminalSupport, shared by download progress and the CLI: libc isatty/ioctl on Linux and macOS; kernel32 console handles, modes, width and code page on Windows.",
   "foreign": {
     "downcalls": [
       {

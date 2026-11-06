@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 final class GGUFMetadataCache {
     private static final String ROOT_PROPERTY = "toknroll.cache.root";
@@ -157,11 +158,7 @@ final class GGUFMetadataCache {
                         "[" + source + "] Failed to download " + url + " (HTTP " + status + ")");
             }
 
-            Path partial =
-                    Files.createTempFile(
-                            normalizedTarget.getParent(),
-                            normalizedTarget.getFileName().toString() + ".",
-                            ".partial");
+            Path partial = staging(normalizedTarget);
             try {
                 InputStream body = new BufferedInputStream(response.body(), 1 << 16);
                 try (OutputStream tap =
@@ -186,6 +183,23 @@ final class GGUFMetadataCache {
                 Files.deleteIfExists(partial);
             }
         }
+    }
+
+    private static final AtomicLong STAGED = new AtomicLong();
+
+    /**
+     * The target's staging file, next to it, named by this process and a count: only a stale file
+     * of an earlier process with this pid can hold the name, and it is overwritten. No random name,
+     * so no SecureRandom and the security providers behind it in a native image.
+     */
+    private static Path staging(Path target) {
+        return target.resolveSibling(
+                target.getFileName()
+                        + "."
+                        + ProcessHandle.current().pid()
+                        + "-"
+                        + STAGED.incrementAndGet()
+                        + ".partial");
     }
 
     /** Whether the file starts with "GGUF": a cached header without it fails at its magic. */

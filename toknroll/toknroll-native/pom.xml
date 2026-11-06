@@ -143,8 +143,6 @@
                 <buildArg>-ENATIVE_SONAME</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>
-                <!-- the substitutions Lean gates: this library's own SHA-256 and temp-file names, no security providers -->
-                <buildArg>-Dtoknroll.image.lean=true</buildArg>
                 <!-- libstdc++ linked in when the image needs it (Oracle's G1 is C++): no GLIBCXX floor, no dependency -->
                 <buildArg>-H:+StaticLibStdCpp</buildArg>
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>

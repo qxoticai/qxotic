@@ -3,6 +3,7 @@ package com.qxotic.jinfer.hub;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -10,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The shared HuggingFace hub cache ({@code models--owner--repo/blobs/<sha256>} plus a {@code
@@ -257,7 +259,7 @@ final class Hub {
             return dest;
         }
         Files.createDirectories(dest.getParent());
-        Path tmp = Files.createTempFile(dest.getParent(), ".jinfer-link-", ".part");
+        Path tmp = staging(dest.getParent(), ".jinfer-link-");
         try {
             Path target = dest.getParent().toAbsolutePath().relativize(blob.toAbsolutePath());
             Files.delete(tmp);
@@ -281,12 +283,31 @@ final class Hub {
         if (Files.isRegularFile(refFile) && Arrays.equals(Files.readAllBytes(refFile), bytes))
             return;
         Files.createDirectories(refFile.getParent());
-        Path tmp = Files.createTempFile(refFile.getParent(), ".jinfer-ref-", ".part");
+        Path tmp = staging(refFile.getParent(), ".jinfer-ref-");
         try {
             Files.write(tmp, bytes);
             Fetch.publish(tmp, refFile);
         } finally {
             Fetch.cleanup(tmp);
+        }
+    }
+
+    private static final AtomicLong STAGED = new AtomicLong();
+
+    /**
+     * A new, empty {@code .part} file of the folder, named by this process and a count: a name only
+     * a stale file of an earlier process with this pid can hold, in which case the next count. No
+     * random name, so no SecureRandom and the security providers behind it in a native image.
+     */
+    private static Path staging(Path dir, String prefix) throws IOException {
+        long pid = ProcessHandle.current().pid();
+        for (; ; ) {
+            Path file = dir.resolve(prefix + pid + "-" + STAGED.incrementAndGet() + ".part");
+            try {
+                return Files.createFile(file);
+            } catch (FileAlreadyExistsException stale) {
+                // the next count
+            }
         }
     }
 

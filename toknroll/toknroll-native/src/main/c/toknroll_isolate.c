@@ -574,8 +574,8 @@ int32_t toknroll__log(toknroll__log_fn fn, void* user_data, const char* who,
     return TOKNROLL_OK;
 }
 
-/* ---- The terminal, for the hub's download board: TerminalSupport's few console calls, made here so the
- * image carries no Foreign Function API (Target_TerminalSupport.java). fd is 0, 1 or 2. ---- */
+/* ---- The terminal, for the hub's download board: the image's Console provider (ShimConsole.java) makes
+ * the hub's few console calls here, so the image carries no Foreign Function API. fd is 0, 1 or 2. ---- */
 
 #ifdef _WIN32
 static HANDLE std_handle(int fd) { return GetStdHandle(fd == 1 ? STD_OUTPUT_HANDLE : fd == 2 ? STD_ERROR_HANDLE : STD_INPUT_HANDLE); }

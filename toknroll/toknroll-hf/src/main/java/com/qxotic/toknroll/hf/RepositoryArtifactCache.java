@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 final class RepositoryArtifactCache {
@@ -207,11 +208,7 @@ final class RepositoryArtifactCache {
             }
         }
 
-        Path partial =
-                Files.createTempFile(
-                        normalizedTarget.getParent(),
-                        normalizedTarget.getFileName().toString() + ".",
-                        ".partial");
+        Path partial = staging(normalizedTarget);
         try (Transport.Response response =
                 Transport.deadline(
                         transport.follow(URI.create(url), requestHeaders, downloadTimeout),
@@ -240,6 +237,23 @@ final class RepositoryArtifactCache {
         } finally {
             Files.deleteIfExists(partial);
         }
+    }
+
+    private static final AtomicLong STAGED = new AtomicLong();
+
+    /**
+     * The target's staging file, next to it, named by this process and a count: only a stale file
+     * of an earlier process with this pid can hold the name, and it is overwritten. No random name,
+     * so no SecureRandom and the security providers behind it in a native image.
+     */
+    private static Path staging(Path target) {
+        return target.resolveSibling(
+                target.getFileName()
+                        + "."
+                        + ProcessHandle.current().pid()
+                        + "-"
+                        + STAGED.incrementAndGet()
+                        + ".partial");
     }
 
     private static Map<String, List<String>> authHeaders(String token) {

@@ -215,8 +215,9 @@
                      (jam resolves them by name at run time, from the image's own file: TOKNROLL_SELF_PROPERTY above),
                      so without whole-archive the linker would drop every member; no bundled copy is left to extract -->
                 <buildArg>${jam.link}</buildArg>
-                <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
-                <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
+                <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image;
+                     the console through the shim (toknroll-native's ShimConsole): no Foreign Function API -->
+                <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport,com.qxotic.jinfer.hub.FfmConsole</buildArg>
                 <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
                 <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
                 <!-- the kernels' vector width: the target ISA's unless narrowed here (VectorWidth) -->

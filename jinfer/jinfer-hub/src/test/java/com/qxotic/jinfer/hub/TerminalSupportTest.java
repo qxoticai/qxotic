@@ -30,13 +30,13 @@ class TerminalSupportTest {
             info.set(ValueLayout.JAVA_SHORT, 0, (short) 1000); // buffer width
             info.set(ValueLayout.JAVA_SHORT, 10, (short) 17); // window left
             info.set(ValueLayout.JAVA_SHORT, 14, (short) 46); // inclusive right
-            assertEquals(30, TerminalSupport.windowsColumns(info));
+            assertEquals(30, FfmConsole.windowsColumns(info));
             info.set(ValueLayout.JAVA_SHORT, 14, (short) 66);
-            assertEquals(50, TerminalSupport.windowsColumns(info));
+            assertEquals(50, FfmConsole.windowsColumns(info));
             info.set(ValueLayout.JAVA_SHORT, 14, (short) 96);
-            assertEquals(80, TerminalSupport.windowsColumns(info));
+            assertEquals(80, FfmConsole.windowsColumns(info));
             info.set(ValueLayout.JAVA_SHORT, 14, (short) 0);
-            assertTrue(TerminalSupport.windowsColumns(info) <= 0);
+            assertTrue(FfmConsole.windowsColumns(info) <= 0);
         }
     }
 
@@ -52,7 +52,7 @@ class TerminalSupportTest {
     @EnabledOnOs(OS.WINDOWS)
     void windowsConsoleBindingsAreAvailableEvenWithRedirectedStreams() throws Exception {
         assertTrue(
-                TerminalSupport.class.getModule().isNativeAccessEnabled(),
+                FfmConsole.class.getModule().isNativeAccessEnabled(),
                 "the test JVM must enable native access for jinfer-hub");
         for (String name :
                 List.of(
@@ -62,7 +62,7 @@ class TerminalSupportTest {
                         "GET_SCREEN_BUFFER_INFO",
                         "GET_OUTPUT_CODE_PAGE",
                         "SET_OUTPUT_CODE_PAGE")) {
-            var handle = TerminalSupport.class.getDeclaredField(name);
+            var handle = FfmConsole.class.getDeclaredField(name);
             handle.setAccessible(true);
             assertNotNull(handle.get(null), name + " could not link kernel32");
         }
