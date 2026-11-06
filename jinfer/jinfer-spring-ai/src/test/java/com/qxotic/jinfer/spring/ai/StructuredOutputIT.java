@@ -88,12 +88,9 @@ class StructuredOutputIT {
                         chunk -> {
                             if (chunk.getResults().isEmpty()) return;
                             var out = chunk.getResult().getOutput();
-                            // reasoning streams too, flagged - only CONTENT deltas carry the JSON
-                            boolean thought =
-                                    Boolean.TRUE.equals(out.getMetadata().get("isThought"));
-                            if (!thought && out.getText() != null) {
-                                text.append(out.getText());
-                            }
+                            // reasoning streams too, as its own part, which a chunk's text
+                            // leaves out: the texts alone carry the JSON
+                            if (out.getText() != null) text.append(out.getText());
                         })
                 .blockLast(Duration.ofMinutes(2));
         Map<String, Object> json = parseJson(text.toString());
@@ -139,8 +136,7 @@ class StructuredOutputIT {
         assertEquals(1, json.size(), json.toString());
         // the grammar stayed dormant during the think span: reasoning was produced, then JSON
         Assumptions.assumeTrue(
-                r.getResult().getOutput().getMetadata().get("thinking") != null,
-                "not a thinking model reply");
+                !r.getResult().getOutput().getReasoning().isEmpty(), "not a thinking model reply");
     }
 
     @Test
@@ -295,7 +291,7 @@ class StructuredOutputIT {
         assertTrue(byCall.stream().allMatch(a -> a.movies().size() == 2), byCall.toString());
 
         // ChatClient.stream().content() joins EVERY chunk's text; the adapter streams reasoning
-        // flagged (IS_THOUGHT_KEY) rather than hidden, so the content lane is selected here
+        // as its own part, which a chunk's text leaves out, so the join is the content lane
         String streamed =
                 ChatClient.create(model)
                         .prompt()
@@ -318,8 +314,7 @@ class StructuredOutputIT {
     private static String contentChunk(ChatResponse chunk) {
         if (chunk.getResult() == null) return "";
         AssistantMessage m = chunk.getResult().getOutput();
-        boolean thought = Boolean.TRUE.equals(m.getMetadata().get(JinferChatModel.IS_THOUGHT_KEY));
-        return thought || m.getText() == null ? "" : m.getText();
+        return m.getText() == null ? "" : m.getText();
     }
 
     record Transaction(String id, double amount, String status) {}

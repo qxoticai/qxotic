@@ -23,10 +23,18 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.part.MediaPart;
+import org.springframework.ai.chat.messages.part.MessagePart;
+import org.springframework.ai.chat.messages.part.ReasoningPart;
+import org.springframework.ai.chat.messages.part.StreamingParts;
+import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.chat.messages.part.ToolCallPart;
+import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.Resource;
@@ -55,9 +63,9 @@ final class JinferMappings {
                 case UserMessage u -> out.add(new Message(Role.USER, userParts(u, videoSampler)));
                 case AssistantMessage ai -> out.add(assistant(ai));
                 case ToolResponseMessage r -> {
-                    List<Content> results = new ArrayList<>(r.getResponses().size());
-                    for (ToolResponseMessage.ToolResponse t : r.getResponses()) {
-                        results.add(new Content.ToolResult(t.id(), t.responseData()));
+                    List<Content> results = new ArrayList<>(r.getResults().size());
+                    for (ToolResultPart t : r.getResults()) {
+                        results.add(new Content.ToolResult(t.id(), toolResultText(t)));
                     }
                     out.add(new Message(Role.TOOL, results));
                 }
@@ -69,16 +77,43 @@ final class JinferMappings {
         return out;
     }
 
-    /** User content, media included: text stays text, image/audio/video decode to media parts. */
+    /**
+     * User content in the user's order, text and media interleaved as written: text stays text,
+     * image/audio/video decode to media parts.
+     */
     private static List<Content> userParts(UserMessage u, VideoSampler videoSampler) {
         List<Content> parts = new ArrayList<>();
-        if (u.getText() != null && !u.getText().isEmpty()) {
-            parts.add(new Content.Text(u.getText(), null));
-        }
-        for (org.springframework.ai.content.Media media : u.getMedia()) {
-            parts.add(media(media, videoSampler));
+        for (MessagePart part : u.getParts()) {
+            switch (part) {
+                case TextPart t when t.text() != null && !t.text().isEmpty() ->
+                        parts.add(new Content.Text(t.text(), null));
+                case MediaPart m -> parts.add(media(m.media(), videoSampler));
+                default -> {} // empty, or another provider's block
+            }
         }
         return parts;
+    }
+
+    /**
+     * A tool result's content as the text jinfer renders: its text parts joined. A tool result is
+     * text here, so media in one is refused rather than dropped in silence.
+     */
+    private static String toolResultText(ToolResultPart result) {
+        StringBuilder text = new StringBuilder();
+        for (MessagePart part : result.content()) {
+            switch (part) {
+                case TextPart t -> text.append(t.text());
+                case MediaPart m ->
+                        throw new IllegalArgumentException(
+                                "tool "
+                                        + result.name()
+                                        + " returned "
+                                        + m.media().getMimeType()
+                                        + " media: a tool result is text here");
+                default -> {} // another provider's block
+            }
+        }
+        return text.toString();
     }
 
     /** One image, audio or video, decoded by its MIME type; any other type is refused. */
@@ -197,9 +232,6 @@ final class JinferMappings {
         return data;
     }
 
-    /** Metadata key carrying a reply's reasoning (Ollama convention); replayed on history. */
-    static final String THINKING_KEY = "thinking";
-
     /**
      * Metadata key carrying the parsed reply {@link Message} whole. The round-trip law: an
      * UNMODIFIED assistant echo re-encodes to the exact tokens the model generated (verbatim ids),
@@ -212,24 +244,52 @@ final class JinferMappings {
         // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
         // its verbatim ids (byte-exact re-encode: what makes retained-session extension hits
         // deterministic); an edited echo (or one from another provider) re-renders faithfully
-        if (ai.getMetadata().get(REPLY_KEY) instanceof Message reply
-                && toAssistantMessage(reply).equals(ai)) {
+        if (ai.getMetadata().get(REPLY_KEY) instanceof Message reply && unchanged(ai, reply)) {
             return reply;
         }
+        // the message's parts in their order: the reasoning the model produced earlier is
+        // replayed too, the Ollama/OpenAI convention
         List<Content> parts = new ArrayList<>();
-        // replay the reasoning the model produced earlier (stored by toAssistantMessage)
-        if (ai.getMetadata().get(THINKING_KEY) instanceof String thinking && !thinking.isEmpty()) {
-            parts.add(new Content.Reasoning(List.of(new Content.Text(thinking, null)), null));
-        }
-        if (ai.getText() != null && !ai.getText().isEmpty()) {
-            parts.add(new Content.Text(ai.getText(), null));
-        }
-        for (AssistantMessage.ToolCall c : ai.getToolCalls()) {
-            parts.add(
-                    new Content.ToolCall(
-                            c.id() == null ? "" : c.id(), c.name(), args(c.arguments()), null));
+        for (MessagePart part : ai.getParts()) {
+            switch (part) {
+                case ReasoningPart r when r.text() != null && !r.text().isEmpty() ->
+                        parts.add(
+                                new Content.Reasoning(
+                                        List.of(new Content.Text(r.text(), null)), null));
+                case TextPart t when t.text() != null && !t.text().isEmpty() ->
+                        parts.add(new Content.Text(t.text(), null));
+                case ToolCallPart c when !StreamingParts.isPartial(c) -> {
+                    AssistantMessage.ToolCall call = c.toolCall();
+                    parts.add(
+                            new Content.ToolCall(
+                                    call.id() == null ? "" : call.id(),
+                                    call.name(),
+                                    args(call.arguments()),
+                                    null));
+                }
+                default -> {} // empty, a streamed argument delta, media, another provider's block
+            }
         }
         return new Message(Role.ASSISTANT, parts);
+    }
+
+    /**
+     * Whether an echo says what the reply said: same text, reasoning and calls. A streamed echo's
+     * parts were rebuilt from the deltas, and a reasoning span's seed newline never streamed, so
+     * the parts themselves are not compared.
+     */
+    private static boolean unchanged(AssistantMessage echo, Message reply) {
+        AssistantMessage parsed = toAssistantMessage(reply);
+        return parsed.getText().equals(echo.getText())
+                && reasoning(parsed).strip().equals(reasoning(echo).strip())
+                && parsed.getToolCalls().equals(echo.getToolCalls());
+    }
+
+    /** A message's reasoning as one text. */
+    static String reasoning(AssistantMessage message) {
+        return message.getReasoning().stream()
+                .map(ReasoningPart::text)
+                .collect(Collectors.joining());
     }
 
     /** A call's arguments JSON as the map jinfer's tools speak; empty/blank = no arguments. */
@@ -284,48 +344,54 @@ final class JinferMappings {
 
     // ---- jinfer reply -> Spring AI ----
 
+    /**
+     * The reply as a message of parts in the reply's own order: reasoning, text, tool calls. The
+     * parsed reply rides along whole, so an unmodified echo restores verbatim ids instead of
+     * re-tokenizing.
+     */
     static AssistantMessage toAssistantMessage(Message reply) {
-        StringBuilder text = new StringBuilder();
-        StringBuilder thinking = new StringBuilder();
-        List<AssistantMessage.ToolCall> calls = new ArrayList<>();
-        collect(reply.content(), text, thinking, calls, false);
-        AssistantMessage.Builder<?> b =
-                AssistantMessage.builder().content(text.toString()).toolCalls(calls);
-        // reasoning survives in metadata (Spring AI's AssistantMessage has no thinking slot) and
-        // is replayed into the next request's assistant turn - the Ollama/OpenAI convention.
-        // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the closed empty
-        // pair when thinking is off) is no reasoning at all. The parsed reply rides along whole,
-        // so an unmodified echo restores verbatim ids instead of re-tokenizing.
+        List<MessagePart> parts = new ArrayList<>();
+        collect(reply.content(), parts);
+        if (parts.isEmpty()) parts.add(TextPart.of("")); // an empty reply has an empty text
         Map<String, Object> properties = new HashMap<>();
         properties.put(REPLY_KEY, reply);
-        if (!thinking.toString().isBlank()) {
-            properties.put(THINKING_KEY, thinking.toString());
-        }
-        b.properties(properties);
-        return b.build();
+        return AssistantMessage.builder().parts(parts).properties(properties).build();
     }
 
-    /** The reply flattened: content lane, reasoning lane, tool calls with canonical JSON args. */
-    private static void collect(
-            List<Content> parts,
-            StringBuilder text,
-            StringBuilder thinking,
-            List<AssistantMessage.ToolCall> calls,
-            boolean inReasoning) {
-        for (Content part : parts) {
+    /**
+     * The reply's content as parts: a reasoning span whole, text, calls with canonical JSON args.
+     */
+    private static void collect(List<Content> content, List<MessagePart> parts) {
+        for (Content part : content) {
             switch (part) {
-                case Content.Text t -> (inReasoning ? thinking : text).append(t.text());
-                case Content.Reasoning r -> collect(r.content(), text, thinking, calls, true);
-                case Content.ToolCall c ->
-                        // pythonic syntaxes carry no call ids: mint stable positional ones (what
-                        // Ollama's server does); ids never render back into the prompt (the
-                        // template's call syntax has no id slot), so echoes stay byte-identical
-                        calls.add(
-                                new AssistantMessage.ToolCall(
-                                        c.id().isEmpty() ? "call_" + calls.size() : c.id(),
-                                        "function",
-                                        c.name(),
-                                        Json.stringify(c.arguments())));
+                case Content.Text t when !t.text().isEmpty() -> parts.add(TextPart.of(t.text()));
+                case Content.Reasoning r -> {
+                    // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the
+                    // closed empty pair when thinking is off) is no reasoning at all
+                    String text =
+                            r.content().stream()
+                                    .filter(Content.Text.class::isInstance)
+                                    .map(c -> ((Content.Text) c).text())
+                                    .collect(Collectors.joining());
+                    if (!text.isBlank()) parts.add(ReasoningPart.of(text));
+                    // a call claimed inside the span is a call
+                    collect(
+                            r.content().stream().filter(c -> !(c instanceof Content.Text)).toList(),
+                            parts);
+                }
+                case Content.ToolCall c -> {
+                    // pythonic syntaxes carry no call ids: mint stable positional ones (what
+                    // Ollama's server does); ids never render back into the prompt (the
+                    // template's call syntax has no id slot), so echoes stay byte-identical
+                    long calls = parts.stream().filter(ToolCallPart.class::isInstance).count();
+                    parts.add(
+                            ToolCallPart.of(
+                                    new AssistantMessage.ToolCall(
+                                            c.id().isEmpty() ? "call_" + calls : c.id(),
+                                            "function",
+                                            c.name(),
+                                            Json.stringify(c.arguments()))));
+                }
                 default -> {} // ToolResult/Media never appear in a generated reply
             }
         }

@@ -204,8 +204,17 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     @Override
     public float[] embed(Document document) {
         return document.isText()
-                ? embedOne(loaded.documentPrefix() + document.getText())
+                ? embedOne(getEmbeddingContent(document))
                 : embedMedia(document, null);
+    }
+
+    /**
+     * What a text document embeds as: the card's document framing, then its text. The default
+     * batched path and the one below both embed this, so a store gets the same vector either way.
+     */
+    @Override
+    public String getEmbeddingContent(Document document) {
+        return loaded.documentPrefix() + document.getText();
     }
 
     /**
@@ -224,8 +233,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
         int next = 0; // text vectors fill the remaining slots in document order
         for (List<Document> batch : strategy.batch(texts)) {
-            List<String> framed =
-                    batch.stream().map(d -> loaded.documentPrefix() + d.getText()).toList();
+            List<String> framed = batch.stream().map(this::getEmbeddingContent).toList();
             for (Embedding e : call(new EmbeddingRequest(framed, options)).getResults()) {
                 while (all[next] != null) next++;
                 all[next++] = e.getOutput();

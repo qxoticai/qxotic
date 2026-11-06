@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -49,13 +49,12 @@ class MiniCpm5ThinkingIT {
                                 new UserMessage("What is 17 + 25? Answer briefly."),
                                 JinferChatOptions.builder().maxTokens(512).build()));
         AssistantMessage out = r.getResult().getOutput();
-        String thinking = (String) out.getMetadata().get(JinferMappings.THINKING_KEY);
-        assertNotNull(
-                thinking,
-                "reasoning must land in metadata, not content - the reply seed was not pre-fed?"
+        String thinking = JinferMappings.reasoning(out);
+        assertTrue(
+                !thinking.isBlank(),
+                "reasoning must land in its part, not content - the reply seed was not pre-fed?"
                         + " text: "
                         + out.getText());
-        assertTrue(!thinking.isBlank());
         assertTrue(
                 out.getText() != null && !out.getText().isBlank(),
                 "no content after the think span");
@@ -74,20 +73,12 @@ class MiniCpm5ThinkingIT {
         StringBuilder thoughts = new StringBuilder();
         for (ChatResponse c : chunks.subList(0, chunks.size() - 1)) {
             AssistantMessage out = c.getResult().getOutput();
-            if (Boolean.TRUE.equals(out.getMetadata().get(JinferChatModel.IS_THOUGHT_KEY))) {
-                thoughts.append(out.getText());
-            }
+            thoughts.append(JinferMappings.reasoning(out));
         }
         assertTrue(
                 !thoughts.isEmpty(),
                 "no thought chunks streamed - the prompt-opened think span leaked to content");
-        String thinking =
-                (String)
-                        chunks.get(chunks.size() - 1)
-                                .getResult()
-                                .getOutput()
-                                .getMetadata()
-                                .get(JinferMappings.THINKING_KEY);
+        String thinking = JinferMappings.reasoning(parsed(chunks.get(chunks.size() - 1)));
         // the finished thinking is the streamed thoughts plus the seed's scaffold newline (the
         // parser attributes the prompt-opened span's "\n" to reasoning; the chunks, generated
         // after the seed, start fresh)
@@ -106,7 +97,13 @@ class MiniCpm5ThinkingIT {
                         new Prompt(
                                 new UserMessage("One word: ok?"),
                                 JinferChatOptions.builder().thinking(false).maxTokens(32).build()));
-        assertNull(r.getResult().getOutput().getMetadata().get(JinferMappings.THINKING_KEY));
+        assertTrue(r.getResult().getOutput().getReasoning().isEmpty());
         assertTrue(!r.getResult().getOutput().getText().isBlank());
+    }
+
+    /** The reply as parsed, which the final chunk carries whole. */
+    static AssistantMessage parsed(ChatResponse last) {
+        return JinferMappings.toAssistantMessage(
+                (Message) last.getResult().getOutput().getMetadata().get(JinferMappings.REPLY_KEY));
     }
 }

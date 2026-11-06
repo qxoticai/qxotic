@@ -29,6 +29,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.part.MessagePart;
+import org.springframework.ai.chat.messages.part.ReasoningPart;
+import org.springframework.ai.chat.messages.part.StreamingPartIndexer;
+import org.springframework.ai.chat.messages.part.StreamingParts;
+import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.chat.messages.part.ToolCallPart;
 import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
@@ -78,12 +84,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(JinferChatModel.class);
     private static final ChatModelObservationConvention DEFAULT_CONVENTION =
             new DefaultChatModelObservationConvention();
-
-    /**
-     * Core's thought-lane convention: {@link MessageAggregator} accumulates these on {@code
-     * thoughts} metadata instead of conflating them with content.
-     */
-    static final String IS_THOUGHT_KEY = "isThought";
 
     final ChatEngine engine;
     final JinferChatOptions options;
@@ -415,14 +415,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
             AssistantMessage ai = JinferMappings.toAssistantMessage(done.reply());
             if (done.stopped()) {
-                ai =
-                        AssistantMessage.builder()
-                                .content(TextStops.apply(ai.getText(), p.stops()).text())
-                                .properties(ai.getMetadata())
-                                .toolCalls(ai.getToolCalls())
-                                .build();
+                ai = ai.mutate().content(TextStops.apply(ai.getText(), p.stops()).text()).build();
             }
-            return response(ai, done);
+            return response(ai, done, UUID.randomUUID().toString());
         }
     }
 
@@ -442,10 +437,11 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     /**
-     * Streams delta chunks (text only in each chunk's {@code AssistantMessage}; reasoning deltas
-     * are flagged {@code isThought} per core's convention; metadata on the final chunk carries the
-     * finish reason, tool calls and usage). Generation runs on the engine's single lazy driver
-     * thread; cancellation aborts the pass silently.
+     * Streams delta chunks, each a {@link TextPart} or a {@link ReasoningPart} stamped with its
+     * content block index ({@link StreamingParts}), so {@code ChatClient} and {@link
+     * MessageAggregator} keep reasoning off the content lane; the final chunk carries the tool
+     * calls, complete, with the finish reason and usage. Generation runs on the engine's single
+     * lazy driver thread; cancellation aborts the pass silently.
      */
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
@@ -504,19 +500,35 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         AtomicBoolean cancelled = new AtomicBoolean();
         sink.onCancel(() -> cancelled.set(true));
         sink.onDispose(() -> cancelled.set(true));
+        // one response: its chunks share the id the aggregator groups indexed parts by, and
+        // the indexer gives each run of deltas (reasoning, then text) its content block index
+        String id = UUID.randomUUID().toString();
+        StreamingPartIndexer indexer = new StreamingPartIndexer();
         try {
             ChatEngine.Completion done =
                     engine.complete(
                             p,
                             new ChatEngine.ReplySink() {
+                                boolean reasoning; // a non-blank reasoning delta has streamed
+
                                 @Override
                                 public void on(ChatEngine.Delta delta) {
                                     if (delta.channel() == Channel.CONTENT) {
-                                        sink.next(chunk(delta.text(), false));
+                                        sink.next(
+                                                chunk(
+                                                        indexer.stamp(TextPart.of(delta.text())),
+                                                        id));
                                     } else if (delta.channel() == Channel.REASONING) {
-                                        // reasoning streams too, flagged so consumers can keep it
-                                        // off the content lane
-                                        sink.next(chunk(delta.text(), true));
+                                        // reasoning streams too, as its own part; a span of
+                                        // blanks is no reasoning (the parse drops it), so its
+                                        // leading blanks open no run of their own
+                                        if (!reasoning && delta.text().isBlank()) return;
+                                        reasoning = true;
+                                        sink.next(
+                                                chunk(
+                                                        indexer.stamp(
+                                                                ReasoningPart.of(delta.text())),
+                                                        id));
                                     }
                                     // other channels are structural: a claimed call span surfaces
                                     // nothing until the finished reply's parsed calls
@@ -528,28 +540,29 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 }
                             });
             if (done.cancelled()) return; // cancelled subscriptions end silently
-            // the final chunk: no text (deltas carried it), but complete tool calls + metadata,
-            // from the same parse that streamed
+            // the final chunk: no text (the deltas carried it), but the tool calls the stream
+            // never showed, complete, and the metadata, from the same parse that streamed
             AssistantMessage parsed = JinferMappings.toAssistantMessage(done.reply());
+            List<MessagePart> calls = new ArrayList<>();
+            for (AssistantMessage.ToolCall call : parsed.getToolCalls())
+                calls.add(indexer.stamp(ToolCallPart.of(call)));
+            if (calls.isEmpty()) calls.add(TextPart.of("")); // a chunk's text is never null
             AssistantMessage ai =
                     AssistantMessage.builder()
-                            .content("")
+                            .parts(calls)
                             .properties(parsed.getMetadata())
-                            .toolCalls(parsed.getToolCalls())
                             .build();
-            sink.next(response(ai, done));
+            sink.next(response(ai, done, id));
             sink.complete();
         } catch (Throwable e) {
             sink.error(e);
         }
     }
 
-    static ChatResponse chunk(String delta, boolean thought) {
-        AssistantMessage.Builder<?> b = AssistantMessage.builder().content(delta);
-        if (thought) {
-            b.properties(Map.of(IS_THOUGHT_KEY, true));
-        }
-        return new ChatResponse(List.of(new Generation(b.build())));
+    static ChatResponse chunk(MessagePart part, String id) {
+        return new ChatResponse(
+                List.of(new Generation(AssistantMessage.builder().part(part).build())),
+                ChatResponseMetadata.builder().id(id).build());
     }
 
     // topK is NOT rejected here: it is a supported sampling knob (the builder exposes it, the
@@ -594,7 +607,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return engine.thinkingPolicy();
     }
 
-    private ChatResponse response(AssistantMessage ai, ChatEngine.Completion done) {
+    private ChatResponse response(AssistantMessage ai, ChatEngine.Completion done, String id) {
         Generator.GenerationResult result = done.result();
         String finishReason =
                 done.stopped() // a stop-sequence cut IS a stop, not an abort
@@ -609,7 +622,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // slot must not be null (framework consumers read it provider-agnostically).
         ChatResponseMetadata metadata =
                 ChatResponseMetadata.builder()
-                        .id(UUID.randomUUID().toString())
+                        .id(id)
                         .model(engine.modelName())
                         .usage(
                                 new DefaultUsage(

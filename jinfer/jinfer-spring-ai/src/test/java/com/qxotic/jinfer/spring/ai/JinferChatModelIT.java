@@ -132,11 +132,9 @@ class JinferChatModelIT {
         StringBuilder streamed = new StringBuilder();
         for (ChatResponse c : chunks) {
             AssistantMessage out = c.getResult().getOutput();
-            // the content lane only: reasoning streams as isThought chunks, blocking puts it in
-            // metadata
-            if (!Boolean.TRUE.equals(out.getMetadata().get(JinferChatModel.IS_THOUGHT_KEY))) {
-                streamed.append(out.getText());
-            }
+            // the content lane only: reasoning streams as its own part, which a chunk's text
+            // leaves out
+            streamed.append(out.getText());
         }
         ChatResponse last = chunks.get(chunks.size() - 1);
         assertEquals(blocking, streamed.toString());
@@ -363,7 +361,7 @@ class JinferChatModelIT {
         ChatResponse thinking =
                 model.call(new Prompt(new UserMessage("What is 17 + 25? Answer briefly.")));
         Assumptions.assumeTrue(
-                thinking.getResult().getOutput().getMetadata().get("thinking") != null,
+                !thinking.getResult().getOutput().getReasoning().isEmpty(),
                 "not a thinking model reply");
         // 8B-A1B has no non-thinking turn: off is refused per request, with the remedy
         IllegalArgumentException refused =
@@ -496,23 +494,16 @@ class JinferChatModelIT {
         StringBuilder content = new StringBuilder();
         for (ChatResponse c : chunks.subList(0, chunks.size() - 1)) {
             AssistantMessage out = c.getResult().getOutput();
-            if (Boolean.TRUE.equals(out.getMetadata().get(JinferChatModel.IS_THOUGHT_KEY))) {
-                thoughts.append(out.getText());
-            } else {
-                content.append(out.getText());
-            }
+            thoughts.append(JinferMappings.reasoning(out));
+            content.append(out.getText());
         }
         Assumptions.assumeTrue(!thoughts.isEmpty(), "not a thinking model reply");
         assertTrue(!content.isEmpty(), "no content streamed");
-        // the final chunk's thinking metadata is the same reasoning the thought chunks streamed
+        // the parsed reply the final chunk carries holds the same reasoning the chunks streamed
+        // (less a span's leading blanks, which stream as no reasoning at all)
         String thinking =
-                (String)
-                        chunks.get(chunks.size() - 1)
-                                .getResult()
-                                .getOutput()
-                                .getMetadata()
-                                .get("thinking");
-        assertEquals(thinking, thoughts.toString());
+                JinferMappings.reasoning(MiniCpm5ThinkingIT.parsed(chunks.get(chunks.size() - 1)));
+        assertEquals(thinking.strip(), thoughts.toString().strip());
     }
 
     @Test

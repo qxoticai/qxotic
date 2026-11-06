@@ -327,6 +327,12 @@ class JinferEmbeddingModelIT {
         for (int i = 0; i < docs.size(); i++) {
             assertTrue(cosine(batched.get(i), model.embed(docs.get(i))) > 0.999);
         }
+        // the content the default batched path would embed is the framed text, same vector
+        String framed = model.getEmbeddingContent(docs.get(0));
+        assertTrue(framed.endsWith(docs.get(0).getText()), framed);
+        float[] raw =
+                model.call(new EmbeddingRequest(List.of(framed), null)).getResult().getOutput();
+        assertTrue(cosine(raw, batched.get(0)) > 0.999);
     }
 
     @Test

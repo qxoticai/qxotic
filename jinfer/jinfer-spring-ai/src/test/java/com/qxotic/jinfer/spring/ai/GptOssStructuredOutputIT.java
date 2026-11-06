@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.json.Json;
@@ -64,10 +63,9 @@ class GptOssStructuredOutputIT {
         assertTrue(String.valueOf(map.get("city")).toLowerCase().contains("paris"), text);
         assertInstanceOf(Number.class, map.get("population_millions"), text);
         // the reasoning channel stayed FREE - Harmony always analyses first
-        Object thinking = r.getResult().getOutput().getMetadata().get("thinking");
-        assertNotNull(thinking, "analysis channel should be present");
+        String thinking = JinferMappings.reasoning(r.getResult().getOutput());
         assertTrue(
-                !thinking.toString().isBlank(),
+                !thinking.isBlank(),
                 "reasoning must flow unconstrained while the final channel is schema-bound");
     }
 }

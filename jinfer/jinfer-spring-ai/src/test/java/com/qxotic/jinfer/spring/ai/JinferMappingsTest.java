@@ -22,6 +22,14 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.part.MediaPart;
+import org.springframework.ai.chat.messages.part.MessagePart;
+import org.springframework.ai.chat.messages.part.OpaquePayload;
+import org.springframework.ai.chat.messages.part.ReasoningPart;
+import org.springframework.ai.chat.messages.part.StreamingParts;
+import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.chat.messages.part.ToolCallPart;
+import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
@@ -222,6 +230,113 @@ class JinferMappingsTest {
     }
 
     @Test
+    void userPartsKeepTheirOrder() throws Exception {
+        var img = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
+        var png = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", png);
+        Media image =
+                Media.builder()
+                        .mimeType(MimeType.valueOf("image/png"))
+                        .data(png.toByteArray())
+                        .build();
+        UserMessage u =
+                UserMessage.builder()
+                        .part(TextPart.of("Before:"))
+                        .part(MediaPart.of(image))
+                        .part(TextPart.of("After."))
+                        .build();
+        List<Content> parts =
+                JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM).get(0).content();
+        assertEquals(3, parts.size());
+        assertEquals("Before:", ((Content.Text) parts.get(0)).text());
+        assertTrue(parts.get(1) instanceof Content.Media);
+        assertEquals("After.", ((Content.Text) parts.get(2)).text());
+
+        // the legacy builder orders text, then media; an empty text adds no part
+        UserMessage legacy = UserMessage.builder().text("").media(image).build();
+        List<Content> legacyParts =
+                JinferMappings.toMessages(List.of(legacy), VideoSampler.UNIFORM).get(0).content();
+        assertEquals(1, legacyParts.size());
+        assertTrue(legacyParts.get(0) instanceof Content.Media);
+    }
+
+    @Test
+    void toolResultsAreReadByParts() {
+        ToolResponseMessage m =
+                ToolResponseMessage.builder()
+                        .result(
+                                new ToolResultPart(
+                                        "abc",
+                                        "get_weather",
+                                        List.of(TextPart.of("18C"), TextPart.of(" sunny")),
+                                        false,
+                                        null,
+                                        Map.of()))
+                        .build();
+        Content.ToolResult result =
+                (Content.ToolResult)
+                        JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM)
+                                .get(0)
+                                .content()
+                                .get(0);
+        assertEquals("abc", result.callId());
+        assertEquals("18C sunny", result.text());
+    }
+
+    @Test
+    void aMediaToolResultIsRefusedInWords() {
+        Media image =
+                Media.builder()
+                        .mimeType(MimeType.valueOf("image/png"))
+                        .data(new byte[] {1, 2, 3})
+                        .build();
+        ToolResponseMessage m =
+                ToolResponseMessage.builder()
+                        .result(
+                                new ToolResultPart(
+                                        "abc",
+                                        "screenshot",
+                                        List.of(MediaPart.of(image)),
+                                        false,
+                                        null,
+                                        Map.of()))
+                        .build();
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM));
+        assertTrue(e.getMessage().contains("screenshot"), e.getMessage());
+        assertTrue(e.getMessage().contains("image/png"), e.getMessage());
+    }
+
+    @Test
+    void assistantHistoryIsReadByParts() {
+        AssistantMessage.ToolCall call =
+                new AssistantMessage.ToolCall(
+                        "c1", "function", "get_weather", "{\"city\":\"Paris\"}");
+        AssistantMessage ai =
+                AssistantMessage.builder()
+                        // a streamed argument delta is not a call, a foreign payload's text is
+                        // still the model's reasoning, an unknown block has nothing to render
+                        .part(StreamingParts.partial(ToolCallPart.of(call), 0))
+                        .part(
+                                new ReasoningPart(
+                                        "hmm",
+                                        null,
+                                        new OpaquePayload("anthropic", "sig", "x"),
+                                        Map.of()))
+                        .part(TextPart.of("The weather:"))
+                        .part(ToolCallPart.of(call))
+                        .build();
+        List<Content> parts =
+                JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM).get(0).content();
+        assertEquals(3, parts.size());
+        assertTrue(parts.get(0) instanceof Content.Reasoning);
+        assertEquals("The weather:", ((Content.Text) parts.get(1)).text());
+        assertEquals("c1", ((Content.ToolCall) parts.get(2)).id());
+    }
+
+    @Test
     void multipleToolResponsesShareOneMessage() {
         List<Message> out =
                 JinferMappings.toMessages(
@@ -335,8 +450,8 @@ class JinferMappingsTest {
     }
 
     @Test
-    void thinkingStoredInMetadataAndReplayedAsReasoningPart() {
-        // reply side: reasoning lands in AssistantMessage metadata (Ollama/OpenAI convention)
+    void reasoningIsAPartAndReplaysAsAReasoningSpan() {
+        // reply side: the reasoning is a ReasoningPart before the text, in the reply's order
         Message reply =
                 new Message(
                         Role.ASSISTANT,
@@ -346,9 +461,12 @@ class JinferMappingsTest {
                                 new Content.Text("42", null)));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertEquals("42", ai.getText());
-        assertEquals("hmm, let me think", ai.getMetadata().get("thinking"));
+        assertEquals(
+                List.<MessagePart>of(ReasoningPart.of("hmm, let me think"), TextPart.of("42")),
+                ai.getParts());
 
-        // history side: the stored thinking renders back as a Reasoning part on the next turn
+        // history side: the part renders back as a Reasoning span on the next turn (the
+        // Ollama/OpenAI convention)
         List<Message> out = JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM);
         Content.Reasoning reasoning = (Content.Reasoning) out.get(0).content().get(0);
         assertEquals("hmm, let me think", ((Content.Text) reasoning.content().get(0)).text());

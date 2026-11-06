@@ -252,7 +252,9 @@ Context capacity defaults to 4096 tokens, or the model's maximum when smaller, f
 Set `contextCapacity(PromptCache.Options.MAXIMUM_CONTEXT)` (`-1`) to use the model's maximum; `0` is the default.
 Other negative values, and explicit capacities above that maximum, are rejected.
 
-`stream(Prompt)` returns a cancellable stream of text deltas and a final response.
+A reply is a message of parts, in the model's order: the reasoning of a thinking model is a `ReasoningPart` (`getReasoning()`), the answer its text (`getText()`), then the tool calls.
+Send the reply back as it is to continue the conversation; the reasoning replays with it.
+`stream(Prompt)` returns a cancellable stream of deltas, each a text or a reasoning part, and a final response with the tool calls and usage; `MessageAggregator` and `ChatClient` rebuild the whole message from them.
 
 ## Images, audio and video
 
@@ -275,6 +277,7 @@ try (var vision = JinferChatModel.builder()
 }
 ```
 
+A message is a list of parts in the order written, so text and media may interleave: `UserMessage.builder().part(TextPart.of("Before:")).part(MediaPart.of(image)).part(TextPart.of("After?"))` reaches the model in that order.
 Media bytes are decoded locally, then projected into model embeddings.
 Audio and video require a model and companion that support those inputs; this LFM2.5-VL example uses images only.
 Configure video frame selection with `videoSampler`.
