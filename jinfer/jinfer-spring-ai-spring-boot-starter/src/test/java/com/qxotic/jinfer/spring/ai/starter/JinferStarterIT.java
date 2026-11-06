@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferChatAutoConfiguration;
+import com.qxotic.jinfer.spring.ai.autoconfigure.JinferSessionAutoConfiguration;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.nio.file.Path;
@@ -14,7 +15,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
+import org.springframework.ai.model.session.autoconfigure.SessionServiceAutoConfiguration;
 import org.springframework.ai.model.tool.autoconfigure.ToolCallingAutoConfiguration;
+import org.springframework.ai.session.SessionService;
+import org.springframework.ai.session.advisor.SessionAdvisors;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
@@ -73,6 +77,58 @@ class JinferStarterIT {
                                             .call()
                                             .content();
                             assertThat(answer).contains("18");
+                        });
+    }
+
+    @Test
+    void sessionMemoryRemembersAcrossTurns() {
+        new ApplicationContextRunner()
+                .withConfiguration(
+                        AutoConfigurations.of(
+                                JinferChatAutoConfiguration.class,
+                                ChatClientAutoConfiguration.class,
+                                JinferSessionAutoConfiguration.class,
+                                SessionServiceAutoConfiguration.class))
+                .withPropertyValues(
+                        "spring.ai.jinfer.chat.model=" + MODEL,
+                        "spring.ai.jinfer.chat.context-capacity=4096",
+                        "spring.ai.jinfer.chat.max-tokens=64",
+                        "spring.ai.jinfer.chat.temperature=0",
+                        "spring.ai.jinfer.chat.seed=1")
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            assertThat(context).hasSingleBean(SessionService.class);
+                            ChatClient chat =
+                                    context.getBean(ChatClient.Builder.class)
+                                            .defaultAdvisors(
+                                                    SessionAdvisors.builder(
+                                                                    context.getBean(
+                                                                            SessionService.class))
+                                                            .build())
+                                            .build();
+                            chat.prompt("My name is Zorblax.")
+                                    .advisors(SessionAdvisors.session("s1"))
+                                    .call()
+                                    .content();
+                            String answer =
+                                    chat.prompt("What is my name?")
+                                            .advisors(SessionAdvisors.session("s1"))
+                                            .call()
+                                            .content();
+                            assertThat(answer).containsIgnoringCase("Zorblax");
+                            // another session knows nothing of it
+                            String other =
+                                    chat.prompt("What is my name?")
+                                            .advisors(SessionAdvisors.session("s2"))
+                                            .call()
+                                            .content();
+                            assertThat(other).doesNotContainIgnoringCase("Zorblax");
+                            // the turns went into the session, two of them against one
+                            SessionService sessions = context.getBean(SessionService.class);
+                            assertThat(sessions.getEventVersion("s1"))
+                                    .isGreaterThan(sessions.getEventVersion("s2"));
+                            assertThat(sessions.getEventVersion("s2")).isGreaterThan(0);
                         });
     }
 

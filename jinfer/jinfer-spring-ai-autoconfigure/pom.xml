@@ -63,6 +63,17 @@
       <artifactId>spring-ai-rag</artifactId>
       <optional>true</optional>
     </dependency>
+    <!-- session memory (2.1): the in-memory repository Spring's auto-configuration leaves out -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-session</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-autoconfigure-model-session</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-observation</artifactId>

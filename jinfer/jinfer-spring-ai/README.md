@@ -213,6 +213,22 @@ Compile tool classes with `-parameters` so Spring can read their parameter names
 The Spring Boot parent enables this; for other Maven projects, set `<parameters>true</parameters>` on `maven-compiler-plugin`.
 The JBang header above includes the flag.
 
+## Conversation memory
+
+The starter configures Spring AI's session memory: a `SessionService` bean, in memory unless a `SessionRepository` such as the JDBC one is on the classpath, and the advisors that attach it to a `ChatClient`.
+Name the session on every call:
+
+```java
+ChatClient chat = ChatClient.builder(model)
+        .defaultAdvisors(SessionAdvisors.builder(sessionService).build())
+        .build();
+
+chat.prompt("My name is Ada.").advisors(SessionAdvisors.session("s1")).call().content();
+chat.prompt("What is my name?").advisors(SessionAdvisors.session("s1")).call().content();
+```
+
+Replies go back into the session as they came, reasoning and tool calls included, so a retained prompt cache keeps hitting across turns.
+
 ## Without Spring Boot
 
 Keep the BOMs and model providers shown above, and replace the starter with the integration and `ChatClient` dependencies:

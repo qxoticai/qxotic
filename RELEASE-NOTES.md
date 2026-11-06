@@ -60,6 +60,7 @@ The one unchanged artifact is `json`, at 0.2.0.
   The `thinking` metadata entry and the `isThought` chunk flag are gone.
   Prompts are read by parts too: a user message's text and media reach the model in the order written, and tool results are read from their parts (text; a media result is refused in words).
   `JinferEmbeddingModel.getEmbeddingContent` returns the framed document text, so Spring's default batched path embeds what the provider's own does.
+  The starter configures 2.1's session memory (`SessionService`, `SessionAdvisors`) in place of the chat memory it deprecates for 3.0; it requires Spring Boot 4.2.
 
 ### Behaviour changes
 

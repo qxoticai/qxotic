@@ -69,9 +69,14 @@
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-autoconfigure-model-tool</artifactId>
     </dependency>
+    <!-- session memory (2.1): a SessionService bean, and SessionAdvisors for the ChatClient -->
     <dependency>
       <groupId>org.springframework.ai</groupId>
-      <artifactId>spring-ai-autoconfigure-model-chat-memory</artifactId>
+      <artifactId>spring-ai-autoconfigure-model-session</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-session-advisor</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
