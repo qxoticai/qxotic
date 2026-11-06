@@ -65,7 +65,7 @@ Record the platforms built, their test totals and skips, and the wheel file name
 
 ## C libraries
 
-The native libraries for C are the release archives, one per platform, assets of the GitHub release on the tag: `libtoknroll-<version>-<platform>.tar.gz` and `libjinfer-<version>-<platform>.tar.gz`, a `.zip` on Windows, each a prefix tree (`include/`, `lib/` with the library under its soname, the linker's name, the static archive where there is one, and `lib/pkgconfig/<name>.pc`; `bin\` for the DLL on Windows) with the README and the license.
+The native libraries for C are the release archives, one per platform, assets of the GitHub release on the tag: `libtoknroll-<version>-<platform>.tar.gz` and `libjinfer-<version>-<platform>.tar.gz`, a `.zip` on Windows, each a prefix tree (`include/`, `lib/` with the library under its soname, the linker's name, the static archive where there is one, and `lib/pkgconfig/<name>.pc`; `bin\` for the DLL on Windows) with the README, the license and the notice.
 Each machine builds and checks its own from a clean export of the tag, as the wheels, and they collect in `target/dists/`:
 
 ```sh
@@ -75,6 +75,7 @@ make dists-linux REF=<tag>     # on a Mac: the Linux aarch64 archives, in the co
 
 On Windows, `.\dists.ps1 -Ref <tag>` builds the two zips into `target\dists\`.
 Copying every machine's `target/dists/` to one machine gives the eight archives and their checksums; the release is created once, `gh release create <tag>`, and the archives uploaded with `gh release upload <tag> target/dists/*`.
+The builds are Oracle GraalVM's, the PGO build, so every archive and wheel carries the module's `NOTICE` with the runtime's terms, the GFTC and its no-fee condition on products that bundle the binary, and the README's License section says so; the release notes link it.
 
 ## Consumer artifacts and native libraries
 

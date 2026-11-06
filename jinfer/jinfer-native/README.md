@@ -23,7 +23,7 @@ The models are jinfer's ports, the [Python README](python/README.md#models) list
 
 ## Getting the library
 
-- The release tarball, `libjinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/` with both headers, `lib/` with the shared library under its soname, the linker's name linked to it and `lib/pkgconfig/jinfer.pc`, this README and the license. Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
+- The release tarball, `libjinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/` with both headers, `lib/` with the shared library under its soname, the linker's name linked to it and `lib/pkgconfig/jinfer.pc`, this README, the license and the [notice](NOTICE). Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install jinfer`: the [wheel](https://pypi.org/project/jinfer/) carries the shared library, both headers and a pkg-config file in the installed package, and `jinfer-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
@@ -111,3 +111,9 @@ The image is lean the way libtoknroll's is: curl as a process instead of the JDK
 The shipped shared library is 42 MB on Linux and Windows and 39 MB on macOS, most of it the kernels of every architecture at this ISA level.
 
 `python/` is the `jinfer` package, see its [README](python/README.md).
+
+## License
+
+Apache 2.0 for the library's own code.
+The released binary, in the archive and in the wheel, is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in [NOTICE](NOTICE): use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms.
+For that case build the library with GraalVM CE, `JAVA_HOME=<GraalVM CE> make libjinfer`, which carries the runtime under GPLv2 with the Classpath Exception and no fee condition; the community compiler is slower, prefill most of all.

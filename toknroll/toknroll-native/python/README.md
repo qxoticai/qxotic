@@ -155,4 +155,8 @@ Both wheels in one process are two runtimes that never interact, in any order.
 - [Tok'n'Roll](https://github.com/qxoticai/qxotic/tree/main/toknroll): the Java library, the parity tests, the tested models and the known divergences.
 - [libtoknroll](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native): the shared library, its C API [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) and this package.
 - [Documentation](https://qxotic.ai/toknroll), and [issues](https://github.com/qxoticai/qxotic/issues).
-- Apache 2.0, by [Quixotic AI](https://qxotic.ai).
+
+## License
+
+Apache 2.0, by [Quixotic AI](https://qxotic.ai), for the package and the library's own code.
+The library in the wheel is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in the wheel's NOTICE: use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms, and takes a build with GraalVM CE, see the [libtoknroll README](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native#license).

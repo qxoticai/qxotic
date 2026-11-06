@@ -194,4 +194,8 @@ The C API the package binds is [`jinfer.h`](https://github.com/qxoticai/qxotic/b
 - [jinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer): the engine, the ports, the Java API, the server and the framework providers.
 - [libjinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native): the shared library, its C API [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h), this package and its [examples](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native/python/examples).
 - [Documentation](https://qxotic.ai/jinfer), the [Python comparison](https://qxotic.ai/jinfer/python-comparison), and [issues](https://github.com/qxoticai/qxotic/issues).
-- Apache 2.0, by [Quixotic AI](https://qxotic.ai).
+
+## License
+
+Apache 2.0, by [Quixotic AI](https://qxotic.ai), for the package and the library's own code.
+The library in the wheel is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in the wheel's NOTICE: use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms, and takes a build with GraalVM CE, see the [libjinfer README](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native#license).

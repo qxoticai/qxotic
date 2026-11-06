@@ -95,7 +95,7 @@ function Ensure-Tools {   # one venv per Python, as native.mk's: pip builds the 
 }
 function Build-Wheel {   # tagged py3-none-win_amd64 by setup.py: ctypes over a C library, any Python 3
     Stage-Python; Ensure-Tools
-    Copy-Item "$Root\LICENSE" python\LICENSE
+    Copy-Item "$Root\LICENSE", NOTICE python\
     Remove-Item -Recurse -Force target\wheel, python\build -ErrorAction Ignore
     & "$Tools\Scripts\pip" wheel -q --no-deps -w target\wheel .\python; if ($LASTEXITCODE) { throw "pip wheel failed" }
 }
@@ -106,7 +106,7 @@ function Build-Dist {   # the release zip as native.mk's dist: a prefix tree, Wi
     Remove-Item -Recurse -Force "target\dist\$dist", "target\dist\$dist.zip" -ErrorAction Ignore
     New-Item -ItemType Directory -Force "target\dist\$dist\include", "target\dist\$dist\lib", "target\dist\$dist\bin" | Out-Null
     Copy-Item $Headers "target\dist\$dist\include\"; Copy-Item $Lib "target\dist\$dist\bin\"; Copy-Item "target\$Name.lib", "target\$Name.def" "target\dist\$dist\lib\"   # the .def: another toolchain's import library
-    Copy-Item README.md, "$Root\LICENSE" "target\dist\$dist\"
+    Copy-Item README.md, NOTICE, "$Root\LICENSE" "target\dist\$dist\"
     Compress-Archive -Path "target\dist\$dist" -DestinationPath "target\dist\$dist.zip"
     $hash = (Get-FileHash "target\dist\$dist.zip" -Algorithm SHA256).Hash.ToLower()
     [IO.File]::WriteAllText("$Here\target\dist\$dist.zip.sha256", "$hash  $dist.zip`n")
@@ -121,8 +121,8 @@ function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders
     & target\wheelenv\Scripts\pip install -q $whl $deps; if ($LASTEXITCODE) { throw "pip install failed" }
     Push-Location target
     try { Set-Item "Env:$($Name.ToUpper())_INSTALLED" '1'; & $WheelTest } finally { Remove-Item "Env:$($Name.ToUpper())_INSTALLED"; Pop-Location }
-    if (-not (python -m zipfile -l $whl | Select-String 'LICENSE')) { throw "no LICENSE in the wheel" }
-    "the wheel carries the license"
+    foreach ($f in 'LICENSE', 'NOTICE') { if (-not (python -m zipfile -l $whl | Select-String $f)) { throw "no $f in the wheel" } }
+    "the wheel carries the license and the notice"
     Enter-Toolchain   # cl, for the example: check-wheel alone has not built anything yet
     $cflags = & "target\wheelenv\Scripts\$Name-config.exe" --cflags; $libs = & "target\wheelenv\Scripts\$Name-config.exe" --libs   # one flag per line
     cl -nologo -std:c11 -W4 $cflags $WheelExample -Fe:target\wheel-example.exe -Fo:target\ /link $libs; if ($LASTEXITCODE) { throw "cl failed against the wheel" }

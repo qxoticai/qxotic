@@ -1,0 +1,51 @@
+libjinfer
+Copyright 2026 Quixotic AI (https://qxotic.ai)
+
+The library's own code is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Oracle GraalVM
+  The released binary, in the release archive and in the jinfer wheel, is a native image
+  built with Oracle GraalVM. It contains the Native Image runtime and the parts of the Java
+  class library it uses, which are Oracle's, redistributed under the GraalVM Free Terms and
+  Conditions (GFTC), https://www.oracle.com/downloads/licenses/graal-free-license.html, with
+  Oracle's notices in the binary intact. The GFTC counts those portions of a native image as
+  the unmodified Program and grants the right to "redistribute the unmodified Program ...
+  provided that You do not charge Your licensees any fees associated with such distribution or
+  use of the Program, including, without limitation, fees for products that include or are
+  bundled with a copy of the Program".
+  In short: using this binary, in commercial products and paid services included, is within
+  that license; charging a fee for a product that bundles a copy of it is not something it
+  grants, and takes Oracle's terms or a build with GraalVM CE. A build from source with GraalVM
+  CE, see README.md, carries the runtime under the GNU General Public License version 2 with
+  the Classpath Exception instead, which has no such condition.
+
+llama.cpp and ggml (https://github.com/ggml-org/llama.cpp, https://github.com/ggml-org/ggml)
+  Copyright (c) 2023-2024 The ggml authors. MIT License.
+  - The pretokenizer regular expressions and their family groups mirror llama-vocab.cpp.
+  - The Q1_0 AVX2 dot product is a port of ggml_vec_dot_q1_0_q8_0, the NEON Q1_0 kernel reuses
+    ggml's table_b2b_0 sign-expansion construction, and the K-quant block layouts and decode
+    arithmetic follow ggml's quants.
+  - The Qwen 3.5 vision tower is a port of clip_graph_qwen3vl.
+  - The Gemma 4 multi-token-prediction head follows the structure of gemma4-assistant.cpp.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this
+  software and associated documentation files (the "Software"), to deal in the Software
+  without restriction, including without limitation the rights to use, copy, modify, merge,
+  publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+  to whom the Software is furnished to do so, subject to the following conditions: The above
+  copyright notice and this permission notice shall be included in all copies or substantial
+  portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+  FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+  USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+llamafile tinyBLAS (https://github.com/Mozilla-Ocho/llamafile)
+  Copyright 2024 Mozilla Foundation. Apache License, Version 2.0.
+  - The register-tiled dense GEMM kernels and their recursive tile selection (mnpack) follow
+    tinyBLAS's design.
+
+External programs (not distributed with this product)
+  - espeak-ng (GPL-3.0) or espeak: the speech ports invoke a binary found on the PATH as a
+    phonemizer. It is neither bundled nor required.

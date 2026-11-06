@@ -24,7 +24,7 @@ x86-64 means x86-64-v3, a CPU with AVX2.
 
 ## Getting the library
 
-- The release tarball, `libtoknroll-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/toknroll.h`, `lib/` with the shared library under its soname, the linker's name linked to it, the static archive and `lib/pkgconfig/toknroll.pc`, this README and the license. Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
+- The release tarball, `libtoknroll-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/toknroll.h`, `lib/` with the shared library under its soname, the linker's name linked to it, the static archive and `lib/pkgconfig/toknroll.pc`, this README, the license and the [notice](NOTICE). Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install toknroll`: the [wheel](https://pypi.org/project/toknroll/) carries the shared library, `toknroll.h` and a pkg-config file in the installed package, and `toknroll-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
 - Or build it, see below.
 
@@ -108,3 +108,9 @@ The shipped shared library is 13.8 MB on every platform, the static archive 15.2
 `-Os` would save 3 MB for 9% less single-threaded encode throughput, so it is not used.
 
 `python/` is the `toknroll` package, see its [README](python/README.md); its suite is `python3 -m unittest discover -s tests -t tests` from `python/`.
+
+## License
+
+Apache 2.0 for the library's own code.
+The released binary, in the archive and in the wheel, is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in [NOTICE](NOTICE): use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms.
+For that case build the library with GraalVM CE, `JAVA_HOME=<GraalVM CE> make libtoknroll`, which carries the runtime under GPLv2 with the Classpath Exception and no fee condition, at about 12% less single-threaded encode throughput and a library nearly twice the size at `-O3`, as CE has no profile-guided optimization.

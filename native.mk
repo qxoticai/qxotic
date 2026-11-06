@@ -65,7 +65,7 @@ help::
 	@echo 'make python                stage $(LIB), the headers and a pkg-config file into python/$(NAME)/'
 	@echo 'make wheel                 the wheel, tagged with the platform and glibc floor of $(LIB) -> target/wheel/'
 	@echo 'make check-wheel           the wheel as a user gets it: twine check, a fresh venv, pip install, the tests from outside the tree'
-	@echo 'make dist                  the release tarball, a prefix tree: include/, lib/ with the library, its soname and .pc, README, LICENSE -> target/dist/$(DIST).tar.gz'
+	@echo 'make dist                  the release tarball, a prefix tree: include/, lib/ with the library, its soname and .pc, README, NOTICE, LICENSE -> target/dist/$(DIST).tar.gz'
 	@echo 'make check-dist            the tarball unpacked to a prefix of its own, the C example built with pkg-config alone'
 	@echo 'make publish-dist TAG=<tag>   the tarball and its checksum as assets of that GitHub release (gh)'
 	@echo 'This machine'"'"'s two wheels from a clean export, and PyPI: make wheels, make publish-wheels at the root.'
@@ -96,7 +96,7 @@ python: $(LIB)
 	@printf '%s\n' 'prefix=$${pcfiledir}/../../..' 'includedir=$${prefix}/include' 'libdir=$${pcfiledir}/..' '' \
 	    'Name: $(NAME)' 'Description: $(DESCRIPTION)' 'Version: $(VERSION)' \
 	    'Cflags: -I$${includedir}' 'Libs: $${libdir}/$(SONAME) -Wl,-rpath,$${libdir}' > python/$(NAME)/lib/$(PLATFORM)/pkgconfig/$(NAME).pc
-	cp $(ROOT)/LICENSE python/LICENSE   # pyproject's license-files: a pip install of python/ carries it, as the wheel does
+	cp $(ROOT)/LICENSE NOTICE python/   # pyproject's license-files: a pip install of python/ carries them, as the wheel does
 
 # The release tools, one venv for both packages (the root's publish-wheels makes the same one, by the same
 # path, to upload with): pip builds the wheel, twine
@@ -116,7 +116,7 @@ check-wheel: wheel
 	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)   # "unsupported ISA extensions": native-image's default target, x86-64-v3, the libraries' floor
 	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(WHEEL_DEPS)
 	cd target && $(WHEEL_TEST)
-	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && echo "the wheel carries the license"
+	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && python3 -m zipfile -l target/wheel/*.whl | grep -q NOTICE && echo "the wheel carries the license and the notice"
 	@cflags=$$(target/wheelenv/bin/$(NAME)-config --cflags) && libs=$$(target/wheelenv/bin/$(NAME)-config --libs) && \
 	 $(CC) -std=c99 -o target/wheel-example $(WHEEL_EXAMPLE) $$cflags $$libs && ./target/wheel-example $(WHEEL_EXAMPLE_ARGS) > /dev/null && \
 	 echo "the C example builds and runs against the installed wheel: $(NAME)-config --cflags --libs"
@@ -134,7 +134,7 @@ dist: $(LIB)
 	@printf '%s\n' 'prefix=$${pcfiledir}/../..' 'includedir=$${prefix}/include' 'libdir=$${prefix}/lib' '' \
 	    'Name: $(NAME)' 'Description: $(DESCRIPTION)' 'Version: $(VERSION)' \
 	    'Cflags: -I$${includedir}' 'Libs: -L$${libdir} -l$(NAME) -Wl,-rpath,$${libdir}' > target/dist/$(DIST)/lib/pkgconfig/$(NAME).pc
-	cp README.md $(ROOT)/LICENSE target/dist/$(DIST)/
+	cp README.md NOTICE $(ROOT)/LICENSE target/dist/$(DIST)/
 	cd target/dist && rm -f $(DIST).tar.gz && tar -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256   # a tarball: the Unix form, symlinks and modes kept; Windows' is a zip
 	@ls -la target/dist/$(DIST).tar.gz && cat target/dist/$(DIST).tar.gz.sha256
 
