@@ -8,6 +8,7 @@
 #   $WheelTest   a script block: the tests from outside the tree, run in target\ with wheelenv's python
 #   $WheelDeps   a script block: other wheels the installed one needs, built first
 #   $WheelExample  the C example built against the installed wheel, and $WheelExampleArgs, how it is run
+#   $Description the pkg-config file's Description line
 #   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\default.iprof
 #   $MvnArg      optional, one more argument for the library's Maven build, as its Makefile passes
 $ErrorActionPreference = 'Stop'
@@ -66,6 +67,12 @@ function Stage-Python {   # this platform's library, its import library and the 
     Remove-Item -Recurse -Force "python\$Name\lib", "python\$Name\include" -ErrorAction Ignore
     New-Item -ItemType Directory -Force "python\$Name\lib\$Platform", "python\$Name\include" | Out-Null
     Copy-Item $Lib, "target\$Name.lib" "python\$Name\lib\$Platform\"; Copy-Item $Headers "python\$Name\include\"
+    # the pkg-config file, as native.mk writes it: paths relative to itself, so it is right wherever pip puts it
+    $version = ((Get-Content "include\$Name.h") -match "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) " | ForEach-Object { ($_ -split ' ')[-1] }) -join '.'
+    New-Item -ItemType Directory -Force "python\$Name\lib\$Platform\pkgconfig" | Out-Null
+    $pc = 'prefix=${pcfiledir}/../../..', 'includedir=${prefix}/include', 'libdir=${pcfiledir}/..', '',
+          "Name: $Name", "Description: $Description", "Version: $version", 'Cflags: -I${includedir}', "Libs: -L`${libdir} -l$Name"
+    [IO.File]::WriteAllText("$Here\python\$Name\lib\$Platform\pkgconfig\$Name.pc", ($pc -join "`n") + "`n")
 }
 function Ensure-Tools {   # one venv per Python, as native.mk's: pip builds the wheel, twine checks it
     if (Test-Path "$Tools\Scripts\twine.exe") { return }
@@ -90,6 +97,7 @@ function Check-Wheel {   # the wheel as a user gets it: metadata as PyPI renders
     try { Set-Item "Env:$($Name.ToUpper())_INSTALLED" '1'; & $WheelTest } finally { Remove-Item "Env:$($Name.ToUpper())_INSTALLED"; Pop-Location }
     if (-not (python -m zipfile -l $whl | Select-String 'LICENSE')) { throw "no LICENSE in the wheel" }
     "the wheel carries the license"
+    Enter-Toolchain   # cl, for the example: check-wheel alone has not built anything yet
     $cflags = & target\wheelenv\Scripts\python -m $Name --cflags; $libs = & target\wheelenv\Scripts\python -m $Name --libs   # one flag per line
     cl -nologo -std:c11 -W4 $cflags $WheelExample -Fe:target\wheel-example.exe -Fo:target\ /link $libs; if ($LASTEXITCODE) { throw "cl failed against the wheel" }
     $path = $env:PATH; $env:PATH = (& target\wheelenv\Scripts\python -m $Name --pkgconfig | Split-Path) + ";$env:PATH"   # the DLL beside the import library
