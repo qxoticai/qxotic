@@ -1,7 +1,19 @@
-# jinfer for Python
+# jinfer
 
-Local AI inference from Python over `libjinfer`, jinfer's shared library with a C API.
-Chat, vision, audio, embeddings, reranking, speech synthesis and transcription; no server, no Python ML stack, no Java visible, `toknroll` the only dependency.
+**Local AI inference for Python. Chat, vision, audio, embeddings, reranking, speech and transcription in one wheel: no server, no ML stack, no GPU needed.**
+
+[![PyPI](https://img.shields.io/pypi/v/jinfer)](https://pypi.org/project/jinfer/)
+[![Python](https://img.shields.io/pypi/pyversions/jinfer)](https://pypi.org/project/jinfer/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://github.com/qxoticai/qxotic/blob/main/LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)](#requirements)
+
+`jinfer` is [jinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer), the JVM inference engine, for Python: `libjinfer`, the engine, every ported model architecture and its native kernels compiled into one shared library with a C API, which the wheel carries.
+A GGUF model runs in your process, on the CPU, from one `load` call, and comes back as a typed object with only the methods the file supports.
+`toknroll` is the only dependency, for the tokenizer.
+
+```sh
+pip install jinfer
+```
 
 ```python
 import jinfer
@@ -26,7 +38,66 @@ print(conversation.chat("Weather in Zurich?").text)          # runs weather, the
 branch = conversation.fork(); conversation.rewind()          # free: nothing is recomputed
 ```
 
-Models are hub references (`owner/repo:QUANT`, downloaded once with `curl`, which must be on the PATH for that, and cached) or local paths.
+## Why jinfer
+
+- **Three lines to a reply, and the reply is an object.** `load`, `chat`, `.text`; no messages list to assemble for a first question, no `["choices"][0]["message"]["content"]` to dig through, no server to start first.
+- **Everything local in one package.** Chat, vision, audio in, embeddings, reranking, speech synthesis and transcription, each a method on the class the model file calls for, from one 19 MB wheel; no `torch`, no `transformers`, no daemon.
+- **Structured output that cannot come back malformed.** `schema=Person` takes a dataclass, a TypedDict, a Pydantic class, `list[T]`, `Literal` or `Enum`, the engine enforces it while decoding, and `reply.parsed` is the Python value; there is nothing to validate and retry.
+- **Tools are functions.** The signature is the schema and the docstring the description; a conversation runs the calls itself, between the words of the streamed answer.
+- **The engine keeps the conversation.** A turn costs only its new tokens, `fork` and `rewind` recompute nothing, `prepare` warms a prompt before the user types, and a prompt cache file keeps it across processes.
+- **Stopping is not losing.** Close a reply early and its partial text, usage and finish reason stay readable, in a conversation too.
+- **Typed errors, keyword options, model defaults.** `InvalidArgument` is a `ValueError`, `NotFound` a `FileNotFoundError`; a typo in an option is a `TypeError` at the call; an option left out takes the model file's value, never the library's.
+- **One engine, three faces.** The same code serves Java, this package, and [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h), twenty-nine C functions any language calls.
+
+| | jinfer | ollama | transformers | llama-cpp-python |
+|---|---|---|---|---|
+| Install | `pip install`, no ML stack | the Ollama app, a running server, `pip install ollama` | `transformers` plus `torch`, gigabytes | compiles llama.cpp, or a per-backend wheel index |
+| Lines to a first reply | 3 | 3, plus two shell commands | 4 | 4 |
+| Where the text is | `.text` | `.message.content` | `[0]["generated_text"][-1]["content"]` | `["choices"][0]["message"]["content"]` |
+| Stop early | close; partial text, usage and finish reason stay | break; nothing stays | custom stopping criteria | break; nothing stays |
+| Conversation state | an object; engine cache visible; fork, rewind | your list, re-sent each turn | your list, recomputed each turn | your list, last prefix reused |
+| Structured output | any Python type, parsed object back, enforced | JSON schema in, validate yourself | none built in | JSON schema in, dict back, enforced |
+| Tools | functions; the conversation runs the loop | functions; you run the loop | functions; you parse and loop | hand-written JSON; you parse and loop |
+| Embeddings, reranking | `(n, dim)` float32 array; one call | list of lists; none | pooling by hand; cross-encoder by hand | list of lists; none |
+| Speech, transcription | both, streaming, timed words | neither | both, no streaming | neither |
+| Extra process | none | required | none | none |
+| GPU | no | yes | yes | yes, chosen at install |
+| Model breadth | the architectures jinfer ports | the Ollama library | everything on the Hub | every GGUF llama.cpp loads |
+
+Where it trails, so you can decide: the CPU only, the architectures listed below rather than every GGUF, WAV or PCM into `transcribe`, and eight options on purpose, the rest left to the model file.
+The [comparison](https://qxotic.ai/jinfer/python-comparison), use case by use case, has every snippet.
+
+## Requirements
+
+- Python 3.10 or later, and the `toknroll` wheel it pins, installed with it.
+- The wheel carries the library: Linux x86-64 and aarch64 with glibc 2.28 or later, macOS 14 or later on Apple silicon, Windows 10 or later on x86-64.
+  On x86-64 the library is built for x86-64-v3, a CPU with AVX2.
+- `curl` on the PATH, to download a model named by a hub reference; a local file needs nothing.
+- `ffmpeg` on the PATH, to decode an image or an audio file given to a chat; a WAV file for transcription needs nothing.
+- `espeak-ng` (or `espeak`) on the PATH, for speech synthesis with Kokoro voices.
+- RAM for the model file, which is read whole, plus its context.
+
+## Models
+
+Any GGUF of a ported architecture, in `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4`, `NVFP4`, `Q1_0`, `TQ1_0`, `TQ2_0`, `F32`, `F16` or `BF16`; `Q8_0` is the recommended balance of quality and speed.
+
+| Family | What the model does |
+|---|---|
+| Google Gemma 4 | chat, vision, audio in |
+| Google EmbeddingGemma 2 | embeddings of text, images, audio and video |
+| Liquid AI LFM 2.5 | chat, vision, embeddings, reranking |
+| Liquid AI LFM3 | chat, vision, audio in and speech out (LFM3-Omni) |
+| OpenAI gpt-oss | chat |
+| Alibaba Qwen 3.5+ | chat, vision |
+| Alibaba Qwen 3 | embeddings, reranking |
+| Meta Llama 3+, IBM Granite 4.1+, Mistral AI Ministral 3, Hugging Face SmolLM3, OpenBMB MiniCPM5 | chat |
+| Poolside Laguna XS 2.1, JetBrains Mellum 2, inclusionAI Ling 3, NVIDIA Nemotron-H | chat |
+| Kokoro, Inflect | speech synthesis |
+| NVIDIA Parakeet | speech recognition, with timed words |
+
+The [jinfer README](https://github.com/qxoticai/qxotic/tree/main/jinfer#supported-architectures) keeps the authoritative table, with links to each family.
+
+Models are hub references (`owner/repo:QUANT`, downloaded once and cached) or local paths.
 `load` returns the class the file calls for, `LanguageModel`, `Embedder`, `Reranker`, `Speaker` or `Transcriber`, each with only the methods that apply.
 Every call returns a plain typed object; nothing is a dict you have to know the shape of, and nothing in the API mentions tokens, JSON or OpenAI field names.
 
@@ -80,16 +151,32 @@ The toknroll wheel is a dependency for that class alone, pinned to the exact tok
 Using both wheels in one process is fine: `toknroll.load(...)` starts libtoknroll, a second runtime with its own heap and threads, the two never interact, the order they start in does not matter, and every tokenizer remembers the library serving it.
 A knob both need, such as a GGUF pre-tokenizer registration, is given to both.
 
-## Install
+## Examples
 
-```sh
-pip install jinfer            # the wheel carries the library: Linux x86_64 with AVX2 and Linux aarch64 (glibc 2.28 or later), macOS 14 or later on Apple silicon, Windows 10 or later on x86_64 with AVX2
-```
+One script a use case, in [`examples/`](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native/python/examples), each runnable as it is with the model it names, downloaded on the first run:
 
-From a source checkout, `make python` in `jinfer/jinfer-native` stages the freshly built library into the package, then `pip install python/`.
+| Script | Model |
+|---|---|
+| `chat.py`, `stream.py`, `conversation.py`, `structured.py`, `tools.py`, `openai_client.py` | `LiquidAI/LFM2.5-350M-GGUF:Q8_0` |
+| `vision.py` | `LiquidAI/LFM2.5-VL-450M-GGUF:Q8_0` with `companions={"media": ...}`, the repository's `mmproj` file |
+| `embed.py` | `LiquidAI/LFM2.5-Embedding-350M-GGUF:Q8_0` |
+| `rerank.py` | `mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0` |
+| `speak.py` | `simonfxr/kokoro.cpp-GGUF:Q8_0` with `companions={"voice": ...}`, one of the repository's voice files |
+| `transcribe.py` | `mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf` |
+
+A companion is a second file a model needs, named at load: `jinfer.load(ref, companions={"media": "<ref>"})` for a vision model's projector, `{"voice": "<ref>"}` for a speaker's voice.
+The architectures the library carries are jinfer's ports, listed in the [jinfer documentation](https://qxotic.ai/jinfer).
+
+## From a checkout
+
+`make python` in `jinfer/jinfer-native` stages the freshly built library into the package, then `pip install python/`.
 `JINFER_LIBRARY=/path/to/libjinfer.so` points the package at any build.
 `pydantic` is optional.
 
-## Examples
+The C API the package binds is [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h), with `toknroll.h` for the tokenizer, usable from any language with a foreign function interface.
+## Links
 
-`examples/`: `chat.py`, `stream.py`, `conversation.py`, `structured.py`, `tools.py`, `openai_client.py`, `embed.py`, `rerank.py`, `speak.py`, `transcribe.py`, `vision.py`.
+- [jinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer): the engine, the ports, the Java API, the server and the framework providers.
+- [libjinfer](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native): the shared library, its C API [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h), this package and its [examples](https://github.com/qxoticai/qxotic/tree/main/jinfer/jinfer-native/python/examples).
+- [Documentation](https://qxotic.ai/jinfer), the [Python comparison](https://qxotic.ai/jinfer/python-comparison), and [issues](https://github.com/qxoticai/qxotic/issues).
+- Apache 2.0, by [Quixotic AI](https://qxotic.ai).

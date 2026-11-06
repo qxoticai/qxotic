@@ -60,22 +60,40 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:toknroll-core:0.3.1'
-implementation 'com.qxotic:toknroll-hf:0.3.1'
-implementation 'com.qxotic:toknroll-gguf:0.3.1'
+implementation 'com.qxotic:toknroll-core:0.4.0'
+implementation 'com.qxotic:toknroll-hf:0.4.0'
+implementation 'com.qxotic:toknroll-gguf:0.4.0'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:toknroll-core:0.3.1"
-mvn"com.qxotic:toknroll-hf:0.3.1"
-mvn"com.qxotic:toknroll-gguf:0.3.1"
+mvn"com.qxotic:toknroll-core:0.4.0"
+mvn"com.qxotic:toknroll-hf:0.4.0"
+mvn"com.qxotic:toknroll-gguf:0.4.0"
 ```
 
   </TabItem>
 </Tabs>
+
+### From Python
+
+The [`toknroll`](https://pypi.org/project/toknroll/) wheel carries `libtoknroll`, Tok'n'Roll as a shared library, and needs no other package: Python 3.10 or later on Linux x86-64 and aarch64, macOS on Apple silicon and Windows x86-64.
+
+```sh
+pip install toknroll
+```
+
+```python
+import toknroll
+
+tokenizer = toknroll.load("Qwen/Qwen3-0.6B")   # a hub tokenizer.json, a local one, a GGUF, or a tiktoken folder
+ids = tokenizer.encode("Hello, world!")        # array('i', [9707, 11, 1879, 0]), the same ids as the Java API
+tokenizer.decode(ids)                          # 'Hello, world!'
+```
+
+The same sources, ids and spellings as from Java; the package [README](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/python/README.md) has the whole API, and [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) is the C API under it, for any other language.
 
 ## Quick Start
 

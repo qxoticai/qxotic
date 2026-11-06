@@ -37,6 +37,13 @@ Tokenization is toknroll's API, `toknroll.h`, which `jinfer.h` includes: `jinfer
 
 ## Python
 
+```sh
+pip install jinfer    # Python 3.10 or later; the wheel carries the library for Linux x86-64 and aarch64, macOS on Apple silicon and Windows x86-64
+```
+
+Downloads run through `curl` on the PATH; an image or an audio file given to a chat is decoded by `ffmpeg`, and speech synthesis with Kokoro voices phonemizes through `espeak-ng`.
+The package [README](https://pypi.org/project/jinfer/) has the whole API and one example script a use case.
+
 The package wraps the header and adds what Python expects, and nothing else.
 `load` returns a `LanguageModel`, `Embedder`, `Reranker`, `Speaker` or `Transcriber` with only the methods that apply.
 Results are typed objects instead of dicts, a reply is both the stream and the result, options are keyword-only with `None` for the model's default, log lines go to `logging`, errors form a hierarchy under `jinfer.JinferError`.
