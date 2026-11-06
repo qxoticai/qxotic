@@ -559,8 +559,14 @@ static void load_references(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load("hf.co/ctest-nobody/no-such-repo"), TOKNROLL_ENOTFOUND, LE, "");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("huggingface.co/ctest-nobody/no-such-repo@v1"), TOKNROLL_ENOTFOUND, LE, "");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("modelscope.cn/ctest-nobody/no-such-repo"), TOKNROLL_ENOTFOUND, LE, "");
-    /* the file named as the reference spells it, no Java null in it */
-    CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-nobody/repo/sub/x.gguf"), TOKNROLL_ENOTFOUND, LE, "ctest-nobody/repo/sub/x.gguf");
+    /* the file named as the reference spells it, no Java null in it; a bare reference with a path spells a
+     * relative path too, which would have won had it existed: the hint says how one is written */
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-nobody/repo/sub/x.gguf"), TOKNROLL_ENOTFOUND, LE, "ctest-nobody/repo/sub/x.gguf is not cached");
+    CHECK_HAS(LE(NULL), "a local path is written './ctest-nobody/repo/sub/x.gguf'");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-mydir/sub/tokenizer.json"), TOKNROLL_ENOTFOUND, LE, "is not cached");
+    CHECK_HAS(LE(NULL), "a local path is written './ctest-mydir/sub/tokenizer.json'");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("hf.co/ctest-nobody/repo/sub/x.gguf"), TOKNROLL_ENOTFOUND, LE, "is not cached");
+    CHECK(!strstr(LE(NULL), "a local path"));   /* a host written: no path it could be */
     /* malformed: refused as spelled, before any lookup */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo@"), TOKNROLL_EINVAL, LE, "empty revision");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("example.com/owner/repo"), TOKNROLL_EINVAL, LE, "unknown host");

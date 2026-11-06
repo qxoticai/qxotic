@@ -60,10 +60,21 @@ class HubTest(unittest.TestCase):
                 self.assertEqual(remote.encode(text), local.encode(text))
             self.assertEqual(remote.vocabulary_size, local.vocabulary_size)
 
-    def test_a_missing_repository_is_an_error_with_the_reference_in_it(self):
-        with self.assertRaises(toknroll.ToknrollError) as e:
-            toknroll.load("LiquidAI/no-such-repository-xyz")
-        self.assertIn("no-such-repository-xyz", str(e.exception))
+    def test_a_missing_repository_is_not_found_in_every_form(self):
+        """The hub answers 401 for a repository that is not there, as for a gated one: not found, in words, whether
+        the store listed it (a root, a quant) or the header reader asked for the file by its path."""
+        for source in ("LiquidAI/no-such-repository-xyz", "LiquidAI/no-such-repository-xyz:Q8_0",
+                       "LiquidAI/no-such-repository-xyz/model.gguf"):
+            with self.subTest(source=source), self.assertRaises(toknroll.NotFound) as e:
+                toknroll.load(source)
+            self.assertIn("LiquidAI/no-such-repository-xyz does not exist, or is gated or private", str(e.exception))
+
+    def test_a_missing_bare_reference_with_a_path_says_how_a_path_is_written(self):
+        """mydir/sub/tokenizer.json is a hub file and a relative path alike; the file wins when it exists, and when
+        nothing does the hub's not-found says how a path is written."""
+        with self.assertRaises(toknroll.NotFound) as e:
+            toknroll.load("mydir/sub/tokenizer.json")
+        self.assertTrue(str(e.exception).endswith("a local path is written './mydir/sub/tokenizer.json'"), str(e.exception))
 
     def test_a_malformed_reference(self):
         for ref in ("owner/", "/x/y:Q8", "owner/repo:"):

@@ -10,6 +10,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.NoSuchFileException;
@@ -34,11 +35,23 @@ final class Sources {
     }
 
     static Tokenizer load(String source, ModelStore store) {
-        Located at = locate(source, store);
-        if (at.repository() != null)
-            return at.ggufFile() != null
-                    ? ggufFromHub(at.repository(), at.ggufFile())
-                    : tiktokenFromHub(at.repository());
+        try {
+            return load(source, locate(source, store));
+        } catch (Errors.Failure e) {
+            // a bare reference with a path spells a relative path too, and the file would have
+            // won had it existed: the hub's "not found" gets the hint the unknown-host error gives
+            if (e.code == Errors.ENOTFOUND
+                    && ModelStore.isRef(source)
+                    && source.strip().matches("[^/\\\\.]+/[^/\\\\]+/.+"))
+                throw Errors.notFound(
+                        e.getMessage() + "; a local path is written './" + source.strip() + "'");
+            throw e;
+        }
+    }
+
+    /** The source as written names the fetch's failures, as the store's own do. */
+    private static Tokenizer load(String source, Located at) {
+        if (at.repository() != null) return fromHub(source, at);
         if (!at.folder()) return read(at.path());
         // a folder holds a tokenizer.json, or a tiktoken.model read as a hub checkout is; neither
         // is missing, as a file is; one that cannot be listed is not missing either
@@ -216,30 +229,78 @@ final class Sources {
     }
 
     /**
-     * A hub GGUF, read for its header by toknroll's own bounded reader and cached under its root.
+     * What the loaders fetch themselves: a hub GGUF, read for its header by toknroll's own bounded
+     * reader, or a tiktoken repository, each cached under the loader's root.
      */
-    private static Tokenizer ggufFromHub(ModelRef ref, String file) {
+    private static Tokenizer fromHub(String source, Located at) {
+        ModelRef ref = at.repository();
         boolean offline = Stores.offline();
-        return ref.host().equals("modelscope.cn")
-                ? gguf().fromModelScope(
-                                ref.owner(), ref.repo(), ref.revision(), file, offline, false)
-                : gguf().fromHuggingFace(
-                                ref.owner(), ref.repo(), ref.revision(), file, offline, false);
-    }
-
-    private static Tokenizer tiktokenFromHub(ModelRef ref) {
-        boolean offline = Stores.offline();
+        boolean modelscope = ref.host().equals("modelscope.cn");
         try {
-            return ref.host().equals("modelscope.cn")
+            if (at.ggufFile() != null)
+                return modelscope
+                        ? gguf().fromModelScope(
+                                        ref.owner(),
+                                        ref.repo(),
+                                        ref.revision(),
+                                        at.ggufFile(),
+                                        offline,
+                                        false)
+                        : gguf().fromHuggingFace(
+                                        ref.owner(),
+                                        ref.repo(),
+                                        ref.revision(),
+                                        at.ggufFile(),
+                                        offline,
+                                        false);
+            return modelscope
                     ? HuggingFaceTokenizerLoader.fromModelScope(
                             ref.owner(), ref.repo(), ref.revision(), offline, false)
                     : HuggingFaceTokenizerLoader.fromHuggingFace(
                             ref.owner(), ref.repo(), ref.revision(), offline, false);
         } catch (TokenizerLoadException e) {
-            // offline, the transport answers every request with a NoSuchFileException
-            if (e.getCause() instanceof NoSuchFileException) throw notCached(ref.toString());
-            throw e;
+            throw failure(source, ref, offline, e);
         }
+    }
+
+    /**
+     * A loader's own fetch failure in the header's codes. Offline, the transport refuses every
+     * request as a NoSuchFileException, and a cache folder the loader cannot make holds nothing
+     * either: not cached. Online, a 401, 403 or 404 is a repository or file the hub does not serve,
+     * said as the store says it for a listing, and a cache folder the loader cannot make is said in
+     * words. Anything else is the loader's own failure, as it says it.
+     */
+    static RuntimeException failure(
+            String source, ModelRef ref, boolean offline, TokenizerLoadException e) {
+        Throwable cause = e.getCause();
+        if (offline
+                && (cause instanceof NoSuchFileException || cause instanceof AccessDeniedException))
+            return notCached(source);
+        if (cause instanceof AccessDeniedException denied)
+            return new Errors.Failure(
+                    Errors.ERROR, "cache root is not writable: " + denied.getFile());
+        // the loaders' caches say "(HTTP <status>)", a 404 as a FileNotFoundException
+        if (cause instanceof FileNotFoundException
+                || (cause instanceof IOException
+                        && String.valueOf(cause.getMessage()).matches(".*\\(HTTP 40[134]\\)")))
+            return Errors.notFound(denied(ref));
+        return e;
+    }
+
+    /**
+     * What a 401, 403 or 404 means to a user, as jinfer-hub says it for a listing: Hugging Face
+     * answers 401 for a repository that does not exist too. The loaders read a token from HF_TOKEN
+     * or MODELSCOPE_TOKEN, and nowhere else.
+     */
+    private static String denied(ModelRef ref) {
+        boolean modelscope = ref.host().equals("modelscope.cn");
+        return ref.repoId()
+                + " does not exist, or is gated or private: check the name, or accept its licence"
+                + " at "
+                + (modelscope ? "https://modelscope.cn/models/" : "https://huggingface.co/")
+                + ref.repoId()
+                + " and set "
+                + (modelscope ? "MODELSCOPE_TOKEN" : "HF_TOKEN");
     }
 
     /**

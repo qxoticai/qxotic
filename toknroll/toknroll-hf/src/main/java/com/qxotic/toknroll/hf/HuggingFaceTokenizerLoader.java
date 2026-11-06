@@ -214,8 +214,7 @@ public final class HuggingFaceTokenizerLoader {
                             + source
                             + "] Failed to load tokenizer for "
                             + modelRef
-                            + "@"
-                            + String.valueOf(revision),
+                            + (revision == null ? "" : "@" + revision), // as a reference spells it
                     e);
         }
     }

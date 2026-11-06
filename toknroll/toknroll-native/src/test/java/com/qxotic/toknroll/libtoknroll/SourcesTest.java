@@ -3,6 +3,7 @@ package com.qxotic.toknroll.libtoknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,11 +13,16 @@ import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
+import com.qxotic.jinfer.hub.ModelRef;
 import com.qxotic.jinfer.hub.ModelStore;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.TokenizerLoadException;
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -232,6 +238,65 @@ class SourcesTest {
     }
 
     @Test
+    void aMissingBareReferenceWithAPathSaysHowAPathIsWritten() {
+        FakeSource fake = new FakeSource().serving("", "tokenizer.json");
+        Errors.Failure e =
+                assertThrows(
+                        Errors.Failure.class,
+                        () -> Sources.load("t/thing/other.json", store(fake)));
+        assertEquals(Errors.ENOTFOUND, e.code);
+        assertTrue(
+                e.getMessage().endsWith("; a local path is written './t/thing/other.json'"),
+                e.getMessage());
+        // a host-qualified reference spells no path: the hub's answer as it is
+        Errors.Failure qualified =
+                assertThrows(
+                        Errors.Failure.class,
+                        () -> Sources.load("hf.co/t/thing/other.json", store(fake)));
+        assertEquals(Errors.ENOTFOUND, qualified.code);
+        assertFalse(qualified.getMessage().contains("a local path"), qualified.getMessage());
+    }
+
+    @Test
+    void aLoaderFetchFailsInTheHeadersCodes() {
+        ModelRef ref = ModelRef.parse("t/thing");
+        IOException gated =
+                new IOException("[huggingface] Failed to download https://x/y (HTTP 401)");
+        Errors.Failure e =
+                assertThrows(Errors.Failure.class, () -> fetchFailing(ref, false, gated));
+        assertEquals(Errors.ENOTFOUND, e.code);
+        assertTrue(
+                e.getMessage().startsWith("t/thing does not exist, or is gated or private"),
+                e.getMessage());
+        assertTrue(e.getMessage().endsWith("set HF_TOKEN"), e.getMessage());
+        FileNotFoundException missing =
+                new FileNotFoundException("[huggingface] HTTP 404 (cached): https://x/y");
+        assertEquals(
+                Errors.ENOTFOUND,
+                assertThrows(Errors.Failure.class, () -> fetchFailing(ref, false, missing)).code);
+        AccessDeniedException denied =
+                new AccessDeniedException(root.resolve("repository-artifacts").toString());
+        e = assertThrows(Errors.Failure.class, () -> fetchFailing(ref, false, denied));
+        assertEquals(Errors.ERROR, e.code);
+        assertEquals("cache root is not writable: " + denied.getFile(), e.getMessage());
+        // offline, a cache folder the loader cannot make holds nothing: not cached, as a miss is
+        e = assertThrows(Errors.Failure.class, () -> fetchFailing(ref, true, denied));
+        assertEquals(Errors.ENOTFOUND, e.code);
+        assertTrue(e.getMessage().contains("not cached"), e.getMessage());
+        // anything else is the loader's own failure, as it says it
+        IOException down =
+                new IOException("[huggingface] Failed to download https://x/y (HTTP 503)");
+        assertSame(
+                down,
+                assertThrows(TokenizerLoadException.class, () -> fetchFailing(ref, false, down))
+                        .getCause());
+    }
+
+    private static Tokenizer fetchFailing(ModelRef ref, boolean offline, IOException cause) {
+        throw Sources.failure("t/thing", ref, offline, new TokenizerLoadException("failed", cause));
+    }
+
+    @Test
     void aFolderWithoutATokenizerJsonIsNotFound() {
         Errors.Failure e = assertThrows(Errors.Failure.class, () -> Sources.load(disk.toString()));
         assertEquals(Errors.ENOTFOUND, e.code);
@@ -300,12 +365,23 @@ class SourcesTest {
                 assertTrue(e.getMessage().contains("offline"), e.getMessage());
             }
             // a .gguf path needs no lookup: it is handed to the header reader, whose offline
-            // transport refuses
+            // transport refuses, which is not cached, and a path spelled bare is a hint
             assertEquals(
                     "thing-Q8_0.gguf",
                     Sources.locate("t/thing/thing-Q8_0.gguf", store(fake)).ggufFile());
+            System.setProperty("toknroll.cache.root", root.toString()); // the reader's own cache
+            Errors.Failure e =
+                    assertThrows(
+                            Errors.Failure.class,
+                            () -> Sources.load("t/thing/thing-Q8_0.gguf", store(fake)));
+            assertEquals(Errors.ENOTFOUND, e.code);
+            assertEquals(
+                    "t/thing/thing-Q8_0.gguf is not cached, and offline mode never fetches; a local"
+                            + " path is written './t/thing/thing-Q8_0.gguf'",
+                    e.getMessage());
         } finally {
             System.clearProperty("jinfer.offline");
+            System.clearProperty("toknroll.cache.root");
         }
         assertEquals(0, fake.listed, "no listing");
         assertFalse(fake.fetched, "no download");

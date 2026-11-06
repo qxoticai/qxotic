@@ -29,6 +29,7 @@ class HuggingFaceTokenizerLoadExceptionTest {
                                     HuggingFaceTokenizerLoader.fromHuggingFace(
                                             "missing-user", "missing-repo", "main", true, false));
             assertTrue(error.getMessage().contains("[huggingface]"));
+            assertTrue(error.getMessage().contains("missing-user/missing-repo@main"));
             assertTrue(error.getCause() instanceof IOException);
             assertTrue(error.getCause().getMessage().contains("offline"));
             assertTrue(error.getCause().getMessage().contains("huggingface.co"));
@@ -49,6 +50,9 @@ class HuggingFaceTokenizerLoadExceptionTest {
                                     HuggingFaceTokenizerLoader.fromModelScope(
                                             "missing-user", "missing-repo", null, true, false));
             assertTrue(error.getMessage().contains("[modelscope]"));
+            // a null revision is the default branch: named as a reference spells it, no "@null"
+            assertTrue(
+                    error.getMessage().endsWith("missing-user/missing-repo"), error.getMessage());
             assertTrue(error.getCause() instanceof IOException);
             assertTrue(error.getCause().getMessage().contains("offline"));
             assertTrue(error.getCause().getMessage().contains("modelscope.cn"));
