@@ -251,7 +251,7 @@ final class Lfm3SpokenChatTest {
                                         .build()));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> engine.loaded().template().orElseThrow().speechInstruction("en", "robot"));
+                () -> Lfm3ChatTemplate.ttsInstruction("en", "robot"));
     }
 
     private static ChatEngine.Request chat(List<Message> messages) {
@@ -263,12 +263,7 @@ final class Lfm3SpokenChatTest {
 
     /** {@code text} read aloud in English: the family's instruction, answered in audio alone. */
     private static ChatEngine.Request reading(String text, String voice, Long seed) {
-        String instruction =
-                engine.loaded()
-                        .template()
-                        .orElseThrow()
-                        .speechInstruction("en", voice)
-                        .orElseThrow();
+        String instruction = Lfm3ChatTemplate.ttsInstruction("en", voice);
         return ChatEngine.Request.builder(
                         List.of(Message.system(instruction), Message.user(text)),
                         engine.loaded().samplingDefaults().resolve(null, null, null, null, seed))

@@ -347,19 +347,19 @@ final class Lfm3ChatTemplate implements ChatTemplate {
                     Map.entry("zh", "Chinese"));
 
     /**
-     * The GGUF's {@code tts} system turn: {@code language} a code from its table or a language name
-     * as LiquidAI writes them ("American English"), null = English; {@code voice} {@code female}
-     * (null) or {@code male}.
+     * The GGUF's {@code tts} system turn, as LiquidAI's reference writes it, for the port's parity
+     * tests: {@code language} a code from its table or a language name ("American English"), null =
+     * English; {@code voice} {@code female} (null) or {@code male}. Reading text aloud is a speech
+     * model's job; a chat model with a voice speaks its replies.
      */
-    @Override
-    public Optional<String> speechInstruction(String language, String voice) {
+    static String ttsInstruction(String language, String voice) {
         String code = language == null || language.isEmpty() ? "en" : language.toLowerCase();
         String name = TTS_LANGUAGES.getOrDefault(code, language);
         String v = voice == null ? "female" : voice.toLowerCase();
         if (!v.equals("female") && !v.equals("male"))
             throw new IllegalArgumentException(
                     "LFM3 speaks with a female or a male voice, not '" + voice + "'");
-        return Optional.of("Perform TTS in " + name + " using a " + v + " voice.");
+        return "Perform TTS in " + name + " using a " + v + " voice.";
     }
 
     /**

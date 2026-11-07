@@ -221,7 +221,6 @@ public final class Server {
         route(server, "/v1/chat/completions", exchange -> handleChatCompletion(exchange, config));
         route(server, "/v1/completions", exchange -> handleCompletion(exchange, config));
         route(server, "/v1/responses", exchange -> handleResponse(exchange, config));
-        route(server, "/v1/audio/speech", exchange -> handleSpeech(exchange, config));
         // liveness probes carry no key: /health is open (llama.cpp's is too); it says nothing
         // a probe should not know (up, busy, queue depth)
         jsonProbe(
@@ -541,46 +540,6 @@ public final class Server {
                                 200,
                                 OpenAiSchema.chatCompletionResponse(id, modelId, result));
                     }
-                });
-    }
-
-    /**
-     * OpenAI's text to speech: {@code input} read aloud in the model's own voice. {@code voice} is
-     * one the model has ({@code female} or {@code male} on LFM3-Omni), {@code language} - a jinfer
-     * extension, as llama.cpp's {@code lang} - one it speaks; {@code response_format} is {@code
-     * wav} (the default) or {@code pcm} (16-bit, mono, at the model's rate). An integer {@code
-     * seed} makes the reading reproducible.
-     */
-    private void handleSpeech(HttpExchange exchange, ServerConfig config) throws IOException {
-        handleGenerationPost(
-                exchange,
-                "/v1/audio/speech",
-                "speech-",
-                request -> {
-                    Validation.validateModel(request, servedModel);
-                    Validation.require(
-                            !Values.stringValue(request.get("input"), "").isBlank(),
-                            "input must not be empty");
-                    // knobs the model cannot honor are refused, never ignored
-                    for (String knob : List.of("speed", "instructions", "stream_format"))
-                        Validation.require(request.get(knob) == null, "%s is not supported", knob);
-                    Validation.speechWav(request);
-                    Values.longValue(request.get("seed"), "seed", 0); // as chat checks it
-                },
-                (request, id) -> {
-                    boolean wav = Validation.speechWav(request);
-                    Http.sendBytes(
-                            exchange,
-                            200,
-                            wav ? "audio/wav" : "audio/pcm",
-                            generation.speech(
-                                    Values.stringValue(request.get("input"), ""),
-                                    Values.stringValue(request.get("language"), null),
-                                    Values.stringValue(request.get("voice"), null),
-                                    request.get("seed") == null
-                                            ? null
-                                            : Values.longValue(request.get("seed"), "seed", 0),
-                                    wav));
                 });
     }
 

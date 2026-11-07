@@ -366,7 +366,7 @@ final class Server {
                 The model selects the API: chat and completions for a language model,
                 /v1/embeddings for an embedding model, /v1/rerank for a reranker,
                 /v1/audio/transcriptions for a speech-to-text model. A model that
-                speaks (LFM3-Omni) adds spoken chat replies and /v1/audio/speech.
+                speaks (LFM3-Omni) answers chat in speech when a request allows it.
 
                 Server options (after the command):
                   --host <host>              bind address; default 127.0.0.1

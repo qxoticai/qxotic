@@ -4,8 +4,6 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
-import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -66,32 +64,6 @@ final class Generation {
     Reply chat(Map<String, Object> request, List<Object> messages, Sinks sinks, String audioId) {
         OpenAiChat.Lowered lowered = OpenAiChat.lower(request, messages, config, defaults, turns);
         return recorded(run(lowered, sinks, request, audioId));
-    }
-
-    /**
-     * Text to speech: {@code input} read aloud - the family's reading instruction as the system
-     * turn, the input as the user's, answered in audio alone - as a WAV file or raw 16-bit PCM; the
-     * same {@code seed} gives the same audio, null a fresh take.
-     */
-    byte[] speech(String input, String language, String voice, Long seed, boolean wav) {
-        String instruction =
-                engine.loaded()
-                        .template()
-                        .flatMap(template -> template.speechInstruction(language, voice))
-                        .orElseThrow(
-                                () ->
-                                        new UnsupportedOperationException(
-                                                engine.modelName()
-                                                        + " has no text-to-speech instruction"));
-        ChatEngine.Request request =
-                ChatEngine.Request.builder(
-                                List.of(Message.system(instruction), Message.user(input)),
-                                engine.loaded()
-                                        .samplingDefaults()
-                                        .resolve(null, null, null, null, seed))
-                        .output(Modality.AUDIO)
-                        .build();
-        return encode(engine.complete(request).reply().speech().orElseThrow(), wav);
     }
 
     /** Speech on the wire: a WAV file, or the bare 16-bit samples. */

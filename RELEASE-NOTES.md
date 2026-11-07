@@ -10,6 +10,7 @@
 - **Media embeddings in LangChain4j and Spring AI.** Both `JinferEmbeddingModel` builders take `companion(capability, ref)` and `companionPath(capability, path)`, and the starter reads `spring.ai.jinfer.embedding.companions.media`.
   With EmbeddingGemma 2's projector attached, LangChain4j embeds image, audio and video `EmbeddingRequest` inputs (`supportedContentTypes()` says which), and Spring AI embeds media `Document`s, both with the query or document framing.
   Spring AI's vector stores still refuse non-text documents at `add`; media vectors come from the `EmbeddingModel` directly.
+- **The chat server no longer reads text aloud.** `POST /v1/audio/speech` is gone from a chat model's server, and `ChatTemplate.speechInstruction` with it: a model with a voice speaks its chat replies, and reading text aloud is a speech model's job, `jinfer speak` and the `JinferSpeechModel` faces, at a fraction of a 2B chat model's cost.
 - **Gemma 4 media follows Google's reference, not llama.cpp.** Three places where llama.cpp departs from Google's JAX and Hugging Face implementations now follow the reference, for the Gemma 4 chat models as well as EmbeddingGemma 2.
   Images are resized to fill the token budget (280 by default) with their aspect kept, small images growing and nothing padded, where llama.cpp only shrinks them and pads with black.
   The vision tower's MLP uses tanh GELU, where llama.cpp runs quick-GELU.

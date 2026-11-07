@@ -162,8 +162,7 @@ final class Lfm3SpeechParityTest {
         Conversation tts =
                 new Conversation(
                         List.of(
-                                Message.system(
-                                        template.speechInstruction("en", null).orElseThrow()),
+                                Message.system(Lfm3ChatTemplate.ttsInstruction("en", null)),
                                 Message.user(text)),
                         List.of(),
                         false);

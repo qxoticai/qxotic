@@ -163,16 +163,6 @@ final class Validation {
         return null;
     }
 
-    /**
-     * Whether a text-to-speech request wants a WAV file ({@code response_format} {@code wav}, the
-     * default) rather than raw {@code pcm}; refuses anything else.
-     */
-    static boolean speechWav(Map<String, Object> request) {
-        String format = Values.stringValue(request.get("response_format"), "wav");
-        require(format.equals("wav") || format.equals("pcm"), "response_format must be wav or pcm");
-        return format.equals("wav");
-    }
-
     /** Responses fields that would otherwise be silently accepted without their semantics. */
     static void validateResponseOptions(Map<String, Object> request) {
         require(!present(request, "previous_response_id"), "previous_response_id is not supported");

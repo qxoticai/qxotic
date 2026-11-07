@@ -117,11 +117,11 @@ With "Respond in text." as the system turn, the same request is answered in text
 
 ## Text to speech
 
-Reading text aloud is the same call: the model's reading instruction as the system turn, the text as the user's, and audio as the only output.
+Reading text aloud is the same call: the GGUF's reading instruction as the system turn, the text as the user's, and audio as the only output.
+It is the model's own mode, not a jinfer API: a dedicated speech model reads text for a fraction of the cost, so jinfer's text-to-speech faces serve those, and a chat model with a voice speaks its replies.
 
 ```java
-String reading = omni.loaded().template().orElseThrow()
-        .speechInstruction("fr", "male").orElseThrow();
+String reading = "Perform TTS in French using a male voice.";
 
 omni.complete(
         ChatEngine.Request.builder(
