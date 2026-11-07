@@ -199,7 +199,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     /**
      * Ingestion side: the card's document framing is prepended (LFM2.5: {@code "document: "}); a
-     * media document embeds its image, audio or video after the same framing.
+     * media document embeds its image, audio or video unframed, as the card says ("Prefixes apply
+     * to text only. Pass images, video, and audio without any prefix.").
      */
     @Override
     public float[] embed(Document document) {
@@ -252,7 +253,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return embedOne(loaded.queryPrefix() + text);
     }
 
-    /** A media document's vector: the document framing, then its image, audio or video. */
+    /** A media document's vector: its image, audio or video alone, with no framing. */
     private float[] embedMedia(Document document, EmbeddingOptions options) {
         String kind = document.getMedia().getMimeType().getType();
         if (!media.contains(kind)) {
@@ -269,9 +270,8 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + " spring.ai.jinfer.embedding.companions.media");
         }
         int outputDimension = outputDimension(options);
-        List<Object> parts = new ArrayList<>(2);
-        if (!loaded.documentPrefix().isEmpty()) parts.add(loaded.documentPrefix());
-        parts.add(JinferMappings.media(document.getMedia(), EMBEDDING_FRAMES).media());
+        List<Object> parts =
+                List.of(JinferMappings.media(document.getMedia(), EMBEDDING_FRAMES).media());
         EmbeddingResponse response =
                 observed(
                         new EmbeddingRequest(List.of(), options),

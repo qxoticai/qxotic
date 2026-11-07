@@ -255,13 +255,15 @@ EmbeddingModel embeddings = JinferEmbeddingModel.builder()
 
 Embedding photo = embeddings.embed(EmbeddingRequest.builder()
         .input(ImageContent.from(Path.of("photo.png").toUri()))
-        .inputType(EmbeddingInputType.DOCUMENT)
         .build()).embeddings().getFirst();
 ```
 
+The vector lands in the space text queries search.
+As the model card says, media embeds without a prompt, so the input type changes nothing for an input that carries media.
 Text and media parts in one `EmbeddingInput` embed as one vector, in order.
 Without the projector, `supportedContentTypes()` is text only and LangChain4j refuses media before decoding it.
-With a listener registered, LangChain4j (1.21 and 1.22) refuses an input that is media alone ("text cannot be null or blank"), so give such an input a text part.
+With a listener registered, LangChain4j (1.21 to 1.23) refuses an input that is media alone ("text cannot be null or blank", [langchain4j#6784](https://github.com/langchain4j/langchain4j/issues/6784)).
+Adding a text part avoids the error, but the text then becomes part of the vector.
 
 Plain `embed`/`embedAll` embeds raw text; a one-time stderr note points at the knobs when the model is prefix-trained.
 

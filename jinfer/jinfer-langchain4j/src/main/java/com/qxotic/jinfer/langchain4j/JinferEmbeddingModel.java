@@ -230,21 +230,24 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      * before tokenizing - retrieval-tuned embedders are TRAINED with these prefixes, and both
      * {@code EmbeddingStoreIngestor} and {@code EmbeddingStoreContentRetriever} send the type via
      * their {@code embeddingInputType(...)} builder knob. A typeless request embeds raw text as
-     * given. An input carrying media embeds as one vector of its parts in order, the framing as its
-     * leading text.
+     * given. An input carrying media embeds as one vector of its parts in order, unframed whatever
+     * the type: the model card frames text alone ("Prefixes apply to text only. Pass images, video,
+     * and audio without any prefix."), as sentence-transformers does.
      */
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
         if (request.inputs() == null) throw new IllegalArgumentException("inputs cannot be null");
         int outputDimension =
                 request.dimensions() == null ? loaded.dimension() : request.dimensions();
-        String prefix =
-                switch (request.inputType()) {
-                    case QUERY -> loaded.queryPrefix();
-                    case DOCUMENT -> loaded.documentPrefix();
-                    case null -> hintBareUse();
-                };
         List<EmbeddingInput> inputs = request.inputs();
+        String prefix =
+                inputs.stream().noneMatch(JinferEmbeddingModel::textOnly)
+                        ? "" // no text-only input to frame
+                        : switch (request.inputType()) {
+                            case QUERY -> loaded.queryPrefix();
+                            case DOCUMENT -> loaded.documentPrefix();
+                            case null -> hintBareUse();
+                        };
         Response<List<Embedding>> response =
                 inputs.stream().allMatch(JinferEmbeddingModel::textOnly)
                         ? embedTexts(
@@ -284,13 +287,14 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     /**
      * One vector per input, its parts in order: texts as written, media decoded before the lock.
+     * The prefix frames the text-only inputs alone.
      */
     private Response<List<Embedding>> embedParts(
             List<EmbeddingInput> inputs, String prefix, int outputDimension) {
         List<List<Object>> decoded = new ArrayList<>(inputs.size());
         for (EmbeddingInput input : inputs) {
             List<Object> parts = new ArrayList<>();
-            if (!prefix.isEmpty()) parts.add(prefix);
+            if (!prefix.isEmpty() && textOnly(input)) parts.add(prefix);
             for (var content : input.contents()) {
                 parts.add(
                         content instanceof TextContent t

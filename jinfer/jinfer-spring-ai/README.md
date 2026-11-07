@@ -378,7 +378,8 @@ float[] photo = embeddings.embed(Document.builder()
         .build());
 ```
 
-The vector lands in the space text queries search, with the document framing applied.
+The vector lands in the space text queries search.
+As the model card says, media embeds without a prompt; text documents keep theirs.
 Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
 
 ## Prompt caching

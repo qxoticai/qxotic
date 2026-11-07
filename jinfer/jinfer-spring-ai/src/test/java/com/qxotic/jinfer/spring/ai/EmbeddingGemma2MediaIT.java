@@ -5,10 +5,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.chat.LoadedEmbedder;
+import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
+import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -21,10 +30,10 @@ import org.springframework.util.MimeType;
 
 /**
  * EmbeddingGemma 2 with its projector attached as {@code companion("media", ...)}: a media {@link
- * Document} embeds into the space text queries search, a mixed batch keeps document order and
- * equals its documents one by one, and a load without the projector refuses media naming the
- * companion. Model-gated via {@link TestModels}. Run: {@code mvn test -Dsurefire.excludedGroups=
- * -Dgroups=integration -pl jinfer-spring-ai}
+ * Document} embeds into the space text queries search, without the text prompt, a mixed batch keeps
+ * document order and equals its documents one by one, and a load without the projector refuses
+ * media naming the companion. Model-gated via {@link TestModels}. Run: {@code mvn test
+ * -Dsurefire.excludedGroups= -Dgroups=integration -pl jinfer-spring-ai}
  */
 @Tag("integration")
 class EmbeddingGemma2MediaIT {
@@ -58,6 +67,38 @@ class EmbeddingGemma2MediaIT {
     void aTextQueryFindsTheSpokenDocument() {
         float[] query = model.embed("a person saying hello world and counting");
         assertTrue(cosine(query, model.embed(speech)) > cosine(query, model.embed(chirp)));
+    }
+
+    /**
+     * The model card: "Prefixes apply to text only. Pass images, video, and audio without any
+     * prefix." A media document embeds exactly as the core embedder embeds the media bare, alone
+     * and in the batched route vector stores take.
+     */
+    @Test
+    void mediaEmbedsWithoutThePrompt() throws IOException {
+        List<float[]> bare = new ArrayList<>();
+        try (Arena arena = Arena.ofShared()) {
+            LoadedEmbedder<?> core =
+                    Models.loadEmbedder(
+                            TestModels.require(MODEL),
+                            arena,
+                            Map.of("media", TestModels.require(MMPROJ)),
+                            null);
+            ContextState state = core.model().newState(2048, MemoryAllocators.ofArena(arena));
+            for (String wav : List.of("audio/speech-tts.wav", "audio/chirp-5s.wav")) {
+                Object audio = AudioCodec.decode(Files.readAllBytes(fixture(wav)));
+                core.embed(state, List.of(audio), core.dimension(), bare::add);
+            }
+        }
+        assertTrue(cosine(model.embed(speech), bare.get(0)) > 0.99999, "speech");
+        assertTrue(cosine(model.embed(chirp), bare.get(1)) > 0.99999, "chirp");
+        List<float[]> batch =
+                model.embed(
+                        List.of(new Document("A tone rising in pitch."), speech, chirp),
+                        EmbeddingOptions.builder().build(),
+                        new TokenCountBatchingStrategy());
+        assertTrue(cosine(batch.get(1), bare.get(0)) > 0.99999, "speech in a batch");
+        assertTrue(cosine(batch.get(2), bare.get(1)) > 0.99999, "chirp in a batch");
     }
 
     @Test

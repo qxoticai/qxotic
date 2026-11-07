@@ -5,7 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.chat.LoadedEmbedder;
+import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.Content;
 import dev.langchain4j.data.message.ContentType;
@@ -16,10 +22,15 @@ import dev.langchain4j.model.embedding.request.EmbeddingInput;
 import dev.langchain4j.model.embedding.request.EmbeddingInputType;
 import dev.langchain4j.model.embedding.request.EmbeddingRequest;
 import dev.langchain4j.model.embedding.response.EmbeddingResponse;
+import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,8 +39,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * EmbeddingGemma 2 with its projector attached as {@code companion("media", ...)}: image, audio and
- * interleaved inputs embed into the space text queries search, a mixed batch equals its inputs one
- * by one, and a load without the projector stays text-only at langchain4j's own content check.
+ * interleaved inputs embed into the space text queries search, without the text prompt whatever the
+ * input type, a mixed batch equals its inputs one by one, and a load without the projector stays
+ * text-only at langchain4j's own content check.
  */
 @Tag("integration")
 class EmbeddingGemma2MediaIT {
@@ -78,6 +90,38 @@ class EmbeddingGemma2MediaIT {
         assertEquals(0, nearest(query("a photo of a cat"), documents));
         assertEquals(1, nearest(query("dice on a table"), documents));
         assertEquals(2, nearest(query("a person saying hello world and counting"), documents));
+    }
+
+    /**
+     * The model card: "Prefixes apply to text only. Pass images, video, and audio without any
+     * prefix." Whatever the input type, an input carrying media embeds exactly as the core embedder
+     * embeds its parts bare.
+     */
+    @Test
+    void mediaEmbedsWithoutThePrompt() throws IOException {
+        Object catImage = ImageCodec.decode(Files.readAllBytes(Path.of(cat)));
+        Object diceImage = ImageCodec.decode(Files.readAllBytes(Path.of(dice)));
+        Object speechAudio = AudioCodec.decode(Files.readAllBytes(Path.of(speech)));
+        List<float[]> bare =
+                bare(
+                        List.of(catImage),
+                        List.of(speechAudio),
+                        List.of("A photo of dice:", diceImage));
+        for (EmbeddingInputType type :
+                Arrays.asList(EmbeddingInputType.DOCUMENT, EmbeddingInputType.QUERY, null)) {
+            assertTrue(cosine(embed(type, ImageContent.from(cat)), bare.get(0)) > 0.99999, "image");
+            assertTrue(
+                    cosine(embed(type, AudioContent.from(speech)), bare.get(1)) > 0.99999, "audio");
+            assertTrue(
+                    cosine(
+                                    embed(
+                                            type,
+                                            TextContent.from("A photo of dice:"),
+                                            ImageContent.from(dice)),
+                                    bare.get(2))
+                            > 0.99999,
+                    "interleaved");
+        }
     }
 
     @Test
@@ -132,6 +176,24 @@ class EmbeddingGemma2MediaIT {
                 .embeddings()
                 .getFirst()
                 .vector();
+    }
+
+    /** The core embedder's vectors for the given inputs, from a load of its own. */
+    @SafeVarargs
+    static List<float[]> bare(List<Object>... inputs) throws IOException {
+        try (Arena arena = Arena.ofShared()) {
+            LoadedEmbedder<?> core =
+                    Models.loadEmbedder(
+                            TestModels.require(MODEL),
+                            arena,
+                            Map.of("media", TestModels.require(MMPROJ)),
+                            null);
+            ContextState state = core.model().newState(2048, MemoryAllocators.ofArena(arena));
+            List<float[]> vectors = new ArrayList<>();
+            for (List<Object> parts : inputs)
+                core.embed(state, parts, core.dimension(), vectors::add);
+            return vectors;
+        }
     }
 
     static float[] query(String text) {
