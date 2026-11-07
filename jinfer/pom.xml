@@ -76,6 +76,12 @@
     <!-- native-image -march: compatibility (portable) unless the build asks for the host's ISA
          (make native passes native). A shipped binary must be built with the default. -->
     <jinfer.image.march>compatibility</jinfer.image.march>
+    <!-- the kernels' Vector API width in bits, jinfer-kernels' and jam-vector's, pinned at build time; blank = the
+         build host's preferred width, right only when -march is native: an image for a narrower target would carry
+         the host's wider species and run them through the Vector API's fallback lambdas, fifty times slower
+         (jinfer-native derives it from -march with its VectorWidth feature; the command's Makefile passes the
+         floor's, 256 for x86-64-v3, 128 for armv8.1-a) -->
+    <jinfer.image.vectorBits />
 
     <!-- Convolutions' register tile. A BUILD-time knob for the image, not a run-time one: the
          image initializes com.qxotic.* at build time, so Convolutions.TILE_CODE is frozen here
@@ -504,6 +510,8 @@
               <buildArg>-O3</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
+              <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
+              <buildArg>-Djam.vector.width=${jinfer.image.vectorBits}</buildArg>
               <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>   <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
               <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>

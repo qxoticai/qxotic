@@ -1,5 +1,5 @@
 # The jinfer command on Windows: the Makefile's targets, in PowerShell.
-#   .\build.ps1 image        what ships: the image at the architecture floor (-march=x86-64-v3), -O3 -> target\jinfer.exe
+#   .\build.ps1 image        what ships: the image at the architecture floor (-march=x86-64-v3, 256-bit kernels), -O3 -> target\jinfer.exe
 #   .\build.ps1 check        the image answers --version, --help and one instruct turn on the fixture model (-Model)
 #   .\build.ps1 dist         the release zip, a prefix tree: bin\jinfer.exe, README, LICENSE, NOTICE -> target\dist\
 #   .\build.ps1 check-dist   unpack the zip and run its jinfer as check does
@@ -12,7 +12,7 @@ function Build-Image {   # no clean: the image is linked from the modules' class
     Enter-Toolchain
     Push-Location $Root
     # quoted: PowerShell 5.1 splits an unquoted -argument at its first dot
-    try { mvn -B -Pnative -pl jinfer/jinfer-cli -am package "-DskipTests" "-Djinfer.image.march=x86-64-v3"; if ($LASTEXITCODE) { throw "mvn failed" } }
+    try { mvn -B -Pnative -pl jinfer/jinfer-cli -am package "-DskipTests" "-Djinfer.image.march=x86-64-v3" "-Djinfer.image.vectorBits=256"; if ($LASTEXITCODE) { throw "mvn failed" } }
     finally { Pop-Location }
 }
 function Run-Check([string] $Bin = 'target\jinfer.exe') {
