@@ -190,6 +190,7 @@ An id lives one hour on the server that minted it, among the last 4096; an unkno
 A streamed spoken reply carries the transcript and the speech in `delta.audio` chunks naming that id, the speech as `pcm16` only, 16-bit mono at the voice's rate, and the `expires_at` chunk last.
 `/v1/models` lists the `output_modalities` the served model has.
 A spoken reply cannot offer tools or follow a grammar, and does not reason; the server never speaks unless the request allows audio.
+`audio.voice`, which OpenAI's clients always send, is accepted and ignored: LFM3-Omni's spoken chat replies come in its one chat voice, in English.
 
 To serve transcription instead, stop the language server and select the ASR model:
 

@@ -114,6 +114,7 @@ try (var omni = new ChatEngine(
 
 The words arrive as they are spoken, and the speech in parts of 80 ms at 24 kHz.
 With "Respond in text." as the system turn, the same request is answered in text.
+A spoken chat reply comes in the model's one chat voice, the female one, in English: the voice and language clauses of the text-to-speech instruction do not carry over, a "using a male voice" clause leaves the voice as it is and cuts the speech short, and an "in French" clause makes the model answer in French text without speaking.
 
 ## Text to speech
 

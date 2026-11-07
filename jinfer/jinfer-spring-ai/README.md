@@ -332,6 +332,7 @@ try (var omni = JinferChatModel.builder()
 The same option on a request's `JinferChatOptions` opens or closes the voice for that request alone, and `spring.ai.jinfer.chat.output-modalities=text,audio` sets the default in Spring Boot.
 A streamed reply's media chunks are not aggregated: `ChatClient.stream().content()` yields the transcript, and a subscriber to `ChatModel.stream` collects the audio parts, each chunk a WAV of its own.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+There is no voice or language option: LFM3-Omni's spoken chat replies come in its one chat voice, in English, and a system prompt asking for another voice or language does not change that.
 
 ## Embeddings and reranking
 

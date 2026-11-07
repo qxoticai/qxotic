@@ -313,6 +313,7 @@ An `AiService`'s `TokenStream` takes the same `onUnmappedRawEvent`.
 A reply sent back in history carries its speech and replays exactly; sent back as `AudioContent.from(speech)`, the clip is heard by the model like any other audio input.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
 
+There is no voice or language option: LFM3-Omni's spoken chat replies come in its one chat voice, in English, and a system prompt asking for another voice or language does not change that.
 ## Multi-model agent
 
 Two models can share one JVM: a tool-capable model runs LangChain4j's agent loop while a multimodal
