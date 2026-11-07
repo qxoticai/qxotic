@@ -48,6 +48,7 @@
     <module>jinfer-cli</module>
     <module>jinfer-bench</module>
     <module>jinfer-native</module>
+    <module>jinfer-image</module>
     <module>jinfer-hub</module>
     <module>jinfer-jinja</module>
     <module>jinfer-langchain4j</module>
@@ -76,11 +77,8 @@
     <!-- native-image -march: compatibility (portable) unless the build asks for the host's ISA
          (make native passes native). A shipped binary must be built with the default. -->
     <jinfer.image.march>compatibility</jinfer.image.march>
-    <!-- the kernels' Vector API width in bits, jinfer-kernels' and jam-vector's, pinned at build time; blank = the
-         build host's preferred width, right only when -march is native: an image for a narrower target would carry
-         the host's wider species and run them through the Vector API's fallback lambdas, fifty times slower
-         (jinfer-native derives it from -march with its VectorWidth feature; the command's Makefile passes the
-         floor's, 256 for x86-64-v3, 128 for armv8.1-a) -->
+    <!-- The kernels' Vector API width in bits, empty = what the target ISA (-march) can execute, which jinfer-image's
+         VectorWidth feature pins at build time in every image. Set it only to build narrower than the target. -->
     <jinfer.image.vectorBits />
 
     <!-- Convolutions' register tile. A BUILD-time knob for the image, not a run-time one: the
@@ -125,6 +123,8 @@
     <reactive-streams.version>1.0.4</reactive-streams.version>
     <micrometer.version>1.18.0-RC2</micrometer.version>
 
+    <!-- the GraalVM SDK the image modules compile against (provided; the builder supplies it) -->
+    <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
     <!-- test libraries shared by the backend modules -->
     <assertj.version>3.27.7</assertj.version>
     <mockito.version>5.23.0</mockito.version>
@@ -235,6 +235,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-server</artifactId>
+        <version>${jinfer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-image</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
       <dependency>
@@ -511,7 +516,6 @@
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
               <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
-              <buildArg>-Djam.vector.width=${jinfer.image.vectorBits}</buildArg>
               <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>   <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
               <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>

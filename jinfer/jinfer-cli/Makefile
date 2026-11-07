@@ -1,7 +1,8 @@
 # The jinfer command as a GraalVM native image. `make native` is this machine's build, the root Makefile's
 # recipe (-march=native, into the repository's bin/). What ships is `make image`: the image at the
 # architecture's floor, native-image's default target spelled out since the pom's is compatibility (x86-64-v3,
-# armv8.1-a: the libraries' floor), -O3, Oracle GraalVM's inferred profile. `make dist` wraps it as the release
+# armv8.1-a: the libraries' floor), -O3, Oracle GraalVM's inferred profile; the kernels' vector width follows the
+# target through jinfer-image's feature, as in every image. `make dist` wraps it as the release
 # archive, a prefix tree with bin/jinfer, this README, the license and the notice, and check-dist runs that.
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 MAVEN ?= mvn
@@ -9,10 +10,6 @@ OS    := $(shell uname -s | tr A-Z a-z)
 ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
 PLATFORM := $(OS)-$(ARCH)
 MARCH := $(if $(filter x86-64,$(ARCH)),x86-64-v3,armv8.1-a)
-# the kernels' vector width for that target, pinned: left blank the image carries the build host's, 512 bits on
-# an AVX-512 box, which an x86-64-v3 image then runs through the Vector API's fallback lambdas, fifty times
-# slower at decode (the libraries derive it from -march with jinfer-native's VectorWidth feature)
-VECTOR_BITS := $(if $(filter x86-64,$(ARCH)),256,128)
 BIN   := target/jinfer
 # the check's model, in every build machine's cache (the test fixture); make keeps the spaces before a trailing comment, so none here
 MODEL ?= LiquidAI/LFM2.5-350M-GGUF:Q8_0
@@ -35,7 +32,7 @@ native:
 	$(MAKE) -C $(ROOT) native NATIVE_MODULE=$(notdir $(CURDIR))
 
 image:   # no clean: the image is linked from the modules' classes, not the shaded jar the root's native target cleans for
-	cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH) -Djinfer.image.vectorBits=$(VECTOR_BITS)
+	cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
 
 check:
 	$(BIN) --version && $(BIN) --help > /dev/null

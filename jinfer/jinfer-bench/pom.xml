@@ -64,6 +64,12 @@
       <scope>runtime</scope>
     </dependency>
     <dependency>
+      <!-- pins the kernels' vector width to the image's target, by the jar's own native-image.properties -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-image</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-vector</artifactId>
       <scope>runtime</scope>

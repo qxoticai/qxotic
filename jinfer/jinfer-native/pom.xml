@@ -20,9 +20,6 @@
     <jinfer.image.name>libjinfer</jinfer.image.name>
     <!-- -O3 for a shipped library; the Makefile passes -Ob for the dev loop. -->
     <jinfer.image.opt>-O3</jinfer.image.opt>
-    <!-- The Vector API width in bits, empty = what the target ISA (-march) can execute, which the
-         VectorWidth feature pins at build time. Set it only to build narrower than the target. -->
-    <jinfer.image.vectorBits />
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
     <shim.cc>cc</shim.cc>
     <shim.cflags>-std=c11 -O2 -fPIC -Wall -Wextra -Wpedantic</shim.cflags>
@@ -31,7 +28,6 @@
     <shim.wrapper>--native-compiler-path=${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/native-cc.sh</shim.wrapper>
     <!-- the linker line that pulls libjam's archive into the image whole (the windows profile spells it for link.exe) -->
     <jam.link>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</jam.link>
-    <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
@@ -87,11 +83,10 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <!-- VectorWidth: the builder's own hosted API (CPUFeatureAccess) -->
-      <groupId>org.graalvm.nativeimage</groupId>
-      <artifactId>svm</artifactId>
-      <version>${graalvm.sdk.version}</version>
-      <scope>provided</scope>
+      <!-- the vector width feature, registered by the jar's own native-image.properties -->
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-image</artifactId>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -208,9 +203,6 @@
                 <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
                 <!-- jinfer_model_options is read through the header itself (Options.Directives), which includes toknroll.h -->
                 <buildArg>-Djinfer.native.include=${project.basedir}/include${path.separator}${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/include</buildArg>
-                <!-- the kernels' vector width; toknroll's own feature comes with toknroll-native (its native-image.properties) -->
-                <buildArg>--features=com.qxotic.jinfer.libjinfer.VectorWidth</buildArg>
-                <buildArg>-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED</buildArg>
                 <!-- libjam linked into the image, whole: nothing in the image references its symbols statically
                      (jam resolves them by name at run time, from the image's own file: TOKNROLL_SELF_PROPERTY above),
                      so without whole-archive the linker would drop every member; no bundled copy is left to extract -->
@@ -221,7 +213,7 @@
                 <buildArg>-H:ServiceLoaderFeatureExcludeServices=com.qxotic.jinfer.hub.Console</buildArg>
                 <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
                 <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
-                <!-- the kernels' vector width: the target ISA's unless narrowed here (VectorWidth) -->
+                <!-- the kernels' vector width: the target ISA's unless narrowed here (jinfer-image's VectorWidth) -->
                 <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
                 <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
                 <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>

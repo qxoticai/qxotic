@@ -1,4 +1,4 @@
-package com.qxotic.jinfer.libjinfer;
+package com.qxotic.jinfer.image;
 
 import com.oracle.svm.core.CPUFeatureAccess;
 import java.util.Set;
@@ -6,13 +6,17 @@ import java.util.TreeSet;
 import org.graalvm.nativeimage.hosted.Feature;
 
 /**
- * Pins the Vector API width to the ISA the image is built for. The kernels fix their species at
- * build time (jinfer-core's {@code Segments}, jam-vector's {@code VectorSupport}), and the default
- * there, {@code VectorShape.preferredShape()}, answers for the machine running the build: an {@code
- * -march=x86-64-v3} image built on an AVX-512 host would carry 512-bit species and emulate every
- * lane, a hundred times slower. This reads the target's CPU features from the image builder and
- * sets the width before any kernel class initializes. {@code -Djinfer.vectorBitSize} still
- * overrides, within what the target can execute.
+ * Pins the kernels' Vector API width to the ISA the image is built for, in every image this jar is
+ * on the classpath of: the jar's native-image.properties registers the feature.
+ *
+ * <p>The kernels fix their species at build time (jinfer-core's {@code Segments}, jam-vector's
+ * {@code VectorSupport}, both initialized at build time so the species fold to constants), and the
+ * default there, {@code VectorShape.preferredShape()}, answers for the machine running the build,
+ * not for {@code -march}: an x86-64-v3 image built on an AVX-512 host would carry 512-bit species
+ * and run them through the Vector API's fallback lambdas, fifty times slower at decode. This reads
+ * the target's CPU features from the image builder and sets both widths before any kernel class
+ * initializes. {@code -Djinfer.vectorBitSize} still narrows them, within what the target executes,
+ * and {@code 0} selects jinfer's scalar kernels.
  */
 public final class VectorWidth implements Feature {
     @Override
